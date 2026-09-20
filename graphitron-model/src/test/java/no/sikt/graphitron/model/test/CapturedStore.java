@@ -4,10 +4,10 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreReader;
-import no.sikt.graphitron.model.capture.FactCapture;
+import no.sikt.graphitron.model.capture.code.ClasspathSourceCapture;
 import no.sikt.graphitron.model.capture.code.CodeCapture;
-import no.sikt.graphitron.model.capture.jooq.JooqFactCapture;
-import no.sikt.graphitron.model.capture.document.SdlSchemaProblems;
+import no.sikt.graphitron.model.capture.code.JvmCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLSchemaProblems;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
@@ -15,7 +15,6 @@ import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.schema.SchemaError;
 import no.sikt.graphitron.model.schema.SchemaLoader;
-import no.sikt.graphitron.model.schema.SdlVerdicts;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
@@ -28,6 +27,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -39,10 +39,12 @@ import no.sikt.graphitron.model.jooq.JooqCatalog;
  * A booted fact store with one or more SDL fixtures captured into it: the capture-level population,
  * for the tests whose subject is what a real capture writes.
  *
- * <p><b>Which harness is this.</b> Rows arrive here only through the capture writers, {@link
- * FactCapture} and, on the refused arm, the verdict writer beside it, so a fixture cannot encode a
- * state capture never produces. That is the property to want when the subject is capture itself,
- * the crawlers and the writers, or agreement between a store-native relation and a reader above. When the subject is instead what a relation <em>returns given rows</em>, a view's
+ * <p><b>Which harness is this.</b> Rows arrive here only through the pass, {@link
+ * ModelCapture} {@link ModelCapture}, so a fixture cannot encode a state capture never
+ * produces. That is the property to want when the subject is capture itself, the gatherers and the
+ * writers, or agreement between a store-native relation and a reader above.
+ *
+ * <p>When the subject is instead what a relation <em>returns given rows</em>, a view's
  * joins or a check constraint's boundary, {@link SeededStore} beside this one states the inputs as
  * rows with no pipeline in the way. Seeding skips the step capture exists to perform, so a fixture
  * here that hand-inserts rows owes a reason at the call site.
@@ -55,18 +57,14 @@ import no.sikt.graphitron.model.jooq.JooqCatalog;
  * this handle is the primitive underneath it, for a test that needs more than one step against the
  * open store; and {@link #registryOf} / {@link #attributionOf} / {@link #fixtureFile} / {@link #graph}
  * are the primitives under that, for a test whose axis combination no factory names and which drives
- * {@link FactCapture#capture} itself.
+ * the pass itself.
  *
  * <p><b>Named arms, not flags.</b> Each factory says in its own name what its shape carries. The
  * classpath census is an argument rather than an axis, because it pairs with every shape and naming
  * it would double the set to say nothing.
  *
- * <p>Owns the store's lifetime so a test can query after capture, which is the one thing
- * {@link FactCapture#run} deliberately does not allow: that arm captures and closes, having no
- * reader to hand the store to. The pipeline's own window is
- * {@link FactCapture#runAndRead}, which keeps the store open across the phases that question it;
- * what this handle adds over that is a lifetime a test controls step by step rather than one
- * continuation's. The store itself comes from {@link FactStores#inMemory()} rather than being
+ * <p>Owns the store's lifetime so a test can query after capture, step by step rather than inside
+ * one continuation. The store itself comes from {@link FactStores#inMemory()} rather than being
  * booted here, so how a store is stood up is stated in one place beside the schema that declares
  * it.
  */
@@ -323,16 +321,16 @@ public final class CapturedStore implements AutoCloseable {
     }
 
     /**
-     * Reads {@code files} through {@link SchemaLoader#parsePerSource} rather than
-     * {@code load}, because a refusal is the subject here and {@code load}'s contract is to throw on
-     * one, and captures the verdict beside whatever did parse.
+     * Captures {@code files}, one of which is spelled so a reading stage objects to it.
      *
-     * <p>Fails when nothing objected, so an arm whose refused source quietly started parsing cannot
-     * go on passing as a fixture for a refusal.
+     * <p>Parsed here as well as by the pass, and only to fail when nothing objected: an arm whose
+     * refused source quietly started parsing would otherwise go on passing as a fixture for a
+     * refusal. The registry this hands back is the same reason, a caller wanting to know what did
+     * parse.
      *
-     * <p>Two writers, because the walk and the verdict relation are on either side of the
-     * migration. The walk transcribes whatever parsed and {@link #writeSchemaProblems} records what
-     * the three stages refused; that primitive carries why the two are separate and why this order.
+     * <p>Nothing writes the verdict beside the pass any more. Both stages that can refuse record
+     * their own rows: the reader writes what would not parse and the assembly writes what would not
+     * compose, so the store a refusal leaves is the store a run leaves.
      */
     private static CapturedStore captureRefused(Path directory, List<Path> files, JooqCatalog jooq) {
         var parse = SchemaLoader.parsePerSource(files.stream().map(SchemaSource::file).toList());
@@ -341,11 +339,7 @@ public final class CapturedStore implements AutoCloseable {
                 + "; this arm's whole subject is a read that refused something");
         }
         var store = ThreadConfinedStore.borrow();
-        var assembly = SchemaAssembly.of(parse.registry());
-        FactCapture.capture(store.dsl(), false, graph(directory), corpusOf(files, directory),
-            parse.registry(), assembly, new SdlVerdicts(parse.failures(), parse.registryErrors()),
-            attributionOfFiles(files), jooq, List.of());
-        writeSchemaProblems(store.dsl(), GRAPH, parse, assembly);
+        captureFiles(store.dsl(), files, directory, GRAPH, parse.registry(), jooq, List.of(), false);
         return new CapturedStore(store, GRAPH, directory, files.getFirst(), parse.registry());
     }
 
@@ -502,30 +496,28 @@ public final class CapturedStore implements AutoCloseable {
      * as it goes, so a code row written after it is invisible to everything derived during it, and a
      * fixture would read a resolved route beside a chain that never saw it.
      */
+    @SuppressWarnings("removal")  // states a census while fixtures without a classpath do
     private static void captureFiles(DSLContext dsl, List<Path> files, Path directory,
                                      String graphName, TypeDefinitionRegistry registry, JooqCatalog jooq,
                                      List<CompletionData.ExternalReference> census, boolean warm,
                                      List<ClasspathEntry> classpath) {
-        if (!classpath.isEmpty()) {
-            var readAt = LocalDateTime.now();
-            // The catalog first, in the order ModelCapture runs the two and for the reason the
-            // declared edge from code to jooq states: a concrete table position is keyed to the
-            // table it names, so the arm resolves against rows the jOOQ gatherer has written. The
-            // graph anchor goes in ahead of both, that gatherer's membership rows keying into it.
-            if (jooq != null) {
-                ModelCapture.writeGraph(dsl, new GraphIdentity(graphName, directory), readAt);
-                JooqFactCapture.capture(dsl, graphName, jooq, readAt);
-            }
-            CodeCapture.capture(dsl, classpath, null,
-                jooq == null ? null : jooq.codegenLoader(), readAt);
+        var readAt = LocalDateTime.now();
+        // The graph's own row, before anything that keys into it. The pass writes it first thing,
+        // but the stated census below runs ahead of the pass and claims sources against it.
+        ModelCapture.writeGraph(dsl, new GraphIdentity(graphName, directory), readAt);
+        if (classpath.isEmpty()) {
+            // Before the pass, because the pass derives at its tail and those derivations read
+            // this family. A fixture stating a census and naming no classpath has nothing for the
+            // classpath gatherer to scan, so this is where those rows come from.
+            ClasspathSourceCapture.stated(dsl, graphName,
+                census.stream().map(CompletionData.ExternalReference::sourceName).toList(), readAt);
+            JvmCapture.captureStated(dsl, census, readAt);
         }
-        FactCapture.capture(dsl, warm, new GraphIdentity(graphName, directory),
-            corpusOf(files, directory), registry, attributionOfFiles(files), jooq, census);
-        // Null classpath and null catalog, as this call has always passed: the code family is
-        // captured above where a run captures it, and FactCapture wrote the jOOQ facts, so handing
-        // either over again would be a second writer of one family.
+        // The pass, and the whole of the capture: it writes the graph row, the catalog, the
+        // classpath families where there is a classpath, every document stratum, and runs the
+        // derivations at its tail.
         ModelCapture.capture(dsl, new GraphIdentity(graphName, directory),
-            corpusOf(files, directory), List.of(), null, LocalDateTime.now());
+            corpusOf(files, directory), classpath, jooq, readAt);
     }
 
     /**
@@ -542,7 +534,7 @@ public final class CapturedStore implements AutoCloseable {
      * this capture was given. Several arms here write more than one file into one directory and
      * then capture one of them, and a pattern would quietly hand the gatherer the other.
      */
-    private static SubjectConfig corpusOf(List<Path> files, Path directory) {
+    public static SubjectConfig corpusOf(List<Path> files, Path directory) {
         return SubjectConfig.of(new SchemaRecipe(directory.resolve("pom.xml"),
             files.stream().map(file -> SchemaRecipe.Binding.literal(SchemaSource.file(file)))
                 .toList(),
@@ -550,15 +542,35 @@ public final class CapturedStore implements AutoCloseable {
     }
 
     // ---------------------------------------------------------------------------------------
-    // The primitives, for a test that drives FactCapture itself.
+    // The primitives, for a test that drives the pass itself.
     // ---------------------------------------------------------------------------------------
+
+    /**
+     * One capture of {@code graph}'s corpus, by the pass a run drives.
+     *
+     * <p>For a test whose axis combination no factory above names, so that such a test states which
+     * corpus and which catalog rather than which arity. The instant is taken here because a test
+     * driving one capture has no earlier moment to date it by; an arm wanting two captures to be
+     * told apart calls {@link ModelCapture#capture} with instants of its own.
+     */
+    public static void capture(DSLContext dsl, GraphIdentity graph, SubjectConfig corpus,
+                               JooqCatalog jooq) {
+        capture(dsl, graph, corpus, jooq, List.of());
+    }
+
+    /** {@link #capture(DSLContext, GraphIdentity, SubjectConfig, JooqCatalog)} with a classpath. */
+    public static void capture(DSLContext dsl, GraphIdentity graph, SubjectConfig corpus,
+                               JooqCatalog jooq, List<ClasspathEntry> classpath) {
+        ModelCapture.capture(dsl, graph, corpus, classpath, jooq,
+            LocalDateTime.now().truncatedTo(ChronoUnit.MICROS));
+    }
 
     /**
      * Writes what the three reading stages refused, for a test that drove the walk itself and wants
      * the verdict beside what the walk transcribed.
      *
      * <p>A primitive rather than a step inside the walk, because the two are on either side of the
-     * migration: the walk writes the transcription families and {@link SdlSchemaProblems} writes the
+     * migration: the walk writes the transcription families and {@link GraphQLSchemaProblems} writes the
      * one relation all three stages record in. Reached directly rather than through the document
      * gatherers, whose anchor step sweeps every anchor row carrying an instant other than
      * its own and would therefore delete what the walk had just written, and called after the walk,
@@ -572,8 +584,8 @@ public final class CapturedStore implements AutoCloseable {
         var at = LocalDateTime.now();
         // Two calls because the relation numbers and sweeps per stage, so each stage's writer
         // stands alone; a fixture driving the walk plays both of them.
-        SdlSchemaProblems.writeParsed(dsl, graphName, parse.failures(), at);
-        SdlSchemaProblems.writeAssembled(dsl, graphName, List.copyOf(raised), at);
+        GraphQLSchemaProblems.writeParsed(dsl, graphName, parse.failures(), at);
+        GraphQLSchemaProblems.writeAssembled(dsl, graphName, List.copyOf(raised), at);
     }
 
     /**
@@ -591,9 +603,10 @@ public final class CapturedStore implements AutoCloseable {
      */
     public static void captureCode(DSLContext dsl, Path entry, String skipPrefix,
                                    ClassLoader loader) {
+        var readAt = LocalDateTime.now();
+        var classpath = List.of(new ClasspathEntry(entry, ClasspathEntry.Origin.PROJECT, null, null));
         CodeCapture.capture(dsl,
-            List.of(new ClasspathEntry(entry, ClasspathEntry.Origin.PROJECT, null, null)),
-            skipPrefix, loader, LocalDateTime.now());
+            ClasspathSourceCapture.read(dsl, classpath, skipPrefix, readAt), loader, readAt);
     }
 
     /** The graph identity a fixture captured under, shared so readers can scope by it. */
@@ -604,6 +617,21 @@ public final class CapturedStore implements AutoCloseable {
     /** {@link #graph(Path)} for a graph the caller names. */
     public static GraphIdentity graph(Path directory, String graphName) {
         return new GraphIdentity(graphName, directory);
+    }
+
+    /**
+     * Writes the fixture's schema file and says where it landed.
+     *
+     * <p>What a caller driving the pass wants of {@link #registryOf}: the pass reads the corpus
+     * itself, so the parse that arm also performs is a second reading nobody asked for.
+     */
+    public static Path writeSource(Path directory, String sdl) {
+        return write(directory, GRAPH, sdl);
+    }
+
+    /** {@link #writeSource(Path, String)} under a graph the caller names. */
+    public static Path writeSource(Path directory, String graphName, String sdl) {
+        return write(directory, graphName, sdl);
     }
 
     /** Just the parse, for callers that fill a store from something other than the SDL. */
@@ -654,7 +682,7 @@ public final class CapturedStore implements AutoCloseable {
 
     /**
      * The corpus {@link #registryOf} wrote, stated as the configuration a run would have had, for a
-     * test that drives {@link FactCapture#capture} itself.
+     * test that drives the pass itself.
      *
      * <p>A pass used to need only the merged registry, so these tests handed it
      * {@code SubjectConfig.none()} and lost nothing. It runs the document gatherer now, whose rows

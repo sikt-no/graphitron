@@ -1,5 +1,11 @@
 package no.sikt.graphitron.model.run;
 
+import no.sikt.graphitron.model.capture.graphitron.GraphitronFactCapture;
+import no.sikt.graphitron.model.derive.NameMatchedKeys;
+import no.sikt.graphitron.model.capture.FactCapture;
+import no.sikt.graphitron.model.sink.FactSink;
+import no.sikt.graphitron.model.capture.sdl.SdlFactCapture;
+import no.sikt.graphitron.model.capture.code.ClasspathSourceCapture;
 import no.sikt.graphitron.model.capture.code.CodeCapture;
 import no.sikt.graphitron.model.capture.code.JvmCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLAssemblyCapture;
@@ -53,6 +59,7 @@ public final class ModelCapture {
      * <p>One instant per reading: every relation these fill sweeps by it, so two readings sharing
      * one could not tell each other's rows apart and what the second no longer finds would stay.
      */
+    @SuppressWarnings("deprecation")  // drives the decode until it reads the entry stratum
     public static void capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
                                List<ClasspathEntry> classpath, JooqCatalog jooq,
                                LocalDateTime readAt) {
@@ -66,19 +73,44 @@ public final class ModelCapture {
         // did not assemble still has every fact above it to record.
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);
-        GraphQLAssemblyCapture.capture(dsl, graph, documents, readAt);
+        var assembly = GraphQLAssemblyCapture.capture(dsl, graph, documents, readAt);
+        // Once the gatherers have been told what the dropped documents no longer say. The source
+        // row is the provenance their rows hang on, so forgetting it before they were swept would
+        // orphan them rather than remove them.
+        GraphQLSourceCapture.reclaim(dsl, documents);
         StoreEntries.write(dsl, graph.name(), config, readAt);
         JooqFactCapture.capture(dsl, graph.name(), jooq, readAt);
-        CodeCapture.capture(dsl, classpath, config.jooqPackage().orElse(null),
-            jooq == null ? null : jooq.codegenLoader(), readAt);
+        // The catalog's own closure, over the rows just written. A stage of the catalog rather
+        // than a derivation: it reads no graph and no directive, and the resolution stages below
+        // resolve against it.
+        NameMatchedKeys.derive(dsl);
+        // The classpath read once, by the gatherer that owns the store's record of what was
+        // read, and both gatherers below it handed the reading rather than the configuration. The
+        // same shape the corpus above has, and for the same reason: two readings of one corpus are
+        // two answers that have to agree, with nothing to notice when they stop.
+        var classes = ClasspathSourceCapture.capture(dsl, graph.name(), classpath,
+            config.jooqPackage().orElse(null), readAt);
+        CodeCapture.capture(dsl, classes, jooq == null ? null : jooq.codegenLoader(), readAt);
         // After the arms above, which is what keeps the dependency one-way: a code_ arm cannot read
         // a jvm_ row because none is written yet when it runs. The general reading is here at all
         // because the arms cannot yet answer everything asked of them, and it leaves when they can.
-        JvmCapture.capture(dsl, graph.name(), classpath, config.jooqPackage().orElse(null), readAt);
+        JvmCapture.capture(dsl, classes, readAt);
         // Last, and the ordering is a dependency rather than a preference: these stages resolve
         // what the author wrote against the catalog and the classpath, so they read every family
         // above them and would resolve against whichever of those a pass had reached so far.
+        // The decode of what the author wrote at each directive, driven here rather than by a
+        // second pass over the same corpus. The walk it rides is all that is left of the incumbent
+        // one: it writes no relation of its own, and every family it used to hold is written above
+        // by the gatherers that read the documents. It runs on this pass's own composition of the
+        // corpus, so the registry it visits is the registry the assembly judged.
+        var decode = new FactSink(dsl, graph.name(), readAt);
+        GraphitronFactCapture.clear(dsl, graph.name());
+        SdlFactCapture.capture(decode, assembly.registry());
+        decode.flush();
         GraphitronAssemblyCapture.capture(dsl, graph.name(), readAt);
+        // The derivations the incumbent pass still owns, at the tail because every one of them
+        // reads what this pass has just written. It captures nothing of its own any more.
+        FactCapture.derive(dsl, graph, assembly, readAt);
     }
 
     /**

@@ -70,10 +70,11 @@ import java.util.Set;
  *                       instead of re-walking everything that has not changed. The store appends
  *                       its own compatibility segment under whatever home it is handed. Populated
  *                       by the build mojos from the resolved per-user cache location (or the
- *                       consumer's {@code <storeDirectory>} override); {@code null} for every
- *                       caller with no home to give, which gets the in-memory store that dies
- *                       with the run. Warm or cold changes what a load costs, never what it
- *                       records.
+ *                       consumer's {@code <storeDirectory>} override); {@code null} for a caller
+ *                       that opens its own store and never asks this field for one, which is every
+ *                       test harness. There is no in-memory fallback behind a null: a pass with
+ *                       nowhere to capture stops rather than producing a result nothing can read
+ *                       back. Warm or cold changes what a load costs, never what it records.
  * @param schemaRecipe   how this run's schema files were found: the resolved recipe entries, the
  *                       effective extension filter, and the build file they were resolved from.
  *                       Capture persists it beside the graph so a currency check can re-expand it

@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite.capture;
 
-import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.read.SourceGraph;
 import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.model.test.CapturedStore;
@@ -19,9 +18,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import no.sikt.graphitron.model.capture.FactCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
-import no.sikt.graphitron.model.run.SubjectConfig;
 
 /**
  * Turning a source file into the graph whose facts answer for it, which is the read a consumer
@@ -43,9 +40,9 @@ class SourceGraphScopingTest {
 
     @Test
     void aSourceOneGraphReadResolvesToThatGraphsHandle(@TempDir Path tmp) {
-        var registry = CapturedStore.registryOf(tmp, SDL);
+        CapturedStore.writeSource(tmp, SDL);
         try (var store = FactStores.inMemory()) {
-            captureAs(store.dsl(), "only-reader", tmp, registry);
+            captureAs(store.dsl(), "only-reader", tmp);
 
             assertThat(SourceGraph.of(store.dsl(), fixtureSourceName(tmp)))
                 .isInstanceOfSatisfying(SourceGraph.Scoped.class, scoped -> {
@@ -59,10 +56,10 @@ class SourceGraphScopingTest {
 
     @Test
     void aSourceTwoGraphsReadHandsBackBothRatherThanPickingOne(@TempDir Path tmp) {
-        var registry = CapturedStore.registryOf(tmp, SDL);
+        CapturedStore.writeSource(tmp, SDL);
         try (var store = FactStores.inMemory()) {
-            captureAs(store.dsl(), "downstream", tmp, registry);
-            captureAs(store.dsl(), "api", tmp, registry);
+            captureAs(store.dsl(), "downstream", tmp);
+            captureAs(store.dsl(), "api", tmp);
 
             assertThat(SourceGraph.of(store.dsl(), fixtureSourceName(tmp)))
                 .isInstanceOfSatisfying(SourceGraph.Shared.class, shared -> {
@@ -76,9 +73,9 @@ class SourceGraphScopingTest {
 
     @Test
     void aSourceNoGraphHasReadIsUncaptured(@TempDir Path tmp) {
-        var registry = CapturedStore.registryOf(tmp, SDL);
+        CapturedStore.writeSource(tmp, SDL);
         try (var store = FactStores.inMemory()) {
-            captureAs(store.dsl(), "only-reader", tmp, registry);
+            captureAs(store.dsl(), "only-reader", tmp);
             String unread = tmp.resolve("written-since-the-last-capture.graphqls").toString();
 
             assertThat(SourceGraph.of(store.dsl(), unread))
@@ -92,9 +89,9 @@ class SourceGraphScopingTest {
         // document before a single fact had been read, which for a drain of open files was half its
         // statements; a source no graph has read is answered rather than left out, so a caller reads
         // every source it asked about out of the result.
-        var registry = CapturedStore.registryOf(tmp, SDL);
+        CapturedStore.writeSource(tmp, SDL);
         try (var store = FactStores.inMemory()) {
-            captureAs(store.dsl(), "only-reader", tmp, registry);
+            captureAs(store.dsl(), "only-reader", tmp);
             String read = fixtureSourceName(tmp);
             String unread = tmp.resolve("written-since-the-last-capture.graphqls").toString();
 
@@ -113,9 +110,9 @@ class SourceGraphScopingTest {
 
     @Test
     void resolvingNoSourceCostsNoQuery(@TempDir Path tmp) {
-        var registry = CapturedStore.registryOf(tmp, SDL);
+        CapturedStore.writeSource(tmp, SDL);
         try (var store = FactStores.inMemory()) {
-            captureAs(store.dsl(), "only-reader", tmp, registry);
+            captureAs(store.dsl(), "only-reader", tmp);
 
             var counted = new AtomicInteger();
             assertThat(SourceGraph.ofAll(counting(store.dsl(), counted), List.of())).isEmpty();
@@ -143,9 +140,8 @@ class SourceGraphScopingTest {
      * Captures the one fixture file under {@code graphName}. Two calls with two names is the
      * shared-file case: the same file, read by two modules, into the one store a workspace shares.
      */
-    private static void captureAs(DSLContext dsl, String graphName, Path directory,
-                                  TypeDefinitionRegistry registry) {
-        FactCapture.capture(dsl, new GraphIdentity(graphName, directory),
-            SubjectConfig.none(), registry, CapturedStore.attributionOf(directory));
+    private static void captureAs(DSLContext dsl, String graphName, Path directory) {
+        CapturedStore.capture(dsl, new GraphIdentity(graphName, directory),
+            CapturedStore.corpusOf(directory), null);
     }
 }

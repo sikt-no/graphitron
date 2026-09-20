@@ -111,7 +111,12 @@ final class FactWrites {
      * Here rather than on the sink's generic arm because the relation gained a computed column, and
      * an insert that so much as names one is rejected. Ignores a duplicate key, which is the census
      * disposition rather than a choice made for this relation: the classpath is crawled per source
-     * and two crawls of one jar both land, exactly as the catalog writers below describe.
+     * and two crawls of one jar both land.
+     *
+     * <p>No production writer reaches this any more. The classpath is captured by the gatherer
+     * that reads it, in statements of its own, and this survives only because the computed column
+     * makes the generic arm unusable and the coverage gate writes every such relation to prove it
+     * can be written. It goes with the sink.
      */
     private static void jvmMethod(DSLContext dsl, List<TableRecord<?>> rows) {
         var t = JVM_METHOD;
@@ -121,8 +126,9 @@ final class FactWrites {
                          t.METHOD_NAME,
                          t.DESCRIPTOR,
                          t.RETURN_TYPE,
-                         t.DECLARED_RETURN_TYPE)
-                .values(markers(6)))
+                         t.DECLARED_RETURN_TYPE,
+                         t.TOUCHED_AT)
+                .values(markers(7)))
                 .onDuplicateKeyIgnore());
         for (TableRecord<?> row : rows) {
             batch = batch.bind(row.get(t.SOURCE_NAME),
@@ -130,7 +136,8 @@ final class FactWrites {
                                row.get(t.METHOD_NAME),
                                row.get(t.DESCRIPTOR),
                                row.get(t.RETURN_TYPE),
-                               row.get(t.DECLARED_RETURN_TYPE));
+                               row.get(t.DECLARED_RETURN_TYPE),
+                               row.get(t.TOUCHED_AT));
         }
         batch.execute();
     }

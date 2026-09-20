@@ -2,8 +2,8 @@ package no.sikt.graphitron.model.test;
 
 import no.sikt.graphitron.model.Public;
 import no.sikt.graphitron.model.capture.document.GraphitronAnchor;
-import no.sikt.graphitron.model.capture.document.GraphitronEntries;
-import no.sikt.graphitron.model.capture.document.SdlEntries;
+import no.sikt.graphitron.model.capture.document.GraphitronAstEntries;
+import no.sikt.graphitron.model.capture.document.GraphQLAstEntries;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
@@ -290,9 +290,9 @@ public final class EntryFamilyFixture {
             SchemaSource.file(CapturedStore.fixtureFile(directory, SECOND)));
         for (var document : SchemaLoader.parsePerSource(files).perSource()) {
             SeededStore.seedSource(captured.dsl(), document.sourceName(), "SCHEMA_FILE");
-            SdlEntries.write(captured.dsl(), captured.graphName(), document.sourceName(),
+            GraphQLAstEntries.write(captured.dsl(), captured.graphName(), document.sourceName(),
                 document.registry(), READ_AT);
-            GraphitronEntries.write(captured.dsl(), captured.graphName(), document.sourceName(),
+            GraphitronAstEntries.write(captured.dsl(), captured.graphName(), document.sourceName(),
                 document.registry(), READ_AT);
         }
         // After every document, because this writer resolves across the corpus rather than within

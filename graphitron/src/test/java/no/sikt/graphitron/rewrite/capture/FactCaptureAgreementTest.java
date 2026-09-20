@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.capture;
 
+import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.run.ModelCapture;
 import graphql.language.Directive;
 import graphql.language.EnumTypeDefinition;
 import graphql.language.EnumValueDefinition;
@@ -22,6 +24,7 @@ import no.sikt.graphitron.rewrite.model.ConnectionSynthesis;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.MethodBackedField;
 import no.sikt.graphitron.rewrite.model.OperationMember;
+import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.grammar.NodeDeclaration;
 import no.sikt.graphitron.model.compile.CompileDiagnostic;
@@ -929,8 +932,7 @@ class FactCaptureAgreementTest {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
+            capture(store, graph(tmp), jooq);
 
             var expectedTables = new LinkedHashMap<String, String>();
             int expectedColumns = 0;
@@ -965,8 +967,7 @@ class FactCaptureAgreementTest {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
+            capture(store, graph(tmp), jooq);
 
             var expected = new LinkedHashMap<String, String>();
             for (var entry : jooq.allTableEntries()) {
@@ -1013,8 +1014,7 @@ class FactCaptureAgreementTest {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
+            capture(store, graph(tmp), jooq);
 
             var metadata = store.dsl()
                 .select(SQL_NODE_METADATA.TABLE_SCHEMA, SQL_NODE_METADATA.TABLE_NAME,
@@ -1099,8 +1099,7 @@ class FactCaptureAgreementTest {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
+            capture(store, graph(tmp), jooq);
 
             var expectedRoutines = new LinkedHashMap<String, String>();
             var expectedParameters = new LinkedHashSet<String>();
@@ -1178,8 +1177,7 @@ class FactCaptureAgreementTest {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
+            capture(store, graph(tmp), jooq);
 
             var expected = new LinkedHashSet<String>();
             for (var entry : jooq.allTableEntries()) {
@@ -1217,8 +1215,7 @@ class FactCaptureAgreementTest {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
+            capture(store, graph(tmp), jooq);
 
             var expected = new LinkedHashMap<String, String>();
             for (var entry : jooq.allTableEntries()) {
@@ -1263,8 +1260,7 @@ class FactCaptureAgreementTest {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
+            capture(store, graph(tmp), jooq);
 
             var expectedTables = new LinkedHashMap<String, String>();
             var expectedRecords = new LinkedHashMap<String, String>();
@@ -1342,8 +1338,7 @@ class FactCaptureAgreementTest {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
+            capture(store, graph(tmp), jooq);
 
             var byPackage = store.dsl()
                 .select(SQL_SCHEMA.SOURCE_NAME, SQL_SCHEMA.TABLES_CLASS_FQN)
@@ -1372,8 +1367,7 @@ class FactCaptureAgreementTest {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
+            capture(store, graph(tmp), jooq);
 
             var expected = new LinkedHashMap<String, String>();
             for (var entry : jooq.allTableEntries()) {
@@ -1419,8 +1413,7 @@ class FactCaptureAgreementTest {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
+            capture(store, graph(tmp), jooq);
 
             var expected = new LinkedHashSet<String>();
             for (var entry : jooq.allTableEntries()) {
@@ -1461,8 +1454,7 @@ class FactCaptureAgreementTest {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
+            capture(store, graph(tmp), jooq);
 
             var expected = new LinkedHashSet<String>();
             for (var entry : jooq.allTableEntries()) {
@@ -1517,8 +1509,7 @@ class FactCaptureAgreementTest {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
+            capture(store, graph(tmp), jooq);
 
             var expected = new LinkedHashMap<String, Integer>();
             for (var entry : jooq.allTableEntries()) {
@@ -1565,8 +1556,7 @@ class FactCaptureAgreementTest {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
+            capture(store, graph(tmp), jooq);
             assertThat(store.dsl().fetchCount(SQL_PRIMARY_KEY))
                 .as("the catalog has primary keys, so this pins something")
                 .isPositive();
@@ -1597,8 +1587,7 @@ class FactCaptureAgreementTest {
         var ctx = testContext();
         List<CompletionData.ExternalReference> extensions = CatalogBuilder.buildExternalReferences(ctx);
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), null, extensions);
+            captureClasspath(store, ctx, graph(tmp), SubjectConfig.none());
 
             var captured = new LinkedHashSet<String>();
             store.dsl().select(JVM_METHOD.CLASS_NAME, JVM_METHOD.METHOD_NAME, JVM_METHOD.DESCRIPTOR)
@@ -1630,8 +1619,7 @@ class FactCaptureAgreementTest {
         var ctx = testContext();
         List<CompletionData.ExternalReference> extensions = CatalogBuilder.buildExternalReferences(ctx);
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), null, extensions);
+            captureClasspath(store, ctx, graph(tmp), SubjectConfig.none());
 
             var captured = new LinkedHashSet<String>();
             store.dsl().select(JVM_CLASS_SUPERTYPE.CLASS_NAME, JVM_CLASS_SUPERTYPE.DECLARED_VIA,
@@ -1673,8 +1661,7 @@ class FactCaptureAgreementTest {
         var ctx = testContext();
         List<CompletionData.ExternalReference> extensions = CatalogBuilder.buildExternalReferences(ctx);
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), null, extensions);
+            captureClasspath(store, ctx, graph(tmp), SubjectConfig.none());
 
             var expectedReturns = new LinkedHashSet<String>();
             var expectedParameters = new LinkedHashSet<String>();
@@ -1834,8 +1821,7 @@ class FactCaptureAgreementTest {
         var ctx = testContext();
         List<CompletionData.ExternalReference> extensions = CatalogBuilder.buildExternalReferences(ctx);
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), null, extensions);
+            captureClasspath(store, ctx, graph(tmp), SubjectConfig.none());
 
             var expected = new LinkedHashSet<>(extensions.stream()
                 .map(CompletionData.ExternalReference::sourceName).toList());
@@ -1878,8 +1864,7 @@ class FactCaptureAgreementTest {
         var jooq = new JooqCatalog("no.sikt.graphitron.rewrite.multischemafixture",
             testContext().codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
+            capture(store, graph(tmp), jooq);
 
             var expected = new LinkedHashSet<String>();
             for (var entry : jooq.allTableEntries()) {
@@ -1949,9 +1934,8 @@ class FactCaptureAgreementTest {
         Path bDir = java.nio.file.Files.createDirectories(tmp.resolve("b"));
         try (var store = GraphitronModelStore.open()) {
             var aRegistry = CapturedStore.registryOf(aDir, AgreementCorpus.SDL);
-            FactCapture.capture(store.dsl(), new GraphIdentity("a", aDir),
-                SubjectConfig.none(), aRegistry, CapturedStore.attributionOf(aDir),
-                jooq, extensions);
+            capture(store, new GraphIdentity("a", aDir), CapturedStore.corpusOf(aDir),
+                CatalogBuilder.censusRoots(ctx), jooq);
 
             var expectedA = new LinkedHashSet<>(sdlSourceNames(aRegistry));
             for (var entry : jooq.allTableEntries()) {
@@ -1963,8 +1947,8 @@ class FactCaptureAgreementTest {
             assertThat(membership(store, "a")).isEqualTo(expectedA);
 
             var bRegistry = CapturedStore.registryOf(bDir, "type Query { ping: String }");
-            FactCapture.capture(store.dsl(), new GraphIdentity("b", bDir),
-                SubjectConfig.none(), bRegistry, CapturedStore.attributionOf(bDir));
+            capture(store, new GraphIdentity("b", bDir), CapturedStore.corpusOf(bDir),
+                List.of(), null);
             assertThat(membership(store, "b"))
                 .as("an SDL-only capture's membership is its own file census, no inherited catalog")
                 .isEqualTo(new LinkedHashSet<>(sdlSourceNames(bRegistry)));
@@ -1972,6 +1956,49 @@ class FactCaptureAgreementTest {
                 .as("a sibling's capture leaves this graph's membership standing")
                 .isEqualTo(expectedA);
         }
+    }
+
+    /**
+     * The classpath capture, which the walk does not perform.
+     *
+     * <p>The jvm_ family is the classpath gatherer's, and the classpath gatherer runs in
+     * ModelCapture, so a fixture wanting those rows runs that pass rather than expecting the walk
+     * to have written them. The roots are the ones the census beside it was read from, two
+     * different answers to what the classpath is being the one way to make the comparison
+     * meaningless.
+     *
+     * <p>The corpus is the caller's, and matters: the pass reads the SDL corpus too, and one handed
+     * a narrower corpus than the walk was handed would drop the membership the walk had recorded.
+     */
+    private static void captureClasspath(GraphitronModelStore store, RunContext ctx,
+                                         GraphIdentity graph, SubjectConfig config) {
+        capture(store, graph, config, CatalogBuilder.censusRoots(ctx), null);
+    }
+
+    /**
+     * One capture of {@code graph}, by the pass that owns it.
+     *
+     * <p>The roots are the ones the census beside it was read from, two answers to what the
+     * classpath is being the one way to make a comparison of the two meaningless.
+     */
+    private static void capture(GraphitronModelStore store, GraphIdentity graph,
+                                JooqCatalog jooq) {
+        capture(store, graph, SubjectConfig.none(), CatalogBuilder.censusRoots(testContext()), jooq);
+    }
+
+    /**
+     * {@link #capture(GraphitronModelStore, GraphIdentity, JooqCatalog)} with every input named.
+     *
+     * <p>Each is a fixture's own answer to what the run had, and an arm asserting that one graph's
+     * reading does not reach another's needs to say so: a capture handed this build's classpath
+     * because the helper always passes it would carry classpath sources into a membership the arm
+     * is about to compare against an SDL census.
+     */
+    private static void capture(GraphitronModelStore store, GraphIdentity graph,
+                                SubjectConfig corpus, List<ClasspathEntry> classpath,
+                                JooqCatalog jooq) {
+        ModelCapture.capture(store.dsl(), graph, corpus, classpath, jooq,
+            java.time.LocalDateTime.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS));
     }
 
     /** The graph's membership rows, as a set for order-free comparison. */
@@ -2012,17 +2039,27 @@ class FactCaptureAgreementTest {
     }
 
     /**
-     * The {@code ORACLE} arm's lifecycle anchor. Seeding is what distinguishes "cleared" from
-     * "never written", since an unseeded emptiness check would pass identically with the writer
-     * deleted; the second graph is what distinguishes "cleared what it owns" from "cleared
-     * everything", which under a shared store is the difference between a correct refresh and one
-     * that eats a sibling module's diagnostics. Asserted after a cold capture (trivially empty)
-     * and after a warm one (seeded, then cleared scoped). The one thing genuinely unpinned is
-     * javac's verdict itself: no independent second walk can re-derive it without re-running
-     * javac.
+     * The {@code ORACLE} arm's lifecycle anchor: a compile's verdict is the compile's to replace,
+     * and no other writer's to empty.
+     *
+     * <p>A capture used to empty this partition, and the property was the wholesale graph-scoped
+     * clear's rather than anyone's design: that clear emptied every graph-keyed relation it did
+     * not know the owner of, which is how a relation capture does not write came to be emptied by
+     * one. It reached across a stratum boundary to do it. A javac verdict is a fact about a
+     * compile, and between a capture and the compile that follows it an emptied partition says the
+     * last compile was clean, which is a wrong answer where the previous round's rows are a stale
+     * one.
+     *
+     * <p>So what is pinned is the writer's own replacement, scoped: a round lands, the next round
+     * replaces it whole, and a sibling graph's partition is untouched throughout, which under a
+     * shared store is the difference between a correct writer and one that eats another module's
+     * diagnostics. Seeding is what distinguishes "replaced" from "never written", since an
+     * unseeded emptiness check would pass identically with the writer deleted. A capture between
+     * the two rounds is what pins the retirement itself. The one thing genuinely unpinned is
+     * javac's verdict: no independent second reduction can re-derive it without re-running javac.
      */
     @Test
-    @DisplayName("a capture empties its own graph's javac partition and no other's")
+    @DisplayName("a round replaces its own graph's javac partition and no other's, and a capture leaves both")
     void oracleLifecycleClearsTheOwnedJavacPartitionOnly(@TempDir Path tmp) throws java.io.IOException {
         Path ownDir = java.nio.file.Files.createDirectories(tmp.resolve("own"));
         Path siblingDir = java.nio.file.Files.createDirectories(tmp.resolve("sibling"));
@@ -2030,10 +2067,9 @@ class FactCaptureAgreementTest {
             var own = new GraphIdentity("own", ownDir);
             var sibling = new GraphIdentity("sibling", siblingDir);
 
-            // Cold: capture never writes the oracle family, so a fresh graph's partition is empty.
-            FactCapture.capture(store.dsl(), own, SubjectConfig.none(),
-                CapturedStore.registryOf(ownDir, "type Query { ping: String }"),
-                CapturedStore.attributionOf(ownDir));
+            // Capture writes no oracle row, so a graph nothing has compiled has an empty partition.
+            CapturedStore.writeSource(ownDir, "type Query { ping: String }");
+            capture(store, own, CapturedStore.corpusOf(ownDir), List.of(), null);
             assertThat(javacPartition(store, "own")).isEmpty();
 
             // Rounds land after capture, under both graphs.
@@ -2042,20 +2078,26 @@ class FactCaptureAgreementTest {
                     "cannot find symbol")));
             new CompileFacts(store.dsl(), own).write(round);
             new CompileFacts(store.dsl(), sibling).write(round);
-            assertThat(javacPartition(store, "own")).isNotEmpty();
+            var ownBefore = javacPartition(store, "own");
             var siblingBefore = javacPartition(store, "sibling");
+            assertThat(ownBefore).isNotEmpty();
             assertThat(siblingBefore).isNotEmpty();
 
-            // Warm: the next capture of `own` empties exactly its own partition.
-            FactCapture.capture(store.dsl(), true, own, SubjectConfig.none(),
-                CapturedStore.registryOf(ownDir, "type Query { ping: String }"),
-                CapturedStore.attributionOf(ownDir),
-                null, List.of());
+            // A capture between the rounds leaves both, writing nothing in this family either way.
+            CapturedStore.writeSource(ownDir, "type Query { ping: String }");
+            capture(store, own, CapturedStore.corpusOf(ownDir), List.of(), null);
             assertThat(javacPartition(store, "own"))
-                .as("the captured graph's javac partition, after its own warm capture")
+                .as("a capture writes no row here and empties none: the last compile's verdict stands")
+                .isEqualTo(ownBefore);
+
+            // The next round replaces exactly its own graph's partition.
+            var second = new CompileRound(true, List.of());
+            new CompileFacts(store.dsl(), own).write(second);
+            assertThat(javacPartition(store, "own"))
+                .as("the captured graph's javac partition, after its own next round")
                 .isEmpty();
             assertThat(javacPartition(store, "sibling"))
-                .as("the sibling graph's javac partition, after another graph's capture")
+                .as("the sibling graph's javac partition, after another graph's round")
                 .isEqualTo(siblingBefore);
         }
     }
@@ -2098,25 +2140,23 @@ class FactCaptureAgreementTest {
     }
 
     /**
-     * The loaded diagnostics arms' lifecycle anchor, on the same terms as the javac one: seeded
-     * rows under two graphs, and a warm capture empties exactly its own partition. One anchor
-     * covers all three relations (and the residue's directive child), because they share one
-     * writer cadence and the graph-scoped clear that empties them is the same derived set.
+     * The loaded diagnostics arms' lifecycle anchor, on the same terms as the javac one: each
+     * writer replaces its own graph's partition, a capture writes and empties nothing here, and a
+     * sibling graph is untouched throughout. One anchor covers all three relations (and the
+     * residue's directive child), because they share one writer cadence.
      */
     @Test
-    @DisplayName("a capture empties its own graph's loaded diagnostics partitions and no other's")
+    @DisplayName("a write replaces its own graph's loaded diagnostics partitions and no other's, and a capture leaves both")
     void oracleLifecycleClearsTheOwnedDiagnosticsPartitionsOnly(@TempDir Path tmp) throws java.io.IOException {
         Path ownDir = java.nio.file.Files.createDirectories(tmp.resolve("own"));
         Path siblingDir = java.nio.file.Files.createDirectories(tmp.resolve("sibling"));
         try (var store = GraphitronModelStore.open()) {
             var own = new GraphIdentity("own", ownDir);
             var sibling = new GraphIdentity("sibling", siblingDir);
-            FactCapture.capture(store.dsl(), own, SubjectConfig.none(),
-                CapturedStore.registryOf(ownDir, "type Query { ping: String }"),
-                CapturedStore.attributionOf(ownDir));
-            FactCapture.capture(store.dsl(), sibling, SubjectConfig.none(),
-                CapturedStore.registryOf(siblingDir, "type Query { ping: String }"),
-                CapturedStore.attributionOf(siblingDir));
+            CapturedStore.writeSource(ownDir, "type Query { ping: String }");
+            capture(store, own, CapturedStore.corpusOf(ownDir), List.of(), null);
+            CapturedStore.writeSource(siblingDir, "type Query { ping: String }");
+            capture(store, sibling, CapturedStore.corpusOf(siblingDir), List.of(), null);
             assertThat(diagnosticsPartition(store, "own")).isEmpty();
 
             var loc = new graphql.language.SourceLocation(3, 1, ownDir.resolve("s.graphqls").toString());
@@ -2130,19 +2170,24 @@ class FactCaptureAgreementTest {
             new no.sikt.graphitron.model.diagnostics.BuildWarningFacts(store.dsl(), own).write(warnings);
             new no.sikt.graphitron.model.diagnostics.RejectionFacts(store.dsl(), sibling).write(errors);
             new no.sikt.graphitron.model.diagnostics.BuildWarningFacts(store.dsl(), sibling).write(warnings);
-            assertThat(diagnosticsPartition(store, "own")).isNotEmpty();
+            var ownBefore = diagnosticsPartition(store, "own");
             var siblingBefore = diagnosticsPartition(store, "sibling");
+            assertThat(ownBefore).isNotEmpty();
             assertThat(siblingBefore).isNotEmpty();
 
-            FactCapture.capture(store.dsl(), true, own, SubjectConfig.none(),
-                CapturedStore.registryOf(ownDir, "type Query { ping: String }"),
-                CapturedStore.attributionOf(ownDir),
-                null, List.of());
+            CapturedStore.writeSource(ownDir, "type Query { ping: String }");
+            capture(store, own, CapturedStore.corpusOf(ownDir), List.of(), null);
             assertThat(diagnosticsPartition(store, "own"))
-                .as("the captured graph's loaded diagnostics partitions, after its own warm capture")
+                .as("a capture writes no row here and empties none: the last run's diagnostics stand")
+                .isEqualTo(ownBefore);
+
+            new no.sikt.graphitron.model.diagnostics.RejectionFacts(store.dsl(), own).write(List.of());
+            new no.sikt.graphitron.model.diagnostics.BuildWarningFacts(store.dsl(), own).write(List.of());
+            assertThat(diagnosticsPartition(store, "own"))
+                .as("the captured graph's partitions, after its own next write")
                 .isEmpty();
             assertThat(diagnosticsPartition(store, "sibling"))
-                .as("the sibling graph's loaded diagnostics partitions, after another graph's capture")
+                .as("the sibling graph's loaded diagnostics partitions, after another graph's write")
                 .isEqualTo(siblingBefore);
         }
     }
@@ -2309,9 +2354,8 @@ class FactCaptureAgreementTest {
             .toList();
 
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), SubjectConfig.of(recipe),
-                CapturedStore.registryOf(tmp, "type Query { ping: String }"),
-                CapturedStore.attributionOf(tmp));
+            CapturedStore.writeSource(tmp, "type Query { ping: String }");
+            capture(store, graph(tmp), SubjectConfig.of(recipe), List.of(), null);
 
             var remembered = StoredRecipe.decode(store.dsl(), "FactCaptureAgreementTest")
                 .orElseThrow(() -> new AssertionError("the run's own graph has no anchor row"));
@@ -2350,9 +2394,8 @@ class FactCaptureAgreementTest {
             java.util.Optional.of("tenant_id"), lint, session);
 
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), config,
-                CapturedStore.registryOf(tmp, "type Query { ping: String }"),
-                CapturedStore.attributionOf(tmp));
+            CapturedStore.writeSource(tmp, "type Query { ping: String }");
+            capture(store, graph(tmp), config, List.of(), null);
             var dsl = store.dsl();
 
             assertThat(dsl.select(STORE_GRAPH_SUPERGRAPH.SUPERGRAPH_NAME).from(STORE_GRAPH_SUPERGRAPH)
@@ -2391,9 +2434,8 @@ class FactCaptureAgreementTest {
     @DisplayName("a run that declared nothing writes no configuration rows at all")
     void aRunThatDeclaredNothingWritesNoConfigurationRows(@TempDir Path tmp) {
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), SubjectConfig.none(),
-                CapturedStore.registryOf(tmp, "type Query { ping: String }"),
-                CapturedStore.attributionOf(tmp));
+            CapturedStore.writeSource(tmp, "type Query { ping: String }");
+            capture(store, graph(tmp), SubjectConfig.none(), List.of(), null);
             var dsl = store.dsl();
 
             assertThat(dsl.fetchCount(STORE_GRAPH_SUPERGRAPH))
@@ -2420,9 +2462,8 @@ class FactCaptureAgreementTest {
         var mountOnly = no.sikt.graphitron.model.config.SessionStateConfig.from(
             "com.example.KernelIdentity#mount", null);
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), withSessionState(mountOnly),
-                CapturedStore.registryOf(tmp, "type Query { ping: String }"),
-                CapturedStore.attributionOf(tmp));
+            CapturedStore.writeSource(tmp, "type Query { ping: String }");
+            capture(store, graph(tmp), withSessionState(mountOnly), List.of(), null);
 
             assertThat(store.dsl().select(STORE_GRAPH_SESSION_MOUNT.MOUNT_METHOD)
                 .from(STORE_GRAPH_SESSION_MOUNT).fetch(0, String.class))

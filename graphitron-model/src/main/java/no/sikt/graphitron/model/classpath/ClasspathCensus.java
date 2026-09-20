@@ -1,7 +1,7 @@
 package no.sikt.graphitron.model.classpath;
 
+import no.sikt.graphitron.model.read.SourceStamp;
 import no.sikt.graphitron.model.config.ClasspathEntry;
-import no.sikt.graphitron.model.sources.ClasspathSources;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -34,7 +34,8 @@ import java.util.stream.Stream;
  * <ul>
  *   <li><b>Jars</b> are most of the bytes and change only when a sibling project is installed from
  *       another checkout. A jar is verified by content hash, through
- *       {@link ClasspathSources#hash}, which is the same function the store's persisted stamps use.
+ *       {@link no.sikt.graphitron.model.read.SourceStamp#ofFile}, the same function the store's
+ *       persisted stamps use.
  *       Hashing a jar set costs roughly an eighth of parsing it, so the whole population is
  *       verified for a fraction of one round's parse. Cheaper still where the producer already
  *       knows the answer: an entry carrying a {@link ClasspathEntry#suppliedStamp()} is verified
@@ -188,7 +189,7 @@ public final class ClasspathCensus {
         // cheap because the scanner passes over a jar it cannot open.
         String hash = classified.suppliedStamp() != null
             ? classified.suppliedStamp()
-            : ClasspathSources.hash(jar);
+            : SourceStamp.ofFile(jar);
         if (hash != null) {
             stamps.put(jar.toString(), hash);
         }

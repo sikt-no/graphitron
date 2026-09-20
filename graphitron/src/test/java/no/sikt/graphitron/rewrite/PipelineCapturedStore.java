@@ -1,13 +1,10 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.common.configuration.TestConfiguration;
-import no.sikt.graphitron.model.capture.FactCapture;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.run.SubjectConfig;
-import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
-import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.model.test.CapturedStore;
@@ -75,9 +72,8 @@ public final class PipelineCapturedStore implements AutoCloseable {
         // stratum and therefore derives none of the graphitron_ relations that stand on it. The
         // fixture is already on disk above, and naming it here is what makes the two halves of this
         // pass read the same documents.
-        FactCapture.capture(store.dsl(), CapturedStore.graph(directory), corpusOf(directory, file),
-            attributed.preSynthesisRegistry(), SchemaInputAttribution.build(List.of(input)),
-            new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), List.of());
+        CapturedStore.capture(store.dsl(), CapturedStore.graph(directory), corpusOf(directory, file),
+            new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()));
         return new PipelineCapturedStore(store, attributed);
     }
 

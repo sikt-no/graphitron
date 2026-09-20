@@ -1,7 +1,7 @@
 package no.sikt.graphitron.model;
 
 import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
-import no.sikt.graphitron.model.capture.document.SdlEntries;
+import no.sikt.graphitron.model.capture.document.GraphQLAstEntries;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
 import org.assertj.core.api.ListAssert;
@@ -649,7 +649,7 @@ class GraphQLAnchorTest {
         SchemaLoader.parsePerSource(Arrays.stream(files).map(SchemaSource::file).toList())
             .perSource()
             .forEach(document ->
-                SdlEntries.write(dsl, GRAPH, document.sourceName(), document.registry(), touchedAt));
+                GraphQLAstEntries.write(dsl, GRAPH, document.sourceName(), document.registry(), touchedAt));
         GraphQLAstCapture.anchor(dsl, GRAPH, touchedAt);
     }
 

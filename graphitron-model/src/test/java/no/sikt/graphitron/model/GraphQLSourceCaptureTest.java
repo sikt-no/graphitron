@@ -72,7 +72,7 @@ class GraphQLSourceCaptureTest {
             assertThat(authored(documents))
                 .containsExactly("a-first.graphqls", "b-broken.graphqls", "c-last.graphqls");
             assertThat(documents.stream()
-                    .filter(document -> !document.parsed())
+                    .filter(GraphQLSourceCapture.SourceDocument.Unparsable.class::isInstance)
                     .map(GraphQLSourceCapture.SourceDocument::sourceName)
                     .map(GraphQLSourceCaptureTest::leaf).toList())
                 .as("it is in the list because a gatherer below sweeps by source, and it carries no"
@@ -96,8 +96,9 @@ class GraphQLSourceCaptureTest {
                 Instant.parse("2020-06-01T00:00:00Z"));
 
             var merged = SchemaLoader.merge(capture(dsl).stream()
-                .filter(GraphQLSourceCapture.SourceDocument::parsed)
-                .map(GraphQLSourceCapture.SourceDocument::registry).toList());
+                .filter(GraphQLSourceCapture.SourceDocument.Stated.class::isInstance)
+                .map(GraphQLSourceCapture.SourceDocument.Stated.class::cast)
+                .map(GraphQLSourceCapture.SourceDocument.Stated::registry).toList());
 
             assertThat(merged.registry().types().get("Clash"))
                 .as("the older file's declaration is the one that survived")
@@ -124,8 +125,9 @@ class GraphQLSourceCaptureTest {
                 Instant.parse("2020-06-01T00:00:00Z"));
 
             var merged = SchemaLoader.merge(capture(dsl).stream()
-                .filter(GraphQLSourceCapture.SourceDocument::parsed)
-                .map(GraphQLSourceCapture.SourceDocument::registry).toList());
+                .filter(GraphQLSourceCapture.SourceDocument.Stated.class::isInstance)
+                .map(GraphQLSourceCapture.SourceDocument.Stated.class::cast)
+                .map(GraphQLSourceCapture.SourceDocument.Stated::registry).toList());
 
             assertThat(merged.registry().types())
                 .as("the declaration beside the refused one is in the registry")

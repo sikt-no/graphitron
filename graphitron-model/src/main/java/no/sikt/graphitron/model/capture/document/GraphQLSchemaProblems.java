@@ -37,9 +37,9 @@ import static org.jooq.impl.DSL.val;
  * <p>Swept per graph. Whether a problem is raised depends on the whole document set, so an edit to
  * one file can retire a problem that names another, and no per-file scope could find it.
  */
-public final class SdlSchemaProblems {
+public final class GraphQLSchemaProblems {
 
-    private SdlSchemaProblems() {}
+    private GraphQLSchemaProblems() {}
 
     /** The parse stage's own name, which no enum carries: the parser fails before a stage does. */
     private static final String PARSE_STAGE = "PARSE";

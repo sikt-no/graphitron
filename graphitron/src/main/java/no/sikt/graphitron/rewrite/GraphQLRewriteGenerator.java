@@ -7,8 +7,7 @@ import no.sikt.graphitron.javapoet.JavaFile;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.plan.EmitPlan;
-import no.sikt.graphitron.model.run.CapturePort;
-import no.sikt.graphitron.model.run.CaptureRequest;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.rewrite.compile.CompileDependencyGraph;
@@ -116,7 +115,7 @@ public class GraphQLRewriteGenerator {
         List.of("", "util", "schema", "types", "conditions", "fetchers", "inputs");
 
     private final RunContext ctx;
-    private final CapturePort capture;
+    private final StoreHandle store;
 
     /**
      * The classpath census, which this generator reads and never writes. A one-shot goal gets a
@@ -127,45 +126,26 @@ public class GraphQLRewriteGenerator {
     private final ClasspathCensus census;
 
     /**
-     * Constructs a generator driven by the supplied {@link RunContext}. The context's
-     * {@code schemaInputs} drive schema loading; {@link TagApplier} and
-     * {@link DescriptionNoteApplier} run between parse and classification.
+     * A generator over a store somebody else opened and filled.
      *
-     * <p>Capture goes through {@link CapturePort#forContext}, which opens and closes a store
-     * around each capture. For a caller that runs more than one pass, the constructor below takes
-     * a port whose store outlives them.
+     * <p>It captures nothing, and the store is handed in rather than reached for so that this is
+     * structural: a pass that cannot name a store's home and cannot open one cannot write facts
+     * however its code is edited. Who fills it is the orchestrator's business, a mojo or a test,
+     * and by the time this runs the facts are there, including on the paths where a stage refused
+     * the author's document.
+     *
+     * <p>Sharing the store with the language server and the MCP reader is the ordinary case rather
+     * than a hazard: they are in one process, none of them holds a transaction, and what they
+     * disagree about is only how recently they looked.
      */
-    public GraphQLRewriteGenerator(RunContext ctx) {
-        this(ctx, CapturePort.forContext(ctx));
+    public GraphQLRewriteGenerator(RunContext ctx, StoreHandle store) {
+        this(ctx, store, new ClasspathCensus());
     }
 
-    /**
-     * Constructs a generator that captures through the caller's {@code capture} port, so the store
-     * every pass writes into and reads back is the caller's to open, share between passes and
-     * close. The Maven goals build one per invocation.
-     *
-     * <p>The port is the whole of what this class knows about the fact store: it never names one,
-     * never learns where one lives, and cannot hold a handle past the reads it asked for. That is
-     * the point of the parameter rather than a consequence of it, the generator being a reader of
-     * facts and never a writer.
-     */
-    public GraphQLRewriteGenerator(RunContext ctx, CapturePort capture) {
-        this(ctx, capture, new ClasspathCensus());
-    }
-
-    /**
-     * Constructs a generator that reads the classpath census through the caller's {@code census},
-     * so a caller running more than one round reuses what has not changed between them instead of
-     * re-parsing the whole compile classpath per round.
-     *
-     * <p>The census is the caller's to hold, for the same reason the capture port is: only the
-     * caller knows whether its process outlives the round. A session holds one across rounds; a
-     * one-shot goal takes the overload above and gets a fresh one, which behaves exactly as a
-     * direct scan does.
-     */
-    public GraphQLRewriteGenerator(RunContext ctx, CapturePort capture, ClasspathCensus census) {
+    /** {@link #GraphQLRewriteGenerator(RunContext, StoreHandle)} over a census the caller holds. */
+    public GraphQLRewriteGenerator(RunContext ctx, StoreHandle store, ClasspathCensus census) {
         this.ctx = ctx;
-        this.capture = Objects.requireNonNull(capture, "capture");
+        this.store = Objects.requireNonNull(store, "store");
         this.census = Objects.requireNonNull(census, "census");
     }
 
@@ -388,7 +368,6 @@ public class GraphQLRewriteGenerator {
         var assembly = SchemaAssembly.of(attributed.preSynthesisRegistry());
         var verdicts = SdlVerdicts.of(attributed.read());
         if (verdicts.anyRefusal() || !assembly.errors().isEmpty()) {
-            captureFacts(attributed, assembly, verdicts, jooq, census);
             SchemaLoader.throwIfRejected(attributed.read());
             // Nothing above threw, so the refusal was assembly's own: rethrow it as the stage
             // raised it, which is the exception this path has always failed with.
@@ -402,7 +381,6 @@ public class GraphQLRewriteGenerator {
             // is the "one broken thing blanks every fact beside it" failure this file argues
             // against, here caused by our own defect rather than by anything they wrote. The
             // verdicts written are still the pre-synthesis ones, so no ASSEMBLY row blames them.
-            captureFacts(attributed, assembly, verdicts, jooq, census);
         }
         return new ReadSchema(GraphitronSchemaBuilder.assembleOrFail(pipeline), verdicts, assembly);
     }
@@ -435,73 +413,39 @@ public class GraphQLRewriteGenerator {
 
 
     /**
-     * Runs the capture loads into a fact store for this pass, runs the store-backed detections over
-     * it, and hands the caller's continuation the open store plus the {@link StoreDetections}
-     * product the detections share: the violations for the pass's error stream, and the
-     * field-conflict claims the LSP/MCP snapshot's {@code Conflicted} projection overlay consumes.
-     * Three families read the store here.
-     * The authored-claim conflict rule reports from the claim views over the classification
-     * domain, a captured-fact population rather than anything the walk reached; the walked model
-     * contributes nothing to this seam now, the {@link ClassifiedRun} arm being a property of
-     * which path reached here rather than of anything the walk resolved. The two
-     * {@code @nodeId} rules
-     * ({@link no.sikt.graphitron.model.derive.ArgmappingProjectionDefects} for a node id an
-     * {@code argMapping} entry binds, {@link no.sikt.graphitron.model.derive.NodeIdDecodeDefects}
-     * for one a producer parameter's name receives) report from the captured corpora alone and are
-     * gated on nothing of the walk's. Every other relation still shadows the
-     * live pipeline unread, kept honest by the agreement tests until its own consumer migrates.
+     * What the run makes of the facts: the warnings, the errors the store and the walk raise
+     * together, and the plan where nothing refused.
      *
-     * <p>Both loads read exactly what the pipeline beside them reads: the parsed registry (before
-     * the synthesis rewrites, which is what {@link AttributedRegistry#preSynthesisRegistry()}
-     * hands back), the jOOQ catalog projection, and the classpath scan. Both arrive as parameters
-     * from the top of {@link #runPipeline}, so the census the store's classpath families are
-     * written from is the same scan the completion catalog projects and the same one, per pass.
-     *
-     * <p>The caller's own reads run inside the capture's window: the store stays open past the
-     * detections so the plan can question the same facts the capture just wrote, instead of a
-     * producer reopening the store or being handed a value someone else read for it. This is the
-     * class's one capture seam; nothing else opens a store for a classified run.
+     * <p>A method rather than the body of a callback. It was the latter while a port decided when
+     * the store was open around it; the store is simply held now, so this is ordinary code in the
+     * order it runs.
      */
-    private <T> T captureAndRead(
-            AttributedRegistry attributed, ReadSchema read,
-            JooqCatalog jooq, ClasspathCensus.Reading extensions,
-            CapturePort.AfterCapture<T> after) {
-        return capture.captureAndRead(
-            request(attributed, read.preSynthesisAssembly(), read.verdicts(), jooq, extensions,
-                ClassifiedRun.present()),
-            after);
+    private Captured capturedFrom(Projection projection, GraphitronSchema schema,
+                                  AttributedRegistry attributed, GraphitronSchemaBuilder.Bundle bundle,
+                                  boolean federationLink, String outputPackage,
+                                  StoreDetections storeFacts) {
+        if (!projection.checks()) {
+            // A run that wanted only the store is finished here and pronounces no verdict.
+            return new Captured(List.of(), List.of(), null, List.of());
+        }
+        var warnings = withLintFindings(schema, attributed, store);
+        var walkErrors = List.copyOf(new GraphitronSchemaValidator().validate(schema));
+        var fused = new ArrayList<>(walkErrors);
+        fused.addAll(storeFacts.violations());
+        // The decode-coverage rule, stated where its two operands meet and nowhere else: the
+        // store's census of authored decoding @nodeId instructions, and the walk's own ledger of
+        // what it did about each. See NodeIdDecodeCoverage.
+        fused.addAll(NodeIdDecodeCoverage.violations(
+            storeFacts.nodeIdDecodeCoverage(), bundle.decodeLedger()));
+        var errors = List.copyOf(fused);
+        if (!errors.isEmpty() || !projection.emit()) {
+            return new Captured(walkErrors, errors, null, warnings);
+        }
+        return new Captured(walkErrors, errors,
+            EmitPlan.produce(schema, federationLink, bundle.usesOneOf(), outputPackage,
+                storeFacts.keyProjections(), store), warnings);
     }
 
-    /**
-     * The capture with no classified model to gate detections on: the arm the failure paths take,
-     * where a stage refused the document and there is no walk to derive a claim domain from. It
-     * writes everything the surviving declarations support plus the stages' verdicts, which is the
-     * whole point of running it here rather than giving up.
-     */
-    private void captureFacts(AttributedRegistry attributed, SchemaAssembly assembly,
-                              SdlVerdicts verdicts, JooqCatalog jooq,
-                              ClasspathCensus.Reading census) {
-        capture.capture(
-            request(attributed, assembly, verdicts, jooq, census, ClassifiedRun.absent()));
-    }
-
-    /**
-     * This pass's capture, as the one value both arms above build. Assembled here so the two
-     * cannot describe the same pass differently: the failure arm and the classified arm used to
-     * spell the same nine arguments at two call sites, which is how the registry each of them
-     * handed over came to be chosen twice.
-     */
-    private CaptureRequest request(AttributedRegistry attributed, SchemaAssembly assembly,
-                                   SdlVerdicts verdicts, JooqCatalog jooq,
-                                   ClasspathCensus.Reading census,
-                                   ClassifiedRun classified) {
-        return new CaptureRequest(graphIdentity(), subjectConfig(),
-            attributed.preSynthesisRegistry(), assembly, verdicts,
-            SchemaInputAttribution.build(ctx.schemaInputs()), jooq, census.references(),
-            census.stamps(), census.readAt(), classified);
-    }
-
-    /** The coordinate this run writes under, assembled from the context's identity fields. */
     private GraphIdentity graphIdentity() {
         return new GraphIdentity(ctx.graphName(), ctx.basedir());
     }
@@ -610,41 +554,12 @@ public class GraphQLRewriteGenerator {
         // generators run: the launcher relation's rows are read by the fetcher generator (a root
         // coordinate with a row gets the launcher emission, one without falls through to its
         // legacy builder), and those generators need no store, so the window closes here.
-        var captured = captureAndRead(attributed, read, jooq, reading,
-            (store, storeFacts) -> {
-                // The handle is what the window exists to hand over, and the plan tier holds it:
-                // the producers convert onto the store one family at a time, and each conversion
-                // is a parameter change inside the plan rather than a lifecycle one here. The
-                // routine-write relation is the first that reads it.
-                if (!projection.checks()) {
-                    // The capture is done by the time this callback runs, so a run that wanted
-                    // only the store is finished here and pronounces no verdict on the schema.
-                    return new Captured(List.of(), List.of(), null, List.of());
-                }
-                // Assembled here, logged by the entry point that wants them: the one-shot build
-                // goals emit a line per warning, the dev loop emits the same lines, and
-                // buildOutput() is silent because its consumer reads them off the store rather
-                // than the console. Inside the window because the lint engine reads the store, on
-                // the same argument the detections above it take: what feeds the error stream has
-                // to come after the rows it judges. A capture-only run asks for no checks and
-                // assembles none at all, the schema build's own included.
-                var warnings = withLintFindings(schema, attributed, store);
-                var walkErrors = List.copyOf(new GraphitronSchemaValidator().validate(schema));
-                var fused = new ArrayList<>(walkErrors);
-                fused.addAll(storeFacts.violations());
-                // The decode-coverage rule, stated where its two operands meet and nowhere else:
-                // the store's census of authored decoding @nodeId instructions, and the walk's own
-                // ledger of what it did about each. See NodeIdDecodeCoverage.
-                fused.addAll(NodeIdDecodeCoverage.violations(
-                    storeFacts.nodeIdDecodeCoverage(), bundle.decodeLedger()));
-                var errors = List.copyOf(fused);
-                if (!errors.isEmpty() || !projection.emit()) {
-                    return new Captured(walkErrors, errors, null, warnings);
-                }
-                return new Captured(walkErrors, errors,
-                    EmitPlan.produce(schema, federationLink, bundle.usesOneOf(), outputPackage,
-                        storeFacts.keyProjections(), store), warnings);
-            });
+        // The facts this run reads, and the detections over them. No window: the store is the
+        // caller's and stays open as long as the caller holds it, so there is nothing to keep open
+        // and nothing to hand back at the end of.
+        var storeFacts = StoreDetections.over(store.dsl(), store.graphName(), ClassifiedRun.present());
+        var captured = capturedFrom(projection, schema, attributed, bundle, federationLink,
+            outputPackage, storeFacts);
 
         var warnings = captured.warnings();
         if (captured.plan() == null) {

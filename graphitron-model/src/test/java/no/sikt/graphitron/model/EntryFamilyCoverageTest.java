@@ -45,9 +45,9 @@ class EntryFamilyCoverageTest {
 
     /**
      * One capture for both of the cases that need rows, and the one boot this class is counted for
-     * in {@code ThreadConfinedStore}'s budget. It is off the funnel for the reason that class states
-     * for {@code LentStoreTest}: the subject is a store something else captures into, so a body
-     * handed a {@link org.jooq.DSLContext} cannot ask for what it needs. What the funnel would have
+     * in {@code ThreadConfinedStore}'s budget. Off the funnel because the subject is a store
+     * something else captures into, so a body handed a {@link org.jooq.DSLContext} cannot ask for
+     * what it needs. What the funnel would have
      * saved is paid once here rather than per case.
      */
     private static CapturedStore store() {

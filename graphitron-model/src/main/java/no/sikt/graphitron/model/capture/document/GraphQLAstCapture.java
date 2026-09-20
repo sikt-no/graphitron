@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.capture.document;
 
+import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.vocabulary.EntryKind;
 import org.jooq.DSLContext;
@@ -158,9 +159,13 @@ public final class GraphQLAstCapture {
      * The per-document transcription alone, each document's rows swept against this reading as it
      * goes.
      *
-     * <p>A document that would not parse contributes nothing and is skipped. It is still in the
-     * list, and being in the list is what lets the writers below it sweep the rows an author just
-     * broke instead of leaving them standing as though they were still true.
+     * <p>Exhaustive over what the reading found, because every arm is a thing to do rather than
+     * three and a skip. A document that states a registry has its scope rewritten from it. A
+     * document that states nothing, having failed to parse or left the corpus, has its scope
+     * emptied, and an empty registry is how it is said: the writer walks no declarations, marks
+     * nothing, and the sweep it already ends in takes the rows the document used to justify.
+     * A document that states what the scope already holds is left alone, sweeping a scope this
+     * reading did not mark being the one way to delete rows that are still true.
      *
      * <p>Separate from {@link #anchor} because the incumbent walk needs one and writes the other
      * itself. What this half writes meets nothing that pass produces, the entry stratum being keyed
@@ -170,10 +175,16 @@ public final class GraphQLAstCapture {
                                       List<GraphQLSourceCapture.SourceDocument> documents,
                                       LocalDateTime readAt) {
         for (var document : documents) {
-            if (!document.parsed()) {
-                continue;
+            switch (document) {
+                case GraphQLSourceCapture.SourceDocument.Changed changed ->
+                    GraphQLAstEntries.write(dsl, graph.name(), changed.sourceName(),
+                        changed.registry(), readAt);
+                case GraphQLSourceCapture.SourceDocument.Unchanged _ -> { }
+                case GraphQLSourceCapture.SourceDocument.Unparsable _,
+                     GraphQLSourceCapture.SourceDocument.Dropped _ ->
+                    GraphQLAstEntries.write(dsl, graph.name(), document.sourceName(),
+                        new TypeDefinitionRegistry(), readAt);
             }
-            SdlEntries.write(dsl, graph.name(), document.sourceName(), document.registry(), readAt);
         }
     }
 
@@ -1547,13 +1558,16 @@ public final class GraphQLAstCapture {
      * rows the corpus stopped declaring, and a list that has to be edited alongside is the cheapest
      * way to make that visible.
      *
-     * <p>In filling order, parents first, which is the order the foreign keys demand. The sweep
-     * walks it backwards, because a coordinate cannot go while a key-to-coordinate row still names
-     * it and a type cannot go while one of its fields does.
+     * <p>In filling order, which the writes above need and the sweep below does not. What a
+     * coordinate's dependents do when it goes is the schema's to say, and it says it: the keys
+     * within this family cascade, so deleting a coordinate takes the rows that named it whatever
+     * order this list is walked in. A sweep that had to be ordered would be one statement's
+     * ordering standing in for a rule every other deleter of these relations would also have to
+     * know.
      */
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
         GRAPHQL_ELEMENT, GRAPHQL_TYPE_ELEMENT, GRAPHQL_FIELD_ELEMENT, GRAPHQL_ENUM_VALUE_ELEMENT,
-        GRAPHQL_ARGUMENT_ELEMENT, GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT, GRAPHQL_DIRECTIVE_ELEMENT,
+        GRAPHQL_ARGUMENT_ELEMENT, GRAPHQL_DIRECTIVE_ELEMENT, GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT,
         GRAPHQL_TYPE_DECLARATION, GRAPHQL_TYPE, GRAPHQL_FIELD,
         GRAPHQL_ENUM_VALUE, GRAPHQL_ARGUMENT, GRAPHQL_UNION_MEMBER,
         GRAPHQL_IMPLEMENTS_INTERFACE, GRAPHQL_DIRECTIVE,
@@ -1577,7 +1591,7 @@ public final class GraphQLAstCapture {
      */
     private static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var named = GRAPHQL_ELEMENT;
-        for (Table<?> table : TABLES_TO_SWEEP.reversed()) {
+        for (Table<?> table : TABLES_TO_SWEEP) {
             dsl.deleteFrom(table)
                 .where(table.field(named.GRAPH_NAME).eq(graph))
                 .and(table.field(named.TOUCHED_AT).ne(touchedAt))

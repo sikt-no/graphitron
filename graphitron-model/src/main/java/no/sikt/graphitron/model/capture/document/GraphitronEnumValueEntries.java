@@ -13,13 +13,13 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ENUM_VALUE_BINDING_
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INDEX_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ORDER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ORDER_FIELD_ENTRY;
-import static no.sikt.graphitron.model.capture.document.GraphitronEntries.applied;
-import static no.sikt.graphitron.model.capture.document.GraphitronEntries.bool;
-import static no.sikt.graphitron.model.capture.document.GraphitronEntries.elementsOf;
-import static no.sikt.graphitron.model.capture.document.GraphitronEntries.inside;
-import static no.sikt.graphitron.model.capture.document.GraphitronEntries.string;
-import static no.sikt.graphitron.model.capture.document.GraphitronEntries.stringOf;
-import static no.sikt.graphitron.model.capture.document.GraphitronEntries.wrote;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.applied;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.bool;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.elementsOf;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.inside;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.string;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.stringOf;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.wrote;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
 
@@ -42,7 +42,7 @@ import static org.jooq.impl.DSL.val;
  * at a field it declares the surface that field falls back to. The site is already the key, so the
  * populations are told apart by which relation a row is in.
  *
- * @see GraphitronEntries for what every site's decode holds in common
+ * @see GraphitronAstEntries for what every site's decode holds in common
  */
 final class GraphitronEnumValueEntries {
 
@@ -53,19 +53,19 @@ final class GraphitronEnumValueEntries {
      * applications now say.
      */
     static void write(DSLContext dsl, String graph, String source,
-                      List<SdlEntries.Nested<Directive>> applications, LocalDateTime touchedAt) {
+                      List<GraphQLAstEntries.Nested<Directive>> applications, LocalDateTime touchedAt) {
         bindings(dsl, graph, touchedAt, wrote(applied(applications, "field"), "name"));
         indexes(dsl, graph, touchedAt, wrote(applied(applications, "index"), "name"));
 
         var orders = applied(applications, "order");
         orders(dsl, graph, touchedAt, orders);
         orderFields(dsl, graph, touchedAt, orders);
-        GraphitronEntries.sweep(dsl, graph, source, touchedAt, TABLES_TO_SWEEP);
+        GraphitronAstEntries.sweep(dsl, graph, source, touchedAt, TABLES_TO_SWEEP);
     }
 
     /**
      * What the sweep deletes from, and the only thing that reads it. Listed rather than found by
-     * prefix, on the terms {@link GraphitronEntries#sweep} states: a relation this writer gained
+     * prefix, on the terms {@link GraphitronAstEntries#sweep} states: a relation this writer gained
      * and did not list would keep its stale rows silently.
      */
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
@@ -77,9 +77,9 @@ final class GraphitronEnumValueEntries {
         var t = GRAPHITRON_AST_ENUM_VALUE_BINDING_ENTRY;
         var rows = applications.stream().collect(Rows.toRowList(
             application -> val(graph, t.GRAPH_NAME),
-            application -> SdlEntries.sourceName(application),
-            application -> SdlEntries.sourceLine(application),
-            application -> SdlEntries.sourceColumn(application),
+            application -> GraphQLAstEntries.sourceName(application),
+            application -> GraphQLAstEntries.sourceLine(application),
+            application -> GraphQLAstEntries.sourceColumn(application),
             application -> val(touchedAt, t.TOUCHED_AT),
             application -> val(string(application, "name"), t.NAME_REF)));
         BindBatch.execute(dsl, rows, markers ->
@@ -96,9 +96,9 @@ final class GraphitronEnumValueEntries {
         var t = GRAPHITRON_AST_INDEX_ENTRY;
         var rows = applications.stream().collect(Rows.toRowList(
             application -> val(graph, t.GRAPH_NAME),
-            application -> SdlEntries.sourceName(application),
-            application -> SdlEntries.sourceLine(application),
-            application -> SdlEntries.sourceColumn(application),
+            application -> GraphQLAstEntries.sourceName(application),
+            application -> GraphQLAstEntries.sourceLine(application),
+            application -> GraphQLAstEntries.sourceColumn(application),
             application -> val(touchedAt, t.TOUCHED_AT),
             application -> val(string(application, "name"), t.INDEX_REF)));
         BindBatch.execute(dsl, rows, markers ->
@@ -120,9 +120,9 @@ final class GraphitronEnumValueEntries {
         var t = GRAPHITRON_AST_ORDER_ENTRY;
         var rows = applications.stream().collect(Rows.toRowList(
             application -> val(graph, t.GRAPH_NAME),
-            application -> SdlEntries.sourceName(application),
-            application -> SdlEntries.sourceLine(application),
-            application -> SdlEntries.sourceColumn(application),
+            application -> GraphQLAstEntries.sourceName(application),
+            application -> GraphQLAstEntries.sourceLine(application),
+            application -> GraphQLAstEntries.sourceColumn(application),
             application -> val(touchedAt, t.TOUCHED_AT),
             application -> val(string(application, "index"), t.INDEX_REF),
             application -> val(bool(application, "primaryKey"), t.PRIMARY_KEY)));
@@ -141,13 +141,13 @@ final class GraphitronEnumValueEntries {
         var t = GRAPHITRON_AST_ORDER_FIELD_ENTRY;
         var rows = elementsOf(applications, "fields").stream().collect(Rows.toRowList(
             element -> val(graph, t.GRAPH_NAME),
-            element -> SdlEntries.sourceName(element.node()),
-            element -> SdlEntries.sourceLine(element.node()),
-            element -> SdlEntries.sourceColumn(element.node()),
+            element -> GraphQLAstEntries.sourceName(element.node()),
+            element -> GraphQLAstEntries.sourceLine(element.node()),
+            element -> GraphQLAstEntries.sourceColumn(element.node()),
             element -> val(touchedAt, t.TOUCHED_AT),
             element -> val(stringOf(inside(element.node(), "name")), t.NAME_REF),
             element -> val(stringOf(inside(element.node(), "collate")), t.COLLATE),
-            element -> val(GraphitronEntries.tokenOf(inside(element.node(), "direction")),
+            element -> val(GraphitronAstEntries.tokenOf(inside(element.node(), "direction")),
                 t.DIRECTION)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,

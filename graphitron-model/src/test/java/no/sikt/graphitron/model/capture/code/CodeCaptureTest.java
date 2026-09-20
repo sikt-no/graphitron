@@ -256,11 +256,13 @@ class CodeCaptureTest {
     void readingTwiceRestamps() {
         try (var store = GraphitronStore.inMemory()) {
             var dsl = store.dsl();
-            CodeCapture.capture(dsl, CLASSPATH, null, null, FIRST);
+            CodeCapture.capture(dsl,
+                ClasspathSourceCapture.read(dsl, CLASSPATH, null, FIRST), null, FIRST);
             int afterFirst = dsl.fetchCount(CODE_SCALAR_CONSTANT);
             int throwablesAfterFirst = dsl.fetchCount(CODE_THROWABLE);
             int ancestorsAfterFirst = dsl.fetchCount(CODE_THROWABLE_SUPERTYPE);
-            CodeCapture.capture(dsl, CLASSPATH, null, null, SECOND);
+            CodeCapture.capture(dsl,
+                ClasspathSourceCapture.read(dsl, CLASSPATH, null, SECOND), null, SECOND);
 
             assertThat(dsl.fetchCount(CODE_SCALAR_CONSTANT))
                 .as("the same constants, not doubled and not emptied").isEqualTo(afterFirst);
@@ -682,7 +684,8 @@ class CodeCaptureTest {
     private static void withCapture(List<ClasspathEntry> entries, String skipPrefix,
                                     LocalDateTime at, Consumer<DSLContext> body) {
         try (var store = GraphitronStore.inMemory()) {
-            CodeCapture.capture(store.dsl(), entries, skipPrefix, null, at);
+            CodeCapture.capture(store.dsl(),
+                ClasspathSourceCapture.read(store.dsl(), entries, skipPrefix, at), null, at);
             body.accept(store.dsl());
         }
     }
@@ -709,7 +712,8 @@ class CodeCaptureTest {
     /** Captures the reactor fixture beside jOOQ, which is the scope rule's own case. */
     private static void withReactorCapture(Consumer<DSLContext> body) {
         try (var store = GraphitronStore.inMemory()) {
-            CodeCapture.capture(store.dsl(), REACTOR_AND_JOOQ, null, null, FIRST);
+            CodeCapture.capture(store.dsl(),
+                ClasspathSourceCapture.read(store.dsl(), REACTOR_AND_JOOQ, null, FIRST), null, FIRST);
             body.accept(store.dsl());
         }
     }

@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.capture;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.DisplayName;
@@ -568,6 +569,83 @@ class FactSchemaGateTest {
         }
     }
 
+    /**
+     * Everything hanging off an anchor the corpus can stop declaring goes when the anchor goes,
+     * and the key is what says so.
+     *
+     * <p>The document gatherers sweep the {@code graphql_} coordinates near the head of the pass:
+     * a coordinate this reading did not find is deleted there, before most of the writers keyed
+     * into it have run. Nothing downstream can order itself against that, so a dependent row whose
+     * key merely restricts turns an author deleting a field into a referential failure, and the
+     * run dies rather than recording the deletion. Four consecutive builds found this one relation
+     * at a time, each fix exposing the next key one level further out, which is what a rule stated
+     * as a list of fixes does.
+     *
+     * <p>So it is stated as a closure instead: transitively, from the anchors outward. Keys inside
+     * the {@code graphql_} family itself are out of scope, being one gatherer's own sweep to order
+     * against itself, which it does. {@code store_graph} is out of scope too and for a stronger
+     * reason: its row is upserted and never deleted, so there is nothing for its keys to cascade.
+     */
+    @Test
+    @DisplayName("every key reachable from the graphql_ anchors deletes with them")
+    void everyKeyReachableFromTheAnchorsCascades() {
+        try (var store = FactStores.inMemory()) {
+            var parents = new java.util.HashMap<String, List<String>>();
+            var rules = new java.util.HashMap<String, String>();
+            store.dsl().resultQuery("""
+                    select fk.table_name, pk.table_name, rc.delete_rule, rc.constraint_name
+                    from information_schema.referential_constraints rc
+                    join information_schema.table_constraints fk
+                      on fk.constraint_name = rc.constraint_name
+                    join information_schema.table_constraints pk
+                      on pk.constraint_name = rc.unique_constraint_name
+                    """)
+                .fetch()
+                .forEach(row -> {
+                    String child = String.valueOf(row.get(0)).toLowerCase(Locale.ROOT);
+                    String parent = String.valueOf(row.get(1)).toLowerCase(Locale.ROOT);
+                    parents.computeIfAbsent(child, key -> new java.util.ArrayList<>()).add(parent);
+                    if (!"CASCADE".equals(String.valueOf(row.get(2)))) {
+                        rules.put(child + " -> " + parent, String.valueOf(row.get(3)));
+                    }
+                });
+            assertThat(parents)
+                .as("the schema's foreign keys, read back; an empty read would pass vacuously")
+                .isNotEmpty();
+
+            var closure = parents.keySet().stream().filter(t -> t.startsWith("graphql_"))
+                .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+            parents.values().forEach(list -> list.stream().filter(t -> t.startsWith("graphql_"))
+                .forEach(closure::add));
+            for (boolean grew = true; grew; ) {
+                grew = false;
+                for (var entry : parents.entrySet()) {
+                    if (!closure.contains(entry.getKey())
+                        && entry.getValue().stream().anyMatch(closure::contains)) {
+                        closure.add(entry.getKey());
+                        grew = true;
+                    }
+                }
+            }
+
+            var restricting = rules.keySet().stream()
+                .filter(key -> {
+                    String child = key.substring(0, key.indexOf(" -> "));
+                    String parent = key.substring(key.indexOf(" -> ") + 4);
+                    return !child.startsWith("graphql_") && closure.contains(parent)
+                        && !"store_graph".equals(parent);
+                })
+                .sorted()
+                .toList();
+            assertThat(restricting)
+                .as("keys into a relation the anchor sweep can delete, which merely restrict. The"
+                    + " sweep runs before the writers keyed into it, so a restricting key here"
+                    + " fails the run on the author edit it is supposed to record. Declare"
+                    + " ON DELETE CASCADE on each.")
+                .isEmpty();
+        }
+    }
+
     @Test
     @DisplayName("the federation dual projection agrees with its verbatim twin")
     void federationKeyProjectionsAgree(@TempDir Path tmp) {
@@ -802,15 +880,14 @@ class FactSchemaGateTest {
         Path siblingDir = java.nio.file.Files.createDirectories(tmp.resolve("sibling"));
         Path ownDir = java.nio.file.Files.createDirectories(tmp.resolve("own"));
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), new GraphIdentity("sibling", siblingDir),
-                SubjectConfig.none(),
-                CapturedStore.registryOf(siblingDir, "type Query { actors: [String!]! }"),
-                CapturedStore.attributionOf(siblingDir));
+            CapturedStore.writeSource(siblingDir, "type Query { actors: [String!]! }");
+            CapturedStore.capture(store.dsl(), new GraphIdentity("sibling", siblingDir),
+                CapturedStore.corpusOf(siblingDir), null);
             var before = partitionSnapshot(store, "sibling");
 
-            FactCapture.capture(store.dsl(), new GraphIdentity("own", ownDir),
-                SubjectConfig.none(), CapturedStore.registryOf(ownDir, FIXTURE),
-                CapturedStore.attributionOf(ownDir));
+            CapturedStore.writeSource(ownDir, FIXTURE);
+            CapturedStore.capture(store.dsl(), new GraphIdentity("own", ownDir),
+                CapturedStore.corpusOf(ownDir), null);
 
             assertThat(partitionSnapshot(store, "sibling"))
                 .as("the sibling's partition, after another graph's capture")
@@ -928,11 +1005,8 @@ class FactSchemaGateTest {
     private static void captureMaterializationFixture(DSLContext dsl, String graphName,
                                                       Path directory) {
         var registry = CapturedStore.registryOf(directory, MATERIALIZED_FIXTURE);
-        FactCapture.capture(dsl, new GraphIdentity(graphName, directory),
-            CapturedStore.corpusOf(directory),
-            registry,
-            CapturedStore.attributionOf(directory),
-            fixtureCatalog(), List.of());
+        CapturedStore.capture(dsl, new GraphIdentity(graphName, directory),
+            CapturedStore.corpusOf(directory), fixtureCatalog());
     }
 
     /**
@@ -1001,9 +1075,9 @@ class FactSchemaGateTest {
 
             // ...and a warm recapture without the declaration leaves none, removal propagating
             // through the ownership-scoped clear with no both-arms upsert subtlety to get wrong.
-            FactCapture.capture(store.dsl(), true, new GraphIdentity("a", aDir),
-                SubjectConfig.none(), CapturedStore.registryOf(aDir, FIXTURE),
-                CapturedStore.attributionOf(aDir), null, java.util.List.of());
+            CapturedStore.writeSource(aDir, FIXTURE);
+            CapturedStore.capture(store.dsl(), new GraphIdentity("a", aDir),
+                CapturedStore.corpusOf(aDir), null);
             assertThat(store.dsl().select(STORE_GRAPH_SUPERGRAPH.GRAPH_NAME)
                 .from(STORE_GRAPH_SUPERGRAPH).fetch(0, String.class))
                 .as("a pom that drops the element leaves no row on the next capture")
@@ -1017,8 +1091,8 @@ class FactSchemaGateTest {
             java.util.Optional.ofNullable(supergraph), java.util.Optional.empty(),
             java.util.Optional.empty(), no.sikt.graphitron.model.lint.LintConfig.empty(),
             no.sikt.graphitron.model.config.SessionStateConfig.none());
-        FactCapture.capture(store.dsl(), new GraphIdentity(graphName, dir), config,
-            CapturedStore.registryOf(dir, FIXTURE), CapturedStore.attributionOf(dir));
+        CapturedStore.writeSource(dir, FIXTURE);
+        CapturedStore.capture(store.dsl(), new GraphIdentity(graphName, dir), config, null);
     }
 
     /** The peer set as the store spells it: a self-join over supergraph_name between non-null values. */

@@ -1,5 +1,10 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.run.SubjectConfig;
+import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreReader;
@@ -126,9 +131,16 @@ public final class BuiltStore implements AutoCloseable {
                 lintConfig, null, null, null, storeHome,
                 SchemaRecipe.literalOver(inputs, RunContext.DEFAULT_SCHEMA_FILE_EXTENSIONS),
                 null);
-            var output = pass.apply(new GraphQLRewriteGenerator(ctx));
-            return new BuiltStore(FactStores.fileBacked(storeHome), graphName, schemaFile, storeHome,
-                output);
+            // The fixture opens the store and captures into it, which is what a goal does and
+            // what a test is allowed to do. The generator is handed a reader over it and captures
+            // nothing: a pass that could open a store would make "reads facts, writes none" a
+            // property of what its code happens to call.
+            var store = GraphitronStore.captured(storeHome, new GraphIdentity(graphName, tmp),
+                SubjectConfig.of(ctx), ctx.classpathRoots(),
+                new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()));
+            var output = pass.apply(new GraphQLRewriteGenerator(ctx,
+                new StoreHandle(store.dsl(), graphName)));
+            return new BuiltStore(store, graphName, schemaFile, storeHome, output);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

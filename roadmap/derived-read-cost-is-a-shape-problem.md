@@ -1863,6 +1863,25 @@ anchoring being a step of the gatherer whose entries it derives from rather than
 `SdlAnchorTest` is `GraphQLAnchorTest`. The gatherer roster row `document` is retired and is four
 rows now, `graphql-source`, `graphql-ast`, `graphitron-ast` and `graphql-assembly`.
 
+**Java, the document states.** `GraphQLSourceCapture.SourceDocument` was a record of three
+components and is a sealed interface of four arms, `Changed`, `Unchanged`, `Unparsable` and
+`Dropped`, under a `Stated` supertype for the two that carry a registry. Its `parsed()` accessor is
+retired, the question it answered being which arm a document is; its `registry()` moved to `Stated`,
+where it cannot be null; and its `changed` component is retired, a boolean nothing read having been
+replaced by the distinction between two arms. `reclaimVanished` is `reclaim` and is public, the pass
+sequencing it after the gatherers rather than the reader folding it into its own return.
+
+**Three writers renamed.** `SdlEntries` is `GraphQLAstEntries`, `SdlSchemaProblems` is
+`GraphQLSchemaProblems` and `GraphitronEntries` is `GraphitronAstEntries`, each now named for the
+family it writes and matching the gatherer beside it; `SdlEntriesTest` and `SdlSchemaProblemsTest`
+followed. The remaining `Sdl` names belong to the incumbent walk and go when it does.
+
+**Columns, the per-graph stamp.** Nothing retired, two added, recorded here because the grain is the
+point: `store_graph_source.stamp` and `store_graph_source.read_at`. The stamp on `store_source` is
+store-global and says what a file hashed to for whoever read it, which cannot answer whether a given
+graph holds rows derived from those bytes; a reading that skips an unchanged document reads the new
+pair instead.
+
 **Swept, with seven survivors found and fixed.** One in main sources: the comment on
 `intent_field_navigated_type.basis` still described a closed vocabulary of three and named the retired
 rung as current. Six in roadmap bodies, four of them live plans rather than history:

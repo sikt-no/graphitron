@@ -73,7 +73,7 @@ class RelationRegistrationGateTest {
             // agreement is the view's: what GraphitronSchema states is one population, and
             // reading it through graphql_poly_member is reading both.
             "graphql_implements_interface", "graphql_union_member",
-            "graphql_root_operation", "graphql_duplicate_declaration", "graphql_directive",
+            "graphql_root_operation", "graphql_directive",
             "graphql_directive_location", "graphql_directive_argument", "graphql_schema_directive",
             "graphql_schema_directive_arg", "graphql_type_directive", "graphql_type_directive_arg",
             "graphql_field_directive", "graphql_field_directive_arg", "graphql_argument_directive",
@@ -139,7 +139,7 @@ class RelationRegistrationGateTest {
         // The SDL node entries: one relation per node kind and site, read per document and keyed by the
         // position the node was written at. GraphitronSchema has no counterpart, holding a merged schema where these hold
         // each document as it was parsed, so there is nothing here to agree with. What pins them is
-        // SdlEntriesTest, over a corpus that does not merge: two files declaring one type are two
+        // GraphQLAstEntriesTest, over a corpus that does not merge: two files declaring one type are two
         // rows, a child names its parent by the position that parent was written at, and the
         // engine's built-in scalars land nowhere.
         for (String relation : List.of(
@@ -156,7 +156,7 @@ class RelationRegistrationGateTest {
             // The decode of a type-site directive application, keyed by the application's own
             // position. GraphitronSchema holds one binding per type where these hold one per
             // application, so two documents binding one type have nothing to agree about here.
-            // What pins them is GraphitronEntriesTest, over a corpus that binds one type twice.
+            // What pins them is GraphitronAstEntriesTest, over a corpus that binds one type twice.
             "graphitron_ast_table_entry", "graphitron_ast_scalar_type_entry",
             "graphitron_ast_enum_entry", "graphitron_ast_record_entry",
             "graphitron_ast_node_entry", "graphitron_ast_node_keycolumn_entry",
@@ -237,7 +237,7 @@ class RelationRegistrationGateTest {
             // built from a corpus that made a schema, so it has nothing to say about one that did
             // not. The family's only verdict relation, and unshadowed for that reason rather than
             // by exemption: the walk's own two verdict relations are retired, so there is no
-            // oracle arm left here to agree with. SdlSchemaProblemsTest pins it, over a corpus
+            // oracle arm left here to agree with. GraphQLSchemaProblemsTest pins it, over a corpus
             // that provokes each stage in turn.
             "graphql_schema_problem")) {
             registrations.put(relation, Arm.UNSHADOWED);

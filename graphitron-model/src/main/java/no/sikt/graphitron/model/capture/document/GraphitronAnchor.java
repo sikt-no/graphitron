@@ -150,7 +150,7 @@ public final class GraphitronAnchor {
      * declaration; and the element's authored index inside the directive, which orders the elements
      * of one {@code path:} against each other.
      *
-     * <p>Ranked and not copied, which {@code GraphitronEntries.elementsOf} is the reason for: it
+     * <p>Ranked and not copied, which {@code GraphitronAstEntries.elementsOf} is the reason for: it
      * increments past an element it does not transcribe, so an authored index can skip. A chain
      * wants its links counted, so position 1 is the second link and never the second thing typed.
      *

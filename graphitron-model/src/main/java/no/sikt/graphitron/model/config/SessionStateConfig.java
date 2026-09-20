@@ -8,7 +8,7 @@ import java.util.Optional;
  *
  * <p>This carrier is <em>strings only</em>, deliberately: fact capture transcribes the config
  * object verbatim into the authored-facts provenance family
- * ({@code ConfigurationFactCapture}), so a resolved method reference on this arm would leak
+ * ({@code StoreEntries}), so a resolved method reference on this arm would leak
  * reflected facts into relations that store only what the author wrote. The reflected
  * signatures live on the model's resolved carrier ({@code SessionHooks}), minted by
  * {@code GraphitronSchemaBuilder} from these strings. The authored config has exactly two

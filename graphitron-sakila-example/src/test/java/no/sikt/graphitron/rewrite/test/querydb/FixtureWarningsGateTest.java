@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.test.querydb;
 
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
+import no.sikt.graphitron.rewrite.test.internal.CapturedGenerator;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
@@ -56,7 +57,8 @@ class FixtureWarningsGateTest {
             OUTPUT_PACKAGE,
             JOOQ_PACKAGE
         );
-        return new GraphQLRewriteGenerator(ctx).buildOutput().report().warnings();
+        return CapturedGenerator.with(ctx,
+            generator -> generator.buildOutput().report().warnings());
     }
 
     @Test

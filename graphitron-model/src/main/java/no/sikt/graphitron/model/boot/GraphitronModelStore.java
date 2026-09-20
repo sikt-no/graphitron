@@ -184,7 +184,6 @@ public final class GraphitronModelStore implements AutoCloseable {
 
     private final Connection connection;
     private final DSLContext dsl;
-    private final boolean warm;
     private final Path location;
     private final boolean dropOnClose;
     private final String url;
@@ -192,11 +191,10 @@ public final class GraphitronModelStore implements AutoCloseable {
     private boolean closed;
     private Compaction compaction;
 
-    private GraphitronModelStore(Connection connection, boolean warm, Path location,
+    private GraphitronModelStore(Connection connection, Path location,
                                  boolean dropOnClose, String url, Reaped reaped) {
         this.connection = connection;
         this.dsl = DSL.using(connection, SQLDialect.H2);
-        this.warm = warm;
         this.location = location;
         this.dropOnClose = dropOnClose;
         this.url = url;
@@ -260,7 +258,7 @@ public final class GraphitronModelStore implements AutoCloseable {
         create(connection);
         stamp(connection);
         deriveDependencies(connection);
-        return new GraphitronModelStore(connection, false, null, true, url, Reaped.none());
+        return new GraphitronModelStore(connection, null, true, url, Reaped.none());
     }
 
     /**
@@ -289,9 +287,7 @@ public final class GraphitronModelStore implements AutoCloseable {
      *
      * <p>An existing file is kept only when it opens and its
      * {@code store_stamp} row names this DDL and this generator version, which under the
-     * stamped path can only fail for a hand-moved or hand-damaged file. {@link #warm()} reports
-     * whether previous rows were found, and it is the caller's cue that the store already holds
-     * rows a refresh has to reconcile.
+     * stamped path can only fail for a hand-moved or hand-damaged file.
      *
      * <p>It fails rather than answering with a store the caller did not ask for, and each way it
      * can fail names one thing to do: make the home writable, delete a directory a hand moved or
@@ -336,7 +332,7 @@ public final class GraphitronModelStore implements AutoCloseable {
             Connection connection = connect(url);
             if (stampMatches(connection)) {
                 markUsed(directory);
-                return new GraphitronModelStore(connection, true, directory, false, url, reaped);
+                return new GraphitronModelStore(connection, directory, false, url, reaped);
             }
             if (existing) {
                 // A file at the stamped path whose stamp still mismatches was moved or damaged by
@@ -355,7 +351,7 @@ public final class GraphitronModelStore implements AutoCloseable {
             stamp(connection);
             deriveDependencies(connection);
             markUsed(directory);
-            return new GraphitronModelStore(connection, false, directory, false, url, reaped);
+            return new GraphitronModelStore(connection, directory, false, url, reaped);
         } catch (StoreUnavailableException e) {
             throw e;
         } catch (RuntimeException e) {
@@ -503,14 +499,6 @@ public final class GraphitronModelStore implements AutoCloseable {
         return StoreConsole.open(connection, url, port, bindCheck);
     }
 
-    /**
-     * Whether this store opened onto rows a previous run wrote. False for every in-memory store
-     * and for a persisted one created fresh by this open, so a caller can treat it as "the schema
-     * is empty" without asking the database.
-     */
-    public boolean warm() {
-        return warm;
-    }
 
     /**
      * The directory this store actually opened in (the home plus the stamp segment), empty for

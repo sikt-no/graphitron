@@ -87,14 +87,14 @@ class GeneratorDeterminismTest {
     @BeforeAll
     static void generateCanonicalTree() throws IOException {
         canonical = Files.createDirectories(shared.resolve("canonical"));
-        new GraphQLRewriteGenerator(contextFor(canonical)).generate();
+        generateInto(canonical);
         assertThat(readAll(canonical)).as("the canonical tree").isNotEmpty();
     }
 
     @Test
     void twoIndependentRunsProduceIdenticalOutputTrees(@TempDir Path root) throws IOException {
         Path other = Files.createDirectories(root.resolve("other"));
-        new GraphQLRewriteGenerator(contextFor(other)).generate();
+        generateInto(other);
 
         Map<String, Path> canonicalFiles = index(canonical);
         Map<String, Path> otherFiles = index(other);
@@ -122,7 +122,7 @@ class GeneratorDeterminismTest {
         Map<Path, Long> before = mtimes(outDir);
         assertThat(before).isNotEmpty();
 
-        new GraphQLRewriteGenerator(contextFor(outDir)).generate();
+        generateInto(outDir);
 
         assertThat(mtimes(outDir)).isEqualTo(before);
     }
@@ -138,7 +138,7 @@ class GeneratorDeterminismTest {
         Path foreign = plant(outDir, UNOWNED, "HandWritten.java");
         Map<String, Path> emitted = index(outDir);
 
-        new GraphQLRewriteGenerator(contextFor(outDir)).generate();
+        generateInto(outDir);
 
         assertThat(orphans)
             .as("a unit the schema no longer calls for, in a subpackage the generator owns")
@@ -194,6 +194,18 @@ class GeneratorDeterminismTest {
                 catch (IOException e) { throw new RuntimeException(e); }
             });
         }
+    }
+
+    /**
+     * One generation into {@code outputDir}, captured first.
+     *
+     * <p>A test orchestrates its own capture, which is what makes this the run's shape rather than
+     * an approximation of it: the store is opened here, the pass fills it, and the generator reads
+     * what it finds. The generator opens nothing and captures nothing, so a caller handing it a
+     * store that was never captured into gets an empty tree rather than a quiet re-read.
+     */
+    private static void generateInto(Path outputDir) {
+        CapturedGenerator.generate(contextFor(outputDir));
     }
 
     private static RunContext contextFor(Path outputDir) {

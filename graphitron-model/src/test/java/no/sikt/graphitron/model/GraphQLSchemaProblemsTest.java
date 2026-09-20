@@ -39,7 +39,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * as well as what it said. Absence is success and is meant to be relied on: a graph that made a
  * schema has no rows here.
  */
-class SdlSchemaProblemsTest {
+class GraphQLSchemaProblemsTest {
 
     private static final String GRAPH = "problems";
 

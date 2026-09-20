@@ -262,13 +262,21 @@ CREATE TABLE store_source (
 CREATE TABLE store_graph_source (
   graph_name  VARCHAR NOT NULL,
   source_name VARCHAR NOT NULL,
+  -- What this graph's rows of this source were derived from. Per graph, not per source: the shared
+  -- stamp on store_source says what the file last hashed to for whoever read it, which answers
+  -- nothing about whether a given graph has transcribed those bytes. Null where the graph holds a
+  -- claim but no transcription it may trust, a source that would not parse being the case.
+  stamp       VARCHAR,
+  read_at     TIMESTAMP,
   PRIMARY KEY (graph_name, source_name),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (source_name) REFERENCES store_source (source_name)
 );
-COMMENT ON TABLE store_graph_source IS 'The membership relation store_graph''s comment defers to: which sources are the joining graph''s. One row per source the graph''s run actually read, every kind alike (schema files, jOOQ schema packages, classpath entries), because kind is an axis on store_source and a kind-filtered membership would make completeness a function of which consumers had shipped, leaving a reader unable to tell "not this graph''s" from "kind not captured yet". What the run read, not configuration: the recipe rows above hold patterns the run held in hand, including files that do not exist yet, while a row here names a source the walk met. Graph-keyed, so a warm capture clears and rewrites exactly its own graph''s rows. Any derivation joining a graph-keyed fact to a source-keyed one (the column-match claim view is the first) scopes its catalog side through this relation, which is what keeps one graph''s resolution from seeing a sibling module''s tables in a shared store.';
+COMMENT ON TABLE store_graph_source IS 'The membership relation store_graph''s comment defers to: which sources are the joining graph''s. One row per source the graph''s run actually read, every kind alike (schema files, jOOQ schema packages, classpath entries), because kind is an axis on store_source and a kind-filtered membership would make completeness a function of which consumers had shipped, leaving a reader unable to tell "not this graph''s" from "kind not captured yet". What the run read, not configuration: the recipe rows above hold patterns the run held in hand, including files that do not exist yet, while a row here names a source the walk met. Graph-keyed, so a capture writes exactly its own graph''s rows: it claims each source it read and deletes the claims it no longer holds, rather than clearing and rewriting, the stamp being a record of what this graph last transcribed that a clear would throw away. Any derivation joining a graph-keyed fact to a source-keyed one (the column-match claim view is the first) scopes its catalog side through this relation, which is what keeps one graph''s resolution from seeing a sibling module''s tables in a shared store.';
 COMMENT ON COLUMN store_graph_source.graph_name IS 'the member graph, anchored by store_graph';
 COMMENT ON COLUMN store_graph_source.source_name IS 'a source the graph''s run read, anchored by store_source; the scan''s hand-built stand-ins record against the empty source name like their class rows do';
+COMMENT ON COLUMN store_graph_source.stamp IS 'what this graph''s rows of this source were derived from, or null where it holds a claim but no transcription it may trust. Per graph rather than per source: the stamp on store_source says what the file last hashed to for whoever read it, which answers nothing about whether a given graph has transcribed those bytes, so only this column can tell a reading that a scope is already current and may be left alone';
+COMMENT ON COLUMN store_graph_source.read_at IS 'when this graph last transcribed this source, which is the instant its rows of it carry. The stamp says what the bytes were and this says when they were read, and a reading deciding whether it may leave a scope alone needs both. Not advanced by a reading that skipped the source: the rows still date from the reading that wrote them, and a column claiming otherwise would describe a transcription that never ran';
 COMMENT ON TABLE store_source IS 'A source the store read, store-global rather than graph-keyed: it can say what a file hashed to, never which graph read it. Every base relation is partitionable by the source that produced it: a refresh deletes exactly the rows one source wrote and re-walks it, so a relation unreachable from a source row is one the store can only ever discard wholesale.';
 COMMENT ON COLUMN store_source.source_name IS 'the schema file path, the classpath entry path, or the generated package a jOOQ schema lives in, as the reader spelled it';
 COMMENT ON COLUMN store_source.source_kind IS 'a closed taxonomy: a schema file, a directory root, a jar, or a generated jOOQ schema package. The last names jOOQ deliberately, unlike the sql_ family: a family is named for whose vocabulary its rows are written in and jOOQ owns none of SQL''s, but a source is named for what it is, and a generated package is jOOQ''s artefact';
@@ -333,7 +341,7 @@ CREATE TABLE graphql_type_element (
   touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate)
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_type_element IS 'A type name exists in this graph: the anchor every SDL fact, every directive decode and every type-keyed derivation hangs off. It carries the key and nothing else, which is what a coordinate relation is for: existence is the whole assertion, and every attribute of the type is a fact some other relation owns at that fact''s own cadence. Split out from graphql_type so the reference web anchors on the earliest cadence an SDL fact can have. A name exists because some declaration site declares or extends it, which the per-file parse settles before anything is composed and before assembly has judged anything; a relation on a later cadence can then be rewritten, withheld or emptied without the facts hanging off the coordinate following it. Anchoring on a composed relation instead makes every per-site fact''s existence conditional on the whole document assembling, and an author mid-edit is exactly the reader who has no assembled document and every per-site fact. The declared-or-extended reading is what makes the site rows'' foreign keys structural (capture writes this row before any site row), and on a base-less extension chain (an author error a detection reports) the row still exists, anchored by the extension sites.';
 COMMENT ON COLUMN graphql_type_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -349,8 +357,8 @@ CREATE TABLE graphql_field_element (
   touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name),
   UNIQUE (graph_name, coordinate),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate)
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_field_element IS 'A field coordinate exists on a type: the anchor for the field-keyed half of the reference web, on graphql_type_element''s terms and for its reason. Written from the declaration sites, so the coordinate exists as soon as one site declares the field, and a coordinate two sites declare is one row (the losing declaration is the duplicate quarantine''s business, not this relation''s). OBJECT and INTERFACE parents make it an output field, INPUT_OBJECT parents an input field, which the specification counts as two kinds of schema element sharing one coordinate form. This relation asserts neither and holds both, the two differing in nothing it carries; the supertype settles it, graphql_element.element_kind saying FIELD or INPUT_FIELD from the parent''s kind at the moment the walk writes the row.';
 COMMENT ON COLUMN graphql_field_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -369,8 +377,8 @@ CREATE TABLE graphql_argument_element (
   PRIMARY KEY (graph_name, type_name, field_name, argument_name),
   UNIQUE (graph_name, coordinate),
   FOREIGN KEY (graph_name, type_name, field_name)
-    REFERENCES graphql_field_element (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate)
+    REFERENCES graphql_field_element (graph_name, type_name, field_name) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_argument_element IS 'An argument coordinate exists on a field: the anchor for the argument-keyed decode relations, on graphql_type_element''s terms and for its reason.';
 COMMENT ON COLUMN graphql_argument_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -387,8 +395,8 @@ CREATE TABLE graphql_enum_value_element (
   coordinate VARCHAR NOT NULL,
   touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, value_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate)
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_enum_value_element IS 'An enum value coordinate exists on a type: the anchor for the value-keyed decode relations, on graphql_type_element''s terms and for its reason.';
 
@@ -399,7 +407,7 @@ CREATE TABLE graphql_directive_element (
   touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, directive_name),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate)
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_directive_element IS 'A directive coordinate exists in this graph: the decomposition of the coordinate graphql_element holds for a directive definition, which is the at sign and this name. For example directive @paged on FIELD_DEFINITION is the row (paged, @paged).';
 COMMENT ON COLUMN graphql_directive_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -416,8 +424,8 @@ CREATE TABLE graphql_directive_argument_element (
   PRIMARY KEY (graph_name, directive_name, argument_name),
   UNIQUE (graph_name, coordinate),
   FOREIGN KEY (graph_name, directive_name)
-    REFERENCES graphql_directive_element (graph_name, directive_name),
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate)
+    REFERENCES graphql_directive_element (graph_name, directive_name) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_directive_argument_element IS 'A directive argument coordinate exists on a directive: the decomposition of the coordinate graphql_element holds for a formal argument of a directive definition. For example the pagedName of directive @paged(pagedName: String) is the row (paged, pagedName, @paged(pagedName:)).';
 COMMENT ON COLUMN graphql_directive_argument_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -452,7 +460,7 @@ CREATE TABLE graphql_type (
   description   VARCHAR,
   touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name) ON DELETE CASCADE,
   -- Free, the primary key already implying it, and what lets a relation carrying a fact that is
   -- legal for only some kinds reference the type and its kind together rather than the type alone.
   UNIQUE (graph_name, type_name, kind),
@@ -476,7 +484,7 @@ CREATE TABLE graphql_type_declaration (
   kind          VARCHAR NOT NULL,
   touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, source_name, source_line, source_column),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name) ON DELETE CASCADE,
   CHECK (kind IN ('OBJECT', 'INTERFACE', 'UNION', 'ENUM', 'INPUT_OBJECT', 'SCALAR'))
 );
 COMMENT ON TABLE graphql_type_declaration IS 'A declaration site of a type: the base definition or one extension. All five extension kinds are live today, so a type''s effective shape may be assembled from several files; this relation records who contributed what and indexes the incremental-refresh unit ("which types does this file touch"). Engine-provided types (built-in scalars) have no declaration rows.';
@@ -1315,9 +1323,9 @@ CREATE TABLE graphql_field (
   field_name_upper  VARCHAR GENERATED ALWAYS AS (UPPER(field_name)),
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name)
-    REFERENCES graphql_field_element (graph_name, type_name, field_name),
+    REFERENCES graphql_field_element (graph_name, type_name, field_name) ON DELETE CASCADE,
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column),
+    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column) ON DELETE CASCADE,
   CHECK (is_list OR item_non_null IS NULL)
 );
 COMMENT ON TABLE graphql_field IS 'What a field at a coordinate is: its type expression, its description, its default and the site that contributed it, hanging off graphql_field_element. OBJECT and INTERFACE parents make it an output field, INPUT_OBJECT parents an input field; the join decides. Nothing references this relation, on graphql_type''s terms: the field-keyed reference web anchors on the coordinate instead.';
@@ -1360,7 +1368,7 @@ CREATE TABLE graphql_argument (
   argument_name_upper VARCHAR GENERATED ALWAYS AS (UPPER(argument_name)),
   PRIMARY KEY (graph_name, type_name, field_name, argument_name),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name)
-    REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name),
+    REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name) ON DELETE CASCADE,
   CHECK (is_list OR item_non_null IS NULL)
 );
 COMMENT ON TABLE graphql_argument IS 'What an argument on a field is, hanging off graphql_argument_element. Net-new coordinate: today arguments are classified per-field and mostly projected away, with no location kept. Nothing references this relation, on graphql_type''s terms.';
@@ -1396,9 +1404,9 @@ CREATE TABLE graphql_enum_value (
   touched_at          TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, value_name),
   FOREIGN KEY (graph_name, type_name, value_name)
-    REFERENCES graphql_enum_value_element (graph_name, type_name, value_name),
+    REFERENCES graphql_enum_value_element (graph_name, type_name, value_name) ON DELETE CASCADE,
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
+    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column) ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_enum_value IS 'What a value an enum declares is, hanging off graphql_enum_value_element. Net-new coordinate; deprecation is not a column because @deprecated is an ordinary applied directive. Nothing references this relation, on graphql_type''s terms.';
 COMMENT ON COLUMN graphql_enum_value.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1425,9 +1433,9 @@ CREATE TABLE graphql_union_member (
   source_column       INT,
   touched_at          TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, union_name, member_type_name),
-  FOREIGN KEY (graph_name, union_name) REFERENCES graphql_type_element (graph_name, type_name),
+  FOREIGN KEY (graph_name, union_name) REFERENCES graphql_type_element (graph_name, type_name) ON DELETE CASCADE,
   FOREIGN KEY (graph_name, union_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
+    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column) ON DELETE CASCADE
 );
 
 CREATE TABLE graphql_implements_interface (
@@ -1442,9 +1450,9 @@ CREATE TABLE graphql_implements_interface (
   source_column       INT,
   touched_at          TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, interface_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name) ON DELETE CASCADE,
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
+    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column) ON DELETE CASCADE
 );
 
 COMMENT ON TABLE graphql_union_member IS 'A union names a member: one row per member the union declares, in the order it wrote them. Separate from graphql_implements_interface because the two are not one fact wearing two hats; a union declares who it admits and a type declares which interfaces it answers to, so the declaring end differs and with it the key, the position base and every foreign key. graphql_poly_member unions the two for the readers that genuinely take either.';
@@ -1498,28 +1506,6 @@ COMMENT ON COLUMN graphql_root_operation.source_line IS 'line of the binding; NU
 COMMENT ON COLUMN graphql_root_operation.source_column IS 'column of the binding; NULL with the siblings when the binding is the name-convention default';
 COMMENT ON COLUMN graphql_root_operation.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
-CREATE TABLE graphql_duplicate_declaration (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  element_kind  VARCHAR NOT NULL,
-  coordinate    VARCHAR NOT NULL,
-  value_sdl     VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  CHECK (element_kind IN ('TYPE', 'FIELD', 'ARGUMENT', 'ENUM_VALUE',
-                          'UNION_MEMBER', 'IMPLEMENTS', 'DIRECTIVE_APPLICATION',
-                          'DIRECTIVE_LOCATION', 'DIRECTIVE_ARGUMENT'))
-);
-COMMENT ON TABLE graphql_duplicate_declaration IS 'The duplicate-declaration overflow, sibling of graphitron_undecoded_argument_entry in that each is its family''s overflow relation, holding what that family''s primary write path declined. The registry retains element-level duplicates without error (a field declared twice in one body or re-declared by an extension, a repeated argument, enum value, union member, or implements entry, a second application of a single-application graphitron directive, a repeated location or formal argument in a directive definition), so every element-level natural key in this schema is author-reachable. Capture is first-wins in merge order; the losing occurrence records here, rendered and located, so no authored text is lost and the duplicate-declaration detection has its row. The element-level kinds became reachable when capture stopped being conditional on the document assembling: assembly does reject these schemas (a twice-declared field is a NonUniqueNameError), but its refusal is now a row in graphql_schema_problem rather than an abort, so the same pass captures both the verdict and the retained duplicate this relation holds. A second base definition, of a type or of a directive, is refused one stage earlier, by the registry, whose first-wins admission keeps the winner and reports the loser as a verdict without offering its declaration to capture; the TYPE kind is therefore still reachable only through the LSP''s per-file fragment path, now because the losing declaration never reaches the walk rather than because the registry throws.';
-COMMENT ON COLUMN graphql_duplicate_declaration.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_duplicate_declaration.source_name IS 'the losing occurrence''s own position identifies the row';
-COMMENT ON COLUMN graphql_duplicate_declaration.source_line IS 'line of the losing occurrence';
-COMMENT ON COLUMN graphql_duplicate_declaration.source_column IS 'column of the losing occurrence';
-COMMENT ON COLUMN graphql_duplicate_declaration.element_kind IS 'which family''s natural key collided';
-COMMENT ON COLUMN graphql_duplicate_declaration.coordinate IS 'the colliding key, rendered (e.g. ''Q.title'')';
-COMMENT ON COLUMN graphql_duplicate_declaration.value_sdl IS 'the losing occurrence as written, rendered from the AST; children ride inside it, so a losing field keeps its arguments';
 
 -- ==== Directive definitions =======================================================
 -- The definition side of the directive surface: what a directive is, where it may sit, what
@@ -1557,7 +1543,7 @@ CREATE TABLE graphql_directive_location (
   location       VARCHAR NOT NULL,
   touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, directive_name, location),
-  FOREIGN KEY (graph_name, directive_name) REFERENCES graphql_directive (graph_name, directive_name)
+  FOREIGN KEY (graph_name, directive_name) REFERENCES graphql_directive (graph_name, directive_name) ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_directive_location IS 'A directive definition names a permitted location.';
 COMMENT ON COLUMN graphql_directive_location.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1582,7 +1568,7 @@ CREATE TABLE graphql_directive_argument (
   source_column     INT,
   touched_at        TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, directive_name, argument_name),
-  FOREIGN KEY (graph_name, directive_name) REFERENCES graphql_directive (graph_name, directive_name),
+  FOREIGN KEY (graph_name, directive_name) REFERENCES graphql_directive (graph_name, directive_name) ON DELETE CASCADE,
   CHECK (is_list OR item_non_null IS NULL)
 );
 COMMENT ON TABLE graphql_directive_argument IS 'A directive definition declares a formal argument. Carries the same wrapping decode as graphql_field, so list-ness of a directive argument is a column read, not a string parse.';
@@ -1638,7 +1624,7 @@ CREATE TABLE graphql_schema_directive_arg (
   touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, directive_name, ordinal, directive_argument_name),
   FOREIGN KEY (graph_name, directive_name, ordinal)
-    REFERENCES graphql_schema_directive (graph_name, directive_name, ordinal)
+    REFERENCES graphql_schema_directive (graph_name, directive_name, ordinal) ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_schema_directive_arg IS 'An argument the author passed to a schema-level application.';
 COMMENT ON COLUMN graphql_schema_directive_arg.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1660,9 +1646,9 @@ CREATE TABLE graphql_type_directive (
   source_column       INT,
   touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, directive_name, ordinal),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name) ON DELETE CASCADE,
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
+    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column) ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_type_directive IS 'A directive is applied to a type (OBJECT, INTERFACE, UNION, ENUM, INPUT_OBJECT, or SCALAR; the parent kind is a join away).';
 COMMENT ON COLUMN graphql_type_directive.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1686,7 +1672,7 @@ CREATE TABLE graphql_type_directive_arg (
   touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, directive_name, ordinal, directive_argument_name),
   FOREIGN KEY (graph_name, type_name, directive_name, ordinal)
-    REFERENCES graphql_type_directive (graph_name, type_name, directive_name, ordinal)
+    REFERENCES graphql_type_directive (graph_name, type_name, directive_name, ordinal) ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_type_directive_arg IS 'An argument the author passed to a type-level application.';
 COMMENT ON COLUMN graphql_type_directive_arg.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1708,7 +1694,7 @@ CREATE TABLE graphql_field_directive (
   source_column  INT,
   touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name, directive_name, ordinal),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
+  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name) ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_field_directive IS 'A directive is applied to a field (output or input-object; the parent type''s kind decides which SDL location this was).';
 COMMENT ON COLUMN graphql_field_directive.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1732,7 +1718,7 @@ CREATE TABLE graphql_field_directive_arg (
   touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name, directive_name, ordinal, directive_argument_name),
   FOREIGN KEY (graph_name, type_name, field_name, directive_name, ordinal)
-    REFERENCES graphql_field_directive (graph_name, type_name, field_name, directive_name, ordinal)
+    REFERENCES graphql_field_directive (graph_name, type_name, field_name, directive_name, ordinal) ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_field_directive_arg IS 'An argument the author passed to a field-level application.';
 COMMENT ON COLUMN graphql_field_directive_arg.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1757,7 +1743,7 @@ CREATE TABLE graphql_argument_directive (
   touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name, argument_name, directive_name, ordinal),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name)
-    REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
+    REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name) ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_argument_directive IS 'A directive is applied to a field argument (ARGUMENT_DEFINITION site).';
 COMMENT ON COLUMN graphql_argument_directive.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1783,7 +1769,7 @@ CREATE TABLE graphql_argument_directive_arg (
   touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name, argument_name, directive_name, ordinal, directive_argument_name),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name, directive_name, ordinal)
-    REFERENCES graphql_argument_directive (graph_name, type_name, field_name, argument_name, directive_name, ordinal)
+    REFERENCES graphql_argument_directive (graph_name, type_name, field_name, argument_name, directive_name, ordinal) ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_argument_directive_arg IS 'An argument the author passed to an argument-level application.';
 COMMENT ON COLUMN graphql_argument_directive_arg.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1807,7 +1793,7 @@ CREATE TABLE graphql_enum_value_directive (
   source_column  INT,
   touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, value_name, directive_name, ordinal),
-  FOREIGN KEY (graph_name, type_name, value_name) REFERENCES graphql_enum_value_element (graph_name, type_name, value_name)
+  FOREIGN KEY (graph_name, type_name, value_name) REFERENCES graphql_enum_value_element (graph_name, type_name, value_name) ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_enum_value_directive IS 'A directive is applied to an enum value (@deprecated lives here, and so does the graphitron enum-value inventory, which is additionally decoded).';
 COMMENT ON COLUMN graphql_enum_value_directive.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1831,7 +1817,7 @@ CREATE TABLE graphql_enum_value_directive_arg (
   touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, value_name, directive_name, ordinal, directive_argument_name),
   FOREIGN KEY (graph_name, type_name, value_name, directive_name, ordinal)
-    REFERENCES graphql_enum_value_directive (graph_name, type_name, value_name, directive_name, ordinal)
+    REFERENCES graphql_enum_value_directive (graph_name, type_name, value_name, directive_name, ordinal) ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_enum_value_directive_arg IS 'An argument the author passed to an enum-value application.';
 COMMENT ON COLUMN graphql_enum_value_directive_arg.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1922,7 +1908,8 @@ CREATE TABLE graphitron_argmapping_candidate (
   ambiguous     BOOLEAN NOT NULL,
   PRIMARY KEY (graph_name, coordinate, path),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate),
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name, coordinate, parent_path)
     REFERENCES graphitron_argmapping_candidate (graph_name, coordinate, path) ON DELETE CASCADE,
   CHECK (path <> ''),
@@ -3291,6 +3278,7 @@ CREATE TABLE graphitron_deprecated (
   PRIMARY KEY (graph_name, coordinate),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_deprecated IS 'This schema element is deprecated, and this is the replacement hint the author gave: whatever the corpus retired, under the coordinate that names it. For example a retired directive draws the row @asConnection and a retired argument of one draws @asConnection(connectionName:).';
 COMMENT ON COLUMN graphitron_deprecated.graph_name IS 'the owning graph''s partition, anchored by store_graph';
@@ -3347,6 +3335,7 @@ CREATE TABLE graphitron_field_binding_entry (
   name_ref_upper VARCHAR GENERATED ALWAYS AS (UPPER(name_ref)),
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_field_binding_entry IS '@field on an output or input-object field: the slot''s bound name. A column, a Java accessor, or a Java member depending on the backing, which is classification''s business; the $source / $errors sigil forms are stored as written, their recognition being a prefix test SQL can express.';
 COMMENT ON COLUMN graphitron_field_binding_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -3371,6 +3360,7 @@ CREATE TABLE graphitron_argument_binding_entry (
   PRIMARY KEY (graph_name, type_name, field_name, argument_name),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name)
     REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_argument_binding_entry IS '@field on an argument: the filter argument''s bound column.';
 COMMENT ON COLUMN graphitron_argument_binding_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -3393,6 +3383,7 @@ CREATE TABLE graphitron_enum_value_binding_entry (
   name_ref      VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name, value_name),
   FOREIGN KEY (graph_name, type_name, value_name) REFERENCES graphql_enum_value_element (graph_name, type_name, value_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_enum_value_binding_entry IS '@field on an enum value: the database string (or Java constant) the value maps to. The pivot vocabulary decode reads this relation too.';
 COMMENT ON COLUMN graphitron_enum_value_binding_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -3447,9 +3438,11 @@ CREATE TABLE graphitron_enum_entry (
   method           VARCHAR,
   argmapping      VARCHAR,
   PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_enum_entry IS '@enum on an enum type. The full ExternalCodeReference is captured as written, though today only argmapping is consumed (to reject a non-blank value; the Java binding is derived by reflection and the per-value mapping comes from graphitron_enum_value_binding_entry).';
 COMMENT ON COLUMN graphitron_enum_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -3476,6 +3469,7 @@ CREATE TABLE graphitron_field_condition_entry (
   override      BOOLEAN,
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_field_condition_entry IS '@condition on a field or input field (shared coordinate; the parent kind decides which SDL site this was).';
 COMMENT ON COLUMN graphitron_field_condition_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -3498,6 +3492,7 @@ CREATE TABLE graphitron_field_condition_context_arg_entry (
   PRIMARY KEY (graph_name, type_name, field_name, position),
   FOREIGN KEY (graph_name, type_name, field_name)
     REFERENCES graphitron_field_condition_entry (graph_name, type_name, field_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_field_condition_context_arg_entry IS 'An ordered context argument of a field-site @condition.';
 COMMENT ON COLUMN graphitron_field_condition_context_arg_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -3521,6 +3516,7 @@ CREATE TABLE graphitron_argument_condition_entry (
   PRIMARY KEY (graph_name, type_name, field_name, argument_name),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name)
     REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_argument_condition_entry IS '@condition on an argument: the same decode over the three-part coordinate.';
 COMMENT ON COLUMN graphitron_argument_condition_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -3545,6 +3541,7 @@ CREATE TABLE graphitron_argument_condition_context_arg_entry (
   PRIMARY KEY (graph_name, type_name, field_name, argument_name, position),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name)
     REFERENCES graphitron_argument_condition_entry (graph_name, type_name, field_name, argument_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_argument_condition_context_arg_entry IS 'An ordered context argument of an argument-site @condition.';
 COMMENT ON COLUMN graphitron_argument_condition_context_arg_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -3587,6 +3584,7 @@ CREATE TABLE graphitron_field_reference_entry (
   source_column INT,
   PRIMARY KEY (graph_name, type_name, field_name, ordinal),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_field_reference_entry IS '@reference on a field or input field: one row per application, because an application is a fact of its own. An empty path means FK auto-discovery between the endpoints, and the rule that every application in a multi-application chain must carry an element is per-application; both are invisible in a flat concatenated chain. The effective chain the consumers read is the steps ordered by (ordinal, position), and the written-order interleaving with @routine applications on the same field is an ORDER BY over the two relations'' source positions.';
 COMMENT ON COLUMN graphitron_field_reference_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -3619,6 +3617,7 @@ CREATE TABLE graphitron_field_reference_step_entry (
   PRIMARY KEY (graph_name, type_name, field_name, ordinal, position),
   FOREIGN KEY (graph_name, type_name, field_name, ordinal)
     REFERENCES graphitron_field_reference_entry (graph_name, type_name, field_name, ordinal)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_field_reference_step_entry IS 'An ordered path element of one @reference application; the step''s ExternalCodeReference condition flattens in place.';
 COMMENT ON COLUMN graphitron_field_reference_step_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -3652,6 +3651,7 @@ CREATE TABLE graphitron_argument_reference_entry (
   PRIMARY KEY (graph_name, type_name, field_name, argument_name, ordinal),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name)
     REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_argument_reference_entry IS '@reference on an argument: the same family over the three-part coordinate.';
 COMMENT ON COLUMN graphitron_argument_reference_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -3686,6 +3686,7 @@ CREATE TABLE graphitron_argument_reference_step_entry (
   PRIMARY KEY (graph_name, type_name, field_name, argument_name, ordinal, position),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name, ordinal)
     REFERENCES graphitron_argument_reference_entry (graph_name, type_name, field_name, argument_name, ordinal)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_argument_reference_step_entry IS 'An ordered path element of one argument-site @reference application; the step''s ExternalCodeReference condition flattens in place.';
 COMMENT ON COLUMN graphitron_argument_reference_step_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -3719,6 +3720,7 @@ CREATE TABLE graphitron_reference_for_entry (
   participant_type_ref VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name, ordinal),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_reference_for_entry IS '@referenceFor at a field coordinate: an explicit join path for one participant of a multi-table interface or union. Two populations share the relation, and they share it because graphql_field spans both: an output field, where the path runs from the parent''s table to the participant''s, and a @nodeId filter input field, where it runs from the participant''s own table to the decoded target''s. Which of the two a row is about is a fact of the owning coordinate''s type kind and is not restated as a column here, on graphql_field''s own terms: the join decides. Keyed by ordinal per the repeatable rule; the consumption-side keying by participant makes a repeated participant a detection, never a collision.';
 COMMENT ON COLUMN graphitron_reference_for_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -3752,6 +3754,7 @@ CREATE TABLE graphitron_reference_for_step_entry (
   PRIMARY KEY (graph_name, type_name, field_name, ordinal, position),
   FOREIGN KEY (graph_name, type_name, field_name, ordinal)
     REFERENCES graphitron_reference_for_entry (graph_name, type_name, field_name, ordinal)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_reference_for_step_entry IS 'An ordered path element of one @referenceFor application: the participant''s complete path from the parent''s table, read as the same element grammar as @reference.';
 COMMENT ON COLUMN graphitron_reference_for_step_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -3786,6 +3789,7 @@ CREATE TABLE graphitron_argument_reference_for_entry (
   PRIMARY KEY (graph_name, type_name, field_name, argument_name, ordinal),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name)
     REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_argument_reference_for_entry IS '@referenceFor on an argument: the same family over the four-part coordinate. A sibling relation rather than an argument_name column on graphitron_reference_for_entry, on the discipline the argument-site @reference family already keeps: the two coordinates are different lengths, so one relation over both would carry a column NULL by kind on half its rows and every reader would have to say which kind it meant. The participant set this row''s spelling is checked against is the consuming field''s own, which at this coordinate is the field the argument sits on rather than a set reached through the occurrence paths, so the whole-schema detection the input-field population needs is a local join here.';
 COMMENT ON COLUMN graphitron_argument_reference_for_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -3821,6 +3825,7 @@ CREATE TABLE graphitron_argument_reference_for_step_entry (
   PRIMARY KEY (graph_name, type_name, field_name, argument_name, ordinal, position),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name, ordinal)
     REFERENCES graphitron_argument_reference_for_entry (graph_name, type_name, field_name, argument_name, ordinal)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_argument_reference_for_step_entry IS 'An ordered path element of one argument-site @referenceFor application: the participant''s complete path, read as the same element grammar as @reference. The direction is the coordinate''s and not this relation''s: at the one coordinate an argument-site application is admitted on today, a @nodeId decode leaf, the path departs the participant''s own table and reaches the decoded target''s.';
 COMMENT ON COLUMN graphitron_argument_reference_for_step_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -3855,6 +3860,7 @@ CREATE TABLE graphitron_service_entry (
   argmapping   VARCHAR,
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_service_entry IS '@service on a field: the external service reference.';
 COMMENT ON COLUMN graphitron_service_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -3875,6 +3881,7 @@ CREATE TABLE graphitron_service_context_arg_entry (
   name       VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name, position),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphitron_service_entry (graph_name, type_name, field_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_service_context_arg_entry IS 'An ordered contextArguments entry of a @service application; the value is supplied on the GraphQLContext at run time.';
 COMMENT ON COLUMN graphitron_service_context_arg_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -3895,6 +3902,7 @@ CREATE TABLE graphitron_external_field_entry (
   argmapping   VARCHAR,
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_external_field_entry IS '@externalField on a field: the static jOOQ-Field method. The omitted-method fallback (the field name) is a derivation; argmapping is inert here (raw column only, its rejection is presence-triggered).';
 COMMENT ON COLUMN graphitron_external_field_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -3942,6 +3950,7 @@ CREATE TABLE graphitron_facet_entry (
   source_column INT,
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_facet_entry IS '@asFacet on an input field: a marker; the bound column comes from graphitron_field_binding_entry, and every misuse arm is a detection.';
 COMMENT ON COLUMN graphitron_facet_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -3962,6 +3971,7 @@ CREATE TABLE graphitron_order_by_entry (
   PRIMARY KEY (graph_name, type_name, field_name, argument_name),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name)
     REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_order_by_entry IS '@orderBy on an argument: a marker; the input shape rules are detections.';
 COMMENT ON COLUMN graphitron_order_by_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -3983,6 +3993,7 @@ CREATE TABLE graphitron_order_entry (
   primary_key   BOOLEAN,
   PRIMARY KEY (graph_name, type_name, value_name),
   FOREIGN KEY (graph_name, type_name, value_name) REFERENCES graphql_enum_value_element (graph_name, type_name, value_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_order_entry IS '@order on an enum value: a sorting specification. The exactly-one-of rule over index, fields, and primaryKey is a detection.';
 COMMENT ON COLUMN graphitron_order_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -4004,6 +4015,7 @@ CREATE TABLE graphitron_order_field_entry (
   direction  VARCHAR,
   PRIMARY KEY (graph_name, type_name, value_name, position),
   FOREIGN KEY (graph_name, type_name, value_name) REFERENCES graphitron_order_entry (graph_name, type_name, value_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_order_field_entry IS 'An ordered FieldSort entry of an @order.';
 COMMENT ON COLUMN graphitron_order_field_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -4024,6 +4036,7 @@ CREATE TABLE graphitron_index_entry (
   index_ref     VARCHAR,
   PRIMARY KEY (graph_name, type_name, value_name),
   FOREIGN KEY (graph_name, type_name, value_name) REFERENCES graphql_enum_value_element (graph_name, type_name, value_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_index_entry IS '@index on an enum value: the deprecated alias of @order(index:), still honoured when @order is absent; the deprecation is a lint detection.';
 COMMENT ON COLUMN graphitron_index_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -4128,9 +4141,11 @@ CREATE TABLE graphitron_error_entry (
   source_line      INT,
   source_column    INT,
   PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_error_entry IS '@error on an object type: presence; the handlers list decodes into the ordered child, and every cross-field handler rule is a detection.';
 COMMENT ON COLUMN graphitron_error_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -4153,6 +4168,7 @@ CREATE TABLE graphitron_error_handler_entry (
   description VARCHAR,
   PRIMARY KEY (graph_name, type_name, position),
   FOREIGN KEY (graph_name, type_name) REFERENCES graphitron_error_entry (graph_name, type_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_error_handler_entry IS 'An ordered ErrorHandler of an @error application.';
 COMMENT ON COLUMN graphitron_error_handler_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -4176,9 +4192,11 @@ CREATE TABLE graphitron_node_entry (
   type_id          VARCHAR,
   touched_at       TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_node_entry IS '@node on an object type, as the author wrote it. The written half of the pair whose resolved half is graphitron_node: this records the directive wherever it appears and asks nothing of it, that holds the types the directive took effect on. A @node on a type carrying no @table is a row here and no row there, and the anti-join between the two is where an author learns the directive did nothing. Everything the directive leaves unstated is settled on the resolved side and not here: the type-name fallback for the wire id, the catalog key for the columns, and the precedence between what an author declared and what a generated class publishes.';
 COMMENT ON COLUMN graphitron_node_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -4199,6 +4217,7 @@ CREATE TABLE graphitron_node_keycolumn_entry (
   touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, position),
   FOREIGN KEY (graph_name, type_name) REFERENCES graphitron_node_entry (graph_name, type_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_node_keycolumn_entry IS 'An ordered keyColumns entry of an @node, as the author wrote it. The written half of the pair whose resolved half is graphitron_node_keycolumn: this holds a spelling and asks nothing of it, that holds a column the catalog has. A spelling naming no column of the bound table is a row here and no row there, and the anti-join between the two is the only place an author finds out; there is no other relation that records the mistake. Keyed by the graph and the type rather than by the node, deliberately, because an author may pin key columns on a type that turns out not to be a node at all and a decode that could not hold that row could not report it either.';
 COMMENT ON COLUMN graphitron_node_keycolumn_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -4217,6 +4236,7 @@ CREATE TABLE graphitron_field_node_id_entry (
   node_type_ref VARCHAR,
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_field_node_id_entry IS '@nodeId on a field or input field.';
 COMMENT ON COLUMN graphitron_field_node_id_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -4239,6 +4259,7 @@ CREATE TABLE graphitron_argument_node_id_entry (
   PRIMARY KEY (graph_name, type_name, field_name, argument_name),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name)
     REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_argument_node_id_entry IS '@nodeId on an argument.';
 COMMENT ON COLUMN graphitron_argument_node_id_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -4261,6 +4282,7 @@ CREATE TABLE graphitron_argument_lookup_key_entry (
   PRIMARY KEY (graph_name, type_name, field_name, argument_name),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name)
     REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_argument_lookup_key_entry IS '@lookupKey on an argument: the live site, a marker.';
 COMMENT ON COLUMN graphitron_argument_lookup_key_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -4280,6 +4302,7 @@ CREATE TABLE graphitron_field_lookup_key_entry (
   source_column INT,
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_field_lookup_key_entry IS '@lookupKey on an input field: the retired site; the sole consumer is the located migration rejection.';
 COMMENT ON COLUMN graphitron_field_lookup_key_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -4298,6 +4321,7 @@ CREATE TABLE graphitron_split_query_entry (
   source_column INT,
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_split_query_entry IS '@splitQuery on a field: a marker.';
 COMMENT ON COLUMN graphitron_split_query_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -4316,6 +4340,7 @@ CREATE TABLE graphitron_tenant_fan_out_entry (
   source_column INT,
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_tenant_fan_out_entry IS '@tenantFanOut on a field: a marker; its many conflict arms are detections.';
 COMMENT ON COLUMN graphitron_tenant_fan_out_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -4370,6 +4395,7 @@ CREATE TABLE graphitron_routine_entry (
   routine_ref_name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(routine_ref_name_part)),
   PRIMARY KEY (graph_name, type_name, field_name, ordinal),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_routine_entry IS '@routine on a field: one row per application (repeatable). The table chain interleaves these with graphitron_field_reference_entry rows in written order.';
 COMMENT ON COLUMN graphitron_routine_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -4400,6 +4426,7 @@ CREATE TABLE graphitron_routine_column_mapping_pair_entry (
   PRIMARY KEY (graph_name, type_name, field_name, ordinal, position),
   FOREIGN KEY (graph_name, type_name, field_name, ordinal)
     REFERENCES graphitron_routine_entry (graph_name, type_name, field_name, ordinal)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_routine_column_mapping_pair_entry IS 'columnMapping pairs bind routine parameters to previous-node columns; a dotted right side is captured as written and rejected by detection.';
 COMMENT ON COLUMN graphitron_routine_column_mapping_pair_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -4428,9 +4455,11 @@ CREATE TABLE graphitron_discriminate_entry (
   source_column    INT,
   on_column        VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_discriminate_entry IS '@discriminate on an interface or union: the discriminator column.';
 COMMENT ON COLUMN graphitron_discriminate_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -4452,9 +4481,11 @@ CREATE TABLE graphitron_discriminator_entry (
   source_column       INT,
   discriminator_value VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_discriminator_entry IS '@discriminator on an object type: the participant''s discriminator value.';
 COMMENT ON COLUMN graphitron_discriminator_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -4478,9 +4509,11 @@ CREATE TABLE graphitron_federation_key_entry (
   fields_sdl       VARCHAR NOT NULL,
   resolvable       BOOLEAN,
   PRIMARY KEY (graph_name, type_name, ordinal),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_federation_key_entry IS 'Federation @key as the author wrote it, decoded for consumption (its verbatim twin lives in graphql_type_directive for re-emission; a gate query pins agreement). Authored applications alone, which is what this family''s charter says a decode is: the key federation synthesizes for a node type is a derivation over these rows and the node metadata, and it lives in intent_synthesized_federation_key. A reader wanting every key the emitted schema carries reads intent_federation_key, which unions the two.';
 COMMENT ON COLUMN graphitron_federation_key_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -4502,6 +4535,7 @@ CREATE TABLE graphitron_federation_key_field_entry (
   PRIMARY KEY (graph_name, type_name, ordinal, position),
   FOREIGN KEY (graph_name, type_name, ordinal)
     REFERENCES graphitron_federation_key_entry (graph_name, type_name, ordinal)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_federation_key_field_entry IS 'An ordered element of a @key field set (the field-set grammar is a parse boundary, so the decode happens at capture). One row per leaf selection, in written order, and the row is the position alone: what the selection names is the segment child, because the grammar admits nesting and a decoded grammar lands as rows rather than as a rendered string. A top-level selection is one segment, so the child is never empty. That today''s consumer rejects nesting is a detection, not a capture limit.';
 COMMENT ON COLUMN graphitron_federation_key_field_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -4519,6 +4553,7 @@ CREATE TABLE graphitron_federation_key_field_segment_entry (
   PRIMARY KEY (graph_name, type_name, ordinal, position, segment_position),
   FOREIGN KEY (graph_name, type_name, ordinal, position)
     REFERENCES graphitron_federation_key_field_entry (graph_name, type_name, ordinal, position)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_federation_key_field_segment_entry IS 'What one @key selection names, segment by segment: the nesting the field-set parser computes, recorded rather than rendered. A reader asking which leaf a key selects, and under what parent, joins instead of splitting a dotted string, which is the whole reason the parser''s prefix stack reaches the store at all. Positions are dense from zero and a selection always has a position-zero segment, an unnested one having only that.';
 COMMENT ON COLUMN graphitron_federation_key_field_segment_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -4554,6 +4589,7 @@ CREATE TABLE graphitron_link_import_entry (
   alias        VARCHAR,
   PRIMARY KEY (graph_name, link_ordinal, position),
   FOREIGN KEY (graph_name, link_ordinal) REFERENCES graphitron_link_entry (graph_name, ordinal)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_link_import_entry IS 'An ordered import entry of an @link, covering both the string form and the object form.';
 COMMENT ON COLUMN graphitron_link_import_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -4579,6 +4615,7 @@ CREATE TABLE graphitron_multitable_reference_entry (
   source_column INT,
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_multitable_reference_entry IS '@multitableReference (removed) on a field; routes is never read.';
 COMMENT ON COLUMN graphitron_multitable_reference_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -4843,7 +4880,8 @@ CREATE TABLE graphitron_minted_type (
   FOREIGN KEY (graph_name, source_coordinate)
     REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE,
   FOREIGN KEY (graph_name, directive_name)
-    REFERENCES graphql_directive (graph_name, directive_name),
+    REFERENCES graphql_directive (graph_name, directive_name)
+    ON DELETE CASCADE,
   CHECK (precedence IN ('REPLACE', 'YIELD')),
   CHECK (kind IN ('OBJECT'))
 );
@@ -4878,7 +4916,8 @@ CREATE TABLE graphitron_minted_field (
   FOREIGN KEY (graph_name, source_coordinate)
     REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE,
   FOREIGN KEY (graph_name, directive_name)
-    REFERENCES graphql_directive (graph_name, directive_name),
+    REFERENCES graphql_directive (graph_name, directive_name)
+    ON DELETE CASCADE,
   CHECK (precedence IN ('REPLACE', 'YIELD')),
   CHECK (is_list OR item_non_null IS NULL)
 );
@@ -4921,7 +4960,8 @@ CREATE TABLE graphitron_minted_argument (
   FOREIGN KEY (graph_name, source_coordinate)
     REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE,
   FOREIGN KEY (graph_name, directive_name)
-    REFERENCES graphql_directive (graph_name, directive_name),
+    REFERENCES graphql_directive (graph_name, directive_name)
+    ON DELETE CASCADE,
   CHECK (precedence IN ('REPLACE', 'YIELD')),
   CHECK (is_list OR item_non_null IS NULL)
 );
@@ -5031,7 +5071,8 @@ CREATE TABLE graphitron_argmapping_entry (
   source_column INT,
   PRIMARY KEY (graph_name, site, use_site, position),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate),
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate)
+    ON DELETE CASCADE,
   CHECK (site IN ('ROUTINE', 'SERVICE', 'FIELD_CONDITION', 'INPUT_FIELD_CONDITION',
                   'ARGUMENT_CONDITION', 'FIELD_REFERENCE_STEP', 'ARGUMENT_REFERENCE_STEP',
                   'REFERENCE_FOR_STEP', 'ARGUMENT_REFERENCE_FOR_STEP')),
@@ -5785,11 +5826,13 @@ CREATE TABLE jvm_class (
   source_name VARCHAR NOT NULL,
   class_name  VARCHAR NOT NULL,
   class_kind  VARCHAR NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, class_name),
-  FOREIGN KEY (source_name) REFERENCES store_source (source_name),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name) ON DELETE CASCADE,
   CHECK (class_kind IN ('CLASS', 'INTERFACE', 'ENUM', 'RECORD', 'ANNOTATION'))
 );
 COMMENT ON TABLE jvm_class IS 'One class the declared compile classpath carries. For example org.jooq.Result, an INTERFACE read from the jOOQ jar''s entry.';
+COMMENT ON COLUMN jvm_class.touched_at IS 'the reading that last wrote this row. The classpath is read per entry and swept per entry: a row of a source this reading touched that does not carry this instant is a class, method or component the entry stopped declaring, and nothing else can say so, the row being keyed by what it declares rather than by where in the entry it sat';
 COMMENT ON COLUMN jvm_class.source_name IS 'the classpath entry it was read from; the partition this row belongs to and the key''s leading dimension. Within one run a class present under more than one entry is captured once, at the entry that comes first in classpath order, which is where a classloader would resolve it; store-wide, two runs'' entries are two partitions that coexist by design, so one class name may legitimately appear under several sources';
 COMMENT ON COLUMN jvm_class.class_name IS 'fully qualified binary name';
 COMMENT ON COLUMN jvm_class.class_kind IS 'the classfile''s declared form; the domain is closed over classfile shapes, so a violation is a capture bug';
@@ -5799,11 +5842,13 @@ CREATE TABLE jvm_class_supertype (
   class_name     VARCHAR NOT NULL,
   supertype_name VARCHAR NOT NULL,
   declared_via   VARCHAR NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, class_name, supertype_name),
-  FOREIGN KEY (source_name, class_name) REFERENCES jvm_class (source_name, class_name),
+  FOREIGN KEY (source_name, class_name) REFERENCES jvm_class (source_name, class_name) ON DELETE CASCADE,
   CHECK (declared_via IN ('EXTENDS', 'IMPLEMENTS'))
 );
 COMMENT ON TABLE jvm_class_supertype IS 'One supertype a class in the census declares, through its extends clause or its implements list. For example org.jooq.Result declaring java.util.List, a name with no census row of its own, which is where such a chain ordinarily ends.';
+COMMENT ON COLUMN jvm_class_supertype.touched_at IS 'the reading that last wrote this row. The classpath is read per entry and swept per entry: a row of a source this reading touched that does not carry this instant is a class, method or component the entry stopped declaring, and nothing else can say so, the row being keyed by what it declares rather than by where in the entry it sat';
 COMMENT ON COLUMN jvm_class_supertype.source_name IS 'the declaring class''s classpath entry, as on jvm_class; the key''s leading dimension';
 COMMENT ON COLUMN jvm_class_supertype.class_name IS 'the fully-qualified binary name of the declaring class';
 COMMENT ON COLUMN jvm_class_supertype.supertype_name IS 'the fully-qualified binary name the classfile declares as the supertype, a nested one spelled with the $ the JVM uses. Deliberately not a foreign key and frequently not a census row at all, which at the end of a chain is the ordinary case: the scan drops nested classes and the generated jOOQ package and nothing ships the JDK as a classpath entry, while what a closure needs is the name a classfile declares. A chain terminating at such a name is read as not-known-to-be-assignable rather than as not-assignable; org.jooq.Result reaching java.util.List is one hop within the census and resolves, a method declared to return java.util.ArrayList does not. java.lang.Object is deliberately absent: the JVM writes it as the superclass of every class that declared no extends clause and of every interface, so a row would assert a declaration the source never made';
@@ -5824,11 +5869,13 @@ CREATE TABLE jvm_method (
               AND SUBSTRING(method_name, 3, 1) <> LOWER(SUBSTRING(method_name, 3, 1))
          THEN LOWER(SUBSTRING(method_name, 3, 1)) || SUBSTRING(method_name, 4)
     END),
+  touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, class_name, method_name, descriptor),
-  FOREIGN KEY (source_name, class_name) REFERENCES jvm_class (source_name, class_name)
+  FOREIGN KEY (source_name, class_name) REFERENCES jvm_class (source_name, class_name) ON DELETE CASCADE
 );
 CREATE INDEX jvm_method_bean_property_ix ON jvm_method (source_name, bean_property);
 COMMENT ON TABLE jvm_method IS 'One public method of a class in the census, its descriptor telling an overload apart from its siblings. For example a service class''s getFilm method, beside an overload of the same name that is a row of its own.';
+COMMENT ON COLUMN jvm_method.touched_at IS 'the reading that last wrote this row. The classpath is read per entry and swept per entry: a row of a source this reading touched that does not carry this instant is a class, method or component the entry stopped declaring, and nothing else can say so, the row being keyed by what it declares rather than by where in the entry it sat';
 COMMENT ON COLUMN jvm_method.source_name IS 'the owning class''s classpath entry, as on jvm_class; the key''s leading dimension';
 COMMENT ON COLUMN jvm_method.class_name IS 'the fully-qualified Java class name as written';
 COMMENT ON COLUMN jvm_method.method_name IS 'the method name; not a key on its own, overloads share it';
@@ -5847,6 +5894,7 @@ CREATE TABLE jvm_declared_type_ref (
   type_path        VARCHAR NOT NULL,
   referenced_class VARCHAR NOT NULL,
   variance         VARCHAR NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, class_name, owner_kind, owner_name,
                owner_descriptor, owner_position, type_path),
   CHECK (owner_kind IN ('METHOD_RETURN', 'RECORD_COMPONENT', 'METHOD_PARAMETER')),
@@ -5857,6 +5905,7 @@ CREATE TABLE jvm_declared_type_ref (
 CREATE INDEX jvm_declared_type_ref_class_ix
   ON jvm_declared_type_ref (source_name, referenced_class);
 COMMENT ON TABLE jvm_declared_type_ref IS 'One class named at one position of one declared type, under the wildcard bound it was written with. For example a method returning Map<String, List<Film>> names Film at type path 1.0, and three further classes at three further positions.';
+COMMENT ON COLUMN jvm_declared_type_ref.touched_at IS 'the reading that last wrote this row. The classpath is read per entry and swept per entry: a row of a source this reading touched that does not carry this instant is a class, method or component the entry stopped declaring, and nothing else can say so, the row being keyed by what it declares rather than by where in the entry it sat';
 COMMENT ON COLUMN jvm_declared_type_ref.source_name IS 'the owning class''s classpath entry, as on jvm_class; the key''s leading dimension';
 COMMENT ON COLUMN jvm_declared_type_ref.class_name IS 'the fully-qualified Java class name declaring the owner';
 COMMENT ON COLUMN jvm_declared_type_ref.owner_kind IS 'METHOD_RETURN, RECORD_COMPONENT or METHOD_PARAMETER: which kind of thing declares the type this row is a position in, and the whole of what says how to read the three columns beside it. A closed vocabulary, one value per kind of declared type a classfile carries, and there is no fourth';
@@ -5877,11 +5926,13 @@ CREATE TABLE jvm_method_parameter (
   parameter_name VARCHAR,
   parameter_type VARCHAR NOT NULL,
   declared_parameter_type VARCHAR NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, class_name, method_name, descriptor, position),
   FOREIGN KEY (source_name, class_name, method_name, descriptor)
-    REFERENCES jvm_method (source_name, class_name, method_name, descriptor)
+    REFERENCES jvm_method (source_name, class_name, method_name, descriptor) ON DELETE CASCADE
 );
 COMMENT ON TABLE jvm_method_parameter IS 'One position in a captured method''s parameter list. For example position 0 of a service method, named filmId where the consumer compiled with -parameters and unnamed where they did not.';
+COMMENT ON COLUMN jvm_method_parameter.touched_at IS 'the reading that last wrote this row. The classpath is read per entry and swept per entry: a row of a source this reading touched that does not carry this instant is a class, method or component the entry stopped declaring, and nothing else can say so, the row being keyed by what it declares rather than by where in the entry it sat';
 COMMENT ON COLUMN jvm_method_parameter.source_name IS 'the owning class''s classpath entry, as on jvm_class; the key''s leading dimension';
 COMMENT ON COLUMN jvm_method_parameter.class_name IS 'the fully-qualified Java class name as written';
 COMMENT ON COLUMN jvm_method_parameter.method_name IS 'the owning method name';
@@ -5899,10 +5950,12 @@ CREATE TABLE jvm_record_component (
   position       INT     NOT NULL,
   display_type   VARCHAR NOT NULL,
   declared_type  VARCHAR NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, class_name, component_name),
-  FOREIGN KEY (source_name, class_name) REFERENCES jvm_class (source_name, class_name)
+  FOREIGN KEY (source_name, class_name) REFERENCES jvm_class (source_name, class_name) ON DELETE CASCADE
 );
 COMMENT ON TABLE jvm_record_component IS 'One component of a record class in the census, as the classfile''s record attribute declares it. For example the filmId component at position 0 of a record an author names in @record.';
+COMMENT ON COLUMN jvm_record_component.touched_at IS 'the reading that last wrote this row. The classpath is read per entry and swept per entry: a row of a source this reading touched that does not carry this instant is a class, method or component the entry stopped declaring, and nothing else can say so, the row being keyed by what it declares rather than by where in the entry it sat';
 COMMENT ON COLUMN jvm_record_component.source_name IS 'the owning class''s classpath entry, as on jvm_class; the key''s leading dimension';
 COMMENT ON COLUMN jvm_record_component.class_name IS 'the fully-qualified Java class name as written';
 COMMENT ON COLUMN jvm_record_component.component_name IS 'the record component name';
@@ -6121,7 +6174,7 @@ CREATE TABLE code_scalar_constant (
   input_type  VARCHAR,
   touched_at  TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, class_name, field_name),
-  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name) ON DELETE CASCADE
 );
 COMMENT ON TABLE code_scalar_constant IS 'One constant an author may name in @scalarType(scalar:), and the Java type its scalar coerces to. For example a DATE_TIME field coercing to java.time.OffsetDateTime.';
 COMMENT ON COLUMN code_scalar_constant.source_name IS 'the classpath entry the owning class was read from, anchored by store_source; the key''s leading dimension, and what a reader joins through to scope by origin or by the graph''s own source set';
@@ -6135,7 +6188,7 @@ CREATE TABLE code_throwable (
   class_name  VARCHAR NOT NULL,
   touched_at  TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, class_name),
-  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name) ON DELETE CASCADE
 );
 COMMENT ON TABLE code_throwable IS 'One throwable on the classpath, which is what an author may name as an @error handler''s exception. For example org.jooq.exception.IntegrityConstraintViolationException, read from the jOOQ jar.';
 COMMENT ON COLUMN code_throwable.source_name IS 'the classpath entry the class was read from, anchored by store_source; the key''s leading dimension, and what a reader joins through to rank a candidate by origin or by coordinate';
@@ -8555,6 +8608,7 @@ CREATE TABLE intent_type_backing_class (
   PRIMARY KEY (graph_name, type_name, class_name),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE intent_type_backing_class IS 'A graph''s type is backed by a class: the reachability of intent_field_accessor_hop''s edges from the classes the graph''s producer methods deliver. The seeds are intent_type_backing_seed, which states both axes and says which of this relation''s rows a producer grounded rather than a hop reached; the closure then reads each backed type''s fields off its class and backs what they return with what the member delivers. Objects and input objects only, on both ends. A class stands for a composite type by answering its fields, and an interface''s implementors and a union''s members are not what a hop lands on, so an SDL name of any other kind is where the closure stops rather than a row it declines to write; a field typed by a scalar therefore falls away here without any reject list over Java classes, which is the population the walk this replaces excludes by naming String, Boolean, the java packages and the rest one at a time. One closure condition is applied and it is not a hop''s property: a coordinate that has a producer of its own is not read off its parent, its value coming from the method rather than from the member, so the hop over it is no edge of this closure. Materialized, not a view, for intent_type_domain''s reason exactly: the closure is over the SDL type graph, which is cyclic, and H2 has no safe recursive view form for one. Written by a capture-cadence derivation writer that clears its own graph partition and re-derives after every flush, so on any settled store these rows are current for every captured graph. Ambiguity is rows and there is no first-wins. A type two seeds answer differently is two rows and intent_type_backing_conflict names it, where the walk suppresses the second observation to protect the first and leaves the disagreement unobservable. A type a seed and a hop answer differently is two rows here as well, and there the walk''s suppression is doing more than ordering: a hop reads the parent''s member type without checking it against the child''s own grounding, so it can land on a class that is wrong rather than merely second. Which of those two rows to believe is intent_type_backing_seed''s to tell a reader, not this relation''s to decide. How a binding was reached is deliberately not a column: a class reached by two routes is one backing, so a route column would key the relation by path and multiply every reader''s rows by however many routes converged; the routes are the seed and hop relations'' own rows for a reader that wants them. An arity is absent for a different reason: it is an aggregate over this relation''s own rows, so storing it beside them would put a function of the relation inside the relation, which a materialization has to earn and this one cannot. Both axes seed it, on intent_type_backing_seed''s terms: a producer''s return backs the type the field names and a producer''s parameter backs the type of the argument it is fed from, and that is one closure rather than two, an input object seeded from a parameter having its own fields read off that class by the frontier that reads an output type''s. Three populations remain absent while the derivation is built out, each queued for adjudication against the walk''s shadow rather than assumed harmless. A @table-bound type seeds nothing here: that population is intent_bound_table''s, and the classes it would seed are the generated jOOQ records the classpath census excludes by design, so the subtree below one is unreachable from the store rather than merely unwritten; intent_type_backing is where the two populations meet. The walk''s cardinality guard is not applied, so a single-object field produced by a collection return backs its type here where the walk reads a carrier and declines. And the two-level carrier fork is not applied, so a payload wrapper backs itself here where the walk reaches past it to the data field it wraps; both of those are the cardinality reading, which is its own fact and not a clause of this one.';
 COMMENT ON COLUMN intent_type_backing_class.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -9874,6 +9928,7 @@ CREATE TABLE intent_input_occurrence_path (
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, root_type_name, root_field_name, root_argument_name)
     REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE intent_input_occurrence_path IS 'One occurrence of the input surface under a use site: an argument whose named type is an input object, or a nested input field reached from one by descending through input-object-typed fields. The key is the serialized path, <root type>.<root field>(<argument>)[/<input field>...]: an occurrence path is its own identity (no minted coordinate is involved), the relation is re-derived each run so the value key costs nothing, and the step child carries the same data relationally so no consumer parses the key. Every prefix of a path is itself a row. Materialized by a capture-cadence derivation writer for the same reason as intent_type_domain (cyclic input nesting is legal GraphQL and has no safe recursive H2 view form); the expansion stops descending when the leaf type is already visited on the path, which is the classification walk''s own first-visit guard (ClassifyContext.expandingTypes) restated, so the row population equals the recursion tree the build already walks and simple-path enumeration adds no new asymptotic class here.';
 COMMENT ON COLUMN intent_input_occurrence_path.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -9893,9 +9948,11 @@ CREATE TABLE intent_input_occurrence_path_step (
   field_name          VARCHAR NOT NULL,
   named_type          VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, path, ordinal),
-  FOREIGN KEY (graph_name, path) REFERENCES intent_input_occurrence_path (graph_name, path),
+  FOREIGN KEY (graph_name, path) REFERENCES intent_input_occurrence_path (graph_name, path)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name, container_type_name, field_name)
     REFERENCES graphql_field_element (graph_name, type_name, field_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE intent_input_occurrence_path_step IS 'The ordinal-keyed decomposition of an occurrence path: one row per input-field step, 1-based, so no consumer parses the serialized key. Homogeneous over input-field steps only: the use-site field and argument are fixed by construction (every path has exactly one of each) and live on the parent row, so no column here is nullable by kind. The row at ordinal = depth is the path''s leaf.';
 COMMENT ON COLUMN intent_input_occurrence_path_step.graph_name IS 'the owning graph''s partition, anchored through the parent path; the leading key dimension that keeps one workspace''s graphs apart';
@@ -13945,9 +14002,9 @@ COMMENT ON COLUMN meta_gatherer.gatherer_name IS 'the gatherer''s name, the rost
 COMMENT ON COLUMN meta_gatherer.gatherer_class IS 'the fully qualified Java class that is the gatherer''s entry point, unique per row; a class-loading gate in the graphitron module holds every value to a class that exists. The derivation gatherer names Materializations, the executor of the refresh plan meta_materialize declares, which is the one class that acts for it.';
 
 INSERT INTO meta_gatherer VALUES
-  ('configuration', 'no.sikt.graphitron.model.capture.config.ConfigurationFactCapture'),
   ('sdl', 'no.sikt.graphitron.model.capture.sdl.SdlFactCapture'),
   ('graphitron', 'no.sikt.graphitron.model.capture.graphitron.GraphitronAssemblyCapture'),
+  ('classpath-source', 'no.sikt.graphitron.model.capture.code.ClasspathSourceCapture'),
   ('jvm', 'no.sikt.graphitron.model.capture.code.JvmCapture'),
   ('code', 'no.sikt.graphitron.model.capture.code.CodeCapture'),
   ('graphql-source', 'no.sikt.graphitron.model.capture.document.GraphQLSourceCapture'),
@@ -13972,8 +14029,8 @@ COMMENT ON COLUMN meta_gatherer_corpus.gatherer_name IS 'the reading gatherer, a
 COMMENT ON COLUMN meta_gatherer_corpus.corpus_name IS 'the corpus read, a meta_corpus key';
 
 INSERT INTO meta_gatherer_corpus VALUES
-  ('configuration', 'configuration'),
   ('sdl', 'sdl'),
+  ('classpath-source', 'classpath'),
   ('jvm', 'classpath'),
   ('code', 'classpath'),
   ('graphql-source', 'sdl'),
@@ -14003,8 +14060,10 @@ INSERT INTO meta_gatherer_dependency VALUES
   ('graphitron', 'jvm'),
   -- A concrete table position is keyed to the table it names, so the arm reads the catalog the
   -- jOOQ gatherer wrote. ModelCapture runs the two in this order for that reason.
+  ('code', 'classpath-source'),
+  ('jvm', 'classpath-source'),
   ('code', 'jooq'),
-  ('derivation', 'configuration'),
+  ('derivation', 'store'),
   ('derivation', 'sdl'),
   ('derivation', 'graphql-source'),
   ('derivation', 'graphql-ast'),

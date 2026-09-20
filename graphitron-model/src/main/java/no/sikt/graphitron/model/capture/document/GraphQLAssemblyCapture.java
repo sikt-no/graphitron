@@ -47,6 +47,25 @@ public final class GraphQLAssemblyCapture {
     private GraphQLAssemblyCapture() {}
 
     /**
+     * The corpus composed into one registry.
+     *
+     * <p>Every document that states something, whether or not this reading is what made it say so:
+     * the corpus is composed from the whole of it, and a source left untranscribed because its
+     * bytes had not moved is still one of the documents the schema is made of.
+     *
+     * <p>Exposed because the decode still rides a walk of the merged registry rather than reading
+     * the entry stratum, and the pass that drives it should compose the corpus the same way this
+     * does rather than a second way that could differ. It stops being needed when the decode stops
+     * needing a registry.
+     */
+    public static SchemaLoader.PerSourceParse merge(List<GraphQLSourceCapture.SourceDocument> documents) {
+        return SchemaLoader.merge(documents.stream()
+            .filter(GraphQLSourceCapture.SourceDocument.Stated.class::isInstance)
+            .map(GraphQLSourceCapture.SourceDocument.Stated.class::cast)
+            .map(GraphQLSourceCapture.SourceDocument.Stated::registry).toList());
+    }
+
+    /**
      * Reduces {@code documents} into one registry, assembles it, and makes {@code graph}'s problem
      * rows be what the two stages raised.
      *
@@ -56,15 +75,13 @@ public final class GraphQLAssemblyCapture {
     public static SchemaAssembly capture(DSLContext dsl, GraphIdentity graph,
                                          List<GraphQLSourceCapture.SourceDocument> documents,
                                          LocalDateTime readAt) {
-        var merged = SchemaLoader.merge(documents.stream()
-            .filter(GraphQLSourceCapture.SourceDocument::parsed)
-            .map(GraphQLSourceCapture.SourceDocument::registry).toList());
+        var merged = merge(documents);
         var assembly = SchemaAssembly.of(merged.registry());
         // What the merge refused and what the assembly refused are the same question asked of the
         // same corpus, so they are written as one list in the order the stages ran.
         var raised = new ArrayList<>(merged.registryErrors());
         raised.addAll(assembly.errors());
-        SdlSchemaProblems.writeAssembled(dsl, graph.name(), List.copyOf(raised), readAt);
+        GraphQLSchemaProblems.writeAssembled(dsl, graph.name(), List.copyOf(raised), readAt);
         return assembly;
     }
 }

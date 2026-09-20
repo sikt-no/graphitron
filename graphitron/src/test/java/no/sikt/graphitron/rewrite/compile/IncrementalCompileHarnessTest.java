@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.compile;
 
+import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.read.StoreHandle;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.plan.GeneratedUnits;
@@ -316,7 +318,11 @@ class IncrementalCompileHarnessTest {
             OUTPUT_PACKAGE,
             TestConfiguration.DEFAULT_JOOQ_PACKAGE);
 
-        var result = new GraphQLRewriteGenerator(ctx).generate();
+        GraphQLRewriteGenerator.GenerationResult result;
+        try (var store = GraphitronStore.captured(ctx)) {
+            result = new GraphQLRewriteGenerator(ctx, new StoreHandle(store.dsl(), ctx.graphName()))
+                .generate();
+        }
 
         // The model, from the same SDL the generator classified (plain untagged schema, so a direct
         // parse + buildBundle matches the generator's attributed pipeline). The plan rides the

@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.config.DependencyVersions;
 import no.sikt.graphitron.model.config.ObservedVersion;
 import no.sikt.graphitron.model.config.WatchedDependency;
@@ -50,7 +52,10 @@ class LintSuppressionPipelineTest {
             List.of(new SchemaInput(SchemaSource.file(schema), Optional.empty(), Optional.empty())),
             schema.getParent(), "LintSuppressionPipelineTest", schema.getParent(), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE
         ).withLintConfig(lintConfig).withDependencyVersions(versions);
-        return new GraphQLRewriteGenerator(ctx).buildOutput().report();
+        try (var store = GraphitronStore.captured(ctx)) {
+            return new GraphQLRewriteGenerator(ctx, new StoreHandle(store.dsl(), ctx.graphName()))
+                .buildOutput().report();
+        }
     }
 
     private static List<BuildWarning.LintFinding> lintFindings(ValidationReport report) {

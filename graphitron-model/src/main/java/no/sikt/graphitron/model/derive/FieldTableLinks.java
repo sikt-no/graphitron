@@ -60,7 +60,7 @@ import static org.jooq.impl.DSL.when;
  *
  * <p>Marked and swept, on {@link FieldEndpoints}' terms, and the instant does a second job here: a
  * pass reads the rows the pass before it wrote, so the departure is matched on this reading's
- * instant. That is {@code AstEntries}' rule for resolving one arm against another, and without it a
+ * instant. That is {@code GraphQLAstEntries}' rule for resolving one arm against another, and without it a
  * link would be free to depart from where a previous reading arrived.
  *
  * <p>One statement per arm, five of them, and no arm ranks against another. Two boundaries are

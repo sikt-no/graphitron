@@ -2695,6 +2695,7 @@ public final class SeededStore {
             .set(JVM_CLASS.SOURCE_NAME, sourceName)
             .set(JVM_CLASS.CLASS_NAME, className)
             .set(JVM_CLASS.CLASS_KIND, classKind)
+            .set(JVM_CLASS.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 
@@ -2712,6 +2713,7 @@ public final class SeededStore {
             .set(JVM_CLASS_SUPERTYPE.CLASS_NAME, className)
             .set(JVM_CLASS_SUPERTYPE.SUPERTYPE_NAME, supertypeName)
             .set(JVM_CLASS_SUPERTYPE.DECLARED_VIA, declaredVia)
+            .set(JVM_CLASS_SUPERTYPE.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 
@@ -2745,6 +2747,7 @@ public final class SeededStore {
             .set(JVM_METHOD.DESCRIPTOR, descriptor)
             .set(JVM_METHOD.RETURN_TYPE, "Object")
             .set(JVM_METHOD.DECLARED_RETURN_TYPE, "Object")
+            .set(JVM_METHOD.TOUCHED_AT, SEEDED_READING)
             .execute();
         declaredReturn.forEach((typePath, referencedClass) ->
             dsl.insertInto(JVM_DECLARED_TYPE_REF)
@@ -2757,6 +2760,7 @@ public final class SeededStore {
                 .set(JVM_DECLARED_TYPE_REF.TYPE_PATH, typePath)
                 .set(JVM_DECLARED_TYPE_REF.REFERENCED_CLASS, referencedClass)
                 .set(JVM_DECLARED_TYPE_REF.VARIANCE, "NONE")
+                .set(JVM_DECLARED_TYPE_REF.TOUCHED_AT, SEEDED_READING)
                 .execute());
     }
 
@@ -2824,6 +2828,7 @@ public final class SeededStore {
             .set(JVM_DECLARED_TYPE_REF.TYPE_PATH, typePath)
             .set(JVM_DECLARED_TYPE_REF.REFERENCED_CLASS, referencedClass)
             .set(JVM_DECLARED_TYPE_REF.VARIANCE, variance)
+            .set(JVM_DECLARED_TYPE_REF.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 
@@ -2865,6 +2870,7 @@ public final class SeededStore {
             .set(JVM_METHOD_PARAMETER.PARAMETER_NAME, parameterName)
             .set(JVM_METHOD_PARAMETER.PARAMETER_TYPE, "Object")
             .set(JVM_METHOD_PARAMETER.DECLARED_PARAMETER_TYPE, "Object")
+            .set(JVM_METHOD_PARAMETER.TOUCHED_AT, SEEDED_READING)
             .execute();
         declaredType.forEach((typePath, referencedClass) ->
             dsl.insertInto(JVM_DECLARED_TYPE_REF)
@@ -2877,6 +2883,7 @@ public final class SeededStore {
                 .set(JVM_DECLARED_TYPE_REF.TYPE_PATH, typePath)
                 .set(JVM_DECLARED_TYPE_REF.REFERENCED_CLASS, referencedClass)
                 .set(JVM_DECLARED_TYPE_REF.VARIANCE, "NONE")
+                .set(JVM_DECLARED_TYPE_REF.TOUCHED_AT, SEEDED_READING)
                 .execute());
     }
 
@@ -2911,6 +2918,7 @@ public final class SeededStore {
             .set(JVM_CLASS.SOURCE_NAME, sourceName)
             .set(JVM_CLASS.CLASS_NAME, className)
             .set(JVM_CLASS.CLASS_KIND, "CLASS")
+            .set(JVM_CLASS.TOUCHED_AT, SEEDED_READING)
             .onDuplicateKeyIgnore()
             .execute();
         var descriptor = new StringBuilder("(");
@@ -3036,6 +3044,7 @@ public final class SeededStore {
                     .and(JVM_RECORD_COMPONENT.CLASS_NAME.eq(className))))
             .set(JVM_RECORD_COMPONENT.DISPLAY_TYPE, "Object")
             .set(JVM_RECORD_COMPONENT.DECLARED_TYPE, "Object")
+            .set(JVM_RECORD_COMPONENT.TOUCHED_AT, SEEDED_READING)
             .execute();
         declaredType.forEach((typePath, referencedClass) ->
             dsl.insertInto(JVM_DECLARED_TYPE_REF)
@@ -3048,6 +3057,7 @@ public final class SeededStore {
                 .set(JVM_DECLARED_TYPE_REF.TYPE_PATH, typePath)
                 .set(JVM_DECLARED_TYPE_REF.REFERENCED_CLASS, referencedClass)
                 .set(JVM_DECLARED_TYPE_REF.VARIANCE, "NONE")
+                .set(JVM_DECLARED_TYPE_REF.TOUCHED_AT, SEEDED_READING)
                 .execute());
     }
 

@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
@@ -81,13 +83,15 @@ class NodeIdDecodeCoverageRatchetTest {
     private static List<String> errorsOf(Path tmp, String sdl) throws IOException {
         Path schema = tmp.resolve("schema.graphqls");
         Files.writeString(schema, sdl);
-        var generator = new GraphQLRewriteGenerator(new RunContext(
+        var ctx = new RunContext(
             List.of(new SchemaInput(SchemaSource.file(schema), Optional.empty(), Optional.empty())),
             tmp, "NodeIdDecodeCoverageRatchetTest",
             tmp,
             DEFAULT_OUTPUT_PACKAGE,
-            DEFAULT_JOOQ_PACKAGE));
-        try {
+            DEFAULT_JOOQ_PACKAGE);
+        try (var store = GraphitronStore.captured(ctx)) {
+            var generator = new GraphQLRewriteGenerator(ctx,
+                new StoreHandle(store.dsl(), ctx.graphName()));
             generator.validate();
             return List.of();
         } catch (ValidationFailedException e) {

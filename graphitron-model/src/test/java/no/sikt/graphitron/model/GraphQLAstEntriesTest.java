@@ -18,7 +18,7 @@ import graphql.language.Value;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import graphql.util.TraversalControl;
 import graphql.util.TraverserContext;
-import no.sikt.graphitron.model.capture.document.SdlEntries;
+import no.sikt.graphitron.model.capture.document.GraphQLAstEntries;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
 import org.jooq.DSLContext;
@@ -77,7 +77,7 @@ import static org.assertj.core.api.Assertions.tuple;
  * declared rather than only that they collided. Keyed by position, both are rows, and which of them
  * is the incumbent is a question about their files rather than about which write landed first.
  */
-class SdlEntriesTest {
+class GraphQLAstEntriesTest {
 
     private static final String GRAPH = "entries";
 
@@ -128,7 +128,7 @@ class SdlEntriesTest {
                     .fetch(GRAPHQL_AST_TYPE_DECLARATION_ENTRY.SOURCE_NAME))
                 .as("one row per declaration site, so a corpus the merge refuses is a corpus the "
                     + "store still holds")
-                .extracting(SdlEntriesTest::name)
+                .extracting(GraphQLAstEntriesTest::name)
                 .containsExactlyInAnyOrder("first.graphqls", "second.graphqls");
         });
     }
@@ -867,7 +867,7 @@ class SdlEntriesTest {
         Arrays.stream(files).forEach(file -> seedSource(dsl, file.toString(), "SCHEMA_FILE"));
         SchemaLoader.parsePerSource(Arrays.stream(files).map(SchemaSource::file).toList())
             .perSource()
-            .forEach(document -> SdlEntries.write(dsl, GRAPH, document.sourceName(), document.registry(), touchedAt));
+            .forEach(document -> GraphQLAstEntries.write(dsl, GRAPH, document.sourceName(), document.registry(), touchedAt));
     }
 
     private static Path write(Path directory, String name, String sdl) {

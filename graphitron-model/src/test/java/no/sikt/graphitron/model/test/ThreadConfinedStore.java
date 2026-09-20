@@ -73,106 +73,21 @@ final class ThreadConfinedStore {
 
     /**
      * The most stores this module may open in one JVM before the funnel treats it as a regression
-     * rather than as growth. About thirty-five are expected: one per thread that runs a funnel case,
-     * the twenty-odd per-case boots of the classes whose subject is the boot path rather than their
-     * setup, {@link CandidateCutSet}'s five, which are per case because realising a candidate
-     * rewrites the register one way and no clear puts it back, and
-     * {@code WrittenStatementCoverageTest}'s two, which bend the schema they run on (referential
-     * integrity off, check constraints dropped) and so cannot share a store with anything, and
-     * {@code LentStoreTest}'s three, whose subject is a store one caller opens and another
-     * captures into: two of them are one home opened twice, the second open being warm, which is
-     * the only state the ownership check reads, and {@code EntryFamilyCoverageTest}'s one, which is
-     * that same shape: a store {@code CapturedStore} captures two documents into, booted once for
-     * the class rather than once per case. Orders of magnitude under the case count, which is the
-     * number this exists to keep the module away from.
+     * rather than as growth. Most cases share one store per thread; what boots per case is the
+     * classes whose subject is the boot path itself, those that bend the schema they run on, and
+     * those whose subject is a store handle rather than a context over one, which the funnel
+     * cannot hand them.
      *
-     * <p>It bounds {@link FactStores#boots()} rather than {@link #boots()}, which is the whole
-     * point of having two counters: the funnel's own count cannot see a boot that does not go
-     * through the funnel, and a new path that opens a store per case is exactly what would not.
+     * <p>It bounds {@link FactStores#boots()} rather than {@link #boots()}: the funnel's own count
+     * cannot see a boot that does not go through the funnel, and a new path opening a store per
+     * case is exactly what would not.
      *
-     * <p>Stated here rather than on {@code FactStores} even though it is that counter's budget,
-     * because the harness is reached from four modules and only this one has adopted the funnel.
-     * The others boot per case by design and in the hundreds, so a number enforced down there would
-     * be this module's claim imposed on theirs. When one of them adopts a funnel it states its own.
+     * <p>One constant over two modules whose counts differ by a factor of seven, so while it sits
+     * here it guards this module against nothing; that is the price of keeping the number in one
+     * place while the larger module is mid-conversion.
      *
-     * <p>Raising it is a deliberate act: recount what boots and why, and if the answer is that a
-     * new class opens a store per case, the question is whether it should run on the funnel instead.
-     * The funnel is not always the answer: it hands a body a {@link org.jooq.DSLContext}, so a case
-     * whose subject is a store <em>handle</em> (one lent to something that captures into it, or one
-     * home reopened to meet its own previous rows) cannot ask it for what it needs, which is the
-     * reason {@code LentStoreTest}'s three and {@code EntryFamilyCoverageTest}'s one are counted
-     * here rather than routed away.
-     *
-     * <p>Raised to 77 on 2026-09-08 for {@code SourceMtimeTest}, recounted rather than nudged. Its
-     * subject is what capture writes into {@code store_source} from files that exist on disk, so it
-     * is the handle shape this paragraph describes: the funnel hands a body a context over a store
-     * nothing captured into, which has no source rows and no files behind them to have a
-     * modification time. One boot for the class, on {@code EntryFamilyCoverageTest}'s terms.
-     *
-     * <p>Raised to 79 on 2026-09-10, by two. One is {@code ModelCapturePortTest}, the lent-handle
-     * shape exactly: its subject is a store two captures share, so its body has to hold the store
-     * rather than a context over one, and its two claims are folded into a single sequence for that
-     * reason rather than split across a store each.
-     *
-     * <p>The other is what the number was already short by, and the reason is worth knowing before
-     * the next recount. This check runs inside funnelled cases, so what a run reports is however
-     * many off-funnel boots happened before its last funnelled one, which is an ordering rather
-     * than a total: 78 passed this module scoped and failed it in the reactor. Count the boots, do
-     * not read a peak off one run.
-     *
-     * <p>Raised to 80 on 2026-09-10 when the anchor derivation met the work that landed beside it,
-     * and to 81 when the verdict migration did. One boot each time, which is what says neither is
-     * the thing this guard is for: a path that boots per case moves the total by however many cases
-     * it has, and a move of one is a class that opened one store.
-     *
-     * <p>Lowered to 60 on 2026-09-14, the first move downward, when twenty-six cases across five
-     * schema gates stopped booting a store each. Their subject is the schema rather than any fact
-     * row, and a clear leaves the {@code meta_} registry and {@code store_stamp} standing, which is
-     * the whole of what they read, so the funnel already served them and each was declining it
-     * through a private helper of its own. What stayed private stayed for a reason a pool cannot
-     * remove: {@code MetaDeclarationGateTest}'s seeded-declaration case restates a comment, and
-     * {@code MaterializationOrderTest} and {@code MaterializationProgressTest} create relations, and
-     * no clear takes a comment or a view back.
-     *
-     * <p>Sixty rather than the fifty-five the count came to, which is a change of policy worth
-     * naming. The number this check reads is an ordering rather than a total, as the paragraph
-     * above says, and it moves by one between runs of the same tree; a budget set at the count is
-     * therefore a coin flip, and when it loses it fails every funnelled case after it rather than
-     * one. It had been at the count, and that is what a clean run at eighty-two cost. Leave the
-     * headroom, and recount when it is gone.
-     *
-     * <p><b>Two hundred and fifty, and the number is a debt rather than a budget.</b> This guard
-     * only runs when a funnel case runs, so for as long as {@code graphitron} had exactly one such
-     * case it never fired there and the module's boot count went unread. Routing
-     * {@code CapturedStore}'s scoped form through the funnel switched it on, and the first thing it
-     * said was that the module opens 398 stores in a JVM against a figure chosen for 55. The count was
-     * real and was always real; what changed is that something now reads it. Routing
-     * {@code CapturedStore} through the funnel took it to about 105, and this sits above that.
-     *
-     * <p>So this is pinned above what {@code graphitron} costs today, which makes it a ratchet and
-     * not an allowance: it can only come down, and what brings it down is a case that stops booting
-     * a store of its own. Pinned well above rather than just above, which two attempts got wrong:
-     * 420 against an observed 398 failed on the next run at 438, and 100 against an observed 105
-     * failed at once. At this size the count is not the stable ordering the paragraph above
-     * describes but a total over however many threads the pool happened to use, so headroom here is
-     * not slack, it is the difference between a guard and a coin flip.
-     *
-     * <p>And measure the worst case rather than the quiet one, which is the third time this was got
-     * wrong and the only one with a general lesson in it. 150 was set against 105 observed from
-     * {@code mvn test -pl graphitron} on an idle machine, and the full reactor reached 151: more
-     * threads boot when the build is loaded, so the count a module run reports is its floor and not
-     * its ceiling. A number for this guard comes from a whole build.
-     *
-     * <p>What is left under it is the cases that own a store deliberately, which is the ones that
-     * change the schema: a clear puts rows back and cannot put a relation back, so a case that
-     * demotes a registered target to a view leaves the thread's store a different shape for every
-     * case after it. Those reach {@code CapturedStore.ownStore}, and every one of them is a boot
-     * this number is counting. Two consequences worth naming rather than
-     * discovering. It is one constant over two modules whose counts differ by a factor of seven, so
-     * while it sits here it guards {@code graphitron-model}'s 55 against nothing; that is the price
-     * of keeping the number in one place while the larger module is mid-conversion. And a store
-     * boot is around 390 ms, so 398 of them is most of a CPU-minute per fork, which is what the
-     * ratchet is for.
+     * <p>Raising it is a deliberate act: recount what boots and why, and if a new class opens a
+     * store per case, ask whether it should run on the funnel instead.
      */
     private static final int BOOT_BUDGET = 250;
 

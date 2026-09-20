@@ -27,8 +27,18 @@ import java.util.List;
  */
 public sealed interface SchemaAssembly {
 
+    /**
+     * What this was assembled from, whether or not it assembled.
+     *
+     * <p>Carried so a caller holding the outcome need not compose the corpus a second time to say
+     * what was composed. Transitional: the readers that still want a registry rather than the
+     * entry stratum are the reason it is here, and it goes with them.
+     */
+    TypeDefinitionRegistry registry();
+
     /** The registry assembled; {@code schema} is the executable schema it produced. */
-    record Assembled(GraphQLSchema schema) implements SchemaAssembly {}
+    record Assembled(TypeDefinitionRegistry registry, GraphQLSchema schema)
+        implements SchemaAssembly {}
 
     /**
      * The registry did not assemble.
@@ -37,7 +47,8 @@ public sealed interface SchemaAssembly {
      * @param cause  the problem as graphql-java raised it, so a caller that fails the build throws
      *               what it always threw rather than a reconstruction
      */
-    record Rejected(List<SchemaError> errors, SchemaProblem cause) implements SchemaAssembly {}
+    record Rejected(TypeDefinitionRegistry registry, List<SchemaError> errors, SchemaProblem cause)
+        implements SchemaAssembly {}
 
     /**
      * Assembles {@code registry}, returning the outcome instead of throwing on refusal.
@@ -57,9 +68,11 @@ public sealed interface SchemaAssembly {
             })
         );
         try {
-            return new Assembled(new SchemaGenerator().makeExecutableSchema(registry, runtimeWiring));
+            return new Assembled(registry,
+                new SchemaGenerator().makeExecutableSchema(registry, runtimeWiring));
         } catch (SchemaProblem e) {
-            return new Rejected(SchemaError.allOf(SchemaError.Stage.ASSEMBLY, e.getErrors()), e);
+            return new Rejected(registry,
+                SchemaError.allOf(SchemaError.Stage.ASSEMBLY, e.getErrors()), e);
         }
     }
 

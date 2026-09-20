@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures;
@@ -493,14 +495,18 @@ class ArgmappingProjectionRejectionPipelineTest {
             throws IOException {
         Path schema = tmp.resolve("schema.graphqls");
         Files.writeString(schema, sdl);
-        new GraphQLRewriteGenerator(new RunContext(
+        var ctx = new RunContext(
             List.of(new SchemaInput(SchemaSource.file(schema), Optional.empty(), Optional.empty())),
             tmp, "ArgmappingProjectionRejectionPipelineTest",
             tmp,
             DEFAULT_OUTPUT_PACKAGE,
             DEFAULT_JOOQ_PACKAGE,
             classpathRoots
-        )).validate();
+        );
+        try (var store = GraphitronStore.captured(ctx)) {
+            new GraphQLRewriteGenerator(ctx, new StoreHandle(store.dsl(), ctx.graphName()))
+                .validate();
+        }
     }
 
     /**

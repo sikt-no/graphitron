@@ -19,8 +19,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
 import static no.sikt.graphitron.model.test.CapturedStore.withCapturedStore;
 import static org.assertj.core.api.Assertions.assertThat;
-import no.sikt.graphitron.model.capture.FactCapture;
-import no.sikt.graphitron.model.run.SubjectConfig;
 
 /**
  * The registered agreement anchor for {@code intent_type_domain}: what the SDL gatherer's rooted
@@ -221,13 +219,12 @@ class ClassificationDomainTest {
         // The traversal reads what assembly produced, so a document with no assembled schema has
         // nothing to walk. The declaration facts survive, which is what makes the emptiness
         // readable: it is the assembly verdict's consequence and not the census's absence.
-        // Driven through FactCapture directly: the refused-schema fixtures are about the two
-        // stages ahead of assembly, and a dangling type reference is refused by assembly alone.
+        // Driven through the pass directly: the refused-schema fixtures are about the two stages
+        // ahead of assembly, and a dangling type reference is refused by assembly alone.
         try (var store = FactStores.inMemory()) {
-            FactCapture.capture(store.dsl(), CapturedStore.graph(tmp),
-                SubjectConfig.none(),
-                CapturedStore.registryOf(tmp, "type Query { gone: Nope }\n"),
-                CapturedStore.attributionOf(tmp));
+            CapturedStore.writeSource(tmp, "type Query { gone: Nope }\n");
+            CapturedStore.capture(store.dsl(), CapturedStore.graph(tmp),
+                CapturedStore.corpusOf(tmp), null);
             assertThat(domain(store.dsl(), CapturedStore.GRAPH)).isEmpty();
             assertThat(store.dsl().fetchCount(GRAPHQL_TYPE,
                 GRAPHQL_TYPE.GRAPH_NAME.eq(CapturedStore.GRAPH)))

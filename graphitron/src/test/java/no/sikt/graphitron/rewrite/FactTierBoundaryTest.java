@@ -41,11 +41,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       writers are a separate matter and stay outside this module: they record a completed pass,
  *       a compile round and the consumer's source tree, which are the plugin's observations rather
  *       than the generator's account of itself.</li>
- *   <li><b>Nothing that stays owns a store.</b> The generator asks a
- *       {@link no.sikt.graphitron.model.run.CapturePort} for a capture and reads what comes back;
- *       which store that is, where it lives and how long it is held are the port's, decided by
- *       whichever caller built it. So nothing here names the capture entry point, the type that
- *       owns a store's lifetime, or the store's home. The last of those is why
+ *   <li><b>Nothing that stays owns a store.</b> The generator is handed a
+ *       {@link no.sikt.graphitron.model.read.StoreHandle} and reads through it; which store that
+ *       is, where it lives and how long it is held are decided by whoever opened it, a mojo or a
+ *       test. So nothing here names a capture entry point, the type that opens a store, or the
+ *       store's home. The last of those is why
  *       {@link no.sikt.graphitron.model.config.RunContext} carries its store directory below the
  *       line rather than here: the Maven goals need it as a setting, and what it stopped being is
  *       something a pass reads on its way to a store.</li>
@@ -95,7 +95,8 @@ class FactTierBoundaryTest {
 
     private static final Set<String> OWNERSHIP_SURFACE = Set.of(
         "FactCapture",
-        "RunStore",
+        "GraphitronStore",
+        "GraphitronModelStore",
         "storeDirectory");
 
     @Test
@@ -134,8 +135,8 @@ class FactTierBoundaryTest {
             }
         }
         assertThat(violations)
-            .as("the generator deciding something about the fact store; ask a CapturePort for the"
-                + " capture and let whoever built the port decide which store answers it")
+            .as("the generator deciding something about the fact store; it is handed a"
+                + " StoreHandle, and whoever opened the store decides which store answers it")
             .isEmpty();
     }
 

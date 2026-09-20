@@ -806,12 +806,15 @@ class DevMojoTest {
     private static RunContext contextFor(Path basedir, Path schemaFile) {
         // Both failure modes occur during schema load, before any jOOQ catalog work,
         // so the jooq package / output directory values are never exercised.
+        //
+        // A store home, because a pass captures before it reads the schema and there is no
+        // in-memory store to fall back to: a session with nowhere to capture stops.
         return new RunContext(
             List.of(SchemaInput.file(schemaFile)),
             basedir, "DevMojoTest",
             basedir.resolve("target/generated"),
             "com.example.generated",
-            "com.example.jooq");
+            "com.example.jooq").withStoreDirectory(basedir.resolve("target/store"));
     }
 
     /** Maven {@link org.apache.maven.plugin.logging.Log} that records error calls instead of printing. */

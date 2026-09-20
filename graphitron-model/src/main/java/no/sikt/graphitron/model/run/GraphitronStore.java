@@ -1,5 +1,7 @@
 package no.sikt.graphitron.model.run;
 
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
+import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.boot.StoreUnavailableException;
 import no.sikt.graphitron.model.config.ClasspathEntry;
@@ -48,6 +50,105 @@ public final class GraphitronStore {
      */
     public static GraphitronModelStore at(Path directory) {
         return GraphitronModelStore.openAt(directory);
+    }
+
+    /**
+     * A store for {@code ctx}, captured and handed back open.
+     *
+     * <p>Every argument the capture needs is already the run's: the graph it writes under, the
+     * corpus it reads, the classpath it scans and the catalog it resolves against are all stated
+     * once in the context and derived the same way by everyone who captures. Deriving them here
+     * rather than at each caller is what keeps two callers from deriving them differently.
+     *
+     * <p>In memory where the context names no store home, which is what a run that wants facts and
+     * keeps none asks for.
+     *
+     * @throws StoreUnavailableException if the store cannot be opened
+     */
+    public static GraphitronModelStore captured(RunContext ctx) {
+        var graph = new GraphIdentity(ctx.graphName(), ctx.basedir());
+        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        return ctx.storeDirectory() == null
+            ? capturedInMemory(graph, SubjectConfig.of(ctx), ctx.classpathRoots(), jooq)
+            : captured(ctx.storeDirectory(), graph, SubjectConfig.of(ctx), ctx.classpathRoots(),
+                jooq);
+    }
+
+    /**
+     * Refuses a store that already belongs to a different checkout of the same graph name.
+     *
+     * <p>Asked at the open, because that is where every owner passes and there is nothing useful
+     * to do about it later. Two modules claiming one graph name would otherwise write over each
+     * other's partition, each reading the other's rows as its own; the run stops and says which
+     * two directories are in dispute and what to set.
+     *
+     * <p>Asked of the store's rows rather than of how the open went. A store nobody has written
+     * records no graph, so the lookup answers nothing and this returns; there is no separate
+     * question of whether the file pre-existed, and a flag saying so would be a second answer to
+     * one the rows already give.
+     *
+     * <p>It throws rather than recovering. A store that cannot be had is the caller's to handle,
+     * and the caller is a mojo, which knows how to fail a build and what to tell the person
+     * reading the log.
+     */
+    private static void refuseIfOwnedElsewhere(GraphitronModelStore store, GraphIdentity graph) {
+        String recorded = store.dsl().select(STORE_GRAPH.BASE_DIR).from(STORE_GRAPH)
+            .where(STORE_GRAPH.GRAPH_NAME.eq(graph.name()))
+            .fetchOne(0, String.class);
+        if (recorded == null || recorded.equals(graph.baseDir().toString())) {
+            return;
+        }
+        throw new StoreUnavailableException(("graphitron: graph '%s' is already recorded in the "
+            + "fact store for %s, but this run's base directory is %s. Set <graphName> so the two "
+            + "modules stop claiming one name, then run again.")
+            .formatted(graph.name(), recorded, graph.baseDir()));
+    }
+
+    /**
+     * A store at {@code directory} with {@code graph} captured into it, handed back open.
+     *
+     * <p>The two calls a run makes, as the one call it makes them in: opening a store and filling
+     * it are the same act from outside, and a caller that wants facts to read wants both. It hands
+     * the store back rather than closing it, because reading is what the caller opened it for and
+     * the reads happen after.
+     *
+     * <p>Whoever calls this owns the store. That is a mojo or a test and never a pass: a pass is
+     * handed a {@link no.sikt.graphitron.model.read.StoreHandle} over somebody else's store, so it
+     * has no home to name and nothing to open.
+     *
+     * @throws StoreUnavailableException if the store cannot be opened
+     */
+    public static GraphitronModelStore captured(Path directory, GraphIdentity graph,
+                                                SubjectConfig config,
+                                                List<ClasspathEntry> classpath, JooqCatalog jooq) {
+        if (directory == null) {
+            // No home to name is a private store that dies with the run, which is what a caller
+            // with nowhere to keep facts is asking for.
+            return capturedInMemory(graph, config, classpath, jooq);
+        }
+        var store = at(directory);
+        try {
+            refuseIfOwnedElsewhere(store, graph);
+            capture(store, graph, config, classpath, jooq);
+        } catch (RuntimeException | Error failure) {
+            store.close();
+            throw failure;
+        }
+        return store;
+    }
+
+    /** {@link #captured} into a store that lives as long as the caller, for a run with no home. */
+    public static GraphitronModelStore capturedInMemory(GraphIdentity graph, SubjectConfig config,
+                                                        List<ClasspathEntry> classpath,
+                                                        JooqCatalog jooq) {
+        var store = inMemory();
+        try {
+            capture(store, graph, config, classpath, jooq);
+        } catch (RuntimeException | Error failure) {
+            store.close();
+            throw failure;
+        }
+        return store;
     }
 
     /**

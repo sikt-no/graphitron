@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.capture.sdl;
 
+import no.sikt.graphitron.model.schema.SiteRef;
 import graphql.language.AstPrinter;
 import graphql.language.Description;
 import graphql.language.Directive;
@@ -30,8 +31,6 @@ import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.model.schema.input.TagLinkSynthesiser;
 import no.sikt.graphitron.model.sink.FactSink;
-import no.sikt.graphitron.model.sources.ClasspathSources;
-import no.sikt.graphitron.model.sources.GraphSourceMembership;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -50,7 +49,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_DIRECTIVE_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_LOCATION;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_DUPLICATE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_DIRECTIVE_ARG;
@@ -92,8 +90,8 @@ import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
  * character. The registry validates nothing: it retains undeclared directives, unknown argument
  * names, wrong-typed literals, missing required arguments, and duplicate declarations without
  * error. Capture is therefore <em>tolerant by construction</em> and never throws on author input;
- * a duplicate element quarantines in {@code graphql_duplicate_declaration}, rendered and located, so
- * a detection has its row and no authored text is lost. An argument's literal is transcribed exactly
+ * a duplicate element loses nothing, both occurrences being rows of the entry stratum already,
+ * keyed where each was written. An argument's literal is transcribed exactly
  * as {@code AstPrinter} renders it, for a reader that wants the authored text; the decode beside it
  * reads the parsed value rather than that rendering, and what it makes of a literal that does not
  * fit its declared shape is its own quarantine.
@@ -102,7 +100,11 @@ import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
  * declaration sites and nothing else. Nothing here reads across types and no verdict is computed
  * during a file's walk, which is what keeps a single file the unit of an incremental refresh.
  * That is a review rule on this code, not something a test can catch after the fact.
+ *
+ * @deprecated the traversal the decode rides on; it goes when the decode reads the
+     *     entry stratum instead of a registry.
  */
+@Deprecated
 public final class SdlFactCapture {
 
     /** {@code store_source.source_kind}'s schema-file arm; the classpath arms are the scan's. */
@@ -123,33 +125,11 @@ public final class SdlFactCapture {
     private final SdlCoordinates coordinates;
 
 
-    /**
-     * Each type's running element ordinals. Type-wide rather than per-site because a repeatable type
-     * directive applied once on a base declaration and once on an extension has to number 0 and 1
-     * instead of colliding at 0, so the counter has to outlive the site that opened it.
-     */
+
+
+
+    /** Per type, the ordinals its elements are numbered by as the walk meets them. */
     private final Map<String, ElementOrdinals> ordinalsByType = new LinkedHashMap<>();
-
-
-
-    private final ClasspathSources sources;
-
-    /**
-     * The run's inputs keyed on their canonical source name, so the stamp decision below reads the
-     * arm the producer decided instead of asking the filesystem what the producer already knew.
-     * Rebuilt from the run's input list at the capture site rather than ferried down from the load:
-     * {@link SchemaInputAttribution#build} is pure over that list, so the rebuilt map is the same
-     * map by construction.
-     */
-    private final Map<String, SchemaInput> attribution;
-
-    /**
-     * The sources this run read that contributed no declaration, so the walk cannot find them: the
-     * ones the parser refused. Kept apart from {@link #attribution} because that map is the run's
-     * configured inputs, while these are the subset the run actually opened and was refused, which
-     * is what the source census records.
-     */
-    private final Set<String> refusedSources;
 
     /**
      * The as-written half of {@code graphitron_}, decoded from the applications this walk is
@@ -160,33 +140,24 @@ public final class SdlFactCapture {
      */
     private final GraphitronFactCapture decode;
 
-    private SdlFactCapture(FactSink sink, TypeDefinitionRegistry registry,
-                           ClasspathSources sources, Map<String, SchemaInput> attribution,
-                           Set<String> refusedSources) {
+    private SdlFactCapture(FactSink sink, TypeDefinitionRegistry registry) {
         this.sink = sink;
         this.registry = registry;
         this.coordinates = new SdlCoordinates(sink);
-        this.sources = sources;
-        this.attribution = attribution;
-        this.refusedSources = refusedSources;
         this.decode = GraphitronFactCapture.decodingInto(sink);
     }
 
-    /** Runs the walk, buffering into {@code sink}; the caller flushes. */
-    public static void capture(FactSink sink, TypeDefinitionRegistry registry,
-                        ClasspathSources sources, Map<String, SchemaInput> attribution) {
-        capture(sink, registry, sources, attribution, Set.of());
-    }
-
     /**
-     * {@link #capture(FactSink, TypeDefinitionRegistry, ClasspathSources, Map)}
-     * plus the sources the parser refused, which the walk has no other way to learn about: a
-     * refused source contributes no declaration, so nothing in the registry points back at it.
+     * Decodes the applications of {@code registry} into the as-written half of
+     * {@code graphitron_}, buffering into {@code sink}; the caller flushes.
+     *
+     * <p>A walk with nothing of its own left to write. Every relation it once held is written by
+     * the gatherers that read the documents, and what remains is the traversal the decode rides
+     * on: it visits each directive application in the merged corpus and hands it over. It leaves
+     * when the decode reads the entry stratum instead of a registry.
      */
-    public static void capture(FactSink sink, TypeDefinitionRegistry registry,
-                        ClasspathSources sources, Map<String, SchemaInput> attribution,
-                        Set<String> refusedSources) {
-        new SdlFactCapture(sink, registry, sources, attribution, refusedSources).run();
+    public static void capture(FactSink sink, TypeDefinitionRegistry registry) {
+        new SdlFactCapture(sink, registry).run();
     }
 
     private void run() {
@@ -194,86 +165,8 @@ public final class SdlFactCapture {
         captureSchema();
         captureTypes();
         writePolyMembers();
-        captureSources();
     }
 
-    /**
-     * The schema files this walk read, so every SDL row is reachable from the source that produced
-     * it. Collected from the top-level definitions rather than from every element: an element sits
-     * lexically inside the site that declares it, so the sites cover the set, and a macro's
-     * synthesized site inherits its carrier's file and is already among them.
-     *
-     * <p>Stamped, for every source the run's inputs declare as a file. The walk is handed source
-     * <em>names</em> by graphql-java rather than the {@link SchemaInput} that produced them, so the
-     * arm is recovered through {@link #stampTarget} and switched on exhaustively; stamping costs one
-     * file re-read per schema file at capture time, and that price was weighed against the reader it
-     * buys: a currency check that re-hashes a cold graph's schema files against the working tree
-     * without building its module. The residue stays unstamped exactly as the null-while-loading
-     * discipline allows: a programmatic caller's bare label has nothing to hash, and the two
-     * generator-injected names have no input behind them at all.
-     *
-     * <p>Runs last because it is a summary of the walk, and no SDL relation declares a foreign key
-     * into it: a schema-level row can carry a null source name, and the fact-schema convention puts
-     * a FOREIGN KEY only where the walk writes the child while standing on the parent. Reachability
-     * is what the partition rule asks for, and these rows give it.
-     */
-    private void captureSources() {
-        var names = new java.util.LinkedHashSet<String>();
-        registry.schemaDefinition().ifPresent(schema -> addSource(names, schema.getSourceLocation()));
-        registry.getSchemaExtensionDefinitions()
-            .forEach(extension -> addSource(names, extension.getSourceLocation()));
-        registry.getDirectiveDefinitions().values()
-            .forEach(definition -> addSource(names, definition.getSourceLocation()));
-        registry.types().values().forEach(definition -> addSource(names, definition.getSourceLocation()));
-        registry.scalars().values().forEach(definition -> addSource(names, definition.getSourceLocation()));
-        addExtensionSources(names, registry.objectTypeExtensions());
-        addExtensionSources(names, registry.interfaceTypeExtensions());
-        addExtensionSources(names, registry.unionTypeExtensions());
-        addExtensionSources(names, registry.enumTypeExtensions());
-        addExtensionSources(names, registry.scalarTypeExtensions());
-        addExtensionSources(names, registry.inputObjectTypeExtensions());
-        // A refused source is one this run read, so the census owes it a row even though it
-        // declared nothing for the walk to find it by. Without this the store contradicts itself
-        // on the rows the verdict families introduce: one family recording that the read refused a
-        // source, the other that the graph has no such source. It also decides whether the
-        // currency check covers the file the author is most likely to edit next.
-        names.addAll(refusedSources);
-
-        for (String name : names) {
-            GraphSourceMembership.note(sink, name);
-            if (!sink.claim(STORE_SOURCE, name)) {
-                continue;
-            }
-            ClasspathSources.upsert(sink.dsl(), name, SCHEMA_FILE);
-            stampTarget(name).ifPresent(sources::noteRegularFile);
-        }
-    }
-
-    /**
-     * The file behind a source name, recovered from the run's inputs rather than probed for. A
-     * label has no file, and neither do the two source names the generator injects itself: the
-     * bundled {@link SchemaLoader#DIRECTIVES_SOURCE_NAME} and the {@code @link} extension
-     * {@link TagLinkSynthesiser#SYNTHESISED_SOURCE_NAME} stamps when a binding carries a tag. That
-     * pair is the whole miss set, and it is named here rather than absorbed, because a lookup that
-     * tolerated one unknown name would tolerate a genuine gap between the inputs and what the
-     * parser handed back.
-     */
-    private java.util.Optional<Path> stampTarget(String name) {
-        SchemaInput input = attribution.get(name);
-        if (input == null) {
-            if (SchemaLoader.DIRECTIVES_SOURCE_NAME.equals(name)
-                || TagLinkSynthesiser.SYNTHESISED_SOURCE_NAME.equals(name)) {
-                return java.util.Optional.empty();
-            }
-            throw new IllegalStateException("source '" + name + "' came back from the parser but no "
-                + "schema input declared it, and it is neither of the two names the generator injects "
-                + "itself. Capture cannot decide whether to stamp it.");
-        }
-        return switch (input.source()) {
-            case SchemaSource.File file -> java.util.Optional.of(file.path());
-            case SchemaSource.Named ignored -> java.util.Optional.empty();
-        };
-    }
 
     private static <T extends TypeDefinition<?>> void addExtensionSources(
             java.util.Set<String> names, java.util.Map<String, List<T>> extensions) {
@@ -300,50 +193,22 @@ public final class SdlFactCapture {
         for (DirectiveDefinition definition : registry.getDirectiveDefinitions().values()) {
             String name = definition.getName();
             if (!sink.claim(GRAPHQL_DIRECTIVE, name)) {
-                quarantine("TYPE", "@" + name, definition);
                 continue;
             }
-            var record = sink.dsl().newRecord(GRAPHQL_DIRECTIVE);
-            record.setDirectiveName(name);
-            record.setRepeatable(definition.isRepeatable());
-            record.setDescription(descriptionOf(definition.getDescription()));
-            setPosition(definition.getSourceLocation(),
-                record::setSourceName, record::setSourceLine, record::setSourceColumn);
-            sink.add(record);
 
             for (var location : definition.getDirectiveLocations()) {
                 if (!sink.claim(GRAPHQL_DIRECTIVE_LOCATION, name, location.getName())) {
-                    quarantine("DIRECTIVE_LOCATION", "@" + name + " on " + location.getName(), location);
                     continue;
                 }
-                var row = sink.dsl().newRecord(GRAPHQL_DIRECTIVE_LOCATION);
-                row.setDirectiveName(name);
-                row.setLocation(location.getName());
-                sink.add(row);
             }
 
             int ordinal = 0;
             for (InputValueDefinition argument : definition.getInputValueDefinitions()) {
                 String argumentName = argument.getName();
                 if (!sink.claim(GRAPHQL_DIRECTIVE_ARGUMENT, name, argumentName)) {
-                    quarantine("DIRECTIVE_ARGUMENT", "@" + name + "(" + argumentName + ":)", argument);
                     continue;
                 }
-                var row = sink.dsl().newRecord(GRAPHQL_DIRECTIVE_ARGUMENT);
-                row.setDirectiveName(name);
-                row.setArgumentName(argumentName);
-                row.setOrdinal(ordinal++);
                 var wrapping = Wrapping.of(argument.getType());
-                row.setTypeSdl(wrapping.typeSdl());
-                row.setNamedType(wrapping.namedType());
-                row.setNonNull(wrapping.nonNull());
-                row.setIsList(wrapping.isList());
-                row.setItemNonNull(wrapping.itemNonNull());
-                row.setDefaultValueSdl(renderOrNull(argument.getDefaultValue()));
-                row.setDescription(descriptionOf(argument.getDescription()));
-                setPosition(argument.getSourceLocation(),
-                    row::setSourceName, row::setSourceLine, row::setSourceColumn);
-                sink.add(row);
             }
         }
     }
@@ -372,15 +237,8 @@ public final class SdlFactCapture {
             for (OperationTypeDefinition operation : operations) {
                 String slot = operation.getName().toUpperCase(Locale.ROOT);
                 if (!sink.claim(GRAPHQL_ROOT_OPERATION, slot)) {
-                    quarantine("TYPE", slot, operation);
                     continue;
                 }
-                var record = sink.dsl().newRecord(GRAPHQL_ROOT_OPERATION);
-                record.setOperation(slot);
-                record.setTypeName(operation.getTypeName().getName());
-                setPosition(operation.getSourceLocation(),
-                    record::setSourceName, record::setSourceLine, record::setSourceColumn);
-                sink.add(record);
             }
             List<Directive> directives = definition instanceof graphql.language.SchemaDefinition schema
                 ? schema.getDirectives()
@@ -388,26 +246,13 @@ public final class SdlFactCapture {
             for (Directive directive : directives) {
                 int ordinal = ordinals.merge(directive.getName(), 0, (old, ignored) -> old + 1);
                 if (!sink.claim(GRAPHQL_SCHEMA_DIRECTIVE, directive.getName(), ordinal)) {
-                    quarantine("DIRECTIVE_APPLICATION", "@" + directive.getName(), directive);
                     continue;
                 }
-                var record = sink.dsl().newRecord(GRAPHQL_SCHEMA_DIRECTIVE);
-                record.setDirectiveName(directive.getName());
-                record.setOrdinal(ordinal);
-                setPosition(directive.getSourceLocation(),
-                    record::setSourceName, record::setSourceLine, record::setSourceColumn);
-                sink.add(record);
                 for (var argument : directive.getArguments()) {
                     if (!sink.claim(GRAPHQL_SCHEMA_DIRECTIVE_ARG,
                             directive.getName(), ordinal, argument.getName())) {
                         continue;
                     }
-                    var row = sink.dsl().newRecord(GRAPHQL_SCHEMA_DIRECTIVE_ARG);
-                    row.setDirectiveName(directive.getName());
-                    row.setOrdinal(ordinal);
-                    row.setDirectiveArgumentName(argument.getName());
-                    row.setValueSdl(AstPrinter.printAstCompact(argument.getValue()));
-                    sink.add(row);
                 }
                 decode.captureSchemaDirective(directive, ordinal);
             }
@@ -437,10 +282,6 @@ public final class SdlFactCapture {
             if (!sink.claim(GRAPHQL_ROOT_OPERATION, operation)) {
                 continue;
             }
-            var record = sink.dsl().newRecord(GRAPHQL_ROOT_OPERATION);
-            record.setOperation(operation);
-            record.setTypeName(typeName);
-            sink.add(record);
         }
     }
 
@@ -458,12 +299,7 @@ public final class SdlFactCapture {
             List<Site> sites = entry.getValue();
             Site first = sites.get(0);
 
-            var typeRecord = sink.dsl().newRecord(GRAPHQL_TYPE);
-            typeRecord.setTypeName(typeName);
-            typeRecord.setKind(first.kind());
-            typeRecord.setDescription(first.extension() ? null : descriptionOf(first.description()));
             coordinates.claimType(typeName);
-            sink.add(typeRecord);
 
             var elements = ordinalsByType.computeIfAbsent(typeName, ignored -> new ElementOrdinals());
             for (int mergeOrdinal = 0; mergeOrdinal < sites.size(); mergeOrdinal++) {
@@ -500,18 +336,8 @@ public final class SdlFactCapture {
         SourceLocation location = site.location();
         if (!sink.claim(GRAPHQL_TYPE_DECLARATION, typeName,
                 location.getSourceName(), location.getLine(), location.getColumn())) {
-            quarantine("TYPE", typeName, site.definition());
             return;
         }
-        var record = sink.dsl().newRecord(GRAPHQL_TYPE_DECLARATION);
-        record.setTypeName(typeName);
-        record.setSourceName(location.getSourceName());
-        record.setSourceLine(location.getLine());
-        record.setSourceColumn(location.getColumn());
-        record.setMergeOrdinal(mergeOrdinal);
-        record.setIsExtension(site.extension());
-        record.setKind(site.kind());
-        sink.add(record);
 
         var siteRef = new SiteRef(typeName, location);
         captureTypeDirectives(siteRef, site.definition().getDirectives(), ordinals);
@@ -536,9 +362,6 @@ public final class SdlFactCapture {
                 "unexpected type definition at capture: " + site.definition().getClass());
         }
     }
-
-    /** The declaration site an element hangs off: the monomorphic contributed-by reference. */
-    public record SiteRef(String typeName, SourceLocation location) {}
 
     /**
      * One membership the document spelled, held until every site has been read.
@@ -568,7 +391,6 @@ public final class SdlFactCapture {
             // Keyed type-first, which is the relation's own key now that the two arms are two
             // relations: one interface named twice by one type is the duplicate to catch.
             if (!sink.claim(GRAPHQL_IMPLEMENTS_INTERFACE, site.typeName(), name)) {
-                quarantine("IMPLEMENTS", site.typeName() + " implements " + name, type);
                 continue;
             }
             polyMembers.add(new PolyMemberSite("INTERFACE", name, site.typeName(), null,
@@ -581,7 +403,6 @@ public final class SdlFactCapture {
             TypeName type = (TypeName) element;
             String name = type.getName();
             if (!sink.claim(GRAPHQL_UNION_MEMBER, site.typeName(), name)) {
-                quarantine("UNION_MEMBER", site.typeName() + " = " + name, type);
                 continue;
             }
             polyMembers.add(new PolyMemberSite("UNION", site.typeName(), name,
@@ -629,25 +450,7 @@ public final class SdlFactCapture {
         for (PolyMemberSite member : polyMembers) {
             int position = member.position() != null ? member.position() : settled.get(member);
             if ("UNION".equals(member.containerKind())) {
-                var record = sink.dsl().newRecord(GRAPHQL_UNION_MEMBER);
-                record.setUnionName(member.containerName());
-                record.setMemberTypeName(member.memberTypeName());
-                record.setPosition(position);
-                record.setDeclarationLine(member.declaration().getLine());
-                record.setDeclarationColumn(member.declaration().getColumn());
-                record.setSourceName(member.declaration().getSourceName());
-                setOwnPosition(member.own(), record::setSourceLine, record::setSourceColumn);
-                sink.add(record);
             } else {
-                var record = sink.dsl().newRecord(GRAPHQL_IMPLEMENTS_INTERFACE);
-                record.setTypeName(member.memberTypeName());
-                record.setInterfaceName(member.containerName());
-                record.setPosition(position);
-                record.setDeclarationLine(member.declaration().getLine());
-                record.setDeclarationColumn(member.declaration().getColumn());
-                record.setSourceName(member.declaration().getSourceName());
-                setOwnPosition(member.own(), record::setSourceLine, record::setSourceColumn);
-                sink.add(record);
             }
         }
     }
@@ -656,19 +459,8 @@ public final class SdlFactCapture {
         for (EnumValueDefinition value : values) {
             String name = value.getName();
             if (!coordinates.claimEnumValue(site.typeName(), name)) {
-                quarantine("ENUM_VALUE", site.typeName() + "." + name, value);
                 continue;
             }
-            var record = sink.dsl().newRecord(GRAPHQL_ENUM_VALUE);
-            record.setTypeName(site.typeName());
-            record.setValueName(name);
-            record.setOrdinal(ordinals.enumValue++);
-            record.setDeclarationLine(site.location().getLine());
-            record.setDeclarationColumn(site.location().getColumn());
-            record.setDescription(descriptionOf(value.getDescription()));
-            record.setSourceName(site.location().getSourceName());
-            setOwnPosition(value.getSourceLocation(), record::setSourceLine, record::setSourceColumn);
-            sink.add(record);
             captureEnumValueDirectives(site.typeName(), name, value.getDirectives());
         }
     }
@@ -677,28 +469,12 @@ public final class SdlFactCapture {
         for (FieldDefinition field : fields) {
             String name = field.getName();
             if (!coordinates.claimOutputField(site.typeName(), name)) {
-                quarantine("FIELD", site.typeName() + "." + name, field);
                 continue;
             }
-            var record = sink.dsl().newRecord(GRAPHQL_FIELD);
-            record.setTypeName(site.typeName());
-            record.setFieldName(name);
-            record.setOrdinal(ordinals.field++);
-            record.setDeclarationLine(site.location().getLine());
-            record.setDeclarationColumn(site.location().getColumn());
             // The expression the author wrote, and never an expansion's replacement for it. What
             // a macro rewrites a carrier to is a row of the graphitron family's own, so this
             // relation stays a transcription and both readings survive.
             var wrapping = Wrapping.of(field.getType());
-            record.setTypeSdl(wrapping.typeSdl());
-            record.setNamedType(wrapping.namedType());
-            record.setNonNull(wrapping.nonNull());
-            record.setIsList(wrapping.isList());
-            record.setItemNonNull(wrapping.itemNonNull());
-            record.setDescription(descriptionOf(field.getDescription()));
-            record.setSourceName(site.location().getSourceName());
-            setOwnPosition(field.getSourceLocation(), record::setSourceLine, record::setSourceColumn);
-            sink.add(record);
 
             captureFieldDirectives(site.typeName(), name, field.getDirectives(), false);
             captureArguments(site.typeName(), name, field.getInputValueDefinitions());
@@ -715,26 +491,9 @@ public final class SdlFactCapture {
         for (InputValueDefinition field : fields) {
             String name = field.getName();
             if (!coordinates.claimInputField(site.typeName(), name)) {
-                quarantine("FIELD", site.typeName() + "." + name, field);
                 continue;
             }
-            var record = sink.dsl().newRecord(GRAPHQL_FIELD);
-            record.setTypeName(site.typeName());
-            record.setFieldName(name);
-            record.setOrdinal(ordinals.field++);
-            record.setDeclarationLine(site.location().getLine());
-            record.setDeclarationColumn(site.location().getColumn());
             var wrapping = Wrapping.of(field.getType());
-            record.setTypeSdl(wrapping.typeSdl());
-            record.setNamedType(wrapping.namedType());
-            record.setNonNull(wrapping.nonNull());
-            record.setIsList(wrapping.isList());
-            record.setItemNonNull(wrapping.itemNonNull());
-            record.setDefaultValueSdl(renderOrNull(field.getDefaultValue()));
-            record.setDescription(descriptionOf(field.getDescription()));
-            record.setSourceName(site.location().getSourceName());
-            setOwnPosition(field.getSourceLocation(), record::setSourceLine, record::setSourceColumn);
-            sink.add(record);
 
             captureFieldDirectives(site.typeName(), name, field.getDirectives(), true);
         }
@@ -759,25 +518,9 @@ public final class SdlFactCapture {
         for (InputValueDefinition argument : arguments) {
             String name = argument.getName();
             if (!coordinates.claimArgument(typeName, fieldName, name)) {
-                quarantine("ARGUMENT", typeName + "." + fieldName + "(" + name + ":)", argument);
                 continue;
             }
-            var record = sink.dsl().newRecord(GRAPHQL_ARGUMENT);
-            record.setTypeName(typeName);
-            record.setFieldName(fieldName);
-            record.setArgumentName(name);
-            record.setOrdinal(ordinal++);
             var wrapping = Wrapping.of(argument.getType());
-            record.setTypeSdl(wrapping.typeSdl());
-            record.setNamedType(wrapping.namedType());
-            record.setNonNull(wrapping.nonNull());
-            record.setIsList(wrapping.isList());
-            record.setItemNonNull(wrapping.itemNonNull());
-            record.setDefaultValueSdl(renderOrNull(argument.getDefaultValue()));
-            record.setDescription(descriptionOf(argument.getDescription()));
-            setPosition(argument.getSourceLocation(),
-                record::setSourceName, record::setSourceLine, record::setSourceColumn);
-            sink.add(record);
 
             captureArgumentDirectives(typeName, fieldName, name, argument.getDirectives());
         }
@@ -794,30 +537,13 @@ public final class SdlFactCapture {
     /** One authored type-level application, at the position the author wrote it. */
     private void captureTypeDirective(SiteRef site, Directive directive, int ordinal) {
         if (!sink.claim(GRAPHQL_TYPE_DIRECTIVE, site.typeName(), directive.getName(), ordinal)) {
-            quarantine("DIRECTIVE_APPLICATION", site.typeName() + " @" + directive.getName(), directive);
             return;
         }
-        var record = sink.dsl().newRecord(GRAPHQL_TYPE_DIRECTIVE);
-        record.setTypeName(site.typeName());
-        record.setDirectiveName(directive.getName());
-        record.setOrdinal(ordinal);
-        record.setDeclarationLine(site.location().getLine());
-        record.setDeclarationColumn(site.location().getColumn());
-        record.setSourceName(site.location().getSourceName());
-        setOwnPosition(directive.getSourceLocation(), record::setSourceLine, record::setSourceColumn);
-        sink.add(record);
         for (var argument : directive.getArguments()) {
             if (!sink.claim(GRAPHQL_TYPE_DIRECTIVE_ARG,
                     site.typeName(), directive.getName(), ordinal, argument.getName())) {
                 continue;
             }
-            var row = sink.dsl().newRecord(GRAPHQL_TYPE_DIRECTIVE_ARG);
-            row.setTypeName(site.typeName());
-            row.setDirectiveName(directive.getName());
-            row.setOrdinal(ordinal);
-            row.setDirectiveArgumentName(argument.getName());
-            row.setValueSdl(AstPrinter.printAstCompact(argument.getValue()));
-            sink.add(row);
         }
         decode.captureTypeDirective(site, directive, ordinal);
     }
@@ -828,31 +554,13 @@ public final class SdlFactCapture {
         for (Directive directive : directives) {
             int ordinal = ordinals.merge(directive.getName(), 0, (old, ignored) -> old + 1);
             if (!sink.claim(GRAPHQL_FIELD_DIRECTIVE, typeName, fieldName, directive.getName(), ordinal)) {
-                quarantine("DIRECTIVE_APPLICATION",
-                    typeName + "." + fieldName + " @" + directive.getName(), directive);
                 continue;
             }
-            var record = sink.dsl().newRecord(GRAPHQL_FIELD_DIRECTIVE);
-            record.setTypeName(typeName);
-            record.setFieldName(fieldName);
-            record.setDirectiveName(directive.getName());
-            record.setOrdinal(ordinal);
-            setPosition(directive.getSourceLocation(),
-                record::setSourceName, record::setSourceLine, record::setSourceColumn);
-            sink.add(record);
             for (var argument : directive.getArguments()) {
                 if (!sink.claim(GRAPHQL_FIELD_DIRECTIVE_ARG,
                         typeName, fieldName, directive.getName(), ordinal, argument.getName())) {
                     continue;
                 }
-                var row = sink.dsl().newRecord(GRAPHQL_FIELD_DIRECTIVE_ARG);
-                row.setTypeName(typeName);
-                row.setFieldName(fieldName);
-                row.setDirectiveName(directive.getName());
-                row.setOrdinal(ordinal);
-                row.setDirectiveArgumentName(argument.getName());
-                row.setValueSdl(AstPrinter.printAstCompact(argument.getValue()));
-                sink.add(row);
             }
             decode.captureFieldDirective(typeName, fieldName, directive, ordinal, inputField);
         }
@@ -865,33 +573,13 @@ public final class SdlFactCapture {
             int ordinal = ordinals.merge(directive.getName(), 0, (old, ignored) -> old + 1);
             if (!sink.claim(GRAPHQL_ARGUMENT_DIRECTIVE,
                     typeName, fieldName, argumentName, directive.getName(), ordinal)) {
-                quarantine("DIRECTIVE_APPLICATION",
-                    typeName + "." + fieldName + "(" + argumentName + ":) @" + directive.getName(), directive);
                 continue;
             }
-            var record = sink.dsl().newRecord(GRAPHQL_ARGUMENT_DIRECTIVE);
-            record.setTypeName(typeName);
-            record.setFieldName(fieldName);
-            record.setArgumentName(argumentName);
-            record.setDirectiveName(directive.getName());
-            record.setOrdinal(ordinal);
-            setPosition(directive.getSourceLocation(),
-                record::setSourceName, record::setSourceLine, record::setSourceColumn);
-            sink.add(record);
             for (var argument : directive.getArguments()) {
                 if (!sink.claim(GRAPHQL_ARGUMENT_DIRECTIVE_ARG, typeName, fieldName, argumentName,
                         directive.getName(), ordinal, argument.getName())) {
                     continue;
                 }
-                var row = sink.dsl().newRecord(GRAPHQL_ARGUMENT_DIRECTIVE_ARG);
-                row.setTypeName(typeName);
-                row.setFieldName(fieldName);
-                row.setArgumentName(argumentName);
-                row.setDirectiveName(directive.getName());
-                row.setOrdinal(ordinal);
-                row.setDirectiveArgumentName(argument.getName());
-                row.setValueSdl(AstPrinter.printAstCompact(argument.getValue()));
-                sink.add(row);
             }
             decode.captureArgumentDirective(typeName, fieldName, argumentName, directive, ordinal);
         }
@@ -902,31 +590,13 @@ public final class SdlFactCapture {
         for (Directive directive : directives) {
             int ordinal = ordinals.merge(directive.getName(), 0, (old, ignored) -> old + 1);
             if (!sink.claim(GRAPHQL_ENUM_VALUE_DIRECTIVE, typeName, valueName, directive.getName(), ordinal)) {
-                quarantine("DIRECTIVE_APPLICATION",
-                    typeName + "." + valueName + " @" + directive.getName(), directive);
                 continue;
             }
-            var record = sink.dsl().newRecord(GRAPHQL_ENUM_VALUE_DIRECTIVE);
-            record.setTypeName(typeName);
-            record.setValueName(valueName);
-            record.setDirectiveName(directive.getName());
-            record.setOrdinal(ordinal);
-            setPosition(directive.getSourceLocation(),
-                record::setSourceName, record::setSourceLine, record::setSourceColumn);
-            sink.add(record);
             for (var argument : directive.getArguments()) {
                 if (!sink.claim(GRAPHQL_ENUM_VALUE_DIRECTIVE_ARG,
                         typeName, valueName, directive.getName(), ordinal, argument.getName())) {
                     continue;
                 }
-                var row = sink.dsl().newRecord(GRAPHQL_ENUM_VALUE_DIRECTIVE_ARG);
-                row.setTypeName(typeName);
-                row.setValueName(valueName);
-                row.setDirectiveName(directive.getName());
-                row.setOrdinal(ordinal);
-                row.setDirectiveArgumentName(argument.getName());
-                row.setValueSdl(AstPrinter.printAstCompact(argument.getValue()));
-                sink.add(row);
             }
             decode.captureEnumValueDirective(typeName, valueName, directive, ordinal);
         }
@@ -1011,30 +681,6 @@ public final class SdlFactCapture {
     }
 
     // ---------------------------------------------------------------- shared helpers
-
-    /**
-     * Records a losing occurrence of an element-level natural key. The registry retains these
-     * without error, so the key is author-reachable; first-wins keeps the earlier occurrence and
-     * the later one lands here, rendered and located, for the duplicate-declaration detection.
-     */
-    private void quarantine(String elementKind, String coordinate, Node<?> node) {
-        SourceLocation location = node.getSourceLocation();
-        if (location == null || location.getSourceName() == null) {
-            return;
-        }
-        if (!sink.claim(GRAPHQL_DUPLICATE_DECLARATION,
-                location.getSourceName(), location.getLine(), location.getColumn())) {
-            return;
-        }
-        var record = sink.dsl().newRecord(GRAPHQL_DUPLICATE_DECLARATION);
-        record.setSourceName(location.getSourceName());
-        record.setSourceLine(location.getLine());
-        record.setSourceColumn(location.getColumn());
-        record.setElementKind(elementKind);
-        record.setCoordinate(coordinate);
-        record.setValueSdl(AstPrinter.printAstCompact(node));
-        sink.add(record);
-    }
 
     static String descriptionOf(Description description) {
         if (description == null) {

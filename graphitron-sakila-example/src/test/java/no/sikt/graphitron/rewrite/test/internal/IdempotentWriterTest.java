@@ -53,7 +53,7 @@ class IdempotentWriterTest {
         Path outDir = root.resolve("out");
         Files.createDirectories(outDir);
 
-        var result = new GraphQLRewriteGenerator(contextFor(schemaFile, outDir)).generate();
+        var result = CapturedGenerator.with(contextFor(schemaFile, outDir), GraphQLRewriteGenerator::generate);
 
         // Fresh output dir: every emitted compilation unit is a first write, so changed == the
         // .java subset of emitted. The SDL resource is emitted but never counted as changed.
@@ -73,8 +73,8 @@ class IdempotentWriterTest {
         Files.createDirectories(outDir);
 
         var ctx = contextFor(schemaFile, outDir);
-        var first = new GraphQLRewriteGenerator(ctx).generate();
-        var second = new GraphQLRewriteGenerator(ctx).generate();
+        var first = CapturedGenerator.with(ctx, GraphQLRewriteGenerator::generate);
+        var second = CapturedGenerator.with(ctx, GraphQLRewriteGenerator::generate);
 
         // Nothing changed on disk between runs: the delta is empty, but the emitted set is stable.
         assertThat(second.changed()).isEmpty();
@@ -89,7 +89,7 @@ class IdempotentWriterTest {
         Files.createDirectories(outDir);
 
         var ctx = contextFor(schemaFile, outDir);
-        new GraphQLRewriteGenerator(ctx).generate();
+        CapturedGenerator.generate(ctx);
 
         Path anyFile;
         try (var walk = Files.walk(outDir)) {
@@ -99,7 +99,7 @@ class IdempotentWriterTest {
         }
         Files.writeString(anyFile, "// CORRUPTED\n" + Files.readString(anyFile), StandardCharsets.UTF_8);
 
-        var afterTamper = new GraphQLRewriteGenerator(ctx).generate();
+        var afterTamper = CapturedGenerator.with(ctx, GraphQLRewriteGenerator::generate);
 
         // Only the tampered unit differs from disk, so the delta is exactly that file.
         assertThat(afterTamper.changed()).containsExactly(anyFile);
@@ -113,7 +113,7 @@ class IdempotentWriterTest {
         Files.createDirectories(outDir);
 
         var ctx = contextFor(schemaFile, outDir);
-        new GraphQLRewriteGenerator(ctx).generate();
+        CapturedGenerator.generate(ctx);
 
         Path anyFile;
         try (var walk = Files.walk(outDir)) {
@@ -122,7 +122,7 @@ class IdempotentWriterTest {
         String original = Files.readString(anyFile, StandardCharsets.UTF_8);
         Files.writeString(anyFile, "// CORRUPTED\n" + original, StandardCharsets.UTF_8);
 
-        new GraphQLRewriteGenerator(ctx).generate();
+        CapturedGenerator.generate(ctx);
 
         assertThat(Files.readString(anyFile, StandardCharsets.UTF_8)).isEqualTo(original);
     }
@@ -135,7 +135,7 @@ class IdempotentWriterTest {
         Files.createDirectories(outDir);
 
         var ctx = contextFor(schemaFile, outDir);
-        new GraphQLRewriteGenerator(ctx).generate();
+        CapturedGenerator.generate(ctx);
 
         // Plant an orphan in "util" — always created, regardless of schema content
         Path utilDir = outDir;
@@ -145,7 +145,7 @@ class IdempotentWriterTest {
         Path orphan = utilDir.resolve("StaleOrphan.java");
         Files.writeString(orphan, "// orphan", StandardCharsets.UTF_8);
 
-        new GraphQLRewriteGenerator(ctx).generate();
+        CapturedGenerator.generate(ctx);
 
         assertThat(orphan).doesNotExist();
     }
@@ -158,7 +158,7 @@ class IdempotentWriterTest {
         Files.createDirectories(outDir);
 
         var ctx = contextFor(schemaFile, outDir);
-        new GraphQLRewriteGenerator(ctx).generate();
+        CapturedGenerator.generate(ctx);
 
         // Plant a file in a sub-package the generator does NOT own
         Path foreignDir = outDir;
@@ -169,7 +169,7 @@ class IdempotentWriterTest {
         Path foreign = foreignDir.resolve("LegacyResolver.java");
         Files.writeString(foreign, "// not ours", StandardCharsets.UTF_8);
 
-        new GraphQLRewriteGenerator(ctx).generate();
+        CapturedGenerator.generate(ctx);
 
         assertThat(foreign).exists();
     }

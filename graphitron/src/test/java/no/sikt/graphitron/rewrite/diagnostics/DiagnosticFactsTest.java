@@ -314,9 +314,7 @@ class DiagnosticFactsTest {
             """;
         Path file = write(tmp, sdl);
         withStore(dsl -> {
-            FactCapture.capture(dsl, graph(), SubjectConfig.none(),
-                SchemaLoader.load(List.of(SchemaSource.file(file))),
-                TestSchemaHelper.attribution(file));
+            CapturedStore.capture(dsl, graph(), CapturedStore.corpusOf(List.of(file), tmp), null);
             var expected = AuthoredClaimConflicts.detect(dsl, GRAPH).violations();
             assertThat(expected).hasSize(1);
 
@@ -356,11 +354,8 @@ class DiagnosticFactsTest {
         assertThat(assembly.errors()).isNotEmpty();
 
         withStore(dsl -> {
-            FactCapture.capture(dsl, false, graph(), SubjectConfig.none(),
-                read.registry(), assembly, verdicts,
-                SchemaInputAttribution.build(sources.stream().map(f -> SchemaInput.file(f.path())).toList()),
-                null, List.of());
-            CapturedStore.writeSchemaProblems(dsl, GRAPH, read, assembly);
+            CapturedStore.capture(dsl, graph(),
+                CapturedStore.corpusOf(List.of(broken, dangling), tmp), null);
 
             var rows = dsl.selectFrom(DIAGNOSTIC)
                 .where(DIAGNOSTIC.GRAPH_NAME.eq(GRAPH), DIAGNOSTIC.SOURCE.eq("schema"))
@@ -443,9 +438,7 @@ class DiagnosticFactsTest {
             type Query { film: Film }
             """);
         withStore(dsl -> {
-            FactCapture.capture(dsl, graph(), SubjectConfig.none(),
-                SchemaLoader.load(List.of(SchemaSource.file(conflict))),
-                TestSchemaHelper.attribution(conflict));
+            CapturedStore.capture(dsl, graph(), CapturedStore.corpusOf(List.of(conflict), tmp), null);
             assertEveryFileIsAPath(dsl, 1);
         });
 
@@ -457,11 +450,8 @@ class DiagnosticFactsTest {
         var read = SchemaLoader.parsePerSource(sources);
         var assembly = SchemaAssembly.of(read.registry());
         withStore(dsl -> {
-            FactCapture.capture(dsl, false, graph(), SubjectConfig.none(),
-                read.registry(), assembly, SdlVerdicts.of(read),
-                SchemaInputAttribution.build(sources.stream().map(f -> SchemaInput.file(f.path())).toList()),
-                null, List.of());
-            CapturedStore.writeSchemaProblems(dsl, GRAPH, read, assembly);
+            CapturedStore.capture(dsl, graph(),
+                CapturedStore.corpusOf(List.of(broken, dangling), tmp), null);
             assertEveryFileIsAPath(dsl, 2);
         });
     }

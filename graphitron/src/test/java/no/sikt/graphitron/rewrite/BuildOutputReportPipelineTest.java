@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.lint.LintRule;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
@@ -71,7 +73,11 @@ class BuildOutputReportPipelineTest {
             DEFAULT_JOOQ_PACKAGE
         );
 
-        var report = new GraphQLRewriteGenerator(ctx).buildOutput().report();
+        ValidationReport report;
+        try (var store = GraphitronStore.captured(ctx)) {
+            report = new GraphQLRewriteGenerator(ctx, new StoreHandle(store.dsl(), ctx.graphName()))
+                .buildOutput().report();
+        }
 
         // Error half: the validator pass over bundle.model() reaches report.errors().
         assertThat(report.errors())
@@ -112,7 +118,11 @@ class BuildOutputReportPipelineTest {
             List.of(new SchemaInput(SchemaSource.file(schema), Optional.empty(), Optional.empty())),
             tmp, "BuildOutputReportPipelineTest", tmp, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
 
-        var report = new GraphQLRewriteGenerator(ctx).buildOutput().report();
+        ValidationReport report;
+        try (var store = GraphitronStore.captured(ctx)) {
+            report = new GraphQLRewriteGenerator(ctx, new StoreHandle(store.dsl(), ctx.graphName()))
+                .buildOutput().report();
+        }
 
         var lintFinding = report.warnings().stream()
             .filter(w -> w instanceof BuildWarning.LintFinding lf

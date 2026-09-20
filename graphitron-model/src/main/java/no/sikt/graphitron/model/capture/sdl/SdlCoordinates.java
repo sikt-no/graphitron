@@ -43,10 +43,6 @@ final class SdlCoordinates {
         }
         String coordinate = SchemaCoordinateSyntax.ofType(typeName);
         anchor(coordinate, "NAMED_TYPE");
-        var record = sink.dsl().newRecord(GRAPHQL_TYPE_ELEMENT);
-        record.setTypeName(typeName);
-        record.setCoordinate(coordinate);
-        sink.add(record);
         return true;
     }
 
@@ -71,11 +67,6 @@ final class SdlCoordinates {
         }
         String coordinate = SchemaCoordinateSyntax.ofField(typeName, fieldName);
         anchor(coordinate, elementKind);
-        var record = sink.dsl().newRecord(GRAPHQL_FIELD_ELEMENT);
-        record.setTypeName(typeName);
-        record.setFieldName(fieldName);
-        record.setCoordinate(coordinate);
-        sink.add(record);
         return true;
     }
 
@@ -85,12 +76,6 @@ final class SdlCoordinates {
         }
         String coordinate = SchemaCoordinateSyntax.ofArgument(typeName, fieldName, argumentName);
         anchor(coordinate, "FIELD_ARGUMENT");
-        var record = sink.dsl().newRecord(GRAPHQL_ARGUMENT_ELEMENT);
-        record.setTypeName(typeName);
-        record.setFieldName(fieldName);
-        record.setArgumentName(argumentName);
-        record.setCoordinate(coordinate);
-        sink.add(record);
         return true;
     }
 
@@ -100,11 +85,6 @@ final class SdlCoordinates {
         }
         String coordinate = SchemaCoordinateSyntax.ofEnumValue(typeName, valueName);
         anchor(coordinate, "ENUM_VALUE");
-        var record = sink.dsl().newRecord(GRAPHQL_ENUM_VALUE_ELEMENT);
-        record.setTypeName(typeName);
-        record.setValueName(valueName);
-        record.setCoordinate(coordinate);
-        sink.add(record);
         return true;
     }
 
@@ -117,9 +97,5 @@ final class SdlCoordinates {
         if (!sink.claim(GRAPHQL_ELEMENT, coordinate)) {
             return;
         }
-        var record = sink.dsl().newRecord(GRAPHQL_ELEMENT);
-        record.setCoordinate(coordinate);
-        record.setElementKind(elementKind);
-        sink.add(record);
     }
 }

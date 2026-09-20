@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.capture.document;
 
+import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import org.jooq.DSLContext;
 
@@ -24,7 +25,7 @@ import java.util.List;
  *
  * <p>A directive application is decoded where it sits, and the rows it decodes live in a different
  * relation at each site: a type's applications, a field's, an input value's, an enum value's, the
- * schema's. {@link GraphitronEntries} is the one call behind those writers.
+ * schema's. {@link GraphitronAstEntries} is the one call behind those writers.
  *
  * <p>Anchoring is this gatherer's final step, for the reason it is every gatherer's: what a
  * coordinate resolves to cannot be settled by any one document, only by all of them.
@@ -51,8 +52,13 @@ public final class GraphitronAstCapture {
     /**
      * The per-document decode alone, each document's rows swept against this reading as it goes.
      *
-     * <p>A document that would not parse contributes nothing and is skipped, on the same terms as
-     * the transcription it decodes.
+     * <p>Exhaustive over what the reading found, because every arm is a thing to do rather than
+     * three and a skip. A document that states a registry has its scope rewritten from it. A
+     * document that states nothing, having failed to parse or left the corpus, has its scope
+     * emptied, and an empty registry is how it is said: the writer walks no declarations, marks
+     * nothing, and the sweep it already ends in takes the rows the document used to justify.
+     * A document that states what the scope already holds is left alone, sweeping a scope this
+     * reading did not mark being the one way to delete rows that are still true.
      *
      * <p>Separate from {@link #anchor} for the incumbent walk, whose pass runs the two with its own
      * work between them.
@@ -61,11 +67,16 @@ public final class GraphitronAstCapture {
                                       List<GraphQLSourceCapture.SourceDocument> documents,
                                       LocalDateTime readAt) {
         for (var document : documents) {
-            if (!document.parsed()) {
-                continue;
+            switch (document) {
+                case GraphQLSourceCapture.SourceDocument.Changed changed ->
+                    GraphitronAstEntries.write(dsl, graph.name(), changed.sourceName(),
+                        changed.registry(), readAt);
+                case GraphQLSourceCapture.SourceDocument.Unchanged _ -> { }
+                case GraphQLSourceCapture.SourceDocument.Unparsable _,
+                     GraphQLSourceCapture.SourceDocument.Dropped _ ->
+                    GraphitronAstEntries.write(dsl, graph.name(), document.sourceName(),
+                        new TypeDefinitionRegistry(), readAt);
             }
-            GraphitronEntries.write(dsl, graph.name(), document.sourceName(), document.registry(),
-                readAt);
         }
     }
 

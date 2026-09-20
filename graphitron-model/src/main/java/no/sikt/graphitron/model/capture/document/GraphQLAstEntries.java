@@ -105,9 +105,9 @@ import static org.jooq.impl.DSL.val;
  * the reading ends by deleting its file's older rows. Those are the nodes the author removed, and an
  * upsert cannot find them: there is no incoming row to match.
  */
-public final class SdlEntries {
+public final class GraphQLAstEntries {
 
-    private SdlEntries() {}
+    private GraphQLAstEntries() {}
 
     /**
      * Makes {@code source}'s rows under {@code graph} be exactly what {@code document} wrote.
@@ -184,7 +184,7 @@ public final class SdlEntries {
      * relation that says a written position exists, which every entry relation then keys into.
      *
      * <p>Not an anchor, whatever the position grain is classified as. The anchors are what
-     * {@code SdlAnchor} writes, resolving what several documents said into one answer, and this
+     * {@link GraphQLAstCapture#anchor} writes, resolving what several documents said into one answer, and this
      * runs before any of that: the entry stratum's claim is that it exists before anything is
      * composed, and a row here is one document saying it wrote something at a position.
      *
@@ -283,8 +283,8 @@ public final class SdlEntries {
     private static void typeDeclarations(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                           TypeDefinitionRegistry document) {
         supertype(dsl, graph, touchedAt, EntryKind.TYPE_DECLARATION,
-            declarations(document).map(SdlEntries::root).toList());
-        element(dsl, graph, touchedAt, declarations(document).map(SdlEntries::root).toList(),
+            declarations(document).map(GraphQLAstEntries::root).toList());
+        element(dsl, graph, touchedAt, declarations(document).map(GraphQLAstEntries::root).toList(),
             nested -> ((TypeDefinition<?>) nested.node()).getName());
         var t = GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
         var rows = declarations(document).collect(Rows.toRowList(
@@ -314,8 +314,8 @@ public final class SdlEntries {
     private static void directiveDefinitions(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                               TypeDefinitionRegistry document) {
         supertype(dsl, graph, touchedAt, EntryKind.DIRECTIVE_DEFINITION,
-            directives(document).map(SdlEntries::root).toList());
-        element(dsl, graph, touchedAt, directives(document).map(SdlEntries::root).toList(),
+            directives(document).map(GraphQLAstEntries::root).toList());
+        element(dsl, graph, touchedAt, directives(document).map(GraphQLAstEntries::root).toList(),
             nested -> "@" + ((DirectiveDefinition) nested.node()).getName());
         var t = GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY;
         var rows = directives(document).collect(Rows.toRowList(
@@ -343,7 +343,7 @@ public final class SdlEntries {
     private static void schemaDefinitions(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                            TypeDefinitionRegistry document) {
         supertype(dsl, graph, touchedAt, EntryKind.SCHEMA_DEFINITION,
-            schemas(document).map(SdlEntries::root).toList());
+            schemas(document).map(GraphQLAstEntries::root).toList());
         var t = GRAPHQL_AST_SCHEMA_DEFINITION_ENTRY;
         var rows = schemas(document).collect(Rows.toRowList(
             node -> val(graph, t.GRAPH_NAME),

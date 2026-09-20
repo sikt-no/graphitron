@@ -73,7 +73,7 @@ class EntryNamingGuardTest {
      * a name is what this guard reads and the facade spells one.
      */
     private static final List<Path> SITE_WRITERS = List.of(
-        decodeWriter("GraphitronEntries.java"), decodeWriter("GraphitronTypeEntries.java"),
+        decodeWriter("GraphitronAstEntries.java"), decodeWriter("GraphitronTypeEntries.java"),
         decodeWriter("GraphitronFieldEntries.java"),
         decodeWriter("GraphitronInputValueEntries.java"),
         decodeWriter("GraphitronEnumValueEntries.java"),

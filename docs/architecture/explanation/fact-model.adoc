@@ -16,7 +16,7 @@ Referential integrity splits by what it can enforce. Capture-structural edges, w
 
 Base relations key schema elements by the spec grammar's own `Name` columns, per relation and all non-null: `graphql_field` keys `(graph_name, type_name, field_name)`, and its kin follow the same shape. There is no surrogate id anywhere in the DDL; where a tie-breaker is needed it is an ordinal inside the natural key, never decoration on a counter. The keys are what the model joins and scans on: every field of a type is a prefix scan on the type name, and every graph-partitioned key leads with `graph_name`.
 
-The canonical coordinate string (`Foo`, `Foo.bar`) appears in the store only as a rendering of those columns. The two stored `coordinate` columns, on the duplicate-declaration overflow (`graphql_duplicate_declaration`) and on the `diagnostic` read surface, each say so in their own comment: a rendered value computed from the stored columns, never the key. A rendered key cannot drift from the columns it names, which is what makes it safe as a stable id to hand outward.
+The canonical coordinate string (`Foo`, `Foo.bar`) appears in the store only as a rendering of those columns. The stored `coordinate` column on the `diagnostic` read surface says so in its own comment: a rendered value computed from the stored columns, never the key. A rendered key cannot drift from the columns it names, which is what makes it safe as a stable id to hand outward.
 
 Authored facts are definition-keyed; derived bindings are use-keyed. An input field's authored facts live at its own member coordinate, the only key available where the author's cursor sits, because one input type is consumed by many fields. The use-site resolution, which table an input binds against and through which occurrence path, depends on the consuming field, so it is a derived join over definition and consumer, shipped as the materialized `intent_input_occurrence_path` pair rather than as a dotted-path key.
 
@@ -429,7 +429,7 @@ Gathering the schema is itself a staged pipeline, and a stage's refusal never ca
 
 | 4. Coordinate-keyed census
 | the file set
-| the merged effective element set: one row per coordinate, the losing occurrence of a duplicated one quarantined in `graphql_duplicate_declaration`
+| the merged effective element set: one row per coordinate, both occurrences of a duplicated one already rows of the entry stratum
 
 | 5. Rooted traversal
 | the assembled schema

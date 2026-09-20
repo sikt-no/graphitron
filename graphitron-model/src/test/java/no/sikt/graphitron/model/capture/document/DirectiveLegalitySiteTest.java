@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * The locations the five site writers name, held against the vocabulary that declares them.
  *
- * <p>{@link GraphitronEntries} judges each site's applications by handing {@link DirectiveLegality}
+ * <p>{@link GraphitronAstEntries} judges each site's applications by handing {@link DirectiveLegality}
  * a location string, and a site that spells its location wrong fails open: no declared location
  * matches, every application is refused, and the relation simply empties. A corpus case at that
  * site would catch it, but only for a directive that site decodes, and the schema site decodes none

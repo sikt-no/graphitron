@@ -1,6 +1,6 @@
 package no.sikt.graphitron.model.capture.java;
 
-import no.sikt.graphitron.model.sources.ClasspathSources;
+import no.sikt.graphitron.model.read.SourceStamp;
 import no.sikt.graphitron.model.sources.Observation;
 import no.sikt.graphitron.model.sources.SourceWalker;
 import no.sikt.graphitron.model.tables.records.JavaClassDeclarationRecord;
@@ -184,7 +184,7 @@ public final class JavaSourceFacts {
                     skipped++;
                     continue;
                 }
-                String stamp = ClasspathSources.hash(file.file());
+                String stamp = SourceStamp.ofFile(file.file());
                 hashed++;
                 if (stamp == null) {
                     // Readable enough to walk, unreadable now. Its rows describe the content this

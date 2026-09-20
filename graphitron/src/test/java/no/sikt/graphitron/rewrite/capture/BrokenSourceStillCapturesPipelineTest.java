@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.capture;
 
+import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.model.config.RunContext;
@@ -41,7 +43,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * the generator directly rather than through a mojo, so they run the walk and nothing else, which
  * is why they assert the surviving half, that a broken file costs its own declarations and no
  * others, and say nothing about the verdict. What pins the verdict is
- * no.sikt.graphitron.model.SdlSchemaProblemsTest, against the gatherer itself, over a corpus that
+ * no.sikt.graphitron.model.GraphQLSchemaProblemsTest, against the gatherer itself, over a corpus that
  * provokes each of the three stages.
  */
 @PipelineTier
@@ -65,10 +67,13 @@ class BrokenSourceStillCapturesPipelineTest {
         Path storeDir = Files.createDirectories(tmp.resolve("store"));
         var ctx = context(tmp, storeDir, List.of(SchemaInput.file(good), SchemaInput.file(broken)));
 
-        assertThatThrownBy(() -> new GraphQLRewriteGenerator(ctx).validate())
+        try (var store = GraphitronStore.captured(ctx)) {
+            var handle = new StoreHandle(store.dsl(), ctx.graphName());
+            assertThatThrownBy(() -> new GraphQLRewriteGenerator(ctx, handle).validate())
             .as("the run still fails, and with the exception the mojo's catch arm already handles")
             .isInstanceOf(SchemaParseException.class)
             .hasMessageContaining(broken.toString());
+        }
 
         try (var store = GraphitronModelStore.openAt(storeDir)) {
             assertThat(store.location()).as("the fixture's store is the shared file, not a fallback")
@@ -116,9 +121,12 @@ class BrokenSourceStillCapturesPipelineTest {
         Path storeDir = Files.createDirectories(tmp.resolve("store"));
         var ctx = context(tmp, storeDir, List.of(SchemaInput.file(dangling)));
 
-        assertThatThrownBy(() -> new GraphQLRewriteGenerator(ctx).validate())
-            .as("an unassemblable schema still fails the run")
-            .isInstanceOf(RuntimeException.class);
+        try (var store = GraphitronStore.captured(ctx)) {
+            var handle = new StoreHandle(store.dsl(), ctx.graphName());
+            assertThatThrownBy(() -> new GraphQLRewriteGenerator(ctx, handle).validate())
+                .as("an unassemblable schema still fails the run")
+                .isInstanceOf(RuntimeException.class);
+        }
 
         try (var store = GraphitronModelStore.openAt(storeDir)) {
             assertThat(store.dsl().select(GRAPHQL_TYPE.TYPE_NAME).from(GRAPHQL_TYPE)

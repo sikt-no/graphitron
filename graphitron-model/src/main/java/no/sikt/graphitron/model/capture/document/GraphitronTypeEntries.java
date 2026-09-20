@@ -26,18 +26,18 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_VALIDATION_HA
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_RECORD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SCALAR_TYPE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
-import static no.sikt.graphitron.model.capture.document.GraphitronEntries.applied;
-import static no.sikt.graphitron.model.capture.document.GraphitronEntries.bool;
-import static no.sikt.graphitron.model.capture.document.GraphitronEntries.classPart;
-import static no.sikt.graphitron.model.capture.document.GraphitronEntries.elementsOf;
-import static no.sikt.graphitron.model.capture.document.GraphitronEntries.fieldPart;
-import static no.sikt.graphitron.model.capture.document.GraphitronEntries.inside;
-import static no.sikt.graphitron.model.capture.document.GraphitronEntries.naming;
-import static no.sikt.graphitron.model.capture.document.GraphitronEntries.ofKind;
-import static no.sikt.graphitron.model.capture.document.GraphitronEntries.string;
-import static no.sikt.graphitron.model.capture.document.GraphitronEntries.writtenIn;
-import static no.sikt.graphitron.model.capture.document.GraphitronEntries.stringOf;
-import static no.sikt.graphitron.model.capture.document.GraphitronEntries.wrote;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.applied;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.bool;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.classPart;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.elementsOf;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.fieldPart;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.inside;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.naming;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.ofKind;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.string;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.writtenIn;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.stringOf;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.wrote;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
 
@@ -56,7 +56,7 @@ import static org.jooq.impl.DSL.val;
  * because the kind decides which of the input's six fields mean anything: GENERIC matches by class
  * identity, DATABASE by one of two SQL discriminators, and VALIDATION carries nothing at all.
  *
- * @see GraphitronEntries for what every site's decode holds in common
+ * @see GraphitronAstEntries for what every site's decode holds in common
  */
 final class GraphitronTypeEntries {
 
@@ -67,7 +67,7 @@ final class GraphitronTypeEntries {
      * applications now say.
      */
     static void write(DSLContext dsl, String graph, String source,
-                      List<SdlEntries.Nested<Directive>> applications, LocalDateTime touchedAt) {
+                      List<GraphQLAstEntries.Nested<Directive>> applications, LocalDateTime touchedAt) {
         tables(dsl, graph, touchedAt, wrote(applied(applications, "table"), "name"));
         scalarTypes(dsl, graph, touchedAt, wrote(applied(applications, "scalarType"), "scalar"));
         enums(dsl, graph, touchedAt, naming(applied(applications, "enum"), "enumReference"));
@@ -91,7 +91,7 @@ final class GraphitronTypeEntries {
         var selections = selectionsOf(keys);
         federationKeySelections(dsl, graph, touchedAt, selections);
         federationKeySegments(dsl, graph, touchedAt, selections);
-        GraphitronEntries.sweep(dsl, graph, source, touchedAt, TABLES_TO_SWEEP);
+        GraphitronAstEntries.sweep(dsl, graph, source, touchedAt, TABLES_TO_SWEEP);
     }
 
     /**
@@ -117,9 +117,9 @@ final class GraphitronTypeEntries {
         var t = GRAPHITRON_AST_TABLE_ENTRY;
         var rows = applications.stream().collect(Rows.toRowList(
             application -> val(graph, t.GRAPH_NAME),
-            application -> SdlEntries.sourceName(application),
-            application -> SdlEntries.sourceLine(application),
-            application -> SdlEntries.sourceColumn(application),
+            application -> GraphQLAstEntries.sourceName(application),
+            application -> GraphQLAstEntries.sourceLine(application),
+            application -> GraphQLAstEntries.sourceColumn(application),
             application -> val(touchedAt, t.TOUCHED_AT),
             application -> val(string(application, "name"), t.TABLE_REF),
             application -> val(QualifiedNameGrammar.namespacePart(string(application, "name")),
@@ -142,9 +142,9 @@ final class GraphitronTypeEntries {
         var t = GRAPHITRON_AST_SCALAR_TYPE_ENTRY;
         var rows = applications.stream().collect(Rows.toRowList(
             application -> val(graph, t.GRAPH_NAME),
-            application -> SdlEntries.sourceName(application),
-            application -> SdlEntries.sourceLine(application),
-            application -> SdlEntries.sourceColumn(application),
+            application -> GraphQLAstEntries.sourceName(application),
+            application -> GraphQLAstEntries.sourceLine(application),
+            application -> GraphQLAstEntries.sourceColumn(application),
             application -> val(touchedAt, t.TOUCHED_AT),
             application -> val(string(application, "scalar"), t.SCALAR_REF),
             application -> val(classPart(string(application, "scalar")), t.SCALAR_REF_CLASS_PART),
@@ -165,9 +165,9 @@ final class GraphitronTypeEntries {
         var t = GRAPHITRON_AST_ENUM_ENTRY;
         var rows = applications.stream().collect(Rows.toRowList(
             application -> val(graph, t.GRAPH_NAME),
-            application -> SdlEntries.sourceName(application),
-            application -> SdlEntries.sourceLine(application),
-            application -> SdlEntries.sourceColumn(application),
+            application -> GraphQLAstEntries.sourceName(application),
+            application -> GraphQLAstEntries.sourceLine(application),
+            application -> GraphQLAstEntries.sourceColumn(application),
             application -> val(touchedAt, t.TOUCHED_AT),
             application -> val(inside(application, "enumReference", "className"), t.CLASS_NAME),
             application -> val(inside(application, "enumReference", "method"), t.METHOD),
@@ -188,9 +188,9 @@ final class GraphitronTypeEntries {
         var t = GRAPHITRON_AST_RECORD_ENTRY;
         var rows = applications.stream().collect(Rows.toRowList(
             application -> val(graph, t.GRAPH_NAME),
-            application -> SdlEntries.sourceName(application),
-            application -> SdlEntries.sourceLine(application),
-            application -> SdlEntries.sourceColumn(application),
+            application -> GraphQLAstEntries.sourceName(application),
+            application -> GraphQLAstEntries.sourceLine(application),
+            application -> GraphQLAstEntries.sourceColumn(application),
             application -> val(touchedAt, t.TOUCHED_AT),
             application -> val(inside(application, "record", "className"), t.CLASS_NAME)));
         BindBatch.execute(dsl, rows, markers ->
@@ -203,13 +203,13 @@ final class GraphitronTypeEntries {
     }
 
     private static void genericHandlers(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                        List<GraphitronEntries.Element> handlers) {
+                                        List<GraphitronAstEntries.Element> handlers) {
         var t = GRAPHITRON_AST_ERROR_GENERIC_HANDLER_ENTRY;
         var rows = handlers.stream().collect(Rows.toRowList(
             handler -> val(graph, t.GRAPH_NAME),
-            handler -> SdlEntries.sourceName(handler.node()),
-            handler -> SdlEntries.sourceLine(handler.node()),
-            handler -> SdlEntries.sourceColumn(handler.node()),
+            handler -> GraphQLAstEntries.sourceName(handler.node()),
+            handler -> GraphQLAstEntries.sourceLine(handler.node()),
+            handler -> GraphQLAstEntries.sourceColumn(handler.node()),
             handler -> val(touchedAt, t.TOUCHED_AT),
             handler -> val(stringOf(inside(handler.node(), "className")), t.CLASS_NAME),
             handler -> val(stringOf(inside(handler.node(), "matches")), t.MATCHES),
@@ -226,13 +226,13 @@ final class GraphitronTypeEntries {
     }
 
     private static void databaseHandlers(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                         List<GraphitronEntries.Element> handlers) {
+                                         List<GraphitronAstEntries.Element> handlers) {
         var t = GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY;
         var rows = handlers.stream().collect(Rows.toRowList(
             handler -> val(graph, t.GRAPH_NAME),
-            handler -> SdlEntries.sourceName(handler.node()),
-            handler -> SdlEntries.sourceLine(handler.node()),
-            handler -> SdlEntries.sourceColumn(handler.node()),
+            handler -> GraphQLAstEntries.sourceName(handler.node()),
+            handler -> GraphQLAstEntries.sourceLine(handler.node()),
+            handler -> GraphQLAstEntries.sourceColumn(handler.node()),
             handler -> val(touchedAt, t.TOUCHED_AT),
             handler -> val(stringOf(inside(handler.node(), "code")), t.CODE),
             handler -> val(stringOf(inside(handler.node(), "sqlState")), t.SQL_STATE),
@@ -252,13 +252,13 @@ final class GraphitronTypeEntries {
 
     /** The position is the whole row: the directive gives this kind no field it may carry. */
     private static void validationHandlers(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                           List<GraphitronEntries.Element> handlers) {
+                                           List<GraphitronAstEntries.Element> handlers) {
         var t = GRAPHITRON_AST_ERROR_VALIDATION_HANDLER_ENTRY;
         var rows = handlers.stream().collect(Rows.toRowList(
             handler -> val(graph, t.GRAPH_NAME),
-            handler -> SdlEntries.sourceName(handler.node()),
-            handler -> SdlEntries.sourceLine(handler.node()),
-            handler -> SdlEntries.sourceColumn(handler.node()),
+            handler -> GraphQLAstEntries.sourceName(handler.node()),
+            handler -> GraphQLAstEntries.sourceLine(handler.node()),
+            handler -> GraphQLAstEntries.sourceColumn(handler.node()),
             handler -> val(touchedAt, t.TOUCHED_AT)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
@@ -278,9 +278,9 @@ final class GraphitronTypeEntries {
         var t = GRAPHITRON_AST_NODE_ENTRY;
         var rows = applications.stream().collect(Rows.toRowList(
             application -> val(graph, t.GRAPH_NAME),
-            application -> SdlEntries.sourceName(application),
-            application -> SdlEntries.sourceLine(application),
-            application -> SdlEntries.sourceColumn(application),
+            application -> GraphQLAstEntries.sourceName(application),
+            application -> GraphQLAstEntries.sourceLine(application),
+            application -> GraphQLAstEntries.sourceColumn(application),
             application -> val(touchedAt, t.TOUCHED_AT),
             application -> val(string(application, "typeId"), t.TYPE_ID)));
         BindBatch.execute(dsl, rows, markers ->
@@ -294,7 +294,7 @@ final class GraphitronTypeEntries {
 
     /**
      * The key columns, which are a list of bare strings rather than of object literals, so they are
-     * read through {@link GraphitronEntries#writtenIn}. Each row names the element it decodes. The
+     * read through {@link GraphitronAstEntries#writtenIn}. Each row names the element it decodes. The
      * order is part of what the directive says, being the order the columns take inside an id, and
      * that is why it is not restated here: the element's own row carries the index already.
      */
@@ -303,9 +303,9 @@ final class GraphitronTypeEntries {
         var t = GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
         var rows = writtenIn(applications, "keyColumns").stream().collect(Rows.toRowList(
             column -> val(graph, t.GRAPH_NAME),
-            column -> SdlEntries.sourceName(column.node()),
-            column -> SdlEntries.sourceLine(column.node()),
-            column -> SdlEntries.sourceColumn(column.node()),
+            column -> GraphQLAstEntries.sourceName(column.node()),
+            column -> GraphQLAstEntries.sourceLine(column.node()),
+            column -> GraphQLAstEntries.sourceColumn(column.node()),
             column -> val(touchedAt, t.TOUCHED_AT),
             column -> val(column.value(), t.COLUMN_REF)));
         BindBatch.execute(dsl, rows, markers ->
@@ -329,9 +329,9 @@ final class GraphitronTypeEntries {
         var t = GRAPHITRON_AST_DISCRIMINATE_ENTRY;
         var rows = applications.stream().collect(Rows.toRowList(
             application -> val(graph, t.GRAPH_NAME),
-            application -> SdlEntries.sourceName(application),
-            application -> SdlEntries.sourceLine(application),
-            application -> SdlEntries.sourceColumn(application),
+            application -> GraphQLAstEntries.sourceName(application),
+            application -> GraphQLAstEntries.sourceLine(application),
+            application -> GraphQLAstEntries.sourceColumn(application),
             application -> val(touchedAt, t.TOUCHED_AT),
             application -> val(string(application, "on"), t.ON_COLUMN)));
         BindBatch.execute(dsl, rows, markers ->
@@ -349,9 +349,9 @@ final class GraphitronTypeEntries {
         var t = GRAPHITRON_AST_DISCRIMINATOR_ENTRY;
         var rows = applications.stream().collect(Rows.toRowList(
             application -> val(graph, t.GRAPH_NAME),
-            application -> SdlEntries.sourceName(application),
-            application -> SdlEntries.sourceLine(application),
-            application -> SdlEntries.sourceColumn(application),
+            application -> GraphQLAstEntries.sourceName(application),
+            application -> GraphQLAstEntries.sourceLine(application),
+            application -> GraphQLAstEntries.sourceColumn(application),
             application -> val(touchedAt, t.TOUCHED_AT),
             application -> val(string(application, "value"), t.DISCRIMINATOR_VALUE)));
         BindBatch.execute(dsl, rows, markers ->
@@ -375,9 +375,9 @@ final class GraphitronTypeEntries {
         var t = GRAPHITRON_AST_FEDERATION_KEY_ENTRY;
         var rows = applications.stream().collect(Rows.toRowList(
             application -> val(graph, t.GRAPH_NAME),
-            application -> SdlEntries.sourceName(application),
-            application -> SdlEntries.sourceLine(application),
-            application -> SdlEntries.sourceColumn(application),
+            application -> GraphQLAstEntries.sourceName(application),
+            application -> GraphQLAstEntries.sourceLine(application),
+            application -> GraphQLAstEntries.sourceColumn(application),
             application -> val(touchedAt, t.TOUCHED_AT),
             application -> val(string(application, "fields"), t.FIELDS_SDL),
             application -> val(bool(application, "resolvable"), t.RESOLVABLE)));
@@ -415,9 +415,9 @@ final class GraphitronTypeEntries {
         var t = GRAPHITRON_AST_FEDERATION_KEY_SELECTION_ENTRY;
         var rows = selections.stream().collect(Rows.toRowList(
             selection -> val(graph, t.GRAPH_NAME),
-            selection -> SdlEntries.sourceName(selection.application()),
-            selection -> SdlEntries.sourceLine(selection.application()),
-            selection -> SdlEntries.sourceColumn(selection.application()),
+            selection -> GraphQLAstEntries.sourceName(selection.application()),
+            selection -> GraphQLAstEntries.sourceLine(selection.application()),
+            selection -> GraphQLAstEntries.sourceColumn(selection.application()),
             selection -> val(selection.position(), t.POSITION),
             selection -> val(touchedAt, t.TOUCHED_AT)));
         BindBatch.execute(dsl, rows, markers ->
@@ -442,9 +442,9 @@ final class GraphitronTypeEntries {
         }
         var rows = segments.stream().collect(Rows.toRowList(
             segment -> val(graph, t.GRAPH_NAME),
-            segment -> SdlEntries.sourceName(segment.selection().application()),
-            segment -> SdlEntries.sourceLine(segment.selection().application()),
-            segment -> SdlEntries.sourceColumn(segment.selection().application()),
+            segment -> GraphQLAstEntries.sourceName(segment.selection().application()),
+            segment -> GraphQLAstEntries.sourceLine(segment.selection().application()),
+            segment -> GraphQLAstEntries.sourceColumn(segment.selection().application()),
             segment -> val(segment.selection().position(), t.POSITION),
             segment -> val(segment.depth(), t.SEGMENT_POSITION),
             segment -> val(touchedAt, t.TOUCHED_AT),

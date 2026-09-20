@@ -4,15 +4,12 @@ import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
-import no.sikt.graphitron.model.capture.FactCapture;
-import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
-import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -153,17 +150,16 @@ class StoreNodeTablesTest {
      * {@code CapturedStore}'s own factories are not used, and the reason is the subject: they build
      * their context off a temp directory, so their {@code JooqCatalog} resolves no generated classes
      * and the whole {@code sql_} family comes out empty. Everything asserted here is a catalog fact,
-     * so this drives {@link FactCapture#capture} itself over that handle's primitives plus a catalog
-     * built from the test configuration, which is the arrangement the handle documents for a test
-     * whose axis combination it does not name.
+     * so this drives the pass itself over that handle's primitives plus a catalog built from the
+     * test configuration, which is the arrangement the handle documents for a test whose axis
+     * combination it does not name.
      */
     private StoreNodeTables.Tables read(String sdl) {
         var ctx = testContext();
-        var registry = CapturedStore.registryOf(tmp, sdl);
+        CapturedStore.writeSource(tmp, sdl);
         try (var store = FactStores.inMemory()) {
-            FactCapture.capture(store.dsl(), CapturedStore.graph(tmp),
-                CapturedStore.corpusOf(tmp), registry, CapturedStore.attributionOf(tmp),
-                new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), List.of());
+            CapturedStore.capture(store.dsl(), CapturedStore.graph(tmp), CapturedStore.corpusOf(tmp),
+                new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()));
             return StoreNodeTables.read(store.dsl(), CapturedStore.GRAPH);
         }
     }

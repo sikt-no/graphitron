@@ -292,8 +292,13 @@ public final class CatalogBuilder {
      * The classpath the census reads. Falls back to {@code <basedir>/target/classes} as a single
      * root where the context carries none, so unit-tier callers built off {@link RunContext}'s
      * six-arg overload get the single-root scope.
+     *
+     * <p>Public for the test sites that drive a capture rather than a census. The classpath is
+     * captured by the gatherer that reads it, so a fixture wanting those rows runs the pass that
+     * owns them and has to hand it the same roots the census beside it was read from; two
+     * different answers to what the classpath is would make any comparison of the two meaningless.
      */
-    private static List<no.sikt.graphitron.model.config.ClasspathEntry> censusRoots(RunContext ctx) {
+    public static List<no.sikt.graphitron.model.config.ClasspathEntry> censusRoots(RunContext ctx) {
         return ctx.classpathRoots().isEmpty()
             ? List.of(no.sikt.graphitron.model.config.ClasspathEntry.project(
                 ctx.basedir().resolve("target/classes")))

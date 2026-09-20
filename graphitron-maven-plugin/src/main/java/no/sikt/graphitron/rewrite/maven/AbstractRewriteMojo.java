@@ -5,7 +5,9 @@ import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.config.ClasspathEntry.Origin;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
-import no.sikt.graphitron.model.run.CapturePort;
+import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.model.run.GraphitronStore;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.config.RunContext;
@@ -1127,12 +1129,14 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
         var holder = new RunContext[1];
         withCodegenScope(ctx -> {
             holder[0] = ctx;
-            // One store for the whole invocation, opened by the port on the first capture and given
-            // back here. The generator is handed the port rather than the directory, so a goal that
-            // grows a second pass shares this store with it instead of opening another.
-            try (CapturePort capture = CapturePort.holding(ctx.storeDirectory())) {
-                captureModel(ctx, capture);
-                call.invoke(new GraphQLRewriteGenerator(ctx, capture));
+            // One store for the whole invocation, opened here because opening it is this goal's
+            // business and nobody else's. The pass captures into it and the generator is handed a
+            // reader over it: a goal that grows a second pass shares this store with it instead of
+            // opening another, and no pass can open one at all.
+            try (var store = GraphitronModelStore.openAt(ctx.storeDirectory())) {
+                captureModel(ctx, store);
+                call.invoke(new GraphQLRewriteGenerator(ctx,
+                    new StoreHandle(store.dsl(), ctx.graphName())));
             } catch (SchemaProblem e) {
                 var loaded = loadedSchemaFiles(ctx);
                 // Wrap the SchemaProblem in a null-message intermediary so Maven's
@@ -1172,8 +1176,8 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * nothing else, so retiring that walk is deleting its call rather than unpicking this one out
      * of it.
      */
-    void captureModel(RunContext ctx, CapturePort capture) {
-        capture.captureModel(new GraphIdentity(ctx.graphName(), ctx.basedir()),
+    void captureModel(RunContext ctx, GraphitronModelStore store) {
+        GraphitronStore.capture(store, new GraphIdentity(ctx.graphName(), ctx.basedir()),
             SubjectConfig.of(ctx),
             ctx.classpathRoots(),
             // Off the declared parameter rather than the context's, which carries the sentinel a

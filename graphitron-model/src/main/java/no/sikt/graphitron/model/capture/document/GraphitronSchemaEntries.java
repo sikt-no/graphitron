@@ -13,12 +13,12 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_LINK_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_LINK_IMPORT_ENTRY;
-import static no.sikt.graphitron.model.capture.document.GraphitronEntries.applied;
-import static no.sikt.graphitron.model.capture.document.GraphitronEntries.elementsOf;
-import static no.sikt.graphitron.model.capture.document.GraphitronEntries.inside;
-import static no.sikt.graphitron.model.capture.document.GraphitronEntries.string;
-import static no.sikt.graphitron.model.capture.document.GraphitronEntries.stringOf;
-import static no.sikt.graphitron.model.capture.document.GraphitronEntries.writtenIn;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.applied;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.elementsOf;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.inside;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.string;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.stringOf;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.writtenIn;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
 
@@ -36,12 +36,12 @@ import static org.jooq.impl.DSL.val;
  *
  * <p>{@code @link} also carries the one argument shape no other site meets. Federation lets an
  * import be written as a bare string or as an object binding it to a local name, and both spellings
- * mean the same thing with the alias absent in the first. {@link GraphitronEntries} already spells
- * each half, {@link GraphitronEntries#writtenIn} for the strings and
- * {@link GraphitronEntries#elementsOf} for the objects, so this writer reads both and puts them back
+ * mean the same thing with the alias absent in the first. {@link GraphitronAstEntries} already spells
+ * each half, {@link GraphitronAstEntries#writtenIn} for the strings and
+ * {@link GraphitronAstEntries#elementsOf} for the objects, so this writer reads both and puts them back
  * in one order by the position each carries rather than asking the facade for a third reading.
  *
- * @see GraphitronEntries for what every site's decode holds in common
+ * @see GraphitronAstEntries for what every site's decode holds in common
  */
 final class GraphitronSchemaEntries {
 
@@ -52,16 +52,16 @@ final class GraphitronSchemaEntries {
      * applications now say.
      */
     static void write(DSLContext dsl, String graph, String source,
-                      List<SdlEntries.Nested<Directive>> applications, LocalDateTime touchedAt) {
+                      List<GraphQLAstEntries.Nested<Directive>> applications, LocalDateTime touchedAt) {
         var links = applied(applications, "link");
         links(dsl, graph, touchedAt, links);
         linkImports(dsl, graph, touchedAt, links);
-        GraphitronEntries.sweep(dsl, graph, source, touchedAt, TABLES_TO_SWEEP);
+        GraphitronAstEntries.sweep(dsl, graph, source, touchedAt, TABLES_TO_SWEEP);
     }
 
     /**
      * What the sweep deletes from, and the only thing that reads it. Listed rather than found by
-     * prefix, on the terms {@link GraphitronEntries#sweep} states: a relation this writer gained
+     * prefix, on the terms {@link GraphitronAstEntries#sweep} states: a relation this writer gained
      * and did not list would keep its stale rows silently.
      */
     private static final List<Table<?>> TABLES_TO_SWEEP =
@@ -76,9 +76,9 @@ final class GraphitronSchemaEntries {
         var t = GRAPHITRON_AST_LINK_ENTRY;
         var rows = applications.stream().collect(Rows.toRowList(
             application -> val(graph, t.GRAPH_NAME),
-            application -> SdlEntries.sourceName(application),
-            application -> SdlEntries.sourceLine(application),
-            application -> SdlEntries.sourceColumn(application),
+            application -> GraphQLAstEntries.sourceName(application),
+            application -> GraphQLAstEntries.sourceLine(application),
+            application -> GraphQLAstEntries.sourceColumn(application),
             application -> val(touchedAt, t.TOUCHED_AT),
             application -> val(string(application, "url"), t.URL)));
         BindBatch.execute(dsl, rows, markers ->
@@ -95,9 +95,9 @@ final class GraphitronSchemaEntries {
         var t = GRAPHITRON_AST_LINK_IMPORT_ENTRY;
         var rows = importsOf(applications).stream().collect(Rows.toRowList(
             entry -> val(graph, t.GRAPH_NAME),
-            entry -> SdlEntries.sourceName(entry.node()),
-            entry -> SdlEntries.sourceLine(entry.node()),
-            entry -> SdlEntries.sourceColumn(entry.node()),
+            entry -> GraphQLAstEntries.sourceName(entry.node()),
+            entry -> GraphQLAstEntries.sourceLine(entry.node()),
+            entry -> GraphQLAstEntries.sourceColumn(entry.node()),
             entry -> val(touchedAt, t.TOUCHED_AT),
             entry -> val(entry.name(), t.NAME),
             entry -> val(entry.alias(), t.ALIAS)));

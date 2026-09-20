@@ -58,7 +58,7 @@ class GathererIsolationTest {
     private static Map<String, Set<String>> gatherers() {
         var roll = new LinkedHashMap<String, Set<String>>();
         roll.put("capture", Set.of("FactCapture"));
-        roll.put("capture/config", Set.of("ConfigurationFactCapture"));
+        roll.put("capture/config", Set.of());
         // Two gatherers transcribe the configuration: this one writes the store_graph_ rows from
         // the run's own SubjectConfig, marking and sweeping them per graph.
         roll.put("capture/store", Set.of("StoreEntries"));
@@ -68,7 +68,11 @@ class GathererIsolationTest {
         // Two readings of one corpus: the arms say what an author may write at each
         // directive, and the general reading says what is there. The second leaves when
         // the first can answer everything asked of it.
-        roll.put("capture/code", Set.of("CodeCapture", "JvmCapture"));
+        // Three gatherers, on the document package's shape: the corpus reader opens each
+        // classpath entry once and owns the store's record of what was read, and the two
+        // that write from it are handed the reading rather than the configuration.
+        roll.put("capture/code",
+            Set.of("ClasspathSourceCapture", "CodeCapture", "JvmCapture"));
         roll.put("capture/sdl", Set.of("SdlFactCapture"));
         // Four gatherers in this package, one per stage of reading the corpus: the corpus reader
         // owns the store's record of what was read and hands the documents on, the two

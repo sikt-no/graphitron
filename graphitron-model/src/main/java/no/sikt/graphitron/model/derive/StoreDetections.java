@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.derive;
 
+import org.jooq.DSLContext;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import org.jooq.Table;
 
@@ -104,6 +105,30 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
         roster.put("ResolvedKeyProjections", ResolvedKeyProjections.READS);
         roster.put("NodeIdDecodeCoverageFacts", NodeIdDecodeCoverageFacts.READS);
         return Collections.unmodifiableMap(roster);
+    }
+
+    /**
+     * These detections over what a store already holds.
+     *
+     * <p>A read, and here rather than beside a capture because it writes nothing: a pass that may
+     * read facts and may not write them should not have to name a capture class to ask.
+     */
+    public static StoreDetections over(DSLContext dsl, String graphName,
+                                          ClassifiedRun classified) {
+        return switch (classified) {
+            case ClassifiedRun.Absent ignored -> StoreDetections.empty();
+            case ClassifiedRun.Present present -> {
+                yield new StoreDetections(AuthoredClaimConflicts.detect(dsl, graphName),
+                    ArgmappingProjectionDefects.detect(dsl, graphName),
+                    NodeIdDecodeDefects.detect(dsl, graphName),
+                    NodeIdPolymorphicDecodeDefects.detect(dsl, graphName),
+                    NodeIdLandingDefects.detect(dsl, graphName),
+                    ReferenceForParticipantDefects.detect(dsl, graphName),
+                    UnlowerableOrderings.detect(dsl, graphName),
+                    ResolvedKeyProjections.read(dsl, graphName),
+                    NodeIdDecodeCoverageFacts.read(dsl, graphName));
+            }
+        };
     }
 
     /** The empty detection, for callers running capture without the detection pass. */

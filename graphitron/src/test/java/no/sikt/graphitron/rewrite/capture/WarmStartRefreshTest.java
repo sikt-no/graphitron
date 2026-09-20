@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.capture;
 
+import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.Public;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.derive.Materializations;
@@ -56,7 +58,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.jooq.impl.DSL.name;
 import static org.jooq.impl.DSL.table;
-import no.sikt.graphitron.model.sources.ClasspathSources;
 import no.sikt.graphitron.model.capture.FactCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.capture.config.StoredRecipe;
@@ -121,14 +122,14 @@ class WarmStartRefreshTest {
         var references = referencesOver(tmp, jar);
         Path directory = tmp.resolve("graphitron-model");
 
-        capture(directory, tmp, references);
-        capture(directory, tmp, references);
+        capture(directory, tmp, jar);
+        capture(directory, tmp, jar);
 
         Map<String, Integer> cold;
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), SubjectConfig.none(),
-                CapturedStore.registryOf(tmp, SDL), CapturedStore.attributionOf(tmp), null,
-                references);
+            CapturedStore.writeSource(tmp, SDL);
+            ModelCapture.capture(store.dsl(), graph(tmp), CapturedStore.corpusOf(tmp),
+                entries(jar), null, now());
             cold = census(store.dsl());
         }
         try (var warm = GraphitronModelStore.openAt(directory)) {
@@ -162,7 +163,7 @@ class WarmStartRefreshTest {
 
         Map<String, Integer> once;
         try (var store = GraphitronModelStore.openAt(directory)) {
-            captureBound(store.dsl(), false, tmp, jooq);
+            captureBound(store.dsl(), tmp, jooq);
             once = census(store.dsl());
         }
         assertThat(once)
@@ -174,7 +175,7 @@ class WarmStartRefreshTest {
 
         Map<String, Integer> twice;
         try (var store = GraphitronModelStore.openAt(directory)) {
-            captureBound(store.dsl(), true, tmp, jooq);
+            captureBound(store.dsl(), tmp, jooq);
             twice = census(store.dsl());
         }
         assertThat(twice)
@@ -202,7 +203,7 @@ class WarmStartRefreshTest {
      * <p>What this does <em>not</em> hold, so nobody reads it as more than it is: it does not fail if
      * the stamps move back ahead of the refresh, because every capture refreshes every registered
      * target for its graph unconditionally, so a stale target comes back either way. The stamp
-     * placement is a consistency requirement on what a stamp claims, which {@link ClasspathSources}
+     * placement is a consistency requirement on what a stamp claims, which the stamp
      * states, rather than a defence against a reachable stale store. What this would catch is a
      * capture that stopped refreshing a target it had emptied, the shape any future narrowing of the
      * refresh would take.
@@ -214,7 +215,7 @@ class WarmStartRefreshTest {
         Path directory = tmp.resolve("graphitron-model");
 
         try (var store = GraphitronModelStore.openAt(directory)) {
-            captureBound(store.dsl(), false, tmp, jooq);
+            captureBound(store.dsl(), tmp, jooq);
             DSLContext dsl = store.dsl();
             String emptied = lastPopulatedTarget(dsl);
             assertThat(emptied)
@@ -227,12 +228,12 @@ class WarmStartRefreshTest {
 
         Map<String, Integer> repaired;
         try (var store = GraphitronModelStore.openAt(directory)) {
-            captureBound(store.dsl(), true, tmp, jooq);
+            captureBound(store.dsl(), tmp, jooq);
             repaired = census(store.dsl());
         }
         Map<String, Integer> cold;
         try (var store = GraphitronModelStore.open()) {
-            captureBound(store.dsl(), false, tmp, jooq);
+            captureBound(store.dsl(), tmp, jooq);
             cold = census(store.dsl());
         }
         assertThat(repaired)
@@ -249,7 +250,7 @@ class WarmStartRefreshTest {
         var references = referencesOver(tmp, jar);
         Path directory = tmp.resolve("graphitron-model");
 
-        capture(directory, tmp, references);
+        capture(directory, tmp, jar);
         String first = stampOf(directory, jar);
         assertThat(first).as("a jar the scan read is a jar it stamped").isNotNull();
 
@@ -261,7 +262,7 @@ class WarmStartRefreshTest {
             tampered.dsl().update(JVM_CLASS).set(JVM_CLASS.CLASS_KIND, "INTERFACE")
                 .where(JVM_CLASS.CLASS_NAME.eq("com.example.lib.LibraryClass")).execute();
         }
-        capture(directory, tmp, references);
+        capture(directory, tmp, jar);
 
         assertThat(stampOf(directory, jar)).isEqualTo(first);
         try (var store = GraphitronModelStore.openAt(directory)) {
@@ -288,15 +289,14 @@ class WarmStartRefreshTest {
     void theRecordedCurrencyIsWhenTheRoundBeganReading(@TempDir Path tmp) throws IOException {
         Path jar = jarWith(tmp, "com.example.lib.LibraryClass");
         Path directory = tmp.resolve("graphitron-model");
-        var reading = new ClasspathCensus().read(
-            List.of(new ClasspathEntry(jar, ClasspathEntry.Origin.DECLARED, "com.example:library")),
-            DEFAULT_JOOQ_PACKAGE);
+        var classpath =
+            List.of(new ClasspathEntry(jar, ClasspathEntry.Origin.DECLARED, "com.example:library"));
+        var reading = new ClasspathCensus().read(classpath, DEFAULT_JOOQ_PACKAGE);
 
-        var registry = CapturedStore.registryOf(tmp, SDL);
         try (var store = GraphitronModelStore.openAt(directory)) {
-            FactCapture.capture(store.dsl(), false, graph(tmp), SubjectConfig.none(), registry,
-                SchemaAssembly.of(registry), SdlVerdicts.none(),
-                CapturedStore.attributionOf(tmp), null, reading.references(), reading.stamps(),
+            // The pass that owns the classpath, on the instant the census began reading: what it
+            // records about an entry is what these assertions are about.
+            ModelCapture.capture(store.dsl(), graph(tmp), SubjectConfig.none(), classpath, null,
                 reading.readAt());
         }
 
@@ -317,63 +317,64 @@ class WarmStartRefreshTest {
     }
 
     /**
-     * The retention decision reads what the round established, and does not go back to the jar.
+     * The retention decision and the stamp it is next compared against come from one reading.
      *
-     * <p>The two consumers of a jar's identity used to ask independently: the census hashed it to
-     * decide whether to re-parse, and the refresh hashed it again to decide whether to retain the
-     * partition. Two reads of one file is the cost; the correctness is the reason the second one
-     * cannot simply be dropped. The window between them is real, and this case opens it as wide as
-     * it goes: the jar is replaced after the census parsed it. The rows in the store describe the
-     * bytes the census read, so the stamp recorded beside them must describe those bytes too, and
-     * the partition must be retained rather than judged against bytes nobody parsed.
+     * <p>The pair is the subject, not either half. A pass that re-walked an entry but kept the old
+     * stamp would re-walk it forever; one that retained a partition but took the new stamp would
+     * record bytes nobody read and never re-walk it again. Neither is visible in one pass, so this
+     * takes three: unchanged, rewritten, unchanged again, and asserts the stamp moves exactly when
+     * the rows do.
      *
-     * <p>A stopwatch cannot see any of this. The witness is the tampered {@code class_kind}, which
-     * only a rewrite puts back, so dropping the seed fails the case on every machine rather than
-     * on a slow one.
+     * <p>There used to be a seam to test this through, a census read before the pass whose stamps
+     * were handed to it, and the failure it guarded was the pass preferring a fresh read of a jar
+     * that had moved since. The classpath gatherer owns the reading now and there is no second
+     * answer to prefer, so what is left to pin is that the one reading feeds both halves.
      */
     @Test
-    @DisplayName("the retention decision uses the round's stamps, not a fresh read of the jar")
+    @DisplayName("the retention decision and the recorded stamp come from one reading")
     void retentionUsesTheRoundsStamps(@TempDir Path tmp) throws IOException {
         Path jar = jarWith(tmp, "com.example.lib.LibraryClass");
         Path directory = tmp.resolve("graphitron-model");
-        var reading = new ClasspathCensus().read(
-            List.of(new ClasspathEntry(jar, ClasspathEntry.Origin.DECLARED, "com.example:library")),
-            DEFAULT_JOOQ_PACKAGE);
-        capture(directory, tmp, reading.references());
+        capture(directory, tmp, jar);
+        String first = stampOf(directory, jar);
 
+        // A value the classfile does not carry, so it survives a retained partition and does not
+        // survive a re-walked one.
         try (var tampered = GraphitronModelStore.openAt(directory)) {
             tampered.dsl().update(JVM_CLASS).set(JVM_CLASS.CLASS_KIND, "INTERFACE")
                 .where(JVM_CLASS.CLASS_NAME.eq("com.example.lib.LibraryClass")).execute();
         }
-
-        // The jar moves after the census parsed it. Every later question about it has a different
-        // answer than the rows do, which is exactly why the round's own answer has to travel.
-        Files.delete(jar);
-        jarWith(tmp, "com.example.lib.Rewritten");
-        String roundStamp = reading.stamps().get(jar.toString());
-        assertThat(roundStamp)
-            .as("the bytes on disk now hash differently, so a fresh read would rewrite")
-            .isNotNull()
-            .isNotEqualTo(hash(jar));
-
-        var registry = CapturedStore.registryOf(tmp, SDL);
-        try (var store = GraphitronModelStore.openAt(directory)) {
-            FactCapture.capture(store.dsl(), true, graph(tmp), SubjectConfig.none(), registry,
-                SchemaAssembly.of(registry), SdlVerdicts.none(),
-                CapturedStore.attributionOf(tmp), null, reading.references(), reading.stamps(),
-                reading.readAt());
-        }
-
-        try (var store = GraphitronModelStore.openAt(directory)) {
-            assertThat(store.dsl().select(JVM_CLASS.CLASS_KIND).from(JVM_CLASS)
-                .where(JVM_CLASS.CLASS_NAME.eq("com.example.lib.LibraryClass"))
-                .fetchOne(0, String.class))
-                .as("retained against the round's own answer, so the partition was left alone")
-                .isEqualTo("INTERFACE");
-        }
+        capture(directory, tmp, jar);
+        assertThat(kindOf(directory, "com.example.lib.LibraryClass"))
+            .as("the bytes had not moved, so the partition was left alone")
+            .isEqualTo("INTERFACE");
         assertThat(stampOf(directory, jar))
-            .as("and the recorded stamp still describes the bytes the rows came from")
-            .isEqualTo(roundStamp);
+            .as("and the stamp is the one the rows still standing were read under")
+            .isEqualTo(first);
+
+        Files.delete(jar);
+        jarWith(tmp, "com.example.lib.LibraryClass", "com.example.lib.Added");
+        capture(directory, tmp, jar);
+        assertThat(kindOf(directory, "com.example.lib.LibraryClass"))
+            .as("the bytes moved, so the partition was re-walked and the tampering is gone")
+            .isEqualTo("CLASS");
+        String second = stampOf(directory, jar);
+        assertThat(second)
+            .as("the stamp moved with the rows rather than lagging a reading behind them")
+            .isNotEqualTo(first);
+
+        capture(directory, tmp, jar);
+        assertThat(stampOf(directory, jar))
+            .as("and a pass over the bytes that stamp describes retains rather than re-walking")
+            .isEqualTo(second);
+    }
+
+    /** One class's recorded kind, which is what a retained partition keeps and a re-walk resets. */
+    private static String kindOf(Path directory, String className) {
+        try (var store = GraphitronModelStore.openAt(directory)) {
+            return store.dsl().select(JVM_CLASS.CLASS_KIND).from(JVM_CLASS)
+                .where(JVM_CLASS.CLASS_NAME.eq(className)).fetchOne(0, String.class);
+        }
     }
 
     @Test
@@ -381,12 +382,12 @@ class WarmStartRefreshTest {
     void aChangedJarIsRewalked(@TempDir Path tmp) throws IOException {
         Path jar = jarWith(tmp, "com.example.lib.Before");
         Path directory = tmp.resolve("graphitron-model");
-        capture(directory, tmp, referencesOver(tmp, jar));
+        capture(directory, tmp, jar);
         String before = stampOf(directory, jar);
 
         Files.delete(jar);
         jarWith(tmp, "com.example.lib.After");
-        capture(directory, tmp, referencesOver(tmp, jar));
+        capture(directory, tmp, jar);
 
         try (var store = GraphitronModelStore.openAt(directory)) {
             var classes = store.dsl().select(JVM_CLASS.CLASS_NAME).from(JVM_CLASS).fetch(0, String.class);
@@ -400,9 +401,9 @@ class WarmStartRefreshTest {
     void anUncrawledSourceSurvivesARefresh(@TempDir Path tmp) throws IOException {
         Path jar = jarWith(tmp, "com.example.lib.LibraryClass");
         Path directory = tmp.resolve("graphitron-model");
-        capture(directory, tmp, referencesOver(tmp, jar));
+        capture(directory, tmp, jar);
 
-        capture(directory, tmp, List.of());
+        capture(directory, tmp);
 
         try (var store = GraphitronModelStore.openAt(directory)) {
             assertThat(store.dsl().select(JVM_CLASS.CLASS_NAME).from(JVM_CLASS).fetch(0, String.class))
@@ -436,7 +437,7 @@ class WarmStartRefreshTest {
     @DisplayName("a source-partitioned catalog relation survives a run that never read its source")
     void anUnreadCatalogSourceKeepsItsWholePartition(@TempDir Path tmp) {
         Path directory = tmp.resolve("graphitron-model");
-        capture(directory, tmp, List.of());
+        capture(directory, tmp);
 
         String foreign = "com.example.othermodule.jooq";
         try (var store = GraphitronModelStore.openAt(directory)) {
@@ -452,7 +453,7 @@ class WarmStartRefreshTest {
                 .values(foreign, "public", "reported_films", "FUNCTION").execute();
         }
 
-        capture(directory, tmp, List.of());
+        capture(directory, tmp);
 
         try (var store = GraphitronModelStore.openAt(directory)) {
             assertThat(store.dsl().fetchCount(SQL_SCHEMA, SQL_SCHEMA.SOURCE_NAME.eq(foreign)))
@@ -472,12 +473,12 @@ class WarmStartRefreshTest {
     void aSiblingGraphsPartitionSurvivesARefresh(@TempDir Path tmp) throws IOException {
         Path directory = tmp.resolve("graphitron-model");
         Path siblingDir = Files.createDirectories(tmp.resolve("sibling"));
-        FactCapture.run(directory, new GraphIdentity("sibling", siblingDir),
-            SubjectConfig.none(), CapturedStore.registryOf(siblingDir, SIBLING_SDL),
-            CapturedStore.attributionOf(siblingDir), null, List.of());
+        CapturedStore.registryOf(siblingDir, SIBLING_SDL);
+        GraphitronStore.captured(directory, new GraphIdentity("sibling", siblingDir),
+            CapturedStore.corpusOf(siblingDir), List.of(), null).close();
 
-        capture(directory, tmp, List.of());
-        capture(directory, tmp, List.of());
+        capture(directory, tmp);
+        capture(directory, tmp);
 
         try (var store = GraphitronModelStore.openAt(directory)) {
             assertThat(store.dsl().select(GRAPHQL_TYPE.TYPE_NAME).from(GRAPHQL_TYPE)
@@ -500,12 +501,12 @@ class WarmStartRefreshTest {
         var recipe = new SchemaRecipe(null,
             List.of(SchemaRecipe.Binding.pattern("schema/**")),
             List.of(".graphqls"));
-        FactCapture.run(directory, new GraphIdentity("sibling", siblingDir),
-            SubjectConfig.of(recipe), CapturedStore.registryOf(siblingDir, SIBLING_SDL),
-            CapturedStore.attributionOf(siblingDir), null, List.of());
+        CapturedStore.registryOf(siblingDir, SIBLING_SDL);
+        GraphitronStore.captured(directory, new GraphIdentity("sibling", siblingDir),
+            SubjectConfig.of(recipe), List.of(), null).close();
         Record siblingRow = graphRow(directory, "sibling");
 
-        capture(directory, tmp, List.of());
+        capture(directory, tmp);
 
         assertThat(graphRow(directory, "sibling"))
             .as("the sibling's store_graph row after this graph's run")
@@ -522,9 +523,9 @@ class WarmStartRefreshTest {
             List.of(new SchemaRecipe.Binding(new SchemaRecipe.Entry.Pattern("sdl/**"),
                 Optional.of("v2"), Optional.empty())),
             List.of(".graphqls"));
-        FactCapture.run(directory, new GraphIdentity("sibling", siblingDir),
-            SubjectConfig.of(revised), CapturedStore.registryOf(siblingDir, SIBLING_SDL),
-            CapturedStore.attributionOf(siblingDir), null, List.of());
+        CapturedStore.registryOf(siblingDir, SIBLING_SDL);
+        GraphitronStore.captured(directory, new GraphIdentity("sibling", siblingDir),
+            SubjectConfig.of(revised), List.of(), null).close();
         try (var store = GraphitronModelStore.openAt(directory)) {
             assertThat(store.dsl().select(STORE_GRAPH_SCHEMA_INPUT.ENTRY_VALUE)
                 .from(STORE_GRAPH_SCHEMA_INPUT)
@@ -538,7 +539,7 @@ class WarmStartRefreshTest {
     @DisplayName("a schema file's recorded stamp matches a re-hash until the file is edited")
     void aSchemaFileStampMatchesUntilTheFileChanges(@TempDir Path tmp) throws IOException {
         Path directory = tmp.resolve("graphitron-model");
-        capture(directory, tmp, List.of());
+        capture(directory, tmp);
         Path schemaFile = tmp.resolve("fixture.graphqls");
 
         String recorded = stampOf(directory, schemaFile);
@@ -559,9 +560,9 @@ class WarmStartRefreshTest {
         var recipe = new SchemaRecipe(null,
             List.of(SchemaRecipe.Binding.pattern("*.graphqls")),
             List.of(".graphqls"));
-        FactCapture.run(directory, new GraphIdentity(GRAPH_NAME, tmp),
-            SubjectConfig.of(recipe), CapturedStore.registryOf(tmp, SDL),
-            CapturedStore.attributionOf(tmp), null, List.of());
+        CapturedStore.registryOf(tmp, SDL);
+        GraphitronStore.captured(directory, new GraphIdentity(GRAPH_NAME, tmp),
+            SubjectConfig.of(recipe), List.of(), null).close();
 
         // The remembered recipe, decoded from the graph's persisted rows alone: what a freshness
         // reader with no build of the owning module has in hand. Read through the production
@@ -589,11 +590,7 @@ class WarmStartRefreshTest {
      * generated packages), while the catalog walk clears each package's {@code sql_} partition as
      * it visits that package. A warm refresh must not let the delete of one package's constraints
      * fire while a sibling package's stale referential rows still point at them. Calls
-     * {@link FactCapture#capture(DSLContext, boolean, GraphIdentity,
-     * SubjectConfig, graphql.schema.idl.TypeDefinitionRegistry, Map, JooqCatalog, List,
-     * NodeDeclaration) capture}
-     * directly rather than through {@link FactCapture#run}, whose retry-then-fall-back masks a
-     * deterministic failure behind a private in-memory store instead of surfacing it here.
+     * Capturing directly, so a deterministic failure surfaces here rather than behind a retry.
      */
     @Test
     @DisplayName("a warm refresh over a multi-package jOOQ catalog completes")
@@ -601,13 +598,12 @@ class WarmStartRefreshTest {
         var jooq = new JooqCatalog("no.sikt.graphitron.rewrite.multischemafixture",
             testContext().codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), false, graph(tmp), SubjectConfig.none(),
-                CapturedStore.registryOf(tmp, SDL), CapturedStore.attributionOf(tmp),
-                jooq, List.of());
+            CapturedStore.writeSource(tmp, SDL);
+            ModelCapture.capture(store.dsl(), graph(tmp), CapturedStore.corpusOf(tmp),
+                List.of(), jooq, now());
 
-            assertThatCode(() -> FactCapture.capture(store.dsl(), true, graph(tmp),
-                SubjectConfig.none(), CapturedStore.registryOf(tmp, SDL),
-                CapturedStore.attributionOf(tmp), jooq, List.of()))
+            assertThatCode(() -> ModelCapture.capture(store.dsl(), graph(tmp),
+                CapturedStore.corpusOf(tmp), List.of(), jooq, now()))
                 .as("a warm refresh over a catalog whose foreign keys cross package partitions")
                 .doesNotThrowAnyException();
 
@@ -626,11 +622,28 @@ class WarmStartRefreshTest {
         return new GraphIdentity(GRAPH_NAME, baseDir);
     }
 
-    private static void capture(Path directory, Path scratch,
-                                List<CompletionData.ExternalReference> references) {
-        FactCapture.run(directory, graph(scratch), SubjectConfig.none(),
-            CapturedStore.registryOf(scratch, SDL), CapturedStore.attributionOf(scratch), null,
-            references);
+    /**
+     * One round over {@code jars}, both passes, in the order a run has.
+     *
+     * <p>The entries themselves rather than a census someone else read, which is what makes the
+     * assertions below about the store rather than about the fixture.
+     */
+    private static void capture(Path directory, Path scratch, Path... jars) {
+        CapturedStore.writeSource(scratch, SDL);
+        GraphitronStore.captured(directory, graph(scratch), CapturedStore.corpusOf(scratch),
+            entries(jars), null).close();
+    }
+
+    /** The jars as the classified entries a build would hand over. */
+    private static List<ClasspathEntry> entries(Path... jars) {
+        return java.util.Arrays.stream(jars)
+            .map(jar -> new ClasspathEntry(jar, ClasspathEntry.Origin.DECLARED, null))
+            .toList();
+    }
+
+    /** This reading's instant, which every relation the pass fills sweeps by. */
+    private static java.time.LocalDateTime now() {
+        return java.time.LocalDateTime.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
     }
 
     private static Record graphRow(Path directory, String graphName) {
@@ -650,10 +663,10 @@ class WarmStartRefreshTest {
      * the schema is. {@code CapturedStore.corpusOf} exists for exactly this and its own comment
      * names the silence.
      */
-    private static void captureBound(DSLContext dsl, boolean warm, Path scratch, JooqCatalog jooq) {
-        FactCapture.capture(dsl, warm, graph(scratch), CapturedStore.corpusOf(scratch),
-            CapturedStore.registryOf(scratch, TABLE_BOUND_SDL),
-            CapturedStore.attributionOf(scratch), jooq, List.of());
+    private static void captureBound(DSLContext dsl, Path scratch, JooqCatalog jooq) {
+        CapturedStore.writeSource(scratch, TABLE_BOUND_SDL);
+        ModelCapture.capture(dsl, graph(scratch), CapturedStore.corpusOf(scratch), List.of(), jooq,
+            now());
     }
 
     /**
@@ -710,15 +723,17 @@ class WarmStartRefreshTest {
             DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE, List.of(entries)));
     }
 
-    private static Path jarWith(Path directory, String className) throws IOException {
-        byte[] bytes = ClassFile.of().build(ClassDesc.of(className),
-            cb -> cb.withFlags(ClassFile.ACC_PUBLIC));
+    private static Path jarWith(Path directory, String... classNames) throws IOException {
         Path jar = directory.resolve("fixture-library.jar");
         try (OutputStream out = Files.newOutputStream(jar);
              ZipOutputStream zip = new ZipOutputStream(out)) {
-            zip.putNextEntry(new ZipEntry(className.replace('.', '/') + ".class"));
-            zip.write(bytes);
-            zip.closeEntry();
+            for (String className : classNames) {
+                byte[] bytes = ClassFile.of().build(ClassDesc.of(className),
+                    cb -> cb.withFlags(ClassFile.ACC_PUBLIC));
+                zip.putNextEntry(new ZipEntry(className.replace('.', '/') + ".class"));
+                zip.write(bytes);
+                zip.closeEntry();
+            }
         }
         return jar;
     }

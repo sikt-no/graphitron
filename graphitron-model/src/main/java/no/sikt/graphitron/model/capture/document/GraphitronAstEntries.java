@@ -45,9 +45,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
  * <p>This class is the site writers' shared vocabulary for reading an application: the arguments
  * an author wrote, in the shapes graphql-java hands them back. Nothing in it knows a relation.
  */
-public final class GraphitronEntries {
+public final class GraphitronAstEntries {
 
-    private GraphitronEntries() {}
+    private GraphitronAstEntries() {}
 
     /**
      * Makes {@code source}'s decoded rows under {@code graph} be what {@code document}'s
@@ -58,15 +58,15 @@ public final class GraphitronEntries {
     public static void write(DSLContext dsl, String graph, String source,
                              TypeDefinitionRegistry document, LocalDateTime touchedAt) {
         GraphitronTypeEntries.write(dsl, graph, source,
-            admitted(SdlEntries.locatedOnTypes(document)), touchedAt);
+            admitted(GraphQLAstEntries.locatedOnTypes(document)), touchedAt);
         GraphitronFieldEntries.write(dsl, graph, source,
-            admitted(SdlEntries.locatedOnFields(document)), touchedAt);
+            admitted(GraphQLAstEntries.locatedOnFields(document)), touchedAt);
         GraphitronInputValueEntries.write(dsl, graph, source,
-            admitted(SdlEntries.locatedOnInputValues(document)), touchedAt);
+            admitted(GraphQLAstEntries.locatedOnInputValues(document)), touchedAt);
         GraphitronEnumValueEntries.write(dsl, graph, source,
-            admitted(SdlEntries.locatedOnEnumValues(document)), touchedAt);
+            admitted(GraphQLAstEntries.locatedOnEnumValues(document)), touchedAt);
         GraphitronSchemaEntries.write(dsl, graph, source,
-            admitted(SdlEntries.locatedOnSchemas(document)), touchedAt);
+            admitted(GraphQLAstEntries.locatedOnSchemas(document)), touchedAt);
     }
 
     /**
@@ -77,9 +77,9 @@ public final class GraphitronEntries {
      * name its location wrong and have the loop notice, so the five spellings are held against the
      * vocabulary by {@code DirectiveLegalitySiteTest} rather than by anything here.
      */
-    private static List<SdlEntries.Nested<Directive>> admitted(List<SdlEntries.Located> located) {
-        var kept = new ArrayList<SdlEntries.Nested<Directive>>();
-        for (SdlEntries.Located one : located) {
+    private static List<GraphQLAstEntries.Nested<Directive>> admitted(List<GraphQLAstEntries.Located> located) {
+        var kept = new ArrayList<GraphQLAstEntries.Nested<Directive>>();
+        for (GraphQLAstEntries.Located one : located) {
             if (DirectiveLegality.admits(one.application().node(), one.location())) {
                 kept.add(one.application());
             }
@@ -113,8 +113,8 @@ public final class GraphitronEntries {
     // ------------------------------------------------------------------- reading an application
 
     /** The applications of one directive name, whatever the site the caller collected them at. */
-    static List<Directive> applied(List<SdlEntries.Nested<Directive>> applications, String name) {
-        return applications.stream().map(SdlEntries.Nested::node)
+    static List<Directive> applied(List<GraphQLAstEntries.Nested<Directive>> applications, String name) {
+        return applications.stream().map(GraphQLAstEntries.Nested::node)
             .filter(application -> application.getName().equals(name)).toList();
     }
 

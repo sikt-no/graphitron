@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.methodgraph;
 
+import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.command.Arity;
 import no.sikt.graphitron.command.CallWrap;
 import no.sikt.graphitron.command.Contribution;
@@ -109,12 +111,17 @@ class LauncherOrderingClosureTest {
     static void generate(@TempDir Path workDir) throws Exception {
         Path schemaFile = workDir.resolve("schema.graphqls");
         Files.writeString(schemaFile, SCHEMA);
-        var result = new GraphQLRewriteGenerator(new RunContext(
+        var ctx = new RunContext(
             List.of(SchemaInput.file(schemaFile)),
             workDir, "LauncherOrderingClosureTest",
             workDir.resolve("generated-sources"),
             OUTPUT_PACKAGE,
-            TestConfiguration.DEFAULT_JOOQ_PACKAGE)).generate();
+            TestConfiguration.DEFAULT_JOOQ_PACKAGE);
+        GraphQLRewriteGenerator.GenerationResult result;
+        try (var store = GraphitronStore.captured(ctx)) {
+            result = new GraphQLRewriteGenerator(ctx, new StoreHandle(store.dsl(), ctx.graphName()))
+                .generate();
+        }
         launchers = result.plan().launchers();
         projections = result.plan().projections();
     }

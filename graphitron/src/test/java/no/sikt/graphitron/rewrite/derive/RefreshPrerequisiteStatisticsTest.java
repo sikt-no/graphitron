@@ -66,7 +66,7 @@ import static org.jooq.impl.DSL.table;
  * {@code store_graph} as a proxy for the register's state, three unrelated writers mint that anchor
  * row before a capture, and so every consumer build took the in-transaction cadence on a store with
  * no statistics anywhere while both cadences went on behaving exactly as pinned. The third leg
- * drives {@code FactCapture.capture} on a store whose anchor was pre-written the way the build
+ * drives the capture pass on a store whose anchor was pre-written the way the build
  * writes it, and asserts the same claim as the first. Same observation, same instrument, one step
  * further out.
  */
@@ -155,9 +155,8 @@ class RefreshPrerequisiteStatisticsTest {
             // before", and the pass above has just written one. So the capture stands its own rows
             // down before rewriting them, which is why this leg does not collide with the recipe
             // families that pass wrote.
-            FactCapture.capture(dsl, true, graph, config, registry, SchemaAssembly.of(registry),
-                SdlVerdicts.none(), CapturedStore.attributionOf(directory), jooq, List.of(),
-                Map.of(), readAt, observer);
+            ModelCapture.capture(dsl, graph, config, List.of(), jooq, readAt);
+            FactCapture.derive(dsl, graph, SchemaAssembly.of(registry), readAt, observer);
 
             var populated = populated(dsl, prerequisites);
             dependentRegistrationsUnderCapture = populated.keySet();

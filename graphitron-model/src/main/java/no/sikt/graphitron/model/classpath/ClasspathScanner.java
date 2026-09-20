@@ -69,6 +69,18 @@ public final class ClasspathScanner {
     }
 
     /**
+     * This vocabulary over a reading the caller already performed.
+     *
+     * <p>For the classpath's corpus reader, which reads the entries once and hands the reading to
+     * every gatherer that wants it. {@link #scan} above is the same projection with the read in
+     * front of it, for a caller holding no reading; one classpath read twice is two answers that
+     * have to agree and no way to notice when they stop.
+     */
+    public static List<CompletionData.ExternalReference> project(ClassfileCensus.Census census) {
+        return census.classes().stream().map(ClasspathScanner::reference).toList();
+    }
+
+    /**
      * Walks every non-{@code TRANSITIVE} entry in {@code classpathEntries} and returns class
      * records in deterministic order. A directory is walked; a {@code .jar} is opened and its
      * entries fed through the same filter, which is already byte-oriented. A

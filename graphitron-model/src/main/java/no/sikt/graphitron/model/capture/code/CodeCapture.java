@@ -116,21 +116,23 @@ public final class CodeCapture {
     }
 
     /**
-     * Makes the code rows of {@code entries} be what their classfiles now declare.
+     * Makes the code rows of the classpath be what its classfiles now declare.
      *
-     * @param entries    the classpath as its producer classified them; each carries how it reached
-     *                   the classpath, which a bare path could not say
-     * @param skipPrefix a package to leave out, or null to leave nothing out
-     * @param loader     the run's codegen classloader, for the one fact a classfile cannot answer;
-     *                   null falls back to the thread's, which is what a caller with no catalog has
+     * @param reading the classpath as the corpus reader read it, which is where the entries and
+     *                their provenance are recorded; this gatherer writes its own family and none
+     *                of that
+     * @param loader  the run's codegen classloader, for the one fact a classfile cannot answer;
+     *                null falls back to the thread's, which is what a caller with no catalog has
      */
-    public static void capture(DSLContext dsl, List<ClasspathEntry> entries, String skipPrefix,
+    public static void capture(DSLContext dsl, ClasspathSourceCapture.Reading reading,
                                ClassLoader loader, LocalDateTime touchedAt) {
-        var census = ClassfileCensus.read(nameable(entries), skipPrefix);
+        var census = reading.census();
         if (census.entries().isEmpty()) {
             return;
         }
-        sources(dsl, census.entries(), touchedAt);
+        // The entry rows are the corpus reader's, not this gatherer's: one reading of the
+        // classpath records where its rows came from, and two writers of that would be two
+        // answers to the same question.
         scalarConstants(dsl, census.classes(), loader, touchedAt);
         var reactor = reactorClasses(census);
         var ancestry = new ClassAncestry(census.classes(), loader);
@@ -138,30 +140,7 @@ public final class CodeCapture {
         methods(dsl, reactor, ancestry, touchedAt);
         // Every entry read, not only the ones that declared something, so an entry that stopped
         // declaring a member loses its row.
-        sweep(dsl, census.entries().stream().map(ClassfileCensus.EntryAt::source).toList(),
-            touchedAt);
-    }
-
-    /** The registry rows every code row hangs its source on, one per classpath entry. */
-    private static void sources(DSLContext dsl, List<ClassfileCensus.EntryAt> entries,
-                                LocalDateTime touchedAt) {
-        var t = STORE_SOURCE;
-        var rows = entries.stream().collect(Rows.toRowList(
-            at -> val(at.source(), t.SOURCE_NAME),
-            at -> val(at.kind(), t.SOURCE_KIND),
-            at -> val(at.origin(), t.ORIGIN),
-            at -> val(at.coordinate(), t.COORDINATE),
-            at -> val(touchedAt, t.LAST_SEEN),
-            at -> val(touchedAt, t.READ_AT)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.SOURCE_NAME, t.SOURCE_KIND, t.ORIGIN, t.COORDINATE, t.LAST_SEEN,
-                    t.READ_AT)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.ORIGIN, excluded(t.ORIGIN))
-                .set(t.COORDINATE, excluded(t.COORDINATE))
-                .set(t.LAST_SEEN, excluded(t.LAST_SEEN))
-                .set(t.READ_AT, excluded(t.READ_AT)));
+        sweep(dsl, reading.read(), touchedAt);
     }
 
     /**

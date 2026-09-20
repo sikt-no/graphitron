@@ -26,9 +26,8 @@ import no.sikt.graphitron.model.derive.SpelledTables;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.TableTypes;
 import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
-import no.sikt.graphitron.model.capture.sdl.SdlFactCapture.SiteRef;
+import no.sikt.graphitron.model.schema.SiteRef;
 import no.sikt.graphitron.model.grammar.FieldSetGrammar;
-import no.sikt.graphitron.model.capture.sdl.SdlFactCapture;
 import no.sikt.graphitron.model.grammar.ArgMappingSigil;
 import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
 import no.sikt.graphitron.model.selection.GraphQLSelectionParseException;
@@ -100,7 +99,7 @@ import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
 /**
- * The decode of the {@code graphitron_} family: {@link SdlFactCapture} drives it one application at
+ * The decode of the {@code graphitron_} family: {@code SdlFactCapture} drives it one application at
  * a time while it walks, filling every relation whose rows are a function of one document.
  *
  * <p>The stages that resolve used to sit here too, and are {@link GraphitronAssemblyCapture}'s now.
@@ -128,7 +127,11 @@ import static org.jooq.impl.DSL.when;
  * <p>Only what the author wrote is stored: an omitted argument is a NULL column or an absent row,
  * never a default-filled one. Effective values are derivation views, and for the graphitron
  * namespace the defaults are generator constants rather than captured facts.
+ *
+ * @deprecated the decode as a visitor of a registry; it goes when the decode reads the
+ *     entry stratum instead.
  */
+@Deprecated
 public final class GraphitronFactCapture {
 
     /** Federation's two decoded applications; every other federation directive is fidelity only. */
@@ -166,7 +169,7 @@ public final class GraphitronFactCapture {
         }
         var record = sink.dsl().newRecord(GRAPHITRON_LINK_ENTRY);
         record.setOrdinal(ordinal);
-        SdlFactCapture.setPosition(directive.getSourceLocation(),
+        no.sikt.graphitron.model.capture.sdl.SdlFactCapture.setPosition(directive.getSourceLocation(),
             record::setSourceName, record::setSourceLine, record::setSourceColumn);
         record.setUrl(string(directive, "url"));
         sink.add(record);
@@ -980,7 +983,7 @@ public final class GraphitronFactCapture {
 
     private static void position(Directive directive, Consumer<String> name,
                                  Consumer<Integer> line, Consumer<Integer> column) {
-        SdlFactCapture.setPosition(directive.getSourceLocation(), name, line, column);
+        no.sikt.graphitron.model.capture.sdl.SdlFactCapture.setPosition(directive.getSourceLocation(), name, line, column);
     }
 
     /**
@@ -1142,7 +1145,7 @@ public final class GraphitronFactCapture {
         sourceName.accept(site.location().getSourceName());
         declarationLine.accept(site.location().getLine());
         declarationColumn.accept(site.location().getColumn());
-        SdlFactCapture.setOwnPosition(directive.getSourceLocation(), line, column);
+        no.sikt.graphitron.model.capture.sdl.SdlFactCapture.setOwnPosition(directive.getSourceLocation(), line, column);
     }
 
     /**
@@ -1173,5 +1176,115 @@ public final class GraphitronFactCapture {
         record.setDirectiveArgumentName(argumentName);
         record.setValueSdl(AstPrinter.printAstCompact(value));
         sink.add(record);
+    }
+    /**
+     * Empties this graph's decoded rows before the decode refills them.
+     *
+     * <p>Cleared rather than swept: these relations carry no instant, so there is nothing to tell
+     * this reading's rows from the last one's. The wholesale clear this replaces lived in the
+     * pass that used to run before the decode and emptied every graph-keyed relation it did not
+     * know about; owning the clear here is what lets that one go, and what makes the set emptied
+     * exactly the set refilled.
+     *
+     * <p>A sweep is the better answer and wants an instant on all of them, which is a change to
+     * the family rather than to this method.
+     *
+     * <p>Children before parents, which the keys inside the family demand. The order is read off
+     * jOOQ's own metadata rather than hand-kept, so a relation that gains a key does not need this
+     * list re-sorted.
+     */
+    public static void clear(DSLContext dsl, String graphName) {
+        for (Table<?> table : childrenFirst(DECODED)) {
+            dsl.deleteFrom(table)
+                .where(table.field("GRAPH_NAME", String.class).eq(graphName))
+                .execute();
+        }
+    }
+
+    /**
+     * What this class writes, and therefore what it empties.
+     *
+     * <p>Writes, not mentions. A relation this class only {@link FactSink#claim}s a coordinate in
+     * is written by somebody else: {@link no.sikt.graphitron.model.capture.document.GraphitronAnchor}
+     * owns fourteen of them, sweeps them by instant, and runs ahead of the decode, so listing one
+     * here would empty rows the pass had already written and the relation would read as though the
+     * corpus never declared the directive.
+     */
+    private static final List<Table<?>> DECODED = List.of(
+        GRAPHITRON_ARGMAPPING_ENTRY,
+        GRAPHITRON_ARGUMENT_BINDING_ENTRY,
+        GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG_ENTRY,
+        GRAPHITRON_ARGUMENT_CONDITION_ENTRY,
+        GRAPHITRON_ARGUMENT_LOOKUP_KEY_ENTRY,
+        GRAPHITRON_ARGUMENT_NODE_ID_ENTRY,
+        GRAPHITRON_ARGUMENT_REFERENCE_ENTRY,
+        GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY,
+        GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP_ENTRY,
+        GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY,
+        GRAPHITRON_DISCRIMINATE_ENTRY,
+        GRAPHITRON_DISCRIMINATOR_ENTRY,
+        GRAPHITRON_ENUM_ENTRY,
+        GRAPHITRON_ENUM_VALUE_BINDING_ENTRY,
+        GRAPHITRON_ERROR_ENTRY,
+        GRAPHITRON_ERROR_HANDLER_ENTRY,
+        GRAPHITRON_EXTERNAL_FIELD_ENTRY,
+        GRAPHITRON_FACET_ENTRY,
+        GRAPHITRON_FEDERATION_KEY_ENTRY,
+        GRAPHITRON_FEDERATION_KEY_FIELD_ENTRY,
+        GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY,
+        GRAPHITRON_FIELD_BINDING_ENTRY,
+        GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG_ENTRY,
+        GRAPHITRON_FIELD_CONDITION_ENTRY,
+        GRAPHITRON_FIELD_LOOKUP_KEY_ENTRY,
+        GRAPHITRON_FIELD_NODE_ID_ENTRY,
+        GRAPHITRON_FIELD_REFERENCE_ENTRY,
+        GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY,
+        GRAPHITRON_INDEX_ENTRY,
+        GRAPHITRON_LINK_ENTRY,
+        GRAPHITRON_LINK_IMPORT_ENTRY,
+        GRAPHITRON_METHOD_REFERENCE_ENTRY,
+        GRAPHITRON_MULTITABLE_REFERENCE_ENTRY,
+        GRAPHITRON_ORDER_BY_ENTRY,
+        GRAPHITRON_ORDER_ENTRY,
+        GRAPHITRON_ORDER_FIELD_ENTRY,
+        GRAPHITRON_REFERENCE_FOR_ENTRY,
+        GRAPHITRON_REFERENCE_FOR_STEP_ENTRY,
+        GRAPHITRON_SERVICE_CONTEXT_ARG_ENTRY,
+        GRAPHITRON_SERVICE_ENTRY,
+        GRAPHITRON_SPELLED_REFERENCE_ENTRY,
+        GRAPHITRON_SPLIT_QUERY_ENTRY,
+        GRAPHITRON_TENANT_FAN_OUT_ENTRY,
+        GRAPHITRON_UNDECODED_ARGUMENT_ENTRY);
+
+    /** {@code DECODED} ordered so every relation follows the ones whose keys point at it. */
+    private static List<Table<?>> childrenFirst(List<Table<?>> tables) {
+        var names = tables.stream().map(Table::getName).collect(java.util.stream.Collectors.toSet());
+        var ordered = new java.util.ArrayList<Table<?>>();
+        var placed = new java.util.HashSet<String>();
+        while (ordered.size() < tables.size()) {
+            boolean progressed = false;
+            for (Table<?> table : tables) {
+                if (placed.contains(table.getName())) {
+                    continue;
+                }
+                boolean blocked = tables.stream()
+                    .filter(other -> !placed.contains(other.getName()))
+                    .filter(other -> !other.getName().equals(table.getName()))
+                    .anyMatch(other -> other.getReferences().stream()
+                        .anyMatch(key -> key.getKey().getTable().getName().equals(table.getName())));
+                if (!blocked) {
+                    ordered.add(table);
+                    placed.add(table.getName());
+                    progressed = true;
+                }
+            }
+            if (!progressed) {
+                // A cycle among the decoded relations, which the schema does not have; adding the
+                // rest in declaration order keeps this total rather than looping.
+                tables.stream().filter(t -> !placed.contains(t.getName())).forEach(ordered::add);
+                break;
+            }
+        }
+        return ordered;
     }
 }

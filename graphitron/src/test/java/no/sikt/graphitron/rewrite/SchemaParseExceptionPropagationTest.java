@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
@@ -49,7 +51,11 @@ class SchemaParseExceptionPropagationTest {
             DEFAULT_OUTPUT_PACKAGE,
             DEFAULT_JOOQ_PACKAGE);
 
-        Throwable thrown = catchThrowable(() -> new GraphQLRewriteGenerator(ctx).generate());
+        Throwable thrown;
+        try (var store = GraphitronStore.captured(ctx)) {
+            var handle = new StoreHandle(store.dsl(), ctx.graphName());
+            thrown = catchThrowable(() -> new GraphQLRewriteGenerator(ctx, handle).generate());
+        }
 
         assertThat(thrown)
             .as("a parse failure propagates unchanged out of generate(), no translation to another type")

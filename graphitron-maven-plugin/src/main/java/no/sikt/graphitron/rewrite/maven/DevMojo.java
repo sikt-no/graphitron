@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.maven;
 
-import no.sikt.graphitron.model.run.CapturePort;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.lsp.state.StoreAccess;
@@ -375,7 +375,6 @@ public class DevMojo extends AbstractRewriteMojo {
     // than through a database of the pass's own that H2 happened to alias onto the same file.
     // Closed ahead of the store in cleanup(); closing it gives back nothing, the port never owning
     // a store it was lent, unless a refusal demoted it to one of its own.
-    CapturePort sessionCapture;
     // The session's classpath census, held across rounds so a round re-reads only the entries whose
     // bytes moved. A .graphqls save cannot change a classfile, so those rounds re-read nothing;
     // a one-file recompile re-reads that file. Held here for the same reason sessionCapture is:
@@ -471,11 +470,6 @@ public class DevMojo extends AbstractRewriteMojo {
         if (storeHome != null) {
             sessionStore.reaped().report(storeHome).ifPresent(getLog()::info);
         }
-        // Every pass captures through here, into the store above. The port is handed a store it
-        // does not own: a refusal still demotes it to a private one of its own, exactly as it did
-        // when each pass opened its own store, and the session's readers stay on what they were
-        // given either way.
-        this.sessionCapture = CapturePort.over(sessionStore);
 
         var initialCtxHolder = new AtomicReference<RunContext>();
         var initialHolder = new AtomicReference<InitialOutput>();
@@ -1198,12 +1192,25 @@ public class DevMojo extends AbstractRewriteMojo {
     // Package-private so DevMojoTest can drive the catch-arm discrimination directly
     // (a malformed schema vs a missing file) without standing up the full watch loop.
     /**
-     * The port a pass captures through: the session's, so every round writes into the store the
-     * session's readers are on. A per-pass port where there is no session, which is the unit tier
-     * driving {@link #runGeneratorPass} directly without {@link #execute()} having opened one.
+     * The session's store, which every pass captures into and every reader reads.
+     *
+     * <p>One store for the session, opened by the session. The language server, the MCP reader and
+     * the generator are all on it, which is the point rather than a hazard: they share a process,
+     * none of them holds a transaction, and the only thing they can disagree about is how recently
+     * they looked.
      */
-    private CapturePort captureFor(RunContext ctx) {
-        return sessionCapture != null ? sessionCapture : CapturePort.forContext(ctx);
+    private GraphitronModelStore storeFor(RunContext ctx) {
+        if (sessionStore != null) {
+            return sessionStore;
+        }
+        if (ctx.storeDirectory() == null) {
+            throw new IllegalStateException(
+                "graphitron:dev: this pass has no fact store to capture into. The session opens one"
+                    + " at the configured <storeDirectory>, and there is no in-memory store to fall"
+                    + " back to: a pass that cannot open a store stops rather than producing a"
+                    + " result nothing can be read back from.");
+        }
+        return GraphitronModelStore.openAt(ctx.storeDirectory());
     }
 
     /**
@@ -1218,7 +1225,8 @@ public class DevMojo extends AbstractRewriteMojo {
         // three call sites having to remember to ask; the classpath cadence is the one that
         // re-reads, so it is the one a missed site would have silenced.
         sessionCensus.reportTo(round -> getLog().info("graphitron:dev: " + round.report()));
-        return new GraphQLRewriteGenerator(ctx, captureFor(ctx), sessionCensus);
+        return new GraphQLRewriteGenerator(ctx,
+            new StoreHandle(storeFor(ctx).dsl(), ctx.graphName()), sessionCensus);
     }
 
     PassRound runGeneratorPass(RunContext ctx, String label) {
@@ -1229,7 +1237,7 @@ public class DevMojo extends AbstractRewriteMojo {
             // Every round, and before the pass, for the reason captureModel carries. A round the
             // pass refuses gets one too, and gets it whether the refusal returns errors or throws:
             // the schema the gatherers read is no less read for having been turned down.
-            captureModel(ctx, captureFor(ctx));
+            captureModel(ctx, storeFor(ctx));
             // One pass: the emitted tree, the compile graph the incremental driver reads, and the
             // editor-facing catalog and diagnostics, from a single read of the schema and a single
             // capture of the graph's partition.
@@ -1358,9 +1366,6 @@ public class DevMojo extends AbstractRewriteMojo {
         // nothing, the port having been lent the store below rather than opening one. It has
         // something to give back only where a refusal demoted it to a private store of its own,
         // and that store is the port's to close.
-        if (sessionCapture != null) {
-            sessionCapture.close();
-        }
         // Last, after the servers whose tools read through it: the session's store handle. A
         // file-backed store only releases its connection here; the file stays for the next run.
         if (sessionStore != null) {
