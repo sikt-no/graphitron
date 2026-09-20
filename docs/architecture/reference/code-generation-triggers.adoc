@@ -1004,6 +1004,25 @@ declaration when they did, which is what a hand-written or federated schema reli
 half is asserted by the `connection` corpus example, whose SDL declares the whole Relay triad
 outright.
 
+[#pagination-arguments]
+==== The arguments the expansion appends
+
+`@asConnection` appends `first` and `after` to the carrier, after whatever arguments the author
+wrote. `first` carries the connection's page size, which is the application's `defaultFirstValue`
+where it states one.
+
+An author who paginates on their own terms keeps what they wrote. The forward pair lands beside a
+backward one rather than in place of it, so a field declaring `last` and `before` emits all four.
+
+include::_example-backward-paginated-connection.adoc[]
+
+Where the author declares one of the two appended names themselves, theirs stands and only the
+missing one is appended. What they wrote is emitted as written, so an argument declared bare stays
+bare rather than acquiring the connection's page size. Asserted by the `authored-pagination-argument`
+corpus example.
+
+include::_example-authored-pagination-argument.adoc[]
+
 === Turning rows into fields
 
 `@pivot` reads a table whose rows are the values you want as fields, and turns one row per key into

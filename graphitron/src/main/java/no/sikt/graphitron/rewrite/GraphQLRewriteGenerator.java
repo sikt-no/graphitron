@@ -21,6 +21,7 @@ import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.model.lint.LintConfig;
 import no.sikt.graphitron.model.lint.LintFindings;
 import no.sikt.graphitron.model.schema.SchemaLoader;
+import no.sikt.graphitron.model.schema.EmittedRegistry;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.schema.SdlVerdicts;
 import no.sikt.graphitron.model.schema.federation.KeyNodeSynthesiser;
@@ -520,6 +521,29 @@ public class GraphQLRewriteGenerator {
                             EmitPlan plan, List<BuildWarning> warnings) {}
 
     /**
+     * The schema this run emits, derived from the facts rather than synthesised beside the model.
+     *
+     * <p>The registry the author wrote, patched with what the anchors say macro expansion added.
+     * Most of a corpus is untouched by expansion, so what the store owes is the delta and the rest
+     * of the document stays exactly as written, applied directives included.
+     *
+     * <p>A rejection here is not an author error. The authored corpus already assembled upstream,
+     * so a registry that will not assemble after patching is this derivation disagreeing with
+     * itself, which is a defect in the generator and is raised as one.
+     */
+    private graphql.schema.GraphQLSchema emittedSchema(AttributedRegistry attributed) {
+        var assembly = SchemaAssembly.of(EmittedRegistry.of(attributed.registry(), store));
+        if (assembly instanceof SchemaAssembly.Assembled assembled) {
+            return assembled.schema();
+        }
+        var rejected = (SchemaAssembly.Rejected) assembly;
+        throw new IllegalStateException("the emitted registry derived from the store did not "
+            + "assemble, though the authored corpus did: "
+            + rejected.errors().stream().limit(3)
+                .map(e -> e.errorClass() + " " + e.message()).toList());
+    }
+
+    /**
      * The pipeline. Every public entry point runs this body and projects what it wants out of the
      * result; see the class javadoc for why there is one body rather than one per entry point.
      */
@@ -538,8 +562,13 @@ public class GraphQLRewriteGenerator {
         var read = assembleAndCaptureVerdicts(attributed, jooq, reading);
         var bundle = GraphitronSchemaBuilder.buildBundle(attributed, read.assembled(), ctx);
         var schema = bundle.model();
-        var assembled = bundle.assembled();
         boolean federationLink = bundle.federationLink();
+        // The emitted schema comes off the store rather than off the walk that built the model
+        // beside it. Both producers exist and agree: EmittedRegistryAgreementTest compares their
+        // printed schemas over every corpus document, and the two defects that comparison found
+        // were capture's rather than this one's. What the walk still owns is the classified model
+        // above, which nothing compares yet, so it stays where it is.
+        var assembled = emittedSchema(attributed);
 
         var catalog = projection.catalog()
             ? CatalogBuilder.build(jooq, assembled, ctx, census)

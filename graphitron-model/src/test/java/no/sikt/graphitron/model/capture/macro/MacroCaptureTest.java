@@ -253,23 +253,29 @@ class MacroCaptureTest {
     }
 
     /**
-     * The two pagination arguments, which the store did not record at all until this relation
-     * existed: the expansion has two halves in two modules, one writing facts and one building
-     * schema objects, and only the second knew they were there.
+     * The two pagination arguments, minted on every carrier and yielding per name.
      *
-     * <p>The condition is not a per-name collision, which is why it stays in capture rather than
-     * becoming a precedence column: an author who writes any pagination argument keeps their
-     * pagination whole, so a carrier carrying only {@code last} gets neither {@code first} nor
-     * {@code after} though neither name is taken.
+     * <p>The condition this case used to assert was that an author who wrote any pagination
+     * argument kept their pagination whole, so a carrier carrying only {@code last} got neither
+     * {@code first} nor {@code after}. The assembled-schema synthesis appends both to every
+     * carrier regardless, so that rule made the store disagree with the schema on exactly the
+     * shape the sakila example paginates backwards with, and nothing noticed until a generator
+     * read the store instead of the walk.
+     *
+     * <p>The four carriers here are the cases that differ: no arguments at all, an author
+     * paginating backwards, an author with an unrelated argument and a page size of their own, and
+     * an author who writes {@code first} themselves. The last is the one the synthesis handles
+     * worse than this does, appending a second {@code first} where the yield stands the mint down.
      */
     @Test
-    @DisplayName("the pagination arguments are minted, and an authored one stands the pair down")
+    @DisplayName("the pagination arguments are minted on every carrier, and an authored name wins")
     void paginationArgumentsAreMinted(@TempDir Path tmp) {
         String sdl = """
             type Query {
               films: [Film!]! @asConnection
-              actors(last: Int): [Actor!]! @asConnection
+              actors(last: Int, before: String): [Actor!]! @asConnection
               rated(genre: String): [Film!]! @asConnection(defaultFirstValue: 25)
+              paged(first: Int): [Film!]! @asConnection
             }
             type Film { title: String }
             type Actor { name: String }
@@ -284,22 +290,51 @@ class MacroCaptureTest {
                 .from(GRAPHITRON_MINTED_ARGUMENT)
                 .fetch(r -> r.value1() + "." + r.value2() + ":" + r.value3()
                     + "=" + r.value4() + "@" + r.value5()))
-                .as("both arguments on the carriers with no pagination of their own, the page size"
-                    + " the author's where they declared one, and neither on the carrier that"
-                    + " wrote last")
+                .as("every carrier states the pair, appended after whatever the author wrote, with"
+                    + " the page size the author's where they declared one. What an authored name"
+                    + " does to the mint is the anchors' business, not this relation's")
                 .containsExactlyInAnyOrder(
                     "films.first:Int=100@0", "films.after:String=null@1",
-                    "rated.first:Int=25@1", "rated.after:String=null@2");
+                    "actors.first:Int=100@2", "actors.after:String=null@3",
+                    "rated.first:Int=25@1", "rated.after:String=null@2",
+                    "paged.first:Int=100@1", "paged.after:String=null@2");
+
+            assertThat(emittedArguments(store, "actors"))
+                .as("a carrier paginating backwards keeps its own pair and gets the forward one"
+                    + " beside it, which is what the assembled-schema synthesis emits")
+                .containsExactly("last", "before", "first", "after");
+
+            assertThat(emittedArguments(store, "rated"))
+                .as("and an unrelated argument is simply what the mint appends after")
+                .containsExactly("genre", "first", "after");
+
+            assertThat(emittedArguments(store, "paged"))
+                .as("an authored first stands the mint down rather than being stated twice, and"
+                    + " the argument the author did not write is still appended")
+                .containsExactly("first", "after");
+
             assertThat(store.dsl()
-                .select(GRAPHITRON_ARGUMENT.ARGUMENT_NAME)
+                .select(GRAPHITRON_ARGUMENT.DEFAULT_VALUE_SDL)
                 .from(GRAPHITRON_ARGUMENT)
                 .where(GRAPHITRON_ARGUMENT.TYPE_NAME.eq("Query"))
-                .and(GRAPHITRON_ARGUMENT.FIELD_NAME.eq("rated"))
-                .orderBy(GRAPHITRON_ARGUMENT.ORDINAL)
-                .fetch(0, String.class))
-                .as("and the emitted argument list is the author's with the mint appended")
-                .containsExactly("genre", "first", "after");
+                .and(GRAPHITRON_ARGUMENT.FIELD_NAME.eq("paged"))
+                .and(GRAPHITRON_ARGUMENT.ARGUMENT_NAME.eq("first"))
+                .fetchOne(0, String.class))
+                .as("and the surviving first is the author's, so it carries their default rather"
+                    + " than the expansion's page size")
+                .isNull();
         }
+    }
+
+    /** One carrier's emitted argument names, in the order the anchor gives them. */
+    private static java.util.List<String> emittedArguments(CapturedStore store, String fieldName) {
+        return store.dsl()
+            .select(GRAPHITRON_ARGUMENT.ARGUMENT_NAME)
+            .from(GRAPHITRON_ARGUMENT)
+            .where(GRAPHITRON_ARGUMENT.TYPE_NAME.eq("Query"))
+            .and(GRAPHITRON_ARGUMENT.FIELD_NAME.eq(fieldName))
+            .orderBy(GRAPHITRON_ARGUMENT.ORDINAL)
+            .fetch(0, String.class);
     }
 
     /**

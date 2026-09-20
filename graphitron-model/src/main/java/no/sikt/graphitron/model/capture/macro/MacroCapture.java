@@ -45,12 +45,14 @@ import static org.jooq.impl.DSL.select;
  * satisfy while it read a whole-schema set of declared names. Shared machinery needs no special case
  * either: every carrier states the whole of {@code PageInfo} and the primary key is the only dedupe.
  *
- * <p>One exception, and it is not a collision rule. The pagination arguments are minted only where
- * the carrier declares no pagination argument at all, which is not a per-name test: an author who
- * wrote {@code last} keeps their pagination and gets neither {@code first} nor {@code after}, though
- * neither name collides. A precedence column cannot say that, being a property of one row, so the
- * condition stays here; it reads the carrier's own argument list and nothing wider, so the
- * qualification rule above still holds.
+ * <p>No exception for pagination, and there used to be one. The arguments were minted only where
+ * the carrier declared no pagination argument at all, so an author who wrote {@code last} got
+ * neither {@code first} nor {@code after}; the assembled-schema synthesis appends both to every
+ * carrier regardless, so the store and the schema disagreed wherever an author paginated
+ * backwards. Dropping the condition settles it the way the row already could: a minted argument
+ * yields to an authored one of the same name, so an author who writes {@code first} keeps theirs
+ * and an author who writes {@code last} gets the forward pair beside it. That is better than the
+ * synthesis it matches, which appends unconditionally and would state {@code first} twice.
  *
  * <p>It reads the store rather than the parse. Its input is the decode's own
  * {@code graphitron_connection_entry} rows joined to the carrier's transcribed field, so it runs as a
@@ -71,9 +73,6 @@ public final class MacroCapture {
     private static final String REPLACE = "REPLACE";
     /** A mint that stands down where the author declared the coordinate. */
     private static final String YIELD = "YIELD";
-
-    /** The pagination arguments, and the names whose presence stands the whole mint down. */
-    private static final Set<String> PAGINATION_ARGUMENTS = Set.of("first", "last", "after", "before");
 
     /** The Relay shapes' descriptions, matching what the assembled-schema synthesis emits. */
     private static final String DESC_CONNECTION = "A connection to a list of items.";
@@ -140,7 +139,7 @@ public final class MacroCapture {
     private record Carrier(String parentTypeName, String fieldName, String connectionName,
                            String edgeName, String elementTypeName, boolean itemNullable,
                            boolean outerNonNull, int fieldOrdinal, String fieldDescription,
-                           int argumentCount, boolean paginated, Integer authoredPageSize) {
+                           int argumentCount, Integer authoredPageSize) {
 
         /** The coordinate that coins everything this carrier's application mints. */
         String coordinate() {
@@ -190,7 +189,6 @@ public final class MacroCapture {
                 row.get(GRAPHQL_FIELD.NON_NULL),
                 row.get(GRAPHQL_FIELD.ORDINAL), row.get(GRAPHQL_FIELD.DESCRIPTION),
                 arguments.size(),
-                arguments.stream().anyMatch(PAGINATION_ARGUMENTS::contains),
                 row.get(GRAPHITRON_CONNECTION_ENTRY.DEFAULT_FIRST_VALUE)));
         }
         return carriers;
@@ -273,14 +271,14 @@ public final class MacroCapture {
     }
 
     /**
-     * The two pagination arguments, appended after whatever the author wrote. Minted only where the
-     * carrier declares no pagination argument at all, for the reason the class comment gives, and
-     * yielding rather than replacing: an author who names one of these keeps it.
+     * The two pagination arguments, appended after whatever the author wrote, on every carrier.
+     *
+     * <p>Yielding rather than replacing, which is the whole of the collision rule this pair needs:
+     * an author who names one of these keeps theirs and the mint stands down. A carrier that
+     * paginates backwards gets the forward pair beside its own, which is what the assembled-schema
+     * synthesis has always emitted.
      */
     private void mintPaginationArguments(Carrier carrier) {
-        if (carrier.paginated()) {
-            return;
-        }
         int pageSize = carrier.authoredPageSize() != null
             ? carrier.authoredPageSize() : ConnectionDefaults.DEFAULT_PAGE_SIZE;
         mintArgument(carrier, "first", carrier.argumentCount(), "Int", String.valueOf(pageSize));

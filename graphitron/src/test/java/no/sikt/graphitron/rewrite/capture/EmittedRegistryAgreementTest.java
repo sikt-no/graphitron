@@ -48,12 +48,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <h3>The two producers agree, over every document</h3>
  *
  * <p>{@link #KNOWN_DISAGREEMENTS} is a ratchet, not an exemption list: the sweep stays total, a new
- * difference fails the build, and so does an old one fixed without being struck off. It is empty,
- * which is the state this gate was built to reach and the condition under which the second producer
- * can be retired and this test deleted with it.
+ * difference fails the build, and so does an old one fixed without being struck off.
  *
- * <p>Both causes it found are recorded here rather than only in history, because both shapes recur
- * and the second is why an empty set is worth more than it looks.
+ * <p>It held one entry, and what that entry is matters more than the count. Three causes have been
+ * found here. Two were capture stating something the run does not emit, and both were fixed in
+ * capture. The third is the reverse: the store is right and the synthesis is wrong, so it is
+ * recorded rather than repaired, and the difference ships the day the generator reads the store.
+ * A ratchet that only ever went to zero could not have said that; it would have pushed a defect
+ * into capture to make two producers agree on it.
  *
  * <ul>
  *   <li><b>The carrier lost the author's outer non-null.</b> {@code ConnectionPromoter} carries the
@@ -71,16 +73,40 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       description differing on one line after the types already matched, which is the kind of
  *       last mile a relation-count comparison would have called agreement.</li>
  * </ul>
+ *
+ * <h3>The one difference that is not a defect in capture</h3>
+ *
+ * <p><b>An authored pagination argument is replaced rather than yielded to.</b> Where an author
+ * declares {@code first} themselves, {@code ConnectionPromoter.rewriteCarrierField} appends its own
+ * over the top, so a bare {@code first: Int} comes back as {@code first: Int = 100} carrying the
+ * connection's page size the author never wrote. The expansion yields per name, so the store keeps
+ * the declaration as written. An expansion that silently rewrites what an author declared is the
+ * defect, and it is the synthesis that has it.
+ *
+ * <p>This one is worth stating plainly because it is a schema change rather than an internal
+ * correction. A consumer who declared {@code first} has been receiving an argument with a default
+ * they did not ask for, and a client omitting the argument was paging at that default; after the
+ * switch the argument is emitted as declared. The corpus carries the shape as
+ * {@code authored-pagination-argument} so the difference is exercised rather than remembered.
+ *
+ * <p>It also changes the retirement condition. This gate was built to reach an empty set, and the
+ * condition is now an empty set <em>or</em> a set holding only differences where the store is the
+ * better answer. That is a weaker statement and it has to be read, not counted, which is why the
+ * entry carries its reasoning here rather than only its id.
  */
 @PipelineTier
 class EmittedRegistryAgreementTest {
 
     /**
-     * The corpus documents whose two printings differ today. Struck off as each cause is fixed; a
-     * document that starts or stops disagreeing fails this test either way. Empty is the state in
-     * which the second producer can be retired, and this test with it.
+     * The corpus documents whose two printings differ today. Struck off as each cause is settled; a
+     * document that starts or stops disagreeing fails this test either way.
+     *
+     * <p>The entry here is not owed a fix in capture. The synthesis replaces an authored
+     * {@code first} with one carrying the connection's page size, and the store yields to what the
+     * author wrote; the class comment argues why that makes the store right. It stops being a
+     * disagreement when the synthesis goes, not when capture changes.
      */
-    private static final Set<String> KNOWN_DISAGREEMENTS = Set.of();
+    private static final Set<String> KNOWN_DISAGREEMENTS = Set.of("authored-pagination-argument");
 
     @Test
     @DisplayName("the store-derived schema and the incumbent agree on every corpus document but the recorded ones")
@@ -94,6 +120,7 @@ class EmittedRegistryAgreementTest {
 
         var documents = CorpusDocuments.documents();
         var differed = new LinkedHashSet<String>();
+        var detail = new ArrayList<String>();
         var unusable = new ArrayList<String>();
 
         for (var document : documents) {
@@ -122,8 +149,15 @@ class EmittedRegistryAgreementTest {
                 derived = assembled.schema();
             }
 
-            if (!printer.print(incumbent).equals(printer.print(derived))) {
+            String left = printer.print(incumbent);
+            String right = printer.print(derived);
+            if (!left.equals(right)) {
                 differed.add(document.id());
+                // An id says that a document disagrees and not about what, which is the first
+                // thing a reader needs and the one thing a set of ids cannot carry. The first
+                // differing line is usually the whole answer: both sides are printed by one
+                // printer in a stable order, so they diverge at the element that differs.
+                detail.add(document.id() + ": " + firstDifference(left, right));
             }
         }
 
@@ -133,8 +167,23 @@ class EmittedRegistryAgreementTest {
             .isEmpty();
         assertThat(documents).as("the corpus loaded").isNotEmpty();
         assertThat(differed)
-            .as("the two producers' printed schemas, over %d corpus documents", documents.size())
+            .as("the two producers' printed schemas, over %d corpus documents. %s",
+                documents.size(), detail)
             .isEqualTo(KNOWN_DISAGREEMENTS);
+    }
+
+    /** The first line the two printed schemas differ at, with a little of each side. */
+    private static String firstDifference(String left, String right) {
+        var a = left.split("\n");
+        var b = right.split("\n");
+        for (int i = 0; i < Math.min(a.length, b.length); i++) {
+            if (!a[i].equals(b[i])) {
+                return "line " + (i + 1) + ", incumbent [" + a[i].strip()
+                    + "] derived [" + b[i].strip() + "]";
+            }
+        }
+        return "one is a prefix of the other, incumbent " + a.length
+            + " lines and derived " + b.length;
     }
 
     private static String brief(RuntimeException e) {

@@ -1,0 +1,34 @@
+type Film @table(name: "film") @classifiedType(as: TableType) {
+  title: String @classified(source: Child, operations: [Select], target: Single, targetShape: Column)
+}
+
+extend type Query {
+  "A carrier whose author paginates backwards. The expansion appends the forward pair beside the author's own."
+  recentFilms(last: Int, before: String): [Film!]! @asConnection @defaultOrder(primaryKey: true)
+    @classified(source: Query, operations: [OrderBy, Paginate, Select], target: Single, targetShape: Connection)
+
+}
+
+extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
+  type_name,    field_name, classifier,   tier
+  CorpusAnchor, name,       TABLE_COLUMN, INFERRED
+  Film,         title,      TABLE_COLUMN, INFERRED
+  """)
+
+extend schema @expectEquals(relation: "intent_bound_table", rows: """
+  type_name,    table_name
+  CorpusAnchor, category
+  Film,         film
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name, field_name,   source,      result
+  Query,     corpusAnchor, AnchorTable, SingleRecord
+  Query,     recentFilms,  AnchorTable, Connection
+  """)
+
+{
+  recentFilms(last: 2) {
+    edges { node { title } }
+  }
+}
