@@ -15,6 +15,7 @@ import no.sikt.graphitron.model.grammar.ConstantReferenceGrammar;
 import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
+import org.jooq.Record3;
 
 import java.time.LocalDateTime;
 import java.util.Locale;
@@ -22,7 +23,9 @@ import java.util.Map;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD;
-import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD_PARAMETER;
+import static no.sikt.graphitron.model.Tables.CODE_METHOD;
+import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
+import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD_PARAMETER_TABLE;
 import static no.sikt.graphitron.model.Tables.CODE_EXTERNAL_FIELD_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
@@ -961,12 +964,23 @@ public final class SeededStore {
     public static void seedExternalFieldMethod(DSLContext dsl, String sourceName, String className,
                                                String methodName, String descriptor,
                                                String tableParameterType) {
+        dsl.insertInto(CODE_METHOD)
+            .set(CODE_METHOD.SOURCE_NAME, sourceName)
+            .set(CODE_METHOD.CLASS_NAME, className)
+            .set(CODE_METHOD.METHOD_NAME, methodName)
+            .set(CODE_METHOD.DESCRIPTOR, descriptor)
+            .set(CODE_METHOD.IS_STATIC, true)
+            .set(CODE_METHOD.TOUCHED_AT, SEEDED_READING)
+            .onDuplicateKeyIgnore()
+            .execute();
+        // The table the lifter takes is the sole position's role now, not a column on the arm.
+        seedConditionParameter(dsl, sourceName, className, methodName, descriptor, 0, "table",
+            tableParameterType);
         dsl.insertInto(CODE_EXTERNAL_FIELD_METHOD)
             .set(CODE_EXTERNAL_FIELD_METHOD.SOURCE_NAME, sourceName)
             .set(CODE_EXTERNAL_FIELD_METHOD.CLASS_NAME, className)
             .set(CODE_EXTERNAL_FIELD_METHOD.METHOD_NAME, methodName)
             .set(CODE_EXTERNAL_FIELD_METHOD.DESCRIPTOR, descriptor)
-            .set(CODE_EXTERNAL_FIELD_METHOD.TABLE_PARAMETER_TYPE, tableParameterType)
             .set(CODE_EXTERNAL_FIELD_METHOD.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
@@ -2907,31 +2921,95 @@ public final class SeededStore {
             seedMethodParameter(dsl, sourceName, className, methodName, descriptor.toString(),
                 position, parameterClass == null ? Map.of() : Map.of("", parameterClass));
         }
+        for (int position = 0; position < parameterClasses.length; position++) {
+            seedConditionParameter(dsl, sourceName, className, methodName, descriptor.toString(),
+                position, null, parameterClasses[position]);
+        }
+    }
+
+    /**
+     * One position of the condition arm, named. What a case reading a parameter by name needs and
+     * what {@link #seedConditionMethod} cannot supply, its own signature being classes alone.
+     *
+     * <p>The method row is seeded idempotently beside it, since a case building a signature one
+     * position at a time still needs the method the positions hang on.
+     */
+    public static void seedConditionParameter(DSLContext dsl, String sourceName, String className,
+                                              String methodName, String descriptor, int position,
+                                              String parameterName, String parameterClass) {
+        dsl.insertInto(CODE_METHOD)
+            .set(CODE_METHOD.SOURCE_NAME, sourceName)
+            .set(CODE_METHOD.CLASS_NAME, className)
+            .set(CODE_METHOD.METHOD_NAME, methodName)
+            .set(CODE_METHOD.DESCRIPTOR, descriptor)
+            .set(CODE_METHOD.IS_STATIC, true)
+            .set(CODE_METHOD.TOUCHED_AT, SEEDED_READING)
+            .onDuplicateKeyIgnore()
+            .execute();
         dsl.insertInto(CODE_CONDITION_METHOD)
             .set(CODE_CONDITION_METHOD.SOURCE_NAME, sourceName)
             .set(CODE_CONDITION_METHOD.CLASS_NAME, className)
             .set(CODE_CONDITION_METHOD.METHOD_NAME, methodName)
-            .set(CODE_CONDITION_METHOD.DESCRIPTOR, descriptor.toString())
-            .set(CODE_CONDITION_METHOD.IS_STATIC, true)
+            .set(CODE_CONDITION_METHOD.DESCRIPTOR, descriptor)
             .set(CODE_CONDITION_METHOD.TOUCHED_AT, SEEDED_READING)
             .onDuplicateKeyIgnore()
             .execute();
-        for (int position = 0; position < parameterClasses.length; position++) {
-            String parameterClass = parameterClasses[position];
-            dsl.insertInto(CODE_CONDITION_METHOD_PARAMETER)
-                .set(CODE_CONDITION_METHOD_PARAMETER.SOURCE_NAME, sourceName)
-                .set(CODE_CONDITION_METHOD_PARAMETER.CLASS_NAME, className)
-                .set(CODE_CONDITION_METHOD_PARAMETER.METHOD_NAME, methodName)
-                .set(CODE_CONDITION_METHOD_PARAMETER.DESCRIPTOR, descriptor.toString())
-                .set(CODE_CONDITION_METHOD_PARAMETER.POSITION, position)
-                .set(CODE_CONDITION_METHOD_PARAMETER.PARAMETER_TYPE,
-                    // A primitive parameter names no class, and the arm records the type the
-                    // classfile states rather than an absence; int is what the descriptor's I is.
-                    parameterClass == null ? "int" : parameterClass)
-                .set(CODE_CONDITION_METHOD_PARAMETER.TOUCHED_AT, SEEDED_READING)
+        // A primitive parameter names no class, and the arm records the type the classfile states
+        // rather than an absence; int is what the descriptor's I is.
+        String erased = parameterClass == null ? "int" : parameterClass;
+        var table = parameterClass == null ? null : seededTable(dsl, parameterClass);
+        String role = table != null ? "TABLE_CONCRETE"
+            : JOOQ_TABLE.equals(parameterClass) ? "TABLE_ANY" : "OTHER";
+        dsl.insertInto(CODE_METHOD_PARAMETER)
+            .set(CODE_METHOD_PARAMETER.SOURCE_NAME, sourceName)
+            .set(CODE_METHOD_PARAMETER.CLASS_NAME, className)
+            .set(CODE_METHOD_PARAMETER.METHOD_NAME, methodName)
+            .set(CODE_METHOD_PARAMETER.DESCRIPTOR, descriptor)
+            .set(CODE_METHOD_PARAMETER.POSITION, position)
+            .set(CODE_METHOD_PARAMETER.PARAMETER_NAME, parameterName)
+            .set(CODE_METHOD_PARAMETER.ROLE, role)
+            // DIRECT throughout: a fixture names classes rather than compiling them, so it cannot
+            // ask whether one is an enum. The case that turns on the answer is CodeCaptureTest's,
+            // over classes that exist.
+            .set(CODE_METHOD_PARAMETER.EXTRACTION, "DIRECT")
+            .set(CODE_METHOD_PARAMETER.TOUCHED_AT, SEEDED_READING)
+            .onDuplicateKeyIgnore()
+            .execute();
+        if (table != null) {
+            dsl.insertInto(CODE_CONDITION_METHOD_PARAMETER_TABLE)
+                .set(CODE_CONDITION_METHOD_PARAMETER_TABLE.SOURCE_NAME, sourceName)
+                .set(CODE_CONDITION_METHOD_PARAMETER_TABLE.CLASS_NAME, className)
+                .set(CODE_CONDITION_METHOD_PARAMETER_TABLE.METHOD_NAME, methodName)
+                .set(CODE_CONDITION_METHOD_PARAMETER_TABLE.DESCRIPTOR, descriptor)
+                .set(CODE_CONDITION_METHOD_PARAMETER_TABLE.POSITION, position)
+                .set(CODE_CONDITION_METHOD_PARAMETER_TABLE.TABLE_SOURCE_NAME, table.value1())
+                .set(CODE_CONDITION_METHOD_PARAMETER_TABLE.TABLE_SCHEMA, table.value2())
+                .set(CODE_CONDITION_METHOD_PARAMETER_TABLE.TABLE_NAME, table.value3())
+                .set(CODE_CONDITION_METHOD_PARAMETER_TABLE.TOUCHED_AT, SEEDED_READING)
                 .onDuplicateKeyIgnore()
                 .execute();
         }
+    }
+
+    /** The bare jOOQ table interface, which is how a wildcard table parameter is spelled here. */
+    private static final String JOOQ_TABLE = "org.jooq.Table";
+
+    /**
+     * The catalog table a seeded parameter class names, or null where this store holds none.
+     *
+     * <p>The role a position plays is an assignability question, and a fixture has no classes to
+     * ask it of: the table classes these cases name are spellings rather than compiled code. So the
+     * seed asks the store the question capture asks the classpath, which agrees wherever a case
+     * seeded the catalog it is about. A case naming a table class and seeding no catalog row gets
+     * OTHER, and that is the same silence it already got from a rule that resolved the class
+     * through sql_table and found nothing.
+     */
+    private static Record3<String, String, String> seededTable(DSLContext dsl, String classFqn) {
+        return dsl.select(SQL_TABLE.SOURCE_NAME, SQL_TABLE.TABLE_SCHEMA, SQL_TABLE.TABLE_NAME)
+            .from(SQL_TABLE)
+            .where(SQL_TABLE.CLASS_FQN.eq(classFqn))
+            .limit(1)
+            .fetchOne();
     }
 
     /**

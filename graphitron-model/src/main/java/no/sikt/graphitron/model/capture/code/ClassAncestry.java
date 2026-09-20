@@ -1,5 +1,7 @@
 package no.sikt.graphitron.model.capture.code;
 
+import no.sikt.graphitron.model.classpath.ClassfileCensus;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -87,6 +89,23 @@ final class ClassAncestry {
     }
 
     /**
+     * Whether {@code className} is an enum, which decides how a value bound to a parameter of that
+     * type is coerced.
+     *
+     * <p>Asked of a loaded class rather than of the census, and that is what makes it answerable: a
+     * generated jOOQ enum lives in the package the reading excludes, so a census could answer for
+     * an author's own enums and not for the ones a column binds to. The loader reaches both. A name
+     * that does not resolve is not an enum, on {@link #isThrowable}'s terms.
+     */
+    boolean isEnum(String className) {
+        try {
+            return Class.forName(className, false, loader).isEnum();
+        } catch (ClassNotFoundException | LinkageError e) {
+            return false;
+        }
+    }
+
+    /**
      * Every type {@code className} is, itself excluded, in the order the walk met them.
      *
      * <p>Best-effort where {@link #isThrowable} is strict, and the asymmetry is deliberate: a name
@@ -116,6 +135,12 @@ final class ClassAncestry {
         }
     }
 
+    /**
+     * The first {@code extends} edge, which is the superclass for a class and a super-interface for
+     * an interface. The conflation costs {@link #isThrowable} a walk up an interface chain and
+     * never an answer: throwing is single inheritance through classes, so a chain that starts at an
+     * interface reaches {@code java.lang.Throwable} under no reading of it.
+     */
     private String superclassOf(String className) {
         List<ClassfileCensus.SupertypeAt> supertypes = supertypesOf(className);
         if (supertypes == null) {
@@ -156,12 +181,17 @@ final class ClassAncestry {
         } catch (ClassNotFoundException | LinkageError e) {
             return null;
         }
+        // The clause is the declaring type's, exactly as the census reads it off the flags: an
+        // interface extends its super-interfaces. Stated here too because these edges and the
+        // census's are read through one accessor, and an edge that meant different things
+        // depending on which half produced it would be worse than either.
+        String clause = loaded.isInterface() ? EXTENDS : "IMPLEMENTS";
         var edges = new ArrayList<ClassfileCensus.SupertypeAt>();
         if (loaded.getSuperclass() != null) {
             edges.add(new ClassfileCensus.SupertypeAt(loaded.getSuperclass().getName(), EXTENDS));
         }
         for (Class<?> face : loaded.getInterfaces()) {
-            edges.add(new ClassfileCensus.SupertypeAt(face.getName(), "IMPLEMENTS"));
+            edges.add(new ClassfileCensus.SupertypeAt(face.getName(), clause));
         }
         return List.copyOf(edges);
     }

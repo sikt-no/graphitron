@@ -204,8 +204,13 @@ class DerivedReadCostTest {
      * <p>122 with the type binding, the fourth of those rules. The reference walk converted beside
      * it and moved this figure by nothing: it was a plain view and its canonical name is a view
      * still, the two keyed arms under it being tables.
+     *
+     * <p>120 when the condition arm started carrying what its readers were re-deriving. Two rules
+     * went, and this is the other way the count can fall without a reader losing anything: the
+     * question each answered is answered at capture now, so the statement is a column rather than a
+     * view over a recursive closure and a catalog join.
      */
-    private static final int READERS_IN_SCHEMA = 122;
+    private static final int READERS_IN_SCHEMA = 120;
 
     /**
      * Views whose derivation reaches at least one registration's target.

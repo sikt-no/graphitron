@@ -2,36 +2,27 @@ package no.sikt.graphitron.model.classpath;
 
 import no.sikt.graphitron.model.config.ClasspathEntry;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.UncheckedIOException;
-import java.lang.classfile.Attributes;
-import java.lang.classfile.ClassFile;
-import java.lang.classfile.ClassModel;
-import java.lang.classfile.MethodModel;
-import java.lang.classfile.MethodSignature;
-import java.lang.classfile.Signature;
-import java.lang.classfile.attribute.MethodParametersAttribute;
-import java.lang.classfile.attribute.RecordAttribute;
-import java.lang.classfile.attribute.SignatureAttribute;
-import java.lang.constant.ClassDesc;
-import java.lang.reflect.AccessFlag;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
 /**
- * Walks the consumer's declared compile classpath and enumerates the public top-level classes plus
- * their public methods so the LSP can offer them as completion / hover / diagnostic targets for
- * {@code @service} / {@code @condition} / {@code @record} / {@code @scalarType}, and so the fact
- * store's class census is the set a schema is permitted to name. Reads {@code .class} bytes via
- * the stdlib {@link java.lang.classfile} API; no external dependency.
+ * The consumer's declared compile classpath as the completion vocabulary spells it: the public
+ * top-level classes and their public methods, so the LSP can offer them as completion / hover /
+ * diagnostic targets for {@code @service} / {@code @condition} / {@code @record} /
+ * {@code @scalarType}, and so the fact store's class census is the set a schema is permitted to
+ * name.
+ *
+ * <p>It reads no bytes. {@link ClassfileCensus} is the reader, and this is a projection of what it
+ * found into the shape these surfaces and the {@code jvm_} relations were written against. The two
+ * were separate readings of the same classfiles for a while, with their own scope rules and their
+ * own spelling of the signature walk, which is a duplication that can only be paid for by staying
+ * identical. Now there is one reading. This layer is scaffolding with a stated end: it keeps the
+ * {@code jvm_} census answering while the {@code code_} family grows into what reads it, and it
+ * goes when that census does.
  *
  * <p>Directories and jars alike, but declared jars only. The scan used to skip anything that was
  * not a directory, on the premise that consumer vocabulary lives in reactor source rather than in
@@ -55,24 +46,16 @@ import java.util.zip.ZipFile;
  * row needed), never through {@code @service}. Admitting the routine surface
  * would grow the {@code jvm_} fact relations for no present consumer.
  *
- * <p>Method and record-component type information is read in both forms: the erasure the JVM
+ * <p>Method and record-component type information arrives in both forms: the erasure the JVM
  * descriptor carries, and the declared form the {@code Signature} attribute carries where the
- * compiler emitted one. A surface spelling a signature for an author wants the declared form,
- * a check on a type's identity wants the erasure, and a walk following an accessor into a
- * container's element type can only use the declared one. Parameter names follow the
- * {@link CompletionData.Parameter#name()} null-when-unavailable contract; see
- * {@link #readParameterNames}.
- *
- * <p>Each class also carries the supertypes it declares, which is what lets a consumer answer
- * assignability without a loader; see {@link #readSupertypes}.
+ * compiler emitted one. A surface spelling a signature for an author wants the declared form, a
+ * check on a type's identity wants the erasure, and a walk following an accessor into a container's
+ * element type can only use the declared one. Parameter names follow the
+ * {@link CompletionData.Parameter#name()} null-when-unavailable contract, which the census carries
+ * unchanged: a null name, never a synthesised {@code arg0}, is the signal that the class was
+ * compiled without {@code -parameters}.
  */
 public final class ClasspathScanner {
-
-    /** The implicit superclass the JVM writes for anything with no {@code extends} clause. */
-    private static final String OBJECT = "java.lang.Object";
-
-
-    /** JVM field descriptor of {@code graphql.schema.GraphQLScalarType}; the exact field-type match for @scalarType completion.*/
 
     private ClasspathScanner() {}
 
@@ -128,15 +111,10 @@ public final class ClasspathScanner {
      * recomputed alone once it has been folded against its neighbours.
      */
     public static List<CompletionData.ExternalReference> scanEntry(Path entry, String jooqPackage) {
-        var jooqPrefix = jooqPrefix(jooqPackage);
         String source = entry.toString();
-        var refs = new ArrayList<CompletionData.ExternalReference>();
-        if (Files.isDirectory(entry)) {
-            scanDirectory(entry, jooqPrefix, source, refs);
-        } else if (isJar(entry)) {
-            scanJar(entry, jooqPrefix, source, refs);
-        }
-        return List.copyOf(refs);
+        return ClassfileCensus.readEntry(entry, source, jooqPackage).stream()
+            .map(ClasspathScanner::reference)
+            .toList();
     }
 
     /**
@@ -150,14 +128,7 @@ public final class ClasspathScanner {
      */
     public static Optional<CompletionData.ExternalReference> readClassFile(
             Path file, String jooqPackage, String source) {
-        byte[] bytes;
-        try {
-            bytes = Files.readAllBytes(file);
-        } catch (IOException e) {
-            throw new UncheckedIOException("failed to read " + file, e);
-        }
-        return Optional.ofNullable(readIfCandidate(
-            file.getFileName().toString(), bytes, jooqPrefix(jooqPackage), source));
+        return ClassfileCensus.readFile(file, source, jooqPackage).map(ClasspathScanner::reference);
     }
 
     /**
@@ -189,384 +160,66 @@ public final class ClasspathScanner {
             && entry.getFileName().toString().endsWith(".jar")
             && Files.isRegularFile(entry);
     }
-
-    private static void scanDirectory(Path root, String jooqPrefix, String source,
-                                      List<CompletionData.ExternalReference> refs) {
-        try (Stream<Path> walk = Files.walk(root)) {
-            walk.filter(Files::isRegularFile)
-                .filter(p -> p.getFileName().toString().endsWith(".class"))
-                .forEach(p -> {
-                    byte[] bytes;
-                    try {
-                        bytes = Files.readAllBytes(p);
-                    } catch (IOException e) {
-                        throw new UncheckedIOException("failed to read " + p, e);
-                    }
-                    collect(p.getFileName().toString(), bytes, jooqPrefix, source, refs);
-                });
-        } catch (IOException e) {
-            throw new UncheckedIOException("classpath scan failed at " + root, e);
-        }
-    }
-
     /**
-     * A jar's class entries through the same filter. A jar that cannot be opened is skipped rather
-     * than failing the catalog build: an unreadable dependency is the resolver's problem to report
-     * at the coordinate that names a class in it, and a scan that dies takes every other entry's
-     * classes with it.
-     */
-    private static void scanJar(Path jar, String jooqPrefix, String source,
-                                List<CompletionData.ExternalReference> refs) {
-        try (ZipFile zip = new ZipFile(jar.toFile())) {
-            var entries = zip.entries();
-            while (entries.hasMoreElements()) {
-                ZipEntry entry = entries.nextElement();
-                String name = entry.getName();
-                if (entry.isDirectory() || !name.endsWith(".class")) {
-                    continue;
-                }
-                String fileName = name.substring(name.lastIndexOf('/') + 1);
-                if (skipOnName(fileName)) {
-                    continue;
-                }
-                byte[] bytes;
-                try (InputStream in = zip.getInputStream(entry)) {
-                    bytes = in.readAllBytes();
-                } catch (IOException e) {
-                    continue;
-                }
-                collect(fileName, bytes, jooqPrefix, source, refs);
-            }
-        } catch (IOException e) {
-            // Not a readable jar. See the method comment.
-        }
-    }
-
-    private static void collect(String fileName, byte[] bytes, String jooqPrefix, String source,
-                                List<CompletionData.ExternalReference> refs) {
-        var ref = readIfCandidate(fileName, bytes, jooqPrefix, source);
-        if (ref != null) {
-            refs.add(ref);
-        }
-    }
-
-    /**
-     * The filters a file name alone decides, so the common case skips a parse: the two
-     * package-level pseudo-classes, and any {@code Outer$Inner.class} or synthetic {@code $1.class}.
-     * The nested-class exclusion is disclosed on {@code jvm_class}, because a nested class named in
-     * {@code @record} resolves through the codegen loader and reads as unknown here.
-     */
-    private static boolean skipOnName(String fileName) {
-        if ("module-info.class".equals(fileName) || "package-info.class".equals(fileName)) {
-            return true;
-        }
-        String simple = fileName.substring(0, fileName.length() - ".class".length());
-        return simple.indexOf('$') >= 0;
-    }
-
-    private static CompletionData.ExternalReference readIfCandidate(String fileName, byte[] bytes,
-                                                                    String jooqPrefix, String source) {
-        if (skipOnName(fileName)) {
-            return null;
-        }
-        ClassModel cm;
-        try {
-            cm = ClassFile.of().parse(bytes);
-        } catch (IllegalArgumentException e) {
-            // Stray non-class file or a malformed class. Skip rather than
-            // fail the catalog build; broken classes surface elsewhere.
-            return null;
-        }
-        var flags = cm.flags();
-        if (!flags.has(AccessFlag.PUBLIC)) return null;
-        if (flags.has(AccessFlag.SYNTHETIC)) return null;
-        String fqn = cm.thisClass().asInternalName().replace('/', '.');
-        if (jooqPrefix != null && fqn.startsWith(jooqPrefix)) return null;
-        var methods = readMethods(cm);
-        var recordComponents = readRecordComponents(cm);
-        return new CompletionData.ExternalReference(fqn, fqn, "", methods, recordComponents,
-            declaredKind(cm), source, readSupertypes(cm));
-    }
-
-    /**
-     * The names the classfile declares above itself: its superclass, then its interfaces in
-     * declaration order. The one thing a bytecode-only scan holds that answers assignability,
-     * which is otherwise a live loader's question and is why a walk over accessor return types
-     * needed one.
+     * One census class as the completion vocabulary spells it.
      *
-     * <p>{@code java.lang.Object} is dropped rather than recorded. The JVM writes it as the
-     * superclass of every class with no {@code extends} clause and of every interface, so a row
-     * would report a declaration the source never wrote, and what is left is exactly the extends
-     * clause an author typed.
+     * <p>The whole of what this layer is: the bytes are read once, by
+     * {@link ClassfileCensus}, and rendered here into the shape the editor's surfaces and the
+     * {@code jvm_} relations were written against. Two renderings differ and neither is a loss.
+     * The census names erased types fully qualified, because the arms over it compare them against
+     * {@code org.jooq.Condition} and a package-less name cannot be compared for identity; this
+     * vocabulary drops the package, because what reads it renders a signature for a person. The
+     * qualified name determines the short one, so the derivation goes this way and not the other,
+     * and the qualified names a caller does need are in the type references, which pass through
+     * unchanged.
      *
-     * <p>An interface's super-interfaces sit in the same array as a class's implements list, so
-     * the clause is decided by the declaring class's own form. Nothing filters the names: a
-     * supertype the scan will never reach is the whole point, a chain's last hop usually being a
-     * JDK interface nobody scans.
+     * <p>Scaffolding with a stated end. It exists to keep the {@code jvm_} census answering while
+     * the {@code code_} family grows into what reads it, and it goes when that census does.
      */
-    private static List<CompletionData.Supertype> readSupertypes(ClassModel cm) {
-        String clause = cm.flags().has(AccessFlag.INTERFACE) ? "EXTENDS" : "IMPLEMENTS";
-        var supertypes = new ArrayList<CompletionData.Supertype>();
-        cm.superclass()
-            .map(entry -> entry.asInternalName().replace('/', '.'))
-            .filter(name -> !OBJECT.equals(name))
-            .ifPresent(name -> supertypes.add(new CompletionData.Supertype(name, "EXTENDS")));
-        for (var declared : cm.interfaces()) {
-            supertypes.add(new CompletionData.Supertype(
-                declared.asInternalName().replace('/', '.'), clause));
-        }
-        return List.copyOf(supertypes);
+    private static CompletionData.ExternalReference reference(ClassfileCensus.ClassAt at) {
+        var methods = at.methods().stream().map(ClasspathScanner::method).toList();
+        var components = at.components().stream().map(ClasspathScanner::component).toList();
+        var supertypes = at.supertypes().stream()
+            .map(supertype -> new CompletionData.Supertype(supertype.name(), supertype.declaredVia()))
+            .toList();
+        return new CompletionData.ExternalReference(at.className(), at.className(), "",
+            methods, components, at.kind(), at.source(), supertypes);
+    }
+
+    private static CompletionData.Method method(ClassfileCensus.MethodAt at) {
+        return new CompletionData.Method(at.name(), displayName(at.returnType()), "",
+            at.parameters().stream().map(ClasspathScanner::parameter).toList(),
+            at.descriptor(), at.declaredReturnType(), typeRefs(at.returnTypeRefs()));
+    }
+
+    private static CompletionData.Parameter parameter(ClassfileCensus.ParameterAt at) {
+        return new CompletionData.Parameter(at.name(), displayName(at.type()), null, "",
+            at.declaredType(), typeRefs(at.typeRefs()));
+    }
+
+    private static CompletionData.RecordComponent component(ClassfileCensus.ComponentAt at) {
+        return new CompletionData.RecordComponent(at.name(), displayName(at.type()),
+            at.declaredType(), typeRefs(at.typeRefs()));
+    }
+
+    private static List<CompletionData.TypeRef> typeRefs(List<ClassfileCensus.TypeRefAt> refs) {
+        return refs.stream()
+            .map(ref -> new CompletionData.TypeRef(ref.path(), ref.referencedClass(), ref.variance()))
+            .toList();
     }
 
     /**
-     * The classfile's declared form. Read from the access flags rather than inferred from the
-     * reference's own components, because this is the one producer holding the bytecode: an
-     * interface and a class are indistinguishable once the scan has reduced them to a method list.
-     * Annotation is checked before interface, which it also sets.
-     */
-    private static String declaredKind(ClassModel cm) {
-        var flags = cm.flags();
-        if (flags.has(AccessFlag.ANNOTATION)) return "ANNOTATION";
-        if (flags.has(AccessFlag.INTERFACE)) return "INTERFACE";
-        if (flags.has(AccessFlag.ENUM)) return "ENUM";
-        if (cm.findAttribute(Attributes.record()).isPresent()) return "RECORD";
-        return "CLASS";
-    }
-
-    /**
-     * Reads the JVM {@code Record} attribute on a class file when present:
-     * the attribute lists the record's component name + JVM type-descriptor
-     * pairs in declaration order. Returns an empty list for non-record
-     * classes (the attribute is absent on plain classes, enums, interfaces,
-     * abstract classes).
-     */
-    private static List<CompletionData.RecordComponent> readRecordComponents(ClassModel cm) {
-        var attrOpt = cm.findAttribute(Attributes.record());
-        if (attrOpt.isEmpty()) return List.of();
-        RecordAttribute attr = attrOpt.get();
-        var components = new ArrayList<CompletionData.RecordComponent>(attr.components().size());
-        for (var info : attr.components()) {
-            String name = info.name().stringValue();
-            String descriptor = info.descriptor().stringValue();
-            ClassDesc erased = ClassDesc.ofDescriptor(descriptor);
-            String displayType = displayName(erased);
-            // A record component carries its own Signature attribute, so the declared form is read
-            // per component rather than off the record's accessor method.
-            Optional<Signature> signature = info.findAttribute(Attributes.signature())
-                .map(SignatureAttribute::asTypeSignature);
-            String declaredType = signature.map(ClasspathScanner::declaredName).orElse(displayType);
-            components.add(new CompletionData.RecordComponent(
-                name, displayType, declaredType, typeRefs(signature, erased)));
-        }
-        return List.copyOf(components);
-    }
-
-    private static List<CompletionData.Method> readMethods(ClassModel cm) {
-        var methods = new ArrayList<CompletionData.Method>();
-        for (MethodModel m : cm.methods()) {
-            if (!m.flags().has(AccessFlag.PUBLIC)) continue;
-            if (m.flags().has(AccessFlag.SYNTHETIC)) continue;
-            String name = m.methodName().stringValue();
-            // Constructors and class initializers carry name `<init>` /
-            // `<clinit>` in the constant pool; skip both.
-            if (name.startsWith("<")) continue;
-            var desc = m.methodTypeSymbol();
-            String returnType = displayName(desc.returnType());
-            // The real JVM descriptor, not a rendering of the erased display names: two public
-            // methods taking com.foo.Result and com.bar.Result render identically once the package
-            // is gone, and the store keys the method on this.
-            String descriptor = desc.descriptorString();
-            // The declared forms come off the Signature attribute where the classfile carries one,
-            // and fall back to the erasure where it does not, which is what absence means. The
-            // signature's argument list is used only when it is the same length as the descriptor's:
-            // a compiler-synthesised parameter appears in one list and not the other, and there is
-            // no position-wise correction for that, so a length mismatch falls back wholesale rather
-            // than pairing a declared form with the wrong parameter.
-            var signature = methodSignature(m);
-            String declaredReturnType = signature
-                .map(s -> declaredName(s.result()))
-                .orElse(returnType);
-            var declaredParams = signature
-                .map(MethodSignature::arguments)
-                .filter(args -> args.size() == desc.parameterList().size())
-                .orElse(List.of());
-            var paramNames = readParameterNames(m, desc.parameterList().size());
-            var parameters = new ArrayList<CompletionData.Parameter>();
-            for (int i = 0; i < desc.parameterList().size(); i++) {
-                ClassDesc paramType = desc.parameterList().get(i);
-                String erased = displayName(paramType);
-                Optional<Signature> declared = i < declaredParams.size()
-                    ? Optional.of(declaredParams.get(i))
-                    : Optional.empty();
-                parameters.add(new CompletionData.Parameter(
-                    paramNames.get(i),
-                    erased,
-                    null,
-                    "",
-                    declared.map(ClasspathScanner::declaredName).orElse(erased),
-                    typeRefs(declared, paramType)
-                ));
-            }
-            methods.add(new CompletionData.Method(
-                name, returnType, "", List.copyOf(parameters), descriptor,
-                declaredReturnType,
-                typeRefs(signature.map(MethodSignature::result), desc.returnType())));
-        }
-        return List.copyOf(methods);
-    }
-
-    /**
-     * Reads parameter names off the {@code MethodParameters} attribute when
-     * present (i.e. the class was compiled with {@code -parameters}).
-     * Returns a list of {@code null}s otherwise, per the
-     * {@link CompletionData.Parameter#name()} contract: a null name (never a
-     * synthesised {@code arg0}) is the detection signal the LSP diagnostic
-     * uses to warn the schema author that parameter help is unavailable until
-     * the class is recompiled with {@code -parameters}.
-     */
-    private static List<String> readParameterNames(MethodModel m, int parameterCount) {
-        var attrOpt = m.findAttribute(Attributes.methodParameters());
-        if (attrOpt.isEmpty()) {
-            var names = new ArrayList<String>(parameterCount);
-            for (int i = 0; i < parameterCount; i++) names.add(null);
-            return java.util.Collections.unmodifiableList(names);
-        }
-        MethodParametersAttribute attr = attrOpt.get();
-        var names = new ArrayList<String>(parameterCount);
-        var infos = attr.parameters();
-        for (int i = 0; i < parameterCount; i++) {
-            if (i >= infos.size()) {
-                names.add(null);
-                continue;
-            }
-            var nameOpt = infos.get(i).name();
-            names.add(nameOpt.map(n -> n.stringValue()).orElse(null));
-        }
-        return java.util.Collections.unmodifiableList(names);
-    }
-
-    private static String displayName(ClassDesc desc) {
-        return desc.displayName();
-    }
-
-    /**
-     * The qualified classes a declared type names, one per position within it, as
-     * {@link CompletionData.TypeRef} states the path grammar and the omission rules.
+     * A qualified erasure without its package, which is what every display form here is.
      *
-     * <p>Two entry points because the classfile has two encodings of one thing: a
-     * {@code Signature} where the compiler emitted one, and the descriptor where it did not, which
-     * for a non-generic type is always. They are not alternatives of differing quality; absence of
-     * the attribute means the erasure <em>is</em> the declared form, so both readings are the
-     * declaration and they agree wherever both exist.
+     * <p>A string cut rather than a second reading, and the two agree by construction: the census
+     * builds the qualified name as the package, a dot, and the name the JDK renders, so removing
+     * everything through the last dot leaves exactly that name. It holds for the cases that look
+     * like exceptions. A nested class keeps the {@code $} the JVM writes, which carries no dot. An
+     * array and a primitive are already package-less when the census names them, and neither
+     * rendering contains a dot to cut at.
      */
-    private static List<CompletionData.TypeRef> typeRefs(Optional<Signature> signature, ClassDesc erased) {
-        var refs = new ArrayList<CompletionData.TypeRef>();
-        signature.ifPresentOrElse(
-            s -> collectRefs(s, "", "NONE", refs),
-            () -> collectRefs(erased, "", refs));
-        return List.copyOf(refs);
-    }
-
-    /** Walks a signature, emitting a reference for every position that names a class. */
-    private static void collectRefs(Signature signature, String path, String variance,
-                                    List<CompletionData.TypeRef> into) {
-        switch (signature) {
-            // A primitive and a type variable name no class. The variable is the case worth
-            // noting: its erasure is its bound (Object, absent a declared one), so the census's
-            // erased column reads a class here where the declaration named none, and this walk
-            // follows the declaration.
-            case Signature.BaseTypeSig ignored -> { }
-            case Signature.TypeVarSig ignored -> { }
-            case Signature.ArrayTypeSig array -> collectRefs(array.componentSignature(), step(path, "[]"), variance, into);
-            case Signature.ClassTypeSig cls -> {
-                into.add(new CompletionData.TypeRef(path, binaryName(cls.classDesc()), variance));
-                int index = 0;
-                for (var arg : cls.typeArgs()) {
-                    String argPath = step(path, String.valueOf(index++));
-                    switch (arg) {
-                        // A bare `?` bounds at Object, which no relation here records as a
-                        // declaration, so the position stays empty rather than naming it.
-                        case Signature.TypeArg.Unbounded ignored -> { }
-                        case Signature.TypeArg.Bounded bounded -> collectRefs(
-                            bounded.boundType(), argPath, bounded.wildcardIndicator().name(), into);
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * Walks a descriptor, for a type the compiler stored no signature for. A descriptor carries no
-     * type arguments and no wildcards, so the only structure to descend is array nesting and every
-     * position it does name is invariant.
-     */
-    private static void collectRefs(ClassDesc desc, String path, List<CompletionData.TypeRef> into) {
-        if (desc.isPrimitive()) return;
-        if (desc.isArray()) {
-            collectRefs(desc.componentType(), step(path, "[]"), into);
-            return;
-        }
-        into.add(new CompletionData.TypeRef(path, binaryName(desc), "NONE"));
-    }
-
-    /** One step deeper into a type; the root path is empty, so the first step carries no dot. */
-    private static String step(String path, String next) {
-        return path.isEmpty() ? next : path + "." + next;
-    }
-
-    /**
-     * The fully-qualified binary name of a class-typed descriptor: {@link ClassDesc#displayName}
-     * already spells a nested class with the {@code $} the JVM uses, so the package is all it is
-     * missing. Callers exclude arrays and primitives, for which no such name exists.
-     */
-    private static String binaryName(ClassDesc desc) {
-        String packageName = desc.packageName();
-        return packageName.isEmpty() ? desc.displayName() : packageName + "." + desc.displayName();
-    }
-
-    /**
-     * The declared form of one type as a signature spells it: package-less like
-     * {@link #displayName}, with type arguments kept. {@code List<Film>} rather than the
-     * {@code List} its descriptor erases to, which is the whole reason the signature is read.
-     *
-     * <p>A wildcard renders as the author wrote it ({@code ?}, {@code ? extends X},
-     * {@code ? super X}) and a type variable as the variable's own identifier, which is the one
-     * place this form carries strictly less than the erasure: {@code T} does not say what
-     * {@code T} erases to. Neither form subsumes the other, which is why the census keeps both.
-     */
-    private static String declaredName(Signature signature) {
-        return switch (signature) {
-            case Signature.BaseTypeSig base ->
-                displayName(ClassDesc.ofDescriptor(String.valueOf(base.baseType())));
-            case Signature.ArrayTypeSig array -> declaredName(array.componentSignature()) + "[]";
-            case Signature.TypeVarSig variable -> variable.identifier();
-            case Signature.ClassTypeSig cls -> {
-                if (cls.typeArgs().isEmpty()) yield displayName(cls.classDesc());
-                var args = new ArrayList<String>(cls.typeArgs().size());
-                for (var arg : cls.typeArgs()) args.add(declaredArg(arg));
-                yield displayName(cls.classDesc()) + "<" + String.join(", ", args) + ">";
-            }
-        };
-    }
-
-    /** One type argument in the form the author wrote it, wildcard bound included. */
-    private static String declaredArg(Signature.TypeArg arg) {
-        return switch (arg) {
-            case Signature.TypeArg.Unbounded ignored -> "?";
-            case Signature.TypeArg.Bounded bounded -> switch (bounded.wildcardIndicator()) {
-                case NONE -> declaredName(bounded.boundType());
-                case EXTENDS -> "? extends " + declaredName(bounded.boundType());
-                case SUPER -> "? super " + declaredName(bounded.boundType());
-            };
-        };
-    }
-
-    /**
-     * The generic signature a method declares, or empty where the classfile carries none. Absent
-     * is the common case and means the descriptor already is the declared form: the compiler emits
-     * the attribute only where erasure loses something.
-     */
-    private static Optional<MethodSignature> methodSignature(MethodModel m) {
-        return m.findAttribute(Attributes.signature()).map(SignatureAttribute::asMethodSignature);
+    private static String displayName(String qualified) {
+        int lastDot = qualified.lastIndexOf('.');
+        return lastDot < 0 ? qualified : qualified.substring(lastDot + 1);
     }
 }

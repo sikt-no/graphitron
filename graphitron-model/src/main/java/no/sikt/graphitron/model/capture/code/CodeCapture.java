@@ -1,23 +1,36 @@
 package no.sikt.graphitron.model.capture.code;
 
+import no.sikt.graphitron.model.classpath.ClassfileCensus;
 import no.sikt.graphitron.model.classpath.ScalarConstantInput;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.sink.BindBatch;
 import org.jooq.DSLContext;
+import org.jooq.Record3;
 import org.jooq.Rows;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD;
-import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD_PARAMETER;
+import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD_PARAMETER_TABLE;
 import static no.sikt.graphitron.model.Tables.CODE_EXTERNAL_FIELD_METHOD;
+import static no.sikt.graphitron.model.Tables.CODE_METHOD;
+import static no.sikt.graphitron.model.Tables.CODE_METHOD_EXCEPTION;
+import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
+import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER_ELEMENT;
+import static no.sikt.graphitron.model.Tables.CODE_METHOD_RESULT;
 import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
+import static no.sikt.graphitron.model.Tables.CODE_SERVICE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE_SUPERTYPE;
+import static no.sikt.graphitron.model.Tables.INTENT_DELIVERY_CONTAINER;
+import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
@@ -32,10 +45,12 @@ import static org.jooq.impl.DSL.val;
  * reflectively instead. An arm answers what may be written at one coordinate, and the predicate
  * that decides it is the arm's own.
  *
- * <p>Four arms so far, and they divide by corpus rather than by kind. Two read the whole
+ * <p>Four arms so far, and they divide by corpus rather than by kind. Two read the whole declared
  * classpath, because what they admit is a library's to declare: the constants
- * {@code @scalarType(scalar:)} names, and the throwables an {@code @error} handler names. Two read
- * the reactor, a condition and a lifter both being consumer code by construction, and the three
+ * {@code @scalarType(scalar:)} names, and the throwables an {@code @error} handler names. Declared
+ * rather than whole, a dependency the module did not declare being nameable at no coordinate at
+ * all; {@link #nameable} is where that bound is stated. Two read the
+ * reactor, a condition and a lifter both being consumer code by construction, and the three
  * still to come join them, for what a consumer writes at {@code @service}, {@code @enum} and a
  * reference's condition. Arguments, return types and declared exceptions get no arm of their own,
  * being facts about a method, and a method has exactly one arm.
@@ -63,6 +78,12 @@ public final class CodeCapture {
     /** The type that lifter's sole parameter must be, which is the table it lifts from. */
     private static final String JOOQ_TABLE = "org.jooq.Table";
 
+    /** The type a {@code @service} parameter has when the run's own jOOQ context is passed to it. */
+    private static final String JOOQ_DSL_CONTEXT = "org.jooq.DSLContext";
+
+    /** The role a condition's parameter plays when its declaration names one generated table. */
+    private static final String TABLE_CONCRETE = "TABLE_CONCRETE";
+
     /**
      * The entry origins the reactor built: this module's own output and its siblings'. A declared
      * or transitive dependency is somebody else's code, which is what the arms over consumer code
@@ -75,6 +96,26 @@ public final class CodeCapture {
     private CodeCapture() {}
 
     /**
+     * The entries any arm here may read: everything but a dependency the module did not declare.
+     *
+     * <p>The bound is the same one the arms are, one scope up. An arm says what may be written at a
+     * coordinate, and nothing a transitive dependency carries may be written anywhere: naming one
+     * is the undeclared-dependency antipattern, and the build refuses it rather than resolving it
+     * quietly. Admitting such a class would make the store offer an author a name the run then
+     * rejects, which is worse than not offering it, the refusal arriving after the writing.
+     *
+     * <p>In front of the reading rather than over its result, because the cost of the reading is
+     * decompression and the only cut that moves it is opening fewer jars. The reactor arms narrow
+     * again from here, and they narrow the classes rather than the entries: those two arms read the
+     * whole of what this leaves, so one reading of the bytes still serves all four.
+     */
+    private static List<ClasspathEntry> nameable(List<ClasspathEntry> entries) {
+        return entries.stream()
+            .filter(entry -> entry.origin() != ClasspathEntry.Origin.TRANSITIVE)
+            .toList();
+    }
+
+    /**
      * Makes the code rows of {@code entries} be what their classfiles now declare.
      *
      * @param entries    the classpath as its producer classified them; each carries how it reached
@@ -85,7 +126,7 @@ public final class CodeCapture {
      */
     public static void capture(DSLContext dsl, List<ClasspathEntry> entries, String skipPrefix,
                                ClassLoader loader, LocalDateTime touchedAt) {
-        var census = ClassfileCensus.read(entries, skipPrefix);
+        var census = ClassfileCensus.read(nameable(entries), skipPrefix);
         if (census.entries().isEmpty()) {
             return;
         }
@@ -94,8 +135,7 @@ public final class CodeCapture {
         var reactor = reactorClasses(census);
         var ancestry = new ClassAncestry(census.classes(), loader);
         throwables(dsl, census.classes(), ancestry, touchedAt);
-        conditionMethods(dsl, reactor, touchedAt);
-        externalFieldMethods(dsl, reactor, ancestry, touchedAt);
+        methods(dsl, reactor, ancestry, touchedAt);
         // Every entry read, not only the ones that declared something, so an entry that stopped
         // declaring a member loses its row.
         sweep(dsl, census.entries().stream().map(ClassfileCensus.EntryAt::source).toList(),
@@ -222,6 +262,176 @@ public final class CodeCapture {
     }
 
     /**
+     * The reactor's public methods, what each declares, and which directive may name each.
+     *
+     * <p>One pass because the facts divide that way. What a method returns, takes and throws is a
+     * property of the declaration and does not vary by the coordinate somebody reached it through,
+     * so it is written once; which directive may name it is three different questions and three
+     * membership relations. Holding the declaration's facts per arm held one fact as many times as
+     * there were arms pointing at the method, and let the copies disagree.
+     *
+     * <p>The arms partition these methods today and the code does not rely on that. A condition is
+     * a method returning exactly {@code org.jooq.Condition}; a lifter is the whole of that
+     * directive's contract; and a service is what is left, because {@code @service} resolution
+     * applies no filter of its own and a candidate for it is anything that is not already an
+     * answer to something else.
+     */
+    private static void methods(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
+                                ClassAncestry ancestry, LocalDateTime touchedAt) {
+        record Declared(String source, String className, ClassfileCensus.MethodAt at) {}
+        var found = new ArrayList<Declared>();
+        for (ClassfileCensus.ClassAt at : classes) {
+            for (ClassfileCensus.MethodAt method : at.methods()) {
+                found.add(new Declared(at.source(), at.className(), method));
+            }
+        }
+        if (found.isEmpty()) {
+            return;
+        }
+        var m = CODE_METHOD;
+        var methodRows = found.stream().collect(Rows.toRowList(
+            d -> val(d.source(), m.SOURCE_NAME),
+            d -> val(d.className(), m.CLASS_NAME),
+            d -> val(d.at().name(), m.METHOD_NAME),
+            d -> val(d.at().descriptor(), m.DESCRIPTOR),
+            d -> val(d.at().isStatic(), m.IS_STATIC),
+            d -> val(touchedAt, m.TOUCHED_AT)));
+        BindBatch.execute(dsl, methodRows, markers ->
+            dsl.insertInto(m, m.SOURCE_NAME, m.CLASS_NAME, m.METHOD_NAME, m.DESCRIPTOR, m.IS_STATIC,
+                    m.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(m.IS_STATIC, excluded(m.IS_STATIC))
+                .set(m.TOUCHED_AT, excluded(m.TOUCHED_AT)));
+
+        var containers = deliveryContainers(dsl);
+        results(dsl, found.stream()
+            .map(d -> new Member(d.source(), d.className(), d.at()))
+            .toList(), containers, touchedAt);
+        exceptions(dsl, found.stream()
+            .map(d -> new Member(d.source(), d.className(), d.at()))
+            .toList(), touchedAt);
+        parameters(dsl, found.stream()
+            .map(d -> new Member(d.source(), d.className(), d.at()))
+            .toList(), ancestry, containers, touchedAt);
+
+        arm(dsl, CODE_CONDITION_METHOD, found.stream()
+            .filter(d -> isConditionMethod(d.at()))
+            .map(d -> new Member(d.source(), d.className(), d.at())).toList(), touchedAt);
+        arm(dsl, CODE_EXTERNAL_FIELD_METHOD, found.stream()
+            .filter(d -> isLifterMethod(d.at(), ancestry))
+            .map(d -> new Member(d.source(), d.className(), d.at())).toList(), touchedAt);
+        arm(dsl, CODE_SERVICE_METHOD, found.stream()
+            .filter(d -> !isConditionMethod(d.at()) && !isLifterMethod(d.at(), ancestry))
+            .map(d -> new Member(d.source(), d.className(), d.at())).toList(), touchedAt);
+    }
+
+    /** One method as this gatherer passes it around: where it was read, and what it declares. */
+    private record Member(String source, String className, ClassfileCensus.MethodAt at) {}
+
+    /**
+     * One arm's membership. Every arm has the same four columns because membership is the whole of
+     * what an arm says once the declaration's facts are held once, so they take one writer rather
+     * than three that would have to agree.
+     */
+    private static void arm(DSLContext dsl, org.jooq.impl.TableImpl<?> table,
+                            List<Member> members, LocalDateTime touchedAt) {
+        if (members.isEmpty()) {
+            return;
+        }
+        var t = CODE_SERVICE_METHOD;
+        var rows = members.stream().collect(Rows.toRowList(
+            member -> val(member.source(), t.SOURCE_NAME),
+            member -> val(member.className(), t.CLASS_NAME),
+            member -> val(member.at().name(), t.METHOD_NAME),
+            member -> val(member.at().descriptor(), t.DESCRIPTOR),
+            member -> val(touchedAt, t.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(table, table.field(t.SOURCE_NAME), table.field(t.CLASS_NAME),
+                    table.field(t.METHOD_NAME), table.field(t.DESCRIPTOR), table.field(t.TOUCHED_AT))
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(table.field(t.TOUCHED_AT), excluded(table.field(t.TOUCHED_AT))));
+    }
+
+    /** What each method results in, where its return type names a class at all. */
+    private static void results(DSLContext dsl, List<Member> members,
+                                Map<String, Container> containers, LocalDateTime touchedAt) {
+        record Resulted(Member member, Delivery delivery) {}
+        var found = new ArrayList<Resulted>();
+        for (Member member : members) {
+            var delivery = deliveryOf(member.at().returnTypeRefs(), containers);
+            if (delivery != null) {
+                found.add(new Resulted(member, delivery));
+            }
+        }
+        if (found.isEmpty()) {
+            return;
+        }
+        var r = CODE_METHOD_RESULT;
+        var rows = found.stream().collect(Rows.toRowList(
+            row -> val(row.member().source(), r.SOURCE_NAME),
+            row -> val(row.member().className(), r.CLASS_NAME),
+            row -> val(row.member().at().name(), r.METHOD_NAME),
+            row -> val(row.member().at().descriptor(), r.DESCRIPTOR),
+            row -> val(row.delivery().elementClass(), r.RESULT_CLASS),
+            row -> val(row.delivery().deliversMany(), r.IS_MANY),
+            row -> val(touchedAt, r.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(r, r.SOURCE_NAME, r.CLASS_NAME, r.METHOD_NAME, r.DESCRIPTOR,
+                    r.RESULT_CLASS, r.IS_MANY, r.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(r.RESULT_CLASS, excluded(r.RESULT_CLASS))
+                .set(r.IS_MANY, excluded(r.IS_MANY))
+                .set(r.TOUCHED_AT, excluded(r.TOUCHED_AT)));
+    }
+
+    /**
+     * The {@code throws} clause, one row per class named. Read by the {@code @error} channel
+     * check and by {@code @condition}'s admission, which refuses a set of same-named declarations
+     * that disagree on it.
+     */
+    private static void exceptions(DSLContext dsl, List<Member> members, LocalDateTime touchedAt) {
+        record Thrown(Member member, String exceptionClass) {}
+        var rows = new ArrayList<Thrown>();
+        for (Member member : members) {
+            for (String thrown : member.at().declaredExceptions()) {
+                rows.add(new Thrown(member, thrown));
+            }
+        }
+        if (rows.isEmpty()) {
+            return;
+        }
+        var e = CODE_METHOD_EXCEPTION;
+        var bound = rows.stream().collect(Rows.toRowList(
+            row -> val(row.member().source(), e.SOURCE_NAME),
+            row -> val(row.member().className(), e.CLASS_NAME),
+            row -> val(row.member().at().name(), e.METHOD_NAME),
+            row -> val(row.member().at().descriptor(), e.DESCRIPTOR),
+            row -> val(row.exceptionClass(), e.EXCEPTION_CLASS),
+            row -> val(touchedAt, e.TOUCHED_AT)));
+        BindBatch.execute(dsl, bound, markers ->
+            dsl.insertInto(e, e.SOURCE_NAME, e.CLASS_NAME, e.METHOD_NAME, e.DESCRIPTOR,
+                    e.EXCEPTION_CLASS, e.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(e.TOUCHED_AT, excluded(e.TOUCHED_AT)));
+    }
+
+    /** Whether the condition arm admits this method, which is its return type and nothing else. */
+    private static boolean isConditionMethod(ClassfileCensus.MethodAt method) {
+        return JOOQ_CONDITION.equals(method.returnType());
+    }
+
+    /** Whether the lifter arm admits this method, which is every clause of its contract. */
+    private static boolean isLifterMethod(ClassfileCensus.MethodAt method, ClassAncestry ancestry) {
+        return method.isStatic() && JOOQ_FIELD.equals(method.returnType())
+            && method.parameters().size() == 1
+            && ancestry.isA(method.parameters().getFirst().type(), JOOQ_TABLE);
+    }
+
+    /**
      * The classes of the entries the reactor built, which is the corpus the arms over consumer code
      * read.
      *
@@ -241,130 +451,245 @@ public final class CodeCapture {
             .toList();
     }
 
+
+    private record Exception(String source, String className, ClassfileCensus.MethodAt at) {}
+
+    /** A catalog table as this gatherer keys it, which is sql_table's own primary key. */
+    private record TableAt(String source, String schema, String name) {}
+
+
     /**
-     * The methods {@code @condition(condition:)} may name: a method returning exactly
-     * {@code org.jooq.Condition}.
+     * The parameters, their roles and what each contains, plus the catalog table a concrete table
+     * position names.
      *
-     * <p>The return type is the whole admission, and it is read un-erased so a consumer's own type
-     * named {@code Condition} cannot pass. Everything else the generator asks of a condition
-     * method, that it take at least two parameters and that one of them carry the source table, is
-     * a judgement about one directive application rather than about candidacy: an author may write
-     * a method that fails it, and the refusal they get should name the method rather than pretend
-     * it does not exist.
-     *
-     * <p>The parameters go in beside the method for the same reason the ancestry goes in beside a
-     * throwable: a descriptor states types and nothing else, so the name a binding targets and the
-     * declared type that decides which position carries the table are readable now or never.
+     * <p>The role is one column over four exclusive values rather than one vocabulary per arm,
+     * because a position typed as a jOOQ table is typed that way whoever is asking. What that
+     * means at a coordinate is the arm's reading of it.
      */
-    private static void conditionMethods(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
-                                         LocalDateTime touchedAt) {
-        record Method(String source, String className, ClassfileCensus.MethodAt at) {}
-        var found = new ArrayList<Method>();
-        for (ClassfileCensus.ClassAt at : classes) {
-            for (ClassfileCensus.MethodAt method : at.methods()) {
-                if (JOOQ_CONDITION.equals(method.returnType())) {
-                    found.add(new Method(at.source(), at.className(), method));
-                }
+    private static void parameters(DSLContext dsl, List<Member> members, ClassAncestry ancestry,
+                                   Map<String, Container> containers, LocalDateTime touchedAt) {
+        record At(Member member, ClassfileCensus.ParameterAt at, String role, String extraction) {}
+        var found = new ArrayList<At>();
+        for (Member member : members) {
+            for (ClassfileCensus.ParameterAt parameter : member.at().parameters()) {
+                String root = rootClass(parameter);
+                found.add(new At(member, parameter, roleOf(parameter, ancestry),
+                    root != null && ancestry.isEnum(root) ? "ENUM_VALUE_OF" : "DIRECT"));
             }
         }
         if (found.isEmpty()) {
             return;
         }
-        var t = CODE_CONDITION_METHOD;
+        var p = CODE_METHOD_PARAMETER;
         var rows = found.stream().collect(Rows.toRowList(
-            m -> val(m.source(), t.SOURCE_NAME),
-            m -> val(m.className(), t.CLASS_NAME),
-            m -> val(m.at().name(), t.METHOD_NAME),
-            m -> val(m.at().descriptor(), t.DESCRIPTOR),
-            m -> val(m.at().isStatic(), t.IS_STATIC),
-            m -> val(touchedAt, t.TOUCHED_AT)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.SOURCE_NAME, t.CLASS_NAME, t.METHOD_NAME, t.DESCRIPTOR, t.IS_STATIC,
-                    t.TOUCHED_AT)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.IS_STATIC, excluded(t.IS_STATIC))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
-
-        record Parameter(String source, String className, String methodName, String descriptor,
-                         ClassfileCensus.ParameterAt at) {}
-        var parameters = new ArrayList<Parameter>();
-        for (Method m : found) {
-            for (ClassfileCensus.ParameterAt parameter : m.at().parameters()) {
-                parameters.add(new Parameter(m.source(), m.className(), m.at().name(),
-                    m.at().descriptor(), parameter));
-            }
-        }
-        if (parameters.isEmpty()) {
-            return;
-        }
-        var p = CODE_CONDITION_METHOD_PARAMETER;
-        var parameterRows = parameters.stream().collect(Rows.toRowList(
-            row -> val(row.source(), p.SOURCE_NAME),
-            row -> val(row.className(), p.CLASS_NAME),
-            row -> val(row.methodName(), p.METHOD_NAME),
-            row -> val(row.descriptor(), p.DESCRIPTOR),
+            row -> val(row.member().source(), p.SOURCE_NAME),
+            row -> val(row.member().className(), p.CLASS_NAME),
+            row -> val(row.member().at().name(), p.METHOD_NAME),
+            row -> val(row.member().at().descriptor(), p.DESCRIPTOR),
             row -> val(row.at().position(), p.POSITION),
             row -> val(row.at().name(), p.PARAMETER_NAME),
-            row -> val(row.at().type(), p.PARAMETER_TYPE),
+            row -> val(row.role(), p.ROLE),
+            row -> val(row.extraction(), p.EXTRACTION),
             row -> val(touchedAt, p.TOUCHED_AT)));
-        BindBatch.execute(dsl, parameterRows, markers ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(p, p.SOURCE_NAME, p.CLASS_NAME, p.METHOD_NAME, p.DESCRIPTOR, p.POSITION,
-                    p.PARAMETER_NAME, p.PARAMETER_TYPE, p.TOUCHED_AT)
+                    p.PARAMETER_NAME, p.ROLE, p.EXTRACTION, p.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(p.PARAMETER_NAME, excluded(p.PARAMETER_NAME))
-                .set(p.PARAMETER_TYPE, excluded(p.PARAMETER_TYPE))
+                .set(p.ROLE, excluded(p.ROLE))
+                .set(p.EXTRACTION, excluded(p.EXTRACTION))
                 .set(p.TOUCHED_AT, excluded(p.TOUCHED_AT)));
+
+        record Contained(At at, Delivery delivery) {}
+        var elements = new ArrayList<Contained>();
+        for (At row : found) {
+            var delivery = deliveryOf(row.at().typeRefs(), containers);
+            if (delivery != null) {
+                elements.add(new Contained(row, delivery));
+            }
+        }
+        if (!elements.isEmpty()) {
+            var el = CODE_METHOD_PARAMETER_ELEMENT;
+            var elementRows = elements.stream().collect(Rows.toRowList(
+                row -> val(row.at().member().source(), el.SOURCE_NAME),
+                row -> val(row.at().member().className(), el.CLASS_NAME),
+                row -> val(row.at().member().at().name(), el.METHOD_NAME),
+                row -> val(row.at().member().at().descriptor(), el.DESCRIPTOR),
+                row -> val(row.at().at().position(), el.POSITION),
+                row -> val(row.delivery().elementClass(), el.ELEMENT_CLASS),
+                row -> val(row.delivery().deliversMany(), el.IS_MANY),
+                row -> val(touchedAt, el.TOUCHED_AT)));
+            BindBatch.execute(dsl, elementRows, markers ->
+                dsl.insertInto(el, el.SOURCE_NAME, el.CLASS_NAME, el.METHOD_NAME, el.DESCRIPTOR,
+                        el.POSITION, el.ELEMENT_CLASS, el.IS_MANY, el.TOUCHED_AT)
+                    .values(markers)
+                    .onDuplicateKeyUpdate()
+                    .set(el.ELEMENT_CLASS, excluded(el.ELEMENT_CLASS))
+                    .set(el.IS_MANY, excluded(el.IS_MANY))
+                    .set(el.TOUCHED_AT, excluded(el.TOUCHED_AT)));
+        }
+
+        record Resolved(At at, TableAt table) {}
+        var catalog = tablesByClass(dsl);
+        var resolved = new ArrayList<Resolved>();
+        for (At row : found) {
+            if (!TABLE_CONCRETE.equals(row.role())) {
+                continue;
+            }
+            var table = catalog.get(rootClass(row.at()));
+            if (table != null) {
+                resolved.add(new Resolved(row, table));
+            }
+        }
+        if (resolved.isEmpty()) {
+            return;
+        }
+        var pt = CODE_CONDITION_METHOD_PARAMETER_TABLE;
+        var resolvedRows = resolved.stream().collect(Rows.toRowList(
+            row -> val(row.at().member().source(), pt.SOURCE_NAME),
+            row -> val(row.at().member().className(), pt.CLASS_NAME),
+            row -> val(row.at().member().at().name(), pt.METHOD_NAME),
+            row -> val(row.at().member().at().descriptor(), pt.DESCRIPTOR),
+            row -> val(row.at().at().position(), pt.POSITION),
+            row -> val(row.table().source(), pt.TABLE_SOURCE_NAME),
+            row -> val(row.table().schema(), pt.TABLE_SCHEMA),
+            row -> val(row.table().name(), pt.TABLE_NAME),
+            row -> val(touchedAt, pt.TOUCHED_AT)));
+        BindBatch.execute(dsl, resolvedRows, markers ->
+            dsl.insertInto(pt, pt.SOURCE_NAME, pt.CLASS_NAME, pt.METHOD_NAME, pt.DESCRIPTOR,
+                    pt.POSITION, pt.TABLE_SOURCE_NAME, pt.TABLE_SCHEMA, pt.TABLE_NAME,
+                    pt.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(pt.TABLE_SOURCE_NAME, excluded(pt.TABLE_SOURCE_NAME))
+                .set(pt.TABLE_SCHEMA, excluded(pt.TABLE_SCHEMA))
+                .set(pt.TABLE_NAME, excluded(pt.TABLE_NAME))
+                .set(pt.TOUCHED_AT, excluded(pt.TOUCHED_AT)));
     }
 
     /**
-     * The lifters {@code @externalField(reference:)} may name: a public static method taking one
-     * jOOQ table and returning {@code org.jooq.Field}.
+     * What one parameter position is for, decided here rather than by a reader.
      *
-     * <p>Every clause is checked because every clause is about the method. The generator's one
-     * remaining requirement, that the table lifted from is the table the field was written on, is
-     * about the application and is left to a reader with the parameter type this writes.
-     *
-     * <p>The parameter test is assignability and not a name match, a consumer's lifter taking the
-     * generated table class for its own table rather than the interface. That class is not in the
-     * census, the generated package being the one thing the reading skips, so the chain above it is
-     * followed by loading it, which is the same walk the throwables arm makes for the same reason.
+     * <p>The table test is assignability asked of the erasure, which is the question the generator
+     * asks and the one a generated table class answers through a chain the census does not hold.
+     * Concrete or not is then the declaration's own answer: a position written as
+     * {@code org.jooq.Table} itself, raw or wildcarded, names no table, and neither does one written
+     * as a type variable, whose erasure is a bound the source never wrote.
      */
-    private static void externalFieldMethods(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
-                                             ClassAncestry ancestry, LocalDateTime touchedAt) {
-        record Lifter(String source, String className, ClassfileCensus.MethodAt at, String table) {}
-        var found = new ArrayList<Lifter>();
-        for (ClassfileCensus.ClassAt at : classes) {
-            for (ClassfileCensus.MethodAt method : at.methods()) {
-                if (!method.isStatic() || !JOOQ_FIELD.equals(method.returnType())
-                    || method.parameters().size() != 1) {
-                    continue;
+    private static String roleOf(ClassfileCensus.ParameterAt at, ClassAncestry ancestry) {
+        if (ancestry.isA(at.type(), JOOQ_DSL_CONTEXT)) {
+            return "DSL_CONTEXT";
+        }
+        if (!ancestry.isA(at.type(), JOOQ_TABLE)) {
+            return "OTHER";
+        }
+        String root = rootClass(at);
+        return root == null || JOOQ_TABLE.equals(root) ? "TABLE_ANY" : TABLE_CONCRETE;
+    }
+
+    /** The class the declaration names at the root of the type, or null where it names none. */
+    private static String rootClass(ClassfileCensus.ParameterAt at) {
+        return at.typeRefs().stream()
+            .filter(ref -> ref.path().isEmpty())
+            .map(ClassfileCensus.TypeRefAt::referencedClass)
+            .findFirst()
+            .orElse(null);
+    }
+
+    /**
+     * The catalog's tables by the generated class an author's parameter would name, across every
+     * partition the store holds.
+     *
+     * <p>Across partitions rather than within a graph's, because a code row is shared between the
+     * graphs that read its entry and must not mean different things to two of them. The class name
+     * is what makes that safe: a generated class belongs to exactly one package and a package to
+     * one partition, so at most one partition answers. A name two partitions do claim is a genuine
+     * ambiguity, and it is dropped rather than guessed, which reads downstream as a concrete
+     * position the catalog could not resolve.
+     */
+    private static Map<String, TableAt> tablesByClass(DSLContext dsl) {
+        var byClass = new HashMap<String, TableAt>();
+        var ambiguous = new HashSet<String>();
+        dsl.select(SQL_TABLE.CLASS_FQN, SQL_TABLE.SOURCE_NAME, SQL_TABLE.TABLE_SCHEMA,
+                SQL_TABLE.TABLE_NAME)
+            .from(SQL_TABLE)
+            .forEach(row -> {
+                String fqn = row.value1();
+                var at = new TableAt(row.value2(), row.value3(), row.value4());
+                var seen = byClass.put(fqn, at);
+                if (seen != null && !seen.equals(at)) {
+                    ambiguous.add(fqn);
                 }
-                String parameter = method.parameters().getFirst().type();
-                if (ancestry.isA(parameter, JOOQ_TABLE)) {
-                    found.add(new Lifter(at.source(), at.className(), method, parameter));
-                }
+            });
+        ambiguous.forEach(byClass::remove);
+        return byClass;
+    }
+
+
+
+
+    /** What a declared type finally hands back, and whether it hands back many. */
+    private record Delivery(String elementClass, boolean deliversMany) {}
+
+    /** One container the delivery walk peels: which position carries the payload, and whether
+     *  arriving through it means many rather than one. */
+    private record Container(String elementIndex, boolean multiplies) {}
+
+    /**
+     * The container vocabulary, read from the relation that states it rather than spelled again.
+     *
+     * <p>It is a constant with no declared owner, so reading it crosses no ownership and waits on
+     * no gatherer; what it buys is that the list of containers exists once. When the view that
+     * peels them at read time retires, the vocabulary moves with the decision rather than being
+     * copied to follow it.
+     */
+    private static Map<String, Container> deliveryContainers(DSLContext dsl) {
+        var c = INTENT_DELIVERY_CONTAINER;
+        return dsl.select(c.CONTAINER_CLASS, c.ELEMENT_INDEX, c.MULTIPLIES)
+            .from(c)
+            .fetchMap(Record3::value1, row -> new Container(row.value2(), row.value3()));
+    }
+
+    /**
+     * The class a declared type arrives at once every delivery container is peeled off it, or null
+     * where it names no class at all.
+     *
+     * <p>A loop rather than a fixed number of steps, which is the whole of what moving this to
+     * capture buys beyond the cost: the rule stated in SQL has to be unrolled, so it answers to a
+     * depth and stops. Peeling ends where the type is not a container, and also where a container's
+     * payload position names nothing, which is what an unbounded wildcard is: a reader of
+     * {@code List<?>} is given the list, because that is as far as the declaration goes.
+     */
+    private static Delivery deliveryOf(List<ClassfileCensus.TypeRefAt> refs,
+                                       Map<String, Container> containers) {
+        var byPath = new HashMap<String, String>();
+        for (ClassfileCensus.TypeRefAt ref : refs) {
+            byPath.put(ref.path(), ref.referencedClass());
+        }
+        String element = byPath.get("");
+        if (element == null) {
+            return null;
+        }
+        String path = "";
+        boolean many = false;
+        var walked = new HashSet<String>();
+        while (walked.add(path)) {
+            var container = containers.get(element);
+            if (container == null) {
+                break;
             }
+            String next = path.isEmpty() ? container.elementIndex()
+                : path + "." + container.elementIndex();
+            String at = byPath.get(next);
+            if (at == null) {
+                break;
+            }
+            many |= container.multiplies();
+            path = next;
+            element = at;
         }
-        if (found.isEmpty()) {
-            return;
-        }
-        var t = CODE_EXTERNAL_FIELD_METHOD;
-        var rows = found.stream().collect(Rows.toRowList(
-            l -> val(l.source(), t.SOURCE_NAME),
-            l -> val(l.className(), t.CLASS_NAME),
-            l -> val(l.at().name(), t.METHOD_NAME),
-            l -> val(l.at().descriptor(), t.DESCRIPTOR),
-            l -> val(l.table(), t.TABLE_PARAMETER_TYPE),
-            l -> val(touchedAt, t.TOUCHED_AT)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.SOURCE_NAME, t.CLASS_NAME, t.METHOD_NAME, t.DESCRIPTOR,
-                    t.TABLE_PARAMETER_TYPE, t.TOUCHED_AT)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.TABLE_PARAMETER_TYPE, excluded(t.TABLE_PARAMETER_TYPE))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+        return new Delivery(element, many);
     }
 
     /**
@@ -377,35 +702,15 @@ public final class CodeCapture {
      * for it.
      */
     private static void sweep(DSLContext dsl, List<String> sources, LocalDateTime touchedAt) {
-        var lifter = CODE_EXTERNAL_FIELD_METHOD;
-        dsl.deleteFrom(lifter)
-            .where(lifter.SOURCE_NAME.in(sources))
-            .and(lifter.TOUCHED_AT.ne(touchedAt))
-            .execute();
-        var parameter = CODE_CONDITION_METHOD_PARAMETER;
-        dsl.deleteFrom(parameter)
-            .where(parameter.SOURCE_NAME.in(sources))
-            .and(parameter.TOUCHED_AT.ne(touchedAt))
-            .execute();
-        var condition = CODE_CONDITION_METHOD;
-        dsl.deleteFrom(condition)
-            .where(condition.SOURCE_NAME.in(sources))
-            .and(condition.TOUCHED_AT.ne(touchedAt))
-            .execute();
-        var s = CODE_THROWABLE_SUPERTYPE;
-        dsl.deleteFrom(s)
-            .where(s.SOURCE_NAME.in(sources))
-            .and(s.TOUCHED_AT.ne(touchedAt))
-            .execute();
-        var throwable = CODE_THROWABLE;
-        dsl.deleteFrom(throwable)
-            .where(throwable.SOURCE_NAME.in(sources))
-            .and(throwable.TOUCHED_AT.ne(touchedAt))
-            .execute();
-        var t = CODE_SCALAR_CONSTANT;
-        dsl.deleteFrom(t)
-            .where(t.SOURCE_NAME.in(sources))
-            .and(t.TOUCHED_AT.ne(touchedAt))
-            .execute();
+        for (org.jooq.Table<?> table : List.of(
+                CODE_CONDITION_METHOD_PARAMETER_TABLE, CODE_METHOD_PARAMETER_ELEMENT,
+                CODE_METHOD_PARAMETER, CODE_METHOD_RESULT, CODE_METHOD_EXCEPTION,
+                CODE_SERVICE_METHOD, CODE_CONDITION_METHOD, CODE_EXTERNAL_FIELD_METHOD,
+                CODE_METHOD, CODE_THROWABLE_SUPERTYPE, CODE_THROWABLE, CODE_SCALAR_CONSTANT)) {
+            dsl.deleteFrom(table)
+                .where(table.field(CODE_METHOD.SOURCE_NAME).in(sources))
+                .and(table.field(CODE_METHOD.TOUCHED_AT).ne(touchedAt))
+                .execute();
+        }
     }
 }

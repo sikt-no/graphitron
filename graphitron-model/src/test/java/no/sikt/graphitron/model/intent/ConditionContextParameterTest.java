@@ -21,6 +21,7 @@ import static no.sikt.graphitron.model.test.SeededStore.seedFieldConditionContex
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedInputField;
 import static no.sikt.graphitron.model.test.SeededStore.seedMethod;
+import static no.sikt.graphitron.model.test.SeededStore.seedConditionParameter;
 import static no.sikt.graphitron.model.test.SeededStore.seedMethodParameter;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedTable;
@@ -356,6 +357,8 @@ class ConditionContextParameterTest {
         for (int position = 0; position < params.length; position++) {
             seedMethodParameter(dsl, JAR, CONDITIONS, methodName, descriptor.toString(), position,
                 params[position].name(), Map.of("", params[position].classFqn()));
+            seedConditionParameter(dsl, JAR, CONDITIONS, methodName, descriptor.toString(),
+                position, params[position].name(), params[position].classFqn());
         }
     }
 

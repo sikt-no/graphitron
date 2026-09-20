@@ -248,9 +248,15 @@ class RelationRegistrationGateTest {
         // walk it came from resolved a reference only once an author had written one, where an arm
         // states the candidates whether or not anybody has. What pins it is CodeCaptureTest.
         registrations.put("code_scalar_constant", Arm.UNSHADOWED);
+        registrations.put("code_method", Arm.UNSHADOWED);
+        registrations.put("code_method_result", Arm.UNSHADOWED);
+        registrations.put("code_method_parameter", Arm.UNSHADOWED);
+        registrations.put("code_method_parameter_element", Arm.UNSHADOWED);
+        registrations.put("code_method_exception", Arm.UNSHADOWED);
         registrations.put("code_condition_method", Arm.UNSHADOWED);
-        registrations.put("code_condition_method_parameter", Arm.UNSHADOWED);
+        registrations.put("code_condition_method_parameter_table", Arm.UNSHADOWED);
         registrations.put("code_external_field_method", Arm.UNSHADOWED);
+        registrations.put("code_service_method", Arm.UNSHADOWED);
         registrations.put("code_throwable", Arm.UNSHADOWED);
         registrations.put("code_throwable_supertype", Arm.UNSHADOWED);
         // The entry index: one row per written position the nineteen entry relations hold,
@@ -288,10 +294,8 @@ class RelationRegistrationGateTest {
         registrations.put("intent_condition_method_route", Arm.DERIVED);
         registrations.put("intent_condition_method_route_defect", Arm.DERIVED);
         registrations.put("intent_java_enum_class", Arm.DERIVED);
-        registrations.put("intent_condition_param_extraction", Arm.DERIVED);
         registrations.put("intent_condition_param_decode", Arm.DERIVED);
         registrations.put("intent_jvm_ancestor", Arm.DERIVED);
-        registrations.put("intent_condition_table_parameter", Arm.DERIVED);
         registrations.put("intent_condition_slot", Arm.DERIVED);
         registrations.put("intent_scalar_java_type", Arm.DERIVED);
         registrations.put("intent_condition_context_parameter", Arm.DERIVED);

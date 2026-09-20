@@ -6,6 +6,7 @@ import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.capture.FactCapture;
 import no.sikt.graphitron.model.capture.code.CodeCapture;
+import no.sikt.graphitron.model.capture.jooq.JooqFactCapture;
 import no.sikt.graphitron.model.capture.document.SdlSchemaProblems;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.run.GraphIdentity;
@@ -506,8 +507,17 @@ public final class CapturedStore implements AutoCloseable {
                                      List<CompletionData.ExternalReference> census, boolean warm,
                                      List<ClasspathEntry> classpath) {
         if (!classpath.isEmpty()) {
+            var readAt = LocalDateTime.now();
+            // The catalog first, in the order ModelCapture runs the two and for the reason the
+            // declared edge from code to jooq states: a concrete table position is keyed to the
+            // table it names, so the arm resolves against rows the jOOQ gatherer has written. The
+            // graph anchor goes in ahead of both, that gatherer's membership rows keying into it.
+            if (jooq != null) {
+                ModelCapture.writeGraph(dsl, new GraphIdentity(graphName, directory), readAt);
+                JooqFactCapture.capture(dsl, graphName, jooq, readAt);
+            }
             CodeCapture.capture(dsl, classpath, null,
-                jooq == null ? null : jooq.codegenLoader(), LocalDateTime.now());
+                jooq == null ? null : jooq.codegenLoader(), readAt);
         }
         FactCapture.capture(dsl, warm, new GraphIdentity(graphName, directory),
             corpusOf(files, directory), registry, attributionOfFiles(files), jooq, census);

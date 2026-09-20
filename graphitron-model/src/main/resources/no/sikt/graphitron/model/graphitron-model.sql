@@ -5083,7 +5083,7 @@ COMMENT ON COLUMN graphitron_method_reference_entry.field_name IS 'the field own
 COMMENT ON COLUMN graphitron_method_reference_entry.argument_name IS 'the argument the site sits on, at the two argument-grain sites; NULL at the other nine, whose sites sit on a field or a type. Determined by site';
 COMMENT ON COLUMN graphitron_method_reference_entry.ordinal IS 'the owning application''s ordinal, at the four step sites whose directive is repeatable; NULL elsewhere. Determined by site';
 COMMENT ON COLUMN graphitron_method_reference_entry.step_position IS 'the owning step''s 0-based position within its application''s path, at the four step sites; NULL elsewhere. Determined by site';
-COMMENT ON COLUMN graphitron_method_reference_entry.class_name IS 'the class as the author wrote it, fully qualified, verbatim and unresolved; the spelling intent_condition_method_route.class_name and intent_condition_param_extraction.class_name both carry';
+COMMENT ON COLUMN graphitron_method_reference_entry.class_name IS 'the class as the author wrote it, fully qualified, verbatim and unresolved; the spelling intent_condition_method_route.class_name and code_method_parameter.class_name both carry';
 COMMENT ON COLUMN graphitron_method_reference_entry.method IS 'the method name as the author wrote it. A name and not a signature: an overload is told apart by the descriptor the classpath census keys on, which is a fact about the classpath rather than about what was written here, so resolving a name to one signature is the intent layer''s and never this relation''s';
 COMMENT ON COLUMN graphitron_method_reference_entry.source_name IS 'the SDL file the owning directive application was captured from; NULL where the application carries no position, on graphitron_routine_entry.source_name''s terms';
 COMMENT ON COLUMN graphitron_method_reference_entry.source_line IS 'the owning application''s line, 1-based per the graphql-java convention; NULL exactly where source_name is';
@@ -5903,24 +5903,209 @@ COMMENT ON COLUMN jvm_record_component.display_type IS 'erased display form of t
 COMMENT ON COLUMN jvm_record_component.declared_type IS 'the component type as the source declared it, on the same terms as jvm_method.declared_return_type. Read from the component''s own Signature attribute rather than from the accessor method the record generates, the component being where the declaration is';
 
 
--- ==== Java source declaration facts ===============================================
--- What the consumer's .java sources declare, in the source language's vocabulary: where each
--- class, method and field is written, and what its doc comment says. Its own population beside
--- the jvm_ census rather than columns on it, joined to it by name and never keyed by it. Three
--- facts force that separation. A source parse yields arity where a classfile yields a
--- descriptor, so the two cannot share a method key. The jvm_ census excludes the generated jOOQ
--- package, which is exactly where a jump from @table or @field(name:) has to land, so a family
--- hanging off jvm_class could not answer for the half that matters most. And a .java edit
--- refreshes here without a generator round, so the two populations may legitimately disagree
--- between cadences; no view here asserts they agree, because the skew is real and visible skew
--- beats ambient skew.
--- The family is file-keyed, and its files are deliberately not store_source rows: store_source
--- is a capture round's read set, and a .java file is read by neither the SDL walk nor the
--- classpath scan. java_file carries this family's own freshness bookkeeping instead, which keeps
--- store_source's kind taxonomy closed and its currency scan proportional to what capture reads.
--- Graph scoping, for a query that needs it, happens on the jvm_ or sql_ side of the name join
--- through store_graph_source; this family answers for a file, and a file belongs to whoever
--- compiles it.
+-- ==== What a schema may name in Java ==============================================
+-- One relation per thing an author writes, rather than one index of every class. A census answers
+-- what the classpath holds, so its one scope rule has to serve every reader and serves none of
+-- them exactly; an arm answers what may be written at one directive and carries the predicate that
+-- decides it.
+-- The methods are held once. Whether a method may be named at @service and whether it may be
+-- named at @condition are two questions and two relations, but what the method returns, what it
+-- takes and what it throws are properties of the declaration and do not vary by the coordinate
+-- somebody reached it through. So code_method and its satellites hold those once and the arms are
+-- membership over them. The population is the reactor's public methods, which is what makes this
+-- affordable and what keeps it from being a census: the classpath's other hundred thousand
+-- methods are nobody's to name.
+
+CREATE TABLE code_method (
+  source_name VARCHAR NOT NULL,
+  class_name  VARCHAR NOT NULL,
+  method_name VARCHAR NOT NULL,
+  descriptor  VARCHAR NOT NULL,
+  is_static   BOOLEAN NOT NULL,
+  touched_at  TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name, method_name, descriptor),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+);
+COMMENT ON TABLE code_method IS 'One public method of a class the reactor built, which is the population every directive naming Java draws its candidates from. For example filmsByRating(DSLContext, String) on a consumer''s FilmService.';
+COMMENT ON COLUMN code_method.source_name IS 'the classpath entry the declaring class was read from; the key''s leading dimension, so a method is a fact about one entry and is swept with it';
+COMMENT ON COLUMN code_method.class_name IS 'the declaring class''s binary name, the left part of what an author writes at a directive';
+COMMENT ON COLUMN code_method.method_name IS 'the method''s own name, the right part of it. Not a key on its own: a name an author writes may denote several declarations, and the count of rows sharing one is what says so';
+COMMENT ON COLUMN code_method.descriptor IS 'the JVM method descriptor, completing the key. What tells two overloads apart, which no rendering of the erased types can: two methods taking same-named types from different packages render alike';
+COMMENT ON COLUMN code_method.is_static IS 'whether the method is static. A property of the declaration rather than of any directive, though it is what @service reads to decide whether a holder is needed and what @condition folds on before admitting a set of overloads as one target';
+COMMENT ON COLUMN code_method.touched_at IS 'when the reading that produced this row ran; swept by the reading that replaces it';
+
+CREATE TABLE code_method_result (
+  source_name  VARCHAR NOT NULL,
+  class_name   VARCHAR NOT NULL,
+  method_name  VARCHAR NOT NULL,
+  descriptor   VARCHAR NOT NULL,
+  result_class VARCHAR NOT NULL,
+  is_many      BOOLEAN NOT NULL,
+  touched_at   TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name, method_name, descriptor),
+  FOREIGN KEY (source_name, class_name, method_name, descriptor)
+    REFERENCES code_method (source_name, class_name, method_name, descriptor) ON DELETE CASCADE
+);
+COMMENT ON TABLE code_method_result IS 'What a method results in, containers peeled away. For example a method returning a List of Film resulting in Film, many of them.';
+COMMENT ON COLUMN code_method_result.source_name IS 'the entry the declaring class was read from, as on code_method; the key''s leading dimension';
+COMMENT ON COLUMN code_method_result.class_name IS 'the declaring class, as on code_method';
+COMMENT ON COLUMN code_method_result.method_name IS 'the method, as on code_method';
+COMMENT ON COLUMN code_method_result.descriptor IS 'the method''s descriptor, completing the key; with the three columns above, the method whose result this is, and the row is deleted with it';
+COMMENT ON COLUMN code_method_result.result_class IS 'the binary name of the class the return type arrives at once every container is peeled off it. Presence is the fact this relation states, which is why the columns are not on the method: a return type names no class at all when it is void, a primitive, an array or a type variable, and a placeholder would make four different silences look like one answer';
+COMMENT ON COLUMN code_method_result.is_many IS 'whether any container peeled on the way multiplies, which is what says a field backed by this method is a list rather than one value. A List or a Set or a jOOQ Result multiplies; an Optional or a CompletableFuture or a Map does not, those being one value in a wrapper';
+COMMENT ON COLUMN code_method_result.touched_at IS 'when the reading that produced this row ran; swept with the method it hangs on';
+
+CREATE TABLE code_method_parameter (
+  source_name    VARCHAR NOT NULL,
+  class_name     VARCHAR NOT NULL,
+  method_name    VARCHAR NOT NULL,
+  descriptor     VARCHAR NOT NULL,
+  position       INT NOT NULL,
+  parameter_name VARCHAR,
+  role           VARCHAR NOT NULL,
+  extraction     VARCHAR NOT NULL,
+  touched_at     TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name, method_name, descriptor, position),
+  FOREIGN KEY (source_name, class_name, method_name, descriptor)
+    REFERENCES code_method (source_name, class_name, method_name, descriptor) ON DELETE CASCADE,
+  CHECK (role IN ('DSL_CONTEXT', 'TABLE_CONCRETE', 'TABLE_ANY', 'OTHER')),
+  CHECK (extraction IN ('DIRECT', 'ENUM_VALUE_OF'))
+);
+COMMENT ON TABLE code_method_parameter IS 'One position in a method''s parameter list, and what its type alone says the position is for. For example position 0 of filmTitleContains, named film and playing the TABLE_CONCRETE role.';
+COMMENT ON COLUMN code_method_parameter.source_name IS 'the entry the declaring class was read from, as on code_method; the key''s leading dimension';
+COMMENT ON COLUMN code_method_parameter.class_name IS 'the declaring class, as on code_method';
+COMMENT ON COLUMN code_method_parameter.method_name IS 'the method, as on code_method';
+COMMENT ON COLUMN code_method_parameter.descriptor IS 'the method''s descriptor, as on code_method; with the three columns above, the method this position belongs to, and the row is deleted with it';
+COMMENT ON COLUMN code_method_parameter.position IS 'the position in the parameter list, 0-based, completing the key. Position is the key and not the name, because a name is what a classfile may omit and a position is what it always carries';
+COMMENT ON COLUMN code_method_parameter.parameter_name IS 'the parameter''s name as the source declared it, or NULL where the class was compiled without -parameters and the classfile carries no MethodParameters attribute. What a GraphQL argument binds to and what an argMapping entry targets, so a run that finds it absent refuses the binding rather than guessing; a reader must not read NULL as an unnamed parameter';
+COMMENT ON COLUMN code_method_parameter.role IS 'what the position is for as far as its type alone decides, in a closed vocabulary of four, and the four are exclusive because no type satisfies two of them. DSL_CONTEXT: the run''s own jOOQ context is passed here. TABLE_CONCRETE: the declaration names one generated table, and code_condition_method_parameter_table says which where the catalog holds it. TABLE_ANY: the declaration is org.jooq.Table itself, raw or wildcarded, or a type variable, so the position takes whatever table the site supplies. OTHER: everything else, whose role is the application''s to decide from the arguments and context keys in scope at the site. Decided here rather than by a reader because deciding it needs an assignability walk, which a reader either re-derives through a recursive closure or asks a loader for';
+COMMENT ON COLUMN code_method_parameter.extraction IS 'how a value bound to this position is coerced into it, decided by the declared type alone: ENUM_VALUE_OF where that type is an enum and DIRECT otherwise. The standing rule rather than the last word, a parameter bound to a slot carrying @nodeId receiving that slot''s decoded key instead, which intent_condition_param_decode states as the exception to this. Decided by loading the class, which is what makes it answerable for both populations at once: an author''s own enum and a generated one a column binds to, the second living in the package this reading excludes and so reachable no other way';
+COMMENT ON COLUMN code_method_parameter.touched_at IS 'when the reading that produced this row ran; swept with the method it hangs on';
+
+CREATE TABLE code_method_parameter_element (
+  source_name   VARCHAR NOT NULL,
+  class_name    VARCHAR NOT NULL,
+  method_name   VARCHAR NOT NULL,
+  descriptor    VARCHAR NOT NULL,
+  position      INT NOT NULL,
+  element_class VARCHAR NOT NULL,
+  is_many       BOOLEAN NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name, method_name, descriptor, position),
+  FOREIGN KEY (source_name, class_name, method_name, descriptor, position)
+    REFERENCES code_method_parameter
+      (source_name, class_name, method_name, descriptor, position) ON DELETE CASCADE
+);
+COMMENT ON TABLE code_method_parameter_element IS 'What one parameter position''s type contains, containers peeled away. For example a position typed as a List of FilmInput containing FilmInput, many of them.';
+COMMENT ON COLUMN code_method_parameter_element.source_name IS 'the entry the declaring class was read from, as on code_method_parameter; the key''s leading dimension';
+COMMENT ON COLUMN code_method_parameter_element.class_name IS 'the declaring class, as on code_method_parameter';
+COMMENT ON COLUMN code_method_parameter_element.method_name IS 'the method, as on code_method_parameter';
+COMMENT ON COLUMN code_method_parameter_element.descriptor IS 'the method''s descriptor, as on code_method_parameter';
+COMMENT ON COLUMN code_method_parameter_element.position IS 'the position, completing the key; with the four columns above, the parameter whose type this describes, and the row is deleted with it';
+COMMENT ON COLUMN code_method_parameter_element.element_class IS 'the binary name of the class the position''s type arrives at once every container is peeled off it, on code_method_result.result_class''s terms. A separate relation for the same reason: a type that is a primitive, an array or a type variable contains no class to name';
+COMMENT ON COLUMN code_method_parameter_element.is_many IS 'whether any container peeled on the way multiplies, on code_method_result.is_many''s terms';
+COMMENT ON COLUMN code_method_parameter_element.touched_at IS 'when the reading that produced this row ran; swept with the parameter it hangs on';
+
+CREATE TABLE code_method_exception (
+  source_name     VARCHAR NOT NULL,
+  class_name      VARCHAR NOT NULL,
+  method_name     VARCHAR NOT NULL,
+  descriptor      VARCHAR NOT NULL,
+  exception_class VARCHAR NOT NULL,
+  touched_at      TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name, method_name, descriptor, exception_class),
+  FOREIGN KEY (source_name, class_name, method_name, descriptor)
+    REFERENCES code_method (source_name, class_name, method_name, descriptor) ON DELETE CASCADE
+);
+COMMENT ON TABLE code_method_exception IS 'One exception a method declares it throws. For example filmsByRating declaring java.io.IOException.';
+COMMENT ON COLUMN code_method_exception.source_name IS 'the entry the declaring class was read from, as on code_method; the key''s leading dimension';
+COMMENT ON COLUMN code_method_exception.class_name IS 'the declaring class, as on code_method';
+COMMENT ON COLUMN code_method_exception.method_name IS 'the method, as on code_method';
+COMMENT ON COLUMN code_method_exception.descriptor IS 'the method''s descriptor, as on code_method; with the three columns above, the method this clause belongs to, and the row is deleted with it';
+COMMENT ON COLUMN code_method_exception.exception_class IS 'the exception by binary name, completing the key. A set and not a list: the clause is read to decide whether same-named declarations agree and whether a field''s @error channel covers them, and neither comparison is order-sensitive, so declaration order would be a column nothing reads and a second way for two equal clauses to differ. Deliberately no foreign key to code_throwable, on jvm_class_supertype.supertype_name''s terms: the classes a throws clause names are usually the JDK''s, which no classpath entry ships';
+COMMENT ON COLUMN code_method_exception.touched_at IS 'when the reading that produced this row ran; swept with the method it hangs on';
+
+CREATE TABLE code_service_method (
+  source_name VARCHAR NOT NULL,
+  class_name  VARCHAR NOT NULL,
+  method_name VARCHAR NOT NULL,
+  descriptor  VARCHAR NOT NULL,
+  touched_at  TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name, method_name, descriptor),
+  FOREIGN KEY (source_name, class_name, method_name, descriptor)
+    REFERENCES code_method (source_name, class_name, method_name, descriptor) ON DELETE CASCADE
+);
+COMMENT ON TABLE code_service_method IS 'One method an author may name in @service(service:). For example a public static filmsByRating(DSLContext, String) on a consumer''s FilmService.';
+COMMENT ON COLUMN code_service_method.source_name IS 'the entry the declaring class was read from, as on code_method; the key''s leading dimension';
+COMMENT ON COLUMN code_service_method.class_name IS 'the declaring class, as on code_method';
+COMMENT ON COLUMN code_service_method.method_name IS 'the method, as on code_method';
+COMMENT ON COLUMN code_service_method.descriptor IS 'the method''s descriptor, completing the key. The whole row is the key: what the method returns and takes is code_method''s and does not vary by the directive that reached it, so membership is the only thing this relation has to say';
+COMMENT ON COLUMN code_service_method.touched_at IS 'when the reading that produced this row ran; swept with the method it hangs on';
+
+CREATE TABLE code_condition_method (
+  source_name VARCHAR NOT NULL,
+  class_name  VARCHAR NOT NULL,
+  method_name VARCHAR NOT NULL,
+  descriptor  VARCHAR NOT NULL,
+  touched_at  TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name, method_name, descriptor),
+  FOREIGN KEY (source_name, class_name, method_name, descriptor)
+    REFERENCES code_method (source_name, class_name, method_name, descriptor) ON DELETE CASCADE
+);
+COMMENT ON TABLE code_condition_method IS 'One method an author may name in @condition(condition:). For example a public static filmTitleContains(Film, String) returning an org.jooq.Condition.';
+COMMENT ON COLUMN code_condition_method.source_name IS 'the entry the declaring class was read from, as on code_method; the key''s leading dimension';
+COMMENT ON COLUMN code_condition_method.class_name IS 'the declaring class, as on code_method';
+COMMENT ON COLUMN code_condition_method.method_name IS 'the method, as on code_method';
+COMMENT ON COLUMN code_condition_method.descriptor IS 'the method''s descriptor, completing the key. The whole row is the key, on code_service_method.descriptor''s terms; the return type this arm admits on is fixed by the admission and would repeat its own predicate on every row';
+COMMENT ON COLUMN code_condition_method.touched_at IS 'when the reading that produced this row ran; swept with the method it hangs on';
+
+CREATE TABLE code_external_field_method (
+  source_name VARCHAR NOT NULL,
+  class_name  VARCHAR NOT NULL,
+  method_name VARCHAR NOT NULL,
+  descriptor  VARCHAR NOT NULL,
+  touched_at  TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name, method_name, descriptor),
+  FOREIGN KEY (source_name, class_name, method_name, descriptor)
+    REFERENCES code_method (source_name, class_name, method_name, descriptor) ON DELETE CASCADE
+);
+COMMENT ON TABLE code_external_field_method IS 'One method an author may name in @externalField(reference:). For example a public static titleUpper(Film) returning an org.jooq.Field.';
+COMMENT ON COLUMN code_external_field_method.source_name IS 'the entry the declaring class was read from, as on code_method; the key''s leading dimension';
+COMMENT ON COLUMN code_external_field_method.class_name IS 'the declaring class, as on code_method';
+COMMENT ON COLUMN code_external_field_method.method_name IS 'the method, as on code_method';
+COMMENT ON COLUMN code_external_field_method.descriptor IS 'the method''s descriptor, completing the key. The table the lifter lifts from was a column here and is code_method_parameter''s role at position 0: a parameter''s type is the parameter''s fact, and a reader asking which table a lifter takes asks the position rather than the arm';
+COMMENT ON COLUMN code_external_field_method.touched_at IS 'when the reading that produced this row ran; swept with the method it hangs on';
+
+CREATE TABLE code_condition_method_parameter_table (
+  source_name       VARCHAR NOT NULL,
+  class_name        VARCHAR NOT NULL,
+  method_name       VARCHAR NOT NULL,
+  descriptor        VARCHAR NOT NULL,
+  position          INT NOT NULL,
+  table_source_name VARCHAR NOT NULL,
+  table_schema      VARCHAR NOT NULL,
+  table_name        VARCHAR NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name, method_name, descriptor, position),
+  FOREIGN KEY (source_name, class_name, method_name, descriptor, position)
+    REFERENCES code_method_parameter
+      (source_name, class_name, method_name, descriptor, position) ON DELETE CASCADE,
+  -- The resolution goes when the table does, and only the resolution: the position is still a
+  -- concrete one the author wrote, and a consumer dropping a table has not unwritten their method.
+  FOREIGN KEY (table_source_name, table_schema, table_name)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE code_condition_method_parameter_table IS 'The catalog table one TABLE_CONCRETE parameter position names. For example position 0 of filmTitleContains naming the film table of the consumer''s public schema.';
+COMMENT ON COLUMN code_condition_method_parameter_table.source_name IS 'the entry the declaring class was read from, as on code_method_parameter; the key''s leading dimension';
+COMMENT ON COLUMN code_condition_method_parameter_table.class_name IS 'the declaring class, as on code_method_parameter';
+COMMENT ON COLUMN code_condition_method_parameter_table.method_name IS 'the method, as on code_method_parameter';
+COMMENT ON COLUMN code_condition_method_parameter_table.descriptor IS 'the method''s descriptor, as on code_method_parameter';
+COMMENT ON COLUMN code_condition_method_parameter_table.position IS 'the position, completing the key; with the four columns above, the parameter this resolution is of, and the row is deleted with it';
+COMMENT ON COLUMN code_condition_method_parameter_table.table_source_name IS 'the catalog partition holding the table, the first of three columns keying it';
+COMMENT ON COLUMN code_condition_method_parameter_table.table_schema IS 'the schema the table is in, the second of the three';
+COMMENT ON COLUMN code_condition_method_parameter_table.table_name IS 'the table''s SQL name, the third. Keyed to sql_table rather than carrying the generated class name, so a reader joins a primary key instead of sql_table.class_fqn, which is no key and can match more than one row';
+COMMENT ON COLUMN code_condition_method_parameter_table.touched_at IS 'when the reading that produced this row ran; swept with the parameter it hangs on';
+
 CREATE TABLE code_scalar_constant (
   source_name VARCHAR NOT NULL,
   class_name  VARCHAR NOT NULL,
@@ -5964,66 +6149,24 @@ COMMENT ON COLUMN code_throwable_supertype.class_name IS 'the throwable this row
 COMMENT ON COLUMN code_throwable_supertype.supertype_name IS 'one type the throwable is, by binary name, completing the key. java.lang.Throwable is a row on every throwable, being the admission fact itself, and java.lang.Object is a row for the same reason it is one on sql_table_record_supertype: this states what the class is rather than what its source declared, and a throwable is an Object';
 COMMENT ON COLUMN code_throwable_supertype.touched_at IS 'when the reading that produced this row ran; swept with the throwable it hangs on';
 
-CREATE TABLE code_condition_method (
-  source_name VARCHAR NOT NULL,
-  class_name  VARCHAR NOT NULL,
-  method_name VARCHAR NOT NULL,
-  descriptor  VARCHAR NOT NULL,
-  is_static   BOOLEAN NOT NULL,
-  touched_at  TIMESTAMP NOT NULL,
-  PRIMARY KEY (source_name, class_name, method_name, descriptor),
-  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
-);
-COMMENT ON TABLE code_condition_method IS 'One method an author may name in @condition(condition:), on a class the reactor built. For example a public static filmTitleContains(Film, String) returning an org.jooq.Condition.';
-COMMENT ON COLUMN code_condition_method.source_name IS 'the classpath entry the declaring class was read from, anchored by store_source; the key''s leading dimension, and what scopes the arm to the reactor, an entry''s origin being PROJECT, REACTOR or SIBLING exactly when the reactor built it, whether or not this module declares it';
-COMMENT ON COLUMN code_condition_method.class_name IS 'the declaring class''s binary name, the left part of the reference an author writes';
-COMMENT ON COLUMN code_condition_method.method_name IS 'the method''s own name, the right part of that reference; not unique on its own, which is why the descriptor completes the key';
-COMMENT ON COLUMN code_condition_method.descriptor IS 'the JVM method descriptor, completing the key. What tells two overloads of one name apart, and the directive names only the name, so a reference resolving to several rows here is the ambiguity the generator refuses rather than a defect of this relation';
-COMMENT ON COLUMN code_condition_method.is_static IS 'whether the method is declared static, which decides whether a call needs an instance. Carried because it is one of the discriminators the generator tells admitted overloads apart by and neither census held it; not an admission rule, a non-static condition method being a candidate an author may name and the generator''s to refuse';
-COMMENT ON COLUMN code_condition_method.touched_at IS 'when the reading that produced this row ran; the reading ends by deleting the rows of the entries it read that still carry an older instant, which are the methods a recompiled entry no longer declares';
-
-CREATE TABLE code_condition_method_parameter (
-  source_name    VARCHAR NOT NULL,
-  class_name     VARCHAR NOT NULL,
-  method_name    VARCHAR NOT NULL,
-  descriptor     VARCHAR NOT NULL,
-  position       INT NOT NULL,
-  parameter_name VARCHAR,
-  parameter_type VARCHAR NOT NULL,
-  touched_at     TIMESTAMP NOT NULL,
-  PRIMARY KEY (source_name, class_name, method_name, descriptor, position),
-  FOREIGN KEY (source_name, class_name, method_name, descriptor)
-    REFERENCES code_condition_method (source_name, class_name, method_name, descriptor)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE code_condition_method_parameter IS 'One position in the parameter list of a method @condition(condition:) may name. For example position 0 of filmTitleContains, named film and typed no.sikt.example.tables.Film.';
-COMMENT ON COLUMN code_condition_method_parameter.source_name IS 'the entry the declaring class was read from, as on code_condition_method; the key''s leading dimension';
-COMMENT ON COLUMN code_condition_method_parameter.class_name IS 'the declaring class, as on code_condition_method';
-COMMENT ON COLUMN code_condition_method_parameter.method_name IS 'the method, as on code_condition_method';
-COMMENT ON COLUMN code_condition_method_parameter.descriptor IS 'the method''s descriptor, as on code_condition_method; with the three columns above, the method this position belongs to, and the row is deleted with it';
-COMMENT ON COLUMN code_condition_method_parameter.position IS 'the position in the parameter list, 0-based, completing the key. Position is the key and not the name, because a name is what a classfile may not carry and a position is what it always does';
-COMMENT ON COLUMN code_condition_method_parameter.parameter_name IS 'the parameter''s name as the source declared it, or NULL where the class was compiled without -parameters and the classfile carries no MethodParameters attribute. Absence is a compiler flag rather than a fact about the method, and it is the same absence the generator refuses a binding on, so a reader must not read NULL as an unnamed parameter';
-COMMENT ON COLUMN code_condition_method_parameter.parameter_type IS 'the parameter''s declared type by binary name, erased. What decides which of the three roles a position plays: the generator reads the source table off a parameter typed as a jOOQ table and nothing else';
-COMMENT ON COLUMN code_condition_method_parameter.touched_at IS 'when the reading that produced this row ran; swept with the method it hangs on';
-
-CREATE TABLE code_external_field_method (
-  source_name          VARCHAR NOT NULL,
-  class_name           VARCHAR NOT NULL,
-  method_name          VARCHAR NOT NULL,
-  descriptor           VARCHAR NOT NULL,
-  table_parameter_type VARCHAR NOT NULL,
-  touched_at           TIMESTAMP NOT NULL,
-  PRIMARY KEY (source_name, class_name, method_name, descriptor),
-  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
-);
-COMMENT ON TABLE code_external_field_method IS 'One method an author may name in @externalField(reference:), on a class the reactor built. For example a public static titleUpper(Film) returning an org.jooq.Field.';
-COMMENT ON COLUMN code_external_field_method.source_name IS 'the classpath entry the declaring class was read from, anchored by store_source; the key''s leading dimension, and what scopes the arm to the reactor';
-COMMENT ON COLUMN code_external_field_method.class_name IS 'the declaring class''s binary name, the left part of the reference an author writes';
-COMMENT ON COLUMN code_external_field_method.method_name IS 'the method''s own name, the right part of that reference';
-COMMENT ON COLUMN code_external_field_method.descriptor IS 'the JVM method descriptor, completing the key and telling two overloads of one name apart';
-COMMENT ON COLUMN code_external_field_method.table_parameter_type IS 'the binary name of the sole parameter''s declared type, which is a jOOQ table by the admission rule. Carried because the one contract clause this relation cannot decide is the site''s: whether the table a method lifts from is the table the field is written on, which a reader answers by comparing this to the parent. There is no position column, the admission fixing it at zero, and no return type, the admission fixing that at org.jooq.Field';
-COMMENT ON COLUMN code_external_field_method.touched_at IS 'when the reading that produced this row ran; the reading ends by deleting the rows of the entries it read that still carry an older instant, which are the methods a recompiled entry no longer declares';
-
+-- ==== Java source declaration facts ===============================================
+-- What the consumer's .java sources declare, in the source language's vocabulary: where each
+-- class, method and field is written, and what its doc comment says. Its own population beside
+-- the jvm_ census rather than columns on it, joined to it by name and never keyed by it. Three
+-- facts force that separation. A source parse yields arity where a classfile yields a
+-- descriptor, so the two cannot share a method key. The jvm_ census excludes the generated jOOQ
+-- package, which is exactly where a jump from @table or @field(name:) has to land, so a family
+-- hanging off jvm_class could not answer for the half that matters most. And a .java edit
+-- refreshes here without a generator round, so the two populations may legitimately disagree
+-- between cadences; no view here asserts they agree, because the skew is real and visible skew
+-- beats ambient skew.
+-- The family is file-keyed, and its files are deliberately not store_source rows: store_source
+-- is a capture round's read set, and a .java file is read by neither the SDL walk nor the
+-- classpath scan. java_file carries this family's own freshness bookkeeping instead, which keeps
+-- store_source's kind taxonomy closed and its currency scan proportional to what capture reads.
+-- Graph scoping, for a query that needs it, happens on the jvm_ or sql_ side of the name join
+-- through store_graph_source; this family answers for a file, and a file belongs to whoever
+-- compiles it.
 CREATE TABLE java_file (
   file        VARCHAR NOT NULL,
   source_root VARCHAR NOT NULL,
@@ -6604,39 +6747,53 @@ named (graph_name, class_name, method) AS (
     FROM graphitron_argument_reference_step_entry
    WHERE class_name IS NOT NULL AND key_ref IS NULL AND table_ref IS NULL
 ),
-signature (graph_name, class_name, method, source_name, descriptor) AS (
-  SELECT n.graph_name, n.class_name, n.method, m.source_name, m.descriptor
+arrival (graph_name, class_name, method, source_name, descriptor,
+         to_source_name, to_schema, to_table) AS (
+  SELECT n.graph_name, n.class_name, n.method, m.source_name, m.descriptor,
+         t.table_source_name, t.table_schema, t.table_name
     FROM named n
     JOIN store_graph_source g ON g.graph_name = n.graph_name
     JOIN code_condition_method m
       ON m.source_name = g.source_name AND m.class_name = n.class_name
      AND m.method_name = n.method
-),
-arrival (graph_name, class_name, method, source_name, descriptor,
-         to_source_name, to_schema, to_table) AS (
-  SELECT s.graph_name, s.class_name, s.method, s.source_name, s.descriptor,
-         t.source_name, t.table_schema, t.table_name
-    FROM signature s
-    JOIN code_condition_method_parameter a
-      ON a.source_name = s.source_name AND a.class_name = s.class_name
-     AND a.method_name = s.method AND a.descriptor = s.descriptor AND a.position = 1
-    JOIN store_graph_source gt ON gt.graph_name = s.graph_name
-    JOIN sql_table t ON t.source_name = gt.source_name AND t.class_fqn = a.parameter_type
+    JOIN code_method_parameter a
+      ON a.source_name = m.source_name AND a.class_name = m.class_name
+     AND a.method_name = m.method_name AND a.descriptor = m.descriptor AND a.position = 1
+    JOIN code_condition_method_parameter_table t
+      ON t.source_name = a.source_name AND t.class_name = a.class_name
+     AND t.method_name = a.method_name AND t.descriptor = a.descriptor
+     AND t.position = a.position
+    JOIN store_graph_source gt
+      ON gt.graph_name = n.graph_name AND gt.source_name = t.table_source_name
+   -- Every overload of the name has to arrive at this same table, so a declaration whose second
+   -- position resolves elsewhere, or does not resolve at all, suppresses the route. Driven from
+   -- the parameter rather than the resolution, because not resolving is half of what disagreeing
+   -- means and a resolution relation cannot report a row it does not have.
    WHERE NOT EXISTS (SELECT 1
-                       FROM code_condition_method_parameter p
-                      WHERE p.source_name = s.source_name AND p.class_name = s.class_name
-                        AND p.method_name = s.method AND p.position = 1
-                        AND p.parameter_type <> t.class_fqn)
+                       FROM code_method_parameter p
+                       JOIN code_condition_method cm
+                         ON cm.source_name = p.source_name AND cm.class_name = p.class_name
+                        AND cm.method_name = p.method_name AND cm.descriptor = p.descriptor
+                       LEFT JOIN code_condition_method_parameter_table q
+                         ON q.source_name = p.source_name AND q.class_name = p.class_name
+                        AND q.method_name = p.method_name AND q.descriptor = p.descriptor
+                        AND q.position = p.position
+                        AND q.table_source_name = t.table_source_name
+                        AND q.table_schema = t.table_schema
+                        AND q.table_name = t.table_name
+                      WHERE p.source_name = t.source_name AND p.class_name = t.class_name
+                        AND p.method_name = t.method_name AND p.position = 1
+                        AND q.table_name IS NULL)
 )
 SELECT a.graph_name, a.class_name, a.method,
-       f.source_name, f.table_schema, f.table_name,
+       d.table_source_name, d.table_schema, d.table_name,
        a.to_source_name, a.to_schema, a.to_table
   FROM arrival a
-  JOIN code_condition_method_parameter d
+  JOIN code_condition_method_parameter_table d
     ON d.source_name = a.source_name AND d.class_name = a.class_name
    AND d.method_name = a.method AND d.descriptor = a.descriptor AND d.position = 0
-  JOIN store_graph_source gf ON gf.graph_name = a.graph_name
-  JOIN sql_table f ON f.source_name = gf.source_name AND f.class_fqn = d.parameter_type
+  JOIN store_graph_source gf
+    ON gf.graph_name = a.graph_name AND gf.source_name = d.table_source_name
  UNION
 SELECT a.graph_name, a.class_name, a.method,
        f.source_name, f.table_schema, f.table_name,
@@ -6645,15 +6802,11 @@ SELECT a.graph_name, a.class_name, a.method,
   JOIN store_graph_source gf ON gf.graph_name = a.graph_name
   JOIN sql_table f ON f.source_name = gf.source_name
  WHERE NOT EXISTS (SELECT 1
-                     FROM code_condition_method_parameter d
-                     JOIN store_graph_source g2 ON g2.graph_name = a.graph_name
-                     JOIN sql_table f2
-                       ON f2.source_name = g2.source_name
-                      AND f2.class_fqn = d.parameter_type
+                     FROM code_condition_method_parameter_table d
                     WHERE d.source_name = a.source_name AND d.class_name = a.class_name
                       AND d.method_name = a.method AND d.descriptor = a.descriptor
                       AND d.position = 0);
-COMMENT ON VIEW intent_condition_method_route IS 'How a condition method''s own signature routes a hop: the departing tables its first parameter admits, beside the table its second parameter names. A path element carrying a condition and neither a key nor a table names no foreign key at all, so the only route available is the one the method declares, and the generator''s resolver reads it exactly this way at a filter site: parameter 0 denotes the departure and parameter 1 the arrival, because the emitter calls the method positionally with the source alias first. Both are read off code_condition_method_parameter.parameter_type, the declared type by erased binary name; sql_table.class_fqn is the other side of that join and the only column in the store that reaches a generated jOOQ class at all. A parameter type is one column here where it was a join into the census''s type decomposition before, the arm having read the root of that decomposition once at capture rather than leaving every reader to walk it. Both sides scope through store_graph_source, so neither a sibling graph''s tables nor a sibling graph''s classpath resolve here. Keyed on the class and method rather than on any one element that wrote them, because the rule does not vary by site: the field-site and the argument-site hop views both join this relation, and a resolution with two askers is a relation rather than a subquery repeated in each of them, which is the shape graphitron_spelled_table and sql_name_matched_key_column already have. It is also what keeps those two views textually parallel arm for arm instead of forking one rule into two spellings. The two parameters are read asymmetrically, and both readings are the resolver''s rather than a choice made here. A second parameter naming no generated table class yields no row at all, whatever it names, a wildcard Table<?> included: the arrival is the whole question this relation answers, and refusing it is what the resolver does on a filter path. A first parameter naming none declares no departure constraint instead, so the from side is every table in the graph''s sources on those rows, which is how a NAME_MATCH hop already enumerates every function result and leaves the chain to say where it actually stands. Overloads are admitted rather than refused, and the arrival guard is what keeps this relation reading them the way the resolver does. The generator admits same-named declarations that agree on the binding shape and then, at a filter site, resolves the one table their position-1 slots agree on, rejecting a set that disagrees; so a route survives here only where every position-1 parameter the pair declares resolves, through the same class_fqn join, to that route''s own arrival table. Spelled as a NOT EXISTS over the arm''s parameter rows rather than as a count over the arrival rows, because a declaration whose slot names anything no table is generated as, a wildcard Table<?> and a primitive included, contributes no arrival row at all and is invisible to any test phrased over arrival rows. The guard is one inequality on parameter_type, where reading the census took a NOT EXISTS nested inside a NOT EXISTS to say the same thing: a slot disagreeing with the arrival and a slot naming no table are the same refusal, and one column that always holds a type states both at once. A declaration carrying no position-1 parameter declares no arrival and so makes no claim this relation answers; whether its arity nevertheless makes the set ill-formed is the build''s admission question, asked at all four @condition coordinates and not here. Departure multiplicity is untouched and is still rows: the per-participant set this admission exists for differs on the departure slot, which is one route row per departing table and the candidacy from_table already documents. The population is the condition arm, so the return type is the admission and it is the arm''s to make: a method returning anything but org.jooq.Condition is not a candidate and routes nothing. This relation read the whole classpath census before and stated the opposite, on the argument that the generator picks by name and never by return type. That argument confused what the generator does when resolving a name with what an author may name in the first place, and its cost was that the candidacy rule lived here, in one reader, where every other reader of the same directive had to restate it or diverge. Candidacy belongs to the arm, which is a captured population the readers share. Absence is one fact and one only: this pair routes nothing. Why is intent_condition_method_route_defect''s to say, over the same joins, and its vocabulary spans both kinds of reason: four of the resolver''s own typed author errors and two silences the census contributes. The second kind is the one to know before reading a no-row here as a defect in the author''s schema. The classpath scan admits public classes only, so a condition method on a package-private or nested class has no census row and routes nothing, where the generator resolves the same signature through its codegen loader and emits the hop. That is the census''s own disclosed rule rather than a shortfall of this relation, and it is why the defect vocabulary names it rather than folding it into the author''s errors.';
+COMMENT ON VIEW intent_condition_method_route IS 'How a condition method''s own signature routes a hop: the departing tables its first parameter admits, beside the table its second parameter names. A path element carrying a condition and neither a key nor a table names no foreign key at all, so the only route available is the one the method declares, and the generator''s resolver reads it exactly this way at a filter site: parameter 0 denotes the departure and parameter 1 the arrival, because the emitter calls the method positionally with the source alias first. Both are read off code_condition_method_parameter_table, which is the table each of those two positions names, resolved when the arm read the class rather than matched against sql_table.class_fqn here. A parameter type is one column here where it was a join into the census''s type decomposition before, the arm having read the root of that decomposition once at capture rather than leaving every reader to walk it. Both sides scope through store_graph_source, so neither a sibling graph''s tables nor a sibling graph''s classpath resolve here. Keyed on the class and method rather than on any one element that wrote them, because the rule does not vary by site: the field-site and the argument-site hop views both join this relation, and a resolution with two askers is a relation rather than a subquery repeated in each of them, which is the shape graphitron_spelled_table and sql_name_matched_key_column already have. It is also what keeps those two views textually parallel arm for arm instead of forking one rule into two spellings. The two parameters are read asymmetrically, and both readings are the resolver''s rather than a choice made here. A second parameter naming no generated table class yields no row at all, whatever it names, a wildcard Table<?> included: the arrival is the whole question this relation answers, and refusing it is what the resolver does on a filter path. A first parameter naming none declares no departure constraint instead, so the from side is every table in the graph''s sources on those rows, which is how a NAME_MATCH hop already enumerates every function result and leaves the chain to say where it actually stands. Overloads are admitted rather than refused, and the arrival guard is what keeps this relation reading them the way the resolver does. The generator admits same-named declarations that agree on the binding shape and then, at a filter site, resolves the one table their position-1 slots agree on, rejecting a set that disagrees; so a route survives here only where every position-1 parameter the pair declares resolves, through the same class_fqn join, to that route''s own arrival table. Spelled as a NOT EXISTS over the arm''s parameter rows rather than as a count over the arrival rows, because a declaration whose slot names anything no table is generated as, a wildcard Table<?> and a primitive included, contributes no arrival row at all and is invisible to any test phrased over arrival rows. The guard is one inequality on parameter_type, where reading the census took a NOT EXISTS nested inside a NOT EXISTS to say the same thing: a slot disagreeing with the arrival and a slot naming no table are the same refusal, and one column that always holds a type states both at once. A declaration carrying no position-1 parameter declares no arrival and so makes no claim this relation answers; whether its arity nevertheless makes the set ill-formed is the build''s admission question, asked at all four @condition coordinates and not here. Departure multiplicity is untouched and is still rows: the per-participant set this admission exists for differs on the departure slot, which is one route row per departing table and the candidacy from_table already documents. The population is the condition arm, so the return type is the admission and it is the arm''s to make: a method returning anything but org.jooq.Condition is not a candidate and routes nothing. This relation read the whole classpath census before and stated the opposite, on the argument that the generator picks by name and never by return type. That argument confused what the generator does when resolving a name with what an author may name in the first place, and its cost was that the candidacy rule lived here, in one reader, where every other reader of the same directive had to restate it or diverge. Candidacy belongs to the arm, which is a captured population the readers share. Absence is one fact and one only: this pair routes nothing. Why is intent_condition_method_route_defect''s to say, over the same joins, and its vocabulary spans both kinds of reason: four of the resolver''s own typed author errors and two silences the census contributes. The second kind is the one to know before reading a no-row here as a defect in the author''s schema. The classpath scan admits public classes only, so a condition method on a package-private or nested class has no census row and routes nothing, where the generator resolves the same signature through its codegen loader and emits the hop. That is the census''s own disclosed rule rather than a shortfall of this relation, and it is why the defect vocabulary names it rather than folding it into the author''s errors.';
 COMMENT ON COLUMN intent_condition_method_route.graph_name IS 'the owning graph''s partition, carried from whichever reference-step relation named the pair; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN intent_condition_method_route.class_name IS 'the condition class as the author wrote it, fully qualified, carried from the path element; the key this route answers for together with the method beside it';
 COMMENT ON COLUMN intent_condition_method_route.method IS 'the condition method name as the author wrote it. A name and not a signature: the generator resolves by name and admits the declarations that share it, so this relation answers for the set. Overloads differing on the departure slot are several routes here and the hop arities are where that shows; overloads differing on the arrival slot are no route, the arrival being the one thing the set must agree on';
@@ -6700,27 +6853,32 @@ SELECT n.graph_name, n.class_name, n.method,
            THEN 'METHOD_RETURNS_NO_CONDITION'
          WHEN NOT EXISTS (SELECT 1
                             FROM store_graph_source g
-                            JOIN jvm_method_parameter p
-                              ON p.source_name = g.source_name AND p.class_name = n.class_name
-                             AND p.method_name = n.method AND p.position = 1
+                            JOIN code_condition_method cm
+                              ON cm.source_name = g.source_name AND cm.class_name = n.class_name
+                             AND cm.method_name = n.method
+                            JOIN code_method_parameter p
+                              ON p.source_name = cm.source_name AND p.class_name = cm.class_name
+                             AND p.method_name = cm.method_name AND p.descriptor = cm.descriptor
+                             AND p.position = 1
                            WHERE g.graph_name = n.graph_name)
            THEN 'FEWER_THAN_TWO_PARAMETERS'
          WHEN EXISTS (SELECT 1
                         FROM store_graph_source g
-                        JOIN jvm_declared_type_ref tr
-                          ON tr.source_name = g.source_name AND tr.class_name = n.class_name
-                         AND tr.owner_name = n.method AND tr.owner_position = 1
-                         AND tr.type_path = '' AND tr.owner_kind = 'METHOD_PARAMETER' AND tr.referenced_class = 'org.jooq.Table'
+                        JOIN code_condition_method cm
+                          ON cm.source_name = g.source_name AND cm.class_name = n.class_name
+                         AND cm.method_name = n.method
+                        JOIN code_method_parameter p
+                          ON p.source_name = cm.source_name AND p.class_name = cm.class_name
+                         AND p.method_name = cm.method_name AND p.descriptor = cm.descriptor
+                         AND p.position = 1 AND p.role = 'TABLE_ANY'
                        WHERE g.graph_name = n.graph_name)
            THEN 'WILDCARD_TARGET_PARAMETER'
-         WHEN (SELECT CAST(COUNT(DISTINCT t.class_fqn) AS INT)
+         WHEN (SELECT CAST(COUNT(DISTINCT t.table_source_name || '.' || t.table_schema
+                                          || '.' || t.table_name) AS INT)
                  FROM store_graph_source g
-                 JOIN jvm_declared_type_ref tr
-                   ON tr.source_name = g.source_name AND tr.class_name = n.class_name
-                  AND tr.owner_name = n.method AND tr.owner_position = 1 AND tr.type_path = '' AND tr.owner_kind = 'METHOD_PARAMETER'
-                 JOIN store_graph_source gt ON gt.graph_name = n.graph_name
-                 JOIN sql_table t
-                   ON t.source_name = gt.source_name AND t.class_fqn = tr.referenced_class
+                 JOIN code_condition_method_parameter_table t
+                   ON t.source_name = g.source_name AND t.class_name = n.class_name
+                  AND t.method_name = n.method AND t.position = 1
                 WHERE g.graph_name = n.graph_name) > 1
            THEN 'TARGET_DISAGREEMENT_ACROSS_OVERLOADS'
          ELSE 'TARGET_NOT_A_TABLE_CLASS' END
@@ -6775,86 +6933,7 @@ COMMENT ON VIEW intent_java_enum_class IS 'Which Java classes a graph can see ar
 COMMENT ON COLUMN intent_java_enum_class.graph_name IS 'the owning graph''s partition, carried from the membership relation both arms scope through';
 COMMENT ON COLUMN intent_java_enum_class.class_fqn IS 'the enum''s fully-qualified binary name, a nested one spelled with the $ the JVM uses; keyed with the graph, one row per enum class however many arms answered for it. The same spelling jvm_declared_type_ref.referenced_class and sql_table.class_fqn carry, which is what lets a signature''s decomposed type join straight onto it';
 
-CREATE VIEW intent_condition_param_extraction
-  (graph_name, class_name, method_name, descriptor, position, param_name, java_type,
-   extraction_kind, candidates) AS
-WITH
-named (graph_name, class_name, method) AS (
-  SELECT DISTINCT graph_name, class_name, method
-    FROM graphitron_method_reference_entry
-   WHERE site IN ('FIELD_CONDITION', 'INPUT_FIELD_CONDITION', 'ARGUMENT_CONDITION',
-                  'FIELD_REFERENCE_STEP', 'ARGUMENT_REFERENCE_STEP', 'REFERENCE_FOR_STEP')
-),
-resolved (graph_name, class_name, method_name, descriptor, position, param_name, java_type,
-          extraction_kind) AS (
-  SELECT DISTINCT n.graph_name, n.class_name, n.method, p.descriptor, p.position,
-         p.parameter_name, tr.referenced_class,
-         CASE WHEN EXISTS (SELECT 1
-                             FROM intent_java_enum_class e
-                            WHERE e.graph_name = n.graph_name
-                              AND e.class_fqn = tr.referenced_class)
-              THEN 'ENUM_VALUE_OF' ELSE 'DIRECT' END
-    FROM named n
-    JOIN store_graph_source g ON g.graph_name = n.graph_name
-    JOIN jvm_method_parameter p
-      ON p.source_name = g.source_name AND p.class_name = n.class_name
-     AND p.method_name = n.method
-    LEFT JOIN jvm_declared_type_ref tr
-      ON tr.source_name = p.source_name AND tr.class_name = p.class_name
-     AND tr.owner_name = p.method_name AND tr.owner_descriptor = p.descriptor
-     AND tr.owner_position = p.position AND tr.type_path = '' AND tr.owner_kind = 'METHOD_PARAMETER'
-)
-SELECT r.graph_name, r.class_name, r.method_name, r.descriptor, r.position, r.param_name,
-       r.java_type, r.extraction_kind,
-       CAST(COUNT(*) OVER (PARTITION BY r.graph_name, r.class_name, r.method_name,
-                                        r.descriptor, r.position) AS INT)
-  FROM resolved r;
-COMMENT ON VIEW intent_condition_param_extraction IS 'The extraction a value bound to a condition method''s parameter takes by that parameter''s declared type alone: an enum gets ENUM_VALUE_OF and everything else gets DIRECT. The standing rule rather than the last word, and the distinction is load-bearing since a bound parameter can be exempted from it: a parameter bound to a slot carrying @nodeId receives that slot''s decoded node key instead, which intent_condition_param_decode states beside this, use-keyed and in the override shape, so presence there means the exemption applies and absence means this rule stands. A reader wanting what a given bound parameter actually receives consults both, in that order. The vocabulary below is this rule''s and not the arm''s, and the reason it could not be stated before is intent_java_enum_class''s second arm, a condition parameter typed as a generated enum being exactly the class the classpath census excludes. The @condition call surface and not the @service one, which is a different rule with a different answer: that path runs a wire-coercion check that can reject and an enum-constant parity check that can reject, and this one cannot reject at all, having no dimensional channel to surface a refusal through. So a reader must not carry an answer from here to a @service parameter, and the population below is what keeps that from being an accident. That population is every parameter of a method a @condition names anywhere in the graph, the five spellings of the directive folded into one: at a field, at an input field, at an argument, and at a path element of a @reference or a @referenceFor. Folded by graphitron_method_reference_entry rather than here, which is the correction this relation took: the five spellings were five arms of a union written out in this view and again in intent_condition_table_parameter beside it, so one population was spelled twice and either copy could drift from the other. A filter on that relation''s site column is what both now spell, and it is a filter rather than a union because the sites are rows. Method-keyed and not site-keyed, because the rule stated here does not vary by site: a declared type is a fact of the signature, so the same signature written at two sites is one row here, which is intent_condition_method_route''s shape for the same reason. What does vary by site is the decode override beside it, and that is why the override is a use-keyed relation rather than a column widening this one: a method-keyed row cannot say that one of two sites naming this signature binds a @nodeId slot and the other does not, and a row that tried would have to pick one site''s answer for both. It is also what keeps a site fact out of a method-keyed relation, the path-element sites having no GraphQL slots in scope and therefore no bound value parameters at all; that is a fact about the site, so it prunes at the site and not here. Nothing here claims the parameter is bound. Which of a method''s parameters receives an argument, which receives the source table and which receives a context value is decided per directive application from the slots and the context keys in scope, so it is a site-keyed relation and lands with its own consumer, exactly as jvm_method_parameter''s own comment defers it. This states what the extraction would be, for every parameter, and a reader that knows the role applies it to the parameters that have one. The type is read as the census decomposed it, jvm_declared_type_ref at the empty type path, and that reading is what makes the two rules agree on the awkward shapes rather than by coincidence. The live rule asks Class.forName of the declared type''s own spelling, so a parameterised type, an array, a primitive and a type variable all fail to load and all fall to Direct. The decomposition answers each of them the same way: a parameterised type names its raw head at the root, which is not an enum since no enum is generic; an array names nothing at the root, its component being the next step down; and a primitive and a type variable name nothing at all. Hence the LEFT JOIN, which keeps a parameter that names no class as a DIRECT row rather than dropping it, absence of a class being a fact about the parameter and not a reason to stop describing it. The silences are intent_java_enum_class''s, and they fall in one direction: a nested or package-private enum has no census row, so a parameter typed as one reads DIRECT here where the generator, resolving through its codegen loader, emits the enum decode. That is the classpath scan''s disclosed rule rather than a shortfall of this relation, and it is the same silence intent_condition_method_route_defect names CLASS_NOT_IN_CENSUS. A generated enum is no longer in that set, which is what this increment bought. Overloads are rows, kept apart by the descriptor the census keys on, so a reader holding only a class and a method name either finds one descriptor or picks between them the way the generator does, by name and arity; the descriptor is here so that picking is possible rather than silent.';
-COMMENT ON COLUMN intent_condition_param_extraction.graph_name IS 'the owning graph''s partition, carried from whichever directive named the pair; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN intent_condition_param_extraction.class_name IS 'the condition class as the author wrote it, fully qualified; the same spelling intent_condition_method_route.class_name carries';
-COMMENT ON COLUMN intent_condition_param_extraction.method_name IS 'the condition method name as the author wrote it, which is also the census column it matched. Spelled method_name and not method, as jvm_method spells it, because the descriptor beside it makes this row a statement about one signature where the route relation''s method column is a statement about a name';
-COMMENT ON COLUMN intent_condition_param_extraction.descriptor IS 'the owning method''s raw JVM descriptor, the census''s own overload discriminator; part of the key, so two overloads'' position 2 are two rows rather than one collision';
-COMMENT ON COLUMN intent_condition_param_extraction.position IS 'the parameter''s 0-based position, completing the key. Positions are total over the method: the table parameter and any context parameter are rows here too, this relation deliberately not deciding which role a position plays';
-COMMENT ON COLUMN intent_condition_param_extraction.param_name IS 'the parameter name the classfile recorded; NULL where the consumer compiled without -parameters, which is the state that makes a binding by name impossible and is reported as a warning rather than by this column';
-COMMENT ON COLUMN intent_condition_param_extraction.java_type IS 'the fully-qualified binary name at the root of the parameter''s declared type, on intent_argmapping_bound_parameter_type.java_type''s terms; NULL where the type names no class, a primitive, an array, or a type variable. The payload the ENUM_VALUE_OF arm carries into emitted code, and never NULL on that arm by construction';
-COMMENT ON COLUMN intent_condition_param_extraction.extraction_kind IS 'which extraction the declared-type rule gives, in a closed vocabulary of two: ENUM_VALUE_OF where intent_condition_param_extraction.java_type is an enum either census names, DIRECT everywhere else including where the type names no class. Two and not more because the declared-type rule has exactly two outcomes, which is a narrower claim than the one this column used to make: what a bound parameter actually receives has a third possibility, the decoded node key a @nodeId-bound parameter takes, and that is a row of intent_condition_param_decode rather than a value here. Keeping it out is what lets this vocabulary stay closed while the answer a reader wants is a join. The richer extractions in the generator''s vocabulary belong to the generated predicate arm''s column terms and to the @service path, neither of which this relation is about';
-COMMENT ON COLUMN intent_condition_param_extraction.candidates IS 'how many rows resolved for this key, this row''s being one of them; 1 on an unambiguous parameter. Above one means the class is declared by two of the graph''s classpath sources whose parameters at this position genuinely differ, identical answers having collapsed already, and is a resolution nothing here picks between, on intent_argmapping_bound_parameter_type.candidates'' terms';
 
-CREATE VIEW intent_condition_table_parameter
-  (graph_name, class_name, method_name, descriptor, position) AS
-WITH
-named (graph_name, class_name, method) AS (
-  SELECT DISTINCT graph_name, class_name, method
-    FROM graphitron_method_reference_entry
-   WHERE site IN ('FIELD_CONDITION', 'INPUT_FIELD_CONDITION', 'ARGUMENT_CONDITION',
-                  'FIELD_REFERENCE_STEP', 'ARGUMENT_REFERENCE_STEP', 'REFERENCE_FOR_STEP')
-),
-declared (graph_name, class_name, method_name, descriptor, position, java_type) AS (
-  SELECT DISTINCT n.graph_name, n.class_name, n.method, tr.owner_descriptor, tr.owner_position,
-         tr.referenced_class
-    FROM named n
-    JOIN store_graph_source g ON g.graph_name = n.graph_name
-    JOIN jvm_declared_type_ref tr
-      ON tr.source_name = g.source_name AND tr.class_name = n.class_name
-     AND tr.owner_name = n.method AND tr.type_path = '' AND tr.owner_kind = 'METHOD_PARAMETER'
-)
-SELECT d.graph_name, d.class_name, d.method_name, d.descriptor, d.position
-  FROM declared d
- WHERE EXISTS (SELECT 1
-                 FROM intent_jvm_ancestor a
-                WHERE a.graph_name = d.graph_name AND a.class_name = d.java_type
-                  AND a.ancestor_name = 'org.jooq.Table')
-    OR EXISTS (SELECT 1
-                 FROM store_graph_source g
-                 JOIN sql_table t
-                   ON t.source_name = g.source_name AND t.class_fqn = d.java_type
-                WHERE g.graph_name = d.graph_name);
-COMMENT ON VIEW intent_condition_table_parameter IS 'Which of a condition method''s parameters receive the source table. The first of the three roles a condition parameter can play, and the one that is a fact about the method alone: the generator decides it by the parameter''s declared type and never consults the site, where the other two, an argument and a context value, are decided from the slots and the context keys in scope at each directive application. So this relation is method-keyed like intent_condition_param_extraction beside it, and the two site-keyed roles land with their own consumers rather than being forced into this grain. Membership is the whole fact and there are no columns beyond the key. The population is the one intent_condition_param_extraction states, read the same way: a filter on graphitron_method_reference_entry.site over the six values the five @condition spellings occupy, where both views used to write that union out arm by arm and could drift from each other doing it. What the parameter is named and what its declared type is are already stated at this exact key by intent_condition_param_extraction, which is total over a method''s positions, so repeating either here would be one fact in two places; a reader wanting them joins. Absence within a signature means the parameter takes something other than the table, and absence of every position of a signature means the method declares no table parameter at all, which the generator refuses outright. That refusal is the consumer''s to state, not this relation''s: it is a fact about a method the schema named, and phrasing it here would need a defect vocabulary for a population of one. The type test is two arms because a jOOQ table reaches the store two ways and neither census subsumes the other, which is intent_java_enum_class''s shape for the same reason. A generated table class is in the catalog and nowhere else, the classpath scan excluding that package, so sql_table.class_fqn answers for it and the closure cannot; anything else an author writes is a census class, so intent_jvm_ancestor answers for it and the catalog cannot. The closure arm carries the bare jOOQ table interface for free, that relation being reflexive, and it is the arm that admits an author''s own table supertype and jOOQ''s own TableImpl, which is the whole of what the live rule''s Table.class.isAssignableFrom admits beyond a generated class. The test is not lifted to a relation of its own even though @externalField asks the same question of its own parameter, because the relation it would be is intent_jvm_ancestor unioned with one join, and that union is the reader''s sentence rather than a rule: what is worth stating once is the closure, and it is. Read at the empty type path, so a parameterised Table<FilmRecord> is admitted at its raw head exactly as the live rule reads it, and a parameter naming no class at all draws no row here rather than a false one. The silence is the classpath census''s own and it falls in one direction: a table supertype an author declared on a nested or package-private class has no census row, so a parameter typed as one is absent here where the generator, resolving through its codegen loader, passes it the alias. That is the same silence intent_condition_method_route_defect names CLASS_NOT_IN_CENSUS.';
-COMMENT ON COLUMN intent_condition_table_parameter.graph_name IS 'the owning graph''s partition, carried from whichever directive named the pair; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN intent_condition_table_parameter.class_name IS 'the condition class as the author wrote it, fully qualified; the same spelling intent_condition_param_extraction.class_name carries';
-COMMENT ON COLUMN intent_condition_table_parameter.method_name IS 'the condition method name as the author wrote it, which is also the census column it matched';
-COMMENT ON COLUMN intent_condition_table_parameter.descriptor IS 'the owning method''s raw JVM descriptor, the census''s own overload discriminator; part of the key, so two overloads are kept apart here exactly as they are on intent_condition_param_extraction';
-COMMENT ON COLUMN intent_condition_table_parameter.position IS 'the parameter''s 0-based position, completing the key. A signature declaring two table parameters draws two rows, the generator passing the alias to each rather than picking one, so this is never a single answer per signature and a reader must not read it as one';
 
 CREATE TABLE graphitron_field_reference_step_hop_keyed (
   graph_name       VARCHAR NOT NULL,
@@ -7245,7 +7324,7 @@ SELECT s.graph_name, s.type_name, f.input_type
 COMMENT ON VIEW intent_scalar_java_type IS 'The Java type a value of one of a graph''s scalars arrives as: one row per scalar a Java type was reached for, whether the engine provides the scalar or a @scalarType names the constant carrying it. For example a graph declaring scalar DateTime @scalarType(scalar: "com.example.Scalars.DATE_TIME") draws a row saying java.time.OffsetDateTime, beside the row Int draws for java.lang.Integer.';
 COMMENT ON COLUMN intent_scalar_java_type.graph_name IS 'the owning graph''s partition; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN intent_scalar_java_type.type_name IS 'the scalar''s name as the graph spells it, completing the key';
-COMMENT ON COLUMN intent_scalar_java_type.java_type IS 'the fully-qualified Java type a value of the scalar arrives as, boxed where the coercing accepts a primitive; the same spelling intent_condition_param_extraction.java_type carries for a parameter''s declared type, which is what makes the two comparable';
+COMMENT ON COLUMN intent_scalar_java_type.java_type IS 'the fully-qualified Java type a value of the scalar arrives as, boxed where the coercing accepts a primitive; the same spelling jvm_method_parameter.parameter_type carries for a parameter''s declared type, which is what makes the two comparable';
 
 CREATE VIEW intent_condition_slot
   (graph_name, site, use_site, slot_name, slot_kind, container_type_name, container_field_name,
@@ -7306,15 +7385,15 @@ declared (graph_name, site, use_site, class_name, method, name) AS (
 )
 SELECT DISTINCT d.graph_name, d.site, d.use_site, p.descriptor, p.position
   FROM declared d
-  JOIN intent_condition_param_extraction p
-    ON p.graph_name = d.graph_name AND p.class_name = d.class_name
-   AND p.method_name = d.method AND p.param_name = d.name
+  JOIN store_graph_source g ON g.graph_name = d.graph_name
+  JOIN code_condition_method cm
+    ON cm.source_name = g.source_name AND cm.class_name = d.class_name
+   AND cm.method_name = d.method
+  JOIN code_method_parameter p
+    ON p.source_name = cm.source_name AND p.class_name = cm.class_name
+   AND p.method_name = cm.method_name AND p.descriptor = cm.descriptor
+   AND p.parameter_name = d.name AND p.role = 'OTHER'
  WHERE NOT EXISTS (SELECT 1
-                     FROM intent_condition_table_parameter tp
-                    WHERE tp.graph_name = d.graph_name AND tp.class_name = d.class_name
-                      AND tp.method_name = d.method AND tp.descriptor = p.descriptor
-                      AND tp.position = p.position)
-   AND NOT EXISTS (SELECT 1
                      FROM graphitron_argmapping_entry ap
                     WHERE ap.graph_name = d.graph_name AND ap.site = d.site
                       AND ap.use_site = d.use_site AND ap.param_name = d.name)
@@ -10834,7 +10913,7 @@ SELECT i.graph_name, 'ARGUMENT', i.type_name, i.field_name, i.argument_name, i.p
                     WHERE ac.graph_name = i.graph_name AND ac.type_name = i.type_name
                       AND ac.field_name = i.field_name AND ac.argument_name = i.argument_name
                       AND ac.class_name = c.class_name AND ac.method = c.method);
-COMMENT ON VIEW intent_condition_param_decode IS 'Where a @condition parameter bound to a slot is exempted from the declared-type extraction rule and receives the slot''s decoded node key instead, and what shape that key has. The override half of a pair: intent_condition_param_extraction states the standing rule by declared type, this states the exception, and presence here is the whole of what says the exception applies. Absence is not a silence; it is the assertion that the declared-type rule stands at that coordinate, which is the shape the fact model uses wherever a rule has an exception rather than a variant. The population is every slot carrying the @nodeId instruction that a @condition names a class and a method at, and a slot is named two ways: by its own directive, and by a directive on the field whose arguments it is one of. So the arms are three where the slot sites a value is bound from are two, an argument and an input field. Each arm reads its directive at the coordinate capture wrote it to: an argument condition at the three-part coordinate, an input-field condition at the shared field coordinate with the owning type''s kind INPUT_OBJECT, and a field-level condition at that same shared coordinate with the kind an object or an interface, the slots it sees being its field''s own arguments. They are one relation because they are one rule: the generator installs the decode keyed on the slot, so a parameter bound to a @nodeId argument receives the decoded key however the directive binding it was written, and an arm missing here would assert the declared-type rule stands at a coordinate where it does not. Keyed by the method as well as by the coordinate, for the reason the third arm makes visible: one argument can be named by its own @condition and by its field''s at once, and those are two authored methods each receiving the decoded key, so class_name and method_name complete the key rather than riding as payload of the coordinate. Two directives naming one method at one coordinate stay one row, which the third arm''s anti-join is what says: the exemption is a fact about a slot and a method, and a second directive asserting it again adds no fact. Use-keyed, and that is the point of it being separate: the rule the extraction relation states is a fact of a signature and the same signature written at two sites is one row there, while this is a fact of a site, so one method named by a @nodeId-bound slot at one coordinate and a plain scalar at another is one row here and not two answers on one method-keyed row. The coordinate it carries is intent_node_id_instruction''s own, so a reader holding a use site joins straight across; the instruction relation''s multiplicity is inherited whole, one row per consuming coordinate for an input field and one row for an argument. What this relation does not say is which of the method''s parameters receives the decoded key. That is the binding question the fact model defers everywhere: which parameter takes an argument, which takes the source table and which takes a context value is decided per directive application from the slots and the context keys in scope, and jvm_method_parameter''s own comment defers it for the same reason. A reader that has resolved the binding for itself, which the editor and the validator both have, reads the shape here and needs nothing further; a reader that has not cannot get it from this relation and must not read the row as naming a parameter. The shape is stated as an arity and a list flag rather than as a Java type, because the type is the generator''s composition of two facts a reader already has: the key columns'' own types, at graphitron_node_keycolumn''s grain, and the wrapping this relation names. An arity of one means the key column''s own type, above one means the typed jOOQ Row of the key columns in key order, and list_valued wraps either. Spelling the composed type here would be a second statement of a convention that lives in generated code, and it would go stale against a column type change this relation cannot see. Population boundary, since a hole reads as an exemption that does not apply: a slot whose node type resolves no key columns has no row, the arity join being what excludes it, and that coordinate already meets a shipped rejection naming the type rather than needing a row here to be silent about. A parameter reached by a dotted argMapping into the key columns of the same slot is a different mechanism at a different grain, the projection rail''s, and is not this relation''s exemption; the two do not overlap because a dotted binding is not a whole-slot binding.';
+COMMENT ON VIEW intent_condition_param_decode IS 'Where a @condition parameter bound to a slot is exempted from the declared-type extraction rule and receives the slot''s decoded node key instead, and what shape that key has. The override half of a pair: code_method_parameter.extraction states the standing rule by declared type, this states the exception, and presence here is the whole of what says the exception applies. Absence is not a silence; it is the assertion that the declared-type rule stands at that coordinate, which is the shape the fact model uses wherever a rule has an exception rather than a variant. The population is every slot carrying the @nodeId instruction that a @condition names a class and a method at, and a slot is named two ways: by its own directive, and by a directive on the field whose arguments it is one of. So the arms are three where the slot sites a value is bound from are two, an argument and an input field. Each arm reads its directive at the coordinate capture wrote it to: an argument condition at the three-part coordinate, an input-field condition at the shared field coordinate with the owning type''s kind INPUT_OBJECT, and a field-level condition at that same shared coordinate with the kind an object or an interface, the slots it sees being its field''s own arguments. They are one relation because they are one rule: the generator installs the decode keyed on the slot, so a parameter bound to a @nodeId argument receives the decoded key however the directive binding it was written, and an arm missing here would assert the declared-type rule stands at a coordinate where it does not. Keyed by the method as well as by the coordinate, for the reason the third arm makes visible: one argument can be named by its own @condition and by its field''s at once, and those are two authored methods each receiving the decoded key, so class_name and method_name complete the key rather than riding as payload of the coordinate. Two directives naming one method at one coordinate stay one row, which the third arm''s anti-join is what says: the exemption is a fact about a slot and a method, and a second directive asserting it again adds no fact. Use-keyed, and that is the point of it being separate: the rule the extraction relation states is a fact of a signature and the same signature written at two sites is one row there, while this is a fact of a site, so one method named by a @nodeId-bound slot at one coordinate and a plain scalar at another is one row here and not two answers on one method-keyed row. The coordinate it carries is intent_node_id_instruction''s own, so a reader holding a use site joins straight across; the instruction relation''s multiplicity is inherited whole, one row per consuming coordinate for an input field and one row for an argument. What this relation does not say is which of the method''s parameters receives the decoded key. That is the binding question the fact model defers everywhere: which parameter takes an argument, which takes the source table and which takes a context value is decided per directive application from the slots and the context keys in scope, and jvm_method_parameter''s own comment defers it for the same reason. A reader that has resolved the binding for itself, which the editor and the validator both have, reads the shape here and needs nothing further; a reader that has not cannot get it from this relation and must not read the row as naming a parameter. The shape is stated as an arity and a list flag rather than as a Java type, because the type is the generator''s composition of two facts a reader already has: the key columns'' own types, at graphitron_node_keycolumn''s grain, and the wrapping this relation names. An arity of one means the key column''s own type, above one means the typed jOOQ Row of the key columns in key order, and list_valued wraps either. Spelling the composed type here would be a second statement of a convention that lives in generated code, and it would go stale against a column type change this relation cannot see. Population boundary, since a hole reads as an exemption that does not apply: a slot whose node type resolves no key columns has no row, the arity join being what excludes it, and that coordinate already meets a shipped rejection naming the type rather than needing a row here to be silent about. A parameter reached by a dotted argMapping into the key columns of the same slot is a different mechanism at a different grain, the projection rail''s, and is not this relation''s exemption; the two do not overlap because a dotted binding is not a whole-slot binding.';
 COMMENT ON COLUMN intent_condition_param_decode.graph_name IS 'the owning graph''s partition, carried from the instruction the row is about; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN intent_condition_param_decode.site IS 'which SDL site carries the slot, in a closed vocabulary of two: ARGUMENT and INPUT_FIELD. Narrower than intent_node_id_instruction.site''s three by construction, an output field binding no value into a condition method; the column every other column''s nullness is determined by, on that relation''s terms. The slot''s site and not the directive''s, which is why two of the three arms land ARGUMENT: a field-level @condition is written at a field and binds that field''s arguments, so what it exempts sits at an argument like the argument''s own directive does';
 COMMENT ON COLUMN intent_condition_param_decode.type_name IS 'the GraphQL type owning the slot''s field: the object type at an argument, the input object type at an input field';
@@ -10842,8 +10921,8 @@ COMMENT ON COLUMN intent_condition_param_decode.field_name IS 'the field name wi
 COMMENT ON COLUMN intent_condition_param_decode.argument_name IS 'the argument the slot is, where the site is an argument; NULL at an input field, on intent_node_id_instruction.argument_name''s terms';
 COMMENT ON COLUMN intent_condition_param_decode.path IS 'the occurrence path reaching the slot, where the site is an input field; NULL at an argument, on intent_node_id_instruction.path''s terms';
 COMMENT ON COLUMN intent_condition_param_decode.use_site IS 'the consuming coordinate this row is about, carried whole from intent_node_id_instruction.use_site so a reader holding one joins straight across. Part of the key, and what makes this relation use-keyed rather than method-keyed';
-COMMENT ON COLUMN intent_condition_param_decode.class_name IS 'the condition class as the author wrote it, fully qualified; the same spelling intent_condition_param_extraction.class_name carries, so a reader holding one row of each is holding two statements about one method. Part of the key with the method beside it, one argument being nameable by its own @condition and by its field''s at once';
-COMMENT ON COLUMN intent_condition_param_decode.method_name IS 'the condition method name as the author wrote it, completing the key with the class beside it. No descriptor there, unlike intent_condition_param_extraction: this row is a statement about a slot and not about a signature, and every overload a name resolves to receives the same decoded key at this coordinate';
+COMMENT ON COLUMN intent_condition_param_decode.class_name IS 'the condition class as the author wrote it, fully qualified; the same spelling code_method_parameter.class_name carries, so a reader holding one row of each is holding two statements about one method. Part of the key with the method beside it, one argument being nameable by its own @condition and by its field''s at once';
+COMMENT ON COLUMN intent_condition_param_decode.method_name IS 'the condition method name as the author wrote it, completing the key with the class beside it. No descriptor there, unlike code_method_parameter: this row is a statement about a slot and not about a signature, and every overload a name resolves to receives the same decoded key at this coordinate';
 COMMENT ON COLUMN intent_condition_param_decode.node_type_name IS 'the node type the slot''s instruction resolved, carried from intent_node_id_instruction.resolved_type_name; what the decode is a decode of, and the type whose key columns graphitron_node_keycolumn lists. A node type and not a container, which the arity join is what enforces rather than a predicate here: a container resolves no key columns, so a slot whose typeName: names one draws no row on any of the three arms, which is the silence the view comment discloses';
 COMMENT ON COLUMN intent_condition_param_decode.key_arity IS 'how many key columns the node type resolved, one or more. One means the bound parameter receives the key column''s own Java type; above one means the typed jOOQ Row of the key columns in key order. Never zero: a slot whose node type resolves no key columns is not a row at all, that coordinate meeting a shipped rejection instead';
 COMMENT ON COLUMN intent_condition_param_decode.list_valued IS 'whether the slot is list-shaped in the SDL, read off the slot''s own captured declaration. The wrapping applied over the shape key_arity names, and carried rather than derived because list-ness is a fact of the slot and the arity is a fact of the node type; the two are independent and a reader needs both to name the parameter type';
@@ -13914,6 +13993,9 @@ COMMENT ON COLUMN meta_gatherer_dependency.depends_on IS 'the prerequisite gathe
 INSERT INTO meta_gatherer_dependency VALUES
   ('graphitron', 'sdl'),
   ('graphitron', 'catalog'),
+  -- A concrete table position is keyed to the table it names, so the arm reads the catalog the
+  -- jOOQ gatherer wrote. ModelCapture runs the two in this order for that reason.
+  ('code', 'jooq'),
   ('derivation', 'configuration'),
   ('derivation', 'sdl'),
   ('derivation', 'graphql-source'),
@@ -14222,6 +14304,9 @@ INSERT INTO meta_grain VALUES
   ('declared-type-position',
    'one position within one declared type',
    'source_name, class_name, owner_kind, owner_name, owner_descriptor, owner_position, type_path', 'classpath'),
+  ('method-exception',
+   'one exception one method declares it throws',
+   'source_name, class_name, method_name, descriptor, exception_class', 'classpath'),
   ('method-parameter',
    'one position in one method''s parameter list',
    'source_name, class_name, method_name, descriptor, position', 'classpath'),
@@ -14803,18 +14888,42 @@ INSERT INTO meta_relation VALUES
    'One constant an author may name in @scalarType(scalar:), and the Java type its scalar coerces to.',
    'For example a DATE_TIME field coercing to java.time.OffsetDateTime.',
    'The first arm of a family whose shape is one gatherer per thing an author writes, rather than one index of every class on the classpath. An index answers what the classpath holds and leaves every reader to re-filter it; this answers what may be written at one directive, and the filter is the arm''s own admission rule. The admission is a classfile fact, a public static field whose declared type is exactly GraphQLScalarType, so the candidate set is read from bytes. The input type is not, and the column says so: it is reached by loading the class, the coercing being a live object rather than a signature. Not reactor-limited, alone among the arms but for the throwables, because the constants an author names are a library''s and the premise that consumer vocabulary lives in reactor source was falsified outright by @scalarType(scalar: "graphql.scalars.ExtendedScalars.Date").'),
+  ('code_method', 'class-method', 'code',
+   'One public method of a class the reactor built, which is the population every directive naming Java draws its candidates from.',
+   'For example filmsByRating(DSLContext, String) on a consumer''s FilmService.',
+   'The shared half of the family, and the correction that makes the arms mean one thing each. Whether a method may be named at @service and whether it may be named at @condition are two questions and two relations; what it returns, what it takes and what it throws are properties of the declaration and do not vary by the coordinate somebody reached it through, so holding them per arm held one fact twice and let two copies disagree. The population is the reactor''s public methods, which is what keeps this from being the census it would otherwise resemble: a census answers for the whole classpath and has to, because it does not know who is asking; this answers for the code a build compiles, because nothing else may be named.'),
+  ('code_method_result', 'class-method', 'code',
+   'What a method results in, containers peeled away.',
+   'For example a method returning a List of Film resulting in Film, many of them.',
+   'The question every reader of a producing method asks and none of them could answer cheaply: a field backed by a method is backed by what that method finally hands back, and a return type is a tree rather than a name. Stated at capture because the alternative is in the store and measurable: a view peeling containers by self-joining a type-reference relation once per level, unrolled to a fixed depth because SQL has no loop, which bounds what it can answer as well as costing what it costs. Its own relation and not two columns on the method, because a return type naming no class is four different things, a void, a primitive, an array and a type variable, and presence says that where a placeholder would make them one answer.'),
+  ('code_method_parameter', 'method-parameter', 'code',
+   'One position in a method''s parameter list, and what its type alone says the position is for.',
+   'For example position 0 of filmTitleContains, named film and playing the TABLE_CONCRETE role.',
+   'A method''s parameters are the method''s own fact, so they are held once and the arms read them. Written rather than derived because a descriptor states types and nothing else: the name a binding targets is in the MethodParameters attribute, and the role is an assignability question the descriptor cannot answer. The role vocabulary is four values and they are exclusive because no type satisfies two; it is one column rather than one per arm because a position typed as a jOOQ table is typed that way whether the method is reached at @condition or anywhere else, and the arm''s reading of what that means is the arm''s. Keyed on position and not on name, since the name is exactly the part a classfile may omit.'),
+  ('code_method_parameter_element', 'method-parameter', 'code',
+   'What one parameter position''s type contains, containers peeled away.',
+   'For example a position typed as a List of FilmInput containing FilmInput, many of them.',
+   'The same question code_method_result answers, asked at a position, and separate from the parameter for the same reason that one is separate from the method. Two relations rather than one keyed by which kind of member owns the type, because one would need a sentinel position for a return that has none, and a key per member needs no sentinel to mean not-applicable.'),
+  ('code_method_exception', 'method-exception', 'code',
+   'One exception a method declares it throws.',
+   'For example filmsByRating declaring java.io.IOException.',
+   'Captured because two readers ask for it and neither could be answered without it: the @error channel-coverage check asks whether every exception a producing method declares is covered by a handler on the field''s channel, and @condition''s admission refuses a set of same-named declarations that disagree on the clause. Held on the method rather than per arm because a throws clause is a property of the declaration, which is the whole of this half of the family.'),
+  ('code_service_method', 'class-method', 'code',
+   'One method an author may name in @service(service:).',
+   'For example a public static filmsByRating(DSLContext, String) on a consumer''s FilmService.',
+   'The arm over the directive that names the most Java, and the one whose admission is least about shape. @service resolution picks by name from the declaring class and applies no filter at all, so what makes a method a candidate is stated here rather than read off the generator: the reactor built it, it is public, and it is not already an answer to a different directive. A method returning exactly org.jooq.Condition is the condition arm''s and a static one-parameter method taking a jOOQ table and returning org.jooq.Field is the lifter arm''s, and neither answers what may be called for a field''s value. Everything else the generator asks, that the return matches the field''s declared type and that an instance method''s class can be constructed, is a judgement about one application, and the refusal should name the method rather than behave as though it did not exist.'),
   ('code_condition_method', 'class-method', 'code',
-   'One method an author may name in @condition(condition:), on a class the reactor built.',
+   'One method an author may name in @condition(condition:).',
    'For example a public static filmTitleContains(Film, String) returning an org.jooq.Condition.',
-   'The first arm whose corpus is the reactor, and the first over methods. Admission is the return type read off the classfile and nothing else: exactly org.jooq.Condition, matched un-erased so a consumer''s own Condition type cannot pass. What the generator does with a named method beyond that, how many parameters it wants and which of them carries the table, is a judgement about one directive application rather than about candidacy, so none of it narrows this population. The return type is therefore not a column: the admission fixes it, and a relation stating it would repeat its own predicate on every row. Reactor-scoped because a condition is consumer code by construction, and the entry origin already says which entries the reactor built, so the scope is a predicate rather than a second classpath. Public methods only, which is the census''s own rule and the one the generator''s own silence already had: a non-public method is not a candidate an author can name successfully.'),
-  ('code_condition_method_parameter', 'method-parameter', 'code',
-   'One position in the parameter list of a method @condition(condition:) may name.',
-   'For example position 0 of filmTitleContains, named film and typed no.sikt.example.tables.Film.',
-   'A method''s parameters are the method''s own fact and belong to the arm that admits it, which is why there is no parameter gatherer beside the five. Written here rather than derived because a descriptor states types and nothing else: the name a binding targets is in the MethodParameters attribute, and whether a position takes the source table is read from its declared type. Keyed on position and not on name, since the name is exactly the part a classfile may omit. The throws clause has no column and no relation yet, deliberately: declared exceptions feed the @error channel-coverage check, which is a @service concern, and this arm would be capturing a fact with no reader.'),
+   'Admission is the return type read off the classfile and nothing else: exactly org.jooq.Condition, matched un-erased so a consumer''s own Condition type cannot pass. What the generator does with a named method beyond that, how many parameters it wants and which of them carries the table, is a judgement about one directive application rather than about candidacy, so none of it narrows this population. Reactor-scoped because a condition is consumer code by construction, and the entry origin already says which entries the reactor built, so the scope is a predicate rather than a second classpath.'),
   ('code_external_field_method', 'class-method', 'code',
-   'One method an author may name in @externalField(reference:), on a class the reactor built.',
+   'One method an author may name in @externalField(reference:).',
    'For example a public static titleUpper(Film) returning an org.jooq.Field.',
-   'The whole of this directive''s contract is a fact about the method, which is what lets the relation be the candidate set rather than an approximation of it. The generator admits a lifter that is public and static, takes exactly one parameter typed as a jOOQ table, and returns org.jooq.Field; every clause of that is readable before any schema is consulted, so every clause is an admission rule here and none of them is a column. The one clause left out is the only one that is not about the method: whether the table it lifts from is the table the field was written on, which is the site''s question and is answered by comparing the parameter type this relation does carry. Reading the contract off the shape alone was the alternative, and the editor already does it that way for want of a relation to ask: a method taking one argument and returning a Field looks like a lifter whether or not its parameter is a table, and the suggestion it produces can fail to bind. Raw Field is the single clause not gated on, the parameterisation living in the Signature attribute this arm does not read, so a method returning raw Field is admitted here and refused by name at build.'),
+   'The whole of this directive''s contract is a fact about the method, which is what lets the relation be the candidate set rather than an approximation of it: the generator admits a lifter that is public and static, takes exactly one parameter typed as a jOOQ table, and returns org.jooq.Field. Every clause is readable before any schema is consulted, so every clause is an admission rule here and none of them is a column. The one clause left out is the only one that is not about the method, whether the table it lifts from is the table the field was written on, and a reader answers that from the position''s own role.'),
+  ('code_condition_method_parameter_table', 'method-parameter', 'code',
+   'The catalog table one TABLE_CONCRETE parameter position names.',
+   'For example position 0 of filmTitleContains naming the film table of the consumer''s public schema.',
+   'Its own relation and not three columns on the parameter, because the resolution is absent for two of the three roles and for a concrete position the catalog does not hold, and three nullable columns would spell that absence three times and let two of the three be set. Presence is the fact: a parameter with a row here resolved, one without did not, and the role beside it says whether it was ever going to. Keyed to sql_table rather than carrying the class name so a reader joins a primary key, and cascaded from both parents for different reasons: from the parameter because a method that stops existing has no positions, and from the table because a dropped table unresolves the position without unwriting it.'),
   ('code_throwable', 'classpath-class', 'code',
    'One throwable on the classpath, which is what an author may name as an @error handler''s exception.',
    'For example org.jooq.exception.IntegrityConstraintViolationException, read from the jOOQ jar.',

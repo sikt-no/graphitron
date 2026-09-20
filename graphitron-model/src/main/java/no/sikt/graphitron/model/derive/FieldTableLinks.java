@@ -9,7 +9,7 @@ import org.jooq.Table;
 import java.time.LocalDateTime;
 
 import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD;
-import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD_PARAMETER;
+import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD_PARAMETER_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_CONDITION_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_FOR_CONDITION_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_FOR_KEY_STEP_ENTRY;
@@ -623,13 +623,11 @@ public final class FieldTableLinks {
                                    LocalDateTime touchedAt) {
         var cl = GRAPHITRON_FIELD_CHAIN_LINK;
         var cm = CODE_CONDITION_METHOD;
-        var arrives = CODE_CONDITION_METHOD_PARAMETER.as("arrives");
-        var departs = CODE_CONDITION_METHOD_PARAMETER;
+        var arrives = CODE_CONDITION_METHOD_PARAMETER_TABLE.as("arrives");
+        var departs = CODE_CONDITION_METHOD_PARAMETER_TABLE;
         var m = STORE_GRAPH_SOURCE;
         var mt = STORE_GRAPH_SOURCE.as("mt");
         var md = STORE_GRAPH_SOURCE.as("md");
-        var st = SQL_TABLE;
-        var other = SQL_TABLE.as("other");
         var t = GRAPHITRON_FIELD_TABLE_LINK;
         var stated = conditionSpellings(dsl, graph);
         var d = departures(dsl, graph, position, touchedAt);
@@ -641,17 +639,16 @@ public final class FieldTableLinks {
         // Nothing about the first parameter contradicts the departure. A parameter naming a table
         // other than where the chain stands is the whole of what this excludes.
         Condition departureStands = notExists(selectOne().from(departs)
-            .join(md).on(md.GRAPH_NAME.eq(cl.GRAPH_NAME))
-            .join(other).on(other.SOURCE_NAME.eq(md.SOURCE_NAME),
-                other.CLASS_FQN.eq(departs.PARAMETER_TYPE))
+            .join(md).on(md.GRAPH_NAME.eq(cl.GRAPH_NAME),
+                md.SOURCE_NAME.eq(departs.TABLE_SOURCE_NAME))
             .where(departs.SOURCE_NAME.eq(cm.SOURCE_NAME),
                 departs.CLASS_NAME.eq(cm.CLASS_NAME),
                 departs.METHOD_NAME.eq(cm.METHOD_NAME),
                 departs.DESCRIPTOR.eq(cm.DESCRIPTOR),
                 departs.POSITION.eq(0))
-            .and(other.SOURCE_NAME.ne(fromSource)
-                .or(other.TABLE_SCHEMA.ne(fromSchema))
-                .or(other.TABLE_NAME.ne(fromTable))));
+            .and(departs.TABLE_SOURCE_NAME.ne(fromSource)
+                .or(departs.TABLE_SCHEMA.ne(fromSchema))
+                .or(departs.TABLE_NAME.ne(fromTable))));
 
         var resolved = dsl
             .select(cl.TYPE_NAME.as(TYPE_NAME), cl.FIELD_NAME.as(FIELD_NAME),
@@ -660,8 +657,8 @@ public final class FieldTableLinks {
                 d.field(TARGET_TABLE, String.class).as(TARGET_TABLE),
                 fromSource.as(FROM_SOURCE_NAME), fromSchema.as(FROM_SCHEMA),
                 fromTable.as(FROM_TABLE),
-                st.SOURCE_NAME.as(TO_SOURCE_NAME), st.TABLE_SCHEMA.as(TO_SCHEMA),
-                st.TABLE_NAME.as(TO_TABLE),
+                arrives.TABLE_SOURCE_NAME.as(TO_SOURCE_NAME),
+                arrives.TABLE_SCHEMA.as(TO_SCHEMA), arrives.TABLE_NAME.as(TO_TABLE),
                 count().over(partitionBy(cl.TYPE_NAME, cl.FIELD_NAME,
                     d.field(TARGET_SOURCE_NAME, String.class),
                     d.field(TARGET_SCHEMA, String.class),
@@ -677,12 +674,13 @@ public final class FieldTableLinks {
                 cm.CLASS_NAME.eq(stated.field(CLASS_NAME, String.class)),
                 cm.METHOD_NAME.eq(stated.field(METHOD_NAME, String.class)))
             // The parameter after the first names the arrival, which is what makes this a route.
+            // The arm resolved which table that class names when it read it, so this joins a key
+            // rather than matching a generated class name against the catalog a second time.
             .join(arrives).on(arrives.SOURCE_NAME.eq(cm.SOURCE_NAME),
                 arrives.CLASS_NAME.eq(cm.CLASS_NAME), arrives.METHOD_NAME.eq(cm.METHOD_NAME),
                 arrives.DESCRIPTOR.eq(cm.DESCRIPTOR), arrives.POSITION.eq(1))
-            .join(mt).on(mt.GRAPH_NAME.eq(cl.GRAPH_NAME))
-            .join(st).on(st.SOURCE_NAME.eq(mt.SOURCE_NAME),
-                st.CLASS_FQN.eq(arrives.PARAMETER_TYPE))
+            .join(mt).on(mt.GRAPH_NAME.eq(cl.GRAPH_NAME),
+                mt.SOURCE_NAME.eq(arrives.TABLE_SOURCE_NAME))
             .where(cl.GRAPH_NAME.eq(graph))
             .and(cl.POSITION.eq(position))
             .and(namesNoKey(cl))

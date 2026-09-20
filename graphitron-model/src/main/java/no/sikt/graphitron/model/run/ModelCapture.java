@@ -74,8 +74,12 @@ public final class ModelCapture {
     /**
      * The row every other relation this run writes hangs a foreign key on: which graph, where it
      * was read from, and when it was last read.
+     *
+     * <p>Public because a caller running these gatherers itself, rather than through
+     * {@link #capture}, still owes the anchor before any of them: a fixture reproducing this
+     * method's prefix should call this rather than spell the upsert a second time.
      */
-    private static void writeGraph(DSLContext dsl, GraphIdentity graph, LocalDateTime readAt) {
+    public static void writeGraph(DSLContext dsl, GraphIdentity graph, LocalDateTime readAt) {
         var t = STORE_GRAPH;
         dsl.insertInto(t, t.GRAPH_NAME, t.BASE_DIR, t.LAST_CAPTURED)
             .values(graph.name(), graph.baseDir().toString(), readAt)

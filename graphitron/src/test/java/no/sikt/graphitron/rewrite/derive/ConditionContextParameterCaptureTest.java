@@ -87,7 +87,12 @@ class ConditionContextParameterCaptureTest {
     private static void withCatalogStore(Path tmp, Consumer<DSLContext> body) {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        try (var captured = CapturedStore.ofCatalog(tmp, CapturedStore.GRAPH, SDL, jooq, census())) {
+        // The classpath beside the census, because the relation under test now reads the code
+        // family's own statement of what @condition may name rather than the census's
+        // transcription of every method on the entry. A run performs both readings over the same
+        // directory; a fixture supplying only the first leaves the arm empty.
+        try (var captured = CapturedStore.ofCatalog(tmp, CapturedStore.GRAPH, SDL, jooq, census(),
+                testClassRoot())) {
             body.accept(captured.dsl());
         }
     }

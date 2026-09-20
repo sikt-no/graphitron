@@ -13,9 +13,15 @@ import java.util.function.Consumer;
 import org.jooq.DSLContext;
 
 import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD;
-import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD_PARAMETER;
+import static no.sikt.graphitron.model.Tables.CODE_METHOD;
+import static no.sikt.graphitron.model.Tables.CODE_METHOD_EXCEPTION;
+import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
+import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD_PARAMETER_TABLE;
 import static no.sikt.graphitron.model.Tables.CODE_EXTERNAL_FIELD_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
+import static no.sikt.graphitron.model.Tables.CODE_SERVICE_METHOD;
+import static no.sikt.graphitron.model.Tables.CODE_METHOD_RESULT;
+import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER_ELEMENT;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
@@ -51,6 +57,9 @@ class CodeCaptureTest {
     private static final String LIFTERS =
         "no.sikt.graphitron.model.capture.code.fixtures.ExternalFieldFixture";
 
+    private static final String SERVICES =
+        "no.sikt.graphitron.model.capture.code.fixtures.ServiceFixture";
+
     /**
      * The reactor's own output beside a dependency that declares a great many condition methods.
      * jOOQ is the sharpest case the classpath has for the scope rule: every {@code Condition} the
@@ -60,6 +69,87 @@ class CodeCaptureTest {
     private static final List<ClasspathEntry> REACTOR_AND_JOOQ = List.of(
         ClasspathEntry.project(TEST_CLASSES),
         new ClasspathEntry(jooqJar(), ClasspathEntry.Origin.DECLARED, "org.jooq:jooq"));
+
+    /**
+     * The same jar as {@link #CLASSPATH} carries, reclassified as something a declared dependency
+     * dragged in. Every class the two classpath arms admit is on it, so an arm that reads by path
+     * rather than by classification admits all of them and the difference is unmissable.
+     */
+    private static final List<ClasspathEntry> TRANSITIVE_GRAPHQL_JAVA = List.of(
+        ClasspathEntry.project(Path.of("target", "classes")),
+        new ClasspathEntry(graphqlJavaJar(), ClasspathEntry.Origin.TRANSITIVE,
+            "com.graphql-java:graphql-java"));
+
+    // ===== The corpus: which classpath entries an arm may read at all =====
+
+    /**
+     * An arm answers what may be written at a coordinate, so its corpus is bounded by what may be
+     * written at all. A class reachable only through a transitive dependency may not: naming one is
+     * the undeclared-dependency antipattern, {@code ClasspathEntry.Origin#TRANSITIVE} says the
+     * census does not read such an entry, and the build refuses a schema that names a class from
+     * one. An arm admitting it would offer an author a completion the build then rejects.
+     *
+     * <p>Asserted over the two classpath arms rather than the reactor ones. The reactor arms scope
+     * themselves to what the build compiled, which excludes a transitive jar on the way to
+     * excluding every other jar, so they would pass this whatever the corpus were. The two that
+     * read beyond the reactor are the ones the classification is load-bearing for.
+     */
+    @Test
+    @DisplayName("a transitive dependency is nobody's to name, so no arm reads its classes")
+    void aTransitiveEntryIsNotRead() {
+        withCapture(TRANSITIVE_GRAPHQL_JAVA, null, FIRST, dsl -> {
+            assertThat(dsl.fetchCount(CODE_SCALAR_CONSTANT,
+                    CODE_SCALAR_CONSTANT.CLASS_NAME.eq("graphql.Scalars")))
+                .as("the constants an author may not name, because this jar is undeclared")
+                .isZero();
+            assertThat(dsl.fetchCount(CODE_THROWABLE,
+                    CODE_THROWABLE.CLASS_NAME.eq("graphql.AssertException")))
+                .as("and the throwables, on the same grounds")
+                .isZero();
+        });
+    }
+
+    /**
+     * The entry registry says what the reading read, so an entry no arm may read draws no row
+     * either. A row here would claim a source the store holds no facts from and cannot ever hold
+     * any from, and {@code store_source} is what a currency scan walks.
+     */
+    @Test
+    @DisplayName("an entry the reading never opens registers no source")
+    void aTransitiveEntryRegistersNoSource() {
+        withCapture(TRANSITIVE_GRAPHQL_JAVA, null, FIRST, dsl ->
+            assertThat(dsl.fetchCount(STORE_SOURCE,
+                    STORE_SOURCE.SOURCE_NAME.eq(graphqlJavaJar().toString())))
+                .as("an entry read by nothing, registered by nothing")
+                .isZero());
+    }
+
+    /**
+     * The exclusion the caller passes is a package, and a package is a name plus a dot. Spelled as
+     * a bare string prefix it also excludes every package and every class whose name merely starts
+     * with those characters, which is not a corner: {@code graphql.Assert} is a class on this
+     * classpath and {@code graphql.AssertException} is the throwable beside it, so a consumer whose
+     * generated package is spelled like the shorter of the two loses the longer.
+     *
+     * <p>Both directions in one case, because only the pair says the rule. Excluding by a name that
+     * is a prefix of a class must keep that class; excluding by a name that is genuinely the
+     * package above it must still drop it, or the fix would have bought the parity by excluding
+     * nothing.
+     */
+    @Test
+    @DisplayName("the excluded package is a package, not any name starting with those characters")
+    void theExclusionIsAPackageAndNotAPrefix() {
+        withCapture(CLASSPATH, "graphql.Assert", FIRST, dsl ->
+            assertThat(dsl.fetchCount(CODE_THROWABLE,
+                    CODE_THROWABLE.CLASS_NAME.eq("graphql.AssertException")))
+                .as("a class the excluded name is a prefix of, which is a different class")
+                .isEqualTo(1));
+        withCapture(CLASSPATH, "graphql", FIRST, dsl ->
+            assertThat(dsl.fetchCount(CODE_THROWABLE,
+                    CODE_THROWABLE.CLASS_NAME.eq("graphql.AssertException")))
+                .as("and the package above it, which is the exclusion doing its job")
+                .isZero());
+    }
 
     @Test
     @DisplayName("a GraphQLScalarType constant is admitted, with the type its scalar coerces to")
@@ -193,8 +283,9 @@ class CodeCaptureTest {
 
     /**
      * The admission is the return type and nothing else, so the case that pins it is one class
-     * carrying four methods the arm must tell apart: two overloads that qualify, one that returns
-     * something else, and one that is not public.
+     * carrying methods the arm must tell apart: overloads that qualify, one that returns something
+     * else, and one that is not public. Stated as the whole set rather than a containment, because
+     * what the arm leaves out is the half worth asserting.
      */
     @Test
     @DisplayName("a method returning a condition is admitted, its overloads told apart by descriptor")
@@ -205,7 +296,15 @@ class CodeCaptureTest {
                 .containsExactlyInAnyOrder(
                     "titleContains(Ljava/lang/String;Ljava/lang/String;)Lorg/jooq/Condition;",
                     "titleContains(Ljava/lang/String;)Lorg/jooq/Condition;",
-                    "nonStatic(Ljava/lang/String;)Lorg/jooq/Condition;");
+                    "nonStatic(Ljava/lang/String;)Lorg/jooq/Condition;",
+                    "onAnyTable(Lorg/jooq/Table;Ljava/lang/String;)Lorg/jooq/Condition;",
+                    "onOneTable(Lno/sikt/graphitron/model/capture/code/fixtures/"
+                        + "ExternalFieldFixture$FixtureTable;Ljava/util/Map;)Lorg/jooq/Condition;",
+                    "onAVariableTable(Lorg/jooq/Table;)Lorg/jooq/Condition;",
+                    "onAnEnum(Lorg/jooq/Table;Lno/sikt/graphitron/model/config/"
+                        + "ClasspathEntry$Origin;)Lorg/jooq/Condition;",
+                    "onAnEnumArray(Lorg/jooq/Table;[Lno/sikt/graphitron/model/config/"
+                        + "ClasspathEntry$Origin;)Lorg/jooq/Condition;");
         });
     }
 
@@ -217,11 +316,11 @@ class CodeCaptureTest {
     @Test
     @DisplayName("a non-static condition method is a candidate, recorded as non-static")
     void staticnessIsRecordedNotRequired() {
-        withReactorCapture(dsl -> assertThat(dsl.select(CODE_CONDITION_METHOD.IS_STATIC)
-                .from(CODE_CONDITION_METHOD)
-                .where(CODE_CONDITION_METHOD.CLASS_NAME.eq(FIXTURE))
-                .and(CODE_CONDITION_METHOD.METHOD_NAME.eq("nonStatic"))
-                .fetchOne(CODE_CONDITION_METHOD.IS_STATIC))
+        withReactorCapture(dsl -> assertThat(dsl.select(CODE_METHOD.IS_STATIC)
+                .from(CODE_METHOD)
+                .where(CODE_METHOD.CLASS_NAME.eq(FIXTURE))
+                .and(CODE_METHOD.METHOD_NAME.eq("nonStatic"))
+                .fetchOne(CODE_METHOD.IS_STATIC))
             .as("a candidate the generator may still refuse, told apart by this column")
             .isFalse());
     }
@@ -235,20 +334,22 @@ class CodeCaptureTest {
     @DisplayName("a condition method's positions are recorded, nameless without -parameters")
     void parametersAreRecordedByPosition() {
         withReactorCapture(dsl -> {
-            var rows = dsl.select(CODE_CONDITION_METHOD_PARAMETER.POSITION,
-                    CODE_CONDITION_METHOD_PARAMETER.PARAMETER_TYPE,
-                    CODE_CONDITION_METHOD_PARAMETER.PARAMETER_NAME)
-                .from(CODE_CONDITION_METHOD_PARAMETER)
-                .where(CODE_CONDITION_METHOD_PARAMETER.CLASS_NAME.eq(FIXTURE))
-                .and(CODE_CONDITION_METHOD_PARAMETER.METHOD_NAME.eq("titleContains"))
-                .and(CODE_CONDITION_METHOD_PARAMETER.DESCRIPTOR
+            var rows = dsl.select(CODE_METHOD_PARAMETER.POSITION,
+                    CODE_METHOD_PARAMETER.ROLE,
+                    CODE_METHOD_PARAMETER.PARAMETER_NAME)
+                .from(CODE_METHOD_PARAMETER)
+                .where(CODE_METHOD_PARAMETER.CLASS_NAME.eq(FIXTURE))
+                .and(CODE_METHOD_PARAMETER.METHOD_NAME.eq("titleContains"))
+                .and(CODE_METHOD_PARAMETER.DESCRIPTOR
                     .eq("(Ljava/lang/String;Ljava/lang/String;)Lorg/jooq/Condition;"))
-                .orderBy(CODE_CONDITION_METHOD_PARAMETER.POSITION)
+                .orderBy(CODE_METHOD_PARAMETER.POSITION)
                 .fetch();
 
             assertThat(rows).as("both positions, in order").hasSize(2);
             assertThat(rows.get(0).value1()).isZero();
-            assertThat(rows.get(0).value2()).isEqualTo("java.lang.String");
+            assertThat(rows.get(0).value2())
+                .as("a value position, whose role at a site is the site's to decide")
+                .isEqualTo("OTHER");
             assertThat(rows).as("this module compiles without -parameters, so no position is named")
                 .allSatisfy(row -> assertThat(row.value3()).isNull());
         });
@@ -270,6 +371,239 @@ class CodeCaptureTest {
             assertThat(dsl.fetchCount(CODE_CONDITION_METHOD))
                 .as("and the reactor's are, so the case above is a scope and not an empty capture")
                 .isPositive();
+        });
+    }
+
+    /**
+     * The three roles over one fixture, which is what a reader asking "does this position take the
+     * source table" gets to read instead of climbing an ancestry. Every parameter of every admitted
+     * method is asserted rather than three chosen ones, so a role decided wrongly for a shape this
+     * fixture happens to carry cannot pass by not being looked at.
+     */
+    @Test
+    @DisplayName("each parameter position says what it is for")
+    void eachPositionCarriesItsRole() {
+        withReactorCapture(dsl -> {
+            assertThat(rolesOn(dsl, "onAnyTable"))
+                .as("the bare interface takes any table, and a value is not a table at all")
+                .containsExactly("TABLE_ANY", "OTHER");
+            assertThat(rolesOn(dsl, "onOneTable"))
+                .as("a generated table class names one table")
+                .containsExactly("TABLE_CONCRETE", "OTHER");
+            assertThat(rolesOn(dsl, "titleContains"))
+                .as("a method with no table position at all, which the arm still admits")
+                .containsOnly("OTHER");
+        });
+    }
+
+    /**
+     * A type variable erases to its bound, so the erasure reads {@code org.jooq.Table} where the
+     * source named no class at all. The role follows the declaration, which is the answer an author
+     * reading their own signature would give.
+     */
+    @Test
+    @DisplayName("a type variable takes any table, whatever its erasure says")
+    void aVariableTakesAnyTable() {
+        withReactorCapture(dsl -> {
+            assertThat(rolesOn(dsl, "onAVariableTable"))
+                .as("the declaration names no class, so the position is bound to no one table")
+                .containsExactly("TABLE_ANY");
+        });
+    }
+
+
+    /**
+     * The coercion a bound value takes, by the declared type alone. Six shapes in one case, because
+     * the rule is one predicate and what makes it worth stating is everything it answers DIRECT
+     * for: a plain class, a parameterised type read at its raw head, an array whose component is an
+     * enum, and a position naming no class at all.
+     *
+     * <p>The enum is a nested one on purpose. The reading skips a nested class by name, so no row
+     * here describes it and only a loader can say it is an enum. That is the same reach a generated
+     * jOOQ enum needs, which is the population the view this replaced had to carry a second arm for
+     * and still missed nested ones on.
+     */
+    @Test
+    @DisplayName("an enum coerces by valueOf and everything else directly")
+    void theExtractionIsTheDeclaredTypesAnswer() {
+        withReactorCapture(dsl -> {
+            assertThat(extractionsOn(dsl, "onAnEnum"))
+                .as("a nested enum no row describes, answered by loading it")
+                .containsExactly("DIRECT", "ENUM_VALUE_OF");
+            assertThat(extractionsOn(dsl, "onAnEnumArray"))
+                .as("an array of that enum is not an enum; its component is a step down")
+                .containsExactly("DIRECT", "DIRECT");
+            assertThat(extractionsOn(dsl, "onOneTable"))
+                .as("a parameterised type is read at its raw head, which is no enum")
+                .containsExactly("DIRECT", "DIRECT");
+            assertThat(extractionsOn(dsl, "onAVariableTable"))
+                .as("a type variable names no class, so there is nothing to ask")
+                .containsExactly("DIRECT");
+            assertThat(extractionsOn(dsl, "titleContains"))
+                .as("and the ordinary case, so the ones above are a rule and not an empty capture")
+                .containsOnly("DIRECT");
+        });
+    }
+
+    /**
+     * The clause is captured because the condition path reads it: a set of same-named declarations
+     * that disagree on it is refused by name rather than being one target.
+     */
+    @Test
+    @DisplayName("a declared exception is a row of the method's own")
+    void theThrowsClauseIsCaptured() {
+        withReactorCapture(dsl -> {
+            assertThat(dsl.select(CODE_METHOD_EXCEPTION.EXCEPTION_CLASS)
+                    .from(CODE_METHOD_EXCEPTION)
+                    .where(CODE_METHOD_EXCEPTION.METHOD_NAME.eq("onOneTable"))
+                    .fetch(CODE_METHOD_EXCEPTION.EXCEPTION_CLASS))
+                .as("what the method declares it throws")
+                .containsExactly("java.io.IOException");
+            assertThat(dsl.fetchCount(CODE_METHOD_EXCEPTION,
+                    CODE_METHOD_EXCEPTION.METHOD_NAME.eq("onAnyTable")))
+                .as("and a method declaring none has no rows rather than an empty one")
+                .isZero();
+        });
+    }
+
+    /**
+     * A concrete position names one table and the catalog is what says which. The role is the
+     * declaration's answer and stands whether or not the catalog holds the class, so the two are
+     * separate rows: this capture has no catalog behind it, and the position is still concrete.
+     */
+    @Test
+    @DisplayName("a concrete position the catalog cannot place is concrete and unresolved")
+    void aConcretePositionWithoutACatalogResolvesToNothing() {
+        withReactorCapture(dsl -> {
+            assertThat(rolesOn(dsl, "onOneTable")).containsExactly("TABLE_CONCRETE", "OTHER");
+            assertThat(dsl.fetchCount(CODE_CONDITION_METHOD_PARAMETER_TABLE))
+                .as("no catalog was read, so no position resolved to a table")
+                .isZero();
+        });
+    }
+
+    // ===== The service arm: what a consumer may name at @service(service:) =====
+
+    /**
+     * The arm admits by exclusion, which is unlike every other arm here and is what the directive
+     * makes it. The generator picks a service method by name and applies no filter, so what makes
+     * one a candidate is stated rather than read off, and what it leaves out is the members that
+     * are answers to a different question.
+     */
+    @Test
+    @DisplayName("a method that answers another directive is not a service candidate")
+    void theOtherArmsMembersAreNotServiceCandidates() {
+        withReactorCapture(dsl -> {
+            assertThat(serviceMethodsOn(dsl, FIXTURE))
+                .as("the condition fixture's condition-returning methods are the other arm's,"
+                    + " and the one method on it that returns something else is not, which is what"
+                    + " makes the exclusion a method's and not a class's")
+                .doesNotContain("titleContains", "onAnyTable", "onOneTable")
+                .containsExactly("notACondition");
+            assertThat(serviceMethodsOn(dsl, LIFTERS))
+                .as("the lifters are the other arm's; what is left of that class is not a lifter")
+                .doesNotContain("titleUpper", "byInterface")
+                .contains("notATable", "notAField");
+            assertThat(serviceMethodsOn(dsl, SERVICES))
+                .as("and an ordinary class's methods are candidates, all of them")
+                .contains("manyStrings", "oneString", "nothingAtAll");
+        });
+    }
+
+    /**
+     * What a service delivers, which is the question a field backed by one turns on. Every shape in
+     * one case, because the walk is one loop and what makes it worth stating is the set of places
+     * it stops: at a type that is not a container, and at a container whose payload position names
+     * nothing.
+     */
+    @Test
+    @DisplayName("a return type delivers what is left when its containers are peeled off")
+    void theReturnDeliversItsElement() {
+        withReactorCapture(dsl -> {
+            assertThat(deliveryOf(dsl, "manyStrings"))
+                .as("a list delivers its element, many of them")
+                .isEqualTo("java.lang.String many");
+            assertThat(deliveryOf(dsl, "maybeAString"))
+                .as("an optional delivers its element, one of it")
+                .isEqualTo("java.lang.String one");
+            assertThat(deliveryOf(dsl, "stringsByKey"))
+                .as("a map delivers its value and not its key")
+                .isEqualTo("java.lang.String one");
+            assertThat(deliveryOf(dsl, "oneString"))
+                .as("a type that is no container delivers itself")
+                .isEqualTo("java.lang.String one");
+            assertThat(deliveryOf(dsl, "anythingAtAll"))
+                .as("an unbounded wildcard names nothing, so the walk stops at the container")
+                .isEqualTo("java.util.List one");
+        });
+    }
+
+    /**
+     * The bound the rule had in SQL and does not have here. Peeling containers by self-joining a
+     * type-reference relation has to be unrolled, so it answers to a depth and then reports the
+     * container it stopped on as though it were the payload. Five is one past the four the unrolled
+     * form reaches.
+     */
+    @Test
+    @DisplayName("the walk has no depth to stop at")
+    void theWalkIsNotUnrolled() {
+        withReactorCapture(dsl ->
+            assertThat(deliveryOf(dsl, "deeplyNested"))
+                .as("five containers peeled, where an unrolled form reports the fifth")
+                .isEqualTo("java.lang.String many"));
+    }
+
+    /** A return that names no class delivers nothing, and absence is how that is said. */
+    @Test
+    @DisplayName("a return naming no class has no delivery at all")
+    void aReturnNamingNoClassDeliversNothing() {
+        withReactorCapture(dsl -> {
+            assertThat(deliveryOf(dsl, "aCount")).as("a primitive").isNull();
+            assertThat(deliveryOf(dsl, "nothingAtAll")).as("and a void").isNull();
+            assertThat(dsl.fetchCount(CODE_SERVICE_METHOD,
+                    CODE_SERVICE_METHOD.CLASS_NAME.eq(SERVICES)
+                        .and(CODE_SERVICE_METHOD.METHOD_NAME.eq("aCount"))))
+                .as("while the method itself is a candidate, which is what absence must not hide")
+                .isEqualTo(1);
+        });
+    }
+
+    /** A parameter is asked the same question, and the context slot is decided by type. */
+    @Test
+    @DisplayName("a parameter delivers on the same terms, and the context slot is one by type")
+    void parametersDeliverAndTheContextSlotIsTyped() {
+        withReactorCapture(dsl -> {
+            assertThat(dsl.select(CODE_METHOD_PARAMETER.ROLE)
+                    .from(CODE_METHOD_PARAMETER)
+                    .where(CODE_METHOD_PARAMETER.CLASS_NAME.eq(SERVICES))
+                    .and(CODE_METHOD_PARAMETER.METHOD_NAME.eq("fromManyInputs"))
+                    .orderBy(CODE_METHOD_PARAMETER.POSITION)
+                    .fetch(CODE_METHOD_PARAMETER.ROLE))
+                .as("the run's own context first, then a position the site decides")
+                .containsExactly("DSL_CONTEXT", "OTHER");
+            assertThat(parameterDeliveryOf(dsl, "fromManyInputs", 1))
+                .as("and the position typed as a list of them delivers the element")
+                .isEqualTo("java.lang.String many");
+        });
+    }
+
+    /** The clause is the service arm's too, for the @error channel-coverage check. */
+    @Test
+    @DisplayName("a service's declared exceptions are rows of its own")
+    void theServiceThrowsClauseIsCaptured() {
+        withReactorCapture(dsl -> {
+            assertThat(dsl.select(CODE_METHOD_EXCEPTION.EXCEPTION_CLASS)
+                    .from(CODE_METHOD_EXCEPTION)
+                    .where(CODE_METHOD_EXCEPTION.CLASS_NAME.eq(SERVICES))
+                    .and(CODE_METHOD_EXCEPTION.METHOD_NAME.eq("mayFail"))
+                    .fetch(CODE_METHOD_EXCEPTION.EXCEPTION_CLASS))
+                .as("what a field naming this method owes a handler for")
+                .containsExactly("java.io.IOException");
+            assertThat(dsl.fetchCount(CODE_METHOD_EXCEPTION,
+                    CODE_METHOD_EXCEPTION.CLASS_NAME.eq(SERVICES)
+                        .and(CODE_METHOD_EXCEPTION.METHOD_NAME.eq("oneString"))))
+                .as("and a method declaring none has no rows rather than an empty one")
+                .isZero();
         });
     }
 
@@ -328,20 +662,27 @@ class CodeCaptureTest {
 
     /** The table lifted from is carried, being the one clause the site rather than the method decides. */
     @Test
-    @DisplayName("the table a lifter lifts from is recorded, for the site to check against")
+    @DisplayName("the table a lifter lifts from is the sole position's role")
     void theTableParameterIsRecorded() {
-        withReactorCapture(dsl -> assertThat(dsl.select(CODE_EXTERNAL_FIELD_METHOD.TABLE_PARAMETER_TYPE)
-                .from(CODE_EXTERNAL_FIELD_METHOD)
-                .where(CODE_EXTERNAL_FIELD_METHOD.CLASS_NAME.eq(LIFTERS))
-                .and(CODE_EXTERNAL_FIELD_METHOD.METHOD_NAME.eq("titleUpper"))
-                .fetchOne(CODE_EXTERNAL_FIELD_METHOD.TABLE_PARAMETER_TYPE))
-            .as("what a reader compares against the parent table the field was written on")
-            .isEqualTo(LIFTERS + "$FixtureTable"));
+        withReactorCapture(dsl -> assertThat(dsl.select(CODE_METHOD_PARAMETER.ROLE)
+                .from(CODE_METHOD_PARAMETER)
+                .where(CODE_METHOD_PARAMETER.CLASS_NAME.eq(LIFTERS))
+                .and(CODE_METHOD_PARAMETER.METHOD_NAME.eq("titleUpper"))
+                .and(CODE_METHOD_PARAMETER.POSITION.eq(0))
+                .fetchOne(CODE_METHOD_PARAMETER.ROLE))
+            .as("a generated table class names one table, which is what the site compares against")
+            .isEqualTo("TABLE_CONCRETE"));
     }
 
     private static void withCapture(LocalDateTime at, Consumer<DSLContext> body) {
+        withCapture(CLASSPATH, null, at, body);
+    }
+
+    /** One reading of {@code entries} under {@code skipPrefix}, which is what a run hands in. */
+    private static void withCapture(List<ClasspathEntry> entries, String skipPrefix,
+                                    LocalDateTime at, Consumer<DSLContext> body) {
         try (var store = GraphitronStore.inMemory()) {
-            CodeCapture.capture(store.dsl(), CLASSPATH, null, null, at);
+            CodeCapture.capture(store.dsl(), entries, skipPrefix, null, at);
             body.accept(store.dsl());
         }
     }
@@ -371,6 +712,55 @@ class CodeCaptureTest {
             CodeCapture.capture(store.dsl(), REACTOR_AND_JOOQ, null, null, FIRST);
             body.accept(store.dsl());
         }
+    }
+
+    /** What one service method's return delivers, rendered for comparison, or null where none. */
+    private static String deliveryOf(DSLContext dsl, String methodName) {
+        return dsl.select(CODE_METHOD_RESULT.RESULT_CLASS,
+                CODE_METHOD_RESULT.IS_MANY)
+            .from(CODE_METHOD_RESULT)
+            .where(CODE_METHOD_RESULT.CLASS_NAME.eq(SERVICES))
+            .and(CODE_METHOD_RESULT.METHOD_NAME.eq(methodName))
+            .fetchOne(row -> row.value1() + (row.value2() ? " many" : " one"));
+    }
+
+    /** What one position delivers, on {@link #deliveryOf}'s terms. */
+    private static String parameterDeliveryOf(DSLContext dsl, String methodName, int position) {
+        var d = CODE_METHOD_PARAMETER_ELEMENT;
+        return dsl.select(d.ELEMENT_CLASS, d.IS_MANY)
+            .from(d)
+            .where(d.CLASS_NAME.eq(SERVICES))
+            .and(d.METHOD_NAME.eq(methodName))
+            .and(d.POSITION.eq(position))
+            .fetchOne(row -> row.value1() + (row.value2() ? " many" : " one"));
+    }
+
+    /** The service candidates one class declares, by name. */
+    private static List<String> serviceMethodsOn(DSLContext dsl, String className) {
+        return dsl.select(CODE_SERVICE_METHOD.METHOD_NAME)
+            .from(CODE_SERVICE_METHOD)
+            .where(CODE_SERVICE_METHOD.CLASS_NAME.eq(className))
+            .fetch(CODE_SERVICE_METHOD.METHOD_NAME);
+    }
+
+    /** The extractions of one method's positions, in parameter order. */
+    private static List<String> extractionsOn(DSLContext dsl, String methodName) {
+        return dsl.select(CODE_METHOD_PARAMETER.EXTRACTION)
+            .from(CODE_METHOD_PARAMETER)
+            .where(CODE_METHOD_PARAMETER.CLASS_NAME.eq(FIXTURE))
+            .and(CODE_METHOD_PARAMETER.METHOD_NAME.eq(methodName))
+            .orderBy(CODE_METHOD_PARAMETER.POSITION)
+            .fetch(CODE_METHOD_PARAMETER.EXTRACTION);
+    }
+
+    /** The roles of one method's positions, in parameter order. */
+    private static List<String> rolesOn(DSLContext dsl, String methodName) {
+        return dsl.select(CODE_METHOD_PARAMETER.ROLE)
+            .from(CODE_METHOD_PARAMETER)
+            .where(CODE_METHOD_PARAMETER.CLASS_NAME.eq(FIXTURE))
+            .and(CODE_METHOD_PARAMETER.METHOD_NAME.eq(methodName))
+            .orderBy(CODE_METHOD_PARAMETER.POSITION)
+            .fetch(CODE_METHOD_PARAMETER.ROLE);
     }
 
     /** The condition methods one class declares, spelled as name plus descriptor. */

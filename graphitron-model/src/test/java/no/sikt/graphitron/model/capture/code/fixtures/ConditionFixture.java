@@ -25,6 +25,44 @@ public final class ConditionFixture {
         return DSL.trueCondition();
     }
 
+    /** A position written as the bare interface: it takes whatever table the site supplies. */
+    public static Condition onAnyTable(org.jooq.Table<?> table, String needle) {
+        return DSL.trueCondition();
+    }
+
+    /**
+     * A position written as one generated table, which names that table and no other. Declares a
+     * checked exception too, the clause being what same-named declarations must agree on before
+     * they are one target.
+     */
+    public static Condition onOneTable(ExternalFieldFixture.FixtureTable table,
+                                       java.util.Map<String, Object> filter)
+            throws java.io.IOException {
+        return DSL.trueCondition();
+    }
+
+    /**
+     * A value position typed as an enum, which decides how a bound value is coerced into it. The
+     * enum is a nested one, so the reading skips it by name and no row describes it: only a loader
+     * can answer, which is the same reach a generated jOOQ enum needs.
+     */
+    public static Condition onAnEnum(org.jooq.Table<?> table,
+                                     no.sikt.graphitron.model.config.ClasspathEntry.Origin origin) {
+        return DSL.trueCondition();
+    }
+
+    /** An array of that enum, which is not an enum: the component is a step down, not the type. */
+    public static Condition onAnEnumArray(
+            org.jooq.Table<?> table,
+            no.sikt.graphitron.model.config.ClasspathEntry.Origin[] origins) {
+        return DSL.trueCondition();
+    }
+
+    /** A position written as a type variable, whose erasure is a bound the source never wrote. */
+    public static <T extends org.jooq.Table<?>> Condition onAVariableTable(T table) {
+        return DSL.trueCondition();
+    }
+
     /**
      * A condition an author may name that the generator will have to refuse or construct for. Its
      * candidacy is not the arm's to deny: an author can write it, and a refusal that named no
