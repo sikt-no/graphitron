@@ -22,13 +22,6 @@ package no.sikt.graphitron.rewrite.model;
 public sealed interface FieldWrapper
         permits FieldWrapper.Single, FieldWrapper.List, FieldWrapper.Connection {
 
-    /**
-     * Fallback page size used when a {@code @asConnection} field omits
-     * {@code defaultFirstValue}. Single source for the fallback literal that every
-     * default-page-size resolution site reads instead of hard-coding its own.
-     */
-    int DEFAULT_PAGE_SIZE = 100;
-
     /** Returns {@code true} for {@link List} and {@link Connection}, {@code false} for {@link Single}. */
     default boolean isList() { return !(this instanceof Single); }
 

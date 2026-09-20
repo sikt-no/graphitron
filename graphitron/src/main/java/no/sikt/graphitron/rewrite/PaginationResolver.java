@@ -4,6 +4,7 @@ import graphql.schema.GraphQLFieldDefinition;
 import no.sikt.graphitron.facts.PaginationFacts;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.PaginationSpec;
+import no.sikt.graphitron.model.grammar.ConnectionDefaults;
 
 /**
  * The pagination fact's resolved views. The populations (the authored name-keyed pagination
@@ -55,13 +56,13 @@ final class PaginationResolver {
 
     /**
      * The per-carrier-site default page size: the gathered {@code defaultFirstValue} when the
-     * author wrote one, {@link FieldWrapper#DEFAULT_PAGE_SIZE} otherwise. Both the wrapper
+     * author wrote one, {@link ConnectionDefaults#DEFAULT_PAGE_SIZE} otherwise. Both the wrapper
      * classification and the connection carrier rewrite read this one view, so the two emitted
      * materialisations of the default cannot drift.
      */
     static int defaultPageSize(PaginationFacts facts, GraphQLFieldDefinition fieldDef) {
         return facts.rowFor(fieldDef)
-            .map(row -> row.authoredDefaultFirst().orElse(FieldWrapper.DEFAULT_PAGE_SIZE))
-            .orElse(FieldWrapper.DEFAULT_PAGE_SIZE);
+            .map(row -> row.authoredDefaultFirst().orElse(ConnectionDefaults.DEFAULT_PAGE_SIZE))
+            .orElse(ConnectionDefaults.DEFAULT_PAGE_SIZE);
     }
 }

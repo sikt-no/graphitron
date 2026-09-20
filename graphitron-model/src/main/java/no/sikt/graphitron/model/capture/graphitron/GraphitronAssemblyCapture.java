@@ -78,6 +78,11 @@ public final class GraphitronAssemblyCapture {
         // The minted rows reach the store before the anchors below read them. A flush is not a
         // commit: inside the load's transaction it publishes to the next stage and to nothing else.
         sink.flush();
+        // The facet half of the same expansion, after that flush and not folded into it: the
+        // relation it reads resolves a carrier's facets through the rewrite rows the line above
+        // writes, so those rows have to be in the store before it is asked.
+        MacroCapture.expandFacets(sink, dsl, graph);
+        sink.flush();
         // After the flush, for the reason the method states: the rows have to land before what this
         // reading stopped minting can be told apart from them.
         MacroCapture.sweep(dsl, graph, readAt);

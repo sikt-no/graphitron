@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.grammar.ConnectionDefaults;
 
 /**
  * The pagination fact's population and view pins, asserted through the readers so an empty or
@@ -62,7 +63,7 @@ class PaginationFactPipelineTest {
         assertThat(f.pagination().after()).isNotNull();
         assertThat(f.returnType().wrapper()).isInstanceOf(FieldWrapper.Connection.class);
         assertThat(((FieldWrapper.Connection) f.returnType().wrapper()).defaultPageSize())
-            .isEqualTo(FieldWrapper.DEFAULT_PAGE_SIZE);
+            .isEqualTo(ConnectionDefaults.DEFAULT_PAGE_SIZE);
     }
 
     @Test

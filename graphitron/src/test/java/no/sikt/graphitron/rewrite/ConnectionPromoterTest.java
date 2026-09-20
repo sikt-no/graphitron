@@ -28,6 +28,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.schema.AttributedRegistry;
+import no.sikt.graphitron.model.grammar.ConnectionDefaults;
 
 /**
  * Resolver-tier coverage for {@link ConnectionPromoter}: asserts that promotion synthesises
@@ -68,7 +69,7 @@ class ConnectionPromoterTest {
                 assertThat(dd.parentTypeName()).isEqualTo("Query");
                 assertThat(dd.fieldName()).isEqualTo("customers");
                 assertThat(dd.connectionName()).isEqualTo("QueryCustomersConnection");
-                assertThat(dd.defaultPageSize()).isEqualTo(FieldWrapper.DEFAULT_PAGE_SIZE);
+                assertThat(dd.defaultPageSize()).isEqualTo(ConnectionDefaults.DEFAULT_PAGE_SIZE);
                 assertThat(dd.outerNonNull()).isTrue();
                 assertThat(dd.rewritesCarrierReturnType()).isTrue();
             }));

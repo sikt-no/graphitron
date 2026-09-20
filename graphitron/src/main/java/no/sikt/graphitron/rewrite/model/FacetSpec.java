@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
+import no.sikt.graphitron.model.grammar.FacetNaming;
+
 /**
  * One {@code @asFacet}-marked filter-input field, resolved against the consuming
  * {@code @asConnection} carrier. Carries exactly what the facet emitter needs: which carrier

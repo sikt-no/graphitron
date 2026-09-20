@@ -11,6 +11,7 @@ import java.util.Optional;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.model.jooq.TableRef;
+import no.sikt.graphitron.model.grammar.FacetNaming;
 
 /**
  * Classifies every named GraphQL type. Determines what Graphitron generates for a type

@@ -70,6 +70,7 @@ import no.sikt.graphitron.model.grammar.NodeDeclaration;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.diagnostics.ServiceCarrierShapeError;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
+import no.sikt.graphitron.model.grammar.ConnectionDefaults;
 
 /**
  * Shared build-time state and stateless utilities used by {@link TypeBuilder},
@@ -697,7 +698,7 @@ class BuildContext {
 
         // Structural detection: pre-expanded Connection type with edges.node pattern.
         if (isConnectionType(baseTypeName(fieldDef))) {
-            return new FieldWrapper.Connection(outerNullable, FieldWrapper.DEFAULT_PAGE_SIZE);
+            return new FieldWrapper.Connection(outerNullable, ConnectionDefaults.DEFAULT_PAGE_SIZE);
         }
 
         return new FieldWrapper.Single(outerNullable);

@@ -3987,6 +3987,118 @@ also not clean, `ConnectionPromoter` hanging forms on the classified variants th
 `CarriesObjectForm` and running a scalar-demand sweep, which is classification-side residue that
 goes with the form resolution rather than with this.
 
+**The two producers were compared, and they disagree in two places. 2026-09-15.**
+`EmittedRegistryAgreementTest` prints both schemas through one `SchemaPrinter` and compares the
+text, over the whole corpus, both directions and no hand-picked list. One capture per document, so
+about a minute, which is the price this item's own gate paragraph budgets for exactly this.
+
+It found a defect in the patch on its first run, and that is the argument for having run it before
+building anything on top. `graphitron_field` is merged across declaration sites, so one row stands
+for a field whichever site declared it; a registry does not merge, and `extend type Query` is a
+separate node. The patch decided presence by looking only at the base definition, so every
+extension's field was declared a second time and all 58 documents failed assembly with
+`TypeExtensionFieldRedefinitionError`. Presence is now asked of every site that declares the type,
+a field that needs patching is patched at the site that has it, and a field no site declares lands
+on the base. Fixed here rather than recorded.
+
+What survives are five documents and two causes, both capture-side rather than defects in the patch:
+
+- **The carrier lost the author's outer non-null. Fixed 2026-09-15.** `ConnectionPromoter` carries
+  the authored expression's outer nullability across the rewrite, its synthesis row taking
+  `fieldDef.getType() instanceof GraphQLNonNull`, so `films: [Film!]!` emits as
+  `QueryFilmsConnection!`. `MacroCapture.rewriteCarrier` wrote the connection as "a bare nullable
+  name" unconditionally and its javadoc said so, so the row said `QueryFilmsConnection`. Every
+  `@asConnection` carrier in the corpus is written `[X!]!` and four disagreed on exactly that
+  character; `connection.graphqls` is the control that stayed green, being the structural form with
+  no directive to expand.
+
+  Nothing about the emitted schema changes, and that is the point. The two producers disagreed about
+  what graphitron emits, and the row was the one making the false statement: `MacroCapture.element`
+  parsed the outer `!` and threw it away, so the information was read and discarded rather than
+  never available. It is carried now, on the rule the rewrite already implies, that an expansion
+  replaces what a field returns and says nothing about whether the field may be null. Had the row
+  been believed instead, every consumer with an `@asConnection` on a non-null field would have
+  silently lost the `!`, which is a breaking change; fixing the row is what avoids one rather than
+  causing one. The blast radius is small and was checked: `graphitron_field` has three main-source
+  readers, `ElementAnchors` which writes it, `ReferencePathFanout` which joins on names rather than
+  nullability, and `EmittedRegistry`, which nothing calls in production.
+
+  The ratchet earned its keep here. The fix made four documents agree, and
+  `EmittedRegistryAgreementTest` failed until they were struck off, which is the direction a
+  standing allowlist never fails in.
+- **The facet machinery had no capture-side producer. Fixed 2026-09-16, and it was a mint rather
+  than a capability.** `ConnectionPromoter` mints `FacetsType` and `FacetValueType` off
+  `facetSpecsFor`; `MacroCapture` did not mention facets. The decode was never the gap:
+  `graphitron_facet_entry` held the `@asFacet` applications, `intent_facet_binding` resolved what
+  each binds, and `intent_connection_facet` already stated which facets a carrier surfaces and in
+  which order, its own comment calling itself what a consumer emitting a faceted connection reads.
+
+  `MacroCapture.expandFacets` mints the triad from that relation: the `<Connection>Facets` container
+  with a field per facet, a `<Scalar>FacetValue` per distinct value shape, and the connection's own
+  nullable `facets` field. Position order, field name, value type, value nullability and the
+  first-wins dedup on a repeated facet name are all the relation's, so nothing here decides what the
+  store had already decided.
+
+  **It is a second phase, and the ordering is the design rather than an accident.**
+  `intent_connection_facet` reaches carriers through the rewrite rows `expand` itself writes, a
+  minted field whose coining coordinate is its own, so those rows have to be in the store before the
+  relation can answer. The facet mint therefore runs after `expand`'s flush, which is the rule the
+  gatherer's stages already run under one level up. The alternative was to reimplement that
+  relation's join against the carriers already in hand, which is one rule read twice.
+
+  `FacetNaming` moved to `no.sikt.graphitron.model.grammar` on the way, beside `ConnectionNaming`
+  and `ConnectionDefaults` and for the third time on one argument: a name either side spells for
+  itself is a fact with two homes.
+
+**The two producers agree over the whole corpus, and `KNOWN_DISAGREEMENTS` is empty. 2026-09-16.**
+That is the condition stage 3 was waiting on and the condition under which `ConnectionPromoter` and
+this gate can both be retired.
+
+Worth recording what the last mile looked like, because it is the argument for this gate over a
+cheaper one. After the facet mint the type sets matched exactly, in both directions, and the schemas
+still differed: on one description, on one line, the count field's docstring having been written
+fresh here instead of copied from the generator. A relation-count comparison would have called that
+agreement. So would a coordinate-set comparison. Only printing the artifact a consumer actually
+receives caught a description that would otherwise have shipped wrong into every faceted schema.
+
+The test's `KNOWN_DISAGREEMENTS` is a ratchet rather than an exemption list: the sweep stays total, a
+new disagreement fails the build, and so does one of these being fixed without being struck off. Both
+causes are the author's to settle, being decisions inside the capture-side expansion rather than
+inside the reader; neither is a reason to hold the reader.
+
+**A check that came out of fixing the above, and earned its keep three times. 2026-09-15.** Before
+reaching for Java, ask whether the query can state it. Every instance found so far was a reader
+paying in code for something the model already held, and one of them cost a defect rather than only
+duplication.
+
+- `MacroCapture.element` took the carrier's authored expression apart a character at a time to get
+  the element name, the item's nullability, the list-ness and the outer non-null. All four are
+  columns on `graphql_field`. It now selects them, and the outer non-null cannot be dropped on the
+  floor by a parser that was never needed. One string test survives, whether the list is nested,
+  because `graphql_field` describes one list wrapper and `[[Film]]` and `[Film]` agree on every
+  column; `list_depth` reaching the anchors retires it, which is the open half this item already
+  records.
+- `EmittedRegistry` read fields and arguments flat and regrouped them in memory, keying the
+  arguments by a field coordinate it spelled for itself with a string concatenation. A second
+  spelling of a coordinate is how two of them come to disagree. It is one nested read now, types
+  carrying their fields and fields their arguments on their own keys, which removes the key rather
+  than correcting it, and collapses the two passes into one traversal of one answer.
+- The fallback page size was declared twice, in `MacroCapture` and on the generator's
+  `FieldWrapper`, with a test comparing an emitted row against the field to hold them equal and a
+  javadoc calling that "the nearest thing to a shared constant two tiers can have". It was not:
+  `graphitron` depends on `graphitron-model`, so the generator could always have read a constant
+  here. It is `ConnectionDefaults.DEFAULT_PAGE_SIZE` now, one declaration the compiler enforces,
+  and the test that stood in for it is deleted.
+
+**Capture is tested where capture lives.** `MacroCaptureTest` was in `graphitron`, asserting on the
+rows `graphitron-model` writes, which put the tests for one module's responsibility in another's.
+All ten cases moved to `no.sikt.graphitron.model.capture.macro`; the constant collapse above is what
+let the tenth move with them rather than staying behind as a cross-module pin. Four cases reading one
+identical document now capture it once for the class, and `ThreadConfinedStore.BOOT_BUDGET` goes 60
+to 70: a capture cannot use the funnel, its whole subject being what a capture writes, so these are
+boots the module means to pay for. Recounted at 61 and 62 on two reads of one tree, which is the
+drift that constant's javadoc describes, so the budget is set with headroom rather than at the count.
+
 **The gate**, which every collapse in phase 2 takes too. One corpus captured before and after, every
 relation the schema declares counted under each, both directions. Not the intersection: three
 attempts at the catalog pair failed on a hand-picked list, and the two gaps that mattered were

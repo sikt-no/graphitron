@@ -46,9 +46,20 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class EmittedRegistryTest {
 
+    /**
+     * A carrier on the base declaration and a second on an extension, because a type is its
+     * definition and its extensions and the anchors are neither: {@code graphitron_field} is merged
+     * across declaration sites, so one row stands for a field whichever site declared it. A patch
+     * reading only the base declares every extension's field a second time, which assembly refuses.
+     * Having both in one fixture is what makes {@link #theEmittedRegistryAssembles} bite on that.
+     */
     private static final String CONNECTION_SCHEMA = """
         type Query {
           films: [Film!] @asConnection
+        }
+
+        extend type Query {
+          shorts: [Film!]! @asConnection
         }
 
         type Film {
@@ -142,6 +153,53 @@ class EmittedRegistryTest {
             .isEqualTo("QueryFilmsConnection");
     }
 
+    /**
+     * The expansion replaces what a field returns and says nothing about whether the field may be
+     * null, so the outer non-null the author wrote survives it. The fixture carries one carrier of
+     * each nullability for this: {@code films} is written {@code [Film!]} and {@code shorts} is
+     * written {@code [Film!]!}, and the two have to come out differently.
+     *
+     * <p>Not a preference. An output field that loses its non-null is a breaking change to every
+     * consumer reading it, so a row saying otherwise would describe a schema the run does not emit.
+     */
+    @Test
+    @DisplayName("the carrier keeps the outer non-null its author wrote")
+    void theCarrierKeepsTheAuthorsOuterNonNull() {
+        assertThat(extensionFieldType(connectionEmitted, "Query"))
+            .isEqualTo("QueryShortsConnection!");
+        assertThat(returnTypeOf(connectionEmitted, "Query", "films"))
+            .as("and the nullable carrier beside it stays nullable")
+            .isEqualTo("QueryFilmsConnection");
+    }
+
+    /**
+     * A carrier declared on an extension is rewritten where it was declared. The row for it is the
+     * same shape as one for a base-declared field, the anchors being merged across sites, so what
+     * this pins is that the patch routes it back to the site that has it rather than treating every
+     * row as the base's.
+     */
+    @Test
+    @DisplayName("a carrier on an extension is rewritten on the extension")
+    void theExtensionCarrierIsRetypedInPlace() {
+        var base = (ObjectTypeDefinition) connectionEmitted.getTypeOrNull("Query");
+        assertThat(base.getFieldDefinitions())
+            .as("the extension's field does not migrate onto the base declaration")
+            .extracting(FieldDefinition::getName)
+            .containsExactly("films");
+
+        assertThat(extensionFieldType(connectionEmitted, "Query"))
+            .isEqualTo("QueryShortsConnection!");
+    }
+
+    /** The printed type of the single field on the single extension of {@code type}. */
+    private static String extensionFieldType(TypeDefinitionRegistry registry, String type) {
+        var extensions = registry.objectTypeExtensions().get(type);
+        assertThat(extensions).as("one extension of %s", type).hasSize(1);
+        var fields = extensions.getFirst().getFieldDefinitions();
+        assertThat(fields).as("one field on the extension of %s", type).hasSize(1);
+        return AstPrinter.printAst(fields.getFirst().getType());
+    }
+
     @Test
     @DisplayName("the pagination arguments the expansion appends reach the carrier")
     void thePaginationArgumentsArrive() {
@@ -157,10 +215,12 @@ class EmittedRegistryTest {
      * types downstream of assembly, so nothing it produces meets the specification's structural
      * rules; a registry patched before assembly does, and this is the assertion that says so.
      *
-     * <p>Stated plainly because it was checked: this case does not fail on a patch that does
-     * nothing, the transcribed registry assembling perfectly well on its own. What it catches is a
-     * patch that produces a schema the specification refuses, a minted field naming a type nothing
-     * declares being the likely shape, and it is worth having for that alone.
+     * <p>Stated plainly because it was checked, twice, and the second answer is better than the
+     * first. It does not fail on a patch that does nothing, the transcribed registry assembling
+     * perfectly well on its own. It does fail on a patch that produces a schema the specification
+     * refuses, and that is not hypothetical: reading field presence off the base declaration alone
+     * declares every extension's field a second time, and this case is one of the two that catch
+     * it. The fixture's {@code extend type Query} is what gives it something to catch.
      */
     @Test
     @DisplayName("the emitted registry assembles, so the minted types meet the specification's rules")

@@ -7,6 +7,7 @@ import graphql.language.Directive;
 import graphql.language.FieldDefinition;
 import graphql.language.InputValueDefinition;
 import graphql.language.ObjectTypeDefinition;
+import graphql.language.ObjectTypeExtensionDefinition;
 import graphql.language.SDLDefinition;
 import graphql.language.StringValue;
 import graphql.language.Type;
@@ -19,7 +20,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -28,6 +28,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_SYNTHESIZED_FEDERATION_KEY;
+import static org.jooq.impl.DSL.multiset;
+import static org.jooq.impl.DSL.select;
 
 /**
  * The registry the generator emits, derived from the one capture transcribed plus what the store
@@ -88,6 +90,9 @@ import static no.sikt.graphitron.model.Tables.INTENT_SYNTHESIZED_FEDERATION_KEY;
  */
 public final class EmittedRegistry {
 
+    /** The one kind {@code graphitron_minted_type.kind}'s CHECK admits, and so the only kind here. */
+    private static final String OBJECT = "OBJECT";
+
     private static final String KEY_DIRECTIVE = "key";
     private static final String KEY_FIELDS_ARG = "fields";
     private static final String KEY_RESOLVABLE_ARG = "resolvable";
@@ -105,11 +110,17 @@ public final class EmittedRegistry {
         Objects.requireNonNull(store, "store");
 
         var patched = new TypeDefinitionRegistry().merge(transcribed);
-        var fields = fieldRows(store);
-        var arguments = argumentRows(store);
-
-        mintAbsentTypes(patched, store, fields, arguments);
-        patchPresentTypes(patched, fields, arguments);
+        var replacements = new ArrayList<Replacement>();
+        for (var type : emittedTypes(store)) {
+            if (patched.getTypeOrNull(type.typeName()) instanceof ObjectTypeDefinition object) {
+                patchDeclarationSites(object,
+                    patched.objectTypeExtensions().getOrDefault(type.typeName(), List.of()),
+                    type.fields(), replacements);
+            } else if (patched.getTypeOrNull(type.typeName()) == null) {
+                patched.add(objectType(type));
+            }
+        }
+        apply(patched, replacements);
         applySynthesisedKeys(patched, store);
         return patched;
     }
@@ -118,48 +129,63 @@ public final class EmittedRegistry {
     // The rows
     // ---------------------------------------------------------------------------------------
 
-    /** One field of the emitted population, at the type expression the generator reads. */
-    private record FieldRow(String typeName, String fieldName, String typeSdl, String description) {}
+    /** One emitted object type, with the fields it carries. */
+    private record TypeRow(String typeName, String description, List<FieldRow> fields) {}
 
-    /** One field argument of the emitted population. */
-    private record ArgumentRow(String typeName, String fieldName, String argumentName,
-                               String typeSdl, String defaultValueSdl, String description) {}
+    /** One emitted field, at the type expression the generator reads, with its arguments. */
+    private record FieldRow(String fieldName, String typeSdl, String description,
+                            List<ArgumentRow> arguments) {}
+
+    /** One emitted field argument. */
+    private record ArgumentRow(String argumentName, String typeSdl, String defaultValueSdl,
+                               String description) {}
 
     /**
-     * Every emitted field, grouped by its type and ordered within it. The order is the anchor's
-     * {@code ordinal}, which is document order on an authored field and the order the macro wrote
-     * them on a minted one, so a type built from these rows carries the field order the store says
-     * the generator emits rather than one this class invents.
+     * The emitted object types, each carrying its fields and each field its arguments.
+     *
+     * <p>One row of this answer is one object type the generator emits, and the children hang off it
+     * on their own keys rather than being fetched flat and regrouped in memory. That is not only
+     * fewer statements: a flat read has to be put back together by something, and the only key
+     * available for the arguments was the field's coordinate, which this class would have had to
+     * spell for itself. A second spelling of a coordinate is how two of them come to disagree, and
+     * nesting removes the question rather than answering it carefully.
+     *
+     * <p>Order is the anchors' own {@code ordinal} at both levels: document order on an authored
+     * element and the order the macro wrote them on a minted one. So a type built from these rows
+     * carries the order the store says the generator emits rather than one this class invents.
+     *
+     * <p>Object types only, and stated once here rather than in each pass. The {@code CHECK} on
+     * {@code graphitron_minted_type.kind} admits {@code OBJECT} and nothing else, the macros minting
+     * nothing else, so every other kind reaches the emitted registry exactly as its author wrote it.
      */
-    private static Map<String, List<FieldRow>> fieldRows(StoreHandle store) {
-        var t = GRAPHITRON_FIELD;
+    private static List<TypeRow> emittedTypes(StoreHandle store) {
         return store.dsl()
-            .select(t.TYPE_NAME, t.FIELD_NAME, t.TYPE_SDL, t.DESCRIPTION)
-            .from(t)
-            .where(t.GRAPH_NAME.eq(store.graphName()))
-            .orderBy(t.TYPE_NAME, t.ORDINAL)
-            .fetch(r -> new FieldRow(r.get(t.TYPE_NAME), r.get(t.FIELD_NAME),
-                r.get(t.TYPE_SDL), r.get(t.DESCRIPTION)))
-            .stream()
-            .collect(Collectors.groupingBy(FieldRow::typeName, LinkedHashMap::new,
-                Collectors.toList()));
-    }
-
-    /** Every emitted field argument, grouped by the coordinate of the field it sits on. */
-    private static Map<String, List<ArgumentRow>> argumentRows(StoreHandle store) {
-        var t = GRAPHITRON_ARGUMENT;
-        return store.dsl()
-            .select(t.TYPE_NAME, t.FIELD_NAME, t.ARGUMENT_NAME, t.TYPE_SDL,
-                t.DEFAULT_VALUE_SDL, t.DESCRIPTION)
-            .from(t)
-            .where(t.GRAPH_NAME.eq(store.graphName()))
-            .orderBy(t.TYPE_NAME, t.FIELD_NAME, t.ORDINAL)
-            .fetch(r -> new ArgumentRow(r.get(t.TYPE_NAME), r.get(t.FIELD_NAME),
-                r.get(t.ARGUMENT_NAME), r.get(t.TYPE_SDL),
-                r.get(t.DEFAULT_VALUE_SDL), r.get(t.DESCRIPTION)))
-            .stream()
-            .collect(Collectors.groupingBy(a -> coordinate(a.typeName(), a.fieldName()),
-                LinkedHashMap::new, Collectors.toList()));
+            .select(GRAPHITRON_TYPE.TYPE_NAME, GRAPHITRON_TYPE.DESCRIPTION,
+                multiset(
+                    select(GRAPHITRON_FIELD.FIELD_NAME, GRAPHITRON_FIELD.TYPE_SDL,
+                        GRAPHITRON_FIELD.DESCRIPTION,
+                        multiset(
+                            select(GRAPHITRON_ARGUMENT.ARGUMENT_NAME, GRAPHITRON_ARGUMENT.TYPE_SDL,
+                                GRAPHITRON_ARGUMENT.DEFAULT_VALUE_SDL,
+                                GRAPHITRON_ARGUMENT.DESCRIPTION)
+                                .from(GRAPHITRON_ARGUMENT)
+                                .where(GRAPHITRON_ARGUMENT.GRAPH_NAME.eq(GRAPHITRON_FIELD.GRAPH_NAME))
+                                .and(GRAPHITRON_ARGUMENT.TYPE_NAME.eq(GRAPHITRON_FIELD.TYPE_NAME))
+                                .and(GRAPHITRON_ARGUMENT.FIELD_NAME.eq(GRAPHITRON_FIELD.FIELD_NAME))
+                                .orderBy(GRAPHITRON_ARGUMENT.ORDINAL))
+                            .convertFrom(r -> r.map(a -> new ArgumentRow(
+                                a.value1(), a.value2(), a.value3(), a.value4()))))
+                        .from(GRAPHITRON_FIELD)
+                        .where(GRAPHITRON_FIELD.GRAPH_NAME.eq(GRAPHITRON_TYPE.GRAPH_NAME))
+                        .and(GRAPHITRON_FIELD.TYPE_NAME.eq(GRAPHITRON_TYPE.TYPE_NAME))
+                        .orderBy(GRAPHITRON_FIELD.ORDINAL))
+                    .convertFrom(r -> r.map(f -> new FieldRow(
+                        f.value1(), f.value2(), f.value3(), f.value4()))))
+            .from(GRAPHITRON_TYPE)
+            .where(GRAPHITRON_TYPE.GRAPH_NAME.eq(store.graphName()))
+            .and(GRAPHITRON_TYPE.KIND.eq(OBJECT))
+            .orderBy(GRAPHITRON_TYPE.TYPE_NAME)
+            .fetch(r -> new TypeRow(r.value1(), r.value2(), r.value3()));
     }
 
     // ---------------------------------------------------------------------------------------
@@ -167,47 +193,26 @@ public final class EmittedRegistry {
     // ---------------------------------------------------------------------------------------
 
     /**
-     * Adds every object type the store holds and the registry does not. These are the macro's own
-     * machinery: the connection, its edge and the shared page info, none of which any author wrote.
+     * One object type the registry does not have at all: the macro's own machinery, the connection,
+     * its edge and the shared page info, none of which any author wrote. Built from rows rather
+     * than patched, and nothing is lost by that because a minted element has no authored detail to
+     * lose: no expansion applies a directive.
      */
-    private static void mintAbsentTypes(TypeDefinitionRegistry patched, StoreHandle store,
-                                        Map<String, List<FieldRow>> fields,
-                                        Map<String, List<ArgumentRow>> arguments) {
-        var t = GRAPHITRON_TYPE;
-        var minted = store.dsl()
-            .select(t.TYPE_NAME, t.DESCRIPTION)
-            .from(t)
-            .where(t.GRAPH_NAME.eq(store.graphName()))
-            .and(t.KIND.eq("OBJECT"))
-            .orderBy(t.TYPE_NAME)
-            .fetch();
-        for (var row : minted) {
-            String name = row.get(t.TYPE_NAME);
-            if (patched.getTypeOrNull(name) != null) continue;
-            patched.add(objectType(name, row.get(t.DESCRIPTION),
-                fields.getOrDefault(name, List.of()), arguments));
-        }
-    }
-
-    private static ObjectTypeDefinition objectType(String name, String description,
-                                                   List<FieldRow> fields,
-                                                   Map<String, List<ArgumentRow>> arguments) {
+    private static ObjectTypeDefinition objectType(TypeRow row) {
         return ObjectTypeDefinition.newObjectTypeDefinition()
-            .name(name)
-            .description(description(description))
-            .fieldDefinitions(fields.stream().map(f -> fieldDefinition(f, arguments)).toList())
+            .name(row.typeName())
+            .description(description(row.description()))
+            .fieldDefinitions(row.fields().stream().map(EmittedRegistry::fieldDefinition).toList())
             .build();
     }
 
-    private static FieldDefinition fieldDefinition(FieldRow row,
-                                                   Map<String, List<ArgumentRow>> arguments) {
+    private static FieldDefinition fieldDefinition(FieldRow row) {
         return FieldDefinition.newFieldDefinition()
             .name(row.fieldName())
             .type(type(row.typeSdl()))
             .description(description(row.description()))
-            .inputValueDefinitions(arguments
-                .getOrDefault(coordinate(row.typeName(), row.fieldName()), List.<ArgumentRow>of())
-                .stream().map(EmittedRegistry::inputValue).toList())
+            .inputValueDefinitions(row.arguments().stream()
+                .map(EmittedRegistry::inputValue).toList())
             .build();
     }
 
@@ -226,64 +231,104 @@ public final class EmittedRegistry {
     // Patching what is already there
     // ---------------------------------------------------------------------------------------
 
-    /**
-     * Brings every object type the registry already holds up to what the store says the generator
-     * emits: a field whose type expression the expansion rewrote is retyped, a field the expansion
-     * added is added, and an argument it appended is appended. Everything else on the node is left
-     * exactly as the author wrote it.
-     */
-    private static void patchPresentTypes(TypeDefinitionRegistry patched,
-                                          Map<String, List<FieldRow>> fields,
-                                          Map<String, List<ArgumentRow>> arguments) {
-        var replacements = new ArrayList<Replacement>();
-        for (TypeDefinition<?> definition : patched.types().values()) {
-            if (!(definition instanceof ObjectTypeDefinition object)) continue;
-            var rows = fields.get(object.getName());
-            if (rows == null || rows.isEmpty()) continue;
-            var rebuilt = patchFields(object, rows, arguments);
-            if (rebuilt != null) {
-                replacements.add(new Replacement(object, rebuilt));
-            }
-        }
+    /** Swaps each patched node for the one it replaces, after the whole traversal has decided. */
+    private static void apply(TypeDefinitionRegistry patched, List<Replacement> replacements) {
         for (var replacement : replacements) {
             patched.remove(replacement.old());
             patched.add(replacement.replacement());
         }
     }
 
-    /** The patched type, or {@code null} where the store and the registry already agree. */
-    private static ObjectTypeDefinition patchFields(ObjectTypeDefinition object,
-                                                    List<FieldRow> rows,
-                                                    Map<String, List<ArgumentRow>> arguments) {
+    /**
+     * Brings one object type the registry already holds up to what the store says the generator
+     * emits: a field whose type expression the expansion rewrote is retyped, a field the expansion
+     * added is added, and an argument it appended is appended. Everything else on the node is left
+     * exactly as the author wrote it.
+     *
+     * <h4>A type is its definition and its extensions, and the anchors are not</h4>
+     *
+     * <p>{@code graphitron_field} is merged across declaration sites, numbering a field's ordinal
+     * "exactly as graphql_field numbers it", so one row stands for a field whichever site declared
+     * it. A registry does not merge: {@code extend type Query} is a separate node, and its fields
+     * are not on the base definition. So a patch that decides presence by looking only at the base
+     * declares every extension's field a second time, and assembly rejects the document with
+     * {@code TypeExtensionFieldRedefinitionError}. Presence is therefore asked of every site that
+     * declares the type, and each row is routed to the site declaring its field.
+     *
+     * <p>A field no site declares is new, and it lands on the base definition. That is the right
+     * home rather than an arbitrary one: what mints a field onto an authored type is an expansion,
+     * which is a property of the type rather than of any one document that contributed to it.
+     */
+    private static void patchDeclarationSites(ObjectTypeDefinition base,
+                                              List<? extends ObjectTypeDefinition> extensions,
+                                              List<FieldRow> rows,
+                                              List<Replacement> replacements) {
+        var sites = new ArrayList<ObjectTypeDefinition>();
+        sites.add(base);
+        sites.addAll(extensions);
+
+        var siteOf = new LinkedHashMap<String, ObjectTypeDefinition>();
+        for (var site : sites) {
+            for (var field : site.getFieldDefinitions()) {
+                siteOf.putIfAbsent(field.getName(), site);
+            }
+        }
+
+        var perSite = new LinkedHashMap<ObjectTypeDefinition, List<FieldRow>>();
+        var minted = new ArrayList<FieldRow>();
+        for (var row : rows) {
+            var site = siteOf.get(row.fieldName());
+            if (site == null) {
+                minted.add(row);
+            } else {
+                perSite.computeIfAbsent(site, s -> new ArrayList<>()).add(row);
+            }
+        }
+
+        for (var site : sites) {
+            var owned = perSite.getOrDefault(site, List.of());
+            var added = site == base ? minted : List.<FieldRow>of();
+            var rebuilt = patchFields(site, owned, added);
+            if (rebuilt != null) {
+                replacements.add(new Replacement(site, rebuilt));
+            }
+        }
+    }
+
+    /**
+     * The patched site, or {@code null} where the store and this site already agree. {@code owned}
+     * are the rows for fields this site declares and {@code added} the ones no site does.
+     */
+    private static ObjectTypeDefinition patchFields(ObjectTypeDefinition site,
+                                                    List<FieldRow> owned, List<FieldRow> added) {
         var byName = new LinkedHashMap<String, FieldDefinition>();
-        for (var field : object.getFieldDefinitions()) {
+        for (var field : site.getFieldDefinitions()) {
             byName.put(field.getName(), field);
         }
         boolean changed = false;
-        for (var row : rows) {
+        for (var row : owned) {
             var existing = byName.get(row.fieldName());
-            if (existing == null) {
-                byName.put(row.fieldName(), fieldDefinition(row, arguments));
-                changed = true;
-                continue;
-            }
-            var patchedField = patchField(existing, row, arguments);
+            var patchedField = patchField(existing, row);
             if (patchedField != existing) {
                 byName.put(row.fieldName(), patchedField);
                 changed = true;
             }
         }
+        for (var row : added) {
+            byName.put(row.fieldName(), fieldDefinition(row));
+            changed = true;
+        }
         if (!changed) return null;
         var ordered = List.copyOf(byName.values());
-        return object.transform(b -> b.fieldDefinitions(ordered));
+        return site instanceof ObjectTypeExtensionDefinition extension
+            ? extension.transformExtension(b -> b.fieldDefinitions(ordered))
+            : site.transform(b -> b.fieldDefinitions(ordered));
     }
 
     /** The patched field, or {@code existing} itself where nothing about it changed. */
-    private static FieldDefinition patchField(FieldDefinition existing, FieldRow row,
-                                              Map<String, List<ArgumentRow>> arguments) {
+    private static FieldDefinition patchField(FieldDefinition existing, FieldRow row) {
         boolean retype = !printed(existing.getType()).equals(printed(type(row.typeSdl())));
-        var appended = absentArguments(existing, arguments
-            .getOrDefault(coordinate(row.typeName(), row.fieldName()), List.of()));
+        var appended = absentArguments(existing, row.arguments());
         if (!retype && appended.isEmpty()) return existing;
 
         var inputValues = new ArrayList<>(existing.getInputValueDefinitions());
@@ -398,7 +443,4 @@ public final class EmittedRegistry {
         return graphql.language.AstPrinter.printAst(type);
     }
 
-    private static String coordinate(String typeName, String fieldName) {
-        return typeName + "." + fieldName;
-    }
 }

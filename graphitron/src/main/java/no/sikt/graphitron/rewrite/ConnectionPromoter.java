@@ -24,7 +24,6 @@ import graphql.schema.GraphQLInputObjectType;
 import no.sikt.graphitron.rewrite.model.CarriesObjectForm;
 import no.sikt.graphitron.rewrite.model.ConnectionSynthesis;
 import no.sikt.graphitron.rewrite.model.ConnectionSynthesis.MintedName;
-import no.sikt.graphitron.rewrite.model.FacetNaming;
 import no.sikt.graphitron.rewrite.model.FacetSpec;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType;
@@ -48,6 +47,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE_ID;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
 import no.sikt.graphitron.model.grammar.ConnectionNaming;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
+import no.sikt.graphitron.model.grammar.FacetNaming;
 
 /**
  * Promotes Connection-shaped carrier fields and synthesises the supporting

@@ -1,7 +1,9 @@
 package no.sikt.graphitron.model.capture.macro;
 
 import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
+import no.sikt.graphitron.model.grammar.ConnectionDefaults;
 import no.sikt.graphitron.model.grammar.ConnectionNaming;
+import no.sikt.graphitron.model.grammar.FacetNaming;
 import no.sikt.graphitron.model.sink.FactSink;
 import java.time.LocalDateTime;
 import org.jooq.DSLContext;
@@ -18,6 +20,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
+import static no.sikt.graphitron.model.Tables.INTENT_CONNECTION_FACET;
+import static org.jooq.impl.DSL.multiset;
+import static org.jooq.impl.DSL.select;
 
 /**
  * The {@code @asConnection} expansion: the Relay machinery it mints, the arguments it appends and
@@ -67,14 +72,7 @@ public final class MacroCapture {
     /** A mint that stands down where the author declared the coordinate. */
     private static final String YIELD = "YIELD";
 
-    /**
-     * The pagination arguments, and the names whose presence stands the whole mint down. The
-     * fallback page size is the one value here that is also spelled in the generator module, on
-     * {@code FieldWrapper.DEFAULT_PAGE_SIZE}, which this module cannot see; {@code MacroCaptureTest}
-     * holds the two equal by comparing the emitted row against that field, which is the nearest
-     * thing to a shared constant two tiers can have.
-     */
-    private static final int DEFAULT_PAGE_SIZE = 100;
+    /** The pagination arguments, and the names whose presence stands the whole mint down. */
     private static final Set<String> PAGINATION_ARGUMENTS = Set.of("first", "last", "after", "before");
 
     /** The Relay shapes' descriptions, matching what the assembled-schema synthesis emits. */
@@ -87,10 +85,23 @@ public final class MacroCapture {
     private static final String DESC_CURSOR = "A cursor for use in pagination.";
     private static final String DESC_NODE = "The item at the end of the edge.";
     private static final String DESC_PAGE_INFO = "Information about pagination in a connection.";
+    private static final String DESC_FACETS = "Per-facet value counts for the items in the connection.";
+    private static final String DESC_FACETS_TYPE = "Facet value counts for a connection.";
+    private static final String DESC_FACET_FIELD = "Value counts for this facet, under the connection's filter minus this facet's own predicate.";
+    private static final String DESC_FACET_VALUE_TYPE = "One facet bucket: a filterable value and its count.";
+    private static final String DESC_FACET_VALUE = "The facet value; feed it back into the filter to select this bucket.";
+    private static final String DESC_FACET_COUNT = "The number of items in this bucket.";
     private static final String DESC_HAS_NEXT_PAGE = "When paginating forwards, are there more items?";
     private static final String DESC_HAS_PREVIOUS_PAGE = "When paginating backwards, are there more items?";
     private static final String DESC_START_CURSOR = "When paginating backwards, the cursor to continue.";
     private static final String DESC_END_CURSOR = "When paginating forwards, the cursor to continue.";
+
+    /**
+     * How many fields {@link #mintConnection} puts on a connection, and so the ordinal the facet
+     * half appends at. Named rather than written as a literal at the one site that needs it, because
+     * the two have to move together.
+     */
+    private static final int CONNECTION_FIELDS = 4;
 
     private final FactSink sink;
 
@@ -128,7 +139,7 @@ public final class MacroCapture {
      */
     private record Carrier(String parentTypeName, String fieldName, String connectionName,
                            String edgeName, String elementTypeName, boolean itemNullable,
-                           int fieldOrdinal, String fieldDescription,
+                           boolean outerNonNull, int fieldOrdinal, String fieldDescription,
                            int argumentCount, boolean paginated, Integer authoredPageSize) {
 
         /** The coordinate that coins everything this carrier's application mints. */
@@ -149,7 +160,9 @@ public final class MacroCapture {
                 .select(GRAPHITRON_CONNECTION_ENTRY.TYPE_NAME, GRAPHITRON_CONNECTION_ENTRY.FIELD_NAME,
                     GRAPHITRON_CONNECTION_ENTRY.CONNECTION_NAME,
                     GRAPHITRON_CONNECTION_ENTRY.DEFAULT_FIRST_VALUE,
-                    GRAPHQL_FIELD.TYPE_SDL, GRAPHQL_FIELD.ORDINAL, GRAPHQL_FIELD.DESCRIPTION)
+                    GRAPHQL_FIELD.TYPE_SDL, GRAPHQL_FIELD.NAMED_TYPE, GRAPHQL_FIELD.NON_NULL,
+                    GRAPHQL_FIELD.IS_LIST, GRAPHQL_FIELD.ITEM_NON_NULL,
+                    GRAPHQL_FIELD.ORDINAL, GRAPHQL_FIELD.DESCRIPTION)
                 .from(GRAPHITRON_CONNECTION_ENTRY)
                 .join(GRAPHQL_FIELD)
                 .on(GRAPHQL_FIELD.GRAPH_NAME.eq(GRAPHITRON_CONNECTION_ENTRY.GRAPH_NAME))
@@ -158,23 +171,27 @@ public final class MacroCapture {
                 .where(GRAPHITRON_CONNECTION_ENTRY.GRAPH_NAME.eq(graphName))
                 .orderBy(GRAPHITRON_CONNECTION_ENTRY.TYPE_NAME, GRAPHITRON_CONNECTION_ENTRY.FIELD_NAME)
                 .fetch()) {
-            Element element = element(row.value5());
-            if (element == null) {
+            if (!row.get(GRAPHQL_FIELD.IS_LIST) || nested(row.get(GRAPHQL_FIELD.TYPE_SDL))) {
                 // @asConnection on something that is not a bare list of a named type. The misuse is
                 // a detection, and the field keeps the type its author wrote.
                 continue;
             }
-            String connectionName = row.value3() != null && !row.value3().isEmpty()
-                ? row.value3()
-                : ConnectionNaming.defaultConnectionName(row.value1(), row.value2());
-            var arguments = argumentsByField.getOrDefault(
-                List.of(row.value1(), row.value2()), List.of());
-            carriers.add(new Carrier(row.value1(), row.value2(), connectionName,
+            String typeName = row.get(GRAPHITRON_CONNECTION_ENTRY.TYPE_NAME);
+            String fieldName = row.get(GRAPHITRON_CONNECTION_ENTRY.FIELD_NAME);
+            String declared = row.get(GRAPHITRON_CONNECTION_ENTRY.CONNECTION_NAME);
+            String connectionName = declared != null && !declared.isEmpty()
+                ? declared
+                : ConnectionNaming.defaultConnectionName(typeName, fieldName);
+            var arguments = argumentsByField.getOrDefault(List.of(typeName, fieldName), List.of());
+            carriers.add(new Carrier(typeName, fieldName, connectionName,
                 ConnectionNaming.defaultEdgeName(connectionName),
-                element.name(), element.nullable(), row.value6(), row.value7(),
+                row.get(GRAPHQL_FIELD.NAMED_TYPE),
+                !Boolean.TRUE.equals(row.get(GRAPHQL_FIELD.ITEM_NON_NULL)),
+                row.get(GRAPHQL_FIELD.NON_NULL),
+                row.get(GRAPHQL_FIELD.ORDINAL), row.get(GRAPHQL_FIELD.DESCRIPTION),
                 arguments.size(),
                 arguments.stream().anyMatch(PAGINATION_ARGUMENTS::contains),
-                row.value4()));
+                row.get(GRAPHITRON_CONNECTION_ENTRY.DEFAULT_FIRST_VALUE)));
         }
         return carriers;
     }
@@ -200,36 +217,59 @@ public final class MacroCapture {
         return byField;
     }
 
-    /** The element of a bare list of a named type, or null where the application expands nothing. */
-    private record Element(String name, boolean nullable) {}
-
-    private static Element element(String typeSdl) {
+    /**
+     * Whether the expression lists something that is itself a list, which disqualifies the carrier.
+     *
+     * <p>The one question about the authored expression this class still takes a string apart to
+     * answer, and it is here rather than in a predicate because the anchor cannot state it.
+     * {@code graphql_field} describes exactly one list wrapper, so {@code [[Film]]} and
+     * {@code [Film]} agree on {@code named_type}, {@code non_null}, {@code is_list} and
+     * {@code item_non_null} alike and no combination of those columns tells them apart. The column
+     * that would is {@code list_depth}, which the entry relations carry and the anchors do not; when
+     * it reaches them this method becomes a predicate on {@code list_depth > 1} and stops being
+     * Java.
+     *
+     * <p>Everything else this class used to read out of the expression is a column and is read as
+     * one: the element's name from {@code named_type}, its nullability from {@code item_non_null},
+     * the carrier's own from {@code non_null}, the list-ness from {@code is_list}. Recomputing them
+     * was string surgery paying for columns that already existed, and it cost a defect rather than
+     * only duplication: the outer non-null was parsed and thrown away, so the rewrite emitted a
+     * nullable carrier wherever an author had written a non-null one.
+     */
+    private static boolean nested(String typeSdl) {
         String expression = typeSdl.trim();
         if (expression.endsWith("!")) {
             expression = expression.substring(0, expression.length() - 1);
         }
         if (!expression.startsWith("[") || !expression.endsWith("]")) {
-            return null;
+            return true;
         }
         String item = expression.substring(1, expression.length() - 1).trim();
-        boolean nullable = !item.endsWith("!");
-        if (!nullable) {
+        if (item.endsWith("!")) {
             item = item.substring(0, item.length() - 1);
         }
-        if (item.isEmpty() || item.contains("[") || item.contains("]") || item.contains("!")) {
-            return null;
-        }
-        return new Element(item, nullable);
+        return item.isEmpty() || item.contains("[") || item.contains("]") || item.contains("!");
     }
 
     /**
      * The rewrite itself, which at this grain is a minted field whose coining coordinate is its own.
-     * The carrier returns the Connection this expansion mints, a bare nullable name, and the row
-     * states the ordinal and description it did not change so that the winner is taken wholesale.
+     * The carrier returns the Connection this expansion mints, under the outer nullability its
+     * author wrote, and the row states the ordinal and description it did not change so that the
+     * winner is taken wholesale.
+     *
+     * <p>The outer non-null is carried rather than dropped, and the distinction is the whole of what
+     * this rewrite changes: the expansion replaces what a field returns and says nothing about
+     * whether the field may be null, which is the author's claim and survives. So
+     * {@code films: [Film!]!} becomes {@code QueryFilmsConnection!} and {@code films: [Film!]}
+     * becomes {@code QueryFilmsConnection}. Writing a bare name for both would make the row disagree
+     * with the schema the run emits, and an output field that loses its non-null is a breaking
+     * change to every consumer reading it.
      */
     private void rewriteCarrier(Carrier carrier) {
         mintField(carrier, carrier.parentTypeName(), carrier.fieldName(), REPLACE,
-            carrier.fieldOrdinal(), carrier.connectionName(), carrier.fieldDescription());
+            carrier.fieldOrdinal(),
+            carrier.outerNonNull() ? carrier.connectionName() + "!" : carrier.connectionName(),
+            carrier.fieldDescription());
     }
 
     /**
@@ -242,9 +282,110 @@ public final class MacroCapture {
             return;
         }
         int pageSize = carrier.authoredPageSize() != null
-            ? carrier.authoredPageSize() : DEFAULT_PAGE_SIZE;
+            ? carrier.authoredPageSize() : ConnectionDefaults.DEFAULT_PAGE_SIZE;
         mintArgument(carrier, "first", carrier.argumentCount(), "Int", String.valueOf(pageSize));
         mintArgument(carrier, "after", carrier.argumentCount() + 1, "String", null);
+    }
+
+    /**
+     * The facet half of the expansion, which runs after the half above has flushed.
+     *
+     * <p>Separate because of what it reads. {@code intent_connection_facet} resolves which facets a
+     * carrier surfaces and in what order, and it reaches the carriers through the rewrite rows
+     * {@link #expand} writes: a minted field whose coining coordinate is its own. So those rows have
+     * to be in the store before it is asked, which is the rule the gatherer's own stages run under
+     * one level up. The alternative was to reimplement that relation's join here against the
+     * carriers already in hand, which is one rule read twice and the thing this class exists to
+     * stop.
+     *
+     * <p>What it mints is the triad the generator's synthesis mints: a {@code <Connection>Facets}
+     * container with one field per facet, a {@code <Scalar>FacetValue} per distinct value shape, and
+     * the connection's own {@code facets} field reaching the container. The value shapes are shared
+     * machinery like {@code PageInfo}, so every carrier that has one states the whole of it and the
+     * primary key is the only dedupe.
+     */
+    public static void expandFacets(FactSink sink, DSLContext dsl, String graphName) {
+        var expansion = new MacroCapture(sink);
+        for (var carrier : expansion.facetedCarriers(dsl, graphName)) {
+            expansion.mintFacets(carrier);
+        }
+    }
+
+    /** One carrier that surfaces facets, with its own in the order the container's fields take. */
+    private record FacetedCarrier(String coordinate, String connectionName, List<Facet> facets) {}
+
+    /** One {@code @asFacet} binding a carrier reaches, as the container renders it. */
+    private record Facet(String fieldName, String valueTypeName, boolean valueNullable) {
+
+        /** The shared value shape this facet's buckets take. */
+        String valueTypeRef() {
+            return FacetNaming.facetValueTypeName(valueTypeName, valueNullable);
+        }
+    }
+
+    /**
+     * The carriers that surface facets, each with its own nested on their own key.
+     *
+     * <p>One row of the answer is one carrier, so the ordering and the first-wins dedup on a
+     * repeated facet name stay the relation's rather than being restated here. The connection's name
+     * comes off the rewrite row's {@code named_type} rather than being re-derived from the naming
+     * rule: the expansion already decided it, including where an author overrode it.
+     */
+    private List<FacetedCarrier> facetedCarriers(DSLContext dsl, String graphName) {
+        var rewrite = GRAPHITRON_MINTED_FIELD;
+        return dsl
+            .select(rewrite.TYPE_NAME, rewrite.FIELD_NAME, rewrite.NAMED_TYPE,
+                multiset(
+                    select(INTENT_CONNECTION_FACET.FACET_FIELD_NAME,
+                        INTENT_CONNECTION_FACET.VALUE_TYPE_NAME,
+                        INTENT_CONNECTION_FACET.VALUE_NULLABLE)
+                        .from(INTENT_CONNECTION_FACET)
+                        .where(INTENT_CONNECTION_FACET.GRAPH_NAME.eq(rewrite.GRAPH_NAME))
+                        .and(INTENT_CONNECTION_FACET.TYPE_NAME.eq(rewrite.TYPE_NAME))
+                        .and(INTENT_CONNECTION_FACET.FIELD_NAME.eq(rewrite.FIELD_NAME))
+                        .orderBy(INTENT_CONNECTION_FACET.POSITION))
+                    .convertFrom(r -> r.map(x -> new Facet(x.value1(), x.value2(),
+                        Boolean.TRUE.equals(x.value3())))))
+            .from(rewrite)
+            .where(rewrite.GRAPH_NAME.eq(graphName))
+            .and(rewrite.DIRECTIVE_NAME.eq(DIRECTIVE))
+            .and(rewrite.SOURCE_COORDINATE.eq(
+                rewrite.TYPE_NAME.concat(".").concat(rewrite.FIELD_NAME)))
+            .orderBy(rewrite.TYPE_NAME, rewrite.FIELD_NAME)
+            .fetch(r -> new FacetedCarrier(
+                SchemaCoordinateSyntax.ofField(r.value1(), r.value2()), r.value3(), r.value4()))
+            .stream()
+            .filter(c -> !c.facets().isEmpty())
+            .toList();
+    }
+
+    /**
+     * The container, the value shapes, and the connection's own field reaching them.
+     *
+     * <p>The {@code facets} field is nullable like the connection's other aggregate: a facet that
+     * fails or times out degrades to null on its own field rather than propagating a failure through
+     * the connection. Its ordinal follows the four the connection already carries.
+     */
+    private void mintFacets(FacetedCarrier carrier) {
+        String facetsName = FacetNaming.facetsTypeName(carrier.connectionName());
+        mintField(carrier.coordinate(), carrier.connectionName(), "facets", YIELD,
+            CONNECTION_FIELDS, facetsName, DESC_FACETS);
+
+        mintType(carrier.coordinate(), facetsName, DESC_FACETS_TYPE);
+        int ordinal = 0;
+        for (var facet : carrier.facets()) {
+            mintField(carrier.coordinate(), facetsName, facet.fieldName(), YIELD, ordinal++,
+                "[" + facet.valueTypeRef() + "!]", DESC_FACET_FIELD);
+        }
+
+        for (var facet : carrier.facets()) {
+            String valueType = facet.valueTypeRef();
+            mintType(carrier.coordinate(), valueType, DESC_FACET_VALUE_TYPE);
+            mintField(carrier.coordinate(), valueType, "value", YIELD, 0,
+                facet.valueNullable() ? facet.valueTypeName() : facet.valueTypeName() + "!",
+                DESC_FACET_VALUE);
+            mintField(carrier.coordinate(), valueType, "count", YIELD, 1, "Int!", DESC_FACET_COUNT);
+        }
     }
 
     private void mintConnection(Carrier carrier) {
@@ -304,11 +445,15 @@ public final class MacroCapture {
      * author's declaration stands and this row records that the application stood down.
      */
     private void mintType(Carrier carrier, String typeName, String description) {
-        if (!sink.claim(GRAPHITRON_MINTED_TYPE, carrier.coordinate(), typeName)) {
+        mintType(carrier.coordinate(), typeName, description);
+    }
+
+    private void mintType(String coordinate, String typeName, String description) {
+        if (!sink.claim(GRAPHITRON_MINTED_TYPE, coordinate, typeName)) {
             return;
         }
         var row = sink.dsl().newRecord(GRAPHITRON_MINTED_TYPE);
-        row.setSourceCoordinate(carrier.coordinate());
+        row.setSourceCoordinate(coordinate);
         row.setTypeName(typeName);
         row.setDirectiveName(DIRECTIVE);
         row.setPrecedence(YIELD);
@@ -319,11 +464,17 @@ public final class MacroCapture {
 
     private void mintField(Carrier carrier, String typeName, String fieldName, String precedence,
                            int ordinal, String typeSdl, String description) {
-        if (!sink.claim(GRAPHITRON_MINTED_FIELD, carrier.coordinate(), typeName, fieldName)) {
+        mintField(carrier.coordinate(), typeName, fieldName, precedence, ordinal, typeSdl,
+            description);
+    }
+
+    private void mintField(String coordinate, String typeName, String fieldName, String precedence,
+                           int ordinal, String typeSdl, String description) {
+        if (!sink.claim(GRAPHITRON_MINTED_FIELD, coordinate, typeName, fieldName)) {
             return;
         }
         var row = sink.dsl().newRecord(GRAPHITRON_MINTED_FIELD);
-        row.setSourceCoordinate(carrier.coordinate());
+        row.setSourceCoordinate(coordinate);
         row.setTypeName(typeName);
         row.setFieldName(fieldName);
         row.setDirectiveName(DIRECTIVE);

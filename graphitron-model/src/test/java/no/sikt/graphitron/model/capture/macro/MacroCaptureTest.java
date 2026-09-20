@@ -1,8 +1,6 @@
-package no.sikt.graphitron.rewrite.capture;
+package no.sikt.graphitron.model.capture.macro;
 
 import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.rewrite.model.FieldWrapper;
-import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -30,7 +28,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * corpora and therefore belonging to a derivation over the captured facts of both;
  * {@link FederationKeyDerivationTest} is where that rule's cases live now.
  */
-@UnitTier
 class MacroCaptureTest {
 
     private static final String DIRECTIVES = """
@@ -65,6 +62,12 @@ class MacroCaptureTest {
         }
     }
 
+    /**
+     * Two carriers of opposite outer nullability and one field with no macro on it. The pair is what
+     * pins the rewrite's one rule about nullability: the expansion replaces what a field returns and
+     * says nothing about whether the field may be null, so {@code films} keeps the {@code !} its
+     * author wrote and {@code actors} does not gain one.
+     */
     private static final String CONNECTIONS = """
         type Query {
           films: [Film!]! @asConnection
@@ -77,7 +80,7 @@ class MacroCaptureTest {
         """;
 
     @Test
-    @DisplayName("a carrier's field takes the minted Connection, and the written type expression survives")
+    @DisplayName("a carrier's field takes the minted Connection under the nullability its author wrote, and the written type expression survives")
     void theCarrierFieldIsRewritten(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, CONNECTIONS)) {
             var effective = store.dsl()
@@ -87,7 +90,7 @@ class MacroCaptureTest {
                 .fetch()
                 .intoMap(r -> r.value1(), r -> r.value2());
             assertThat(effective).containsExactlyInAnyOrderEntriesOf(java.util.Map.of(
-                "films", "QueryFilmsConnection",
+                "films", "QueryFilmsConnection!",
                 "actors", "ActorConnection",
                 "plain", "[Film!]!"));
 
@@ -116,7 +119,7 @@ class MacroCaptureTest {
             assertThat(rewritten.map(r -> r.value1() + "=" + r.value2() + ":" + r.value3()
                     + ":" + r.value4() + "@" + r.value5()))
                 .containsExactlyInAnyOrder(
-                    "films=QueryFilmsConnection:REPLACE:asConnection@0",
+                    "films=QueryFilmsConnection!:REPLACE:asConnection@0",
                     "actors=ActorConnection:REPLACE:asConnection@1");
         }
     }
@@ -245,7 +248,7 @@ class MacroCaptureTest {
                 .as("its fields are recorded too, and none of them reaches the anchor")
                 .containsExactlyInAnyOrder("edges", "nodes", "pageInfo", "totalCount");
             // The carrier is still rewritten to the name, which is the author's type now.
-            assertThat(fieldsOf(store, "Query")).containsExactly("films=QueryFilmsConnection");
+            assertThat(fieldsOf(store, "Query")).containsExactly("films=QueryFilmsConnection!");
         }
     }
 
@@ -352,35 +355,6 @@ class MacroCaptureTest {
                 .as("neither reading lands, and the fields both carriers agree on still do")
                 .containsExactly("edges=[SharedConnectionEdge!]!", "pageInfo=PageInfo!", "totalCount=Int");
             assertThat(fieldsOf(store, "SharedConnectionEdge")).containsExactly("cursor=String!");
-        }
-    }
-
-    /**
-     * The fallback page size is spelled twice and has to stay one number. Capture writes it into the
-     * minted argument's default and the generator reads {@link FieldWrapper#DEFAULT_PAGE_SIZE} when
-     * it builds the schema object, and the two live in different modules at different tiers, so
-     * neither can hold the other's constant. This is the test that stands in for the constant they
-     * cannot share, and it compares the emitted row against the field rather than one literal
-     * against another: a capture that stopped writing the default at all would still pass a literal
-     * comparison and fails here.
-     *
-     * <p>It sits in this module because this is the lowest one that can see both.
-     */
-    @Test
-    @DisplayName("the minted page size is the generator's own fallback")
-    void theMintedPageSizeAgreesWithTheGenerator(@TempDir Path tmp) {
-        String sdl = """
-            type Query { films: [Film!]! @asConnection }
-            type Film { title: String }
-            """;
-        try (var store = CapturedStore.of(tmp, sdl)) {
-            assertThat(store.dsl()
-                .select(GRAPHITRON_MINTED_ARGUMENT.DEFAULT_VALUE_SDL)
-                .from(GRAPHITRON_MINTED_ARGUMENT)
-                .where(GRAPHITRON_MINTED_ARGUMENT.ARGUMENT_NAME.eq("first"))
-                .fetchOne(0, String.class))
-                .as("the default capture wrote, against the constant the generator emits")
-                .isEqualTo(String.valueOf(FieldWrapper.DEFAULT_PAGE_SIZE));
         }
     }
 
