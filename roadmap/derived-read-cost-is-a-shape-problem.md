@@ -4099,6 +4099,65 @@ to 70: a capture cannot use the funnel, its whole subject being what a capture w
 boots the module means to pay for. Recounted at 61 and 62 on two reads of one tree, which is the
 drift that constant's javadoc describes, so the budget is set with headroom rather than at the count.
 
+**The emitted element anchor is the union of named sets, and precedence turns out to be
+single-valued at two of its three grains. 2026-09-18.**
+
+`ElementAnchors.elements` was four arms of one insert with two precedence rules interleaved through
+them, every arm's admission living in a Java predicate rather than anywhere a reader of the schema
+could find it. The four sets are views now, `graphitron_element_authored` and one per minted grain,
+and the writer is a union over them plus the reading's instant. The anchor also states its own
+lifetime: it carries `touched_at`, and a reading sweeps coordinates it did not write, children
+first, where it used to be emptied by the walk's clear. A relation whose lifetime is a property of
+whatever pass runs around it cannot move to another pass.
+
+Naming the sets settled a question the one query had hidden, and the answer differs by grain. At the
+element grain an element is a coordinate, so a mint at a coordinate the transcription already
+anchors is excluded outright and `precedence` decides nothing; the `REPLACE` disjunct there could
+never be the reason a row survived. At the payload grains it looked load-bearing, and `MacroCapture`
+says otherwise: `REPLACE` is written in exactly one place and it is a field mint. `mintType` and
+`mintArgument` set `YIELD` unconditionally, for a stated reason, so `authoredTypeSurvives` is
+universally true and the type and argument grains reduce to "authored wins, minted fills the gap".
+
+That left `graphitron_minted_type.precedence` and `graphitron_minted_argument.precedence` as
+columns that can hold one value, with the invariant living in a Java comment. It is why one query
+could handle all kinds with uniform rules: the rules looked uniform because the columns did. Both
+are `CHECK (precedence IN ('YIELD'))` now, beside the `CHECK (kind IN ('OBJECT'))` already on the
+type relation, which is the same move made once before on the same table. The point of putting it
+there rather than encoding the reduction into the readers is that the minting is built on the
+constraint rather than the constraint describing the minting: widening it is the first edit a
+replacing type would need and the one that makes the readers wrong, so the readers can be short and
+the place that must change is the place that says so. The vocabulary moved to
+`graphitron_minted_field.precedence`, the one minted relation where both values occur. Whether the
+column should exist at all on the other two is still open; it reaches `MacroCapture` and the
+supertype roster.
+
+All six remaining sets are views too, so the three part fills are unions like the element fill. The
+reduction the constraint buys shows up as absence: `graphitron_type_authored` and
+`graphitron_argument_authored` exclude nothing, and their javadoc says that is the `CHECK` showing
+through rather than an oversight. `authoredTypeSurvives`, `authoredFieldSurvives`,
+`authoredArgumentSurvives` and `uncontested` are gone; the two surviving `mintedTakesEffect`
+predicates lost the arms the constraint made unreachable and stay only because the conflict scan
+reads them.
+
+One tidying was nearly taken and is wrong, so it is written into both the view comment and the
+javadoc. The minted part views look like they could be joins onto the minted element views, which
+would remove a duplicated predicate. The element sets exclude everything the transcription anchors,
+so a rewritten carrier is an authored element and a minted field: deriving one family from the other
+is right at five of the six sets and silently drops the rewritten carrier's payload at the sixth.
+
+`CaptureParityTest` moves from eighteen relations to twenty-four, the six being the minted views,
+empty for exactly the reason the relations under them are. The six authored views are not on the
+list, both paths filling those, which is the split confirming itself. The ratchet is total over the
+schema, so a view is recorded rather than exempted.
+
+`ExpandedPopulationReaderGateTest` fired, and its roster text was the thing that had gone stale
+rather than the change. The roster said the expanded population is two tables filled by an
+insert-select no view definition mentions, so nothing about it needed excluding; naming the sets
+makes the authored arm of each grain a view over the transcription again. They are the first
+adjudicated-and-kept entries on that roster, under a reason heading, on the grounds that repointing
+them at the anchors would define a relation in terms of itself. The gate's own javadoc is rewritten
+to say that half the seam is definition text again and the union over the sets still is not.
+
 **The gate**, which every collapse in phase 2 takes too. One corpus captured before and after, every
 relation the schema declares counted under each, both directions. Not the intersection: three
 attempts at the catalog pair failed on a hand-picked list, and the two gaps that mattered were

@@ -88,7 +88,7 @@ public final class GraphitronAssemblyCapture {
         MacroCapture.sweep(dsl, graph, readAt);
         // The anchors before every stage that keys at a coordinate, because the expansion above is
         // the second arm of their population and everything below reads them rather than the union.
-        ElementAnchors.derive(dsl, graph);
+        ElementAnchors.derive(dsl, graph, readAt);
         navigation(dsl, graph, readAt);
         // The reference stratum's own resolutions, bottom rung first: what a written table name
         // resolves to against the catalog census, then the hops a @reference path element could

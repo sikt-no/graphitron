@@ -152,6 +152,14 @@ public final class SeededStore {
      * {@code graphql_type_declaration} line up without a caller ever naming a line number.
      */
     private static final String SEED_SOURCE = "seed.graphqls";
+    /**
+     * The instant a seeded reading stamps its anchor rows with. One value for every fixture,
+     * because a fixture seeds one reading: the sweep tells readings apart by this, and two calls
+     * inside one fixture are the same reading rather than two.
+     */
+    private static final java.time.LocalDateTime SEED_INSTANT =
+        java.time.LocalDateTime.of(2000, 1, 1, 0, 0);
+
     private static final int SEED_LINE = 1;
     private static final int SEED_COLUMN = 1;
 
@@ -222,7 +230,7 @@ public final class SeededStore {
         // call, so a fixture cannot hold its own idea of what the emitted population is.
         for (var graph : dsl.select(STORE_GRAPH.GRAPH_NAME).from(STORE_GRAPH)
                 .fetch(STORE_GRAPH.GRAPH_NAME)) {
-            ElementAnchors.derive(dsl, graph);
+            ElementAnchors.derive(dsl, graph, SEED_INSTANT);
         }
         transcribeSupertypes(dsl);
         // The candidate tree, by the same call capture makes. Stated here rather than seeded row by
@@ -3173,7 +3181,7 @@ public final class SeededStore {
      * done for it rather than remembered.
      */
     public static void seedTypeDomain(DSLContext dsl, String graphName, String typeName) {
-        ElementAnchors.derive(dsl, graphName);
+        ElementAnchors.derive(dsl, graphName, SEED_INSTANT);
         dsl.insertInto(INTENT_TYPE_DOMAIN)
             .set(INTENT_TYPE_DOMAIN.GRAPH_NAME, graphName)
             .set(INTENT_TYPE_DOMAIN.TYPE_NAME, typeName)

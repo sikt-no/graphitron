@@ -47,12 +47,14 @@ import static org.jooq.impl.DSL.table;
  * roster as each reading is adjudicated and repointed, and the roster is the reviewer's grep query
  * in the meantime.
  *
- * <p>The seam itself is no longer visible to this gate, and that is the one thing it lost. The
- * expanded population was a pair of union views and this class held their arms; it is two tables
- * now, filled by an insert-select that no view definition mentions, so the claim that the union was
- * taken moved to where the rows are, which is the capture agreement's own arm over the emitted
- * element family. That is the stronger statement of the two: it compares populations rather than
- * definition text.
+ * <p>Half the seam is visible to this gate and half is not, which is worth stating because the
+ * balance has moved twice. The expanded population was a pair of union views, then two tables
+ * filled by an insert-select no definition mentioned, and is now two tables filled from named set
+ * views, one per set. The sets are definitions again, so the authored arm of each grain is a
+ * reading this gate sees and the roster carries it with its reason. That the union over them is
+ * taken is still not definition text, and the claim stays where the rows are, in the capture
+ * agreement's own arm over the emitted element family. That remains the stronger of the two: it
+ * compares populations rather than definition text.
  *
  * <p>Read off the booted schema through {@link ViewReferences}, which parses the definition the
  * engine stored rather than the source text, so a reading reached through another view is not

@@ -4703,9 +4703,10 @@ COMMENT ON COLUMN graphitron_undecoded_argument_entry.value_sdl IS 'the literal 
 -- population, and an emitter reading this family for a whole schema is what would move it.
 
 CREATE TABLE graphitron_element (
-  graph_name   VARCHAR NOT NULL,
-  coordinate   VARCHAR NOT NULL,
-  element_kind VARCHAR NOT NULL,
+  graph_name        VARCHAR NOT NULL,
+  coordinate        VARCHAR NOT NULL,
+  element_kind      VARCHAR NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   CHECK (element_kind IN ('NAMED_TYPE', 'FIELD', 'INPUT_FIELD', 'FIELD_ARGUMENT'))
@@ -4714,6 +4715,7 @@ COMMENT ON TABLE graphitron_element IS 'A schema element the generator emits exi
 COMMENT ON COLUMN graphitron_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_element.coordinate IS 'the coordinate itself, in the specification''s own grammar and spelled exactly as graphql_element spells it: Type for a named type, Type.field for a field or an input field of one, and Type.field(argument:) for an argument of a field. Total by construction, which is what lets one column stand for a coordinate of any kind where the decomposed keys beside it cannot';
 COMMENT ON COLUMN graphitron_element.element_kind IS 'which kind of schema element this row is, in the specification''s own vocabulary, and so which relation beside this one a reader joins to get the parts, FIELD and INPUT_FIELD sharing one. Four of the specification''s seven kinds, the vocabulary being narrower than graphql_element''s by exactly the enum value this family holds no anchor for';
+COMMENT ON COLUMN graphitron_element.touched_at IS 'the reading that last wrote this row, which is what its sweep tells readings apart by: a row this reading did not rewrite is one the corpus stopped stating and goes. The other half of the lifecycle the walk''s clear used to stand in for, the cascade above being the first';
 
 CREATE TABLE graphitron_type (
   graph_name  VARCHAR NOT NULL,
@@ -4882,7 +4884,7 @@ CREATE TABLE graphitron_minted_type (
   FOREIGN KEY (graph_name, directive_name)
     REFERENCES graphql_directive (graph_name, directive_name)
     ON DELETE CASCADE,
-  CHECK (precedence IN ('REPLACE', 'YIELD')),
+  CHECK (precedence IN ('YIELD')),
   CHECK (kind IN ('OBJECT'))
 );
 CREATE INDEX graphitron_minted_type_coordinate_ix
@@ -4892,7 +4894,7 @@ COMMENT ON COLUMN graphitron_minted_type.graph_name IS 'the owning graph''s part
 COMMENT ON COLUMN graphitron_minted_type.source_coordinate IS 'the coordinate whose directive application coined this row, which is the field the directive sits on. Leads the key after the graph, so the cascade from it is a seek and one application''s whole contribution is one range scan. The one foreign key here, into graphql_element rather than into the emitted anchor, which is what says minting is single level: every source is a coordinate an author wrote, and a macro expanding into another macro''s output would fail at capture instead of surprising a reader';
 COMMENT ON COLUMN graphitron_minted_type.type_name IS 'the minted type''s name; with the source, the grain. Not unique on its own and deliberately so, shared machinery being minted once per carrier';
 COMMENT ON COLUMN graphitron_minted_type.directive_name IS 'the directive whose application coined this row, by name, anchored by graphql_directive. A directive rather than a macro label from a closed list: the definition carries a description of what the expansion does, so a reader asking why a coordinate exists reads that instead of an enum';
-COMMENT ON COLUMN graphitron_minted_type.precedence IS 'what this row does at a coordinate the author also declared: REPLACE takes the author''s place, YIELD stands down and leaves the declaration alone. Not derivable from the collision, @asConnection replacing at its carrier and yielding at PageInfo, so it is stated by whichever expansion wrote the row';
+COMMENT ON COLUMN graphitron_minted_type.precedence IS 'what this row does at a coordinate the author also declared, always YIELD: it stands down and leaves the declaration alone, and the CHECK holds the expansions to it. A minted type carries machinery fields, so taking an author''s place at their type name would merge two types nobody asked to merge; the vocabulary is graphitron_minted_field.precedence''s, that being the relation where both values occur. The rule is written here rather than only in the code resting on it, because a good deal rests on it: the emitted anchor''s sets read this relation on the footing that an authored type always survives and a mint only fills a name nobody took, which is what lets them be four small statements instead of one with precedence threaded through. Minting is built on the constraint rather than the constraint describing the minting, so widening it is the first edit a replacing type would need and the one that makes those readers wrong';
 COMMENT ON COLUMN graphitron_minted_type.kind IS 'the type''s kind in graphql_type''s vocabulary, always OBJECT: the macros mint nothing else, and the CHECK holds them to it';
 COMMENT ON COLUMN graphitron_minted_type.description IS 'the docstring the macro wrote, matching what the assembled-schema synthesis emits; display material, never a dimension';
 COMMENT ON COLUMN graphitron_minted_type.touched_at IS 'when the reading that minted this row ran. The expansion finishes by deleting this graph''s rows carrying a different instant, which are the rows a rewriting stopped minting; an upsert cannot find those, there being no incoming row to match';
@@ -4929,7 +4931,7 @@ COMMENT ON COLUMN graphitron_minted_field.source_coordinate IS 'the coordinate w
 COMMENT ON COLUMN graphitron_minted_field.type_name IS 'the type this field sits on, minted or authored: a machinery field sits on a minted type and a rewritten carrier sits on the author''s own';
 COMMENT ON COLUMN graphitron_minted_field.field_name IS 'the field''s name; with the two columns above and the source, the grain';
 COMMENT ON COLUMN graphitron_minted_field.directive_name IS 'the directive whose application coined this row, on graphitron_minted_type.directive_name''s terms';
-COMMENT ON COLUMN graphitron_minted_field.precedence IS 'what this row does at a coordinate the author also declared, on graphitron_minted_type.precedence''s terms. REPLACE on a rewritten carrier, whose whole row is stated here including the ordinal and description the expansion did not change, so the winner is taken wholesale';
+COMMENT ON COLUMN graphitron_minted_field.precedence IS 'what this row does at a coordinate the author also declared: REPLACE takes the author''s place, YIELD stands down and leaves the declaration alone. The one minted relation where both occur, and so where the vocabulary is defined: @asConnection replaces at its carrier and yields at PageInfo, which is not derivable from the collision and is why the expansion states it. REPLACE on a rewritten carrier states the whole row, the ordinal and description the expansion did not change included, so the winner is taken wholesale';
 COMMENT ON COLUMN graphitron_minted_field.ordinal IS 'the field''s position within its type: dense from 0 in the order the macro writes them on a minted type, and the authored field''s own position on a rewritten carrier, copied rather than recomputed';
 COMMENT ON COLUMN graphitron_minted_field.type_sdl IS 'the type expression the macro wrote, rendered the way graphql_field renders an authored one; on a rewritten carrier this is the expansion''s replacement and the author''s stays in graphql_field where it was written';
 COMMENT ON COLUMN graphitron_minted_field.named_type IS 'that expression''s named type with its wrappers stripped, the column readers join on';
@@ -4962,7 +4964,7 @@ CREATE TABLE graphitron_minted_argument (
   FOREIGN KEY (graph_name, directive_name)
     REFERENCES graphql_directive (graph_name, directive_name)
     ON DELETE CASCADE,
-  CHECK (precedence IN ('REPLACE', 'YIELD')),
+  CHECK (precedence IN ('YIELD')),
   CHECK (is_list OR item_non_null IS NULL)
 );
 CREATE INDEX graphitron_minted_argument_coordinate_ix
@@ -4974,7 +4976,7 @@ COMMENT ON COLUMN graphitron_minted_argument.type_name IS 'owning type of the fi
 COMMENT ON COLUMN graphitron_minted_argument.field_name IS 'the field the argument sits on';
 COMMENT ON COLUMN graphitron_minted_argument.argument_name IS 'the argument''s name within the owning field; with the three columns above and the source, the grain';
 COMMENT ON COLUMN graphitron_minted_argument.directive_name IS 'the directive whose application coined this row, on graphitron_minted_type.directive_name''s terms';
-COMMENT ON COLUMN graphitron_minted_argument.precedence IS 'what this row does at a coordinate the author also declared, on graphitron_minted_type.precedence''s terms. YIELD for every argument minted today, an author who wrote their own pagination keeping it';
+COMMENT ON COLUMN graphitron_minted_argument.precedence IS 'what this row does at a coordinate the author also declared, always YIELD: an author who wrote their own pagination keeps it, and the CHECK holds the expansions to that. The vocabulary is graphitron_minted_field.precedence''s, that being the relation where both values occur, and what the constraint carries here it carries for graphitron_minted_type.precedence''s reasons: the readers of this relation are written on the footing that an authored argument always survives, so widening it is the edit that makes them wrong';
 COMMENT ON COLUMN graphitron_minted_argument.ordinal IS 'the argument''s position within its field, counted after every authored argument, which is where the expansion appends';
 COMMENT ON COLUMN graphitron_minted_argument.type_sdl IS 'the type expression the macro wrote, rendered the way graphql_argument renders an authored one';
 COMMENT ON COLUMN graphitron_minted_argument.named_type IS 'that expression''s named type with its wrappers stripped, the column readers join on';
@@ -5007,6 +5009,220 @@ COMMENT ON COLUMN graphitron_minted_argument.touched_at IS 'when the reading tha
 -- invariant capture maintains and a test checks. Buying an enforced edge with a duplicated relation
 -- costs a second write on every producer and a choice on every reader, which is what this section
 -- exists to stop.
+
+-- ==== The sets the emitted element anchor is the union of ==========================
+-- graphitron_element is four populations, and they used to be four arms of one statement with
+-- their precedence rules interleaved in Java. Each is named here instead, so a reader can ask what
+-- a set contains without reading the others, and so the anchor's own writer is a union and nothing
+-- else. The columns are the same four in each, the instant being the reading's rather than a set's.
+--
+-- Two rules are shared and are stated once per set rather than once: a coordinate several
+-- applications would mint and disagree about belongs to none of them, and a coordinate the
+-- transcription already anchors is not minted over. Stating them per set is what lets each set be
+-- read alone and be true.
+
+CREATE VIEW graphitron_element_authored (graph_name, coordinate, element_kind) AS
+SELECT graph_name, coordinate, element_kind
+  FROM graphql_element
+ WHERE element_kind IN ('NAMED_TYPE', 'FIELD', 'INPUT_FIELD', 'FIELD_ARGUMENT');
+COMMENT ON VIEW graphitron_element_authored IS 'One of the four sets graphitron_element is the union of: an element an author declared, at the coordinate the transcription spells for it, of a kind this family anchors. For example the Film in type Film { title: String } is one row, and the Film.title written inside it is another.';
+COMMENT ON COLUMN graphitron_element_authored.graph_name IS 'the owning graph''s partition, carried from the transcription';
+COMMENT ON COLUMN graphitron_element_authored.coordinate IS 'the coordinate itself, as graphql_element spells it';
+COMMENT ON COLUMN graphitron_element_authored.element_kind IS 'the kind, in the specification''s own vocabulary and narrowed to the four this family anchors';
+
+CREATE VIEW graphitron_element_minted_type (graph_name, coordinate, element_kind) AS
+SELECT DISTINCT m.graph_name, m.type_name, 'NAMED_TYPE'
+  FROM graphitron_minted_type m
+ WHERE NOT EXISTS (SELECT 1 FROM graphql_type_element t
+                    WHERE t.graph_name = m.graph_name AND t.type_name = m.type_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_minted_conflict c
+                    WHERE c.graph_name = m.graph_name AND c.coordinate = m.type_name);
+COMMENT ON VIEW graphitron_element_minted_type IS 'One of the four sets graphitron_element is the union of: a type macro expansion adds to the schema, which no author declared and no two applications disagree about. For example an author writing films: [Film!]! @asConnection and nothing else gets QueryFilmsConnection here, where an author who also wrote their own QueryFilmsConnection gets no row.';
+COMMENT ON COLUMN graphitron_element_minted_type.graph_name IS 'the owning graph''s partition, carried from the minting row';
+COMMENT ON COLUMN graphitron_element_minted_type.coordinate IS 'the minted type''s name, which is how the specification spells a named type''s coordinate';
+COMMENT ON COLUMN graphitron_element_minted_type.element_kind IS 'always NAMED_TYPE, the macros minting nothing else at this grain';
+
+CREATE VIEW graphitron_element_minted_field (graph_name, coordinate, element_kind) AS
+SELECT DISTINCT m.graph_name, m.type_name || '.' || m.field_name, 'FIELD'
+  FROM graphitron_minted_field m
+ WHERE NOT EXISTS (SELECT 1 FROM graphql_field_element f
+                    WHERE f.graph_name = m.graph_name AND f.type_name = m.type_name
+                      AND f.field_name = m.field_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_minted_conflict c
+                    WHERE c.graph_name = m.graph_name
+                      AND c.coordinate = m.type_name || '.' || m.field_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_minted_type t
+                    WHERE t.graph_name = m.graph_name
+                      AND t.source_coordinate = m.source_coordinate
+                      AND t.type_name = m.type_name
+                      AND EXISTS (SELECT 1 FROM graphql_type_element a
+                                   WHERE a.graph_name = t.graph_name
+                                     AND a.type_name = t.type_name));
+COMMENT ON VIEW graphitron_element_minted_field IS 'One of the four sets graphitron_element is the union of: a field macro expansion adds to the schema, on the minted type set''s terms and one more. For example the edges and pageInfo on a minted QueryFilmsConnection, and nothing at all where the author declared that type themselves.';
+COMMENT ON COLUMN graphitron_element_minted_field.graph_name IS 'the owning graph''s partition, carried from the minting row';
+COMMENT ON COLUMN graphitron_element_minted_field.coordinate IS 'the field''s coordinate, Type.field in the specification''s grammar';
+COMMENT ON COLUMN graphitron_element_minted_field.element_kind IS 'always FIELD; no macro today puts a field into an input object, and the day one does this is where the kind starts being derived';
+
+CREATE VIEW graphitron_element_minted_argument (graph_name, coordinate, element_kind) AS
+SELECT DISTINCT m.graph_name,
+       m.type_name || '.' || m.field_name || '(' || m.argument_name || ':)',
+       'FIELD_ARGUMENT'
+  FROM graphitron_minted_argument m
+ WHERE NOT EXISTS (SELECT 1 FROM graphql_argument_element a
+                    WHERE a.graph_name = m.graph_name AND a.type_name = m.type_name
+                      AND a.field_name = m.field_name AND a.argument_name = m.argument_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_minted_conflict c
+                    WHERE c.graph_name = m.graph_name
+                      AND c.coordinate = m.type_name || '.' || m.field_name
+                                         || '(' || m.argument_name || ':)');
+COMMENT ON VIEW graphitron_element_minted_argument IS 'One of the four sets graphitron_element is the union of: a field argument macro expansion adds to the schema, which today is the pagination a connection carrier gets where its author wrote none. For example the first and after on Query.films(first:) where the author wrote films: [Film!]! @asConnection with no arguments.';
+COMMENT ON COLUMN graphitron_element_minted_argument.graph_name IS 'the owning graph''s partition, carried from the minting row';
+COMMENT ON COLUMN graphitron_element_minted_argument.coordinate IS 'the argument''s coordinate, Type.field(argument:) in the specification''s grammar, the trailing colon included because the specification writes it';
+COMMENT ON COLUMN graphitron_element_minted_argument.element_kind IS 'always FIELD_ARGUMENT';
+
+-- ==== The sets the three emitted part relations are the unions of =================================
+-- Each of graphitron_type, graphitron_field and graphitron_argument is an authored set and a minted
+-- set, named here for the reasons the element sets above are. They are stated rather than derived
+-- from the element sets, though the element grain answers a question that looks the same, because at
+-- one coordinate the two disagree: a rewritten carrier is an authored element and a minted field.
+-- Deriving either from the other would be right at five of the six and silently wrong at the sixth.
+
+CREATE VIEW graphitron_type_authored (graph_name, type_name, coordinate, kind, description) AS
+SELECT graph_name, type_name, type_name, kind, description
+  FROM graphql_type;
+COMMENT ON VIEW graphitron_type_authored IS 'One of the two sets graphitron_type is the union of: a type an author declared, carried across whole. For example type Film { title: String } is the row Film here, with the kind and docstring the author wrote.';
+COMMENT ON COLUMN graphitron_type_authored.graph_name IS 'the owning graph''s partition, carried from the transcription';
+COMMENT ON COLUMN graphitron_type_authored.type_name IS 'the type''s name, as the author spelled it';
+COMMENT ON COLUMN graphitron_type_authored.coordinate IS 'the same name again, a named type''s coordinate being its name; spelled here so the join up to graphitron_element is a column rather than a concatenation a reader has to trust';
+COMMENT ON COLUMN graphitron_type_authored.kind IS 'the type''s kind in graphql_type''s vocabulary, carried rather than restated';
+COMMENT ON COLUMN graphitron_type_authored.description IS 'the docstring the author wrote, or nothing';
+
+CREATE VIEW graphitron_type_minted (graph_name, type_name, coordinate, kind, description) AS
+SELECT DISTINCT m.graph_name, m.type_name, m.type_name, m.kind, m.description
+  FROM graphitron_minted_type m
+ WHERE NOT EXISTS (SELECT 1 FROM graphql_type_element t
+                    WHERE t.graph_name = m.graph_name AND t.type_name = m.type_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_minted_conflict c
+                    WHERE c.graph_name = m.graph_name AND c.coordinate = m.type_name);
+COMMENT ON VIEW graphitron_type_minted IS 'One of the two sets graphitron_type is the union of: a type macro expansion adds, filling a name no author took. For example QueryFilmsConnection where the author wrote only films: [Film!]! @asConnection.';
+COMMENT ON COLUMN graphitron_type_minted.graph_name IS 'the owning graph''s partition, carried from the minting row';
+COMMENT ON COLUMN graphitron_type_minted.type_name IS 'the minted type''s name';
+COMMENT ON COLUMN graphitron_type_minted.coordinate IS 'the same name again, on graphitron_type_authored.coordinate''s terms';
+COMMENT ON COLUMN graphitron_type_minted.kind IS 'always OBJECT, which graphitron_minted_type.kind''s own CHECK holds; carried rather than written here so the two relations cannot drift';
+COMMENT ON COLUMN graphitron_type_minted.description IS 'the docstring the macro wrote; identical across the carriers that state one shared type, which is what lets the distinct collapse them';
+
+CREATE VIEW graphitron_field_authored (graph_name, type_name, field_name, coordinate, ordinal,
+                                       type_sdl, named_type, non_null, is_list, item_non_null,
+                                       default_value_sdl, description) AS
+SELECT f.graph_name, f.type_name, f.field_name, f.type_name || '.' || f.field_name, f.ordinal,
+       f.type_sdl, f.named_type, f.non_null, f.is_list, f.item_non_null,
+       f.default_value_sdl, f.description
+  FROM graphql_field f
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_minted_field m
+                    WHERE m.graph_name = f.graph_name AND m.type_name = f.type_name
+                      AND m.field_name = f.field_name AND m.precedence = 'REPLACE');
+COMMENT ON VIEW graphitron_field_authored IS 'One of the two sets graphitron_field is the union of: a field an author declared that no expansion rewrote, carried across whole. For example the title in type Film { title: String }, where films: [Film!]! @asConnection is not here, the expansion having restated it.';
+COMMENT ON COLUMN graphitron_field_authored.graph_name IS 'the owning graph''s partition, carried from the transcription';
+COMMENT ON COLUMN graphitron_field_authored.type_name IS 'the type the field is declared on';
+COMMENT ON COLUMN graphitron_field_authored.field_name IS 'the field''s own name';
+COMMENT ON COLUMN graphitron_field_authored.coordinate IS 'Type.field, the specification''s spelling, which is the join up to graphitron_element';
+COMMENT ON COLUMN graphitron_field_authored.ordinal IS 'where the author wrote it among the type''s fields, carried so the emitted schema keeps their order';
+COMMENT ON COLUMN graphitron_field_authored.type_sdl IS 'the type expression as written, wrappers included';
+COMMENT ON COLUMN graphitron_field_authored.named_type IS 'the name at the bottom of that expression';
+COMMENT ON COLUMN graphitron_field_authored.non_null IS 'whether the outermost wrapper is non-null';
+COMMENT ON COLUMN graphitron_field_authored.is_list IS 'whether the expression is a list';
+COMMENT ON COLUMN graphitron_field_authored.item_non_null IS 'whether a list''s items are non-null, and nothing where it is not a list';
+COMMENT ON COLUMN graphitron_field_authored.default_value_sdl IS 'the default as written, which an output field never has and an input field may; the one column the minted set cannot supply';
+COMMENT ON COLUMN graphitron_field_authored.description IS 'the docstring the author wrote, or nothing';
+
+CREATE VIEW graphitron_field_minted (graph_name, type_name, field_name, coordinate, ordinal,
+                                     type_sdl, named_type, non_null, is_list, item_non_null,
+                                     default_value_sdl, description) AS
+SELECT DISTINCT m.graph_name, m.type_name, m.field_name, m.type_name || '.' || m.field_name,
+       m.ordinal, m.type_sdl, m.named_type, m.non_null, m.is_list, m.item_non_null,
+       CAST(NULL AS VARCHAR), m.description
+  FROM graphitron_minted_field m
+ WHERE (m.precedence = 'REPLACE'
+        OR NOT EXISTS (SELECT 1 FROM graphql_field_element f
+                        WHERE f.graph_name = m.graph_name AND f.type_name = m.type_name
+                          AND f.field_name = m.field_name))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_minted_type t
+                    WHERE t.graph_name = m.graph_name
+                      AND t.source_coordinate = m.source_coordinate
+                      AND t.type_name = m.type_name
+                      AND EXISTS (SELECT 1 FROM graphql_type_element a
+                                   WHERE a.graph_name = t.graph_name
+                                     AND a.type_name = t.type_name))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_minted_conflict c
+                    WHERE c.graph_name = m.graph_name
+                      AND c.coordinate = m.type_name || '.' || m.field_name);
+COMMENT ON VIEW graphitron_field_minted IS 'One of the two sets graphitron_field is the union of: a field macro expansion states, either adding one where the author wrote none or restating the carrier the directive sits on. For example the edges on a minted QueryFilmsConnection, and the rewritten films whose author wrote it as a plain list.';
+COMMENT ON COLUMN graphitron_field_minted.graph_name IS 'the owning graph''s partition, carried from the minting row';
+COMMENT ON COLUMN graphitron_field_minted.type_name IS 'the type the minted field sits on';
+COMMENT ON COLUMN graphitron_field_minted.field_name IS 'the field''s own name';
+COMMENT ON COLUMN graphitron_field_minted.coordinate IS 'Type.field, on graphitron_field_authored.coordinate''s terms. The one place the element grain and this one part company: a rewritten carrier is an authored element and a minted field, so this coordinate can be one graphitron_element_authored also carries, where no other minted set''s can';
+COMMENT ON COLUMN graphitron_field_minted.ordinal IS 'where the expansion put it among the type''s fields; a rewritten carrier keeps the position its author wrote, the expansion restating it unchanged';
+COMMENT ON COLUMN graphitron_field_minted.type_sdl IS 'the type expression the expansion wrote, wrappers included; for a rewritten carrier this is the whole of what changed';
+COMMENT ON COLUMN graphitron_field_minted.named_type IS 'the name at the bottom of that expression';
+COMMENT ON COLUMN graphitron_field_minted.non_null IS 'whether the outermost wrapper is non-null, which a rewritten carrier keeps from its author';
+COMMENT ON COLUMN graphitron_field_minted.is_list IS 'whether the expression is a list';
+COMMENT ON COLUMN graphitron_field_minted.item_non_null IS 'whether a list''s items are non-null, and nothing where it is not a list';
+COMMENT ON COLUMN graphitron_field_minted.default_value_sdl IS 'always nothing, and stated here rather than carried: no macro writes a default onto an output field and every field minted or rewritten today is one, so the nullness is a property of this population rather than a column graphitron_minted_field declined to hold';
+COMMENT ON COLUMN graphitron_field_minted.description IS 'the docstring the macro wrote; identical across the carriers that state one shared machinery field, which is what lets the distinct collapse them';
+
+CREATE VIEW graphitron_argument_authored (graph_name, type_name, field_name, argument_name,
+                                          coordinate, ordinal, type_sdl, named_type, non_null,
+                                          is_list, item_non_null, default_value_sdl,
+                                          description) AS
+SELECT graph_name, type_name, field_name, argument_name,
+       type_name || '.' || field_name || '(' || argument_name || ':)', ordinal,
+       type_sdl, named_type, non_null, is_list, item_non_null, default_value_sdl, description
+  FROM graphql_argument;
+COMMENT ON VIEW graphitron_argument_authored IS 'One of the two sets graphitron_argument is the union of: an argument an author declared, carried across whole. For example the lang in title(lang: Lang = NB): String, default included.';
+COMMENT ON COLUMN graphitron_argument_authored.graph_name IS 'the owning graph''s partition, carried from the transcription';
+COMMENT ON COLUMN graphitron_argument_authored.type_name IS 'the type the owning field is declared on';
+COMMENT ON COLUMN graphitron_argument_authored.field_name IS 'the field the argument belongs to';
+COMMENT ON COLUMN graphitron_argument_authored.argument_name IS 'the argument''s own name';
+COMMENT ON COLUMN graphitron_argument_authored.coordinate IS 'Type.field(argument:), the specification''s spelling, the trailing colon included because the specification writes it';
+COMMENT ON COLUMN graphitron_argument_authored.ordinal IS 'where the author wrote it among the field''s arguments';
+COMMENT ON COLUMN graphitron_argument_authored.type_sdl IS 'the type expression as written, wrappers included';
+COMMENT ON COLUMN graphitron_argument_authored.named_type IS 'the name at the bottom of that expression';
+COMMENT ON COLUMN graphitron_argument_authored.non_null IS 'whether the outermost wrapper is non-null';
+COMMENT ON COLUMN graphitron_argument_authored.is_list IS 'whether the expression is a list';
+COMMENT ON COLUMN graphitron_argument_authored.item_non_null IS 'whether a list''s items are non-null, and nothing where it is not a list';
+COMMENT ON COLUMN graphitron_argument_authored.default_value_sdl IS 'the default as written, or nothing';
+COMMENT ON COLUMN graphitron_argument_authored.description IS 'the docstring the author wrote, or nothing';
+
+CREATE VIEW graphitron_argument_minted (graph_name, type_name, field_name, argument_name,
+                                        coordinate, ordinal, type_sdl, named_type, non_null,
+                                        is_list, item_non_null, default_value_sdl,
+                                        description) AS
+SELECT DISTINCT m.graph_name, m.type_name, m.field_name, m.argument_name,
+       m.type_name || '.' || m.field_name || '(' || m.argument_name || ':)', m.ordinal,
+       m.type_sdl, m.named_type, m.non_null, m.is_list, m.item_non_null,
+       m.default_value_sdl, m.description
+  FROM graphitron_minted_argument m
+ WHERE NOT EXISTS (SELECT 1 FROM graphql_argument_element a
+                    WHERE a.graph_name = m.graph_name AND a.type_name = m.type_name
+                      AND a.field_name = m.field_name AND a.argument_name = m.argument_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_minted_conflict c
+                    WHERE c.graph_name = m.graph_name
+                      AND c.coordinate = m.type_name || '.' || m.field_name
+                                         || '(' || m.argument_name || ':)');
+COMMENT ON VIEW graphitron_argument_minted IS 'One of the two sets graphitron_argument is the union of: an argument macro expansion adds where the author wrote none, which today is a connection carrier''s pagination. For example the first and after on Query.films(first:).';
+COMMENT ON COLUMN graphitron_argument_minted.graph_name IS 'the owning graph''s partition, carried from the minting row';
+COMMENT ON COLUMN graphitron_argument_minted.type_name IS 'the type the owning field is declared on';
+COMMENT ON COLUMN graphitron_argument_minted.field_name IS 'the field the argument belongs to';
+COMMENT ON COLUMN graphitron_argument_minted.argument_name IS 'the argument''s own name';
+COMMENT ON COLUMN graphitron_argument_minted.coordinate IS 'Type.field(argument:), on graphitron_argument_authored.coordinate''s terms';
+COMMENT ON COLUMN graphitron_argument_minted.ordinal IS 'where the expansion put it among the field''s arguments';
+COMMENT ON COLUMN graphitron_argument_minted.type_sdl IS 'the type expression the expansion wrote, wrappers included';
+COMMENT ON COLUMN graphitron_argument_minted.named_type IS 'the name at the bottom of that expression';
+COMMENT ON COLUMN graphitron_argument_minted.non_null IS 'whether the outermost wrapper is non-null';
+COMMENT ON COLUMN graphitron_argument_minted.is_list IS 'whether the expression is a list';
+COMMENT ON COLUMN graphitron_argument_minted.item_non_null IS 'whether a list''s items are non-null, and nothing where it is not a list';
+COMMENT ON COLUMN graphitron_argument_minted.default_value_sdl IS 'the default the expansion wrote, which is where a page size comes from; carried rather than nulled, unlike the field set, because pagination arguments are exactly the place a macro does write one';
+COMMENT ON COLUMN graphitron_argument_minted.description IS 'the docstring the macro wrote';
 
 CREATE TABLE graphitron_spelled_reference_entry (
   graph_name           VARCHAR NOT NULL,
@@ -14762,10 +14978,50 @@ INSERT INTO meta_relation VALUES
    'A schema element the generator emits exists in this graph, whether an author declared it or macro expansion minted it: the supertype of the three element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it.',
    'For example a QueryFilmsConnection no author wrote is the row QueryFilmsConnection here and no row at all in graphql_element, and the field carrying the macro is one row in each.',
    'A graphitron relation naming a coordinate has nowhere to key. graphql_element holds what the document declares, so a foreign key there excludes exactly the coordinates macro expansion minted, which is what a connection is made of; the relation that shipped as graphitron_field was written with that key and the build failed on a minted connection''s own field. The union views that answered for the expanded population could not stand in, a view being no key''s target. So this is that population written down, at the grain the specification already gives it, with the same spelling and the same kind vocabulary graphql_element uses so that a reader holding a coordinate from either family holds the same string. The three subtypes beside it carry the parts and the payload together, which is where this family parts company with the transcription: an element the expansion minted has no twin to join for its details, so an anchor that carried only a key would send every reader back through a union.'),
+  ('graphitron_element_authored', 'expanded-element', 'graphitron',
+   'One of the four sets graphitron_element is the union of: an element an author declared, at the coordinate the transcription spells for it, of a kind this family anchors.',
+   'For example the Film in type Film { title: String } is one row, and the Film.title written inside it is another.',
+   'Named rather than left inside the anchor''s writer, where it was one arm of a four-arm insert whose admission rules lived in Java predicates a reader of the schema could not find. The four kinds it claims are listed rather than the other three excluded, so a kind added to graphql_element arrives refused rather than uninvited, and the refusal is a row missing from the schema rather than a silent widening. This set alone carries no precedence: an author''s declaration is the thing the minted sets stand down to, so what admits a row here is only that the transcription anchors it.'),
+  ('graphitron_element_minted_type', 'expanded-element', 'graphitron',
+   'One of the four sets graphitron_element is the union of: a type macro expansion adds to the schema, which no author declared and no two applications disagree about.',
+   'For example an author writing films: [Film!]! @asConnection and nothing else gets QueryFilmsConnection here, where an author who also wrote their own QueryFilmsConnection gets no row.',
+   'Precedence decides nothing at this grain, and saying so once here is clearer than carrying a disjunction that cannot fire. An element is a coordinate, so a mint at a coordinate the transcription already anchors is excluded outright and the authored set has it; there is no reading under which a REPLACE would be the reason a row survived. Distinct because shared machinery is stated whole by every carrier that wants it: several rows arrive for one PageInfo differing in nothing but which carrier wrote them, and the anchor is one row per coordinate because that is what a coordinate is.'),
+  ('graphitron_element_minted_field', 'expanded-element', 'graphitron',
+   'One of the four sets graphitron_element is the union of: a field macro expansion adds to the schema, on the minted type set''s terms and one more.',
+   'For example the edges and pageInfo on a minted QueryFilmsConnection, and nothing at all where the author declared that type themselves.',
+   'The extra rule is the one worth reading twice: a field is excluded where the type it sits on was minted by the same application and lost to an author''s declaration of that name. Machinery fields collide with nothing, so a rule stated at the field grain alone would land edges and pageInfo on the author''s type and fuse two types nobody asked to merge. Losing the type takes its fields with it, and the coordinate that coined both is what ties them together. Distinct on the minted type set''s terms, and for its reason.'),
+  ('graphitron_element_minted_argument', 'expanded-element', 'graphitron',
+   'One of the four sets graphitron_element is the union of: a field argument macro expansion adds to the schema, which today is the pagination a connection carrier gets where its author wrote none.',
+   'For example the first and after on Query.films(first:) where the author wrote films: [Film!]! @asConnection with no arguments.',
+   'On the minted type set''s terms and no more: an argument the transcription already anchors is not minted over, and a contested coordinate belongs to nobody. No rule of the field set''s second kind is owed here, every argument minted today landing on the carrier the directive sits on, and that field surviving whether the expansion rewrote it or left it, so there is no owning element whose fate an argument could have to share.'),
   ('graphitron_type', 'expanded-type', 'graphitron',
    'Every type the generator works with, the author''s and the ones macro expansion minted, under one key: one row per type name in the graph.',
    'For example a Connection type the connection macro minted sits here beside the type whose field carried the macro, at the same grain and answering the same questions. Total by construction, so a consumer joins this rather than left-joining it.',
    'The type grain of the emitted population, as a table where it was a view. Two things follow from being a table and neither is available to a union: a relation about a minted type can key here, and a reader can be given an index. The payload is carried rather than joined from graphql_type because a minted type has no row there, so the join would be a left join whose null arm is the whole reason this relation exists. What it does not carry is the declaration site, that being a fact only the transcription can assert.'),
+  ('graphitron_type_authored', 'expanded-type', 'graphitron',
+   'One of the two sets graphitron_type is the union of: a type an author declared, carried across whole.',
+   'For example type Film { title: String } is the row Film here, with the kind and docstring the author wrote.',
+   'Named rather than left as an arm of the anchor''s writer, where it was one half of a union whose admission lived in a Java predicate. It excludes nothing, and that absence is the CHECK on graphitron_minted_type.precedence showing through: where no mint can replace, an author''s declaration always survives, and an exclusion that excludes nothing would read as though something could.'),
+  ('graphitron_type_minted', 'expanded-type', 'graphitron',
+   'One of the two sets graphitron_type is the union of: a type macro expansion adds, filling a name no author took.',
+   'For example QueryFilmsConnection where the author wrote only films: [Film!]! @asConnection.',
+   'The complement of graphitron_type_authored, and disjoint from it by the same constraint: a mint fills a name nobody took, so no coordinate is in both. Distinct because shared machinery is stated whole by every carrier that wants it, the rows differing in nothing but which carrier wrote them. A coordinate the applications disagree about is in neither set, graphitron_minted_conflict holding the reason.'),
+  ('graphitron_field_authored', 'expanded-field', 'graphitron',
+   'One of the two sets graphitron_field is the union of: a field an author declared that no expansion rewrote, carried across whole.',
+   'For example the title in type Film { title: String }, where films: [Film!]! @asConnection is not here, the expansion having restated it.',
+   'The one authored set that excludes anything, and the exclusion is real here: a rewritten carrier is restated by the expansion, so the author''s row is not what the schema emits. This is where precedence is load-bearing, and the only grain where it is.'),
+  ('graphitron_field_minted', 'expanded-field', 'graphitron',
+   'One of the two sets graphitron_field is the union of: a field macro expansion states, either adding one where the author wrote none or restating the carrier the directive sits on.',
+   'For example the edges on a minted QueryFilmsConnection, and the rewritten films whose author wrote it as a plain list.',
+   'The complement of graphitron_field_authored, and the one set that overlaps the element family: a rewritten carrier is an authored element and a minted field, because an element is a coordinate and the coordinate did not change. That disagreement is why the part sets are stated rather than derived from the element sets, which would be right at five of the six and silently wrong here. A field also stands down where the type it sits on was minted by the same application and lost to an author''s declaration of that name; losing the type takes its fields with it, and the coordinate that coined both is what ties them together.'),
+  ('graphitron_argument_authored', 'expanded-argument', 'graphitron',
+   'One of the two sets graphitron_argument is the union of: an argument an author declared, carried across whole.',
+   'For example the lang in title(lang: Lang = NB): String, default included.',
+   'On graphitron_type_authored''s terms and for its reason: no minted argument replaces, the CHECK on graphitron_minted_argument.precedence holds it there, so an author''s argument always survives and this set excludes nothing.'),
+  ('graphitron_argument_minted', 'expanded-argument', 'graphitron',
+   'One of the two sets graphitron_argument is the union of: an argument macro expansion adds where the author wrote none, which today is a connection carrier''s pagination.',
+   'For example the first and after on Query.films(first:).',
+   'The complement of graphitron_argument_authored. No rule of the field set''s second kind is owed: every argument minted today lands on the carrier the directive sits on, and that field survives whether the expansion rewrote it or left it, so there is no owning element whose fate an argument could have to share.'),
   ('graphitron_field', 'expanded-field', 'graphitron',
    'Every field the generator works with, at the type expression it works with: one row per field coordinate, output and input alike, carrying the wrapping columns graphql_field carries.',
    'For example a field the connection macro rewrote reads here as the Connection it returns, where graphql_field is where a reader goes for what the author wrote instead.',

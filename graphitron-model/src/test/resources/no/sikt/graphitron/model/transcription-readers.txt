@@ -12,10 +12,11 @@
 # is still a reading of the transcription, so it stays on the roster with its reason beside it
 # rather than disappearing from the count.
 #
-# The expanded population was a pair of union views and is two tables now, filled by an
-# insert-select no view definition mentions, so nothing about it is excluded here any more. That the
-# union is taken is pinned where the rows are, in the capture agreement's emitted-element-family
-# arm.
+# The expanded population is two tables, filled by an insert-select over named set views: one view
+# per set, and the authored set of each grain is a view over the transcription. So the population's
+# own arms are entries here, under the reason heading at the foot of this file, rather than an
+# exclusion. That the union is taken is still pinned where the rows are, in the capture agreement's
+# emitted-element-family arm, rather than in any definition text.
 
 intent_argument_column_match_live graphql_type
 intent_argument_filter_role graphql_type
@@ -56,3 +57,17 @@ intent_routine_return_binding graphql_type
 intent_type_backing_seed graphql_field
 intent_type_backing_seed graphql_type
 intent_type_exemption graphql_type
+
+# Adjudicated and kept: the authored arms of the emitted population.
+#
+# These two are the transcription by construction. graphitron_type and graphitron_field are each
+# the union of an authored set and a minted set, and these are the authored sets. Repointing them
+# at the anchors would define a relation in terms of itself, so there is no other population they
+# could mean. They are readings chosen rather than inherited, which is what the roster asks, and
+# they stay counted because a reading kept for a reason is still a reading of the transcription.
+#
+# The argument grain has an authored set too and is not here: its coordinate is spelled from
+# graphql_argument, which was never a relation the expansion wrote into.
+
+graphitron_field_authored graphql_field
+graphitron_type_authored graphql_type

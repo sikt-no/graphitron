@@ -220,8 +220,13 @@ class DerivedReadCostTest {
      * both gone. Their one remaining reader gained two joins and lost a union, which is the shape
      * this figure is meant to track: a view retires when the fact under it is stated, not when a
      * reader stops asking.
+     * <p>128 by naming the sets the emitted element family is the union of: ten views, one per
+     * population, where the unions used to be arms of four insert-selects with their admission
+     * rules in Java. Nothing here was a read that did not happen before, and nothing crossed over
+     * from the table side. It is a derivation that was already being computed becoming one a reader
+     * can see, which is the count paying for legibility rather than for work.
      */
-    private static final int READERS_IN_SCHEMA = 118;
+    private static final int READERS_IN_SCHEMA = 128;
 
     /**
      * Views whose derivation reaches at least one registration's target.
