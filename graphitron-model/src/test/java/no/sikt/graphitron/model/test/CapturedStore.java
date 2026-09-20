@@ -445,33 +445,18 @@ public final class CapturedStore implements AutoCloseable {
     }
 
     /**
-     * Both readings of the documents: the walk, and then {@link ModelCapture}, which is what a run
-     * captures through.
+     * One reading of the documents, through {@link ModelCapture}, which is what a run captures
+     * through.
      *
-     * <p>This level promises that a fixture cannot encode a state capture never writes, and it was
-     * keeping half of it. The walk writes the anchor families and the incumbent decode;
-     * {@link ModelCapture} writes the configuration corpus and the problem rows, and no arm here
-     * reached it. So a reader repointed at an entry found an empty relation in every test while a
-     * real run, capturing through {@code CapturePort}, had the rows all along. A fixture able to
-     * encode a state production never has is the one thing this level exists to prevent.
+     * <p>This level promises that a fixture cannot encode a state capture never writes. It used to
+     * keep half of it, because the fixture drove a walk of its own beside the pass and the two
+     * wrote overlapping families, so a reader repointed at an entry found an empty relation in
+     * every test while a real run had the rows all along. There is one writer now and the promise
+     * is whole: what a fixture holds is what the pass writes, or the pass did not write it.
      *
-     * <p>The entry strata are the walk's pass's own now, written inside it rather than by the
-     * reading that follows, because the relations that have moved off the walk derive from those
-     * entries and the decode stages below the walk read what they derive. That is why the corpus
-     * reaches both calls here: a reading handed none of it writes no entries, which a pass whose
-     * own stages read them cannot survive, where before it merely left a relation empty.
-     *
-     * <p>Walk first and the capture second, which is the order that composes and not a preference.
-     * Both write the {@code graphql_} anchors and they agree on them exactly, which is the walk
-     * redundancy measured elsewhere; the difference is how. The walk's sink inserts and the
-     * derivation upserts, so the derivation lands on the walk's rows without complaint while the
-     * walk lands on the derivation's and fails on its key. Put the other way round it collides on
-     * {@code graphql_directive} at the first directive either of them writes.
-     *
-     * <p>No catalog and no classpath here, the walk having taken both already from the arguments
-     * this arm was given. What the second reading still adds is what the walk's pass leaves out of
-     * its own document reading: the problem rows, which mean assembling the corpus, and the
-     * {@code graphql_} anchors' sweep of the coordinates the corpus stopped declaring.
+     * <p>The anchor first, then the pass. {@link ModelCapture#writeGraph} states the row every
+     * other relation hangs a key on, and a fixture driving the gatherers itself owes it before any
+     * of them rather than spelling the upsert a second time.
      *
      * <p>Each graph names its own files rather than matching a pattern under the directory: the
      * arms capturing a second graph write its file beside the first, and a glob would hand each
@@ -521,14 +506,13 @@ public final class CapturedStore implements AutoCloseable {
     }
 
     /**
-     * The corpus both readings are of, stated as the configuration a run would have had.
+     * The corpus the pass reads, stated as the configuration a run would have had.
      *
-     * <p>A merged registry used to be the whole of what a capture needed, and the walk's pass took
+     * <p>A merged registry used to be the whole of what a capture needed, and a pass given one took
      * {@code SubjectConfig.none()} because nothing in it asked where the documents were. The
      * document gatherer does: its rows are keyed by the position a node was written at in one file,
-     * which a merged registry cannot say, so it re-reads the corpus from configuration. Both
-     * readings therefore get the same corpus, and the walk's pass gets it too rather than none of
-     * it, which is what the arm below turns on.
+     * which a merged registry cannot say. So the corpus is named here rather than merged away,
+     * which is what the arm below turns on.
      *
      * <p>Literal bindings rather than a glob over the directory, so the corpus is exactly the files
      * this capture was given. Several arms here write more than one file into one directory and

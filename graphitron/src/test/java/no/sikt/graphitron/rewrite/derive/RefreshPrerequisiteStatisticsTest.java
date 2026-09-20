@@ -150,11 +150,10 @@ class RefreshPrerequisiteStatisticsTest {
 
             var prerequisites = prerequisiteTargets(dsl);
             var observer = new UnanalysedPrerequisites(dsl, prerequisites);
-            // Warm, which is what a build's own capture is told here and not a choice of this
-            // test's: RunStore reads the graph's store_graph row as "this graph has been captured
-            // before", and the pass above has just written one. So the capture stands its own rows
-            // down before rewriting them, which is why this leg does not collide with the recipe
-            // families that pass wrote.
+            // Warm, which is what a build's own capture meets here and not a choice of this
+            // test's: warmth is what the rows say, and the pass above has just written the graph's
+            // store_graph row. So the capture stands its own rows down before rewriting them,
+            // which is why this leg does not collide with the recipe families that pass wrote.
             ModelCapture.capture(dsl, graph, config, List.of(), jooq, readAt);
             FactCapture.derive(dsl, graph, SchemaAssembly.of(registry), readAt, observer);
 

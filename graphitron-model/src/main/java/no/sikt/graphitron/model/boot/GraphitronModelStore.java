@@ -767,7 +767,7 @@ public final class GraphitronModelStore implements AutoCloseable {
      * column is construction rather than convenience: over the whole class of graph-keyed tables a
      * sweep makes the declaration true of every one of them, where an explicit line per table leaves
      * an invariant that then needs a gate of its own to stop the next relation from silently lacking
-     * it. {@code StoreRefresh} derives its ownership scope from the same column for the same reason.
+     * it.
      *
      * <p><b>Where the schema is created, and nowhere else.</b> Creation runs once per store and never
      * on reopen, so the sweep costs what a DDL line would and runs when one would; a warm store
