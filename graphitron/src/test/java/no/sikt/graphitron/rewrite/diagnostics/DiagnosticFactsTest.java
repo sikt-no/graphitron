@@ -4,7 +4,6 @@ import graphql.language.SourceLocation;
 import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
-import no.sikt.graphitron.model.capture.FactCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.compile.CompileDiagnostic;

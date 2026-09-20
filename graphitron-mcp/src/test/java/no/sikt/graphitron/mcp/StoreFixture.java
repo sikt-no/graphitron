@@ -7,7 +7,7 @@ import no.sikt.graphitron.model.test.RunawayRelation;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.FactWriters;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
-import no.sikt.graphitron.model.capture.FactCapture;
+import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.classpath.ClasspathScanner;
 import no.sikt.graphitron.model.classpath.CompletionData;
 
@@ -30,10 +30,11 @@ import java.util.List;
  * read needs none of that, and paying for a build to get one would price the generator into every
  * catalog case. What this costs is a schema parse and a walk over the generated jOOQ model.
  *
- * <p>Rows still arrive only through {@link FactCapture}, so a fixture cannot encode a census capture
- * would never write. That is the property that matters rather than which entry point produced it: a
- * hand-inserted row can spell an ordinal or a comment the walk never spells, where a real walk over the
- * real generated model spells what a consumer's own editor would be reading.
+ * <p>Rows still arrive only through {@link ModelCapture}, so a fixture cannot encode a census
+ * capture would never write. That is the property that matters rather than which entry point
+ * produced it: a hand-inserted row can spell an ordinal or a comment the reading never spells,
+ * where a real reading of the real generated model spells what a consumer's own editor would be
+ * reading.
  *
  * <p>In memory, so the store dies with the fixture and nothing lands on disk.
  */

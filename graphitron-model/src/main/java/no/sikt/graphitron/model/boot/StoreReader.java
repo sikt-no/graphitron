@@ -140,7 +140,7 @@ public final class StoreReader implements AutoCloseable {
      * the driver's exception, so the shape that survives is the vendor code on the {@link SQLException}
      * underneath rather than anything about the wrapper.
      *
-     * <p>Not {@code FactCapture}'s lock-timeout predicate, and not merely because
+     * <p>Not a capture's lock-timeout predicate, and not merely because
      * {@code graphitron-model} declares no dependency on the module that holds it. That one keys on
      * {@link java.sql.SQLTimeoutException} in general, deliberately, so that it catches a writer out
      * of lock budget while letting a deadlock keep its retry. An expired statement is the same type

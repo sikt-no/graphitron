@@ -13,7 +13,7 @@ import java.util.Set;
 
 /**
  * Everything the store-backed detection pass found, one field per rule family. The product
- * {@code FactCapture} returns and the generator folds into its error stream, so a family acquiring
+ * a capture leaves for the generator to fold into its error stream, so a family acquiring
  * a derivation joins this record rather than threading a second return value through the capture
  * entry points.
  *

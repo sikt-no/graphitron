@@ -36,7 +36,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import no.sikt.graphitron.model.capture.FactCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.GraphitronStore;
 import no.sikt.graphitron.model.run.SubjectConfig;

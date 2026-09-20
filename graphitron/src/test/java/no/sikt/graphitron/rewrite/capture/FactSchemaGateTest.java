@@ -49,7 +49,6 @@ import static org.jooq.impl.DSL.name;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.table;
 import no.sikt.graphitron.model.diagnostics.BuildWarningFacts;
-import no.sikt.graphitron.model.capture.FactCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.lint.LintConfig;
 import no.sikt.graphitron.model.config.SessionStateConfig;

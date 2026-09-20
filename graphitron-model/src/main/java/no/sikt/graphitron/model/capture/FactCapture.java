@@ -5,18 +5,15 @@ import no.sikt.graphitron.model.derive.AuthoredClaimRejectionRows;
 import no.sikt.graphitron.model.derive.ClassificationDomainCapture;
 import no.sikt.graphitron.model.derive.InputOccurrencePaths;
 import no.sikt.graphitron.model.derive.Materializations;
-import no.sikt.graphitron.model.derive.NameMatchedKeys;
 import no.sikt.graphitron.model.derive.RefreshProgress;
 import no.sikt.graphitron.model.derive.TypeBackingRows;
 import no.sikt.graphitron.model.derive.UnlowerableOrderingRejectionRows;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
-import no.sikt.graphitron.model.sink.FactSink;
 import org.jooq.DSLContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.LocalDateTime;
 import java.util.Objects;
 
 
@@ -27,7 +24,14 @@ import java.util.Objects;
  * <p>It captures nothing. Every fact it used to write is written by
  * {@link no.sikt.graphitron.model.run.ModelCapture}, which runs these at its tail because each
  * reads what that pass wrote. The store is the caller's, opened and closed by a mojo or a test.
+ *
+ * @deprecated the last of the walk, and it goes relation by relation. Each derivation here
+ *     leaves as its rows come to be written where they are read from: the hand-written four
+ *     when their rules can be stated as registered materializations, and the refresh when a
+ *     store can state its own cadence. Nothing new belongs here; a derivation added today
+ *     goes in {@link no.sikt.graphitron.model.run.ModelCapture} beside the facts it reads.
  */
+@Deprecated
 public final class FactCapture {
 
     private static final Logger LOG = LoggerFactory.getLogger(FactCapture.class);
@@ -39,20 +43,23 @@ public final class FactCapture {
      *
      * <p>All that survives of a pass that used to capture. Every fact it wrote is written by
      * {@link no.sikt.graphitron.model.run.ModelCapture} now, and what is left reads those facts
-     * and derives from them: the catalog's key closure, the classification domain, four hand
-     * written derivations and the registered materialisations. It is called at that pass's tail
-     * rather than beside it, because there is nothing here that does not read what the pass wrote.
+     * and derives from them: the classification domain, four hand-written derivations and the
+     * registered materialisations. It is called at that pass's tail rather than beside it,
+     * because there is nothing here that does not read what the pass wrote.
+     *
+     * <p>Takes no instant, unlike every gatherer in the pass. Each relation below is emptied and
+     * refilled for the graph rather than marked and swept, so there is nothing here a reading's
+     * instant would date.
      *
      * @param assembly the corpus as it assembled, for the one derivation that reads an executable
      *                 schema rather than rows; a rejected assembly hands it null and it says so
      */
-    public static void derive(DSLContext dsl, GraphIdentity graph, SchemaAssembly assembly,
-                              LocalDateTime readAt) {
-        derive(dsl, graph, assembly, readAt, refreshLines());
+    public static void derive(DSLContext dsl, GraphIdentity graph, SchemaAssembly assembly) {
+        derive(dsl, graph, assembly, refreshLines());
     }
 
     /**
-     * {@link #derive(DSLContext, GraphIdentity, SchemaAssembly, LocalDateTime)} reporting the
+     * {@link #derive(DSLContext, GraphIdentity, SchemaAssembly)} reporting the
      * materialization refresh to {@code refresh} rather than to this class's log lines.
      *
      * <p>The events are the same either way, {@link #refreshLines} being one rendering of them. It
@@ -64,7 +71,7 @@ public final class FactCapture {
      *                for a caller that wants silence
      */
     public static void derive(DSLContext dsl, GraphIdentity graph, SchemaAssembly assembly,
-                              LocalDateTime readAt, RefreshProgress refresh) {
+                              RefreshProgress refresh) {
         Objects.requireNonNull(refresh, "refresh");
         Objects.requireNonNull(assembly, "assembly");
         // Asked before the transaction opens, of the register rather than of store_graph. The
@@ -74,14 +81,10 @@ public final class FactCapture {
         boolean analysingCadence = Materializations.analysingCadenceApplies(dsl);
         dsl.transaction(tx -> {
             DSLContext txDsl = tx.dsl();
-            var sink = new FactSink(txDsl, graph.name(), readAt);
             // Everything the pass ahead of this one writes is gone from here: the graph row, the
             // catalog, the corpus and both entry strata, both sets of anchors and the resolution
-            // stages. It ran them all a second time and overwrote what the pass had just written,
-            // which is the duplication this arc removes rather than orders. What is left is the
-            // derivations nothing else runs yet.
-            NameMatchedKeys.derive(txDsl);
-            sink.flush();
+            // stages, and the catalog's key closure, which the pass runs where it belongs, right
+            // after the catalog it closes over. What is left is the derivations nothing else runs.
             ClassificationDomainCapture.derive(txDsl, graph.name(),
                 assembly instanceof SchemaAssembly.Assembled a ? a.schema() : null);
             InputOccurrencePaths.derive(txDsl, graph.name());

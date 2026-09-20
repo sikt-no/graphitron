@@ -58,7 +58,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.jooq.impl.DSL.name;
 import static org.jooq.impl.DSL.table;
-import no.sikt.graphitron.model.capture.FactCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.capture.config.StoredRecipe;
 import no.sikt.graphitron.model.run.SubjectConfig;

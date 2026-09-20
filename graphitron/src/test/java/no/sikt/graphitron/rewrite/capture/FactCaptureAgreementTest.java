@@ -119,7 +119,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_ELEMENT;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.model.diagnostics.BuildWarningFacts;
-import no.sikt.graphitron.model.capture.FactCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.lint.LintConfig;
 import no.sikt.graphitron.model.run.OutputCoordinates;

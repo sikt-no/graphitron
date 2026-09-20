@@ -31,7 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Rows arrive here by seeding, in transactions this class opens itself, because what a reader
  * must not see mid-round is a set of inserts rather than a document somebody parsed. That the
- * generator's own {@code FactCapture} writes a whole graph in one such round is its property and
+ * generator's own capture writes a whole graph in one such round is its property and
  * was never this class's claim.
  */
 class StoreReaderTest {

@@ -3,11 +3,9 @@ package no.sikt.graphitron.rewrite.derive;
 import no.sikt.graphitron.model.test.MaterializedRegistryFixture;
 
 import no.sikt.graphitron.common.configuration.TestConfiguration;
-import no.sikt.graphitron.model.capture.FactCapture;
 import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.model.derive.RefreshProgress;
 import no.sikt.graphitron.model.run.ModelCapture;
-import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.schema.SdlVerdicts;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.FactStores;
@@ -138,8 +136,7 @@ class RefreshPrerequisiteStatisticsTest {
         Path directory = tmp.resolve("anchored");
         try (var store = FactStores.inMemory()) {
             DSLContext dsl = store.dsl();
-            var registry = CapturedStore.registryOf(directory,
-                MaterializedRegistryFixture.scaledSdl(UNITS));
+            CapturedStore.writeSource(directory, MaterializedRegistryFixture.scaledSdl(UNITS));
             var graph = CapturedStore.graph(directory);
             var config = CapturedStore.corpusOf(directory);
             LocalDateTime readAt = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
@@ -154,8 +151,7 @@ class RefreshPrerequisiteStatisticsTest {
             // test's: warmth is what the rows say, and the pass above has just written the graph's
             // store_graph row. So the capture stands its own rows down before rewriting them,
             // which is why this leg does not collide with the recipe families that pass wrote.
-            ModelCapture.capture(dsl, graph, config, List.of(), jooq, readAt);
-            FactCapture.derive(dsl, graph, SchemaAssembly.of(registry), readAt, observer);
+            ModelCapture.capture(dsl, graph, config, List.of(), jooq, readAt, observer);
 
             var populated = populated(dsl, prerequisites);
             dependentRegistrationsUnderCapture = populated.keySet();

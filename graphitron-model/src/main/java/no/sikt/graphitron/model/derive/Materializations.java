@@ -173,7 +173,7 @@ public final class Materializations {
      * ones whose targets it reads. The measurement is on the fact-model page.
      *
      * <p><b>Each transaction leads with the graph's {@code store_graph} row.</b> The single
-     * transaction {@code FactCapture} otherwise holds is what makes a second writer of one graph
+     * transaction a capture otherwise holds is what makes a second writer of one graph
      * serialize instead of interleaving deletes with inserts, and a per-registration transaction
      * holds no anchor row of its own unless it takes one. Taken under the session's standing lock
      * budget rather than the narrowed one a capture leads with: the whole refresh sits in front of
@@ -368,10 +368,9 @@ public final class Materializations {
      * states statistics for what the materializer wrote.
      *
      * <p>Best-effort, and that is this store's standing posture rather than a special case for this
-     * call: the fact store is a cache shared by every module of a workspace, and
-     * {@code FactCapture}'s fallback to a private in-memory store says outright that warmth is the
-     * only thing a cache is ever allowed to cost. Statistics are an optimisation on top of that
-     * warmth. A registered target is a table another writer may hold at the moment this runs, and
+     * call: the fact store is a cache shared by every module of a workspace, and what a cache is
+     * allowed to cost is warmth. Statistics are an optimisation on top of that warmth, so failing
+     * to state one costs a plan and never an answer. A registered target is a table another writer may hold at the moment this runs, and
      * failing a build to state a selectivity would be the wrong trade by an order of magnitude, so a
      * database refusal here leaves the planner on whatever it had. Only a database refusal: anything
      * that is not a {@link DataAccessException} is a programming error and propagates.
@@ -526,8 +525,9 @@ public final class Materializations {
     /**
      * Holds the graph's anchor row for the caller's transaction, so a second writer of one graph
      * waits for the registration in flight instead of interleaving its own delete with this one's
-     * insert. The row {@code FactCapture} leads its load with, taken again here because the
-     * transaction that held it has committed by the time this cadence runs.
+     * insert. The row {@link no.sikt.graphitron.model.run.ModelCapture#writeGraph} leads a capture
+     * with, taken again here because the transaction that held it has committed by the time this
+     * cadence runs.
      */
     private static void anchor(DSLContext dsl, String graphName) {
         dsl.select(field(name("GRAPH_NAME")))

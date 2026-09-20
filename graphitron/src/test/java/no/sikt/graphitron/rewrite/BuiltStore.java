@@ -38,7 +38,7 @@ import no.sikt.graphitron.model.test.CapturedStore;
  * stores is comparing the projections and nothing else.
  *
  * <p><b>Which harness is this.</b> {@link CapturedStore} beside it drives {@link
- * no.sikt.graphitron.model.capture.FactCapture} directly, which is what a test wants when its
+ * no.sikt.graphitron.model.run.ModelCapture} directly, which is what a test wants when its
  * subject is a crawler or a relation the capture walk writes. This one runs the whole generator,
  * which is what a test wants when the rows it reads are written by loaders that consume the walk's
  * own streams: those rows cannot be arranged, only produced. Paying for a build to reach a fact

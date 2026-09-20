@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.run;
 
 import no.sikt.graphitron.model.capture.graphitron.GraphitronFactCapture;
 import no.sikt.graphitron.model.derive.NameMatchedKeys;
+import no.sikt.graphitron.model.derive.RefreshProgress;
 import no.sikt.graphitron.model.capture.FactCapture;
 import no.sikt.graphitron.model.sink.FactSink;
 import no.sikt.graphitron.model.capture.sdl.SdlFactCapture;
@@ -59,10 +60,27 @@ public final class ModelCapture {
      * <p>One instant per reading: every relation these fill sweeps by it, so two readings sharing
      * one could not tell each other's rows apart and what the second no longer finds would stay.
      */
-    @SuppressWarnings("deprecation")  // drives the decode until it reads the entry stratum
     public static void capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
                                List<ClasspathEntry> classpath, JooqCatalog jooq,
                                LocalDateTime readAt) {
+        capture(dsl, graph, config, classpath, jooq, readAt, null);
+    }
+
+    /**
+     * {@link #capture(DSLContext, GraphIdentity, SubjectConfig, List, JooqCatalog, LocalDateTime)}
+     * reporting the materialization refresh to {@code refresh} rather than to the log.
+     *
+     * <p>Same store either way, so this changes nothing a reader can ask the rows. It exists
+     * because the refresh picks its cadence from the register's own state, and which cadence it
+     * picked is only observable from inside the pass: both leave the same rows behind. A caller
+     * with somewhere better to put those events than a log supplies one.
+     *
+     * @param refresh what the refresh reports to, or null for the log
+     */
+    @SuppressWarnings("deprecation")  // drives the decode until it reads the entry stratum
+    public static void capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
+                               List<ClasspathEntry> classpath, JooqCatalog jooq,
+                               LocalDateTime readAt, RefreshProgress refresh) {
         writeGraph(dsl, graph, readAt);
         // The corpus is read once, by the gatherer that owns the store's record of what was read,
         // and every gatherer below it is handed the documents rather than the configuration.
@@ -110,7 +128,11 @@ public final class ModelCapture {
         GraphitronAssemblyCapture.capture(dsl, graph.name(), readAt);
         // The derivations the incumbent pass still owns, at the tail because every one of them
         // reads what this pass has just written. It captures nothing of its own any more.
-        FactCapture.derive(dsl, graph, assembly, readAt);
+        if (refresh == null) {
+            FactCapture.derive(dsl, graph, assembly);
+        } else {
+            FactCapture.derive(dsl, graph, assembly, refresh);
+        }
     }
 
     /**
