@@ -16,24 +16,27 @@ import java.util.Map;
 import java.util.Optional;
 
 import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD;
+import static no.sikt.graphitron.model.Tables.CODE_METHOD;
+import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
+import static no.sikt.graphitron.model.Tables.CODE_RECORD_COMPONENT;
+import static no.sikt.graphitron.model.Tables.CODE_SERVICE_METHOD;
+import static no.sikt.graphitron.model.Tables.CODE_TYPE;
+import static no.sikt.graphitron.model.Tables.CODE_TYPE_SLOT;
 import static no.sikt.graphitron.model.Tables.JAVA_CLASS_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JAVA_METHOD_DECLARATION;
-import static no.sikt.graphitron.model.Tables.JVM_CLASS;
-import static no.sikt.graphitron.model.Tables.JVM_METHOD;
-import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
-import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.noCondition;
 import static org.jooq.impl.DSL.select;
+import static org.jooq.impl.DSL.selectDistinct;
 import static org.jooq.impl.DSL.selectOne;
 
 /**
- * This module's reads over the {@code jvm_} classpath census and the {@code java_} declaration family,
- * shaped by what the {@code code} tool puts on the wire.
+ * This module's reads over the {@code code_} reading of the classfiles and the {@code java_}
+ * declaration family, shaped by what the {@code code} tool puts on the wire.
  *
  * <p>Two reads, and the boundary between them is the store's rather than this module's. What a
- * classfile declares and where a source file writes it are two questions: the census keys a method by
+ * classfile declares and where a source file writes it are two questions: the reading keys a method by
  * {@code (source_name, class_name, method_name, descriptor)} where the source is a classpath entry and
  * the descriptor a JVM signature, and {@code java_method_declaration} keys a declaration by
  * {@code (file, class_name, method_name, ordinal)} where the file is a source path and the ordinal is
@@ -45,16 +48,24 @@ import static org.jooq.impl.DSL.selectOne;
  * says it is. Nothing joins a descriptor to an ordinal, and no name matching several declarations is
  * resolved by picking the first.
  *
- * <p>Each read is one projection at its own grain. The census read is a class row carrying a
+ * <p>Each read is one projection at its own grain. The reading's half is a class row carrying a
  * {@code MULTISET} of its methods, each carrying its parameters, beside a {@code MULTISET} of its record
  * components; the declaration read is a class-declaration row carrying a {@code MULTISET} of the method
  * declarations written in that same file. Nothing is grouped afterwards except the two row counts the
  * store defines as resolution outcomes.
  *
- * <p>Every type on this wire is the declared form rather than the erasure. The census carries both
- * deliberately, neither being a function of the other, and the two answer different questions: the
- * erasure is what a check on a type's identity compares, which is a store-side job, and the declared
- * form is what an author reads in a signature, which is what this tool hands an agent.
+ * <p>Every kind here is an arm's own population rather than a predicate this module spells over a
+ * general index. That was true of the condition kind first and is now true of all three, which is
+ * what let the general index go: what may be written at a directive is the arm's answer, so asking
+ * the arm is both cheaper and the only way the admission rule cannot drift from the one that admits.
+ * There is no class relation under them and none is needed: a class appears because it declares
+ * something the kind asks about, so the population is the distinct classes of the arm and a class
+ * that declares nothing was never in any of the three.
+ *
+ * <p>Every type on this wire is the declared form rather than the erasure, which here is not a
+ * choice between two columns but the only form the reading keeps: a type is keyed by how the source
+ * wrote it, and {@code code_type.display_name} is that spelling with its packages dropped, which is
+ * what an author reads in a signature and what this tool hands an agent.
  */
 final class CodeQueries {
 
@@ -64,21 +75,26 @@ final class CodeQueries {
     static final int DEFAULT_LIMIT = 100;
 
     /**
-     * What an agent is looking for, which is the whole of what the old three tools were: one census,
-     * three predicates over it.
+     * What an agent is looking for, which is the whole of what the old three tools were: one reading,
+     * three arms of it.
      *
-     * <p>Each kind names a population the census can answer for and nothing more. In particular
-     * {@link #SERVICE} is classes carrying callable methods, which is what {@code jvm_method}'s
-     * presence says; whether the schema wires to one is a classification fact and lives nowhere in this
-     * census. A record satisfies it too, its accessors being public methods, so the answer is the
-     * classpath rather than a guess at intent.
+     * <p>Each kind is a relation rather than a predicate, and each of those relations answers the
+     * question an author asks at a directive: not "what does the classpath contain" but "what may I
+     * name here". So the populations are the reactor's, which is where something nameable lives, and
+     * a method that is already an answer to another directive is not offered as an answer to this
+     * one. An agent asking what it can write is told what it can write.
      */
     enum Kind {
 
-        /** Classes declaring at least one public method. */
+        /**
+         * Classes declaring at least one candidate for {@code @service}. Narrower than "declares a
+         * public method", and deliberately: a condition method and a lifter are the contracts of
+         * other directives, so neither is a service candidate, and a library on the classpath is not
+         * something this reactor's schema may name.
+         */
         SERVICE,
 
-        /** Classes declaring at least one method whose return type is a jOOQ {@code Condition}. */
+        /** Classes declaring at least one method admissible at {@code @condition(condition:)}. */
         CONDITION,
 
         /**
@@ -171,14 +187,19 @@ final class CodeQueries {
         });
     }
 
-    // ---- the census read ----
+    // ---- the reading's half ----
 
     /**
-     * The census classes of the requested kind, ordered by class name, optionally narrowed to a
+     * The classes of the requested kind, ordered by class name, optionally narrowed to a
      * case-insensitive substring of it and bounded by {@code limit} in SQL.
      *
+     * <p>The population is the distinct classes of the kind's own arm, which is what the three kinds
+     * are: a class appears because it declares something the kind asks about. Distinct because an arm
+     * holds methods and a class declaring three of them is still one class, and keyed on the entry
+     * beside the name because a name is not an identity across classpath entries.
+     *
      * <p>Paging is keyset on the class name, which is both the order and the cursor. The name
-     * identifies a row within a graph: a class present under more than one classpath entry is captured
+     * identifies a row within a graph: a class present under more than one classpath entry is read
      * once within a run, at the entry a classloader would resolve it from, so two rows under one name
      * inside one graph's scope would mean two runs' entries had been folded into one graph.
      *
@@ -188,22 +209,33 @@ final class CodeQueries {
     private static ClassPage classes(
         StoreHandle store, Kind kind, Optional<String> nameSubstring, Optional<String> cursor, int limit
     ) {
+        var arm = armOf(kind);
         var filters = new ArrayList<Condition>();
-        filters.add(store.reads(JVM_CLASS.SOURCE_NAME));
-        filters.add(declaring(kind));
-        nameSubstring.ifPresent(n -> filters.add(JVM_CLASS.CLASS_NAME.containsIgnoreCase(n)));
+        filters.add(store.reads(arm.field(CODE_METHOD.SOURCE_NAME)));
+        nameSubstring.ifPresent(n ->
+            filters.add(arm.field(CODE_METHOD.CLASS_NAME).containsIgnoreCase(n)));
 
-        int total = store.dsl().fetchCount(JVM_CLASS, filters);
+        var population = selectDistinct(
+                arm.field(CODE_METHOD.SOURCE_NAME).as(SOURCE),
+                arm.field(CODE_METHOD.CLASS_NAME).as(CLASS))
+            .from(arm)
+            .where(filters)
+            .asTable("population");
+        var source = population.field(SOURCE, String.class);
+        var className = population.field(CLASS, String.class);
 
-        var page = new ArrayList<>(filters);
+        int total = store.dsl().fetchCount(population);
+
+        var page = new ArrayList<Condition>();
         McpWire.decodeKeysetCursor(cursor.orElse(null), 1)
-            .ifPresent(key -> page.add(JVM_CLASS.CLASS_NAME.gt(key.getFirst())));
+            .ifPresent(key -> page.add(className.gt(key.getFirst())));
 
         var rows = store.dsl()
-            .select(JVM_CLASS.CLASS_NAME, methods(narrowing(kind)), components())
-            .from(JVM_CLASS)
+            .select(className, methods(source, className, narrowing(kind)),
+                components(source, className))
+            .from(population)
             .where(page)
-            .orderBy(JVM_CLASS.CLASS_NAME.asc())
+            .orderBy(className.asc())
             .limit(limit + 1)
             .fetch(Records.mapping(ClassEntry::new));
 
@@ -214,26 +246,26 @@ final class CodeQueries {
         return new ClassPage(entries, total, nextCursor);
     }
 
+    /** The two columns the population projects, named so the correlations can find them. */
+    private static final String SOURCE = "source_name";
+    private static final String CLASS = "class_name";
+
     /**
-     * The predicate selecting the classes of one kind: what the class declares, as an {@code EXISTS}
-     * over the relation that declares it. A semi-join rather than a join, so a class with several
-     * methods is still one row.
+     * The relation whose rows are the kind's population.
      *
-     * <p>The condition arm reads {@code code_condition_method} where the other two read the census,
-     * and the asymmetry is the point rather than an inconsistency: what may be written at a
-     * directive is that arm's own answer, so this asks the relation whose subject is the question
-     * instead of re-deriving it from a return type. Two consequences follow and both are wanted.
-     * The population narrows to the reactor, which is where a condition an author may name lives.
-     * And the admission rule stops being stated here at all, so it cannot drift from the one the
-     * arm applies.
+     * <p>Three arms and no predicate of this module's own, which is the whole of what the kinds now
+     * are. What may be written at a directive is the arm's answer, so the admission rule is not
+     * stated here and cannot drift from the one that admits; and the population is the reactor,
+     * which is where something an author may name lives.
+     *
+     * <p>All three key a member by the same four columns, so the correlations below read one field
+     * set off whichever of them answered.
      */
-    private static Condition declaring(Kind kind) {
+    private static org.jooq.Table<?> armOf(Kind kind) {
         return switch (kind) {
-            case SERVICE -> exists(selectOne().from(JVM_METHOD).where(methodOfClass()));
-            case CONDITION -> exists(selectOne().from(CODE_CONDITION_METHOD)
-                .where(CODE_CONDITION_METHOD.SOURCE_NAME.eq(JVM_CLASS.SOURCE_NAME)
-                    .and(CODE_CONDITION_METHOD.CLASS_NAME.eq(JVM_CLASS.CLASS_NAME))));
-            case RECORD -> exists(selectOne().from(JVM_RECORD_COMPONENT).where(componentOfClass()));
+            case SERVICE -> CODE_SERVICE_METHOD;
+            case CONDITION -> CODE_CONDITION_METHOD;
+            case RECORD -> CODE_RECORD_COMPONENT;
         };
     }
 
@@ -244,83 +276,102 @@ final class CodeQueries {
      * answered with the whole class.
      */
     private static Condition narrowing(Kind kind) {
-        return kind == Kind.CONDITION ? exists(selectOne().from(CODE_CONDITION_METHOD)
-            .where(admittedAsCondition())) : noCondition();
+        return kind == Kind.CONDITION
+            ? exists(selectOne().from(CODE_CONDITION_METHOD).where(memberOf(CODE_CONDITION_METHOD)))
+            : noCondition();
     }
 
     /**
-     * The correlation from a census method to the arm that admits it, on the whole method key so
+     * The correlation from a projected method to an arm that admits it, on the whole method key so
      * one overload of a name cannot stand in for another.
-     *
-     * <p>The projection still reads the census rather than the arm, and the reason is a fact the
-     * arm does not hold: the census carries the {@code Signature} attribute, so it can say
-     * {@code List&lt;Film&gt;} where the arm's erased column says {@code java.util.List}. What has
-     * moved here is the admission and only the admission. The projection follows when the arm
-     * carries a declared form of its own, and until it does, reading it from the family that has
-     * it is the honest answer rather than a worse one.
      */
-    private static Condition admittedAsCondition() {
-        return CODE_CONDITION_METHOD.SOURCE_NAME.eq(JVM_METHOD.SOURCE_NAME)
-            .and(CODE_CONDITION_METHOD.CLASS_NAME.eq(JVM_METHOD.CLASS_NAME))
-            .and(CODE_CONDITION_METHOD.METHOD_NAME.eq(JVM_METHOD.METHOD_NAME))
-            .and(CODE_CONDITION_METHOD.DESCRIPTOR.eq(JVM_METHOD.DESCRIPTOR));
+    private static Condition memberOf(org.jooq.Table<?> arm) {
+        return arm.field(CODE_METHOD.SOURCE_NAME).eq(CODE_METHOD.SOURCE_NAME)
+            .and(arm.field(CODE_METHOD.CLASS_NAME).eq(CODE_METHOD.CLASS_NAME))
+            .and(arm.field(CODE_METHOD.METHOD_NAME).eq(CODE_METHOD.METHOD_NAME))
+            .and(arm.field(CODE_METHOD.DESCRIPTOR).eq(CODE_METHOD.DESCRIPTOR));
     }
 
     /**
-     * The predicate correlating a census child to the class row being projected, which is the foreign
-     * key that relation declares against {@code jvm_class} spelled as a join. Every nested list hangs
-     * off this rather than off a copied-down class name: a correlation the census guarantees cannot
-     * pair a child with the wrong parent.
-     */
-    private static Condition methodOfClass() {
-        return JVM_METHOD.SOURCE_NAME.eq(JVM_CLASS.SOURCE_NAME)
-            .and(JVM_METHOD.CLASS_NAME.eq(JVM_CLASS.CLASS_NAME));
-    }
-
-    /** The same, for the record components. */
-    private static Condition componentOfClass() {
-        return JVM_RECORD_COMPONENT.SOURCE_NAME.eq(JVM_CLASS.SOURCE_NAME)
-            .and(JVM_RECORD_COMPONENT.CLASS_NAME.eq(JVM_CLASS.CLASS_NAME));
-    }
-
-    /**
-     * The class's public methods narrowed by {@code narrowing}, each carrying its own parameters.
+     * The class's public methods narrowed by {@code narrowing}, each carrying its own parameters and
+     * the rendering of what it hands back.
      *
-     * <p>Ordered by name then descriptor. The census gives a method no declaration order to carry, the
-     * classfile's method order being an encoding detail, so the order is the one thing that keys the
-     * method: overloads sort under their shared name by the descriptor that tells them apart.
+     * <p>The type is a join rather than a column because that is the relation's shape: a method's
+     * result names a type, and how a type renders is the type's own property, stated once per type
+     * rather than once per method returning one. Both joins are on whole primary keys.
+     *
+     * <p>Ordered by name then descriptor. The reading gives a method no declaration order to carry,
+     * the classfile's method order being an encoding detail, so the order is the one thing that keys
+     * the method: overloads sort under their shared name by the descriptor that tells them apart.
      */
-    private static Field<List<MethodEntry>> methods(Condition narrowing) {
+    private static Field<List<MethodEntry>> methods(
+        Field<String> source, Field<String> className, Condition narrowing
+    ) {
+        var result = CODE_TYPE.as("result_type");
         return multiset(
-            select(JVM_METHOD.METHOD_NAME, JVM_METHOD.DECLARED_RETURN_TYPE, parameters())
-                .from(JVM_METHOD)
-                .where(methodOfClass())
+            select(CODE_METHOD.METHOD_NAME, result.DISPLAY_NAME, parameters())
+                .from(CODE_METHOD)
+                .join(result).on(result.SOURCE_NAME.eq(CODE_METHOD.SOURCE_NAME)
+                    .and(result.TYPE_NAME.eq(CODE_METHOD.RESULT_TYPE)))
+                .where(CODE_METHOD.SOURCE_NAME.eq(source))
+                .and(CODE_METHOD.CLASS_NAME.eq(className))
                 .and(narrowing)
-                .orderBy(JVM_METHOD.METHOD_NAME.asc(), JVM_METHOD.DESCRIPTOR.asc()))
+                .orderBy(CODE_METHOD.METHOD_NAME.asc(), CODE_METHOD.DESCRIPTOR.asc()))
             .convertFrom(r -> r.map(Records.mapping(MethodEntry::new)));
     }
 
     /** One method's parameters in position order, correlated to the method being projected. */
     private static Field<List<ParameterEntry>> parameters() {
+        var bound = CODE_TYPE.as("parameter_type");
         return multiset(
-            select(JVM_METHOD_PARAMETER.PARAMETER_NAME, JVM_METHOD_PARAMETER.DECLARED_PARAMETER_TYPE)
-                .from(JVM_METHOD_PARAMETER)
-                .where(JVM_METHOD_PARAMETER.SOURCE_NAME.eq(JVM_METHOD.SOURCE_NAME)
-                    .and(JVM_METHOD_PARAMETER.CLASS_NAME.eq(JVM_METHOD.CLASS_NAME))
-                    .and(JVM_METHOD_PARAMETER.METHOD_NAME.eq(JVM_METHOD.METHOD_NAME))
-                    .and(JVM_METHOD_PARAMETER.DESCRIPTOR.eq(JVM_METHOD.DESCRIPTOR)))
-                .orderBy(JVM_METHOD_PARAMETER.POSITION.asc()))
+            select(CODE_METHOD_PARAMETER.PARAMETER_NAME, bound.DISPLAY_NAME)
+                .from(CODE_METHOD_PARAMETER)
+                .join(bound).on(bound.SOURCE_NAME.eq(CODE_METHOD_PARAMETER.SOURCE_NAME)
+                    .and(bound.TYPE_NAME.eq(CODE_METHOD_PARAMETER.PARAMETER_TYPE)))
+                .where(CODE_METHOD_PARAMETER.SOURCE_NAME.eq(CODE_METHOD.SOURCE_NAME)
+                    .and(CODE_METHOD_PARAMETER.CLASS_NAME.eq(CODE_METHOD.CLASS_NAME))
+                    .and(CODE_METHOD_PARAMETER.METHOD_NAME.eq(CODE_METHOD.METHOD_NAME))
+                    .and(CODE_METHOD_PARAMETER.DESCRIPTOR.eq(CODE_METHOD.DESCRIPTOR)))
+                .orderBy(CODE_METHOD_PARAMETER.POSITION.asc()))
             .convertFrom(r -> r.map(Records.mapping(ParameterEntry::new)));
     }
 
-    /** The class's record components in declaration order, empty for anything but a record. */
-    private static Field<List<ComponentEntry>> components() {
+    /**
+     * The class's record components in declaration order, empty for anything but a record.
+     *
+     * <p>Four relations and each join is a whole primary key, which is the decomposition rather than
+     * a cost: the order is the one fact only this arm has and is its own relation, the name is the
+     * slot's, and the type is the accessor's result's. A class that is no record has no row in the
+     * ordering relation and so draws nothing, which is the same silence a kind predicate would have
+     * produced and one fewer rule stating it.
+     */
+    private static Field<List<ComponentEntry>> components(
+        Field<String> source, Field<String> className
+    ) {
+        var declared = CODE_TYPE.as("component_type");
+        var method = CODE_METHOD.as("component_accessor");
         return multiset(
-            select(JVM_RECORD_COMPONENT.COMPONENT_NAME, JVM_RECORD_COMPONENT.DECLARED_TYPE)
-                .from(JVM_RECORD_COMPONENT)
-                .where(componentOfClass())
-                .orderBy(JVM_RECORD_COMPONENT.POSITION.asc()))
+            select(CODE_TYPE_SLOT.SLOT_NAME, declared.DISPLAY_NAME)
+                .from(CODE_RECORD_COMPONENT)
+                .join(CODE_TYPE_SLOT).on(slotOfComponent())
+                .join(method).on(method.SOURCE_NAME.eq(CODE_RECORD_COMPONENT.SOURCE_NAME)
+                    .and(method.CLASS_NAME.eq(CODE_RECORD_COMPONENT.CLASS_NAME))
+                    .and(method.METHOD_NAME.eq(CODE_RECORD_COMPONENT.METHOD_NAME))
+                    .and(method.DESCRIPTOR.eq(CODE_RECORD_COMPONENT.DESCRIPTOR)))
+                .join(declared).on(declared.SOURCE_NAME.eq(method.SOURCE_NAME)
+                    .and(declared.TYPE_NAME.eq(method.RESULT_TYPE)))
+                .where(CODE_RECORD_COMPONENT.SOURCE_NAME.eq(source))
+                .and(CODE_RECORD_COMPONENT.CLASS_NAME.eq(className))
+                .orderBy(CODE_RECORD_COMPONENT.POSITION.asc()))
             .convertFrom(r -> r.map(Records.mapping(ComponentEntry::new)));
+    }
+
+    /** A component to the slot it is one of, which is the whole of the key it is keyed by. */
+    private static Condition slotOfComponent() {
+        return CODE_TYPE_SLOT.SOURCE_NAME.eq(CODE_RECORD_COMPONENT.SOURCE_NAME)
+            .and(CODE_TYPE_SLOT.CLASS_NAME.eq(CODE_RECORD_COMPONENT.CLASS_NAME))
+            .and(CODE_TYPE_SLOT.METHOD_NAME.eq(CODE_RECORD_COMPONENT.METHOD_NAME))
+            .and(CODE_TYPE_SLOT.DESCRIPTOR.eq(CODE_RECORD_COMPONENT.DESCRIPTOR));
     }
 
     // ---- the declaration read ----

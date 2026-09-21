@@ -23,6 +23,7 @@ import static no.sikt.graphitron.model.Tables.CODE_EXTERNAL_FIELD_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_EXCEPTION;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
+import static no.sikt.graphitron.model.Tables.CODE_RECORD_COMPONENT;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_SLOT;
@@ -388,32 +389,38 @@ public final class CodeCapture {
      * followed by an upper-case letter offers the remainder with its first letter lowered. No arm
      * reads the return type, because an author who wrote {@code isTitle} returning a String meant
      * that member and a rule that second-guessed the type would hide it.
+     *
+     * <p>The record arm carries one fact the other has no answer for, the position in the record
+     * header, and it is written to a relation of its own rather than to a column standing empty for
+     * every bean accessor in the reactor.
      */
     private static void slots(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
                               LocalDateTime touchedAt) {
         record Slot(String source, String className, ClassfileCensus.MethodAt at, String slotName,
-                    String origin) {}
+                    String origin, Integer position) {}
         var found = new ArrayList<Slot>();
         for (ClassfileCensus.ClassAt at : classes) {
             boolean isRecord = "RECORD".equals(at.kind());
-            var components = at.components().stream()
-                .map(ClassfileCensus.ComponentAt::name)
-                .collect(java.util.stream.Collectors.toSet());
+            var components = new java.util.HashMap<String, Integer>();
+            for (ClassfileCensus.ComponentAt component : at.components()) {
+                components.putIfAbsent(component.name(), component.position());
+            }
             for (ClassfileCensus.MethodAt method : at.methods()) {
                 if (!method.parameters().isEmpty()) {
                     continue;
                 }
                 if (isRecord) {
-                    if (components.contains(method.name())) {
+                    Integer position = components.get(method.name());
+                    if (position != null) {
                         found.add(new Slot(at.source(), at.className(), method, method.name(),
-                            "RECORD_COMPONENT"));
+                            "RECORD_COMPONENT", position));
                     }
                     continue;
                 }
                 String property = beanProperty(method.name());
                 if (property != null) {
                     found.add(new Slot(at.source(), at.className(), method, property,
-                        "BEAN_ACCESSOR"));
+                        "BEAN_ACCESSOR", null));
                 }
             }
         }
@@ -437,6 +444,29 @@ public final class CodeCapture {
                 .set(t.SLOT_NAME, excluded(t.SLOT_NAME))
                 .set(t.ORIGIN, excluded(t.ORIGIN))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+
+        // The one fact only the record arm has, after the slots it hangs on rather than beside
+        // them: it is keyed to a slot, so a component written before its slot would have nothing
+        // to key to.
+        var components = found.stream().filter(row -> row.position() != null).toList();
+        if (components.isEmpty()) {
+            return;
+        }
+        var c = CODE_RECORD_COMPONENT;
+        var componentRows = components.stream().collect(Rows.toRowList(
+            row -> val(row.source(), c.SOURCE_NAME),
+            row -> val(row.className(), c.CLASS_NAME),
+            row -> val(row.at().name(), c.METHOD_NAME),
+            row -> val(row.at().descriptor(), c.DESCRIPTOR),
+            row -> val(row.position(), c.POSITION),
+            row -> val(touchedAt, c.TOUCHED_AT)));
+        BindBatch.execute(dsl, componentRows, markers ->
+            dsl.insertInto(c, c.SOURCE_NAME, c.CLASS_NAME, c.METHOD_NAME, c.DESCRIPTOR,
+                    c.POSITION, c.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(c.POSITION, excluded(c.POSITION))
+                .set(c.TOUCHED_AT, excluded(c.TOUCHED_AT)));
     }
 
     /** The property a getter offers, or null where the name is not one. */
@@ -775,7 +805,7 @@ public final class CodeCapture {
     private static void sweep(DSLContext dsl, List<String> sources, LocalDateTime touchedAt) {
         for (org.jooq.Table<?> table : List.of(
                 CODE_CONDITION_METHOD_PARAMETER_TABLE,
-                CODE_METHOD_PARAMETER, CODE_METHOD_EXCEPTION, CODE_TYPE_SLOT,
+                CODE_METHOD_PARAMETER, CODE_METHOD_EXCEPTION, CODE_RECORD_COMPONENT, CODE_TYPE_SLOT,
                 CODE_SERVICE_METHOD, CODE_CONDITION_METHOD, CODE_EXTERNAL_FIELD_METHOD,
                 CODE_METHOD, CODE_TYPE_ELEMENT, CODE_TYPE,
                 CODE_THROWABLE_SUPERTYPE, CODE_THROWABLE, CODE_SCALAR_CONSTANT)) {

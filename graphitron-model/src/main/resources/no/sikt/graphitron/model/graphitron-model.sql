@@ -6524,6 +6524,27 @@ COMMENT ON COLUMN code_type_slot.touched_at IS 'when the reading that produced t
 CREATE INDEX code_type_slot_name_ix ON code_type_slot (source_name, slot_name);
 COMMENT ON INDEX code_type_slot_name_ix IS 'The slot name is a join key rather than a filter, intent_field_accessor_hop matching every coordinate in a graph against every slot a source offers without binding a class first, so the answer is a product and the name is the only thing narrowing it. The primary key leads with the class and cannot serve that, and the same access without an index on the name was measured in minutes rather than seconds on the relation this replaces.';
 
+CREATE TABLE code_record_component (
+  source_name VARCHAR NOT NULL,
+  class_name  VARCHAR NOT NULL,
+  method_name VARCHAR NOT NULL,
+  descriptor  VARCHAR NOT NULL,
+  position    INT NOT NULL,
+  touched_at  TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name, method_name, descriptor),
+  FOREIGN KEY (source_name, class_name, method_name, descriptor)
+    REFERENCES code_type_slot (source_name, class_name, method_name, descriptor) ON DELETE CASCADE,
+  UNIQUE (source_name, class_name, position)
+);
+COMMENT ON TABLE code_record_component IS 'The slots a record declares in its header, in the order it declares them. For example a Film record''s title first and year second.';
+COMMENT ON COLUMN code_record_component.source_name IS 'the entry the declaring class was read from, as on code_type_slot; the key''s leading dimension';
+COMMENT ON COLUMN code_record_component.class_name IS 'the record declaring the component, as on code_type_slot';
+COMMENT ON COLUMN code_record_component.method_name IS 'the accessor the component is read by, as on code_type_slot; for a component that is its own name';
+COMMENT ON COLUMN code_record_component.descriptor IS 'the accessor''s descriptor, completing the key; the whole of code_type_slot''s key, which is what makes this a subtype of that relation rather than a second description of the same members';
+COMMENT ON COLUMN code_record_component.position IS 'where the component sits in the record header, counted from zero, which is the order the canonical constructor takes its arguments in and the order a surface listing a record''s members shows them in. Here rather than on code_type_slot because a bean accessor has none: a classfile gives a method no declaration order, its order in the class being an encoding detail, so a column on the supertype would be a fact about one arm carrying nothing for the other. Presence is therefore the arm, and it agrees with the discriminator the supertype carries by construction';
+COMMENT ON COLUMN code_record_component.touched_at IS 'when the reading that produced this row ran; swept with the slot it hangs on';
+
+
 CREATE TABLE code_method_exception (
   source_name     VARCHAR NOT NULL,
   class_name      VARCHAR NOT NULL,
@@ -15771,6 +15792,10 @@ INSERT INTO meta_relation VALUES
    'One member name a class offers an author, and the method that reads it.',
    'For example a Film record offering title through its title() accessor, or a FilmDto offering it through getTitle().',
    'What @field(name:) resolves against on a type whose backing is a class rather than a table. Two arms and the discriminator is on the class rather than the member: a record answers with its components and anything else with its getters, which is decided where the class''s declared form is known and stored as the answer. Keyed by the accessor because the accessor is what is unique; the name an author writes is not, a class spelling one property two ways offering it twice. It carries no type, the slot being read by a method and that method''s result already naming one, which is also what makes this relation a projection of the arms rather than a second description of them. A record''s accessors are ordinary public methods and so is everything else a record generates, so the components the Record attribute names are what tells an accessor from a toString.'),
+  ('code_record_component', 'class-method', 'code',
+   'The slots a record declares in its header, in the order it declares them.',
+   'For example a Film record''s title first and year second.',
+   'Declaration order, for the surfaces that list a record''s members and mean the order the author wrote. A subtype of code_type_slot rather than a column on it: a bean accessor has no declaration order to carry, a classfile giving a method none, so the column exists exactly where the fact does and its presence is the arm. That leaves the arm stated twice, here by presence and on the supertype by its discriminator, which is deliberate and is what the discriminator was put there for: four readers fork on which arm a slot came from and none of them wants the ordering, so the cheap answer stays a column and the fact only one arm has becomes a relation.'),
   ('code_method_exception', 'method-exception', 'code',
    'One exception a method declares it throws.',
    'For example filmsByRating declaring java.io.IOException.',

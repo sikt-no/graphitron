@@ -12,6 +12,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
+import static no.sikt.graphitron.model.Tables.CODE_RECORD_COMPONENT;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_SLOT;
@@ -73,6 +74,7 @@ public final class CodeRows {
             if (!isRecord) {
                 continue;
             }
+            int position = 0;
             for (CompletionData.RecordComponent component : at.recordComponents()) {
                 var positions = positionsOf(component.typeRefs());
                 String descriptor = accessorDescriptor(positions);
@@ -80,6 +82,10 @@ public final class CodeRows {
                     positions, readAt);
                 slot(dsl, at.sourceName(), at.className(), component.name(), descriptor,
                     component.name(), "RECORD_COMPONENT", readAt);
+                // The header order is the order the census states them in, a transcription having
+                // no other place to put it.
+                component(dsl, at.sourceName(), at.className(), component.name(), descriptor,
+                    position++, readAt);
             }
         }
     }
@@ -139,6 +145,21 @@ public final class CodeRows {
             .set(CODE_TYPE_SLOT.SLOT_NAME, slotName)
             .set(CODE_TYPE_SLOT.ORIGIN, origin)
             .set(CODE_TYPE_SLOT.TOUCHED_AT, readAt)
+            .onDuplicateKeyIgnore()
+            .execute();
+    }
+
+    /** Where one record component sits in its header, which is the one fact only that arm has. */
+    public static void component(DSLContext dsl, String sourceName, String className,
+                                 String methodName, String descriptor, int position,
+                                 LocalDateTime readAt) {
+        dsl.insertInto(CODE_RECORD_COMPONENT)
+            .set(CODE_RECORD_COMPONENT.SOURCE_NAME, sourceName)
+            .set(CODE_RECORD_COMPONENT.CLASS_NAME, className)
+            .set(CODE_RECORD_COMPONENT.METHOD_NAME, methodName)
+            .set(CODE_RECORD_COMPONENT.DESCRIPTOR, descriptor)
+            .set(CODE_RECORD_COMPONENT.POSITION, position)
+            .set(CODE_RECORD_COMPONENT.TOUCHED_AT, readAt)
             .onDuplicateKeyIgnore()
             .execute();
     }

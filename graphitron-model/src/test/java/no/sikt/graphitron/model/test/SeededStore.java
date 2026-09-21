@@ -2786,13 +2786,17 @@ public final class SeededStore {
             .where(JVM_CLASS.SOURCE_NAME.eq(sourceName).and(JVM_CLASS.CLASS_NAME.eq(className)))
             .fetchOne(0, String.class);
         if ("RECORD".equals(kind)) {
-            boolean isComponent = dsl.fetchExists(JVM_RECORD_COMPONENT,
-                JVM_RECORD_COMPONENT.SOURCE_NAME.eq(sourceName)
+            Integer position = dsl.select(JVM_RECORD_COMPONENT.POSITION)
+                .from(JVM_RECORD_COMPONENT)
+                .where(JVM_RECORD_COMPONENT.SOURCE_NAME.eq(sourceName)
                     .and(JVM_RECORD_COMPONENT.CLASS_NAME.eq(className))
-                    .and(JVM_RECORD_COMPONENT.COMPONENT_NAME.eq(methodName)));
-            if (isComponent) {
+                    .and(JVM_RECORD_COMPONENT.COMPONENT_NAME.eq(methodName)))
+                .fetchOne(0, Integer.class);
+            if (position != null) {
                 CodeRows.slot(dsl, sourceName, className, methodName, descriptor, methodName,
                     "RECORD_COMPONENT", SEEDED_READING);
+                CodeRows.component(dsl, sourceName, className, methodName, descriptor, position,
+                    SEEDED_READING);
             }
             return;
         }
