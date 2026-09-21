@@ -253,7 +253,8 @@ public final class GraphitronModelStore implements AutoCloseable {
      *         which are build-time defects in this module rather than anything an author caused
      */
     public static GraphitronModelStore open() {
-        String url = "jdbc:h2:mem:graphitron-model-" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1";
+        String url = "jdbc:h2:mem:graphitron-model-" + UUID.randomUUID()
+            + ";DB_CLOSE_DELAY=-1;ANALYZE_AUTO=0";
         Connection connection = connect(url);
         create(connection);
         stamp(connection);
@@ -700,7 +701,7 @@ public final class GraphitronModelStore implements AutoCloseable {
      */
     private static String fileUrl(Path directory) {
         return "jdbc:h2:file:" + directory.toAbsolutePath().resolve(DATABASE)
-            + ";LOCK_TIMEOUT=" + LOCK_TIMEOUT_MILLIS;
+            + ";LOCK_TIMEOUT=" + LOCK_TIMEOUT_MILLIS + ";ANALYZE_AUTO=0";
     }
 
     /**

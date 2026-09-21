@@ -126,6 +126,19 @@ public final class ModelCapture {
         SdlFactCapture.capture(decode, assembly.registry());
         decode.flush();
         GraphitronAssemblyCapture.capture(dsl, graph.name(), readAt);
+        // The statistics the derivations below are planned against, stated here rather than left
+        // to H2. The store opens with ANALYZE_AUTO=0, so nothing analyses itself: without this
+        // call every column carries the unanalysed placeholder, and with H2's default a table
+        // would be analysed only once it passed two thousand changes, which makes a plan a
+        // function of how large the captured graph happens to be rather than of anything anyone
+        // chose. One statement over the base tables this pass has just filled, and the registered
+        // targets it covers are empty here, which is why Materializations.analyse still runs at
+        // the tail of the derivations to state theirs.
+        //
+        // ANALYZE commits, which moves the pass's first commit ahead of the derivations. The one
+        // commit that would corrupt a store is one between a refresh's delete and its inserts,
+        // and this is before the refresh rather than inside it.
+        dsl.execute("ANALYZE");
         // The derivations the incumbent pass still owns, at the tail because every one of them
         // reads what this pass has just written. It captures nothing of its own any more.
         if (refresh == null) {
@@ -133,6 +146,11 @@ public final class ModelCapture {
         } else {
             FactCapture.derive(dsl, graph, assembly, refresh);
         }
+        // And again at the end, so what a capture leaves is a store whose statistics describe the
+        // rows it holds rather than the rows it held partway through. The call above states what
+        // the derivations plan against; this one states what every reader after them plans
+        // against, the relations those derivations wrote included.
+        dsl.execute("ANALYZE");
     }
 
     /**

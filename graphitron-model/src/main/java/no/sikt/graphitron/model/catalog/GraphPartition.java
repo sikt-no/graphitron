@@ -52,10 +52,11 @@ public final class GraphPartition {
      * <p>What it removes: H2 reports fifty for a column no {@code ANALYZE} has looked at, which on a
      * partition column reads as nearly unique, and prices the one-column foreign-key index on
      * {@code graph_name} below a multi-column index that answers the same predicate exactly. A seek
-     * that returns the whole graph's partition then looks decisive, once per driving row. A pass
-     * planning inside a transaction cannot reach any other statement of this fact: H2's
-     * {@code ANALYZE} commits, so such a pass can never run one, and the declared value is all its
-     * planner has.
+     * that returns the whole graph's partition then looks decisive, once per driving row. The
+     * window this covers is every read a capture makes before its own first {@code ANALYZE}: the
+     * store opens with {@code ANALYZE_AUTO=0} and {@code ModelCapture} states the statistics
+     * itself, so until that call the declared value is all any planner has, and the gatherers
+     * writing the corpus read under it.
      *
      * <p>An {@code ANALYZE} overwrites it with the measured value, which is correct and not a loss:
      * on a store holding one partition the measured value is this one. The declaration is the floor

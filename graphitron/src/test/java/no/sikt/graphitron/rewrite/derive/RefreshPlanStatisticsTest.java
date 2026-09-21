@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -240,6 +241,7 @@ class RefreshPlanStatisticsTest {
     private static Map<String, String> cold;
     private static Map<String, String> facts;
     private static Map<String, String> targets;
+    private static Map<String, String> factsAndTargets;
 
     /**
      * Plans every registration's source view once per regime, over one store. One store because the
@@ -267,6 +269,9 @@ class RefreshPlanStatisticsTest {
             cold = regime(store, dsl, List.of());
             facts = regime(store, dsl, factTables);
             targets = regime(store, dsl, List.copyOf(targetNames));
+            var both = new ArrayList<>(factTables);
+            both.addAll(targetNames);
+            factsAndTargets = regime(store, dsl, both);
         }
     }
 
@@ -317,18 +322,30 @@ class RefreshPlanStatisticsTest {
 
     /**
      * The reference leg is the state a capture actually leaves, rather than a regime invented here.
-     * {@code Materializations.analyse} covers the registered targets and nothing else, and on a
-     * fixture this size H2's own automatic analysis does not fire on the fact tables, its threshold
-     * being two thousand changes to a table. So the settled store's plans are the targets-analysed
-     * plans, and the comparison above is between the cold refresh and the store every timing in this
-     * investigation was taken against.
+     * A capture states its statistics deliberately and H2 states none of them: the store opens
+     * with {@code ANALYZE_AUTO=0} and {@code ModelCapture} analyses twice, once before the
+     * derivations so they plan against the corpus the gatherers wrote, and once after them so what
+     * the capture leaves describes the rows it holds rather than the rows it held partway through.
+     * The second call is what makes this regime reachable: without it the relations the
+     * derivations themselves write carry statistics taken before they were filled, and five
+     * registrations plan differently for it. So the settled store's plans are the
+     * facts-and-targets plans, and the comparison above is between the cold refresh and the store
+     * every timing in this investigation was taken against.
+     *
+     * <p>This used to read against {@link #targets} alone, on the grounds that analysing the
+     * targets was the only thing a capture did to a plan. That was true of a capture that left the
+     * facts to H2's automatic analysis, which fired or did not according to whether a table had
+     * passed two thousand changes, and therefore according to how large the captured graph
+     * happened to be. Five registrations plan differently once the facts carry statistics, which is
+     * what {@link #analysingTheFactsAloneReachesNoneOfThem} says cannot help the pinned set and
+     * says nothing about the rest.
      */
     @Test
-    void theSettledStoreIsTheTargetsAnalysedRegime() {
-        assertThat(differingFrom(targets, settled))
+    void theSettledStoreIsTheFactsAndTargetsAnalysedRegime() {
+        assertThat(differingFrom(factsAndTargets, settled))
             .as("registrations whose plan on the store a capture leaves differs from the plan with"
-                + " the registered targets analysed. None: analysing the targets is what a capture"
-                + " does, and nothing else it does moves a plan")
+                + " the base tables and the registered targets analysed. None: stating both"
+                + " populations is what a capture does, and nothing else it does moves a plan")
             .isEmpty();
     }
 
