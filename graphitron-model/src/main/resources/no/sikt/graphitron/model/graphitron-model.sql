@@ -5978,15 +5978,17 @@ COMMENT ON COLUMN jvm_record_component.declared_type IS 'the component type as t
 -- methods are nobody's to name.
 
 CREATE TABLE code_type (
-  source_name VARCHAR NOT NULL,
-  type_name   VARCHAR NOT NULL,
-  touched_at  TIMESTAMP NOT NULL,
+  source_name  VARCHAR NOT NULL,
+  type_name    VARCHAR NOT NULL,
+  display_name VARCHAR NOT NULL,
+  touched_at   TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, type_name),
   FOREIGN KEY (source_name) REFERENCES store_source (source_name)
 );
 COMMENT ON TABLE code_type IS 'One type the signatures of an entry''s methods mention, as the source wrote it. For example java.util.List<no.sikt.example.Film>, beside the plain java.lang.String and the int that other positions carry.';
 COMMENT ON COLUMN code_type.source_name IS 'the classpath entry whose signatures mention the type; the key''s leading dimension, so a type is swept with the entry that mentioned it rather than outliving it. A type name is global and this relation is not, which is the same trade every relation in the family makes: what a reading read is what it can answer for';
 COMMENT ON COLUMN code_type.type_name IS 'the type as the source declared it, type arguments kept and packages kept, which is what makes it a key: two Foo<X> from different packages render alike and are two types. A primitive is its own spelling and an array is its component''s with brackets, so the three silences a resolution cannot tell apart, a primitive, an array and a type variable, are told apart here by the name itself. A type variable spells only its own identifier, so two methods writing T share this row; that costs nothing while the only thing stored about it is that it resolves to no class, and stops being adequate the moment anything method-specific is';
+COMMENT ON COLUMN code_type.display_name IS 'the same type with its packages dropped, which is what a surface shows a person: List<Film> where the name beside it is java.util.List<no.sikt.example.Film>. A rendering and not an identity, which is why it is not the key: two Foo<X> from different packages render alike. Here rather than at each site because a rendering is a property of the type, so it is stated once per type rather than once per position carrying one, and here rather than nowhere because the editor surfaces render a member''s type and a store that held only identities could not tell them what to show';
 COMMENT ON COLUMN code_type.touched_at IS 'when the reading that produced this row ran; swept with the entry it was read from';
 
 CREATE TABLE code_type_element (
@@ -6056,6 +6058,28 @@ COMMENT ON COLUMN code_method_parameter.parameter_type IS 'the type bound at thi
 COMMENT ON COLUMN code_method_parameter.role IS 'what the position is for as far as its type alone decides, in a closed vocabulary of four, and the four are exclusive because no type satisfies two of them. DSL_CONTEXT: the run''s own jOOQ context is passed here. TABLE_CONCRETE: the declaration names one generated table, and code_condition_method_parameter_table says which where the catalog holds it. TABLE_ANY: the declaration is org.jooq.Table itself, raw or wildcarded, or a type variable, so the position takes whatever table the site supplies. OTHER: everything else, whose role is the application''s to decide from the arguments and context keys in scope at the site. Decided here rather than by a reader because deciding it needs an assignability walk, which a reader either re-derives through a recursive closure or asks a loader for';
 COMMENT ON COLUMN code_method_parameter.extraction IS 'how a value bound to this position is coerced into it, decided by the declared type alone: ENUM_VALUE_OF where that type is an enum and DIRECT otherwise. The standing rule rather than the last word, a parameter bound to a slot carrying @nodeId receiving that slot''s decoded key instead, which intent_condition_param_decode states as the exception to this. Decided by loading the class, which is what makes it answerable for both populations at once: an author''s own enum and a generated one a column binds to, the second living in the package this reading excludes and so reachable no other way';
 COMMENT ON COLUMN code_method_parameter.touched_at IS 'when the reading that produced this row ran; swept with the method it hangs on';
+
+CREATE TABLE code_type_slot (
+  source_name VARCHAR NOT NULL,
+  class_name  VARCHAR NOT NULL,
+  method_name VARCHAR NOT NULL,
+  descriptor  VARCHAR NOT NULL,
+  slot_name   VARCHAR NOT NULL,
+  origin      VARCHAR NOT NULL,
+  touched_at  TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name, method_name, descriptor),
+  FOREIGN KEY (source_name, class_name, method_name, descriptor)
+    REFERENCES code_method (source_name, class_name, method_name, descriptor) ON DELETE CASCADE,
+  CHECK (origin IN ('RECORD_COMPONENT', 'BEAN_ACCESSOR'))
+);
+COMMENT ON TABLE code_type_slot IS 'One member name a class offers an author, and the method that reads it. For example a Film record offering title through its title() accessor, or a FilmDto offering it through getTitle().';
+COMMENT ON COLUMN code_type_slot.source_name IS 'the entry the declaring class was read from, as on code_method; the key''s leading dimension';
+COMMENT ON COLUMN code_type_slot.class_name IS 'the class offering the member, as on code_method';
+COMMENT ON COLUMN code_type_slot.method_name IS 'the method that reads the member, as on code_method. The accessor is the key rather than the name an author writes, because the name is the part that is not unique: a class spelling one property getTitle and isTitle offers title twice';
+COMMENT ON COLUMN code_type_slot.descriptor IS 'the method''s descriptor, completing the key; with the three columns above, the accessor this slot is read by, and the row is deleted with it. What the slot carries is that method''s result, which code_method.result_type names, so this relation holds no type of its own';
+COMMENT ON COLUMN code_type_slot.slot_name IS 'the name @field(name:) resolves against: a record component''s own name, or the property a getter offers, which is the remainder after get or is with its first letter lowered. Deliberately not unique within a class, two spellings of one property being two rows; a reader wanting one takes the first and a reader offering candidates offers both';
+COMMENT ON COLUMN code_type_slot.origin IS 'RECORD_COMPONENT or BEAN_ACCESSOR, which is a fact about the declaring class rather than the member: a class takes exactly one arm, chosen by its declared form, so a record answers with its components and anything else with its getters. Carried because two readers turn on it, one choosing where a go-to-definition lands and one choosing the noun a diagnostic uses';
+COMMENT ON COLUMN code_type_slot.touched_at IS 'when the reading that produced this row ran; swept with the method it hangs on';
 
 CREATE TABLE code_method_exception (
   source_name     VARCHAR NOT NULL,
@@ -14991,6 +15015,10 @@ INSERT INTO meta_relation VALUES
    'What a type resolves to once its delivery containers are peeled off, for the types that resolve to a class at all.',
    'For example java.util.List<no.sikt.example.Film> resolving to Film, many of them.',
    'A field backed by a method is backed by what that method finally hands back, and a return type is a tree rather than a name. Stated at capture because the alternative is in the store and measurable: a view peeling containers by self-joining a type-reference relation once per level, unrolled to a fixed depth because SQL has no loop, which bounds what it can answer as well as costing what it costs. Its own relation and not two columns on the type, because a void, a primitive, an array and a type variable name no class, and a placeholder would make four different silences look like one answer.'),
+  ('code_type_slot', 'class-method', 'code',
+   'One member name a class offers an author, and the method that reads it.',
+   'For example a Film record offering title through its title() accessor, or a FilmDto offering it through getTitle().',
+   'What @field(name:) resolves against on a type whose backing is a class rather than a table. Two arms and the discriminator is on the class rather than the member: a record answers with its components and anything else with its getters, which is decided where the class''s declared form is known and stored as the answer. Keyed by the accessor because the accessor is what is unique; the name an author writes is not, a class spelling one property two ways offering it twice. It carries no type, the slot being read by a method and that method''s result already naming one, which is also what makes this relation a projection of the arms rather than a second description of them. A record''s accessors are ordinary public methods and so is everything else a record generates, so the components the Record attribute names are what tells an accessor from a toString.'),
   ('code_method_exception', 'method-exception', 'code',
    'One exception a method declares it throws.',
    'For example filmsByRating declaring java.io.IOException.',

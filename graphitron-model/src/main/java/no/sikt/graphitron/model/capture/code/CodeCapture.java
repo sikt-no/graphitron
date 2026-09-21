@@ -25,6 +25,7 @@ import static no.sikt.graphitron.model.Tables.CODE_METHOD_EXCEPTION;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT;
+import static no.sikt.graphitron.model.Tables.CODE_TYPE_SLOT;
 import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
 import static no.sikt.graphitron.model.Tables.CODE_SERVICE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE;
@@ -296,6 +297,8 @@ public final class CodeCapture {
             .map(d -> new Member(d.source(), d.className(), d.at()))
             .toList(), ancestry, containers, touchedAt);
 
+        slots(dsl, classes, touchedAt);
+
         arm(dsl, CODE_CONDITION_METHOD, found.stream()
             .filter(d -> isConditionMethod(d.at()))
             .map(d -> new Member(d.source(), d.className(), d.at())).toList(), touchedAt);
@@ -317,15 +320,17 @@ public final class CodeCapture {
      */
     private static void types(DSLContext dsl, List<Member> members,
                               Map<String, Container> containers, LocalDateTime touchedAt) {
-        record Written(String source, String typeName, Delivery delivery) {}
+        record Written(String source, String typeName, String displayName, Delivery delivery) {}
         var byKey = new java.util.LinkedHashMap<String, Written>();
         for (Member member : members) {
             byKey.putIfAbsent(member.source() + '\u0000' + member.at().qualifiedReturnType(),
                 new Written(member.source(), member.at().qualifiedReturnType(),
+                    member.at().declaredReturnType(),
                     deliveryOf(member.at().returnTypeRefs(), containers)));
             for (ClassfileCensus.ParameterAt parameter : member.at().parameters()) {
                 byKey.putIfAbsent(member.source() + '\u0000' + parameter.qualifiedType(),
                     new Written(member.source(), parameter.qualifiedType(),
+                        parameter.declaredType(),
                         deliveryOf(parameter.typeRefs(), containers)));
             }
         }
@@ -336,11 +341,13 @@ public final class CodeCapture {
         var rows = byKey.values().stream().collect(Rows.toRowList(
             row -> val(row.source(), t.SOURCE_NAME),
             row -> val(row.typeName(), t.TYPE_NAME),
+            row -> val(row.displayName(), t.DISPLAY_NAME),
             row -> val(touchedAt, t.TOUCHED_AT)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.SOURCE_NAME, t.TYPE_NAME, t.TOUCHED_AT)
+            dsl.insertInto(t, t.SOURCE_NAME, t.TYPE_NAME, t.DISPLAY_NAME, t.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
+                .set(t.DISPLAY_NAME, excluded(t.DISPLAY_NAME))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
 
         var resolved = byKey.values().stream().filter(row -> row.delivery() != null).toList();
@@ -361,6 +368,92 @@ public final class CodeCapture {
                 .set(e.ELEMENT_CLASS, excluded(e.ELEMENT_CLASS))
                 .set(e.IS_MANY, excluded(e.IS_MANY))
                 .set(e.TOUCHED_AT, excluded(e.TOUCHED_AT)));
+    }
+
+    /**
+     * The member names each class offers an author, and the method that reads each.
+     *
+     * <p>A class takes exactly one arm, chosen by its declared form: a record answers with its
+     * components and anything else with its getters. The discriminator is the class's and not the
+     * member's, which is what keeps a slot name unambiguous about where it came from.
+     *
+     * <p>The record arm reads the components rather than the methods, and the difference is not
+     * pedantry. A record's accessors are ordinary public methods, and so are the {@code toString},
+     * {@code hashCode} and {@code equals} it generates beside them: none is synthetic and none
+     * takes an argument, so a rule that admitted every no-argument public method would offer an
+     * author {@code toString} as a member. The {@code Record} attribute names the components, and
+     * matching them to their accessors is what tells the two apart.
+     *
+     * <p>The bean rule is the other arm's and is a rule about the name: {@code get} or {@code is}
+     * followed by an upper-case letter offers the remainder with its first letter lowered. No arm
+     * reads the return type, because an author who wrote {@code isTitle} returning a String meant
+     * that member and a rule that second-guessed the type would hide it.
+     */
+    private static void slots(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
+                              LocalDateTime touchedAt) {
+        record Slot(String source, String className, ClassfileCensus.MethodAt at, String slotName,
+                    String origin) {}
+        var found = new ArrayList<Slot>();
+        for (ClassfileCensus.ClassAt at : classes) {
+            boolean isRecord = "RECORD".equals(at.kind());
+            var components = at.components().stream()
+                .map(ClassfileCensus.ComponentAt::name)
+                .collect(java.util.stream.Collectors.toSet());
+            for (ClassfileCensus.MethodAt method : at.methods()) {
+                if (!method.parameters().isEmpty()) {
+                    continue;
+                }
+                if (isRecord) {
+                    if (components.contains(method.name())) {
+                        found.add(new Slot(at.source(), at.className(), method, method.name(),
+                            "RECORD_COMPONENT"));
+                    }
+                    continue;
+                }
+                String property = beanProperty(method.name());
+                if (property != null) {
+                    found.add(new Slot(at.source(), at.className(), method, property,
+                        "BEAN_ACCESSOR"));
+                }
+            }
+        }
+        if (found.isEmpty()) {
+            return;
+        }
+        var t = CODE_TYPE_SLOT;
+        var rows = found.stream().collect(Rows.toRowList(
+            row -> val(row.source(), t.SOURCE_NAME),
+            row -> val(row.className(), t.CLASS_NAME),
+            row -> val(row.at().name(), t.METHOD_NAME),
+            row -> val(row.at().descriptor(), t.DESCRIPTOR),
+            row -> val(row.slotName(), t.SLOT_NAME),
+            row -> val(row.origin(), t.ORIGIN),
+            row -> val(touchedAt, t.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.SOURCE_NAME, t.CLASS_NAME, t.METHOD_NAME, t.DESCRIPTOR,
+                    t.SLOT_NAME, t.ORIGIN, t.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(t.SLOT_NAME, excluded(t.SLOT_NAME))
+                .set(t.ORIGIN, excluded(t.ORIGIN))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+    }
+
+    /** The property a getter offers, or null where the name is not one. */
+    private static String beanProperty(String methodName) {
+        String get = propertyAfter(methodName, "get");
+        return get != null ? get : propertyAfter(methodName, "is");
+    }
+
+    private static String propertyAfter(String methodName, String prefix) {
+        if (!methodName.startsWith(prefix) || methodName.length() <= prefix.length()) {
+            return null;
+        }
+        char first = methodName.charAt(prefix.length());
+        if (first == Character.toLowerCase(first)) {
+            return null;
+        }
+        return Character.toLowerCase(first) + methodName.substring(prefix.length() + 1);
     }
 
     /** One method as this gatherer passes it around: where it was read, and what it declares. */
@@ -682,7 +775,7 @@ public final class CodeCapture {
     private static void sweep(DSLContext dsl, List<String> sources, LocalDateTime touchedAt) {
         for (org.jooq.Table<?> table : List.of(
                 CODE_CONDITION_METHOD_PARAMETER_TABLE,
-                CODE_METHOD_PARAMETER, CODE_METHOD_EXCEPTION,
+                CODE_METHOD_PARAMETER, CODE_METHOD_EXCEPTION, CODE_TYPE_SLOT,
                 CODE_SERVICE_METHOD, CODE_CONDITION_METHOD, CODE_EXTERNAL_FIELD_METHOD,
                 CODE_METHOD, CODE_TYPE_ELEMENT, CODE_TYPE,
                 CODE_THROWABLE_SUPERTYPE, CODE_THROWABLE, CODE_SCALAR_CONSTANT)) {

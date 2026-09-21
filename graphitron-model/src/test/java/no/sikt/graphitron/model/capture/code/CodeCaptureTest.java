@@ -20,7 +20,9 @@ import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD_PARAMETER_TA
 import static no.sikt.graphitron.model.Tables.CODE_EXTERNAL_FIELD_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
 import static no.sikt.graphitron.model.Tables.CODE_SERVICE_METHOD;
+import static no.sikt.graphitron.model.Tables.CODE_TYPE;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT;
+import static no.sikt.graphitron.model.Tables.CODE_TYPE_SLOT;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
@@ -58,6 +60,12 @@ class CodeCaptureTest {
 
     private static final String SERVICES =
         "no.sikt.graphitron.model.capture.code.fixtures.ServiceFixture";
+
+    private static final String SLOT_RECORD =
+        "no.sikt.graphitron.model.capture.code.fixtures.SlotRecord";
+
+    private static final String SLOT_BEAN =
+        "no.sikt.graphitron.model.capture.code.fixtures.SlotBean";
 
     /**
      * The reactor's own output beside a dependency that declares a great many condition methods.
@@ -608,6 +616,77 @@ class CodeCaptureTest {
         });
     }
 
+    // ===== The slots: what a class offers @field(name:) =====
+
+    /**
+     * A record answers with its components, and the methods it generates beside them are the case
+     * that matters. {@code toString}, {@code hashCode} and {@code equals} are public,
+     * non-synthetic and take no argument, so a rule reading methods rather than the record
+     * attribute would offer an author {@code toString} as a member of every record in the reactor.
+     */
+    @Test
+    @DisplayName("a record offers its components and not what it generates beside them")
+    void aRecordOffersItsComponents() {
+        withReactorCapture(dsl -> {
+            assertThat(slotsOn(dsl, SLOT_RECORD))
+                .as("the three components, each read by the accessor of its own name")
+                .containsExactlyInAnyOrder("title", "year", "tags");
+            assertThat(originsOn(dsl, SLOT_RECORD))
+                .as("and the arm is the class's, chosen by its declared form")
+                .containsOnly("RECORD_COMPONENT");
+        });
+    }
+
+    /**
+     * The other arm is a rule about the name and not about the type: {@code get} or {@code is}
+     * followed by an upper-case letter offers the remainder with its first letter lowered. Two
+     * spellings of one property are two rows, which is what the key being the accessor buys.
+     */
+    @Test
+    @DisplayName("a class that is no record offers what its getters name, twice where spelled twice")
+    void aBeanOffersItsProperties() {
+        withReactorCapture(dsl -> {
+            assertThat(slotsOn(dsl, SLOT_BEAN))
+                .as("both spellings of title, and tags; not the prefixless one, not the one that"
+                    + " takes an argument, and not a bare get")
+                .containsExactlyInAnyOrder("title", "title", "tags");
+            assertThat(originsOn(dsl, SLOT_BEAN)).containsOnly("BEAN_ACCESSOR");
+            assertThat(dsl.select(CODE_TYPE_SLOT.METHOD_NAME)
+                    .from(CODE_TYPE_SLOT)
+                    .where(CODE_TYPE_SLOT.CLASS_NAME.eq(SLOT_BEAN))
+                    .and(CODE_TYPE_SLOT.SLOT_NAME.eq("title"))
+                    .orderBy(CODE_TYPE_SLOT.METHOD_NAME)
+                    .fetch(CODE_TYPE_SLOT.METHOD_NAME))
+                .as("one slot name, two accessors, which is why the accessor is the key")
+                .containsExactly("getTitle", "isTitle");
+        });
+    }
+
+    /**
+     * A slot carries no type of its own: it is read by a method, and that method's result already
+     * names one. So what a slot offers is reached through the method rather than restated here.
+     */
+    @Test
+    @DisplayName("what a slot carries is its accessor's result")
+    void aSlotCarriesItsAccessorsResult() {
+        withReactorCapture(dsl -> {
+            var m = CODE_METHOD;
+            var t = CODE_TYPE;
+            assertThat(dsl.select(t.DISPLAY_NAME)
+                    .from(CODE_TYPE_SLOT)
+                    .join(m).on(m.SOURCE_NAME.eq(CODE_TYPE_SLOT.SOURCE_NAME),
+                        m.CLASS_NAME.eq(CODE_TYPE_SLOT.CLASS_NAME),
+                        m.METHOD_NAME.eq(CODE_TYPE_SLOT.METHOD_NAME),
+                        m.DESCRIPTOR.eq(CODE_TYPE_SLOT.DESCRIPTOR))
+                    .join(t).on(t.SOURCE_NAME.eq(m.SOURCE_NAME), t.TYPE_NAME.eq(m.RESULT_TYPE))
+                    .where(CODE_TYPE_SLOT.CLASS_NAME.eq(SLOT_BEAN))
+                    .and(CODE_TYPE_SLOT.SLOT_NAME.eq("tags"))
+                    .fetchOne(t.DISPLAY_NAME))
+                .as("rendered for a person, packages dropped and type arguments kept")
+                .isEqualTo("List<String>");
+        });
+    }
+
     // ===== The externalField arm: what a consumer may name at @externalField(reference:) =====
 
     /**
@@ -740,6 +819,22 @@ class CodeCaptureTest {
             .and(p.METHOD_NAME.eq(methodName))
             .and(p.POSITION.eq(position))
             .fetchOne(row -> row.value1() + (row.value2() ? " many" : " one"));
+    }
+
+    /** The slot names one class offers. */
+    private static List<String> slotsOn(DSLContext dsl, String className) {
+        return dsl.select(CODE_TYPE_SLOT.SLOT_NAME)
+            .from(CODE_TYPE_SLOT)
+            .where(CODE_TYPE_SLOT.CLASS_NAME.eq(className))
+            .fetch(CODE_TYPE_SLOT.SLOT_NAME);
+    }
+
+    /** The arms those slots came from, which is a fact about the class. */
+    private static List<String> originsOn(DSLContext dsl, String className) {
+        return dsl.select(CODE_TYPE_SLOT.ORIGIN)
+            .from(CODE_TYPE_SLOT)
+            .where(CODE_TYPE_SLOT.CLASS_NAME.eq(className))
+            .fetch(CODE_TYPE_SLOT.ORIGIN);
     }
 
     /** The service candidates one class declares, by name. */

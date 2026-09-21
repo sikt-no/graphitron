@@ -3027,6 +3027,10 @@ public final class SeededStore {
         dsl.insertInto(CODE_TYPE)
             .set(CODE_TYPE.SOURCE_NAME, sourceName)
             .set(CODE_TYPE.TYPE_NAME, typeName)
+            // A fixture names types by their binary spelling, so the rendering is that spelling
+            // with its package dropped; nothing seeded here asserts on how a type reads.
+            .set(CODE_TYPE.DISPLAY_NAME,
+                typeName.substring(typeName.lastIndexOf('.') + 1))
             .set(CODE_TYPE.TOUCHED_AT, SEEDED_READING)
             .onDuplicateKeyIgnore()
             .execute();
