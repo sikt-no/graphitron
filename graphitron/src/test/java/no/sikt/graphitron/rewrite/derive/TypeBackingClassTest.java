@@ -125,6 +125,31 @@ class TypeBackingClassTest {
     }
 
     /**
+     * The condition is the authored application and not its resolution. {@code Film.rating} names a
+     * service class the census never reached, so nothing seeds Rating, and the parent's member of
+     * the same name delivers a class of its own. Reading the resolution would find no producer and
+     * back Rating off that member, which is a wrong class dressed as an answer; the field's value
+     * comes from the method the author named whether or not a classpath entry declared it, so the
+     * type stays unbacked here exactly as the walk leaves it.
+     */
+    @Test
+    void aProducerReferenceTheCensusNeverReachedStillStopsTheHop() {
+        withCapturedStore(dsl -> assertThat(backing(dsl, GRAPH, "Rating")).isEmpty());
+    }
+
+    /**
+     * And the application, not the reference it decodes to. {@code Film.score} carries a
+     * {@code @service} spelled without its method, which the reference relation drops as
+     * unresolvable, while the parent's member of the same name delivers a class of its own. The
+     * author still said the value does not come from the member, and the walk skips the field on
+     * the applied directive alone, so Score stays unbacked here too.
+     */
+    @Test
+    void aProducerApplicationMissingItsMethodStillStopsTheHop() {
+        withCapturedStore(dsl -> assertThat(backing(dsl, GRAPH, "Score")).isEmpty());
+    }
+
+    /**
      * Two producers answering one type differently are two rows, where the walk suppresses the
      * second observation to protect the first and leaves the disagreement unobservable. The writer
      * records both and prefers neither; that a reader can then learn the type is contested is the
@@ -264,8 +289,9 @@ class TypeBackingClassTest {
 
     /**
      * One chain three types deep, one cycle, one coordinate two producers answer differently, one
-     * field whose own producer overrides its parent's member, one scalar producer and one object
-     * nothing reaches. One type carries {@code @table} against the test catalog, which is the
+     * field whose own producer overrides its parent's member, one whose producer names a class the
+     * census never reached, one whose producer is spelled without its method, one scalar producer
+     * and one object nothing reaches. One type carries {@code @table} against the test catalog, which is the
      * population the closure never seeds.
      */
     private static final String SDL = """
@@ -286,6 +312,8 @@ class TypeBackingClassTest {
             language: Language
             actors: [Actor]
             reviews: [Review] @service(service: {className: "app.ReviewService", method: "forFilm"})
+            rating: Rating @service(service: {className: "app.RatingService", method: "forFilm"})
+            score: Score @service(service: {className: "app.FilmService"})
             related: Film
             grounded: Grounded
         }
@@ -297,6 +325,8 @@ class TypeBackingClassTest {
         type Country { code: String }
         type Actor { name: String }
         type Review { body: String }
+        type Rating { stars: Int }
+        type Score { value: Int }
         type Contested { id: ID }
         type Carrier { id: ID }
         type Orphan { id: ID }
@@ -317,8 +347,10 @@ class TypeBackingClassTest {
 
     /**
      * Two service classes and the records their returns reach. {@code app.FilmRecord}'s
-     * {@code reviews} component names a class no SDL coordinate should reach, which is what makes
-     * the producer-override case an assertion rather than a coincidence.
+     * {@code reviews}, {@code rating} and {@code score} components each name a class no SDL
+     * coordinate should reach, which is what makes the three producer-override cases assertions
+     * rather than coincidences; {@code app.RatingService} is deliberately absent, being the
+     * unreached class.
      */
     private static List<CompletionData.ExternalReference> census() {
         return List.of(
@@ -342,6 +374,8 @@ class TypeBackingClassTest {
                 component("language", ref("", "app.LanguageRecord")),
                 component("actors", ref("", "java.util.List"), ref("0", "app.ActorRecord")),
                 component("reviews", ref("", "java.util.List"), ref("0", "app.WrongRecord")),
+                component("rating", ref("", "app.WrongRatingRecord")),
+                component("score", ref("", "app.WrongScoreRecord")),
                 component("related", ref("", "app.FilmRecord")),
                 component("grounded", ref("", "app.GroundedRecord"))),
             record(APP, "app.LanguageRecord",

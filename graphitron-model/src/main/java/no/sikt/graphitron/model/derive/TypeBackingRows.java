@@ -2,10 +2,11 @@ package no.sikt.graphitron.model.derive;
 
 import org.jooq.DSLContext;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_ACCESSOR_HOP;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_METHOD;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CLASS;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_SEED;
 import static org.jooq.impl.DSL.notExists;
@@ -30,6 +31,28 @@ import static org.jooq.impl.DSL.val;
  * objects, which is where a class can stand for a type at all, and the two axes share one frontier:
  * an input object seeded from a parameter has its own fields read off that class exactly as an
  * output type does.
+ *
+ * <p>The one closure condition is an authored fact: a coordinate the author applied a producer
+ * directive to, {@code @service} or {@code @externalField}, is not read off its parent, its value
+ * coming from the method the author named. It is read where it is captured, off the two entry
+ * relations {@code graphitron_service_entry} and {@code graphitron_external_field_entry}, which
+ * hold one row per application whatever the application spelled. Not off the reference those
+ * entries decode to, which drops an application missing its method, and not off that reference's
+ * census resolution, which drops an application naming a class no classpath entry declared: both
+ * are the author saying the value does not come from the member, and the classification walk skips
+ * the field on the applied directive alone. The condition is broader than the walk's on one arm,
+ * the walk skipping on {@code @service} only; that breadth predates the entry read and is the
+ * derivation's own reading, an external field's method being invoked for the field like a
+ * service's.
+ *
+ * <p>The condition used to be read off the resolution, and that was wrong before it was slow: an
+ * unreached producer backed its type off the parent's member, a wrong class dressed as an answer.
+ * The slowness was the symptom the fact model predicts of a reader pointed past a captured fact.
+ * The resolution carries a window function, which no outside predicate prunes, so the anti-join
+ * evaluated the whole census join once per hop the closure reached and its cost tracked the census
+ * rather than the graph; against the entry tables the same anti-join is a primary-key seek into
+ * each and measured within a few percent of the statement with no producer condition at all, where
+ * the resolved form cost minutes per capture on a consumer census.
  *
  * <p>The pass count is bounded by the row count rather than by a constant. Every pass inserts at
  * least one pair the relation did not hold, so a pass index above the current row count is
@@ -78,14 +101,16 @@ public final class TypeBackingRows {
 
     /**
      * One frontier pass: every field of a backed type, read off the class backing it, backs its
-     * own named type with what the hop lands on. A coordinate with a producer of its own is
-     * skipped, its value coming from that method rather than from the parent's member.
+     * own named type with what the hop lands on. A coordinate the author applied a producer
+     * directive to is skipped, its value coming from that method rather than from the parent's
+     * member; the class javadoc says why the entries and not their resolution.
      */
     private static int expand(DSLContext dsl, String graphName) {
         var b = INTENT_TYPE_BACKING_CLASS;
         var backed = INTENT_TYPE_BACKING_CLASS.as("backed");
         var h = INTENT_FIELD_ACCESSOR_HOP;
-        var p = INTENT_FIELD_PRODUCER_METHOD;
+        var service = GRAPHITRON_SERVICE_ENTRY;
+        var external = GRAPHITRON_EXTERNAL_FIELD_ENTRY;
         return dsl.insertInto(b, b.GRAPH_NAME, b.TYPE_NAME, b.CLASS_NAME)
             .select(selectDistinct(val(graphName), GRAPHQL_FIELD.NAMED_TYPE, h.TO_CLASS_NAME)
                 .from(backed)
@@ -99,10 +124,14 @@ public final class TypeBackingRows {
                     .and(GRAPHQL_TYPE.TYPE_NAME.eq(GRAPHQL_FIELD.NAMED_TYPE))
                     .and(GRAPHQL_TYPE.KIND.in("OBJECT", "INPUT_OBJECT")))
                 .where(backed.GRAPH_NAME.eq(graphName))
-                .and(notExists(selectOne().from(p)
-                    .where(p.GRAPH_NAME.eq(h.GRAPH_NAME))
-                    .and(p.TYPE_NAME.eq(h.TYPE_NAME))
-                    .and(p.FIELD_NAME.eq(h.FIELD_NAME))))
+                .and(notExists(selectOne().from(service)
+                    .where(service.GRAPH_NAME.eq(h.GRAPH_NAME))
+                    .and(service.TYPE_NAME.eq(h.TYPE_NAME))
+                    .and(service.FIELD_NAME.eq(h.FIELD_NAME))))
+                .and(notExists(selectOne().from(external)
+                    .where(external.GRAPH_NAME.eq(h.GRAPH_NAME))
+                    .and(external.TYPE_NAME.eq(h.TYPE_NAME))
+                    .and(external.FIELD_NAME.eq(h.FIELD_NAME))))
                 .and(notExists(selectOne().from(b)
                     .where(b.GRAPH_NAME.eq(graphName))
                     .and(b.TYPE_NAME.eq(GRAPHQL_FIELD.NAMED_TYPE))
