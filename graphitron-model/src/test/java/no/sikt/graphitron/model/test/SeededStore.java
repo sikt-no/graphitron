@@ -2764,6 +2764,18 @@ public final class SeededStore {
         seedSlot(dsl, sourceName, className, methodName, descriptor);
     }
 
+    /** What the seeded accessor hands back, which the signature pass wrote down a moment ago. */
+    private static String resultTypeOf(DSLContext dsl, String sourceName, String className,
+                                       String methodName, String descriptor) {
+        return dsl.select(CODE_METHOD.RESULT_TYPE)
+            .from(CODE_METHOD)
+            .where(CODE_METHOD.SOURCE_NAME.eq(sourceName)
+                .and(CODE_METHOD.CLASS_NAME.eq(className))
+                .and(CODE_METHOD.METHOD_NAME.eq(methodName))
+                .and(CODE_METHOD.DESCRIPTOR.eq(descriptor)))
+            .fetchOne(0, String.class);
+    }
+
     /**
      * The member slot a seeded accessor offers, where the class's declared form says it offers one.
      *
@@ -2796,17 +2808,12 @@ public final class SeededStore {
                 return;
             }
             CodeRows.slot(dsl, sourceName, className, methodName, descriptor, methodName,
+                resultTypeOf(dsl, sourceName, className, methodName, descriptor),
                 "RECORD_COMPONENT", SEEDED_READING);
             // A record's component is read off one and passed to make one, so stating it states
             // both sides. What it is filled with is what its accessor hands back, those being the
             // same declaration seen from either end.
-            String filled = dsl.select(CODE_METHOD.RESULT_TYPE)
-                .from(CODE_METHOD)
-                .where(CODE_METHOD.SOURCE_NAME.eq(sourceName)
-                    .and(CODE_METHOD.CLASS_NAME.eq(className))
-                    .and(CODE_METHOD.METHOD_NAME.eq(methodName))
-                    .and(CODE_METHOD.DESCRIPTOR.eq(descriptor)))
-                .fetchOne(0, String.class);
+            String filled = resultTypeOf(dsl, sourceName, className, methodName, descriptor);
             CodeRows.construction(dsl, sourceName, className, "POSITIONAL", "<canonical>",
                 SEEDED_READING);
             CodeRows.writeSlot(dsl, sourceName, className, "<init>", "<canonical>", position,
@@ -2814,7 +2821,9 @@ public final class SeededStore {
             return;
         }
         CodeRows.slot(dsl, sourceName, className, methodName, descriptor,
-            CodeRows.beanProperty(methodName), "BEAN_ACCESSOR", SEEDED_READING);
+            CodeRows.beanProperty(methodName),
+            resultTypeOf(dsl, sourceName, className, methodName, descriptor),
+            "BEAN_ACCESSOR", SEEDED_READING);
     }
 
     /**

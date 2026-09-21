@@ -162,30 +162,51 @@ class ConstructionQueryTest {
     }
 
     /**
-     * The gap the queries found and this suite does not paper over: a member a base class declares
-     * is fillable on the subclass and is not readable on it.
+     * The same question on the read side, which is where the queries found the model short and
+     * where it now answers: a member a base class declares is one the subclass offers, and the slot
+     * says where it is written so a jump to its source lands in the file that has it.
      *
-     * <p>Written as a pin rather than an expectation. The emitter reaches an inherited member from
-     * either direction, so the read side owes the same closure the write side now walks; it cannot
-     * take it yet for a reason the write side did not have, which is that a read slot names the
-     * method that reads it and keys to that method's own row, and an inherited method has no row
-     * under the class that offers it. Closing it means a read slot naming its declaring class, and
-     * this case is what will fail when it does.
+     * <p>One join for the type, which is the shape the write side settled first. The accessor's own
+     * row is not consulted and could not be: it sits under the class that declares the method, and
+     * the class offering the member is a different one.
      */
     @Test
-    @DisplayName("an inherited member is fillable and not yet readable, which is a gap and not a rule")
-    void theReadSideStopsAtTheDeclaringClass() {
+    @DisplayName("what can I read off this class, inherited members included")
+    void theRecipeForReadingABean() {
+        withReactorCapture(dsl ->
+            assertThat(dsl.select(CODE_TYPE_SLOT.SLOT_NAME, CODE_TYPE.DISPLAY_NAME,
+                    CODE_TYPE_SLOT.METHOD_NAME, CODE_TYPE_SLOT.DECLARING_CLASS)
+                .from(CODE_TYPE_SLOT)
+                .join(CODE_TYPE).on(CODE_TYPE.SOURCE_NAME.eq(CODE_TYPE_SLOT.SOURCE_NAME),
+                    CODE_TYPE.TYPE_NAME.eq(CODE_TYPE_SLOT.SLOT_TYPE))
+                .where(CODE_TYPE_SLOT.CLASS_NAME.eq(FIXTURES + "BeanChild"))
+                .orderBy(CODE_TYPE_SLOT.SLOT_NAME.asc())
+                .fetch(r -> r.value1() + " " + r.value2() + " " + r.value3() + " from "
+                    + r.value4().substring(FIXTURES.length())))
+                .as("the inherited getter is offered here and written there")
+                .containsExactly("title String getTitle from BeanBase"));
+    }
+
+    /**
+     * And the two axes now agree about one class, which is what says the gap is closed rather than
+     * moved. The member is readable and fillable, each through the method its own side names.
+     */
+    @Test
+    @DisplayName("an inherited member is both readable and fillable")
+    void bothAxesReachAnInheritedMember() {
         withReactorCapture(dsl -> {
-            assertThat(dsl.fetchCount(CODE_WRITE_SLOT,
-                CODE_WRITE_SLOT.TYPE_NAME.eq(FIXTURES + "BeanChild")
-                    .and(CODE_WRITE_SLOT.SLOT_NAME.eq("title"))))
-                .as("the setter the base class declares is offered on the subclass")
-                .isOne();
-            assertThat(dsl.fetchCount(CODE_TYPE_SLOT,
-                CODE_TYPE_SLOT.CLASS_NAME.eq(FIXTURES + "BeanChild")
-                    .and(CODE_TYPE_SLOT.SLOT_NAME.eq("title"))))
-                .as("and the getter beside it is not, which is the gap")
-                .isZero();
+            assertThat(dsl.select(CODE_TYPE_SLOT.METHOD_NAME)
+                .from(CODE_TYPE_SLOT)
+                .where(CODE_TYPE_SLOT.CLASS_NAME.eq(FIXTURES + "BeanChild"))
+                .and(CODE_TYPE_SLOT.SLOT_NAME.eq("title"))
+                .fetch(CODE_TYPE_SLOT.METHOD_NAME))
+                .containsExactly("getTitle");
+            assertThat(dsl.select(CODE_WRITE_SLOT.METHOD_NAME)
+                .from(CODE_WRITE_SLOT)
+                .where(CODE_WRITE_SLOT.TYPE_NAME.eq(FIXTURES + "BeanChild"))
+                .and(CODE_WRITE_SLOT.SLOT_NAME.eq("title"))
+                .fetch(CODE_WRITE_SLOT.METHOD_NAME))
+                .containsExactly("setTitle");
         });
     }
 

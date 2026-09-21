@@ -24,7 +24,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
-import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_SLOT;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_CLAIM_CONFLICT;
@@ -550,23 +549,18 @@ final class SchemaQueries {
      * never reached answers with nothing, which is not a failure: the table arm's classes are generated
      * jOOQ records the reading deliberately never scans.
      *
-     * <p>The rendered type is two key joins out, the slot being read by a method whose result names
-     * a type and the rendering belonging to that type. Both joins are on whole primary keys, so
-     * neither can widen what the class offers.
+     * <p>The rendered type is one key join out, the slot naming what reading it yields and the
+     * rendering belonging to that type. On a whole primary key, so it cannot widen what the class
+     * offers.
      */
     private static Field<List<MemberSlot>> members(StoreHandle store) {
         return multiset(
             select(CODE_TYPE_SLOT.SLOT_NAME, CODE_TYPE.DISPLAY_NAME,
                 CODE_TYPE_SLOT.ORIGIN, CODE_TYPE_SLOT.METHOD_NAME)
                 .from(CODE_TYPE_SLOT)
-                .join(CODE_METHOD)
-                .on(CODE_METHOD.SOURCE_NAME.eq(CODE_TYPE_SLOT.SOURCE_NAME)
-                    .and(CODE_METHOD.CLASS_NAME.eq(CODE_TYPE_SLOT.CLASS_NAME))
-                    .and(CODE_METHOD.METHOD_NAME.eq(CODE_TYPE_SLOT.METHOD_NAME))
-                    .and(CODE_METHOD.DESCRIPTOR.eq(CODE_TYPE_SLOT.DESCRIPTOR)))
                 .join(CODE_TYPE)
-                .on(CODE_TYPE.SOURCE_NAME.eq(CODE_METHOD.SOURCE_NAME)
-                    .and(CODE_TYPE.TYPE_NAME.eq(CODE_METHOD.RESULT_TYPE)))
+                .on(CODE_TYPE.SOURCE_NAME.eq(CODE_TYPE_SLOT.SOURCE_NAME)
+                    .and(CODE_TYPE.TYPE_NAME.eq(CODE_TYPE_SLOT.SLOT_TYPE)))
                 .where(CODE_TYPE_SLOT.CLASS_NAME.eq(INTENT_TYPE_BACKING.CLASS_NAME)
                     .and(store.reads(CODE_TYPE_SLOT.SOURCE_NAME)))
                 .orderBy(CODE_TYPE_SLOT.SLOT_NAME.asc(), CODE_TYPE_SLOT.METHOD_NAME.asc()))

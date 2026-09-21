@@ -397,55 +397,110 @@ public final class CodeCapture {
      */
     private static void slots(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
                               LocalDateTime touchedAt) {
-        record Slot(String source, String className, ClassfileCensus.MethodAt at, String slotName,
-                    String origin, Integer position) {}
+        record Slot(String source, String className, String declaringClass,
+                    ClassfileCensus.MethodAt at, String slotName, String origin) {}
+        var byName = new java.util.LinkedHashMap<String, ClassfileCensus.ClassAt>();
+        for (ClassfileCensus.ClassAt at : classes) {
+            byName.putIfAbsent(at.className(), at);
+        }
         var found = new ArrayList<Slot>();
         for (ClassfileCensus.ClassAt at : classes) {
-            boolean isRecord = "RECORD".equals(at.kind());
-            var components = new java.util.HashMap<String, Integer>();
-            for (ClassfileCensus.ComponentAt component : at.components()) {
-                components.putIfAbsent(component.name(), component.position());
-            }
-            for (ClassfileCensus.MethodAt method : at.methods()) {
-                if (!method.parameters().isEmpty()) {
-                    continue;
-                }
-                if (isRecord) {
-                    Integer position = components.get(method.name());
-                    if (position != null) {
-                        found.add(new Slot(at.source(), at.className(), method, method.name(),
-                            "RECORD_COMPONENT", position));
+            if ("RECORD".equals(at.kind())) {
+                var components = at.components().stream()
+                    .map(ClassfileCensus.ComponentAt::name)
+                    .collect(java.util.stream.Collectors.toSet());
+                for (ClassfileCensus.MethodAt method : at.methods()) {
+                    if (method.parameters().isEmpty() && components.contains(method.name())) {
+                        found.add(new Slot(at.source(), at.className(), at.className(), method,
+                            method.name(), "RECORD_COMPONENT"));
                     }
-                    continue;
                 }
-                String property = beanProperty(method.name());
-                if (property != null) {
-                    found.add(new Slot(at.source(), at.className(), method, property,
-                        "BEAN_ACCESSOR", null));
-                }
+                continue;
+            }
+            for (Offered offered : offeredBy(at, byName, CodeCapture::accessorProperty)) {
+                found.add(new Slot(at.source(), at.className(), offered.declaringClass(),
+                    offered.at(), accessorProperty(offered.at()), "BEAN_ACCESSOR"));
             }
         }
         if (found.isEmpty()) {
             return;
         }
+        // The types these slots are about to key to, under the offering class's own entry. An
+        // inherited accessor was read from the base class's entry, so its result type was written
+        // down under that one, and a slot is partitioned by where the class an author names was
+        // found rather than by where the method behind it was.
+        writeTypes(dsl, found.stream()
+            .map(row -> new Named(row.source(), row.at().qualifiedReturnType(),
+                row.at().declaredReturnType()))
+            .toList(), touchedAt);
         var t = CODE_TYPE_SLOT;
         var rows = found.stream().collect(Rows.toRowList(
             row -> val(row.source(), t.SOURCE_NAME),
             row -> val(row.className(), t.CLASS_NAME),
             row -> val(row.at().name(), t.METHOD_NAME),
             row -> val(row.at().descriptor(), t.DESCRIPTOR),
+            row -> val(row.declaringClass(), t.DECLARING_CLASS),
             row -> val(row.slotName(), t.SLOT_NAME),
+            row -> val(row.at().qualifiedReturnType(), t.SLOT_TYPE),
             row -> val(row.origin(), t.ORIGIN),
             row -> val(touchedAt, t.TOUCHED_AT)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.CLASS_NAME, t.METHOD_NAME, t.DESCRIPTOR,
-                    t.SLOT_NAME, t.ORIGIN, t.TOUCHED_AT)
+                    t.DECLARING_CLASS, t.SLOT_NAME, t.SLOT_TYPE, t.ORIGIN, t.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
+                .set(t.DECLARING_CLASS, excluded(t.DECLARING_CLASS))
                 .set(t.SLOT_NAME, excluded(t.SLOT_NAME))
+                .set(t.SLOT_TYPE, excluded(t.SLOT_TYPE))
                 .set(t.ORIGIN, excluded(t.ORIGIN))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+    }
 
+    /** One method a class offers, and the class it is written on. */
+    private record Offered(ClassfileCensus.MethodAt at, String declaringClass) {}
+
+    /**
+     * Every method of one shape a class offers, its superclasses' included, nearest declaration
+     * winning.
+     *
+     * <p>What an author may name is what the class offers rather than what its own file declares,
+     * so a member a base class declares is one the subclass offers and both sides of the model owe
+     * it: the emitter reaches an inherited accessor and an inherited setter alike, through the
+     * subclass, without caring which file either came from.
+     *
+     * <p>The walk is the extends chain and stops where the classpath does, which is the same best
+     * effort every walk past a classfile makes: a base class no entry declares contributes what it
+     * can be read for, which is nothing. Overriding is by name and descriptor, which is what
+     * overriding is, and the nearest class wins because that is the method the call reaches.
+     */
+    private static List<Offered> offeredBy(
+        ClassfileCensus.ClassAt at, Map<String, ClassfileCensus.ClassAt> byName,
+        java.util.function.Function<ClassfileCensus.MethodAt, String> shape) {
+        var offered = new ArrayList<Offered>();
+        var overridden = new java.util.HashSet<String>();
+        var walked = new java.util.LinkedHashSet<String>();
+        ClassfileCensus.ClassAt walking = at;
+        while (walking != null && walked.add(walking.className())) {
+            for (ClassfileCensus.MethodAt method : walking.methods()) {
+                if (shape.apply(method) != null
+                    && overridden.add(method.name() + method.descriptor())) {
+                    offered.add(new Offered(method, walking.className()));
+                }
+            }
+            walking = walking.supertypes().stream()
+                .filter(supertype -> "EXTENDS".equals(supertype.declaredVia()))
+                .map(supertype -> byName.get(supertype.name()))
+                .filter(java.util.Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+        }
+        return offered;
+    }
+
+    /** The property a no-argument getter offers, or null where the method is not one. */
+    private static String accessorProperty(ClassfileCensus.MethodAt method) {
+        return method.parameters().isEmpty() && !method.isStatic()
+            ? beanProperty(method.name()) : null;
     }
 
     /** The property a getter offers, or null where the name is not one. */
@@ -675,27 +730,9 @@ public final class CodeCapture {
      */
     private static List<ClassfileCensus.MethodAt> settersOf(
         ClassfileCensus.ClassAt at, Map<String, ClassfileCensus.ClassAt> byName) {
-        var offered = new ArrayList<ClassfileCensus.MethodAt>();
-        var overridden = new java.util.HashSet<String>();
-        var walked = new java.util.LinkedHashSet<String>();
-        ClassfileCensus.ClassAt walking = at;
-        while (walking != null && walked.add(walking.className())) {
-            for (ClassfileCensus.MethodAt method : walking.methods()) {
-                if (setterProperty(method) == null) {
-                    continue;
-                }
-                if (overridden.add(method.name() + method.descriptor())) {
-                    offered.add(method);
-                }
-            }
-            walking = walking.supertypes().stream()
-                .filter(supertype -> "EXTENDS".equals(supertype.declaredVia()))
-                .map(supertype -> byName.get(supertype.name()))
-                .filter(java.util.Objects::nonNull)
-                .findFirst()
-                .orElse(null);
-        }
-        return offered;
+        return offeredBy(at, byName, CodeCapture::setterProperty).stream()
+            .map(Offered::at)
+            .toList();
     }
 
     /**

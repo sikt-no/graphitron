@@ -72,7 +72,8 @@ public final class CodeRows {
                 }
                 if (method.parameters().isEmpty()) {
                     slot(dsl, at.sourceName(), at.className(), method.name(), method.descriptor(),
-                        beanProperty(method.name()), "BEAN_ACCESSOR", readAt);
+                        beanProperty(method.name()),
+                        resultTypeName(positions, method.descriptor()), "BEAN_ACCESSOR", readAt);
                     continue;
                 }
                 String filled = setterProperty(method);
@@ -95,7 +96,8 @@ public final class CodeRows {
                 write(dsl, at.sourceName(), at.className(), component.name(), descriptor,
                     positions, readAt);
                 slot(dsl, at.sourceName(), at.className(), component.name(), descriptor,
-                    component.name(), "RECORD_COMPONENT", readAt);
+                    component.name(), resultTypeName(positions, descriptor), "RECORD_COMPONENT",
+                    readAt);
                 // And the write side of the same component. A record is made in one call, so the
                 // component is both what you read off one and what you pass to make one, and the
                 // census states it once for both.
@@ -147,19 +149,28 @@ public final class CodeRows {
             .execute();
     }
 
-    /** One member slot, where the name is one; a null name is a method offering none. */
+    /**
+     * One member slot, where the name is one; a null name is a method offering none.
+     *
+     * <p>The declaring class is the offering class here, a stated census having no inheritance to
+     * describe: it lists what each class declares. The distinction is the reading's and is pinned
+     * where the reading is.
+     */
     public static void slot(DSLContext dsl, String sourceName, String className, String methodName,
-                            String descriptor, String slotName, String origin,
+                            String descriptor, String slotName, String slotType, String origin,
                             LocalDateTime readAt) {
         if (slotName == null) {
             return;
         }
+        type(dsl, sourceName, slotType, readAt);
         dsl.insertInto(CODE_TYPE_SLOT)
             .set(CODE_TYPE_SLOT.SOURCE_NAME, sourceName)
             .set(CODE_TYPE_SLOT.CLASS_NAME, className)
             .set(CODE_TYPE_SLOT.METHOD_NAME, methodName)
             .set(CODE_TYPE_SLOT.DESCRIPTOR, descriptor)
+            .set(CODE_TYPE_SLOT.DECLARING_CLASS, className)
             .set(CODE_TYPE_SLOT.SLOT_NAME, slotName)
+            .set(CODE_TYPE_SLOT.SLOT_TYPE, slotType)
             .set(CODE_TYPE_SLOT.ORIGIN, origin)
             .set(CODE_TYPE_SLOT.TOUCHED_AT, readAt)
             .onDuplicateKeyIgnore()

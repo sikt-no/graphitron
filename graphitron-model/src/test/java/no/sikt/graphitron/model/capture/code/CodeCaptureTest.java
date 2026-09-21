@@ -689,15 +689,11 @@ class CodeCaptureTest {
     @DisplayName("what a slot carries is its accessor's result")
     void aSlotCarriesItsAccessorsResult() {
         withReactorCapture(dsl -> {
-            var m = CODE_METHOD;
             var t = CODE_TYPE;
             assertThat(dsl.select(t.DISPLAY_NAME)
                     .from(CODE_TYPE_SLOT)
-                    .join(m).on(m.SOURCE_NAME.eq(CODE_TYPE_SLOT.SOURCE_NAME),
-                        m.CLASS_NAME.eq(CODE_TYPE_SLOT.CLASS_NAME),
-                        m.METHOD_NAME.eq(CODE_TYPE_SLOT.METHOD_NAME),
-                        m.DESCRIPTOR.eq(CODE_TYPE_SLOT.DESCRIPTOR))
-                    .join(t).on(t.SOURCE_NAME.eq(m.SOURCE_NAME), t.TYPE_NAME.eq(m.RESULT_TYPE))
+                    .join(t).on(t.SOURCE_NAME.eq(CODE_TYPE_SLOT.SOURCE_NAME),
+                        t.TYPE_NAME.eq(CODE_TYPE_SLOT.SLOT_TYPE))
                     .where(CODE_TYPE_SLOT.CLASS_NAME.eq(SLOT_BEAN))
                     .and(CODE_TYPE_SLOT.SLOT_NAME.eq("tags"))
                     .fetchOne(t.DISPLAY_NAME))
@@ -856,15 +852,11 @@ class CodeCaptureTest {
 
     /** How a slot's type renders, which is its accessor's result type's property. */
     private static String displayTypeOf(DSLContext dsl, String className, String slotName) {
-        var m = CODE_METHOD;
         var t = CODE_TYPE;
         return dsl.select(t.DISPLAY_NAME)
             .from(CODE_TYPE_SLOT)
-            .join(m).on(m.SOURCE_NAME.eq(CODE_TYPE_SLOT.SOURCE_NAME),
-                m.CLASS_NAME.eq(CODE_TYPE_SLOT.CLASS_NAME),
-                m.METHOD_NAME.eq(CODE_TYPE_SLOT.METHOD_NAME),
-                m.DESCRIPTOR.eq(CODE_TYPE_SLOT.DESCRIPTOR))
-            .join(t).on(t.SOURCE_NAME.eq(m.SOURCE_NAME), t.TYPE_NAME.eq(m.RESULT_TYPE))
+            .join(t).on(t.SOURCE_NAME.eq(CODE_TYPE_SLOT.SOURCE_NAME),
+                t.TYPE_NAME.eq(CODE_TYPE_SLOT.SLOT_TYPE))
             .where(CODE_TYPE_SLOT.CLASS_NAME.eq(className))
             .and(CODE_TYPE_SLOT.SLOT_NAME.eq(slotName))
             .fetchOne(t.DISPLAY_NAME);

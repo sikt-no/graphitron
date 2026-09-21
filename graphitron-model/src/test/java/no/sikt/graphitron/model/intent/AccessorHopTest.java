@@ -8,7 +8,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_SLOT;
 import static no.sikt.graphitron.model.Tables.INTENT_DECLARED_TYPE_ELEMENT;
@@ -772,21 +771,15 @@ class AccessorHopTest {
     }
 
     /**
-     * What the named slot delivers: the slot's accessor, that accessor's result type, and what the
-     * reading peeled that type down to. Three key joins and no owner kind, the slot naming the whole
-     * of its accessor's key rather than half of it.
+     * What the named slot delivers: the type the slot yields, peeled. One key join and no owner
+     * kind, the slot naming what reading it hands back.
      */
     private static List<String> delivered(DSLContext dsl, String className, String slotName) {
         return dsl.select(CODE_TYPE_ELEMENT.ELEMENT_CLASS)
             .from(CODE_TYPE_SLOT)
-            .join(CODE_METHOD)
-            .on(CODE_METHOD.SOURCE_NAME.eq(CODE_TYPE_SLOT.SOURCE_NAME)
-                .and(CODE_METHOD.CLASS_NAME.eq(CODE_TYPE_SLOT.CLASS_NAME))
-                .and(CODE_METHOD.METHOD_NAME.eq(CODE_TYPE_SLOT.METHOD_NAME))
-                .and(CODE_METHOD.DESCRIPTOR.eq(CODE_TYPE_SLOT.DESCRIPTOR)))
             .join(CODE_TYPE_ELEMENT)
-            .on(CODE_TYPE_ELEMENT.SOURCE_NAME.eq(CODE_METHOD.SOURCE_NAME)
-                .and(CODE_TYPE_ELEMENT.TYPE_NAME.eq(CODE_METHOD.RESULT_TYPE)))
+            .on(CODE_TYPE_ELEMENT.SOURCE_NAME.eq(CODE_TYPE_SLOT.SOURCE_NAME)
+                .and(CODE_TYPE_ELEMENT.TYPE_NAME.eq(CODE_TYPE_SLOT.SLOT_TYPE)))
             .where(CODE_TYPE_SLOT.CLASS_NAME.eq(className)
                 .and(CODE_TYPE_SLOT.SLOT_NAME.eq(slotName)))
             .fetch(0, String.class);
