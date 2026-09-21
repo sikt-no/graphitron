@@ -378,7 +378,6 @@ class AccessorHopTest {
                 .as("the declaration a jump to the member's own source lands on")
                 .isEqualTo("getFilms");
             assertThat(rows.getFirst().getToClassName()).isEqualTo(FILM);
-            assertThat(rows.getFirst().getOrigin()).isEqualTo("BEAN_ACCESSOR");
         });
     }
 
@@ -396,18 +395,41 @@ class AccessorHopTest {
     }
 
     /**
-     * An input-object field is the same question about the same members, so it is one population.
-     * Two records offer the slot the field names and the coordinate stands on both, this relation
-     * saying which class a parent is on no more here than anywhere else.
+     * An input-object field resolves against what a class can be filled with, not against what it
+     * can be read for. A record is where the two coincide: a component is passed to make one and
+     * read off one, so both axes reach it, and the two records offering the slot are both standing
+     * classes here exactly as they are on the output side.
      */
     @Test
-    void anInputObjectFieldHopsOnTheSameTerms() {
+    void anInputObjectFieldHopsThroughWhatFillsTheMember() {
         withCensus(dsl ->
             assertThat(hops(dsl, GRAPH, "FilmInput", "actors"))
-                .extracting(r -> r.getFromClassName() + " " + r.getOrigin() + " " + r.getToClassName())
+                .extracting(r -> r.getFromClassName() + " " + r.getToClassName())
                 .containsExactlyInAnyOrder(
-                    "app.FilmRecord RECORD_COMPONENT app.ActorRecord",
-                    "app.ShowRecord RECORD_COMPONENT app.CastRecord"));
+                    "app.FilmRecord app.ActorRecord",
+                    "app.ShowRecord app.CastRecord"));
+    }
+
+    /**
+     * And where they do not coincide, the two axes part. A class offering an accessor and no way to
+     * be filled answers an output coordinate of that name and no input one, which is the whole
+     * reason the two are separate arms: the emitter writes a member through a constructor argument
+     * or a setter, so a store that answered an input coordinate from an accessor would promise a
+     * binding the emitter then refuses.
+     */
+    @Test
+    void aClassThatCanOnlyBeReadAnswersNoInputCoordinate() {
+        withCensus(dsl -> {
+            assertThat(hops(dsl, GRAPH, "Store", "films"))
+                .as("the accessor answers the output coordinate")
+                .extracting(IntentFieldAccessorHopRecord::getFromClassName)
+                .contains(STORE);
+            assertThat(hops(dsl, GRAPH, "FilmInput", "films"))
+                .as("and nothing fills a member of that name on it, so the input coordinate is"
+                    + " unanswered rather than answered from the accessor")
+                .extracting(IntentFieldAccessorHopRecord::getFromClassName)
+                .doesNotContain(STORE);
+        });
     }
 
     /**
@@ -665,12 +687,14 @@ class AccessorHopTest {
         seedClass(dsl, LIB, LEGACY_STORE, "CLASS");
         seedMethod(dsl, LIB, LEGACY_STORE, "getCast", LIST,
             Map.of("", "java.util.List", "0", "lib.CastDto"));
+        seedType(dsl, SIBLING, "Store", "OBJECT");
         seedType(dsl, SIBLING, "Film", "OBJECT");
         seedField(dsl, SIBLING, "Store", "films", "Film", true);
     }
 
     /** Only the coordinates the hop cases need, output and input axis alike. */
     private static void seedCoordinates(DSLContext dsl) {
+        seedType(dsl, GRAPH, "Store", "OBJECT");
         seedType(dsl, GRAPH, "Film", "OBJECT");
         seedType(dsl, GRAPH, "String", "SCALAR");
         seedField(dsl, GRAPH, "Store", "films", "Film", true);
@@ -683,6 +707,7 @@ class AccessorHopTest {
         seedField(dsl, GRAPH, "Film", "title", "String", false);
         seedDeclaredType(dsl, GRAPH, "FilmInput", "INPUT_OBJECT");
         seedField(dsl, GRAPH, "FilmInput", "actors", "ActorInput", true);
+        seedField(dsl, GRAPH, "FilmInput", "films", "Film", true);
     }
 
     /**

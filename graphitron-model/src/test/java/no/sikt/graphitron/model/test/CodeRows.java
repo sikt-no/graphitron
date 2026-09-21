@@ -11,11 +11,12 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTION;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
-import static no.sikt.graphitron.model.Tables.CODE_RECORD_COMPONENT;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_SLOT;
+import static no.sikt.graphitron.model.Tables.CODE_WRITE_SLOT;
 
 /**
  * A stated signature as the reading would have written it down: the method, the type its result
@@ -66,9 +67,22 @@ public final class CodeRows {
                 var positions = positionsOf(method.returnTypeRefs());
                 write(dsl, at.sourceName(), at.className(), method.name(), method.descriptor(),
                     positions, readAt);
-                if (!isRecord && method.parameters().isEmpty()) {
+                if (isRecord) {
+                    continue;
+                }
+                if (method.parameters().isEmpty()) {
                     slot(dsl, at.sourceName(), at.className(), method.name(), method.descriptor(),
                         beanProperty(method.name()), "BEAN_ACCESSOR", readAt);
+                    continue;
+                }
+                String filled = setterProperty(method);
+                if (filled != null) {
+                    var bound = positionsOf(method.parameters().getFirst().typeRefs());
+                    String boundType = resultTypeName(bound, "()Ljava/lang/Object;");
+                    type(dsl, at.sourceName(), boundType, readAt);
+                    construction(dsl, at.sourceName(), at.className(), "SETTERS", "()V", readAt);
+                    writeSlot(dsl, at.sourceName(), at.className(), method.name(),
+                        method.descriptor(), 0, filled, boundType, readAt);
                 }
             }
             if (!isRecord) {
@@ -82,10 +96,13 @@ public final class CodeRows {
                     positions, readAt);
                 slot(dsl, at.sourceName(), at.className(), component.name(), descriptor,
                     component.name(), "RECORD_COMPONENT", readAt);
-                // The header order is the order the census states them in, a transcription having
-                // no other place to put it.
-                component(dsl, at.sourceName(), at.className(), component.name(), descriptor,
-                    position++, readAt);
+                // And the write side of the same component. A record is made in one call, so the
+                // component is both what you read off one and what you pass to make one, and the
+                // census states it once for both.
+                construction(dsl, at.sourceName(), at.className(), "POSITIONAL", "<canonical>",
+                    readAt);
+                writeSlot(dsl, at.sourceName(), at.className(), "<init>", "<canonical>",
+                    position++, component.name(), resultTypeName(positions, descriptor), readAt);
             }
         }
     }
@@ -149,17 +166,60 @@ public final class CodeRows {
             .execute();
     }
 
-    /** Where one record component sits in its header, which is the one fact only that arm has. */
-    public static void component(DSLContext dsl, String sourceName, String className,
+    /** The property a setter fills, or null where the method is not one. */
+    public static String setterProperty(CompletionData.Method method) {
+        if (method.parameters().size() != 1) {
+            return null;
+        }
+        String name = method.name();
+        if (!name.startsWith("set") || name.length() <= 3) {
+            return null;
+        }
+        char first = name.charAt(3);
+        return first == Character.toLowerCase(first)
+            ? null : Character.toLowerCase(first) + name.substring(4);
+    }
+
+    /** That a value of the class can be made, and how. Idempotent; the first statement wins. */
+    public static void construction(DSLContext dsl, String sourceName, String className,
+                                    String shape, String descriptor, LocalDateTime readAt) {
+        type(dsl, sourceName, className, readAt);
+        dsl.insertInto(CODE_CONSTRUCTION)
+            .set(CODE_CONSTRUCTION.SOURCE_NAME, sourceName)
+            .set(CODE_CONSTRUCTION.TYPE_NAME, className)
+            .set(CODE_CONSTRUCTION.SHAPE, shape)
+            .set(CODE_CONSTRUCTION.DESCRIPTOR, descriptor)
+            .set(CODE_CONSTRUCTION.TOUCHED_AT, readAt)
+            .onDuplicateKeyIgnore()
+            .execute();
+    }
+
+    /** One member that goes in when a value of the class is made. */
+    public static void writeSlot(DSLContext dsl, String sourceName, String className,
                                  String methodName, String descriptor, int position,
-                                 LocalDateTime readAt) {
-        dsl.insertInto(CODE_RECORD_COMPONENT)
-            .set(CODE_RECORD_COMPONENT.SOURCE_NAME, sourceName)
-            .set(CODE_RECORD_COMPONENT.CLASS_NAME, className)
-            .set(CODE_RECORD_COMPONENT.METHOD_NAME, methodName)
-            .set(CODE_RECORD_COMPONENT.DESCRIPTOR, descriptor)
-            .set(CODE_RECORD_COMPONENT.POSITION, position)
-            .set(CODE_RECORD_COMPONENT.TOUCHED_AT, readAt)
+                                 String slotName, String slotType, LocalDateTime readAt) {
+        type(dsl, sourceName, slotType, readAt);
+        dsl.insertInto(CODE_WRITE_SLOT)
+            .set(CODE_WRITE_SLOT.SOURCE_NAME, sourceName)
+            .set(CODE_WRITE_SLOT.TYPE_NAME, className)
+            .set(CODE_WRITE_SLOT.METHOD_NAME, methodName)
+            .set(CODE_WRITE_SLOT.DESCRIPTOR, descriptor)
+            .set(CODE_WRITE_SLOT.POSITION, position)
+            .set(CODE_WRITE_SLOT.SLOT_NAME, slotName)
+            .set(CODE_WRITE_SLOT.SLOT_TYPE, slotType)
+            .set(CODE_WRITE_SLOT.TOUCHED_AT, readAt)
+            .onDuplicateKeyIgnore()
+            .execute();
+    }
+
+    /** One type, idempotently, for a caller that is about to key to it. */
+    public static void type(DSLContext dsl, String sourceName, String typeName,
+                            LocalDateTime readAt) {
+        dsl.insertInto(CODE_TYPE)
+            .set(CODE_TYPE.SOURCE_NAME, sourceName)
+            .set(CODE_TYPE.TYPE_NAME, typeName)
+            .set(CODE_TYPE.DISPLAY_NAME, withoutPackages(typeName))
+            .set(CODE_TYPE.TOUCHED_AT, readAt)
             .onDuplicateKeyIgnore()
             .execute();
     }

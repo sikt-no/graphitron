@@ -730,6 +730,8 @@ class GraphitronMcpServerTest {
                     FILM_SERVICE + "#activeFilms/0",
                     FILM_SERVICE + "#describe/1",
                     FILM_SERVICE + "#describe/1",
+                    FILM_SERVICE + "#search/1",
+                    FILM_SERVICE + "#summarise/1",
                     FILM_SERVICE + "#titles/1");
 
             assertThat(methodNamed(methods, "titles")).satisfies(m -> {
@@ -787,9 +789,9 @@ class GraphitronMcpServerTest {
      */
     @Test
     @SuppressWarnings("unchecked")
-    void codeRecordKindListsComponentsAndReportsMandatedMembersAsUndeclared(@TempDir Path tmp) {
+    void codeConstructibleKindListsWhatGoesInAndReportsMandatedMembersAsUndeclared(@TempDir Path tmp) {
         try (var fixture = StoreFixture.ofCodeFixtures(tmp)) {
-            var entry = onlyClass(fixture, "record", FILM_CARD);
+            var entry = onlyClass(fixture, "constructible", FILM_CARD);
 
             var components = (List<Map<String, Object>>) entry.get("components");
             assertThat(components).containsExactly(
@@ -866,16 +868,16 @@ class GraphitronMcpServerTest {
      */
     @Test
     @SuppressWarnings("unchecked")
-    void codeAnswersOnceForAClassThatIsBothAServiceAndARecord(@TempDir Path tmp) {
+    void codeAnswersOnceForAClassThatIsBothAServiceAndConstructible(@TempDir Path tmp) {
         try (var fixture = StoreFixture.ofCodeFixtures(tmp)) {
             var asService = onlyClass(fixture, "service", FILM_CARD);
-            var asRecord = onlyClass(fixture, "record", FILM_CARD);
+            var asConstructible = onlyClass(fixture, "constructible", FILM_CARD);
 
             assertThat((List<Map<String, Object>>) asService.get("components"))
-                .as("the service kind carries the components too, so neither half is missing")
-                .isEqualTo(asRecord.get("components"));
+                .as("the service kind carries what goes in too, so neither half is missing")
+                .isEqualTo(asConstructible.get("components"));
             assertThat((List<Map<String, Object>>) asService.get("methods"))
-                .isEqualTo(asRecord.get("methods"));
+                .isEqualTo(asConstructible.get("methods"));
         }
     }
 
@@ -885,7 +887,7 @@ class GraphitronMcpServerTest {
         try (var fixture = StoreFixture.ofCodeFixtures(tmp)) {
             var missing = GraphitronMcpServer.codeResult(fixture.handle(), fixture.reader(), Map.of());
             assertThat(missing.isError()).isTrue();
-            assertThat(firstLine(missing)).startsWith("code:").contains("service, condition, record");
+            assertThat(firstLine(missing)).startsWith("code:").contains("service, condition, constructible");
 
             var unknown = GraphitronMcpServer.codeResult(
                 fixture.handle(), fixture.reader(), Map.of("kind", "conditions"));

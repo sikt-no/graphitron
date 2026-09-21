@@ -37,4 +37,18 @@ public class FilmService {
     public String describe(String title) {
         return title;
     }
+
+    /**
+     * Takes a class that is filled in one call, which is what puts {@link FilmCard} in the
+     * constructible population: a class is constructible because something is passed one, not
+     * because it looks makeable.
+     */
+    public String summarise(FilmCard card) {
+        return card.title();
+    }
+
+    /** The same for the other shape, a class filled one member at a time. */
+    public List<String> search(FilmFilter filter) {
+        return List.of(filter.getTitle());
+    }
 }

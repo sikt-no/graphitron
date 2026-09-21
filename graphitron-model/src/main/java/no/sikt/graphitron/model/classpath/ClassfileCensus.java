@@ -49,7 +49,8 @@ public final class ClassfileCensus {
 
     /** One class, and everything public it declares. */
     public record ClassAt(String source, String className, String kind, List<SupertypeAt> supertypes,
-                          List<MethodAt> methods, List<ComponentAt> components,
+                          List<MethodAt> methods,
+                          List<MethodAt> constructors, List<ComponentAt> components,
                           List<FieldAt> fields) {}
 
     /** A name written above a class, and the clause it was written in. */
@@ -252,8 +253,8 @@ public final class ClassfileCensus {
             return Optional.empty();
         }
         return Optional.of(new ClassAt(source, className, kindOf(classfile),
-            supertypesOf(classfile), methodsOf(classfile), componentsOf(classfile),
-            fieldsOf(classfile)));
+            supertypesOf(classfile), methodsOf(classfile), constructorsOf(classfile),
+            componentsOf(classfile), fieldsOf(classfile)));
     }
 
     /**
@@ -322,37 +323,71 @@ public final class ClassfileCensus {
                 || name.startsWith("<")) {
                 continue;
             }
-            var type = method.methodTypeSymbol();
-            var signature = method.findAttribute(Attributes.signature())
-                .map(SignatureAttribute::asMethodSignature);
-            var declaredParameters = signature
-                .map(MethodSignature::arguments)
-                .filter(arguments -> arguments.size() == type.parameterCount())
-                .orElseGet(List::of);
-            var names = parameterNames(method);
-            var parameters = new ArrayList<ParameterAt>();
-            for (int i = 0; i < type.parameterCount(); i++) {
-                ClassDesc erased = type.parameterType(i);
-                Optional<Signature> declared = i < declaredParameters.size()
-                    ? Optional.of(declaredParameters.get(i))
-                    : Optional.empty();
-                parameters.add(new ParameterAt(i, i < names.size() ? names.get(i) : null,
-                    binaryName(erased),
-                    declared.map(ClassfileCensus::declaredName).orElseGet(() -> displayName(erased)),
-                    declared.map(ClassfileCensus::qualifiedName).orElseGet(() -> binaryName(erased)),
-                    typeRefs(declared, erased)));
-            }
-            var result = signature.map(MethodSignature::result);
-            methods.add(new MethodAt(name, type.descriptorString(),
-                binaryName(type.returnType()),
-                result.map(ClassfileCensus::declaredName)
-                    .orElseGet(() -> displayName(type.returnType())),
-                result.map(ClassfileCensus::qualifiedName)
-                    .orElseGet(() -> binaryName(type.returnType())),
-                flags.has(AccessFlag.STATIC), parameters,
-                typeRefs(result, type.returnType()), declaredExceptions(method)));
+            methods.add(read(method));
         }
         return methods;
+    }
+
+    /**
+     * The public constructors, read exactly as a method is and kept apart from them.
+     *
+     * <p>Apart because a constructor is not a method: the language says so, it is not a member and
+     * it is not inherited, and every rule this reading states over methods is a rule about what an
+     * author may name. A constructor is named by nothing an author writes. What reads these rows
+     * asks a different question, which is how a value of the class is made rather than what the
+     * class offers, and a reader walking the methods must not meet one by accident.
+     *
+     * <p>A record's canonical constructor is the reason this is read at all. The compiler emits its
+     * parameter names into the classfile whether or not the build asked for parameter names, so the
+     * components arrive here in header order, named, and with the declared form each was written
+     * in: the whole of what constructing one positionally needs.
+     */
+    private static List<MethodAt> constructorsOf(ClassModel classfile) {
+        var constructors = new ArrayList<MethodAt>();
+        for (var method : classfile.methods()) {
+            var flags = method.flags();
+            if (!flags.has(AccessFlag.PUBLIC) || flags.has(AccessFlag.SYNTHETIC)
+                || !"<init>".equals(method.methodName().stringValue())) {
+                continue;
+            }
+            constructors.add(read(method));
+        }
+        return constructors;
+    }
+
+    /** One method or constructor, with its erasure and whatever the declaration kept. */
+    private static MethodAt read(java.lang.classfile.MethodModel method) {
+        var flags = method.flags();
+        String name = method.methodName().stringValue();
+        var type = method.methodTypeSymbol();
+        var signature = method.findAttribute(Attributes.signature())
+            .map(SignatureAttribute::asMethodSignature);
+        var declaredParameters = signature
+            .map(MethodSignature::arguments)
+            .filter(arguments -> arguments.size() == type.parameterCount())
+            .orElseGet(List::of);
+        var names = parameterNames(method);
+        var parameters = new ArrayList<ParameterAt>();
+        for (int i = 0; i < type.parameterCount(); i++) {
+            ClassDesc erased = type.parameterType(i);
+            Optional<Signature> declared = i < declaredParameters.size()
+                ? Optional.of(declaredParameters.get(i))
+                : Optional.empty();
+            parameters.add(new ParameterAt(i, i < names.size() ? names.get(i) : null,
+                binaryName(erased),
+                declared.map(ClassfileCensus::declaredName).orElseGet(() -> displayName(erased)),
+                declared.map(ClassfileCensus::qualifiedName).orElseGet(() -> binaryName(erased)),
+                typeRefs(declared, erased)));
+        }
+        var result = signature.map(MethodSignature::result);
+        return new MethodAt(name, type.descriptorString(),
+            binaryName(type.returnType()),
+            result.map(ClassfileCensus::declaredName)
+                .orElseGet(() -> displayName(type.returnType())),
+            result.map(ClassfileCensus::qualifiedName)
+                .orElseGet(() -> binaryName(type.returnType())),
+            flags.has(AccessFlag.STATIC), parameters,
+            typeRefs(result, type.returnType()), declaredExceptions(method));
     }
 
     /**

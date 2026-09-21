@@ -18,10 +18,10 @@ import java.util.Optional;
 import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
-import static no.sikt.graphitron.model.Tables.CODE_RECORD_COMPONENT;
+import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTION;
+import static no.sikt.graphitron.model.Tables.CODE_WRITE_SLOT;
 import static no.sikt.graphitron.model.Tables.CODE_SERVICE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE;
-import static no.sikt.graphitron.model.Tables.CODE_TYPE_SLOT;
 import static no.sikt.graphitron.model.Tables.JAVA_CLASS_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JAVA_METHOD_DECLARATION;
 import static org.jooq.impl.DSL.exists;
@@ -98,10 +98,17 @@ final class CodeQueries {
         CONDITION,
 
         /**
-         * Classes declaring at least one record component. A record with no components at all has
-         * nothing to bind a type to and is absent, which is the population this replaces.
+         * Classes a value of which this generator can make, with the members that go in and the
+         * call each goes in through.
+         *
+         * <p>Named for what it answers rather than for the directive it replaces. {@code @record}
+         * is deprecated and ignored, a class-backed type's class being reflected from the field
+         * that produces it, and "record" names three different things across a jOOQ record, a Java
+         * record and a row, so a kind carrying that word would say the least useful of the three.
+         * What an author is actually asking is what can be on the receiving end of an input, and
+         * that is a question about construction.
          */
-        RECORD;
+        CONSTRUCTIBLE;
 
         /** The kind {@code value} names, absent when it names none; the wire spells these lower-case. */
         static Optional<Kind> parse(String value) {
@@ -146,7 +153,7 @@ final class CodeQueries {
      */
     record ParameterEntry(String name, String type) {}
 
-    /** One record component, in the position the record declaration gives it. */
+    /** One member that goes into the class when one is made, and what it is filled with. */
     record ComponentEntry(String name, String type) {}
 
     /**
@@ -211,14 +218,12 @@ final class CodeQueries {
     ) {
         var arm = armOf(kind);
         var filters = new ArrayList<Condition>();
-        filters.add(store.reads(arm.field(CODE_METHOD.SOURCE_NAME)));
-        nameSubstring.ifPresent(n ->
-            filters.add(arm.field(CODE_METHOD.CLASS_NAME).containsIgnoreCase(n)));
+        filters.add(store.reads(arm.source()));
+        filters.add(arm.narrowing());
+        nameSubstring.ifPresent(n -> filters.add(arm.className().containsIgnoreCase(n)));
 
-        var population = selectDistinct(
-                arm.field(CODE_METHOD.SOURCE_NAME).as(SOURCE),
-                arm.field(CODE_METHOD.CLASS_NAME).as(CLASS))
-            .from(arm)
+        var population = selectDistinct(arm.source().as(SOURCE), arm.className().as(CLASS))
+            .from(arm.relation())
             .where(filters)
             .asTable("population");
         var source = population.field(SOURCE, String.class);
@@ -251,21 +256,30 @@ final class CodeQueries {
     private static final String CLASS = "class_name";
 
     /**
-     * The relation whose rows are the kind's population.
+     * The relation whose rows are the kind's population, and how a class is named on it.
      *
-     * <p>Three arms and no predicate of this module's own, which is the whole of what the kinds now
-     * are. What may be written at a directive is the arm's answer, so the admission rule is not
-     * stated here and cannot drift from the one that admits; and the population is the reactor,
-     * which is where something an author may name lives.
+     * <p>Each kind is a relation rather than a predicate this module spells over a general index,
+     * which is the whole of what the kinds are: what may be written at a directive is the store's
+     * own answer, so the admission rule is not stated here and cannot drift from the one that
+     * admits, and the population is the reactor, which is where something an author may name lives.
      *
-     * <p>All three key a member by the same four columns, so the correlations below read one field
-     * set off whichever of them answered.
+     * <p>The third names a class by its type rather than by a method's owner, because what it is
+     * about is the class and not a member of one. It is also the one whose population is reached
+     * rather than admitted: a class is constructible here because something is passed it, so a
+     * class nothing takes has no row however makeable it looks.
      */
-    private static org.jooq.Table<?> armOf(Kind kind) {
+    private record Population(org.jooq.Table<?> relation, Field<String> source,
+                              Field<String> className, Condition narrowing) {}
+
+    private static Population armOf(Kind kind) {
         return switch (kind) {
-            case SERVICE -> CODE_SERVICE_METHOD;
-            case CONDITION -> CODE_CONDITION_METHOD;
-            case RECORD -> CODE_RECORD_COMPONENT;
+            case SERVICE -> new Population(CODE_SERVICE_METHOD, CODE_SERVICE_METHOD.SOURCE_NAME,
+                CODE_SERVICE_METHOD.CLASS_NAME, noCondition());
+            case CONDITION -> new Population(CODE_CONDITION_METHOD,
+                CODE_CONDITION_METHOD.SOURCE_NAME, CODE_CONDITION_METHOD.CLASS_NAME,
+                noCondition());
+            case CONSTRUCTIBLE -> new Population(CODE_CONSTRUCTION, CODE_CONSTRUCTION.SOURCE_NAME,
+                CODE_CONSTRUCTION.TYPE_NAME, noCondition());
         };
     }
 
@@ -337,41 +351,29 @@ final class CodeQueries {
     }
 
     /**
-     * The class's record components in declaration order, empty for anything but a record.
+     * The members that go into the class when one is made, and what each is filled with.
      *
-     * <p>Four relations and each join is a whole primary key, which is the decomposition rather than
-     * a cost: the order is the one fact only this arm has and is its own relation, the name is the
-     * slot's, and the type is the accessor's result's. A class that is no record has no row in the
-     * ordering relation and so draws nothing, which is the same silence a kind predicate would have
-     * produced and one fewer rule stating it.
+     * <p>Ordered by the argument position each goes in at, which is the order a caller passes them
+     * where they all go in at once and is arbitrary but stable where they go in one at a time. The
+     * shape says which of the two a reader is looking at, so the ordering does not have to carry
+     * that as well.
+     *
+     * <p>Empty for a class nothing constructs, which is the same silence a class with no readable
+     * members gives on the other side.
      */
     private static Field<List<ComponentEntry>> components(
         Field<String> source, Field<String> className
     ) {
-        var declared = CODE_TYPE.as("component_type");
-        var method = CODE_METHOD.as("component_accessor");
+        var declared = CODE_TYPE.as("slot_type");
         return multiset(
-            select(CODE_TYPE_SLOT.SLOT_NAME, declared.DISPLAY_NAME)
-                .from(CODE_RECORD_COMPONENT)
-                .join(CODE_TYPE_SLOT).on(slotOfComponent())
-                .join(method).on(method.SOURCE_NAME.eq(CODE_RECORD_COMPONENT.SOURCE_NAME)
-                    .and(method.CLASS_NAME.eq(CODE_RECORD_COMPONENT.CLASS_NAME))
-                    .and(method.METHOD_NAME.eq(CODE_RECORD_COMPONENT.METHOD_NAME))
-                    .and(method.DESCRIPTOR.eq(CODE_RECORD_COMPONENT.DESCRIPTOR)))
-                .join(declared).on(declared.SOURCE_NAME.eq(method.SOURCE_NAME)
-                    .and(declared.TYPE_NAME.eq(method.RESULT_TYPE)))
-                .where(CODE_RECORD_COMPONENT.SOURCE_NAME.eq(source))
-                .and(CODE_RECORD_COMPONENT.CLASS_NAME.eq(className))
-                .orderBy(CODE_RECORD_COMPONENT.POSITION.asc()))
+            select(CODE_WRITE_SLOT.SLOT_NAME, declared.DISPLAY_NAME)
+                .from(CODE_WRITE_SLOT)
+                .join(declared).on(declared.SOURCE_NAME.eq(CODE_WRITE_SLOT.SOURCE_NAME)
+                    .and(declared.TYPE_NAME.eq(CODE_WRITE_SLOT.SLOT_TYPE)))
+                .where(CODE_WRITE_SLOT.SOURCE_NAME.eq(source))
+                .and(CODE_WRITE_SLOT.TYPE_NAME.eq(className))
+                .orderBy(CODE_WRITE_SLOT.POSITION.asc(), CODE_WRITE_SLOT.SLOT_NAME.asc()))
             .convertFrom(r -> r.map(Records.mapping(ComponentEntry::new)));
-    }
-
-    /** A component to the slot it is one of, which is the whole of the key it is keyed by. */
-    private static Condition slotOfComponent() {
-        return CODE_TYPE_SLOT.SOURCE_NAME.eq(CODE_RECORD_COMPONENT.SOURCE_NAME)
-            .and(CODE_TYPE_SLOT.CLASS_NAME.eq(CODE_RECORD_COMPONENT.CLASS_NAME))
-            .and(CODE_TYPE_SLOT.METHOD_NAME.eq(CODE_RECORD_COMPONENT.METHOD_NAME))
-            .and(CODE_TYPE_SLOT.DESCRIPTOR.eq(CODE_RECORD_COMPONENT.DESCRIPTOR));
     }
 
     // ---- the declaration read ----

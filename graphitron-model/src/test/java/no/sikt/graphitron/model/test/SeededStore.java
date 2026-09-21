@@ -2792,12 +2792,25 @@ public final class SeededStore {
                     .and(JVM_RECORD_COMPONENT.CLASS_NAME.eq(className))
                     .and(JVM_RECORD_COMPONENT.COMPONENT_NAME.eq(methodName)))
                 .fetchOne(0, Integer.class);
-            if (position != null) {
-                CodeRows.slot(dsl, sourceName, className, methodName, descriptor, methodName,
-                    "RECORD_COMPONENT", SEEDED_READING);
-                CodeRows.component(dsl, sourceName, className, methodName, descriptor, position,
-                    SEEDED_READING);
+            if (position == null) {
+                return;
             }
+            CodeRows.slot(dsl, sourceName, className, methodName, descriptor, methodName,
+                "RECORD_COMPONENT", SEEDED_READING);
+            // A record's component is read off one and passed to make one, so stating it states
+            // both sides. What it is filled with is what its accessor hands back, those being the
+            // same declaration seen from either end.
+            String filled = dsl.select(CODE_METHOD.RESULT_TYPE)
+                .from(CODE_METHOD)
+                .where(CODE_METHOD.SOURCE_NAME.eq(sourceName)
+                    .and(CODE_METHOD.CLASS_NAME.eq(className))
+                    .and(CODE_METHOD.METHOD_NAME.eq(methodName))
+                    .and(CODE_METHOD.DESCRIPTOR.eq(descriptor)))
+                .fetchOne(0, String.class);
+            CodeRows.construction(dsl, sourceName, className, "POSITIONAL", "<canonical>",
+                SEEDED_READING);
+            CodeRows.writeSlot(dsl, sourceName, className, "<init>", "<canonical>", position,
+                methodName, filled, SEEDED_READING);
             return;
         }
         CodeRows.slot(dsl, sourceName, className, methodName, descriptor,

@@ -23,10 +23,11 @@ import static no.sikt.graphitron.model.Tables.CODE_EXTERNAL_FIELD_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_EXCEPTION;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
-import static no.sikt.graphitron.model.Tables.CODE_RECORD_COMPONENT;
+import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTION;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_SLOT;
+import static no.sikt.graphitron.model.Tables.CODE_WRITE_SLOT;
 import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
 import static no.sikt.graphitron.model.Tables.CODE_SERVICE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE;
@@ -299,6 +300,7 @@ public final class CodeCapture {
             .toList(), ancestry, containers, touchedAt);
 
         slots(dsl, classes, touchedAt);
+        construction(dsl, classes, containers, touchedAt);
 
         arm(dsl, CODE_CONDITION_METHOD, found.stream()
             .filter(d -> isConditionMethod(d.at()))
@@ -335,21 +337,24 @@ public final class CodeCapture {
                         deliveryOf(parameter.typeRefs(), containers)));
             }
         }
+        // Every class a peel lands on is a type too, and gets a row of its own so the relations
+        // that hang facts on a class have something to key to. A landing class is named at a
+        // position inside some declared type rather than being one, so without this the store
+        // could say what a type delivers and could say nothing further about what it delivered.
+        for (Written written : List.copyOf(byKey.values())) {
+            if (written.delivery() == null) {
+                continue;
+            }
+            String element = written.delivery().elementClass();
+            byKey.putIfAbsent(written.source() + '\u0000' + element,
+                new Written(written.source(), element, simpleName(element), null));
+        }
         if (byKey.isEmpty()) {
             return;
         }
-        var t = CODE_TYPE;
-        var rows = byKey.values().stream().collect(Rows.toRowList(
-            row -> val(row.source(), t.SOURCE_NAME),
-            row -> val(row.typeName(), t.TYPE_NAME),
-            row -> val(row.displayName(), t.DISPLAY_NAME),
-            row -> val(touchedAt, t.TOUCHED_AT)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.SOURCE_NAME, t.TYPE_NAME, t.DISPLAY_NAME, t.TOUCHED_AT)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.DISPLAY_NAME, excluded(t.DISPLAY_NAME))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+        writeTypes(dsl, byKey.values().stream()
+            .map(row -> new Named(row.source(), row.typeName(), row.displayName()))
+            .toList(), touchedAt);
 
         var resolved = byKey.values().stream().filter(row -> row.delivery() != null).toList();
         if (resolved.isEmpty()) {
@@ -389,10 +394,6 @@ public final class CodeCapture {
      * followed by an upper-case letter offers the remainder with its first letter lowered. No arm
      * reads the return type, because an author who wrote {@code isTitle} returning a String meant
      * that member and a rule that second-guessed the type would hide it.
-     *
-     * <p>The record arm carries one fact the other has no answer for, the position in the record
-     * header, and it is written to a relation of its own rather than to a column standing empty for
-     * every bean accessor in the reactor.
      */
     private static void slots(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
                               LocalDateTime touchedAt) {
@@ -445,28 +446,6 @@ public final class CodeCapture {
                 .set(t.ORIGIN, excluded(t.ORIGIN))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
 
-        // The one fact only the record arm has, after the slots it hangs on rather than beside
-        // them: it is keyed to a slot, so a component written before its slot would have nothing
-        // to key to.
-        var components = found.stream().filter(row -> row.position() != null).toList();
-        if (components.isEmpty()) {
-            return;
-        }
-        var c = CODE_RECORD_COMPONENT;
-        var componentRows = components.stream().collect(Rows.toRowList(
-            row -> val(row.source(), c.SOURCE_NAME),
-            row -> val(row.className(), c.CLASS_NAME),
-            row -> val(row.at().name(), c.METHOD_NAME),
-            row -> val(row.at().descriptor(), c.DESCRIPTOR),
-            row -> val(row.position(), c.POSITION),
-            row -> val(touchedAt, c.TOUCHED_AT)));
-        BindBatch.execute(dsl, componentRows, markers ->
-            dsl.insertInto(c, c.SOURCE_NAME, c.CLASS_NAME, c.METHOD_NAME, c.DESCRIPTOR,
-                    c.POSITION, c.TOUCHED_AT)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(c.POSITION, excluded(c.POSITION))
-                .set(c.TOUCHED_AT, excluded(c.TOUCHED_AT)));
     }
 
     /** The property a getter offers, or null where the name is not one. */
@@ -484,6 +463,245 @@ public final class CodeCapture {
             return null;
         }
         return Character.toLowerCase(first) + methodName.substring(prefix.length() + 1);
+    }
+
+    /**
+     * How a value of each class a generator has to make is made, and what goes into it.
+     *
+     * <p>Reached rather than enumerated, which is what keeps the relation about the generator's
+     * problem instead of about the classpath. A type at a result position is only read, so it owes
+     * accessors and nothing here. A type at a parameter position has to exist before it can be
+     * passed, so what it delivers is constructed, and whatever that constructor takes is
+     * constructed in turn. The walk starts at the parameter positions and closes over the
+     * constructors it finds, so a class nothing is ever passed has no row however constructible it
+     * looks.
+     *
+     * <p>A class the walk reaches and cannot make is silence rather than a row saying so. An
+     * interface, an enum and a class whose constructors all take arguments it cannot supply are the
+     * same answer to a consumer, which is that this is not a class a generator can hand over, and
+     * the walk stops there rather than recording a shape nobody can emit.
+     */
+    private static void construction(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
+                                     Map<String, Container> containers, LocalDateTime touchedAt) {
+        var byName = new java.util.LinkedHashMap<String, ClassfileCensus.ClassAt>();
+        for (ClassfileCensus.ClassAt at : classes) {
+            byName.putIfAbsent(at.className(), at);
+        }
+        var queue = new java.util.ArrayDeque<String>();
+        var reached = new java.util.LinkedHashSet<String>();
+        for (ClassfileCensus.ClassAt at : classes) {
+            for (ClassfileCensus.MethodAt method : at.methods()) {
+                for (ClassfileCensus.ParameterAt parameter : method.parameters()) {
+                    delivered(parameter.typeRefs(), containers, byName, reached, queue);
+                }
+            }
+        }
+
+        record Made(ClassfileCensus.ClassAt at, ClassfileCensus.MethodAt constructor, String shape) {}
+        var made = new ArrayList<Made>();
+        while (!queue.isEmpty()) {
+            ClassfileCensus.ClassAt at = byName.get(queue.poll());
+            boolean positional = "RECORD".equals(at.kind());
+            ClassfileCensus.MethodAt constructor = positional
+                ? canonicalConstructor(at) : noArgumentConstructor(at);
+            if (constructor == null) {
+                continue;
+            }
+            made.add(new Made(at, constructor, positional ? "POSITIONAL" : "SETTERS"));
+            // What goes in has to be made too, on the same terms the parameter positions above
+            // reached this class by.
+            if (positional) {
+                for (ClassfileCensus.ParameterAt parameter : constructor.parameters()) {
+                    delivered(parameter.typeRefs(), containers, byName, reached, queue);
+                }
+            } else {
+                for (ClassfileCensus.MethodAt setter : at.methods()) {
+                    if (setterProperty(setter) != null) {
+                        delivered(setter.parameters().getFirst().typeRefs(), containers, byName,
+                            reached, queue);
+                    }
+                }
+            }
+        }
+        if (made.isEmpty()) {
+            return;
+        }
+        // The types this pass is about to key to, before it keys to them. The classes it reached
+        // through a constructor are ones no method walk named, so the signature pass cannot have
+        // written them.
+        var named = new java.util.LinkedHashMap<String, Named>();
+        for (Made row : made) {
+            named.putIfAbsent(row.at().source() + '\u0000' + row.at().className(),
+                new Named(row.at().source(), row.at().className(),
+                    simpleName(row.at().className())));
+            var carried = "POSITIONAL".equals(row.shape())
+                ? row.constructor().parameters()
+                : row.at().methods().stream()
+                    .filter(method -> setterProperty(method) != null)
+                    .map(method -> method.parameters().getFirst())
+                    .toList();
+            for (ClassfileCensus.ParameterAt parameter : carried) {
+                named.putIfAbsent(row.at().source() + '\u0000' + parameter.qualifiedType(),
+                    new Named(row.at().source(), parameter.qualifiedType(),
+                        parameter.declaredType()));
+            }
+        }
+        writeTypes(dsl, List.copyOf(named.values()), touchedAt);
+
+        var c = CODE_CONSTRUCTION;
+        var constructionRows = made.stream().collect(Rows.toRowList(
+            row -> val(row.at().source(), c.SOURCE_NAME),
+            row -> val(row.at().className(), c.TYPE_NAME),
+            row -> val(row.shape(), c.SHAPE),
+            row -> val(row.constructor().descriptor(), c.DESCRIPTOR),
+            row -> val(touchedAt, c.TOUCHED_AT)));
+        BindBatch.execute(dsl, constructionRows, markers ->
+            dsl.insertInto(c, c.SOURCE_NAME, c.TYPE_NAME, c.SHAPE, c.DESCRIPTOR, c.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(c.SHAPE, excluded(c.SHAPE))
+                .set(c.DESCRIPTOR, excluded(c.DESCRIPTOR))
+                .set(c.TOUCHED_AT, excluded(c.TOUCHED_AT)));
+
+        record Slot(String source, String className, String methodName, String descriptor,
+                    int position, String slotName, String slotType) {}
+        var slots = new ArrayList<Slot>();
+        for (Made row : made) {
+            if ("POSITIONAL".equals(row.shape())) {
+                var components = row.at().components();
+                var parameters = row.constructor().parameters();
+                for (int i = 0; i < parameters.size() && i < components.size(); i++) {
+                    slots.add(new Slot(row.at().source(), row.at().className(), "<init>",
+                        row.constructor().descriptor(), i, components.get(i).name(),
+                        parameters.get(i).qualifiedType()));
+                }
+                continue;
+            }
+            for (ClassfileCensus.MethodAt setter : row.at().methods()) {
+                String property = setterProperty(setter);
+                if (property != null) {
+                    slots.add(new Slot(row.at().source(), row.at().className(), setter.name(),
+                        setter.descriptor(), 0, property,
+                        setter.parameters().getFirst().qualifiedType()));
+                }
+            }
+        }
+        if (slots.isEmpty()) {
+            return;
+        }
+        var w = CODE_WRITE_SLOT;
+        var slotRows = slots.stream().collect(Rows.toRowList(
+            row -> val(row.source(), w.SOURCE_NAME),
+            row -> val(row.className(), w.TYPE_NAME),
+            row -> val(row.methodName(), w.METHOD_NAME),
+            row -> val(row.descriptor(), w.DESCRIPTOR),
+            row -> val(row.position(), w.POSITION),
+            row -> val(row.slotName(), w.SLOT_NAME),
+            row -> val(row.slotType(), w.SLOT_TYPE),
+            row -> val(touchedAt, w.TOUCHED_AT)));
+        BindBatch.execute(dsl, slotRows, markers ->
+            dsl.insertInto(w, w.SOURCE_NAME, w.TYPE_NAME, w.METHOD_NAME, w.DESCRIPTOR, w.POSITION,
+                    w.SLOT_NAME, w.SLOT_TYPE, w.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(w.SLOT_NAME, excluded(w.SLOT_NAME))
+                .set(w.SLOT_TYPE, excluded(w.SLOT_TYPE))
+                .set(w.TOUCHED_AT, excluded(w.TOUCHED_AT)));
+    }
+
+    /** Queues what a declared type delivers, where that is a class this reading read. */
+    private static void delivered(List<ClassfileCensus.TypeRefAt> refs,
+                                  Map<String, Container> containers,
+                                  Map<String, ClassfileCensus.ClassAt> byName,
+                                  java.util.Set<String> reached,
+                                  java.util.Deque<String> queue) {
+        Delivery delivery = deliveryOf(refs, containers);
+        if (delivery == null || !byName.containsKey(delivery.elementClass())) {
+            return;
+        }
+        if (reached.add(delivery.elementClass())) {
+            queue.add(delivery.elementClass());
+        }
+    }
+
+    /**
+     * The constructor whose parameters are the record's components, which is the one that makes a
+     * record in one call. Matched on the erased parameter types in header order, so a second
+     * constructor a record declares for convenience is not mistaken for it.
+     */
+    private static ClassfileCensus.MethodAt canonicalConstructor(ClassfileCensus.ClassAt at) {
+        var components = at.components();
+        for (ClassfileCensus.MethodAt constructor : at.constructors()) {
+            var parameters = constructor.parameters();
+            if (parameters.size() != components.size()) {
+                continue;
+            }
+            boolean matches = true;
+            for (int i = 0; i < parameters.size(); i++) {
+                if (!parameters.get(i).type().equals(components.get(i).type())) {
+                    matches = false;
+                    break;
+                }
+            }
+            if (matches) {
+                return constructor;
+            }
+        }
+        return null;
+    }
+
+    /** The no-argument constructor, which is what a class filled one member at a time starts from. */
+    private static ClassfileCensus.MethodAt noArgumentConstructor(ClassfileCensus.ClassAt at) {
+        return at.constructors().stream()
+            .filter(constructor -> constructor.parameters().isEmpty())
+            .findFirst()
+            .orElse(null);
+    }
+
+    /**
+     * The property a setter fills, or null where the method is not one: {@code set} followed by an
+     * upper-case letter, taking exactly one argument. The read side's rule in the other direction,
+     * and it reads no type for the same reason that one does not.
+     */
+    private static String setterProperty(ClassfileCensus.MethodAt method) {
+        if (method.parameters().size() != 1 || method.isStatic()) {
+            return null;
+        }
+        return propertyAfter(method.name(), "set");
+    }
+
+    /** One type as this gatherer names it: where it was read, its key, and how it renders. */
+    private record Named(String source, String typeName, String displayName) {}
+
+    /**
+     * The type rows, idempotently.
+     *
+     * <p>Two passes write them, and neither is the other's subset. The signature pass reaches a
+     * type by reading a method, and the construction pass reaches one by following what a
+     * constructor takes, which is a signature no method walk visits. So the relation is filled
+     * where a type is first needed rather than in one place that would have to anticipate both.
+     */
+    private static void writeTypes(DSLContext dsl, List<Named> types, LocalDateTime touchedAt) {
+        if (types.isEmpty()) {
+            return;
+        }
+        var t = CODE_TYPE;
+        var rows = types.stream().collect(Rows.toRowList(
+            row -> val(row.source(), t.SOURCE_NAME),
+            row -> val(row.typeName(), t.TYPE_NAME),
+            row -> val(row.displayName(), t.DISPLAY_NAME),
+            row -> val(touchedAt, t.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.SOURCE_NAME, t.TYPE_NAME, t.DISPLAY_NAME, t.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(t.DISPLAY_NAME, excluded(t.DISPLAY_NAME))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+    }
+
+    /** A binary class name as a surface renders it, which for a bare class is its last segment. */
+    private static String simpleName(String className) {
+        return className.substring(className.lastIndexOf('.') + 1);
     }
 
     /** One method as this gatherer passes it around: where it was read, and what it declares. */
@@ -805,7 +1023,8 @@ public final class CodeCapture {
     private static void sweep(DSLContext dsl, List<String> sources, LocalDateTime touchedAt) {
         for (org.jooq.Table<?> table : List.of(
                 CODE_CONDITION_METHOD_PARAMETER_TABLE,
-                CODE_METHOD_PARAMETER, CODE_METHOD_EXCEPTION, CODE_RECORD_COMPONENT, CODE_TYPE_SLOT,
+                CODE_METHOD_PARAMETER, CODE_METHOD_EXCEPTION, CODE_WRITE_SLOT, CODE_CONSTRUCTION,
+                CODE_TYPE_SLOT,
                 CODE_SERVICE_METHOD, CODE_CONDITION_METHOD, CODE_EXTERNAL_FIELD_METHOD,
                 CODE_METHOD, CODE_TYPE_ELEMENT, CODE_TYPE,
                 CODE_THROWABLE_SUPERTYPE, CODE_THROWABLE, CODE_SCALAR_CONSTANT)) {

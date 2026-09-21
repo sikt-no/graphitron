@@ -22,15 +22,11 @@ import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
 import static no.sikt.graphitron.model.Tables.CODE_SERVICE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT;
-import static no.sikt.graphitron.model.Tables.CODE_RECORD_COMPONENT;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_SLOT;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.jooq.impl.DSL.exists;
-import static org.jooq.impl.DSL.notExists;
-import static org.jooq.impl.DSL.selectOne;
 
 /**
  * The four arms of the code family: what an author may name in {@code @scalarType(scalar:)}, the
@@ -668,66 +664,6 @@ class CodeCaptureTest {
                     .fetch(CODE_TYPE_SLOT.METHOD_NAME))
                 .as("one slot name, two accessors, which is why the accessor is the key")
                 .containsExactly("getTitle", "isTitle");
-        });
-    }
-
-    /**
-     * The order a record declares its components in, which is the one fact the record arm has and
-     * the bean arm has none of: a classfile gives a method no declaration order, its position in the
-     * class being an encoding detail. So it is a relation of its own, and a bean accessor's absence
-     * from it is the absence of the fact rather than a position standing empty.
-     */
-    @Test
-    @DisplayName("a record component carries the order its header declares it in")
-    void aRecordComponentCarriesItsHeaderOrder() {
-        withReactorCapture(dsl -> {
-            var c = CODE_RECORD_COMPONENT;
-            assertThat(dsl.select(CODE_TYPE_SLOT.SLOT_NAME)
-                    .from(c)
-                    .join(CODE_TYPE_SLOT).on(CODE_TYPE_SLOT.SOURCE_NAME.eq(c.SOURCE_NAME),
-                        CODE_TYPE_SLOT.CLASS_NAME.eq(c.CLASS_NAME),
-                        CODE_TYPE_SLOT.METHOD_NAME.eq(c.METHOD_NAME),
-                        CODE_TYPE_SLOT.DESCRIPTOR.eq(c.DESCRIPTOR))
-                    .where(c.CLASS_NAME.eq(SLOT_RECORD))
-                    .orderBy(c.POSITION.asc())
-                    .fetch(CODE_TYPE_SLOT.SLOT_NAME))
-                .as("the header's order, which a name order would have got wrong")
-                .containsExactly("title", "year", "tags");
-            assertThat(dsl.fetchCount(c, c.CLASS_NAME.eq(SLOT_BEAN)))
-                .as("and a bean accessor has no such fact to carry")
-                .isZero();
-        });
-    }
-
-    /**
-     * The subtype and the supertype's discriminator state one thing, so they have to agree. Both
-     * directions, because each is a different mistake: a component with no ordering row is an arm
-     * that forgot half its work, and an ordering row under a bean accessor is an arm applied to a
-     * class it was not chosen for.
-     */
-    @Test
-    @DisplayName("the ordering relation holds exactly the slots the discriminator calls components")
-    void theSubtypeAgreesWithTheDiscriminator() {
-        withReactorCapture(dsl -> {
-            var c = CODE_RECORD_COMPONENT;
-            assertThat(dsl.fetchCount(CODE_TYPE_SLOT,
-                    CODE_TYPE_SLOT.ORIGIN.eq("RECORD_COMPONENT")
-                        .and(notExists(selectOne().from(c)
-                            .where(c.SOURCE_NAME.eq(CODE_TYPE_SLOT.SOURCE_NAME),
-                                c.CLASS_NAME.eq(CODE_TYPE_SLOT.CLASS_NAME),
-                                c.METHOD_NAME.eq(CODE_TYPE_SLOT.METHOD_NAME),
-                                c.DESCRIPTOR.eq(CODE_TYPE_SLOT.DESCRIPTOR))))))
-                .as("every component is ordered")
-                .isZero();
-            assertThat(dsl.fetchCount(c,
-                    exists(selectOne().from(CODE_TYPE_SLOT)
-                        .where(CODE_TYPE_SLOT.SOURCE_NAME.eq(c.SOURCE_NAME),
-                            CODE_TYPE_SLOT.CLASS_NAME.eq(c.CLASS_NAME),
-                            CODE_TYPE_SLOT.METHOD_NAME.eq(c.METHOD_NAME),
-                            CODE_TYPE_SLOT.DESCRIPTOR.eq(c.DESCRIPTOR),
-                            CODE_TYPE_SLOT.ORIGIN.ne("RECORD_COMPONENT")))))
-                .as("and nothing else is")
-                .isZero();
         });
     }
 

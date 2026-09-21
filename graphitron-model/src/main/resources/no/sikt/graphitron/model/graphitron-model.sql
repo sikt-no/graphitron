@@ -6524,25 +6524,46 @@ COMMENT ON COLUMN code_type_slot.touched_at IS 'when the reading that produced t
 CREATE INDEX code_type_slot_name_ix ON code_type_slot (source_name, slot_name);
 COMMENT ON INDEX code_type_slot_name_ix IS 'The slot name is a join key rather than a filter, intent_field_accessor_hop matching every coordinate in a graph against every slot a source offers without binding a class first, so the answer is a product and the name is the only thing narrowing it. The primary key leads with the class and cannot serve that, and the same access without an index on the name was measured in minutes rather than seconds on the relation this replaces.';
 
-CREATE TABLE code_record_component (
+CREATE TABLE code_construction (
   source_name VARCHAR NOT NULL,
-  class_name  VARCHAR NOT NULL,
+  type_name   VARCHAR NOT NULL,
+  shape       VARCHAR NOT NULL,
+  descriptor  VARCHAR NOT NULL,
+  touched_at  TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, type_name),
+  FOREIGN KEY (source_name, type_name) REFERENCES code_type (source_name, type_name) ON DELETE CASCADE,
+  CHECK (shape IN ('POSITIONAL', 'SETTERS'))
+);
+COMMENT ON TABLE code_construction IS 'How a value of one class is made, for the classes a generator has to make one of. For example a FilmInput record, made by calling its canonical constructor with every component at once.';
+COMMENT ON COLUMN code_construction.source_name IS 'the entry the class was read from, as on code_type; the key''s leading dimension';
+COMMENT ON COLUMN code_construction.type_name IS 'the class being made, as on code_type. A class is a type with no arguments, which is why this keys into the type relation rather than beside it: what a parameter names is a type, and the thing eventually constructed is what that type delivers';
+COMMENT ON COLUMN code_construction.shape IS 'POSITIONAL or SETTERS: whether the members go in through the constructor all at once or one at a time afterwards. A record is the first, everything else with a usable no-argument constructor is the second, and a jOOQ record is the second like any other, being made empty and then filled. Carried because two emitters fork on it and it is the decision rather than the evidence for it: reading it off the class''s declared form would put the rule in the readers';
+COMMENT ON COLUMN code_construction.descriptor IS 'the constructor to call. At POSITIONAL that is the canonical one, whose parameters are the components in header order; at SETTERS it is ()V. Named by descriptor rather than by presence because a class may declare several and only one of them is the one this shape means';
+COMMENT ON COLUMN code_construction.touched_at IS 'when the reading that produced this row ran; swept with the type it hangs on';
+
+CREATE TABLE code_write_slot (
+  source_name VARCHAR NOT NULL,
+  type_name   VARCHAR NOT NULL,
   method_name VARCHAR NOT NULL,
   descriptor  VARCHAR NOT NULL,
   position    INT NOT NULL,
+  slot_name   VARCHAR NOT NULL,
+  slot_type   VARCHAR NOT NULL,
   touched_at  TIMESTAMP NOT NULL,
-  PRIMARY KEY (source_name, class_name, method_name, descriptor),
-  FOREIGN KEY (source_name, class_name, method_name, descriptor)
-    REFERENCES code_type_slot (source_name, class_name, method_name, descriptor) ON DELETE CASCADE,
-  UNIQUE (source_name, class_name, position)
+  PRIMARY KEY (source_name, type_name, method_name, descriptor, position),
+  FOREIGN KEY (source_name, type_name)
+    REFERENCES code_construction (source_name, type_name) ON DELETE CASCADE,
+  FOREIGN KEY (source_name, slot_type) REFERENCES code_type (source_name, type_name)
 );
-COMMENT ON TABLE code_record_component IS 'The slots a record declares in its header, in the order it declares them. For example a Film record''s title first and year second.';
-COMMENT ON COLUMN code_record_component.source_name IS 'the entry the declaring class was read from, as on code_type_slot; the key''s leading dimension';
-COMMENT ON COLUMN code_record_component.class_name IS 'the record declaring the component, as on code_type_slot';
-COMMENT ON COLUMN code_record_component.method_name IS 'the accessor the component is read by, as on code_type_slot; for a component that is its own name';
-COMMENT ON COLUMN code_record_component.descriptor IS 'the accessor''s descriptor, completing the key; the whole of code_type_slot''s key, which is what makes this a subtype of that relation rather than a second description of the same members';
-COMMENT ON COLUMN code_record_component.position IS 'where the component sits in the record header, counted from zero, which is the order the canonical constructor takes its arguments in and the order a surface listing a record''s members shows them in. Here rather than on code_type_slot because a bean accessor has none: a classfile gives a method no declaration order, its order in the class being an encoding detail, so a column on the supertype would be a fact about one arm carrying nothing for the other. Presence is therefore the arm, and it agrees with the discriminator the supertype carries by construction';
-COMMENT ON COLUMN code_record_component.touched_at IS 'when the reading that produced this row ran; swept with the slot it hangs on';
+COMMENT ON TABLE code_write_slot IS 'One member an author can fill when a value of the class is made, and the call that fills it. For example a FilmInput''s title, filled at argument zero of its canonical constructor.';
+COMMENT ON COLUMN code_write_slot.source_name IS 'the entry the class was read from, as on code_construction';
+COMMENT ON COLUMN code_write_slot.type_name IS 'the class being made, as on code_construction; the row is deleted with it';
+COMMENT ON COLUMN code_write_slot.method_name IS 'the call that fills the member: the constructor at POSITIONAL, where every slot names the same one, and the setter at SETTERS, where each names its own';
+COMMENT ON COLUMN code_write_slot.descriptor IS 'that call''s descriptor, completing its key';
+COMMENT ON COLUMN code_write_slot.position IS 'which argument of the call carries the member, counted from zero. At POSITIONAL it is the component''s place in the record header, which is what makes the call emittable in one go; at SETTERS it is zero, a setter taking one argument. Part of the key because one call carries many members at POSITIONAL and the argument is what tells them apart';
+COMMENT ON COLUMN code_write_slot.slot_name IS 'the name @field(name:) resolves against on an input: the record component''s own name, or the property a setter fills, which is the remainder after set with its first letter lowered. Deliberately not unique within a class, on code_type_slot''s terms: a class spelling one property two ways offers it twice and this relation declines to choose between them';
+COMMENT ON COLUMN code_write_slot.slot_type IS 'what the member is filled with, as code_type spells it. The write side''s answer to the question code_method.result_type answers for reading: a value bound here is coerced into this type, and a reader needing what it finally delivers peels it on code_type_element';
+COMMENT ON COLUMN code_write_slot.touched_at IS 'when the reading that produced this row ran; swept with the construction it hangs on';
 
 
 CREATE TABLE code_method_exception (
@@ -8826,10 +8847,13 @@ COMMENT ON COLUMN intent_declared_type_element.delivers_many IS 'whether the dec
 
 CREATE VIEW intent_field_accessor_hop
   (graph_name, type_name, field_name, source_name, from_class_name,
-   origin, slot_name, accessor_method_name, to_class_name) AS
+   slot_name, accessor_method_name, to_class_name) AS
 SELECT f.graph_name, f.type_name, f.field_name, s.source_name, s.class_name,
-       s.origin, s.slot_name, s.method_name, e.element_class
+       s.slot_name, s.method_name, e.element_class
   FROM graphitron_field f
+  JOIN graphitron_type owner
+    ON owner.graph_name = f.graph_name AND owner.type_name = f.type_name
+   AND owner.kind = 'OBJECT'
   JOIN store_graph_source g ON g.graph_name = f.graph_name
   LEFT JOIN graphitron_field_binding_entry b
     ON b.graph_name = f.graph_name AND b.type_name = f.type_name
@@ -8841,17 +8865,32 @@ SELECT f.graph_name, f.type_name, f.field_name, s.source_name, s.class_name,
     ON m.source_name = s.source_name AND m.class_name = s.class_name
    AND m.method_name = s.method_name AND m.descriptor = s.descriptor
   JOIN code_type_element e
-    ON e.source_name = m.source_name AND e.type_name = m.result_type;
-COMMENT ON VIEW intent_field_accessor_hop IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Where an accessor hop lands: for a field coordinate and a class its parent might stand on, the class the member reading that field delivers. One edge of the walk that binds SDL types to backing classes, stated as a fact instead of as a step, so the closure over these edges is a reader''s recursion rather than a rule buried inside one. The slot a coordinate reads is the @field(name:) override where the field carries one and the field''s own name otherwise, which is the resolution the emission side makes; an output field and an input-object field resolve it identically and are one population here, that directive landing on both. The population is the expanded one rather than the transcription, so a coordinate on a type the expansion minted hops on the same terms as one an author declared: reading the transcription here would leave a minted Edge''s node field with no rows, which is the one edge that says what a connection''s element stands on. Total over standing classes by construction. Nothing here says which class a parent actually stands on, so a coordinate pairs with every class in the graph''s sources offering a slot of that name, and a row is a conditional rather than an answer. That totality is what makes this an edge relation instead of another copy of the binding, and it is why this is a view that is never materialized: the product is large wherever a slot name is common and small wherever a reader binds the standing class before asking. Ambiguity is rows and no count. Two spellings of one property are two slots on code_type_slot''s stated terms, and that relation already declines to choose between them, so a count here would be a second stance on a question one relation has settled. Two departures from the walk this replaces, both to be adjudicated against its shadow rather than assumed harmless. The first is that an SDL field''s arguments are not read at all. The walk probes for an accessor whose parameters match them, and a slot is a no-argument member by definition, so this relation hops where the walk would not (an argument-taking field standing on a no-argument accessor of the same name) and stays silent where the walk would hop (a field whose accessor takes those arguments). Reading the shape here would mean a slot relation holding parameterised members, which is a different question from the one that relation answers, so the difference is recorded rather than quietly closed. Three joins and no union: the slot names its accessor, the accessor names its result type and the result type names what it delivers, each on a whole primary key. The two relations this replaced, a slot view with an arm per declared form and an element view rejoining the peel at whichever owner that arm had used, existed because the facts underneath them were keyed by owner and had to be re-sorted per reader; keyed by type at the reading, they compose instead. The second is that the walk skips a field carrying @service and skips a child type already bound; both are conditions on the closure rather than properties of an edge, and neither belongs here.';
+    ON e.source_name = m.source_name AND e.type_name = m.result_type
+UNION ALL
+SELECT f.graph_name, f.type_name, f.field_name, w.source_name, w.type_name,
+       w.slot_name, w.method_name, e.element_class
+  FROM graphitron_field f
+  JOIN graphitron_type owner
+    ON owner.graph_name = f.graph_name AND owner.type_name = f.type_name
+   AND owner.kind = 'INPUT_OBJECT'
+  JOIN store_graph_source g ON g.graph_name = f.graph_name
+  LEFT JOIN graphitron_field_binding_entry b
+    ON b.graph_name = f.graph_name AND b.type_name = f.type_name
+   AND b.field_name = f.field_name
+  JOIN code_write_slot w
+    ON w.source_name = g.source_name
+   AND w.slot_name = COALESCE(b.name_ref, f.field_name)
+  JOIN code_type_element e
+    ON e.source_name = w.source_name AND e.type_name = w.slot_type;
+COMMENT ON VIEW intent_field_accessor_hop IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Where an accessor hop lands: for a field coordinate and a class its parent might stand on, the class the member reading that field delivers. One edge of the walk that binds SDL types to backing classes, stated as a fact instead of as a step, so the closure over these edges is a reader''s recursion rather than a rule buried inside one. The slot a coordinate reads is the @field(name:) override where the field carries one and the field''s own name otherwise, which is the resolution the emission side makes, and @field lands on both axes so both resolve the name the same way. What they do not share is what the name resolves against. An output field is read off the class its parent stands on, so it resolves against an accessor; an input field is written into the class being built, so it resolves against a constructor argument or a setter. The two are different member sets on the same class and a class can offer one and not the other, a data holder with a getter and no setter answering an output field and no input one, so this relation has an arm per axis rather than one population keyed by the coordinate''s owner kind. The owner''s kind is what picks the arm, which is why a type relation is joined here at all, and it is the expanded one for the same reason the fields are: a minted type is an owner like any other, and reading the transcription would leave every coordinate on one unanswered. The population is the expanded one rather than the transcription, so a coordinate on a type the expansion minted hops on the same terms as one an author declared: reading the transcription here would leave a minted Edge''s node field with no rows, which is the one edge that says what a connection''s element stands on. Total over standing classes by construction. Nothing here says which class a parent actually stands on, so a coordinate pairs with every class in the graph''s sources offering a slot of that name, and a row is a conditional rather than an answer. That totality is what makes this an edge relation instead of another copy of the binding, and it is why this is a view that is never materialized: the product is large wherever a slot name is common and small wherever a reader binds the standing class before asking. Ambiguity is rows and no count. Two spellings of one property are two slots on the stated terms of whichever relation the arm reads, and both already decline to choose between them, so a count here would be a second stance on a question those relations have settled. Two departures from the walk this replaces, both to be adjudicated against its shadow rather than assumed harmless. The first is that an SDL field''s arguments are not read at all. The walk probes for an accessor whose parameters match them, and a slot is a no-argument member by definition, so this relation hops where the walk would not (an argument-taking field standing on a no-argument accessor of the same name) and stays silent where the walk would hop (a field whose accessor takes those arguments). Reading the shape here would mean a slot relation holding parameterised members, which is a different question from the one that relation answers, so the difference is recorded rather than quietly closed. Every join is on a whole primary key. The read arm goes slot to accessor to result type to what that delivers; the write arm is one step shorter, a write slot naming the type it is filled with directly, there being no method in between. Which arm produced a row is deliberately not a column: nothing downstream reads it, the closure over these edges wanting only where a hop lands, and a column saying which member set answered would be a fact about this relation rather than about the binding. The second is that the walk skips a field carrying @service and skips a child type already bound; both are conditions on the closure rather than properties of an edge, and neither belongs here.';
 COMMENT ON COLUMN intent_field_accessor_hop.graph_name IS 'the owning graph''s partition, carried from graphitron_field';
 COMMENT ON COLUMN intent_field_accessor_hop.type_name IS 'the coordinate''s owning type: the type whose standing class the hop departs from';
 COMMENT ON COLUMN intent_field_accessor_hop.field_name IS 'the coordinate''s field name within that type';
 COMMENT ON COLUMN intent_field_accessor_hop.source_name IS 'the departing class''s classpath entry, as on code_type_slot; the partition the graph reached it through';
-COMMENT ON COLUMN intent_field_accessor_hop.from_class_name IS 'the class the parent must stand on for this row to hold. A hypothesis the row is conditional on rather than a fact about the coordinate, which is exactly what keeps this relation clear of the closure that decides it';
-COMMENT ON COLUMN intent_field_accessor_hop.origin IS 'RECORD_COMPONENT or BEAN_ACCESSOR, as on code_type_slot';
+COMMENT ON COLUMN intent_field_accessor_hop.from_class_name IS 'the class the parent must stand on, or be built as, for this row to hold. A hypothesis the row is conditional on rather than a fact about the coordinate, which is exactly what keeps this relation clear of the closure that decides it';
 COMMENT ON COLUMN intent_field_accessor_hop.slot_name IS 'the member name the coordinate resolved to: the @field(name:) override, or the field''s own name where it carries none';
-COMMENT ON COLUMN intent_field_accessor_hop.accessor_method_name IS 'the Java declaration the hop reads: code_type_slot.method_name, the accessor the slot is keyed by. The column a jump to the member''s own source lands on';
-COMMENT ON COLUMN intent_field_accessor_hop.to_class_name IS 'the class the hop lands on: what the accessor''s result delivers with its containers peeled, carried from code_type_element. Not a foreign key, a landing class no classpath entry declares being ordinary rather than exceptional. A slot whose accessor returns a void, a primitive, an array or a type variable names no class and so draws no row here, the peel relation stating presence rather than carrying a placeholder, and that silence is the same one a reader would have had to read out of a null';
+COMMENT ON COLUMN intent_field_accessor_hop.accessor_method_name IS 'the Java declaration the hop goes through: the accessor on the read arm and the setter or constructor on the write arm, each the method its own slot relation is keyed by. The column a jump to the member''s own source lands on';
+COMMENT ON COLUMN intent_field_accessor_hop.to_class_name IS 'the class the hop lands on: what the accessor''s result delivers on the read arm and what the member is filled with on the write arm, each with its containers peeled and carried from code_type_element. Not a foreign key, a landing class no classpath entry declares being ordinary rather than exceptional. A slot whose accessor returns a void, a primitive, an array or a type variable names no class and so draws no row here, the peel relation stating presence rather than carrying a placeholder, and that silence is the same one a reader would have had to read out of a null';
 
 CREATE VIEW intent_producer_cardinality_conflict
   (graph_name, type_name, field_name, declared_via, source_name, class_name,
@@ -14918,6 +14957,9 @@ INSERT INTO meta_grain VALUES
   ('class-method',
    'one method of one class, overloads told apart by descriptor',
    'source_name, class_name, method_name, descriptor', 'classpath'),
+  ('construction-argument',
+   'one argument of one call that fills a member when a value of one class is made',
+   'source_name, type_name, method_name, descriptor, position', 'classpath'),
   ('declared-type',
    'one type as a source declared it, within one classpath entry',
    'source_name, type_name', 'classpath'),
@@ -15792,10 +15834,14 @@ INSERT INTO meta_relation VALUES
    'One member name a class offers an author, and the method that reads it.',
    'For example a Film record offering title through its title() accessor, or a FilmDto offering it through getTitle().',
    'What @field(name:) resolves against on a type whose backing is a class rather than a table. Two arms and the discriminator is on the class rather than the member: a record answers with its components and anything else with its getters, which is decided where the class''s declared form is known and stored as the answer. Keyed by the accessor because the accessor is what is unique; the name an author writes is not, a class spelling one property two ways offering it twice. It carries no type, the slot being read by a method and that method''s result already naming one, which is also what makes this relation a projection of the arms rather than a second description of them. A record''s accessors are ordinary public methods and so is everything else a record generates, so the components the Record attribute names are what tells an accessor from a toString.'),
-  ('code_record_component', 'class-method', 'code',
-   'The slots a record declares in its header, in the order it declares them.',
-   'For example a Film record''s title first and year second.',
-   'Declaration order, for the surfaces that list a record''s members and mean the order the author wrote. A subtype of code_type_slot rather than a column on it: a bean accessor has no declaration order to carry, a classfile giving a method none, so the column exists exactly where the fact does and its presence is the arm. That leaves the arm stated twice, here by presence and on the supertype by its discriminator, which is deliberate and is what the discriminator was put there for: four readers fork on which arm a slot came from and none of them wants the ordering, so the cheap answer stays a column and the fact only one arm has becomes a relation.'),
+  ('code_construction', 'declared-type', 'code',
+   'How a value of one class is made, for the classes a generator has to make one of.',
+   'For example a FilmInput record, made by calling its canonical constructor with every component at once.',
+   'Reading a value and writing one are different questions and this family answers them separately, because the direction a type is reached from decides which it owes. A type at a result position is only ever read, so what it owes is accessors, which code_type_slot holds. A type at a parameter position has to be made before it can be passed, so what it owes is a constructor and the members that go in through it. The two are not mirrors: a read is per member and a construction is per object, which is why the arms sit here rather than on the members. Captured rather than reflected because the generator reflects for it today, at six sites, to decide a fork it then emits code for.'),
+  ('code_write_slot', 'construction-argument', 'code',
+   'One member an author can fill when a value of the class is made, and the call that fills it.',
+   'For example a FilmInput''s title, filled at argument zero of its canonical constructor.',
+   'What @field(name:) resolves against on an input, which is not what it resolves against on an output. An output field is read off an accessor and an input field is written through a constructor argument or a setter, and a class can offer one and not the other: a DTO with a getter and no setter answers an output field and cannot answer an input one. Keyed by the call and the argument rather than by the name, on code_type_slot''s terms and for one more reason of its own: at POSITIONAL one call carries every member, so the argument is the only thing telling them apart.'),
   ('code_method_exception', 'method-exception', 'code',
    'One exception a method declares it throws.',
    'For example filmsByRating declaring java.io.IOException.',
