@@ -125,6 +125,30 @@ class TypeBackingClassTest {
     }
 
     /**
+     * The condition is the applied directive and not its resolution. {@code Film.rating} names a
+     * service class no classpath entry declares, so no reference of it resolves and the census has
+     * nothing to say; the author still said the value comes from that method. Reading the resolution
+     * would have backed {@code Rating} off the parent record's same-named member, a class the author
+     * never named, so the type is unbacked here and that is the answer the walk gives too.
+     */
+    @Test
+    void aProducerReferenceTheCensusNeverReachedStillStopsTheHop() {
+        withCapturedStore(dsl -> assertThat(backing(dsl, GRAPH, "Rating")).isEmpty());
+    }
+
+    /**
+     * The case that separates reading the entries from reading their decode. {@code Film.score}
+     * carries a {@code @service} written with a class and no method, which the reference relation
+     * drops for want of a method name even though the class is on the census. The application is
+     * still there, so the hop is still not an edge, and the parent record's {@code score} member
+     * does not back the type.
+     */
+    @Test
+    void aProducerApplicationMissingItsMethodStillStopsTheHop() {
+        withCapturedStore(dsl -> assertThat(backing(dsl, GRAPH, "Score")).isEmpty());
+    }
+
+    /**
      * Two producers answering one type differently are two rows, where the walk suppresses the
      * second observation to protect the first and leaves the disagreement unobservable. The writer
      * records both and prefers neither; that a reader can then learn the type is contested is the
@@ -266,7 +290,9 @@ class TypeBackingClassTest {
      * One chain three types deep, one cycle, one coordinate two producers answer differently, one
      * field whose own producer overrides its parent's member, one scalar producer and one object
      * nothing reaches. One type carries {@code @table} against the test catalog, which is the
-     * population the closure never seeds.
+     * population the closure never seeds. Two more fields carry a producer the derived relations
+     * above the entries drop, one naming a class off the census and one written without a method,
+     * and the parent record delivers a different class at each of their names.
      */
     private static final String SDL = """
         type Query {
@@ -286,6 +312,8 @@ class TypeBackingClassTest {
             language: Language
             actors: [Actor]
             reviews: [Review] @service(service: {className: "app.ReviewService", method: "forFilm"})
+            rating: Rating @service(service: {className: "app.RatingService", method: "forFilm"})
+            score: Score @service(service: {className: "app.ScoreService"})
             related: Film
             grounded: Grounded
         }
@@ -298,6 +326,8 @@ class TypeBackingClassTest {
         type Actor { name: String }
         type Review { body: String }
         type Contested { id: ID }
+        type Rating { stars: Int }
+        type Score { value: Int }
         type Carrier { id: ID }
         type Orphan { id: ID }
         type Grounded { id: ID }
@@ -316,9 +346,12 @@ class TypeBackingClassTest {
         """;
 
     /**
-     * Two service classes and the records their returns reach. {@code app.FilmRecord}'s
-     * {@code reviews} component names a class no SDL coordinate should reach, which is what makes
-     * the producer-override case an assertion rather than a coincidence.
+     * The service classes and the records their returns reach. {@code app.FilmRecord}'s
+     * {@code reviews}, {@code rating} and {@code score} components each name a class no SDL
+     * coordinate should reach, which is what makes the three skip cases assertions rather than
+     * coincidences. {@code app.ScoreService} is declared here and {@code app.RatingService} is not,
+     * so the two cases differ in which derived relation drops their reference and agree on the
+     * entry that holds it.
      */
     private static List<CompletionData.ExternalReference> census() {
         return List.of(
@@ -337,11 +370,15 @@ class TypeBackingClassTest {
             reference(APP, "app.ReviewService",
                 method("forFilm", "()Ljava/util/List;",
                     ref("", "java.util.List"), ref("0", "app.ReviewDto"))),
+            reference(APP, "app.ScoreService",
+                method("forFilm", "()Lapp/ScoreDto;", ref("", "app.ScoreDto"))),
             record(APP, "app.FilmRecord",
                 component("title", ref("", "java.lang.String")),
                 component("language", ref("", "app.LanguageRecord")),
                 component("actors", ref("", "java.util.List"), ref("0", "app.ActorRecord")),
                 component("reviews", ref("", "java.util.List"), ref("0", "app.WrongRecord")),
+                component("rating", ref("", "app.WrongRatingRecord")),
+                component("score", ref("", "app.WrongScoreRecord")),
                 component("related", ref("", "app.FilmRecord")),
                 component("grounded", ref("", "app.GroundedRecord"))),
             record(APP, "app.LanguageRecord",
