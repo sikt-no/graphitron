@@ -1,7 +1,7 @@
 ---
 id: R962
 title: "The type-backing closure probes the census-resolved producer once per hop reached; the condition is the authored reference, and reading it there is a seek"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 1
 theme: dev-loop
