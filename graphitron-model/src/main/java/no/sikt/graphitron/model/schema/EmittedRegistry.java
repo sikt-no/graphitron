@@ -27,6 +27,7 @@ import java.util.stream.Collectors;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SYNTHESIZED_FEDERATION_KEY;
 import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.select;
@@ -93,6 +94,8 @@ public final class EmittedRegistry {
     /** The one kind {@code graphitron_minted_type.kind}'s CHECK admits, and so the only kind here. */
     private static final String OBJECT = "OBJECT";
 
+    private static final String TAG_DIRECTIVE = "tag";
+    private static final String TAG_NAME_ARG = "name";
     private static final String KEY_DIRECTIVE = "key";
     private static final String KEY_FIELDS_ARG = "fields";
     private static final String KEY_RESOLVABLE_ARG = "resolvable";
@@ -121,6 +124,7 @@ public final class EmittedRegistry {
             }
         }
         apply(patched, replacements);
+        applyInheritedTags(patched, store);
         applySynthesisedKeys(patched, store);
         return patched;
     }
@@ -360,6 +364,104 @@ public final class EmittedRegistry {
     // ---------------------------------------------------------------------------------------
     // Federation keys
     // ---------------------------------------------------------------------------------------
+
+    /**
+     * The federation tags a minted type inherits from the coordinate that coined it.
+     *
+     * <p>A {@code @tag} on a carrier reaches the types the expansion synthesises for it, so a
+     * gateway filtering on that tag sees the connection, its edge and the page info the same way it
+     * sees the field. The store names the coining coordinate; the tags themselves are read off the
+     * registry being patched, which is the same place every other authored detail on a patched node
+     * comes from.
+     *
+     * <p>That is not a shortcut around the store, and the alternative was tried. A tag reaches an
+     * element two ways: an author writes it, or a schema input carries one and the tag applier
+     * stamps it on everything that input declared. Only the first is captured, the applier running
+     * above the capture cut, so a store-sourced inheritance silently drops the second and a
+     * federated build configuring {@code <schemaInput tag>} emits synthesised types a gateway can
+     * no longer filter. The registry has both by the time this runs, because the applier has
+     * already rewritten it.
+     *
+     * <p>The store owing those tags is a real gap and it is not this method's to close. It is the
+     * capture cut moving, which is a fact arriving earlier rather than a reader compensating.
+     *
+     * <p>Distinct by name, because shared machinery is minted once per carrier: two tagged carriers
+     * state the same {@code PageInfo}, and it carries each tag once rather than twice.
+     */
+    private static void applyInheritedTags(TypeDefinitionRegistry patched, StoreHandle store) {
+        var m = GRAPHITRON_MINTED_TYPE;
+        var coined = store.dsl()
+            .selectDistinct(m.TYPE_NAME, m.SOURCE_COORDINATE)
+            .from(m)
+            .where(m.GRAPH_NAME.eq(store.graphName()))
+            .orderBy(m.TYPE_NAME, m.SOURCE_COORDINATE)
+            .fetch();
+
+        var byType = new LinkedHashMap<String, LinkedHashSet<String>>();
+        for (var row : coined) {
+            byType.computeIfAbsent(row.get(m.TYPE_NAME), ignored -> new LinkedHashSet<>())
+                .addAll(tagsAt(patched, row.get(m.SOURCE_COORDINATE)));
+        }
+
+        var replacements = new ArrayList<Replacement>();
+        byType.forEach((typeName, tags) -> {
+            if (tags.isEmpty()
+                || !(patched.getTypeOrNull(typeName) instanceof ObjectTypeDefinition object)) {
+                return;
+            }
+            var directives = new ArrayList<>(object.getDirectives());
+            tags.forEach(tag -> directives.add(tagDirective(tag)));
+            replacements.add(new Replacement(object,
+                object.transform(b -> b.directives(directives))));
+        });
+        apply(patched, replacements);
+    }
+
+    /**
+     * The tag names applied at one field coordinate, as the registry holds them.
+     *
+     * <p>A coining coordinate is a field, every expansion being a rewrite of one, so this resolves
+     * {@code Type.field} against the declaration sites of that type. Extensions are searched
+     * beside the base definition: a carrier an extension declared is as much a carrier as one the
+     * base did.
+     */
+    private static List<String> tagsAt(TypeDefinitionRegistry patched, String coordinate) {
+        int dot = coordinate.indexOf('.');
+        if (dot < 0) {
+            return List.of();
+        }
+        String typeName = coordinate.substring(0, dot);
+        String fieldName = coordinate.substring(dot + 1);
+        var sites = new ArrayList<ObjectTypeDefinition>();
+        if (patched.getTypeOrNull(typeName) instanceof ObjectTypeDefinition base) {
+            sites.add(base);
+        }
+        sites.addAll(patched.objectTypeExtensions().getOrDefault(typeName, List.of()));
+
+        var names = new ArrayList<String>();
+        for (var site : sites) {
+            for (var field : site.getFieldDefinitions()) {
+                if (!field.getName().equals(fieldName)) {
+                    continue;
+                }
+                for (var directive : field.getDirectives(TAG_DIRECTIVE)) {
+                    var argument = directive.getArgument(TAG_NAME_ARG);
+                    if (argument != null && argument.getValue() instanceof StringValue value) {
+                        names.add(value.getValue());
+                    }
+                }
+            }
+        }
+        return names;
+    }
+
+    /** One {@code @tag} application, with the name the relation holds. */
+    private static Directive tagDirective(String tagName) {
+        return Directive.newDirective()
+            .name(TAG_DIRECTIVE)
+            .argument(Argument.newArgument(TAG_NAME_ARG, new StringValue(tagName)).build())
+            .build();
+    }
 
     /**
      * Applies the {@code @key} applications the rule derived and no author wrote.

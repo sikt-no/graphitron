@@ -88,8 +88,18 @@ final class ThreadConfinedStore {
      *
      * <p>Raising it is a deliberate act: recount what boots and why, and if a new class opens a
      * store per case, ask whether it should run on the funnel instead.
+     *
+     * <p>Raised from 250 to 300 when fixtures started reading the emitted schema off a store
+     * instead of off the walk's synthesis. The question the paragraph above asks was asked: this
+     * path cannot run on the funnel, because the caller may already be holding a store of its own
+     * and borrowing the thread's would clear the rows that fixture captured, which is what
+     * happened to five shadow cases before it booted its own. What it can do is not boot twice for
+     * one document, and it does not: the derivation is a function of the schema text alone and is
+     * memoised on it, which took the count from 288 to 253. So the boots left are one per distinct
+     * fixture schema, which is what the module means to pay for, and the headroom is for the
+     * schemas it has not written yet rather than for a path nobody looked at.
      */
-    private static final int BOOT_BUDGET = 250;
+    private static final int BOOT_BUDGET = 300;
 
     private final GraphitronModelStore store;
 

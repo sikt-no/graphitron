@@ -8,6 +8,7 @@ import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.schema.EmittedRegistry;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.classifieddsl.CorpusDocuments;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -128,7 +129,11 @@ class EmittedRegistryAgreementTest {
 
             GraphQLSchema incumbent;
             try {
-                incumbent = TestSchemaHelper.buildBundle(sdl, ctx).assembled();
+                // The walk's own synthesis, reached directly. TestSchemaHelper.buildBundle
+                // hands back the store-derived schema now, so going through it would
+                // compare the derivation with itself and agree vacuously.
+                incumbent = GraphitronSchemaBuilder.buildBundle(
+                    TestSchemaHelper.parseRegistryWithPrelude(sdl), ctx).assembled();
             } catch (RuntimeException e) {
                 unusable.add(document.id() + ": the incumbent refused the document: " + brief(e));
                 continue;

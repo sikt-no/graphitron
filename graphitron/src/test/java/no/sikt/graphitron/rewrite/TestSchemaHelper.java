@@ -82,8 +82,59 @@ public final class TestSchemaHelper {
         return buildBundle(schemaText, TestConfiguration.testContext());
     }
 
+    /**
+     * The bundle a run produces for {@code schemaText}, with the emitted schema taken off a store
+     * rather than off the walk that built the model beside it.
+     *
+     * <p>A run reads its emitted schema from the facts, so a fixture that read the walk's
+     * synthesis was testing a producer the generator no longer uses. Every caller here goes
+     * through this arm, which is why the migration is one method rather than the hundred-odd call
+     * sites above it.
+     *
+     * <p>The capture is the cost, and it is per call. What a fixture gets back is what a run would
+     * emit for the same document, which is the only version of this worth asserting against.
+     */
     public static GraphitronSchemaBuilder.Bundle buildBundle(String schemaText, RunContext ctx) {
-        return GraphitronSchemaBuilder.buildBundle(parseRegistryWithPrelude(schemaText), ctx);
+        var bundle = GraphitronSchemaBuilder.buildBundle(parseRegistryWithPrelude(schemaText), ctx);
+        return new GraphitronSchemaBuilder.Bundle(bundle.model(), emittedSchema(schemaText, ctx),
+            bundle.federationLink(), bundle.usesOneOf(), bundle.decodeLedger());
+    }
+
+    /**
+     * The emitted schemas already derived in this JVM, keyed by the exact text captured.
+     *
+     * <p>The derivation is a function of that text and nothing else: the capture is handed the
+     * document and no context, so two fixtures naming one schema get one answer. Without this a
+     * module that builds a bundle per case boots a store per case, which the thread-confined
+     * store's budget refuses and is right to: the boots it counts are the ones nobody meant to pay
+     * for twice.
+     */
+    private static final java.util.Map<String, graphql.schema.GraphQLSchema> EMITTED =
+        new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** The emitted schema for {@code schemaText}, derived from a store captured over it. */
+    private static graphql.schema.GraphQLSchema emittedSchema(String schemaText, RunContext ctx) {
+        String captured = (schemaText.contains("interface Node") ? "" : NODE_INTERFACE) + schemaText;
+        return EMITTED.computeIfAbsent(captured, TestSchemaHelper::deriveEmittedSchema);
+    }
+
+    private static graphql.schema.GraphQLSchema deriveEmittedSchema(String captured) {
+        // Its own store, never the thread's: a fixture that holds a CapturedStore across its
+        // cases would have the rows it captured cleared out from under it by this one.
+        try (var store = no.sikt.graphitron.model.test.CapturedStore.ownStore(
+                java.nio.file.Files.createTempDirectory("emitted"),
+                captured)) {
+            var assembly = no.sikt.graphitron.model.schema.SchemaAssembly.of(
+                no.sikt.graphitron.model.schema.EmittedRegistry.of(store.registry(),
+                    new no.sikt.graphitron.model.read.StoreHandle(store.dsl(),
+                        no.sikt.graphitron.model.test.CapturedStore.GRAPH)));
+            if (assembly instanceof no.sikt.graphitron.model.schema.SchemaAssembly.Assembled a) {
+                return a.schema();
+            }
+            throw new IllegalStateException("the emitted registry did not assemble: " + assembly);
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
     }
 
     /**
