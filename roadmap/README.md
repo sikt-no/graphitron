@@ -14,6 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
+| `R962` | The type-backing closure probes the census-resolved producer once per hop reached; the condition is the authored reference, and reading it there is a seek | Spec | 2026-09-21 | [plan](type-backing-closure-reads-the-authored-producer.md) |
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-09-16 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |
 | `R923` | A grain declares its corpora, so a cross-corpus grain can say so | Spec | 2026-09-05 | [plan](grain-declares-its-corpora.md) |
@@ -599,6 +600,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R951` [**A consumer pom that adds a dependency to the plugin realm can shadow the jOOQ graphitron parses with, and the store will not open**](plugin-realm-shadows-graphitron-jooq.md) — Backlog, dx
 - `R762` [**The census stores every class member to answer questions only ever asked by name**](census-stores-members-it-reads-by-name.md) — Backlog, architecture
+- `R962` [**The type-backing closure probes the census-resolved producer once per hop reached; the condition is the authored reference, and reading it there is a seek**](type-backing-closure-reads-the-authored-producer.md) — Spec, architecture
 - `R925` [**A java_file row's stamp and its declarations come from one read of the file**](one-read-behind-a-java-file-row.md) — Backlog, correctness
 - `R522` [**Reconcile the emitted-code seam-pin assertion convention with the testing doc**](emitted-seam-pin-assertion-convention.md) — Backlog, tech-debt
 - `R924` [**What must re-run is a walk of the keys the schema already declares**](stale-rows-follow-the-declared-keys.md) — Backlog, architecture
