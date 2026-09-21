@@ -74,4 +74,19 @@ public final class ServiceFixture {
     public static String mayFail(DSLContext dsl) throws java.io.IOException {
         return "";
     }
+
+    /** Takes a record, which is what reaches it: a class is constructible because something is passed one. */
+    public static String describeCard(DSLContext dsl, SlotRecord card) {
+        return card.title();
+    }
+
+    /** Takes a bean whose members are partly inherited, which is what reaches it. */
+    public static String describeChild(DSLContext dsl, BeanChild child) {
+        return child.getTitle();
+    }
+
+    /** And one nothing can make, which is what reaches it without making it constructible. */
+    public static String describeHolder(DSLContext dsl, AbstractHolder holder) {
+        return holder.toString();
+    }
 }

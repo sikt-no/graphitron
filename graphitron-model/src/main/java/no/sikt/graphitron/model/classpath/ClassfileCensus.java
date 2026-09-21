@@ -50,7 +50,7 @@ public final class ClassfileCensus {
     /** One class, and everything public it declares. */
     public record ClassAt(String source, String className, String kind, List<SupertypeAt> supertypes,
                           List<MethodAt> methods,
-                          List<MethodAt> constructors, List<ComponentAt> components,
+                          List<MethodAt> constructors, boolean isAbstract, List<ComponentAt> components,
                           List<FieldAt> fields) {}
 
     /** A name written above a class, and the clause it was written in. */
@@ -254,6 +254,7 @@ public final class ClassfileCensus {
         }
         return Optional.of(new ClassAt(source, className, kindOf(classfile),
             supertypesOf(classfile), methodsOf(classfile), constructorsOf(classfile),
+            classfile.flags().has(AccessFlag.ABSTRACT),
             componentsOf(classfile), fieldsOf(classfile)));
     }
 

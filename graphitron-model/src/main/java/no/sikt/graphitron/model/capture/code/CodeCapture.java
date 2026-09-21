@@ -515,11 +515,9 @@ public final class CodeCapture {
                     delivered(parameter.typeRefs(), containers, byName, reached, queue);
                 }
             } else {
-                for (ClassfileCensus.MethodAt setter : at.methods()) {
-                    if (setterProperty(setter) != null) {
-                        delivered(setter.parameters().getFirst().typeRefs(), containers, byName,
-                            reached, queue);
-                    }
+                for (ClassfileCensus.MethodAt setter : settersOf(at, byName)) {
+                    delivered(setter.parameters().getFirst().typeRefs(), containers, byName,
+                        reached, queue);
                 }
             }
         }
@@ -536,8 +534,7 @@ public final class CodeCapture {
                     simpleName(row.at().className())));
             var carried = "POSITIONAL".equals(row.shape())
                 ? row.constructor().parameters()
-                : row.at().methods().stream()
-                    .filter(method -> setterProperty(method) != null)
+                : settersOf(row.at(), byName).stream()
                     .map(method -> method.parameters().getFirst())
                     .toList();
             for (ClassfileCensus.ParameterAt parameter : carried) {
@@ -577,13 +574,10 @@ public final class CodeCapture {
                 }
                 continue;
             }
-            for (ClassfileCensus.MethodAt setter : row.at().methods()) {
-                String property = setterProperty(setter);
-                if (property != null) {
-                    slots.add(new Slot(row.at().source(), row.at().className(), setter.name(),
-                        setter.descriptor(), 0, property,
-                        setter.parameters().getFirst().qualifiedType()));
-                }
+            for (ClassfileCensus.MethodAt setter : settersOf(row.at(), byName)) {
+                slots.add(new Slot(row.at().source(), row.at().className(), setter.name(),
+                    setter.descriptor(), 0, setterProperty(setter),
+                    setter.parameters().getFirst().qualifiedType()));
             }
         }
         if (slots.isEmpty()) {
@@ -650,12 +644,58 @@ public final class CodeCapture {
         return null;
     }
 
-    /** The no-argument constructor, which is what a class filled one member at a time starts from. */
+    /**
+     * The no-argument constructor, which is what a class filled one member at a time starts from.
+     *
+     * <p>An abstract class has none for this purpose however many it declares. A public constructor
+     * on an abstract class is there for its subclasses to chain to and calling it is not a thing any
+     * emitter can do, so a rule reading constructors alone would admit a class nothing can make.
+     */
     private static ClassfileCensus.MethodAt noArgumentConstructor(ClassfileCensus.ClassAt at) {
+        if (at.isAbstract() || "INTERFACE".equals(at.kind()) || "ANNOTATION".equals(at.kind())) {
+            return null;
+        }
         return at.constructors().stream()
             .filter(constructor -> constructor.parameters().isEmpty())
             .findFirst()
             .orElse(null);
+    }
+
+    /**
+     * Every setter a class offers, its superclasses' included, nearest declaration winning.
+     *
+     * <p>What an author may fill is what the class offers rather than what its own file declares,
+     * so a member a base class declares is one the emitter reaches through the subclass and has to
+     * be offered here too. The walk is the extends chain and stops where the classpath does, which
+     * is the same best effort every walk past a classfile makes: a base class no entry declares
+     * contributes what it cannot be read for, which is nothing.
+     *
+     * <p>Overriding is by name and descriptor, which is what overriding is, and the nearest class
+     * wins because that is the method the call actually reaches.
+     */
+    private static List<ClassfileCensus.MethodAt> settersOf(
+        ClassfileCensus.ClassAt at, Map<String, ClassfileCensus.ClassAt> byName) {
+        var offered = new ArrayList<ClassfileCensus.MethodAt>();
+        var overridden = new java.util.HashSet<String>();
+        var walked = new java.util.LinkedHashSet<String>();
+        ClassfileCensus.ClassAt walking = at;
+        while (walking != null && walked.add(walking.className())) {
+            for (ClassfileCensus.MethodAt method : walking.methods()) {
+                if (setterProperty(method) == null) {
+                    continue;
+                }
+                if (overridden.add(method.name() + method.descriptor())) {
+                    offered.add(method);
+                }
+            }
+            walking = walking.supertypes().stream()
+                .filter(supertype -> "EXTENDS".equals(supertype.declaredVia()))
+                .map(supertype -> byName.get(supertype.name()))
+                .filter(java.util.Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+        }
+        return offered;
     }
 
     /**
