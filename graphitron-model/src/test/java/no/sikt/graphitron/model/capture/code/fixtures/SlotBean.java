@@ -19,6 +19,25 @@ public final class SlotBean {
         return List.of();
     }
 
+    /** The second prefix over a primitive: slot {@code restricted}. */
+    public boolean isRestricted() {
+        return false;
+    }
+
+    /**
+     * Only the first letter is lowered, so this is slot {@code uRL} rather than {@code url}. The
+     * rule transcribed rather than improved: an author writing against this class has been writing
+     * that name already.
+     */
+    public String getURL() {
+        return "";
+    }
+
+    /** A lower-case letter after the prefix, so the name is not bean-shaped at all. */
+    public String getlower() {
+        return "";
+    }
+
     /** No prefix at all, so no property and no slot. */
     public String title() {
         return "";

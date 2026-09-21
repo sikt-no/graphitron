@@ -94,8 +94,6 @@ intent_authored_type_claim
 intent_bound_table
 intent_carrier_data_field
 intent_carrier_routine_hop
-intent_class_member_element
-intent_class_member_slot
 intent_column_match_claim
 intent_condition_membership
 intent_condition_method_route

@@ -2768,6 +2768,60 @@ public final class SeededStore {
                 .set(JVM_DECLARED_TYPE_REF.VARIANCE, "NONE")
                 .set(JVM_DECLARED_TYPE_REF.TOUCHED_AT, SEEDED_READING)
                 .execute());
+        seedCodeSignature(dsl, sourceName, className, methodName, descriptor, declaredReturn);
+    }
+
+    /**
+     * The same signature as the reading would have written it down, which {@link CodeRows} projects
+     * from the position map the census rows above are written from.
+     *
+     * <p>Both families come off one statement because that map is the declaration and the two are
+     * two records of it. A case states a signature once and both readings of it answer, which is the
+     * only arrangement under which a case can be about a rule rather than about which family it
+     * remembered to seed.
+     */
+    private static void seedCodeSignature(DSLContext dsl, String sourceName, String className,
+                                          String methodName, String descriptor,
+                                          Map<String, String> declaredReturn) {
+        CodeRows.write(dsl, sourceName, className, methodName, descriptor, declaredReturn,
+            SEEDED_READING);
+        seedSlot(dsl, sourceName, className, methodName, descriptor);
+    }
+
+    /**
+     * The member slot a seeded accessor offers, where the class's declared form says it offers one.
+     *
+     * <p>Called from both sides of a record, because the two halves of one component arrive in
+     * whichever order a case writes them: the accessor may be seeded before its component or after
+     * it, and a slot needs both. Idempotent, so the second of the two writes nothing.
+     *
+     * <p>Taking no parameters is read off the descriptor rather than off the parameter rows, which
+     * is what makes the answer independent of seeding order: a case states the parameters after the
+     * method, so at this point every method looks parameterless in the rows and none does in its
+     * descriptor.
+     */
+    private static void seedSlot(DSLContext dsl, String sourceName, String className,
+                                 String methodName, String descriptor) {
+        if (!descriptor.startsWith("()")) {
+            return;
+        }
+        String kind = dsl.select(JVM_CLASS.CLASS_KIND)
+            .from(JVM_CLASS)
+            .where(JVM_CLASS.SOURCE_NAME.eq(sourceName).and(JVM_CLASS.CLASS_NAME.eq(className)))
+            .fetchOne(0, String.class);
+        if ("RECORD".equals(kind)) {
+            boolean isComponent = dsl.fetchExists(JVM_RECORD_COMPONENT,
+                JVM_RECORD_COMPONENT.SOURCE_NAME.eq(sourceName)
+                    .and(JVM_RECORD_COMPONENT.CLASS_NAME.eq(className))
+                    .and(JVM_RECORD_COMPONENT.COMPONENT_NAME.eq(methodName)));
+            if (isComponent) {
+                CodeRows.slot(dsl, sourceName, className, methodName, descriptor, methodName,
+                    "RECORD_COMPONENT", SEEDED_READING);
+            }
+            return;
+        }
+        CodeRows.slot(dsl, sourceName, className, methodName, descriptor,
+            CodeRows.beanProperty(methodName), "BEAN_ACCESSOR", SEEDED_READING);
     }
 
     /**
@@ -3089,6 +3143,16 @@ public final class SeededStore {
                 .set(JVM_DECLARED_TYPE_REF.VARIANCE, "NONE")
                 .set(JVM_DECLARED_TYPE_REF.TOUCHED_AT, SEEDED_READING)
                 .execute());
+        // The accessor may have been seeded before this component or after it, and the slot needs
+        // both halves, so each half offers the slot and whichever arrives second writes it.
+        dsl.select(JVM_METHOD.DESCRIPTOR)
+            .from(JVM_METHOD)
+            .where(JVM_METHOD.SOURCE_NAME.eq(sourceName)
+                .and(JVM_METHOD.CLASS_NAME.eq(className))
+                .and(JVM_METHOD.METHOD_NAME.eq(componentName)))
+            .fetch(0, String.class)
+            .forEach(descriptor ->
+                seedSlot(dsl, sourceName, className, componentName, descriptor));
     }
 
     // ===== The derivations' own tables =====

@@ -398,13 +398,11 @@ class RelationRegistrationGateTest {
         registrations.put("intent_connection_facet", Arm.DERIVED);
         registrations.put("intent_field_column_table", Arm.DERIVED);
         registrations.put("intent_field_separate_fetch", Arm.DERIVED);
-        registrations.put("intent_class_member_slot", Arm.DERIVED);
         registrations.put("intent_field_producer_reference", Arm.DERIVED);
         registrations.put("intent_field_producer_method", Arm.DERIVED);
         registrations.put("intent_field_routine_method", Arm.DERIVED);
         registrations.put("intent_delivery_container", Arm.DERIVED);
                 registrations.put("intent_declared_type_element", Arm.DERIVED);
-        registrations.put("intent_class_member_element", Arm.DERIVED);
         registrations.put("intent_field_accessor_hop", Arm.DERIVED);
         registrations.put("intent_type_backing_seed", Arm.DERIVED);
         registrations.put("intent_type_backing_class", Arm.DERIVED);

@@ -18,8 +18,8 @@ import java.util.Optional;
 import java.util.SequencedMap;
 import java.util.stream.Stream;
 
+import static no.sikt.graphitron.model.Tables.CODE_TYPE_SLOT;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
-import static no.sikt.graphitron.model.Tables.INTENT_CLASS_MEMBER_SLOT;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_METHOD;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_REFERENCE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_ROUTINE_METHOD;
@@ -562,15 +562,13 @@ public final class DeclarationFacts {
     private static Field<List<SlotRow>> slotArm(StoreHandle store, Coord coord) {
         String memberName = coord.memberName();
         if (memberName == null) return null;
-        return multiset(selectDistinct(INTENT_CLASS_MEMBER_SLOT.CLASS_NAME,
-                INTENT_CLASS_MEMBER_SLOT.SLOT_NAME, INTENT_CLASS_MEMBER_SLOT.ACCESSOR_METHOD_NAME,
-                INTENT_CLASS_MEMBER_SLOT.ORIGIN)
-            .from(INTENT_CLASS_MEMBER_SLOT)
-            .where(store.reads(INTENT_CLASS_MEMBER_SLOT.SOURCE_NAME))
-            .and(INTENT_CLASS_MEMBER_SLOT.SLOT_NAME.eq(memberName))
-            .and(INTENT_CLASS_MEMBER_SLOT.CLASS_NAME.in(backingCandidates(store, coord)))
-            .orderBy(INTENT_CLASS_MEMBER_SLOT.CLASS_NAME,
-                INTENT_CLASS_MEMBER_SLOT.ACCESSOR_METHOD_NAME))
+        return multiset(selectDistinct(CODE_TYPE_SLOT.CLASS_NAME,
+                CODE_TYPE_SLOT.SLOT_NAME, CODE_TYPE_SLOT.METHOD_NAME, CODE_TYPE_SLOT.ORIGIN)
+            .from(CODE_TYPE_SLOT)
+            .where(store.reads(CODE_TYPE_SLOT.SOURCE_NAME))
+            .and(CODE_TYPE_SLOT.SLOT_NAME.eq(memberName))
+            .and(CODE_TYPE_SLOT.CLASS_NAME.in(backingCandidates(store, coord)))
+            .orderBy(CODE_TYPE_SLOT.CLASS_NAME, CODE_TYPE_SLOT.METHOD_NAME))
             .convertFrom(rows -> rows.map(row -> new SlotRow(row.value1(), row.value2(),
                 row.value3(), ClassMemberSlots.Origin.of(row.value4()))));
     }
@@ -723,11 +721,11 @@ public final class DeclarationFacts {
             .where(coordinate(INTENT_FIELD_PRODUCER_REFERENCE.GRAPH_NAME.eq(store.graphName()),
                 INTENT_FIELD_PRODUCER_REFERENCE.TYPE_NAME.eq(coord.typeName()),
                 INTENT_FIELD_PRODUCER_REFERENCE.FIELD_NAME.eq(coord.memberName())))
-            .union(select(INTENT_CLASS_MEMBER_SLOT.ACCESSOR_METHOD_NAME)
-                .from(INTENT_CLASS_MEMBER_SLOT)
-                .where(store.reads(INTENT_CLASS_MEMBER_SLOT.SOURCE_NAME))
-                .and(INTENT_CLASS_MEMBER_SLOT.SLOT_NAME.eq(coord.memberName()))
-                .and(INTENT_CLASS_MEMBER_SLOT.CLASS_NAME.in(backingCandidates(store, coord))))
+            .union(select(CODE_TYPE_SLOT.METHOD_NAME)
+                .from(CODE_TYPE_SLOT)
+                .where(store.reads(CODE_TYPE_SLOT.SOURCE_NAME))
+                .and(CODE_TYPE_SLOT.SLOT_NAME.eq(coord.memberName()))
+                .and(CODE_TYPE_SLOT.CLASS_NAME.in(backingCandidates(store, coord))))
             .union(select(INTENT_FIELD_ROUTINE_METHOD.METHOD_NAME)
                 .from(INTENT_FIELD_ROUTINE_METHOD)
                 .where(routineCoordinate(store, coord)));

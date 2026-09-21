@@ -15,4 +15,13 @@ public record SlotRecord(String title, int year, List<String> tags) {
     public String titled(String suffix) {
         return title + suffix;
     }
+
+    /**
+     * A bean-shaped accessor written by hand on a record. The record arm is what must win over it:
+     * a record's members are its components, so this contributes no second slot beside the one it
+     * shadows.
+     */
+    public String getTitle() {
+        return title;
+    }
 }

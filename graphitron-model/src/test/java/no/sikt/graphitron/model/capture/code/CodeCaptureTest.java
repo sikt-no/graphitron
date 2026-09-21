@@ -67,6 +67,9 @@ class CodeCaptureTest {
     private static final String SLOT_BEAN =
         "no.sikt.graphitron.model.capture.code.fixtures.SlotBean";
 
+    private static final String SLOT_INTERFACE =
+        "no.sikt.graphitron.model.capture.code.fixtures.SlotInterface";
+
     /**
      * The reactor's own output beside a dependency that declares a great many condition methods.
      * jOOQ is the sharpest case the classpath has for the scope rule: every {@code Condition} the
@@ -629,7 +632,8 @@ class CodeCaptureTest {
     void aRecordOffersItsComponents() {
         withReactorCapture(dsl -> {
             assertThat(slotsOn(dsl, SLOT_RECORD))
-                .as("the three components, each read by the accessor of its own name")
+                .as("the three components, each read by the accessor of its own name, and the"
+                    + " hand-written getTitle beside them contributing nothing")
                 .containsExactlyInAnyOrder("title", "year", "tags");
             assertThat(originsOn(dsl, SLOT_RECORD))
                 .as("and the arm is the class's, chosen by its declared form")
@@ -647,9 +651,10 @@ class CodeCaptureTest {
     void aBeanOffersItsProperties() {
         withReactorCapture(dsl -> {
             assertThat(slotsOn(dsl, SLOT_BEAN))
-                .as("both spellings of title, and tags; not the prefixless one, not the one that"
-                    + " takes an argument, and not a bare get")
-                .containsExactlyInAnyOrder("title", "title", "tags");
+                .as("both spellings of title, and the three the other names offer; not the"
+                    + " prefixless one, not the one that takes an argument, not a bare get, and"
+                    + " not the one whose prefix is followed by a lower-case letter")
+                .containsExactlyInAnyOrder("title", "title", "tags", "restricted", "uRL");
             assertThat(originsOn(dsl, SLOT_BEAN)).containsOnly("BEAN_ACCESSOR");
             assertThat(dsl.select(CODE_TYPE_SLOT.METHOD_NAME)
                     .from(CODE_TYPE_SLOT)
@@ -659,6 +664,20 @@ class CodeCaptureTest {
                     .fetch(CODE_TYPE_SLOT.METHOD_NAME))
                 .as("one slot name, two accessors, which is why the accessor is the key")
                 .containsExactly("getTitle", "isTitle");
+        });
+    }
+
+    /**
+     * The bean arm is chosen by "not a record" and not by "a class", so an interface answers with
+     * its accessors on the same terms. A type an author backs with an interface offers the same
+     * members, and the declared form the reading records for one is INTERFACE.
+     */
+    @Test
+    @DisplayName("an interface answers like anything else that is not a record")
+    void anInterfaceAnswersLikeAnyNonRecord() {
+        withReactorCapture(dsl -> {
+            assertThat(slotsOn(dsl, SLOT_INTERFACE)).containsExactly("name");
+            assertThat(originsOn(dsl, SLOT_INTERFACE)).containsExactly("BEAN_ACCESSOR");
         });
     }
 
@@ -684,6 +703,12 @@ class CodeCaptureTest {
                     .fetchOne(t.DISPLAY_NAME))
                 .as("rendered for a person, packages dropped and type arguments kept")
                 .isEqualTo("List<String>");
+            assertThat(displayTypeOf(dsl, SLOT_BEAN, "restricted"))
+                .as("a primitive is its own spelling and has no package to drop")
+                .isEqualTo("boolean");
+            assertThat(displayTypeOf(dsl, SLOT_RECORD, "year"))
+                .as("and a record component is rendered from its accessor's result alike")
+                .isEqualTo("int");
         });
     }
 
@@ -827,6 +852,22 @@ class CodeCaptureTest {
             .from(CODE_TYPE_SLOT)
             .where(CODE_TYPE_SLOT.CLASS_NAME.eq(className))
             .fetch(CODE_TYPE_SLOT.SLOT_NAME);
+    }
+
+    /** How a slot's type renders, which is its accessor's result type's property. */
+    private static String displayTypeOf(DSLContext dsl, String className, String slotName) {
+        var m = CODE_METHOD;
+        var t = CODE_TYPE;
+        return dsl.select(t.DISPLAY_NAME)
+            .from(CODE_TYPE_SLOT)
+            .join(m).on(m.SOURCE_NAME.eq(CODE_TYPE_SLOT.SOURCE_NAME),
+                m.CLASS_NAME.eq(CODE_TYPE_SLOT.CLASS_NAME),
+                m.METHOD_NAME.eq(CODE_TYPE_SLOT.METHOD_NAME),
+                m.DESCRIPTOR.eq(CODE_TYPE_SLOT.DESCRIPTOR))
+            .join(t).on(t.SOURCE_NAME.eq(m.SOURCE_NAME), t.TYPE_NAME.eq(m.RESULT_TYPE))
+            .where(CODE_TYPE_SLOT.CLASS_NAME.eq(className))
+            .and(CODE_TYPE_SLOT.SLOT_NAME.eq(slotName))
+            .fetchOne(t.DISPLAY_NAME);
     }
 
     /** The arms those slots came from, which is a fact about the class. */

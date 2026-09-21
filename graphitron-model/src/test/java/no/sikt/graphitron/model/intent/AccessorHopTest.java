@@ -8,7 +8,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_CLASS_MEMBER_ELEMENT;
+import static no.sikt.graphitron.model.Tables.CODE_METHOD;
+import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT;
+import static no.sikt.graphitron.model.Tables.CODE_TYPE_SLOT;
 import static no.sikt.graphitron.model.Tables.INTENT_DECLARED_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.JVM_DECLARED_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.INTENT_DELIVERY_CONTAINER;
@@ -37,8 +39,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code intent_delivery_container}, the classes a declared type delivers through;
  * {@code jvm_declared_type_ref}, the census's declared types under one owner key;
  * {@code intent_declared_type_element}, the class a declared type delivers once the containers are
- * peeled; {@code intent_class_member_element}, that peel read at a member slot's own owner; and
- * {@code intent_field_accessor_hop}, where a field coordinate standing on a class lands.
+ * peeled; {@code code_type_slot}, the member names a class offers and the accessor each is read by;
+ * and {@code intent_field_accessor_hop}, where a field coordinate standing on a class lands.
+ *
+ * <p>Two peels are pinned here rather than one, and they are not the same rule. The view peels a
+ * census type reference at its owner, unrolled to a fixed depth because SQL has no loop. The
+ * reading peels the same declaration as it reads it, keyed by the type and bounded by nothing, and
+ * a slot reaches it through the accessor's own result. The deep cases below are where the two part,
+ * and each is asserted against the relation it belongs to.
  *
  * <p>Every input is stated as rows. A census position is a name, a path and a variance, which is
  * all these rules read of one, and the arrangements they have to get right are ones no compiled
@@ -237,7 +245,7 @@ class AccessorHopTest {
     void anOverloadedAccessorDoesNotLendItsReturnToTheSlot() {
         withCensus(dsl ->
             assertThat(delivered(dsl, STORE, "title"))
-                .containsExactly("java.lang.String at "));
+                .containsExactly("java.lang.String"));
     }
 
     /**
@@ -249,7 +257,7 @@ class AccessorHopTest {
     void aSlotNamingAClassDeliversItAtTheRoot() {
         withCensus(dsl ->
             assertThat(delivered(dsl, FILM, "language"))
-                .containsExactly("app.LanguageRecord at "));
+                .containsExactly("app.LanguageRecord"));
     }
 
     /** The ordinary peel: one container, one descent, the element. */
@@ -257,7 +265,7 @@ class AccessorHopTest {
     void aContainerSlotDeliversItsElement() {
         withCensus(dsl ->
             assertThat(delivered(dsl, STORE, "films"))
-                .containsExactly("app.FilmRecord at 0"));
+                .containsExactly("app.FilmRecord"));
     }
 
     /**
@@ -274,10 +282,10 @@ class AccessorHopTest {
         withCensus(dsl -> {
             assertThat(delivered(dsl, LEGACY, "cast"))
                 .as("a component declared on both")
-                .containsExactlyInAnyOrder("app.ActorRecord at 0", "lib.CastDto at 0");
+                .containsExactlyInAnyOrder("app.ActorRecord", "lib.CastDto");
             assertThat(delivered(dsl, LEGACY_STORE, "cast"))
                 .as("an accessor declared on both")
-                .containsExactlyInAnyOrder("app.ActorRecord at 0", "lib.CastDto at 0");
+                .containsExactlyInAnyOrder("app.ActorRecord", "lib.CastDto");
         });
     }
 
@@ -290,7 +298,7 @@ class AccessorHopTest {
     void nestedContainersPeelUntilTheyStop() {
         withCensus(dsl ->
             assertThat(delivered(dsl, STORE, "pending"))
-                .containsExactly("app.FilmRecord at 0.0"));
+                .containsExactly("app.FilmRecord"));
     }
 
     /** A map delivers its value, which is the one container whose element is not the first argument. */
@@ -298,7 +306,7 @@ class AccessorHopTest {
     void aMapDeliversItsValue() {
         withCensus(dsl ->
             assertThat(delivered(dsl, STORE, "byKey"))
-                .containsExactly("app.FilmRecord at 1"));
+                .containsExactly("app.FilmRecord"));
     }
 
     /**
@@ -310,9 +318,9 @@ class AccessorHopTest {
     void aTypeThatNamesNoElementDeliversItself() {
         withCensus(dsl -> {
             assertThat(delivered(dsl, STORE, "raw"))
-                .containsExactly("java.util.List at ");
+                .containsExactly("java.util.List");
             assertThat(delivered(dsl, STORE, "boxed"))
-                .containsExactly("app.Box at ");
+                .containsExactly("app.Box");
         });
     }
 
@@ -320,15 +328,22 @@ class AccessorHopTest {
      * The peel lands on a position, so it lands on that position's variance too. A list of
      * something extending Film delivers Film, and a reader that needs to know which direction the
      * values flow can still tell.
+     *
+     * <p>Asked of the view and not of the slot, which is where the two peels differ and not an
+     * oversight in the other. The reading records what a type delivers and not the position it was
+     * read at, so a variance has nowhere to sit there; no reader has wanted one at a slot, and the
+     * relation that does carry it is the one keyed by the position it belongs to.
      */
     @Test
     void varianceSurvivesThePeel() {
         withCensus(dsl ->
-            assertThat(dsl.select(INTENT_CLASS_MEMBER_ELEMENT.ELEMENT_CLASS,
-                    INTENT_CLASS_MEMBER_ELEMENT.VARIANCE)
-                .from(INTENT_CLASS_MEMBER_ELEMENT)
-                .where(INTENT_CLASS_MEMBER_ELEMENT.CLASS_NAME.eq(STORE)
-                    .and(INTENT_CLASS_MEMBER_ELEMENT.SLOT_NAME.eq("subset")))
+            assertThat(dsl.select(INTENT_DECLARED_TYPE_ELEMENT.ELEMENT_CLASS,
+                    INTENT_DECLARED_TYPE_ELEMENT.VARIANCE)
+                .from(INTENT_DECLARED_TYPE_ELEMENT)
+                .where(INTENT_DECLARED_TYPE_ELEMENT.CLASS_NAME.eq(STORE)
+                    .and(INTENT_DECLARED_TYPE_ELEMENT.OWNER_NAME.eq("getSubset"))
+                    .and(INTENT_DECLARED_TYPE_ELEMENT.OWNER_DESCRIPTOR.eq(LIST))
+                    .and(INTENT_DECLARED_TYPE_ELEMENT.OWNER_POSITION.eq(-1)))
                 .fetch())
                 .extracting(r -> r.value1() + " " + r.value2())
                 .containsExactly("app.FilmRecord EXTENDS"));
@@ -364,7 +379,6 @@ class AccessorHopTest {
                 .as("the declaration a jump to the member's own source lands on")
                 .isEqualTo("getFilms");
             assertThat(rows.getFirst().getToClassName()).isEqualTo(FILM);
-            assertThat(rows.getFirst().getElementPath()).isEqualTo("0");
             assertThat(rows.getFirst().getOrigin()).isEqualTo("BEAN_ACCESSOR");
         });
     }
@@ -575,6 +589,8 @@ class AccessorHopTest {
         seedClass(dsl, APP, LEGACY, "RECORD");
         seedRecordComponent(dsl, APP, LEGACY, "cast",
             Map.of("", "java.util.List", "0", "app.ActorRecord"));
+        seedMethod(dsl, APP, LEGACY, "cast", LIST,
+            Map.of("", "java.util.List", "0", "app.ActorRecord"));
         seedClass(dsl, APP, LEGACY_STORE, "CLASS");
         seedMethod(dsl, APP, LEGACY_STORE, "getCast", LIST,
             Map.of("", "java.util.List", "0", "app.ActorRecord"));
@@ -644,6 +660,8 @@ class AccessorHopTest {
             Map.of("", "java.util.List", "0", "lib.FilmDto"));
         seedClass(dsl, LIB, LEGACY, "RECORD");
         seedRecordComponent(dsl, LIB, LEGACY, "cast",
+            Map.of("", "java.util.List", "0", "lib.CastDto"));
+        seedMethod(dsl, LIB, LEGACY, "cast", LIST,
             Map.of("", "java.util.List", "0", "lib.CastDto"));
         seedClass(dsl, LIB, LEGACY_STORE, "CLASS");
         seedMethod(dsl, LIB, LEGACY_STORE, "getCast", LIST,
@@ -729,14 +747,25 @@ class AccessorHopTest {
             .fetch(r -> r.value1() + " at " + r.value2());
     }
 
-    /** The delivered class and the position it was read at, the answer and its evidence together. */
+    /**
+     * What the named slot delivers: the slot's accessor, that accessor's result type, and what the
+     * reading peeled that type down to. Three key joins and no owner kind, the slot naming the whole
+     * of its accessor's key rather than half of it.
+     */
     private static List<String> delivered(DSLContext dsl, String className, String slotName) {
-        return dsl.select(INTENT_CLASS_MEMBER_ELEMENT.ELEMENT_CLASS,
-                INTENT_CLASS_MEMBER_ELEMENT.ELEMENT_PATH)
-            .from(INTENT_CLASS_MEMBER_ELEMENT)
-            .where(INTENT_CLASS_MEMBER_ELEMENT.CLASS_NAME.eq(className)
-                .and(INTENT_CLASS_MEMBER_ELEMENT.SLOT_NAME.eq(slotName)))
-            .fetch(r -> r.value1() + " at " + r.value2());
+        return dsl.select(CODE_TYPE_ELEMENT.ELEMENT_CLASS)
+            .from(CODE_TYPE_SLOT)
+            .join(CODE_METHOD)
+            .on(CODE_METHOD.SOURCE_NAME.eq(CODE_TYPE_SLOT.SOURCE_NAME)
+                .and(CODE_METHOD.CLASS_NAME.eq(CODE_TYPE_SLOT.CLASS_NAME))
+                .and(CODE_METHOD.METHOD_NAME.eq(CODE_TYPE_SLOT.METHOD_NAME))
+                .and(CODE_METHOD.DESCRIPTOR.eq(CODE_TYPE_SLOT.DESCRIPTOR)))
+            .join(CODE_TYPE_ELEMENT)
+            .on(CODE_TYPE_ELEMENT.SOURCE_NAME.eq(CODE_METHOD.SOURCE_NAME)
+                .and(CODE_TYPE_ELEMENT.TYPE_NAME.eq(CODE_METHOD.RESULT_TYPE)))
+            .where(CODE_TYPE_SLOT.CLASS_NAME.eq(className)
+                .and(CODE_TYPE_SLOT.SLOT_NAME.eq(slotName)))
+            .fetch(0, String.class);
     }
 
     private static List<IntentFieldAccessorHopRecord> hops(DSLContext dsl, String graphName,

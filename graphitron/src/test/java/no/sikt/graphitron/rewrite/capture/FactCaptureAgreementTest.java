@@ -274,16 +274,11 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
  *       both seeded in the module whose DDL declares them, several of the states a boundary case
  *       needs (a macro-rewritten type expression, a contested coordinate, a spelling two schemas
  *       both answer) being ones a fixture states in a line and a capture arranges in a schema;
- *       {@code intent_class_member_slot}, the member names a backing class offers, carries its
- *       reason in two places, because a rule reading a class's declared form is asked both what it
- *       makes of a declaration and whether a compiler's own declarations reach it in that shape.
- *       {@code no.sikt.graphitron.rewrite.derive.ClassMemberSlotScanTest} binds the second, in one
- *       case, over a real classfile scan of three fixture classes whose declared form the test did
- *       not write, while {@code no.sikt.graphitron.model.intent.ClassMemberSlotTest} binds the
- *       first to a census stated row by row in the module whose DDL declares it: the two arms' own
- *       owner key, through one class name declared by two classpath entries, the parameter
- *       anti-join's descriptor, through a bean accessor overloaded with a parameterised twin, and
- *       the record arm's gate, through a component under a class no compiler would pair it with;
+ *       the member names a backing class offers are no longer a derivation at all, the reading
+ *       writing them down as {@code code_type_slot}, so the rule is pinned once rather than twice
+ *       and where the reading lives: {@code no.sikt.graphitron.model.capture.code.CodeCaptureTest}
+ *       binds it against a real reading of this build's own classes, both arms and every near-miss
+ *       of the bean rule stated as a fixture whose declared form the test did not write;
  *       {@code no.sikt.graphitron.model.intent.FieldProducerMethodTest} binds the producer pair,
  *       {@code intent_field_producer_reference} naming the method an authored Java reference spells
  *       and {@code intent_field_producer_method} the census method it resolves to, to rows stated on
@@ -299,7 +294,7 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
  *       callable, and a callable the generated model exposes no call surface for);
  *       {@code no.sikt.graphitron.model.intent.AccessorHopTest} binds the five relations an
  *       accessor hop is built from ({@code intent_delivery_container}, {@code jvm_declared_type_ref},
- *       {@code intent_declared_type_element}, {@code intent_class_member_element} and
+ *       {@code intent_declared_type_element}, {@code code_type_slot} and
  *       {@code intent_field_accessor_hop}) to a census stated as rows in the module whose DDL
  *       declares them, one accessor per delivery shape beside the arrangements no scan of compiled
  *       fixtures offers side by side (one class name declared on two classpath entries, one slot

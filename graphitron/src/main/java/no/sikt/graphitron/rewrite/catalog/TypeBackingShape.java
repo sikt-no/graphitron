@@ -22,7 +22,7 @@ public sealed interface TypeBackingShape
     /**
      * Type backed by a Java {@code record} class, named by its binary class name. What the class
      * offers a member name is not carried here: the record's components are a fact about the class,
-     * which the store answers from the classpath census (the {@code intent_class_member_slot}
+     * which the store answers from its reading of the classfiles (the {@code code_type_slot}
      * relation), so a consumer holding this name reads them there rather than off a list projected
      * per build.
      */

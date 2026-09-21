@@ -24,12 +24,14 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
+import static no.sikt.graphitron.model.Tables.CODE_METHOD;
+import static no.sikt.graphitron.model.Tables.CODE_TYPE;
+import static no.sikt.graphitron.model.Tables.CODE_TYPE_SLOT;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_CLAIM_CONFLICT;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_CLAIM_REJECTION;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_FIELD_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_TYPE_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
-import static no.sikt.graphitron.model.Tables.INTENT_CLASS_MEMBER_SLOT;
 import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_TARGET;
@@ -543,20 +545,31 @@ final class SchemaQueries {
     /**
      * The member names one backing class offers, read from the store's own member-slot relation.
      *
-     * <p>Source-keyed like the census it stands on, so the graph reaches it through
-     * {@link StoreHandle#reads} rather than by a graph column it does not carry. A class the census
+     * <p>Source-keyed like the reading it stands on, so the graph reaches it through
+     * {@link StoreHandle#reads} rather than by a graph column it does not carry. A class the reading
      * never reached answers with nothing, which is not a failure: the table arm's classes are generated
-     * jOOQ records the census deliberately never scans.
+     * jOOQ records the reading deliberately never scans.
+     *
+     * <p>The rendered type is two key joins out, the slot being read by a method whose result names
+     * a type and the rendering belonging to that type. Both joins are on whole primary keys, so
+     * neither can widen what the class offers.
      */
     private static Field<List<MemberSlot>> members(StoreHandle store) {
         return multiset(
-            select(INTENT_CLASS_MEMBER_SLOT.SLOT_NAME, INTENT_CLASS_MEMBER_SLOT.DISPLAY_TYPE,
-                INTENT_CLASS_MEMBER_SLOT.ORIGIN, INTENT_CLASS_MEMBER_SLOT.ACCESSOR_METHOD_NAME)
-                .from(INTENT_CLASS_MEMBER_SLOT)
-                .where(INTENT_CLASS_MEMBER_SLOT.CLASS_NAME.eq(INTENT_TYPE_BACKING.CLASS_NAME)
-                    .and(store.reads(INTENT_CLASS_MEMBER_SLOT.SOURCE_NAME)))
-                .orderBy(INTENT_CLASS_MEMBER_SLOT.SLOT_NAME.asc(),
-                    INTENT_CLASS_MEMBER_SLOT.ACCESSOR_METHOD_NAME.asc()))
+            select(CODE_TYPE_SLOT.SLOT_NAME, CODE_TYPE.DISPLAY_NAME,
+                CODE_TYPE_SLOT.ORIGIN, CODE_TYPE_SLOT.METHOD_NAME)
+                .from(CODE_TYPE_SLOT)
+                .join(CODE_METHOD)
+                .on(CODE_METHOD.SOURCE_NAME.eq(CODE_TYPE_SLOT.SOURCE_NAME)
+                    .and(CODE_METHOD.CLASS_NAME.eq(CODE_TYPE_SLOT.CLASS_NAME))
+                    .and(CODE_METHOD.METHOD_NAME.eq(CODE_TYPE_SLOT.METHOD_NAME))
+                    .and(CODE_METHOD.DESCRIPTOR.eq(CODE_TYPE_SLOT.DESCRIPTOR)))
+                .join(CODE_TYPE)
+                .on(CODE_TYPE.SOURCE_NAME.eq(CODE_METHOD.SOURCE_NAME)
+                    .and(CODE_TYPE.TYPE_NAME.eq(CODE_METHOD.RESULT_TYPE)))
+                .where(CODE_TYPE_SLOT.CLASS_NAME.eq(INTENT_TYPE_BACKING.CLASS_NAME)
+                    .and(store.reads(CODE_TYPE_SLOT.SOURCE_NAME)))
+                .orderBy(CODE_TYPE_SLOT.SLOT_NAME.asc(), CODE_TYPE_SLOT.METHOD_NAME.asc()))
             .convertFrom(r -> r.map(Records.mapping(MemberSlot::new)));
     }
 

@@ -213,8 +213,15 @@ class DerivedReadCostTest {
      * went, and this is the other way the count can fall without a reader losing anything: the
      * question each answered is answered at capture now, so the statement is a column rather than a
      * view over a recursive closure and a catalog join.
+     *
+     * <p>118 when the member-slot pair went the same way. The reading writes down what member names
+     * a class offers and what each accessor's result delivers, so the view that chose an arm per
+     * declared form and the view that rejoined the peel at whichever owner that arm had used are
+     * both gone. Their one remaining reader gained two joins and lost a union, which is the shape
+     * this figure is meant to track: a view retires when the fact under it is stated, not when a
+     * reader stops asking.
      */
-    private static final int READERS_IN_SCHEMA = 120;
+    private static final int READERS_IN_SCHEMA = 118;
 
     /**
      * Views whose derivation reaches at least one registration's target.

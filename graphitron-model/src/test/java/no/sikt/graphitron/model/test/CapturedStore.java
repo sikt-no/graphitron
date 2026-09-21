@@ -497,6 +497,11 @@ public final class CapturedStore implements AutoCloseable {
             ClasspathSourceCapture.stated(dsl, graphName,
                 census.stream().map(CompletionData.ExternalReference::sourceName).toList(), readAt);
             JvmCapture.captureStated(dsl, census, readAt);
+            // And the same statement as the reading would have written it. Both families, because a
+            // census is a statement about a classpath and a run reads that classpath once into each:
+            // a fixture that stated only the walk's transcription would leave every rule that moved
+            // to the reading answering nothing, which is a fixture's silence and not a rule's.
+            CodeRows.writeStated(dsl, census, readAt);
         }
         // The pass, and the whole of the capture: it writes the graph row, the catalog, the
         // classpath families where there is a classpath, every document stratum, and runs the
