@@ -8,6 +8,7 @@ import no.sikt.graphitron.model.boot.StoreAnswer;
 import no.sikt.graphitron.model.catalog.GraphPartition;
 import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.test.StoreStatistics;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;

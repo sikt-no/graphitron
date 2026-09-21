@@ -1,13 +1,20 @@
-package no.sikt.graphitron.rewrite.derive;
+package no.sikt.graphitron.model.test;
 
 import no.sikt.graphitron.model.catalog.GraphPartition;
 import org.jooq.DSLContext;
 
 /**
- * H2's per-column statistics, as the two operations a statistics measurement over a fact store
- * needs: put a store back to knowing nothing, and ask whether one relation has been analysed. Its
- * own type because two tests in this package ask the same questions of the same engine metadata, and
- * a second spelling of "unanalysed" would let one of them pass while the other failed.
+ * H2's per-column statistics, as the operations a fact-store fixture needs: put a store back to
+ * knowing nothing, and ask whether one relation has been analysed. Its own type because several
+ * callers ask the same questions of the same engine metadata, and a second spelling of
+ * "unanalysed" would let one of them pass while another failed.
+ *
+ * <p>It lives beside {@link ThreadConfinedStore} rather than beside the measurements because the
+ * clear is its first caller and the most important one. A borrowed store is truncated of its rows
+ * between cases, and selectivity survives a truncate, so a store cold in its rows and warm in its
+ * statistics is what a case would otherwise be handed. That is the residue the clear's own leak
+ * guard exists to refuse, and it fails the same way: quietly, and only when some other case ran
+ * first.
  *
  * <p>{@link #UNANALYSED} is the value H2 assumes for a column it has never looked at, and it is a
  * real stored value rather than an absence: {@code ALTER TABLE ... ALTER COLUMN ... SELECTIVITY 0}
@@ -23,10 +30,10 @@ import org.jooq.DSLContext;
  * stated value on a store that has never been analysed, and it reports it again after the reset
  * below.
  */
-final class StoreStatistics {
+public final class StoreStatistics {
 
     /** What H2 reports for a column no {@code ANALYZE} has looked at, on every base table. */
-    static final int UNANALYSED = 50;
+    public static final int UNANALYSED = 50;
 
     private StoreStatistics() {}
 
@@ -40,7 +47,7 @@ final class StoreStatistics {
      * against it is a plan no run can get, and a regime built on one would report the declaration's
      * own effect as the baseline.
      */
-    static void reset(DSLContext dsl) {
+    public static void reset(DSLContext dsl) {
         resetEveryColumn(dsl);
         declarePartitionSelectivity(dsl);
     }
@@ -51,7 +58,7 @@ final class StoreStatistics {
      * be in now. Only a measurement of what the declaration itself is worth has any business asking
      * for it, and {@code PartitionSelectivityWorthTest} is the one that does.
      */
-    static void resetIncludingTheDeclaration(DSLContext dsl) {
+    public static void resetIncludingTheDeclaration(DSLContext dsl) {
         resetEveryColumn(dsl);
     }
 
@@ -68,7 +75,7 @@ final class StoreStatistics {
     }
 
     /** The boot-time sweep's statement, restated: what {@code GraphitronModelStore.create} issues. */
-    static void declarePartitionSelectivity(DSLContext dsl) {
+    public static void declarePartitionSelectivity(DSLContext dsl) {
         GraphPartition.keyedBaseTables(dsl).forEach(relation ->
             dsl.execute("ALTER TABLE \"" + relation + "\" ALTER COLUMN \"" + GraphPartition.COLUMN
                 + "\" SELECTIVITY " + GraphPartition.DECLARED_SELECTIVITY));
@@ -91,7 +98,7 @@ final class StoreStatistics {
      * impossible. The other direction has a theoretical hole, a relation whose every column
      * genuinely analyses to fifty, which would fail loudly rather than pass wrongly.
      */
-    static boolean analysed(DSLContext dsl, String relation) {
+    public static boolean analysed(DSLContext dsl, String relation) {
         return dsl.fetch("""
             SELECT SELECTIVITY FROM INFORMATION_SCHEMA.COLUMNS
             WHERE TABLE_SCHEMA = 'PUBLIC' AND TABLE_NAME = ? AND COLUMN_NAME <> ?

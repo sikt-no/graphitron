@@ -309,6 +309,15 @@ final class ThreadConfinedStore {
             dsl.execute("SET REFERENTIAL_INTEGRITY TRUE");
         }
         verifyCleared(counts(dsl, census));
+        // The statistics go back with the rows. H2 keeps per-column selectivity across a truncate,
+        // and it sets some of its own once a table passes two thousand changes, so a store cleared
+        // of rows alone is cold in what it holds and warm in what it knows. What that leaks is a
+        // plan rather than a row, so the guard above cannot see it: a case reading its own rows
+        // gets the right answer through a plan the previous case's volume chose, and the day it
+        // matters it matters as an order-dependent failure in a case that never touched the store
+        // that poisoned it. StoreStatistics.reset is what a created store carries, the partition
+        // declaration included, which is the state this borrow is claiming to hand over.
+        StoreStatistics.reset(dsl);
     }
 
     /**

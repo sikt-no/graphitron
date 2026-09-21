@@ -8,6 +8,7 @@ import no.sikt.graphitron.model.derive.RefreshProgress;
 import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.schema.SdlVerdicts;
 import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.test.StoreStatistics;
 import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
