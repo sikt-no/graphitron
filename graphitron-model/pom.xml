@@ -100,84 +100,6 @@
     <build>
         <plugins>
             <!--
-                The DDL has to reach target/classes before the codegen driver runs, because the
-                driver finds it through the classpath and target/classes comes first there. On a
-                clean build that directory is empty and the source tree wins, which is what made
-                the resource's normal process-resources copy look sufficient; on an incremental
-                build the previous run's copy is still sitting there and shadows the edit, so
-                codegen regenerates the schema the build before had. The compile-time surface then
-                lags the DDL by a build, and the first symptom is "cannot find symbol" in a
-                downstream module against a relation the DDL declares. Copying here, ahead of the
-                driver, keeps "edit the DDL and follow the compiler" true on every build. The
-                later default copy is then a no-op.
-            -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-resources-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>copy-model-ddl-before-codegen</id>
-                        <phase>generate-sources</phase>
-                        <goals>
-                            <goal>resources</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-            <!--
-                Codegen is a rehearsal of boot, not a second implementation of it: this execution
-                compiles just the bootstrap and driver packages (which need no generated classes),
-                the exec execution below then calls the bootstrap and points jOOQ at the store it
-                hands back, and the default compile builds the rest against the result.
-            -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>compile-codegen-driver</id>
-                        <phase>generate-sources</phase>
-                        <goals>
-                            <goal>compile</goal>
-                        </goals>
-                        <configuration>
-                            <includes>
-                                <include>no/sikt/graphitron/model/boot/**</include>
-                                <include>no/sikt/graphitron/model/build/**</include>
-                            </includes>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>exec-maven-plugin</artifactId>
-                <version>3.5.0</version>
-                <executions>
-                    <execution>
-                        <id>generate-model-sources</id>
-                        <phase>generate-sources</phase>
-                        <goals><goal>java</goal></goals>
-                        <configuration>
-                            <mainClass>no.sikt.graphitron.model.build.ModelCodegenDriver</mainClass>
-                            <classpathScope>compile</classpathScope>
-                            <!--
-                                The source tree stays on the classpath as the fallback for a build
-                                whose resource copy has not run; the execution above is what makes
-                                the copy that shadows it current rather than a build stale. Same
-                                file either way, same loader lookup.
-                            -->
-                            <additionalClasspathElements>
-                                <additionalClasspathElement>${project.basedir}/src/main/resources</additionalClasspathElement>
-                            </additionalClasspathElements>
-                            <arguments>
-                                <argument>${model.generated.sources}</argument>
-                            </arguments>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-            <!--
                 Renaming or dropping a relation deletes its generated source, but the class compiled
                 from it survives in target/classes and still resolves, so a stale jar installs and
                 the failure surfaces as "cannot find symbol" in a downstream module. Wiping the
@@ -190,6 +112,83 @@
                 already compiled. process-sources is past the fork's reach and still ahead of
                 compile, which recompiles both source roots from scratch.
             -->
+            <!--
+                The compile-time surface, generated from the fact schema the DDL states.
+
+                H2 runs the DDL inside jOOQ's own connection through INIT=RUNSCRIPT, and the
+                database is in-memory and never persisted. Both halves are load-bearing. A
+                persisted database reopened by a second process loses its comments on view
+                columns: H2 rebuilds a view from the SQL it stored and the column comments do not
+                come with it, which silently drops 1142 of this schema's 3468 column comments from
+                the generated source. Running the script on the generating connection is what
+                keeps them, and is why this is one execution rather than a schema step and a
+                codegen step.
+
+                Reading the DDL from src/main/resources directly, rather than off the classpath,
+                is what makes "edit the DDL and follow the compiler" true on every build without a
+                resource copy sequenced ahead of codegen.
+            -->
+            <plugin>
+                <groupId>org.jooq</groupId>
+                <artifactId>jooq-codegen-maven</artifactId>
+                <dependencies>
+                    <dependency>
+                        <groupId>com.h2database</groupId>
+                        <artifactId>h2</artifactId>
+                        <version>${version.com.h2database}</version>
+                    </dependency>
+                </dependencies>
+                <executions>
+                    <execution>
+                        <id>generate-model-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals><goal>generate</goal></goals>
+                        <configuration>
+                            <jdbc>
+                                <driver>org.h2.Driver</driver>
+                                <url>jdbc:h2:mem:graphitron-model-codegen;DB_CLOSE_DELAY=-1;INIT=RUNSCRIPT FROM '${project.basedir}/src/main/resources/no/sikt/graphitron/model/graphitron-model.sql'</url>
+                                <user>sa</user>
+                                <password></password>
+                            </jdbc>
+                            <generator>
+                                <database>
+                                    <name>org.jooq.meta.h2.H2Database</name>
+                                    <inputSchema>PUBLIC</inputSchema>
+                                    <includes>.*</includes>
+                                    <excludes></excludes>
+                                    <includeRoutines>false</includeRoutines>
+                                    <includeIndexes>false</includeIndexes>
+                                    <includeSequences>false</includeSequences>
+                                    <includeUDTs>false</includeUDTs>
+                                    <forcedTypes>
+                                        <forcedType>
+                                            <userType>no.sikt.graphitron.model.vocabulary.EntryKind</userType>
+                                            <enumConverter>true</enumConverter>
+                                            <includeExpression>PUBLIC\.GRAPHQL_AST_ENTRY\.ENTRY_KIND</includeExpression>
+                                            <includeTypes>.*</includeTypes>
+                                        </forcedType>
+                                    </forcedTypes>
+                                </database>
+                                <generate>
+                                    <comments>true</comments>
+                                    <commentsOnCatalogs>false</commentsOnCatalogs>
+                                    <commentsOnSchemas>false</commentsOnSchemas>
+                                    <implicitJoinPathsToMany>false</implicitJoinPathsToMany>
+                                    <daos>false</daos>
+                                    <pojos>false</pojos>
+                                    <interfaces>false</interfaces>
+                                    <globalObjectNames>true</globalObjectNames>
+                                </generate>
+                                <target>
+                                    <packageName>no.sikt.graphitron.model</packageName>
+                                    <directory>${model.generated.sources}</directory>
+                                    <clean>true</clean>
+                                </target>
+                            </generator>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-clean-plugin</artifactId>

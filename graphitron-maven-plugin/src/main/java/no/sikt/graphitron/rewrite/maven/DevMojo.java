@@ -438,7 +438,7 @@ public class DevMojo extends AbstractRewriteMojo {
         // this JVM starts (the fact-store console below is the only one) to loopback.
         //
         // LOAD-BEARING, and deliberately not sufficient on its own: this goal can run in a JVM that
-        // already loaded H2 (ModelCodegenDriver opens a store during an ordinary build), and there
+        // already loaded H2 (jOOQ codegen boots one from the DDL during an ordinary build), and there
         // the property has no effect at all. StoreConsole therefore verifies the bind after starting
         // the listener and refuses to keep it up when it cannot be confined. Do not read this line as
         // covering the requirement and drop that check.

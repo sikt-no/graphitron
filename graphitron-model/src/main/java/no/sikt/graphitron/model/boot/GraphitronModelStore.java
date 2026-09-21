@@ -69,11 +69,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * processes is deliberately not offered: {@link #fileUrl} says why the flag that offered it is
  * refused.
  *
- * <p>The build calls this too. {@code ModelCodegenDriver} opens a store through this same entry
- * point and points jOOQ's live H2 metadata generation at it, so codegen is a rehearsal of boot
- * rather than a second procedure kept similar by hand: a bootstrap regression or a DDL error
- * fails the build with a real H2 error before it can fail a generator run. That is why nothing
- * here may touch a generated class.
+ * <p>The build does not call this. Codegen executes the same DDL resource through H2 directly,
+ * on jOOQ's own connection, so the compile-time surface and this bootstrap agree by reading one
+ * file rather than by one performing the other. A DDL error therefore fails codegen with a real
+ * H2 error, and a regression in this class fails at the first store a test or a run opens rather
+ * than at {@code generate-sources}.
  *
  * <p>Instances are {@link AutoCloseable}. An in-memory store owns its database and drops it on
  * close; a file-backed one only releases its connection, leaving the file for the next run. The
