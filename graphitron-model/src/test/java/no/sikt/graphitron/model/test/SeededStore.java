@@ -1,7 +1,7 @@
 package no.sikt.graphitron.model.test;
 
 import no.sikt.graphitron.model.derive.ArgMappingCandidates;
-import no.sikt.graphitron.model.derive.ElementAnchors;
+import no.sikt.graphitron.model.capture.macro.MacroAnchor;
 import no.sikt.graphitron.model.derive.NameMatchedKeys;
 import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
@@ -230,7 +230,7 @@ public final class SeededStore {
         // call, so a fixture cannot hold its own idea of what the emitted population is.
         for (var graph : dsl.select(STORE_GRAPH.GRAPH_NAME).from(STORE_GRAPH)
                 .fetch(STORE_GRAPH.GRAPH_NAME)) {
-            ElementAnchors.derive(dsl, graph, SEED_INSTANT);
+            MacroAnchor.derive(dsl, graph, SEED_INSTANT);
         }
         transcribeSupertypes(dsl);
         // The candidate tree, by the same call capture makes. Stated here rather than seeded row by
@@ -3181,7 +3181,7 @@ public final class SeededStore {
      * done for it rather than remembered.
      */
     public static void seedTypeDomain(DSLContext dsl, String graphName, String typeName) {
-        ElementAnchors.derive(dsl, graphName, SEED_INSTANT);
+        MacroAnchor.derive(dsl, graphName, SEED_INSTANT);
         dsl.insertInto(INTENT_TYPE_DOMAIN)
             .set(INTENT_TYPE_DOMAIN.GRAPH_NAME, graphName)
             .set(INTENT_TYPE_DOMAIN.TYPE_NAME, typeName)

@@ -105,6 +105,10 @@ import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
      *     entry stratum instead of a registry.
  */
 @Deprecated
+// Acknowledges FactSink's deprecation. This is the decode, which is what the sink is for
+// and what it goes with; the suppression is here so the list of them is the list of what
+// still writes through it.
+@SuppressWarnings("deprecation")
 public final class SdlFactCapture {
 
     /** {@code store_source.source_kind}'s schema-file arm; the classpath arms are the scan's. */

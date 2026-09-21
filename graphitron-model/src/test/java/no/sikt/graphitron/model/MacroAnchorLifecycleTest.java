@@ -1,6 +1,6 @@
 package no.sikt.graphitron.model;
 
-import no.sikt.graphitron.model.derive.ElementAnchors;
+import no.sikt.graphitron.model.capture.macro.MacroAnchor;
 import no.sikt.graphitron.model.test.CapturedStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -27,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * admits it are readable without reading the others. These cases are about the lifetime rather than
  * the sets; the sets are where the admission rules are stated and read.
  */
-class ElementAnchorLifecycleTest {
+class MacroAnchorLifecycleTest {
 
     private static final String SDL = """
         type Query {
@@ -77,7 +77,7 @@ class ElementAnchorLifecycleTest {
             store.dsl().deleteFrom(GRAPHITRON_MINTED_FIELD).execute();
             store.dsl().deleteFrom(GRAPHITRON_MINTED_TYPE).execute();
 
-            ElementAnchors.derive(store.dsl(), CapturedStore.GRAPH,
+            MacroAnchor.derive(store.dsl(), CapturedStore.GRAPH,
                 LocalDateTime.of(2030, 1, 1, 0, 0));
 
             assertThat(store.dsl().fetchCount(GRAPHITRON_ELEMENT,

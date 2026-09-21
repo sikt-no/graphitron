@@ -1,7 +1,6 @@
 package no.sikt.graphitron.model.capture.graphitron;
 
 import no.sikt.graphitron.model.capture.macro.MacroCapture;
-import no.sikt.graphitron.model.derive.ElementAnchors;
 import no.sikt.graphitron.model.derive.FieldChainApplications;
 import no.sikt.graphitron.model.derive.FieldEndpoints;
 import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
@@ -13,7 +12,6 @@ import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.ResolvedTypeBindings;
 import no.sikt.graphitron.model.derive.SpelledTables;
 import no.sikt.graphitron.model.derive.TableTypes;
-import no.sikt.graphitron.model.sink.FactSink;
 import org.jooq.DSLContext;
 
 import java.time.LocalDateTime;
@@ -48,13 +46,8 @@ import static org.jooq.impl.DSL.when;
  * and runs where the document is, where a resolution needs the store whole and cannot run inside a
  * walk at all.
  *
- * <h2>Its own sink</h2>
- *
- * <p>The expansion mints rows and claims their keys first-wins, so it needs a sink; nothing else
- * here does. The sink is built here rather than taken from a caller, because what it buffers is
- * this sequence's own and the flush below is what publishes it to the stage that reads it. A caller
- * sharing one would be handing over a buffer whose contents it cannot see and whose flush point is
- * not its to choose.
+ * <p>Nothing here buffers. Every stage writes as it goes, which is what lets the sequence be read
+ * as the order it states rather than as an order plus a flush somebody has to place correctly.
  */
 public final class GraphitronAssemblyCapture {
 
@@ -67,28 +60,16 @@ public final class GraphitronAssemblyCapture {
      * sweep tell this reading's rows from the last one's by it.
      */
     public static void capture(DSLContext dsl, String graph, LocalDateTime readAt) {
-        var sink = new FactSink(dsl, graph, readAt);
         // First of the stages: it reads the transcription alone, and the written order of a field's
         // applications is what everything below that walks a chain wants.
         FieldChainApplications.derive(dsl, graph);
         TableTypes.derive(dsl, graph);
         Nodes.derive(dsl, graph);
         NodeKeyColumns.derive(dsl, graph);
-        MacroCapture.expand(sink, dsl, graph);
-        // The minted rows reach the store before the anchors below read them. A flush is not a
-        // commit: inside the load's transaction it publishes to the next stage and to nothing else.
-        sink.flush();
-        // The facet half of the same expansion, after that flush and not folded into it: the
-        // relation it reads resolves a carrier's facets through the rewrite rows the line above
-        // writes, so those rows have to be in the store before it is asked.
-        MacroCapture.expandFacets(sink, dsl, graph);
-        sink.flush();
-        // After the flush, for the reason the method states: the rows have to land before what this
-        // reading stopped minting can be told apart from them.
-        MacroCapture.sweep(dsl, graph, readAt);
-        // The anchors before every stage that keys at a coordinate, because the expansion above is
-        // the second arm of their population and everything below reads them rather than the union.
-        ElementAnchors.derive(dsl, graph, readAt);
+        MacroCapture.expand(dsl, graph, readAt);
+        // The anchors before every stage that keys at a coordinate, the expansion above being the
+        // second arm of their population and everything below reading them rather than the union.
+        MacroCapture.anchor(dsl, graph, readAt);
         navigation(dsl, graph, readAt);
         // The reference stratum's own resolutions, bottom rung first: what a written table name
         // resolves to against the catalog census, then the hops a @reference path element could

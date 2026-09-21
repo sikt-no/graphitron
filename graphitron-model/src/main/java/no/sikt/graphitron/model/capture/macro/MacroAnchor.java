@@ -1,4 +1,4 @@
-package no.sikt.graphitron.model.derive;
+package no.sikt.graphitron.model.capture.macro;
 
 import org.jooq.Condition;
 import org.jooq.DSLContext;
@@ -46,38 +46,25 @@ import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
 /**
- * The capture-cadence writer of the element family the generator emits: {@code graphitron_element}
- * and the three anchors under it.
+ * The anchor phase of macro expansion: the schema elements the generator emits, which are what the
+ * author declared unioned with what {@link MacroCapture} minted.
  *
- * <p>Each anchor is the transcription and the mint resolved against each other, and the resolution
- * is two statements per grain with an anti-join in each. The minted arm takes the rows that replace,
- * plus the rows that yield where the transcription holds no such coordinate; the transcription's arm
- * takes the rows no replacing mint covers. Both exclusions are anti-joins rather than insert order,
- * so the precedence is readable in the statement and neither arm depends on running second.
+ * <p>A phase rather than a stage beside the expansion, on the shape the other gatherers already
+ * have: each transcribes, then anchors what it transcribed, the anchoring living in a class of its
+ * own beside the transcription and reached through the gatherer's own {@code anchor}. Half the
+ * input here is the authored transcription and that does not make it the transcription's: the
+ * emitted population exists because expansion adds coordinates no document declares, and without
+ * the mint these relations would be a copy of the {@code graphql_} anchors under another name.
  *
- * <p>A relation keyed at a coordinate the expansion minted has nowhere to point in the transcription,
- * so it points here; and this being a table rather than a view is what makes it a key's target at
- * all.
- *
- * <p>Written in parent order, the supertype first and the argument last, because each anchor's
- * foreign keys are the family's own. Every statement is restricted to one graph and lands on the key
- * it already holds, so a caller may derive as often as it likes: a coordinate already anchored takes
- * the payload this pass computed and a new one is inserted beside it.
- *
- * <p>Upserting rather than clearing and refilling, which is a correctness point and not a
- * performance one. Relations key into these anchors with {@code ON DELETE CASCADE}, so emptying one
- * takes their rows with it, and a re-derive that cleared first would wipe a classification domain or
- * a navigation nothing in this class refills. Clearing a graph outright is the refresh's business
- * and it does it in the right order.
- *
- * <p>The minted arms are {@code DISTINCT}, because shared machinery is minted once per carrier and
- * every carrier states the whole of it, so the readings collapse. Where they do not collapse the
- * applications disagree, and neither of them wins: {@link #conflicts} is where that is found, and
- * every arm withholds what it finds.
+ * <p>The anchor is the union of named sets, one view per population, so what a set holds and what
+ * admits it are readable without reading the others. It also owns its own lifetime: every row
+ * carries the reading that wrote it, and the phase ends by dropping this graph's coordinates
+ * carrying any other instant, children first. A relation whose lifetime is a property of whatever
+ * pass runs around it cannot move to another pass.
  */
-public final class ElementAnchors {
+public final class MacroAnchor {
 
-    private ElementAnchors() {}
+    private MacroAnchor() {}
 
     private static final String REPLACE = "REPLACE";
 

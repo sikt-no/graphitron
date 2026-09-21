@@ -44,6 +44,9 @@ import static org.assertj.core.api.Assertions.fail;
  * because the subject here is a statement's column list and not a relation's domains. Nothing else
  * about the schema is touched, and the rows never leave this store.
  */
+// Acknowledges FactSink's deprecation. This gate's subject is the sink, so it outlives the
+// callers that merely write through one and goes with the class itself.
+@SuppressWarnings("deprecation")
 class WrittenStatementCoverageTest {
 
     @Test

@@ -36,7 +36,25 @@ import java.util.Set;
  * layer up, where a two-graph load would first-wins-drop the second graph's types before the
  * widened primary keys could see them. Scoping the sink leaves every SDL-family call site
  * untouched and correct by construction; a future multi-graph load is a second sink.
+ *
+ * <h2>It goes with the walk</h2>
+ *
+ * <p>Both jobs above are the walk's. Ordering matters because the walk emits rows in whatever
+ * order the SDL hands them over; first-wins matters because what the walk transcribes is an
+ * author's document, where a duplicate is a mistake to detect rather than a row to write twice.
+ * A gatherer that writes relations in an order it chooses, and deduplicates its own machinery
+ * rather than an author's keys, needs neither: it states its relation's conflict rule and writes,
+ * which is what macro expansion does since it stopped holding one of these.
+ *
+ * <p>So this is not a general way to write facts, and reaching for it because a sink is in hand is
+ * how the expansion came to hold one for a job it did not have. It goes when the decode does, that
+ * being its last caller.
+ *
+ * @deprecated with the walk it serves. A new writer states its relation's conflict rule and writes
+ *     through {@link org.jooq.DSLContext}; every remaining caller here is the decode, and the
+ *     suppressions on them are the list of what is left.
  */
+@Deprecated
 public final class FactSink {
 
     private final DSLContext dsl;

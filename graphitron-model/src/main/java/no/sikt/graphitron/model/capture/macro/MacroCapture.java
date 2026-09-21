@@ -4,7 +4,6 @@ import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import no.sikt.graphitron.model.grammar.ConnectionDefaults;
 import no.sikt.graphitron.model.grammar.ConnectionNaming;
 import no.sikt.graphitron.model.grammar.FacetNaming;
-import no.sikt.graphitron.model.sink.FactSink;
 import java.time.LocalDateTime;
 import org.jooq.DSLContext;
 
@@ -102,10 +101,37 @@ public final class MacroCapture {
      */
     private static final int CONNECTION_FIELDS = 4;
 
-    private final FactSink sink;
+    private final DSLContext dsl;
+    private final String graphName;
+    private final LocalDateTime touchedAt;
 
-    private MacroCapture(FactSink sink) {
-        this.sink = sink;
+    private MacroCapture(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
+        this.dsl = dsl;
+        this.graphName = graphName;
+        this.touchedAt = touchedAt;
+    }
+
+    /**
+     * Writes one minted row, stating the conflict rule the relation owes.
+     *
+     * <p>A full upsert, because shared machinery is minted once per carrier and two carriers state
+     * the same {@code PageInfo} identically: the second write of an identical row is the ordinary
+     * case here rather than a capture bug, which is the opposite of what a graph-keyed relation
+     * usually means by a duplicate.
+     *
+     * <p>Written here and not buffered, which is what lets the expansion stop holding a
+     * {@link no.sikt.graphitron.model.sink.FactSink}. The sink's two jobs are ordering a write
+     * parents-first from the declared keys, and first-wins on a key an author can duplicate.
+     * Neither is this expansion's: it writes three relations in an order it chooses, and what it
+     * deduplicates is its own machinery rather than an author's mistake. Holding a sink for the
+     * buffering alone would keep the expansion tied to a class that goes with the walk.
+     */
+    private <R extends org.jooq.UpdatableRecord<R>> void write(R row) {
+        row.set(row.field("GRAPH_NAME", String.class), graphName);
+        row.set(row.field("TOUCHED_AT", LocalDateTime.class), touchedAt);
+        dsl.insertInto(row.getTable()).set(row)
+            .onDuplicateKeyUpdate().set(row)
+            .execute();
     }
 
     /**
@@ -116,8 +142,8 @@ public final class MacroCapture {
      * fact said twice: an edge is a minted field's owning type reaching its named type, so every
      * edge the map carried is a row this method writes. The reader derives it there instead.
      */
-    public static void expand(FactSink sink, DSLContext dsl, String graphName) {
-        var expansion = new MacroCapture(sink);
+    public static void expand(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
+        var expansion = new MacroCapture(dsl, graphName, touchedAt);
         for (Carrier carrier : expansion.carriers(dsl, graphName)) {
             expansion.rewriteCarrier(carrier);
             expansion.mintPaginationArguments(carrier);
@@ -125,6 +151,25 @@ public final class MacroCapture {
             expansion.mintEdge(carrier);
             expansion.mintPageInfo(carrier);
         }
+        // The facet half of the same expansion, and it runs second because the relation it reads
+        // resolves a carrier's facets through the rewrite rows the loop above writes. It was a
+        // second entry point while the rows were buffered and a caller had to flush between the
+        // two; the expansion writes as it goes now, so the ordering is this method's to state and
+        // not a caller's to remember.
+        expandFacets(dsl, graphName, touchedAt);
+    }
+
+    /**
+     * The anchor phase: the emitted element population, and the sweep of what this reading stopped
+     * minting.
+     *
+     * <p>Sweeping first, because what the anchors are the union of includes the minted sets: a row
+     * the expansion stopped writing has to stop being minted before the anchors are asked what the
+     * schema emits.
+     */
+    public static void anchor(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
+        sweep(dsl, graphName, touchedAt);
+        MacroAnchor.derive(dsl, graphName, touchedAt);
     }
 
     /**
@@ -302,8 +347,9 @@ public final class MacroCapture {
      * machinery like {@code PageInfo}, so every carrier that has one states the whole of it and the
      * primary key is the only dedupe.
      */
-    public static void expandFacets(FactSink sink, DSLContext dsl, String graphName) {
-        var expansion = new MacroCapture(sink);
+    private static void expandFacets(DSLContext dsl, String graphName,
+                                     LocalDateTime touchedAt) {
+        var expansion = new MacroCapture(dsl, graphName, touchedAt);
         for (var carrier : expansion.facetedCarriers(dsl, graphName)) {
             expansion.mintFacets(carrier);
         }
@@ -447,17 +493,14 @@ public final class MacroCapture {
     }
 
     private void mintType(String coordinate, String typeName, String description) {
-        if (!sink.claim(GRAPHITRON_MINTED_TYPE, coordinate, typeName)) {
-            return;
-        }
-        var row = sink.dsl().newRecord(GRAPHITRON_MINTED_TYPE);
+        var row = dsl.newRecord(GRAPHITRON_MINTED_TYPE);
         row.setSourceCoordinate(coordinate);
         row.setTypeName(typeName);
         row.setDirectiveName(DIRECTIVE);
         row.setPrecedence(YIELD);
         row.setKind(OBJECT);
         row.setDescription(description);
-        sink.add(row);
+        write(row);
     }
 
     private void mintField(Carrier carrier, String typeName, String fieldName, String precedence,
@@ -468,10 +511,7 @@ public final class MacroCapture {
 
     private void mintField(String coordinate, String typeName, String fieldName, String precedence,
                            int ordinal, String typeSdl, String description) {
-        if (!sink.claim(GRAPHITRON_MINTED_FIELD, coordinate, typeName, fieldName)) {
-            return;
-        }
-        var row = sink.dsl().newRecord(GRAPHITRON_MINTED_FIELD);
+        var row = dsl.newRecord(GRAPHITRON_MINTED_FIELD);
         row.setSourceCoordinate(coordinate);
         row.setTypeName(typeName);
         row.setFieldName(fieldName);
@@ -487,16 +527,12 @@ public final class MacroCapture {
         row.setIsList(isList);
         row.setItemNonNull(isList ? inner.substring(1, inner.length() - 1).endsWith("!") : null);
         row.setDescription(description);
-        sink.add(row);
+        write(row);
     }
 
     private void mintArgument(Carrier carrier, String argumentName, int ordinal, String typeSdl,
                               String defaultValueSdl) {
-        if (!sink.claim(GRAPHITRON_MINTED_ARGUMENT, carrier.coordinate(), carrier.parentTypeName(),
-                carrier.fieldName(), argumentName)) {
-            return;
-        }
-        var row = sink.dsl().newRecord(GRAPHITRON_MINTED_ARGUMENT);
+        var row = dsl.newRecord(GRAPHITRON_MINTED_ARGUMENT);
         row.setSourceCoordinate(carrier.coordinate());
         row.setTypeName(carrier.parentTypeName());
         row.setFieldName(carrier.fieldName());
@@ -509,7 +545,7 @@ public final class MacroCapture {
         row.setNonNull(false);
         row.setIsList(false);
         row.setDefaultValueSdl(defaultValueSdl);
-        sink.add(row);
+        write(row);
     }
 
     /** The element reference a Connection's {@code nodes} and an Edge's {@code node} share. */

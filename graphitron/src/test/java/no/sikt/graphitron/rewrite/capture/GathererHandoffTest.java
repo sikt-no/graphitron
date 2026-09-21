@@ -23,7 +23,11 @@ import no.sikt.graphitron.model.sink.FactSink;
  * foreign key makes the second observable, rather than through a capture, because no gatherer
  * exercises the read yet and a test of the mechanism should fail for the mechanism's own reasons.
  */
+// Acknowledges FactSink's deprecation. This case's subject is the handoff between gatherers
+// and it drives the sink directly to make it observable, so it goes with the sink rather
+// than with any caller that merely writes through one.
 @PipelineTier
+@SuppressWarnings("deprecation")
 class GathererHandoffTest {
 
     /** A fixed instant, so a failure reads the same on every run. */

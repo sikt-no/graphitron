@@ -13,7 +13,6 @@ import graphql.language.SourceLocation;
 import graphql.language.StringValue;
 import graphql.language.Value;
 import no.sikt.graphitron.model.capture.macro.MacroCapture;
-import no.sikt.graphitron.model.derive.ElementAnchors;
 import no.sikt.graphitron.model.derive.FieldChainApplications;
 import no.sikt.graphitron.model.derive.FieldEndpoints;
 import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
@@ -132,6 +131,10 @@ import static org.jooq.impl.DSL.when;
  *     entry stratum instead.
  */
 @Deprecated
+// Acknowledges FactSink's deprecation. This is the decode, which is what the sink is for
+// and what it goes with; the suppression is here so the list of them is the list of what
+// still writes through it.
+@SuppressWarnings("deprecation")
 public final class GraphitronFactCapture {
 
     /** Federation's two decoded applications; every other federation directive is fidelity only. */

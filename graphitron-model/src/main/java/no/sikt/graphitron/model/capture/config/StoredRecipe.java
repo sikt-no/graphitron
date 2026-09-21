@@ -24,6 +24,10 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SCHEMA_INPUT;
  * sibling graph's rows and re-expands them through {@link SchemaRecipe#expand(Path)}), not a test
  * helper: a hand-rolled row-to-recipe decode owned by nobody is what this class retires.
  */
+// Acknowledges FactSink's deprecation. This is the decode, which is what the sink is for
+// and what it goes with; the suppression is here so the list of them is the list of what
+// still writes through it.
+@SuppressWarnings("deprecation")
 public final class StoredRecipe {
 
     /** The three {@code store_graph_schema_input.kind} values, closed by the relation's CHECK. */

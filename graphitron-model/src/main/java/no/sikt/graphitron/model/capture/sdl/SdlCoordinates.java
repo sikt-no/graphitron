@@ -29,6 +29,10 @@ import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
  * <p>Each method returns {@code false} when the coordinate was already claimed, which is the signal
  * the caller quarantines the losing declaration on.
  */
+// Acknowledges FactSink's deprecation. This is the decode, which is what the sink is for
+// and what it goes with; the suppression is here so the list of them is the list of what
+// still writes through it.
+@SuppressWarnings("deprecation")
 final class SdlCoordinates {
 
     private final FactSink sink;
