@@ -20,7 +20,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
-import static no.sikt.graphitron.model.Tables.INTENT_CONNECTION_FACET;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_FACET;
 import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.select;
 
@@ -288,7 +288,7 @@ public final class MacroCapture {
     /**
      * The facet half of the expansion, which runs after the half above has flushed.
      *
-     * <p>Separate because of what it reads. {@code intent_connection_facet} resolves which facets a
+     * <p>Separate because of what it reads. {@code graphitron_connection_facet} resolves which facets a
      * carrier surfaces and in what order, and it reaches the carriers through the rewrite rows
      * {@link #expand} writes: a minted field whose coining coordinate is its own. So those rows have
      * to be in the store before it is asked, which is the rule the gatherer's own stages run under
@@ -334,14 +334,14 @@ public final class MacroCapture {
         return dsl
             .select(rewrite.TYPE_NAME, rewrite.FIELD_NAME, rewrite.NAMED_TYPE,
                 multiset(
-                    select(INTENT_CONNECTION_FACET.FACET_FIELD_NAME,
-                        INTENT_CONNECTION_FACET.VALUE_TYPE_NAME,
-                        INTENT_CONNECTION_FACET.VALUE_NULLABLE)
-                        .from(INTENT_CONNECTION_FACET)
-                        .where(INTENT_CONNECTION_FACET.GRAPH_NAME.eq(rewrite.GRAPH_NAME))
-                        .and(INTENT_CONNECTION_FACET.TYPE_NAME.eq(rewrite.TYPE_NAME))
-                        .and(INTENT_CONNECTION_FACET.FIELD_NAME.eq(rewrite.FIELD_NAME))
-                        .orderBy(INTENT_CONNECTION_FACET.POSITION))
+                    select(GRAPHITRON_CONNECTION_FACET.FACET_FIELD_NAME,
+                        GRAPHITRON_CONNECTION_FACET.VALUE_TYPE_NAME,
+                        GRAPHITRON_CONNECTION_FACET.VALUE_NULLABLE)
+                        .from(GRAPHITRON_CONNECTION_FACET)
+                        .where(GRAPHITRON_CONNECTION_FACET.GRAPH_NAME.eq(rewrite.GRAPH_NAME))
+                        .and(GRAPHITRON_CONNECTION_FACET.TYPE_NAME.eq(rewrite.TYPE_NAME))
+                        .and(GRAPHITRON_CONNECTION_FACET.FIELD_NAME.eq(rewrite.FIELD_NAME))
+                        .orderBy(GRAPHITRON_CONNECTION_FACET.POSITION))
                     .convertFrom(r -> r.map(x -> new Facet(x.value1(), x.value2(),
                         Boolean.TRUE.equals(x.value3())))))
             .from(rewrite)

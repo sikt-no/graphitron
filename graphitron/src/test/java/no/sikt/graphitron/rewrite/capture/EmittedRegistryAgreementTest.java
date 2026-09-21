@@ -66,7 +66,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       null, so the author's claim survives it, and a row saying otherwise described a schema the
  *       run does not emit.</li>
  *   <li><b>The facet machinery had no capture-side producer.</b> The decode was never the gap:
- *       {@code graphitron_facet_entry} held the applications and {@code intent_connection_facet}
+ *       {@code graphitron_facet_entry} held the applications and {@code graphitron_connection_facet}
  *       already resolved which facets a carrier surfaces and in what order, its own comment naming
  *       itself what a consumer emitting a faceted connection reads. What was missing was the mint,
  *       which {@code MacroCapture.expandFacets} now does from that relation. It came down to one

@@ -27,7 +27,7 @@ import java.util.stream.Collectors;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
-import static no.sikt.graphitron.model.Tables.INTENT_SYNTHESIZED_FEDERATION_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SYNTHESIZED_FEDERATION_KEY;
 import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.select;
 
@@ -58,7 +58,7 @@ import static org.jooq.impl.DSL.select;
  * {@code graphitron_minted_conflict}'s and the anchors deliberately hold no row for it, so a
  * contested coordinate reaches this patch as an absence and needs no arm.
  *
- * <p>Federation keys come from {@code intent_synthesized_federation_key}, the derivation itself,
+ * <p>Federation keys come from {@code graphitron_synthesized_federation_key}, the derivation itself,
  * whose own comment says the relation is its own provenance. That is the whole of how a derived
  * application is told from an authored one here: by which relation it was read from. The composed
  * {@code intent_federation_key} beside it is for a reader wanting every key the emitted schema
@@ -364,7 +364,7 @@ public final class EmittedRegistry {
     /**
      * Applies the {@code @key} applications the rule derived and no author wrote.
      *
-     * <p>Read from {@code intent_synthesized_federation_key}, which is the derivation itself. Its
+     * <p>Read from {@code graphitron_synthesized_federation_key}, which is the derivation itself. Its
      * own comment puts it exactly: the relation is its own provenance, which is what lets a
      * synthesized application leave the transcription families entirely. So a reader wanting the
      * derived applications names that relation and gets them, and needs no test to tell derived
@@ -383,7 +383,7 @@ public final class EmittedRegistry {
      * authored applications by construction rather than by a check this method repeats.
      */
     private static void applySynthesisedKeys(TypeDefinitionRegistry patched, StoreHandle store) {
-        var t = INTENT_SYNTHESIZED_FEDERATION_KEY;
+        var t = GRAPHITRON_SYNTHESIZED_FEDERATION_KEY;
         var derived = store.dsl()
             .select(t.TYPE_NAME, t.FIELDS_SDL, t.RESOLVABLE)
             .from(t)

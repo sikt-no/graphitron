@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_CONNECTION_FACET;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_FACET;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedConnection;
@@ -21,7 +21,7 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@code intent_connection_facet} resolves: which facets one connection carrier surfaces, and
+ * What {@code graphitron_connection_facet} resolves: which facets one connection carrier surfaces, and
  * in which order. The use-keyed half of the facet reading, so every case here is about a carrier
  * and the applications it does or does not reach, never about whether an application is well
  * formed; that is {@code FacetBindingTest}'s subject and this relation inherits it.
@@ -52,15 +52,15 @@ class ConnectionFacetTest {
             facet(dsl, "FilmFilter", "rating", 0, "rating");
 
             var row = rows(dsl).getFirst();
-            assertThat(row.get(INTENT_CONNECTION_FACET.TYPE_NAME)).isEqualTo("Query");
-            assertThat(row.get(INTENT_CONNECTION_FACET.FIELD_NAME)).isEqualTo("films");
-            assertThat(row.get(INTENT_CONNECTION_FACET.POSITION)).isEqualTo(1);
-            assertThat(row.get(INTENT_CONNECTION_FACET.FILTER_ARGUMENT_NAME)).isEqualTo("filter");
-            assertThat(row.get(INTENT_CONNECTION_FACET.FACET_TYPE_NAME)).isEqualTo("FilmFilter");
-            assertThat(row.get(INTENT_CONNECTION_FACET.FACET_FIELD_NAME)).isEqualTo("rating");
-            assertThat(row.get(INTENT_CONNECTION_FACET.COLUMN_NAME)).isEqualTo("rating");
-            assertThat(row.get(INTENT_CONNECTION_FACET.VALUE_TYPE_NAME)).isEqualTo("String");
-            assertThat(row.get(INTENT_CONNECTION_FACET.VALUE_NULLABLE)).isTrue();
+            assertThat(row.get(GRAPHITRON_CONNECTION_FACET.TYPE_NAME)).isEqualTo("Query");
+            assertThat(row.get(GRAPHITRON_CONNECTION_FACET.FIELD_NAME)).isEqualTo("films");
+            assertThat(row.get(GRAPHITRON_CONNECTION_FACET.POSITION)).isEqualTo(1);
+            assertThat(row.get(GRAPHITRON_CONNECTION_FACET.FILTER_ARGUMENT_NAME)).isEqualTo("filter");
+            assertThat(row.get(GRAPHITRON_CONNECTION_FACET.FACET_TYPE_NAME)).isEqualTo("FilmFilter");
+            assertThat(row.get(GRAPHITRON_CONNECTION_FACET.FACET_FIELD_NAME)).isEqualTo("rating");
+            assertThat(row.get(GRAPHITRON_CONNECTION_FACET.COLUMN_NAME)).isEqualTo("rating");
+            assertThat(row.get(GRAPHITRON_CONNECTION_FACET.VALUE_TYPE_NAME)).isEqualTo("String");
+            assertThat(row.get(GRAPHITRON_CONNECTION_FACET.VALUE_NULLABLE)).isTrue();
         });
     }
 
@@ -91,7 +91,7 @@ class ConnectionFacetTest {
             carrier(dsl, "archivedFilms", "filter", "FilmFilter", 0);
             facet(dsl, "FilmFilter", "rating", 0, "rating");
 
-            assertThat(rows(dsl).map(r -> r.get(INTENT_CONNECTION_FACET.FIELD_NAME)
+            assertThat(rows(dsl).map(r -> r.get(GRAPHITRON_CONNECTION_FACET.FIELD_NAME)
                     + ":" + render(r)))
                 .containsExactlyInAnyOrder("films:1 filter.rating",
                                            "archivedFilms:1 filter.rating");
@@ -245,16 +245,16 @@ class ConnectionFacetTest {
 
     private static Result<Record> rowsIn(DSLContext dsl, String graphName) {
         derive(dsl);
-        return dsl.select().from(INTENT_CONNECTION_FACET)
-            .where(INTENT_CONNECTION_FACET.GRAPH_NAME.eq(graphName))
-            .orderBy(INTENT_CONNECTION_FACET.FIELD_NAME, INTENT_CONNECTION_FACET.POSITION)
+        return dsl.select().from(GRAPHITRON_CONNECTION_FACET)
+            .where(GRAPHITRON_CONNECTION_FACET.GRAPH_NAME.eq(graphName))
+            .orderBy(GRAPHITRON_CONNECTION_FACET.FIELD_NAME, GRAPHITRON_CONNECTION_FACET.POSITION)
             .fetch();
     }
 
     /** {@code position argument.facet}: the order and the pair that identifies a binding. */
     private static String render(Record row) {
-        return row.get(INTENT_CONNECTION_FACET.POSITION)
-            + " " + row.get(INTENT_CONNECTION_FACET.FILTER_ARGUMENT_NAME)
-            + "." + row.get(INTENT_CONNECTION_FACET.FACET_FIELD_NAME);
+        return row.get(GRAPHITRON_CONNECTION_FACET.POSITION)
+            + " " + row.get(GRAPHITRON_CONNECTION_FACET.FILTER_ARGUMENT_NAME)
+            + "." + row.get(GRAPHITRON_CONNECTION_FACET.FACET_FIELD_NAME);
     }
 }

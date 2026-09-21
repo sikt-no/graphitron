@@ -99,12 +99,10 @@ intent_condition_membership
 intent_condition_method_route
 intent_condition_method_route_defect
 intent_condition_param_decode
-intent_connection_facet
 intent_declared_type_element
 intent_delivery_container
 intent_errors_field
 intent_errors_field_member
-intent_facet_binding
 intent_federation_key
 intent_field_accessor_hop
 intent_field_chain_node
@@ -168,7 +166,6 @@ intent_resolved_node_key_projection
 intent_resolved_node_key_shape
 intent_resolved_type_demand
 intent_routine_return_binding
-intent_synthesized_federation_key
 intent_table_key_candidate
 intent_type_backing
 intent_type_backing_class

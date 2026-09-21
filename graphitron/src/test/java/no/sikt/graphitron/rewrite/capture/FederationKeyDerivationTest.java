@@ -17,7 +17,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.INTENT_FEDERATION_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
-import static no.sikt.graphitron.model.Tables.INTENT_SYNTHESIZED_FEDERATION_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SYNTHESIZED_FEDERATION_KEY;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>What each case reads is the point. Nothing lands in {@code graphql_type_directive} or
  * {@code graphitron_federation_key_entry} for a synthesized key any more, so those two relations are
  * asserted <em>empty</em> at the synthesized coordinate and the membership is read from
- * {@code intent_synthesized_federation_key}. That is the whole of the move: at this coordinate
+ * {@code graphitron_synthesized_federation_key}. That is the whole of the move: at this coordinate
  * stratum one is now pure transcription of the SDL, and a reader wanting every key the emitted
  * schema carries reads the composed reduction.
  *
@@ -83,10 +83,10 @@ class FederationKeyDerivationTest {
     void federationKeyIsDerivedForNodes(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, FEDERATED)) {
             var synthesized = store.dsl()
-                .select(INTENT_SYNTHESIZED_FEDERATION_KEY.FIELDS_SDL,
-                    INTENT_SYNTHESIZED_FEDERATION_KEY.RESOLVABLE)
-                .from(INTENT_SYNTHESIZED_FEDERATION_KEY)
-                .where(INTENT_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME.eq("Film"))
+                .select(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.FIELDS_SDL,
+                    GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.RESOLVABLE)
+                .from(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY)
+                .where(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME.eq("Film"))
                 .fetchSingle();
             assertThat(synthesized.value1()).isEqualTo("id");
             assertThat(synthesized.value2()).isTrue();
@@ -116,7 +116,7 @@ class FederationKeyDerivationTest {
         String sdl = FEDERATED.replace("type Film implements Node @node {",
             "type Film implements Node @node @key(fields: \"id\", resolvable: false) {");
         try (var store = CapturedStore.of(tmp, sdl)) {
-            assertThat(store.dsl().fetchCount(INTENT_SYNTHESIZED_FEDERATION_KEY)).isZero();
+            assertThat(store.dsl().fetchCount(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY)).isZero();
             assertThat(store.dsl()
                 .select(INTENT_FEDERATION_KEY.RESOLVABLE)
                 .from(INTENT_FEDERATION_KEY)
@@ -136,8 +136,8 @@ class FederationKeyDerivationTest {
     void nodeInferenceDecidesWhetherAnInferredNodeGetsAKey(@TempDir Path tmp) {
         try (var store = CapturedStore.ofCatalog(tmp.resolve("inferred"), INFERRED,
                 new JooqCatalog(TestConfiguration.DEFAULT_JOOQ_PACKAGE))) {
-            assertThat(store.dsl().fetchCount(INTENT_SYNTHESIZED_FEDERATION_KEY,
-                INTENT_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME.eq("Pairing")))
+            assertThat(store.dsl().fetchCount(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY,
+                GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME.eq("Pairing")))
                 .as("film_actor publishes node metadata, so Pairing is a node without saying @node")
                 .isOne();
 
@@ -155,7 +155,7 @@ class FederationKeyDerivationTest {
                 .containsExactly("public.film_actor");
         }
         try (var store = CapturedStore.of(tmp.resolve("bare"), INFERRED)) {
-            assertThat(store.dsl().fetchCount(INTENT_SYNTHESIZED_FEDERATION_KEY))
+            assertThat(store.dsl().fetchCount(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY))
                 .as("no catalog facts to conjoin, so nothing infers nodehood")
                 .isZero();
             assertThat(store.dsl().fetchCount(GRAPHITRON_NODE)).isZero();
@@ -194,8 +194,8 @@ class FederationKeyDerivationTest {
         String compound = FEDERATED.replace("type Film implements Node @node {",
             "type Film implements Node @node @key(fields: \"id title\") {");
         try (var store = CapturedStore.of(tmp.resolve("compound"), compound)) {
-            assertThat(store.dsl().fetchCount(INTENT_SYNTHESIZED_FEDERATION_KEY,
-                INTENT_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME.eq("Film"))).isOne();
+            assertThat(store.dsl().fetchCount(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY,
+                GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME.eq("Film"))).isOne();
         }
         String nested = FEDERATED.replace("title: String", "title: Title")
             + """
@@ -205,8 +205,8 @@ class FederationKeyDerivationTest {
         nested = nested.replace("type Film implements Node @node {",
             "type Film implements Node @node @key(fields: \"title { id }\") {");
         try (var store = CapturedStore.of(tmp.resolve("nested"), nested)) {
-            assertThat(store.dsl().fetchCount(INTENT_SYNTHESIZED_FEDERATION_KEY,
-                INTENT_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME.eq("Film"))).isOne();
+            assertThat(store.dsl().fetchCount(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY,
+                GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME.eq("Film"))).isOne();
         }
     }
 
@@ -215,7 +215,7 @@ class FederationKeyDerivationTest {
     void theDerivationNeedsAFederationLink(@TempDir Path tmp) {
         String sdl = FEDERATED.replace(LINK, "");
         try (var store = CapturedStore.of(tmp, sdl)) {
-            assertThat(store.dsl().fetchCount(INTENT_SYNTHESIZED_FEDERATION_KEY)).isZero();
+            assertThat(store.dsl().fetchCount(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY)).isZero();
             assertThat(store.dsl().fetchCount(INTENT_FEDERATION_KEY)).isZero();
         }
     }
@@ -230,7 +230,7 @@ class FederationKeyDerivationTest {
         String sdl = FEDERATED.replace(LINK,
             "extend schema @link(url: \"https://specs.apollo.dev/tag/v0.3\", import: [\"@tag\"])");
         try (var store = CapturedStore.of(tmp, sdl)) {
-            assertThat(store.dsl().fetchCount(INTENT_SYNTHESIZED_FEDERATION_KEY)).isZero();
+            assertThat(store.dsl().fetchCount(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY)).isZero();
         }
     }
 

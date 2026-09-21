@@ -61,7 +61,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_FEDERATION_KEY;
-import static no.sikt.graphitron.model.Tables.INTENT_SYNTHESIZED_FEDERATION_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SYNTHESIZED_FEDERATION_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_SITE;
 import static no.sikt.graphitron.model.Tables.JAVAC_DIAGNOSTIC;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
@@ -649,9 +649,9 @@ class FactCaptureAgreementTest {
             // read the post-rewrite registry would leave this set empty, the authored rows it landed
             // declining the derivation on every type the rewrite had already keyed.
             assertThat(store.dsl()
-                .select(INTENT_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME)
-                .from(INTENT_SYNTHESIZED_FEDERATION_KEY)
-                .fetch(INTENT_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME))
+                .select(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME)
+                .from(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY)
+                .fetch(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME))
                 .containsExactlyInAnyOrder("Film", "Language");
         }
     }

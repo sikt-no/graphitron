@@ -10,7 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * The federation-spec url prefix has three spellings, and this is what holds the third to the other
  * two. Two are Java readers sharing {@link FederationSpec#SPEC_PREFIX}, so the compiler keeps them
- * honest. The third is a SQL literal inside {@code intent_synthesized_federation_key}, which cannot
+ * honest. The third is a SQL literal inside {@code graphitron_synthesized_federation_key}, which cannot
  * bind a query parameter the way a derivation writer in Java can, so nothing but a test can notice
  * the two drifting apart.
  *
@@ -27,7 +27,7 @@ class FederationLinkPrefixPinTest {
             String definition = store.dsl()
                 .resultQuery("""
                     SELECT view_definition FROM information_schema.views
-                     WHERE lower(table_name) = 'intent_synthesized_federation_key'
+                     WHERE lower(table_name) = 'graphitron_synthesized_federation_key'
                     """)
                 .fetchSingle(0, String.class);
             assertThat(definition)

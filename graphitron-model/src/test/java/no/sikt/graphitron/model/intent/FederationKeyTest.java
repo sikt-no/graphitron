@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.INTENT_FEDERATION_KEY;
-import static no.sikt.graphitron.model.Tables.INTENT_SYNTHESIZED_FEDERATION_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SYNTHESIZED_FEDERATION_KEY;
 import static no.sikt.graphitron.model.test.SeededStore.seedFederationKey;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraph;
 import static no.sikt.graphitron.model.test.SeededStore.seedLink;
@@ -16,7 +16,7 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@code intent_synthesized_federation_key} and {@code intent_federation_key} return:
+ * What {@code graphitron_synthesized_federation_key} and {@code intent_federation_key} return:
  * federation's node-entity rule stated as rows, and the composition of authored keys with the ones
  * the rule produces. The generator makes the same decision live in its registry rewrite, so what
  * these cases pin is that the rule's three conditions and the reduction's grain come out the way that
@@ -46,9 +46,9 @@ class FederationKeyTest {
             seedNode(dsl, GRAPH, "Film");
 
             assertThat(synthesized(dsl)).containsExactly("Film");
-            assertThat(dsl.select(INTENT_SYNTHESIZED_FEDERATION_KEY.FIELDS_SDL,
-                    INTENT_SYNTHESIZED_FEDERATION_KEY.RESOLVABLE)
-                .from(INTENT_SYNTHESIZED_FEDERATION_KEY)
+            assertThat(dsl.select(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.FIELDS_SDL,
+                    GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.RESOLVABLE)
+                .from(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY)
                 .fetch()
                 .map(r -> r.value1() + ":" + r.value2()))
                 .as("the rule's constants are the relation's columns")
@@ -257,11 +257,11 @@ class FederationKeyTest {
     // ===== Reads =====
 
     private static List<String> synthesized(DSLContext dsl) {
-        return dsl.select(INTENT_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME)
-            .from(INTENT_SYNTHESIZED_FEDERATION_KEY)
-            .where(INTENT_SYNTHESIZED_FEDERATION_KEY.GRAPH_NAME.eq(GRAPH))
-            .orderBy(INTENT_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME)
-            .fetch(INTENT_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME);
+        return dsl.select(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME)
+            .from(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY)
+            .where(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.GRAPH_NAME.eq(GRAPH))
+            .orderBy(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME)
+            .fetch(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME);
     }
 
     /** The composed keys as {@code ordinal:fields:resolvable}, nulls rendered. */

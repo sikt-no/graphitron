@@ -316,7 +316,7 @@ class RelationRegistrationGateTest {
         registrations.put("intent_table_key_candidate", Arm.DERIVED);
         registrations.put("intent_node_metadata_defect", Arm.DERIVED);
         registrations.put("graphitron_node_type", Arm.DERIVED);
-        registrations.put("intent_synthesized_federation_key", Arm.DERIVED);
+        registrations.put("graphitron_synthesized_federation_key", Arm.DERIVED);
         registrations.put("intent_federation_key", Arm.DERIVED);
         registrations.put("graphitron_field_reference_step_target", Arm.DERIVED);
         registrations.put("graphitron_field_reference_step_target_keyed", Arm.DERIVED);
@@ -407,8 +407,8 @@ class RelationRegistrationGateTest {
         registrations.put("intent_argument_column_match_live", Arm.DERIVED);
         registrations.put("intent_input_field_filter_role_live", Arm.DERIVED);
         registrations.put("intent_argument_filter_role", Arm.DERIVED);
-        registrations.put("intent_facet_binding", Arm.DERIVED);
-        registrations.put("intent_connection_facet", Arm.DERIVED);
+        registrations.put("graphitron_facet_binding", Arm.DERIVED);
+        registrations.put("graphitron_connection_facet", Arm.DERIVED);
         registrations.put("intent_field_column_table", Arm.DERIVED);
         registrations.put("intent_field_separate_fetch", Arm.DERIVED);
         registrations.put("intent_field_producer_reference", Arm.DERIVED);

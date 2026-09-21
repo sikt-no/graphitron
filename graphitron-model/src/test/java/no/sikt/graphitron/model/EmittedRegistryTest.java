@@ -256,7 +256,7 @@ class EmittedRegistryTest {
      *
      * <p>These cases seed the rule's inputs and let the view derive, which is a different bargain
      * from the capture-driven ones above and the right one here. What is under test is whether the
-     * patch applies what {@code intent_synthesized_federation_key} says, not whether that relation
+     * patch applies what {@code graphitron_synthesized_federation_key} says, not whether that relation
      * decides correctly; deciding is the relation's own subject and is pinned where it lives. So
      * seeding a link and a node is seeding inputs, not seeding the answer.
      *

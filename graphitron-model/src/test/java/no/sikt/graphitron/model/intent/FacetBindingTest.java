@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_FACET_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FACET_BINDING;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedFacet;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
@@ -21,7 +21,7 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@code intent_facet_binding} states: for one {@code @asFacet} application, the column its
+ * What {@code graphitron_facet_binding} states: for one {@code @asFacet} application, the column its
  * counts group by, the type those counts are keyed on, and whether a key may be null. The
  * definition-keyed half of the facet reading, so every case here is about one application and none
  * of them seeds a carrier.
@@ -53,13 +53,13 @@ class FacetBindingTest {
             facet(dsl, "FilmFilter", "rating", "String", 0, "rating");
 
             var row = rows(dsl).getFirst();
-            assertThat(row.get(INTENT_FACET_BINDING.TYPE_NAME)).isEqualTo("FilmFilter");
-            assertThat(row.get(INTENT_FACET_BINDING.FIELD_NAME)).isEqualTo("rating");
-            assertThat(row.get(INTENT_FACET_BINDING.ORDINAL)).isZero();
-            assertThat(row.get(INTENT_FACET_BINDING.COLUMN_NAME)).isEqualTo("rating");
-            assertThat(row.get(INTENT_FACET_BINDING.VALUE_TYPE_NAME)).isEqualTo("String");
-            assertThat(row.get(INTENT_FACET_BINDING.VALUE_NULLABLE)).isTrue();
-            assertThat(row.get(INTENT_FACET_BINDING.SOURCE_LINE)).isEqualTo(2);
+            assertThat(row.get(GRAPHITRON_FACET_BINDING.TYPE_NAME)).isEqualTo("FilmFilter");
+            assertThat(row.get(GRAPHITRON_FACET_BINDING.FIELD_NAME)).isEqualTo("rating");
+            assertThat(row.get(GRAPHITRON_FACET_BINDING.ORDINAL)).isZero();
+            assertThat(row.get(GRAPHITRON_FACET_BINDING.COLUMN_NAME)).isEqualTo("rating");
+            assertThat(row.get(GRAPHITRON_FACET_BINDING.VALUE_TYPE_NAME)).isEqualTo("String");
+            assertThat(row.get(GRAPHITRON_FACET_BINDING.VALUE_NULLABLE)).isTrue();
+            assertThat(row.get(GRAPHITRON_FACET_BINDING.SOURCE_LINE)).isEqualTo(2);
         });
     }
 
@@ -124,8 +124,8 @@ class FacetBindingTest {
             facet(dsl, "FilmFilter", "rating", "String", 0, "rating");
             facet(dsl, "FilmFilter", "language", "String", 1, "language");
 
-            assertThat(rows(dsl).map(r -> r.get(INTENT_FACET_BINDING.FIELD_NAME)
-                    + "@" + r.get(INTENT_FACET_BINDING.ORDINAL)))
+            assertThat(rows(dsl).map(r -> r.get(GRAPHITRON_FACET_BINDING.FIELD_NAME)
+                    + "@" + r.get(GRAPHITRON_FACET_BINDING.ORDINAL)))
                 .containsExactlyInAnyOrder("rating@0", "language@1");
         });
     }
@@ -278,17 +278,17 @@ class FacetBindingTest {
 
     private static Result<Record> rowsIn(DSLContext dsl, String graphName) {
         derive(dsl);
-        return dsl.select().from(INTENT_FACET_BINDING)
-            .where(INTENT_FACET_BINDING.GRAPH_NAME.eq(graphName))
-            .orderBy(INTENT_FACET_BINDING.TYPE_NAME, INTENT_FACET_BINDING.ORDINAL)
+        return dsl.select().from(GRAPHITRON_FACET_BINDING)
+            .where(GRAPHITRON_FACET_BINDING.GRAPH_NAME.eq(graphName))
+            .orderBy(GRAPHITRON_FACET_BINDING.TYPE_NAME, GRAPHITRON_FACET_BINDING.ORDINAL)
             .fetch();
     }
 
     /** {@code Type.field -> column KeyType}, a trailing {@code ?} where a key may be null. */
     private static String render(Record row) {
-        return row.get(INTENT_FACET_BINDING.TYPE_NAME) + "." + row.get(INTENT_FACET_BINDING.FIELD_NAME)
-            + " -> " + row.get(INTENT_FACET_BINDING.COLUMN_NAME)
-            + " " + row.get(INTENT_FACET_BINDING.VALUE_TYPE_NAME)
-            + (Boolean.TRUE.equals(row.get(INTENT_FACET_BINDING.VALUE_NULLABLE)) ? "?" : "");
+        return row.get(GRAPHITRON_FACET_BINDING.TYPE_NAME) + "." + row.get(GRAPHITRON_FACET_BINDING.FIELD_NAME)
+            + " -> " + row.get(GRAPHITRON_FACET_BINDING.COLUMN_NAME)
+            + " " + row.get(GRAPHITRON_FACET_BINDING.VALUE_TYPE_NAME)
+            + (Boolean.TRUE.equals(row.get(GRAPHITRON_FACET_BINDING.VALUE_NULLABLE)) ? "?" : "");
     }
 }

@@ -1655,7 +1655,7 @@ COMMENT ON COLUMN graphql_type_directive.graph_name IS 'the owning graph''s part
 COMMENT ON COLUMN graphql_type_directive.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphql_type_directive.directive_name IS 'the applied or defined directive name, without the leading @';
 COMMENT ON COLUMN graphql_type_directive.ordinal IS 'as on graphql_schema_directive; federation''s @key repeats here';
-COMMENT ON COLUMN graphql_type_directive.declaration_line IS 'the applying site (extensions apply type directives too). Every row here is a site the author wrote: no expansion applies a type directive, federation''s synthesized @key being a derivation (intent_synthesized_federation_key) rather than a row in this family';
+COMMENT ON COLUMN graphql_type_directive.declaration_line IS 'the applying site (extensions apply type directives too). Every row here is a site the author wrote: no expansion applies a type directive, federation''s synthesized @key being a derivation (graphitron_synthesized_federation_key) rather than a row in this family';
 COMMENT ON COLUMN graphql_type_directive.declaration_column IS 'column of the contributing declaration site, the site key''s fourth part';
 COMMENT ON COLUMN graphql_type_directive.source_name IS 'NOT NULL as on graphql_field: half of the site FK';
 COMMENT ON COLUMN graphql_type_directive.source_line IS 'source line, 1-based per the graphql-java convention';
@@ -4515,7 +4515,7 @@ CREATE TABLE graphitron_federation_key_entry (
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_federation_key_entry IS 'Federation @key as the author wrote it, decoded for consumption (its verbatim twin lives in graphql_type_directive for re-emission; a gate query pins agreement). Authored applications alone, which is what this family''s charter says a decode is: the key federation synthesizes for a node type is a derivation over these rows and the node metadata, and it lives in intent_synthesized_federation_key. A reader wanting every key the emitted schema carries reads intent_federation_key, which unions the two.';
+COMMENT ON TABLE graphitron_federation_key_entry IS 'Federation @key as the author wrote it, decoded for consumption (its verbatim twin lives in graphql_type_directive for re-emission; a gate query pins agreement). Authored applications alone, which is what this family''s charter says a decode is: the key federation synthesizes for a node type is a derivation over these rows and the node metadata, and it lives in graphitron_synthesized_federation_key. A reader wanting every key the emitted schema carries reads intent_federation_key, which unions the two.';
 COMMENT ON COLUMN graphitron_federation_key_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_federation_key_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_federation_key_entry.ordinal IS '@key is repeatable; document order';
@@ -4851,7 +4851,7 @@ COMMENT ON COLUMN graphitron_argument.description IS 'the docstring, authored or
 -- arguments into the filter input type's fields, so it is an aggregate over the whole schema rather
 -- than a local expansion. And federation's key synthesis conjoins the SDL claim with metadata a
 -- generated jOOQ class publishes, a second corpus, so it is a derivation
--- (intent_synthesized_federation_key) whose rows are their own provenance.
+-- (graphitron_synthesized_federation_key) whose rows are their own provenance.
 
 CREATE TABLE graphitron_minted_conflict (
   graph_name   VARCHAR NOT NULL,
@@ -7002,7 +7002,7 @@ COMMENT ON COLUMN intent_node_metadata_defect.defect IS 'which defect, in a clos
 COMMENT ON COLUMN intent_node_metadata_defect.position IS 'the offending entry''s index in the stated array, on the two per-entry defects; NULL on the eight that are about a whole constant, which is the stated absent bucket rather than a missing value';
 
 
-CREATE VIEW intent_synthesized_federation_key
+CREATE VIEW graphitron_synthesized_federation_key
   (graph_name, type_name, fields_sdl, resolvable) AS
 SELECT n.graph_name, n.type_name, 'id', TRUE
   FROM graphitron_node_type n
@@ -7021,11 +7021,11 @@ SELECT n.graph_name, n.type_name, 'id', TRUE
                                    WHERE s.graph_name = k.graph_name
                                      AND s.type_name = k.type_name AND s.ordinal = k.ordinal
                                      AND s.segment_name = 'id'));
-COMMENT ON VIEW intent_synthesized_federation_key IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Federation''s node-entity rule as a relation: which node types get a @key(fields: "id") nobody wrote, because federation needs the entity declaration visible in the emitted SDL and a node carries a globally-unique id by definition. A derivation and not a capture: the rule reads the SDL claim rows and the node metadata a generated class publishes, so its inputs span two corpora and its output is computable from captured facts, which is what puts it in this stratum rather than in the walk that used to run it. The three conditions are the live rule''s. The graph is federation-linked, which is a predicate over graphitron_link_entry.url as graphitron_link_entry''s own comment says, and the decode rather than the verbatim twin: reading the argument value out of graphql_schema_directive_arg would mean compensating for AST quoting, which is exactly the string surgery a decoded relation exists to retire. A url the author omitted is a null and matches nothing, which is the live predicate''s null guard falling out of the join. The type is a node, by graphitron_node_type. And no authored key already states the id contract, meaning no @key application on the type whose decode is exactly the single path id: one field row, one segment, and that segment named id. Positions are dense from zero in both children, so the two counts pin the shape without naming a position. That transcribes the live rule including its deliberate asymmetry, a malformed fields: argument decoding to no field rows and therefore not counting as the id key, so the misuse reaches its detection instead of suppressing synthesis on the strength of a parse failure; compound and other-field keys likewise do not count, being additional alternatives rather than the id contract. The rule''s constants appear here, in SQL, rather than in a comment each composing reader re-mints from: fields_sdl is the field-set literal the rule would have written and resolvable is true. The federation-spec prefix is a third spelling beside the two Java readers that share the constant, and is pinned to it by a named test rather than by a shared literal, a view being unable to bind a query parameter. This relation is its own provenance, which is what lets the synthesized application leave the transcription families entirely: nothing marks a synthesized row in graphql_type_directive because no synthesized row lands there.';
-COMMENT ON COLUMN intent_synthesized_federation_key.graph_name IS 'the owning graph''s partition, carried from the membership relation';
-COMMENT ON COLUMN intent_synthesized_federation_key.type_name IS 'the node type the key is synthesized for; keyed with the graph, one row per type that gets one';
-COMMENT ON COLUMN intent_synthesized_federation_key.fields_sdl IS 'the field-set literal the rule states, always id; a column and not an implied constant, so a reader composing this arm with the authored one projects the same shape from both';
-COMMENT ON COLUMN intent_synthesized_federation_key.resolvable IS 'the resolvable: the rule states, always true; the synthesized entity is resolvable by construction, an opt-out being something only an author can write';
+COMMENT ON VIEW graphitron_synthesized_federation_key IS 'Federation''s node-entity rule as a relation: which node types get a @key(fields: "id") nobody wrote, federation needing the entity declaration visible in the emitted SDL and a node carrying a globally-unique id by definition. For example a federation-linked graph whose Film is a node and declares no id key of its own gets one row.';
+COMMENT ON COLUMN graphitron_synthesized_federation_key.graph_name IS 'the owning graph''s partition, carried from the membership relation';
+COMMENT ON COLUMN graphitron_synthesized_federation_key.type_name IS 'the node type the key is synthesized for; keyed with the graph, one row per type that gets one';
+COMMENT ON COLUMN graphitron_synthesized_federation_key.fields_sdl IS 'the field-set literal the rule states, always id; a column and not an implied constant, so a reader composing this arm with the authored one projects the same shape from both';
+COMMENT ON COLUMN graphitron_synthesized_federation_key.resolvable IS 'the resolvable: the rule states, always true; the synthesized entity is resolvable by construction, an opt-out being something only an author can write';
 
 CREATE VIEW intent_federation_key
   (graph_name, type_name, ordinal, fields_sdl, resolvable) AS
@@ -7033,7 +7033,7 @@ SELECT graph_name, type_name, ordinal, fields_sdl, resolvable
   FROM graphitron_federation_key_entry
  UNION ALL
 SELECT graph_name, type_name, CAST(NULL AS INT), fields_sdl, resolvable
-  FROM intent_synthesized_federation_key;
+  FROM graphitron_synthesized_federation_key;
 COMMENT ON VIEW intent_federation_key IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Every @key a graph''s emitted schema carries, authored and synthesized alike: the composition two readers already ask for, the round trip that re-emits the applications and the agreement anchor that pins the derivation against the pipeline''s registry rewrite. A relation rather than a union each of them assembles for itself, on the rule that a composition with a second asker is a relation. The grain is the authored relation''s, with a NULL ordinal on the synthesized arm rather than an invented one: document order is a property of something the author wrote, and a derived row has no position in a document. UNION ALL and not UNION, deliberately. The authored arm is unique on its own key already and the synthesized arm cannot collide with it, its condition being that no authored id key exists, so deduplication could only ever fold together rows a reader wants told apart: two authored @key(fields: "id") applications at distinct ordinals are two rows here, which is the arity the authored relation states and this reduction owes its readers. Key grain only. The path and segment children stay authored-only until a reader asks for them composed, the synthesized arm''s single id path being recoverable from fields_sdl by the same rule that would have decoded it. A reader wanting a total order over both arms orders the authored rows by ordinal and appends the derived one, which is the ordering the composing query owns rather than one this relation invents.';
 COMMENT ON COLUMN intent_federation_key.graph_name IS 'the owning graph''s partition, carried from whichever arm produced the row';
 COMMENT ON COLUMN intent_federation_key.type_name IS 'the type the key sits on';
@@ -8228,7 +8228,7 @@ COMMENT ON COLUMN intent_column_match_claim.source_name IS 'the claimed field''s
 COMMENT ON COLUMN intent_column_match_claim.source_line IS 'source line of the field declaration, 1-based';
 COMMENT ON COLUMN intent_column_match_claim.source_column IS 'source column of the field declaration, 1-based';
 
-CREATE VIEW intent_facet_binding
+CREATE VIEW graphitron_facet_binding
   (graph_name, type_name, field_name, ordinal, column_name, value_type_name, value_nullable,
    source_name, source_line, source_column) AS
 SELECT f.graph_name, f.type_name, f.field_name, f.ordinal,
@@ -8260,19 +8260,19 @@ SELECT f.graph_name, f.type_name, f.field_name, f.ordinal,
    AND NOT EXISTS (SELECT 1 FROM graphitron_field_node_id_entry n
                     WHERE n.graph_name = f.graph_name AND n.type_name = f.type_name
                       AND n.field_name = f.field_name);
-COMMENT ON VIEW intent_facet_binding IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. What one @asFacet application binds, at the applications that are well formed: the column its counts group by, the named type those counts are keyed on, and whether such a key may be null. The definition-keyed half of the facet reading, keyed on the input field the directive sits on and resolving nothing about who consumes it; intent_connection_facet is the use-keyed half and reads this one. The split is the resolver''s own rather than a convenience: the classifier states this predicate in one place precisely because the synthesis walk that gates on it sees a field and no consuming coordinate, and every check that needs one lives away from it. The arms transcribe that predicate. The field carries a @field(name:) binding, because a facet value is a GROUP BY key on one column and nothing else names which. It is optional, because a non-null filter is always active, so its facet could never show the counts the filter is not narrowing. Its named type is not an input object, for the same one-column reason, and is not ID, ID being where a node-id reading arises with no directive to point at. It carries no @reference, @condition or @nodeId, those being the join-mediated and node-id bindings the direct-column facet emitter does not serve. The owning type is an INPUT_OBJECT, which is the predicate''s domain and not a further arm: @asFacet written anywhere else is a use-keyed misuse and declines here by never meeting a filter input. Every one of those declines is a misuse the build rejects with a named diagnostic, so on a schema that assembles at all this relation holds every @asFacet application in the graph, and absence is a defect relation''s subject rather than this one''s. value_nullable reads the list element where the filter field is a list and the field itself where it is not, the non-null form having already declined, which is the promoter''s own unwrapping and not a restatement of it. The synthesized FacetValue type name those two columns decide is deliberately not a column here: it is a naming convention over them, and the naming belongs where the other minted names are formed. Deliberately not registered, on measurement rather than on size: registering it costs its one reader more than it saves. Inlined, this rule lets that reader drive from the carrier''s own arguments and reach the facets of each by key, which measured linear in the applications. As a table it is the driving relation instead, and the reader''s join to graphql_argument on named_type has no index to seek, so it degrades to every argument of the graph once per row here: on a fixture of 144 applications the reader went from 659 scans to 7779, and an index on this relation''s own coordinate moved neither figure, the missing seek being on the other side of that join.';
-COMMENT ON COLUMN intent_facet_binding.graph_name IS 'the owning graph''s partition, carried from graphitron_facet_entry';
-COMMENT ON COLUMN intent_facet_binding.type_name IS 'the input object type the facet field is declared on';
-COMMENT ON COLUMN intent_facet_binding.field_name IS 'the facet field''s name within that input type; with the two columns above, the grain';
-COMMENT ON COLUMN intent_facet_binding.ordinal IS 'the field''s declaration order within its input type, carried from graphql_field; the inner half of the order one carrier''s facets surface in';
-COMMENT ON COLUMN intent_facet_binding.column_name IS 'the @field(name:) binding as written: the column the counts group by. Which table it resolves on is the consuming carrier''s element binding and not a fact about the application, so it is not here';
-COMMENT ON COLUMN intent_facet_binding.value_type_name IS 'the named type a facet key carries, the filter field''s leaf; a scalar or an enum, an input object being a decline above';
-COMMENT ON COLUMN intent_facet_binding.value_nullable IS 'whether a facet key may be null: the list element''s nullability where the filter field is a list, TRUE otherwise. With value_type_name it decides both the synthesized FacetValue type the counts surface through and whether the aggregate scrubs a null key';
-COMMENT ON COLUMN intent_facet_binding.source_name IS 'the @asFacet application''s own file; the position a diagnostic would carry';
-COMMENT ON COLUMN intent_facet_binding.source_line IS 'source line of the application, 1-based';
-COMMENT ON COLUMN intent_facet_binding.source_column IS 'source column of the application, 1-based';
+COMMENT ON VIEW graphitron_facet_binding IS 'What one @asFacet application binds, at the applications that are well formed: the column its counts group by, the named type those counts are keyed on, and whether such a key may be null. For example @asFacet on FilmFilter.rating is one row naming the rating column and the type its values carry.';
+COMMENT ON COLUMN graphitron_facet_binding.graph_name IS 'the owning graph''s partition, carried from graphitron_facet_entry';
+COMMENT ON COLUMN graphitron_facet_binding.type_name IS 'the input object type the facet field is declared on';
+COMMENT ON COLUMN graphitron_facet_binding.field_name IS 'the facet field''s name within that input type; with the two columns above, the grain';
+COMMENT ON COLUMN graphitron_facet_binding.ordinal IS 'the field''s declaration order within its input type, carried from graphql_field; the inner half of the order one carrier''s facets surface in';
+COMMENT ON COLUMN graphitron_facet_binding.column_name IS 'the @field(name:) binding as written: the column the counts group by. Which table it resolves on is the consuming carrier''s element binding and not a fact about the application, so it is not here';
+COMMENT ON COLUMN graphitron_facet_binding.value_type_name IS 'the named type a facet key carries, the filter field''s leaf; a scalar or an enum, an input object being a decline above';
+COMMENT ON COLUMN graphitron_facet_binding.value_nullable IS 'whether a facet key may be null: the list element''s nullability where the filter field is a list, TRUE otherwise. With value_type_name it decides both the synthesized FacetValue type the counts surface through and whether the aggregate scrubs a null key';
+COMMENT ON COLUMN graphitron_facet_binding.source_name IS 'the @asFacet application''s own file; the position a diagnostic would carry';
+COMMENT ON COLUMN graphitron_facet_binding.source_line IS 'source line of the application, 1-based';
+COMMENT ON COLUMN graphitron_facet_binding.source_column IS 'source column of the application, 1-based';
 
-CREATE VIEW intent_connection_facet
+CREATE VIEW graphitron_connection_facet
   (graph_name, type_name, field_name, position, filter_argument_name,
    facet_type_name, facet_field_name, column_name, value_type_name, value_nullable,
    source_name, source_line, source_column) AS
@@ -8291,7 +8291,7 @@ SELECT graph_name, type_name, field_name,
                ROW_NUMBER() OVER (
                  PARTITION BY a.graph_name, a.type_name, a.field_name, fb.field_name
                  ORDER BY a.ordinal, fb.ordinal) AS rn
-          FROM intent_facet_binding fb
+          FROM graphitron_facet_binding fb
           JOIN graphql_argument a
             ON a.graph_name = fb.graph_name AND a.named_type = fb.type_name
           -- The carriers the expansion actually rewrote, which is a minted field whose coining
@@ -8303,20 +8303,20 @@ SELECT graph_name, type_name, field_name,
            AND c.source_coordinate = c.type_name || '.' || c.field_name
            AND c.directive_name = 'asConnection') carrier_facet
  WHERE rn = 1;
-COMMENT ON VIEW intent_connection_facet IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Which facets one connection carrier surfaces, and in which order: one row per @asFacet application reachable from the carrier''s own filter arguments. The use-keyed half of the facet reading, and what a consumer emitting a faceted connection reads. The carrier population is the expansion rather than the directive. graphitron_minted_field holds a row at a field''s own coordinate exactly where @asConnection rewrote that field''s type expression, which is the directive on a bare list with a named element and nothing else, so @asConnection that expanded nothing carries no facets here and neither does a structural Connection return type, whose shape is the author''s and which the promoter appends no facets field to. That is the spec''s "inert at the others" reading, held by construction rather than by an arm. Reachability is one hop: the facet field is declared on a type an argument of the carrier names, which is the promoter''s own walk and not a transitive closure through nested input objects. position is dense per carrier and is the emission order, argument declaration order then facet field declaration order, which is what lets a consumer fold these rows into a file and get the same bytes twice. A facet name repeated across one carrier''s filter inputs collapses to its first occurrence, transcribing the promoter''s first-wins dedup; that is a backstop and not a rule, a duplicate being rejected with a named diagnostic before it can reach an accepted schema, and it sits after the definition-keyed gate so a malformed duplicate never consumes the name a well-formed one would take. Two carriers sharing one connection name each read their own filter arguments here rather than one reconciled registry entry, which agrees with that registry on every schema that assembles: carriers minting one connection name must project the same facets, and a disagreement is a rejection naming both. What this relation does not state is whether the emitter serves the carrier it resolves. That a faceted carrier must be a root Query connection over a table-backed element is a limit of the emitter that exists today, enforced as a rejection, and putting it here would make an emitter''s reach a fact about the schema.';
-COMMENT ON COLUMN intent_connection_facet.graph_name IS 'the owning graph''s partition, carried from the carrier''s arguments';
-COMMENT ON COLUMN intent_connection_facet.type_name IS 'the type owning the carrier field';
-COMMENT ON COLUMN intent_connection_facet.field_name IS 'the carrier field''s name within that type; with the column above, the connection carrier''s coordinate';
-COMMENT ON COLUMN intent_connection_facet.position IS 'the facet''s place in this carrier''s facet list, 1-based and dense: argument declaration order, then facet field declaration order. The emission order, so a consumer reads it rather than re-deriving it from the two ordinals it was computed from';
-COMMENT ON COLUMN intent_connection_facet.filter_argument_name IS 'the carrier argument the facet''s binding rides in. Half of a facet''s suppression identity at emission: a same-named field on a sibling filter argument is a different binding, and the pair with facet_field_name is what tells them apart';
-COMMENT ON COLUMN intent_connection_facet.facet_type_name IS 'witness: the input object type the application was written on, which is the argument''s named type. With the column beside it this is intent_facet_binding''s key, so the application''s own position is one join away';
-COMMENT ON COLUMN intent_connection_facet.facet_field_name IS 'the facet field''s name: the label the counts surface under, and the other half of the suppression identity';
-COMMENT ON COLUMN intent_connection_facet.column_name IS 'the column the counts group by, carried from intent_facet_binding';
-COMMENT ON COLUMN intent_connection_facet.value_type_name IS 'the named type a facet key carries, carried from intent_facet_binding';
-COMMENT ON COLUMN intent_connection_facet.value_nullable IS 'whether a facet key may be null, carried from intent_facet_binding';
-COMMENT ON COLUMN intent_connection_facet.source_name IS 'the @asFacet application''s own file, carried from intent_facet_binding: a diagnostic about a facet points at the application and not at the carrier that consumes it';
-COMMENT ON COLUMN intent_connection_facet.source_line IS 'source line of the application, 1-based';
-COMMENT ON COLUMN intent_connection_facet.source_column IS 'source column of the application, 1-based';
+COMMENT ON VIEW graphitron_connection_facet IS 'Which facets one connection carrier surfaces, and in which order: one row per @asFacet application reachable from the carrier''s own filter arguments. For example films(filter: FilmFilter) @asConnection surfaces every facet FilmFilter declares, in emission order.';
+COMMENT ON COLUMN graphitron_connection_facet.graph_name IS 'the owning graph''s partition, carried from the carrier''s arguments';
+COMMENT ON COLUMN graphitron_connection_facet.type_name IS 'the type owning the carrier field';
+COMMENT ON COLUMN graphitron_connection_facet.field_name IS 'the carrier field''s name within that type; with the column above, the connection carrier''s coordinate';
+COMMENT ON COLUMN graphitron_connection_facet.position IS 'the facet''s place in this carrier''s facet list, 1-based and dense: argument declaration order, then facet field declaration order. The emission order, so a consumer reads it rather than re-deriving it from the two ordinals it was computed from';
+COMMENT ON COLUMN graphitron_connection_facet.filter_argument_name IS 'the carrier argument the facet''s binding rides in. Half of a facet''s suppression identity at emission: a same-named field on a sibling filter argument is a different binding, and the pair with facet_field_name is what tells them apart';
+COMMENT ON COLUMN graphitron_connection_facet.facet_type_name IS 'witness: the input object type the application was written on, which is the argument''s named type. With the column beside it this is graphitron_facet_binding''s key, so the application''s own position is one join away';
+COMMENT ON COLUMN graphitron_connection_facet.facet_field_name IS 'the facet field''s name: the label the counts surface under, and the other half of the suppression identity';
+COMMENT ON COLUMN graphitron_connection_facet.column_name IS 'the column the counts group by, carried from graphitron_facet_binding';
+COMMENT ON COLUMN graphitron_connection_facet.value_type_name IS 'the named type a facet key carries, carried from graphitron_facet_binding';
+COMMENT ON COLUMN graphitron_connection_facet.value_nullable IS 'whether a facet key may be null, carried from graphitron_facet_binding';
+COMMENT ON COLUMN graphitron_connection_facet.source_name IS 'the @asFacet application''s own file, carried from graphitron_facet_binding: a diagnostic about a facet points at the application and not at the carrier that consumes it';
+COMMENT ON COLUMN graphitron_connection_facet.source_line IS 'source line of the application, 1-based';
+COMMENT ON COLUMN graphitron_connection_facet.source_column IS 'source column of the application, 1-based';
 
 CREATE VIEW intent_resolved_field_claim
   (graph_name, type_name, field_name, classifier, tier) AS
@@ -14356,6 +14356,15 @@ INSERT INTO meta_materialize VALUES
    'A recursive walk named by three view bodies, two of them the registrations that carried this consumer''s pass, and every naming expands it whole: intent_node_id_instruction reaches it eighty instantiations deep, intent_node_id_decode_hop is the whole of its own ninety-one, and intent_argument_column_scope drives from it. Its own breadth is two namings of the recursive intent_argument_reference_step_hop, so registering the target is what stops that walk being re-run per naming rather than per refresh; the hop below it is left a view deliberately, the counter-case being a registration below the relation still being expanded, and the measurement says the rung above is where the cost is. Measured on a consumer store of 2606 field scopes and 968 argument scopes, driven through the refresh in one transaction and taken after intent_input_field_column_match was registered so the two levers are not counted twice: the pass falls 22.7 s to 16.9 s, the node-id instruction rule 5.8 s to 3.8 s and the decode hop 5.1 s to 3.5 s, for a refresh of its own of 25 milliseconds over two rows. Two rows is the point rather than an objection: this relation''s cost was never its output, it is a recursive term re-evaluated per reader, and a registration is what turns per-naming into per-pass.');
 
 INSERT INTO meta_grain VALUES
+  ('facet-binding',
+   'one @asFacet application, at the input field it sits on, in one graph',
+   'graph_name, type_name, field_name', 'sdl'),
+  ('carrier-facet',
+   'one facet one connection carrier surfaces, in one graph',
+   'graph_name, type_name, field_name, position', 'sdl'),
+  ('synthesized-federation-key',
+   'one synthesized federation key, on one type, in one graph',
+   'graph_name, type_name', 'sdl'),
   ('graph-field',
    'one field one type declares, in one graph',
    'graph_name, type_name, field_name', 'sdl'),
@@ -14978,6 +14987,18 @@ INSERT INTO meta_relation VALUES
    'A schema element the generator emits exists in this graph, whether an author declared it or macro expansion minted it: the supertype of the three element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it.',
    'For example a QueryFilmsConnection no author wrote is the row QueryFilmsConnection here and no row at all in graphql_element, and the field carrying the macro is one row in each.',
    'A graphitron relation naming a coordinate has nowhere to key. graphql_element holds what the document declares, so a foreign key there excludes exactly the coordinates macro expansion minted, which is what a connection is made of; the relation that shipped as graphitron_field was written with that key and the build failed on a minted connection''s own field. The union views that answered for the expanded population could not stand in, a view being no key''s target. So this is that population written down, at the grain the specification already gives it, with the same spelling and the same kind vocabulary graphql_element uses so that a reader holding a coordinate from either family holds the same string. The three subtypes beside it carry the parts and the payload together, which is where this family parts company with the transcription: an element the expansion minted has no twin to join for its details, so an anchor that carried only a key would send every reader back through a union.'),
+  ('graphitron_facet_binding', 'facet-binding', 'graphitron',
+   'What one @asFacet application binds, at the applications that are well formed: the column its counts group by, the named type those counts are keyed on, and whether such a key may be null.',
+   'For example @asFacet on FilmFilter.rating is one row naming the rating column and the type its values carry.',
+   'Moved out of the intent_ family by the arc that owns macro expansion. That family has no owning gatherer and is being retired, and what this derives from is graphitron''s own vocabulary decoded, so this is where the fact belongs and the graphitron gatherer, which runs the expansion, is who answers for it. The definition-keyed half of the facet reading, keyed on the input field the directive sits on and resolving nothing about who consumes it; graphitron_connection_facet is the use-keyed half and reads this one. The split is the resolver''s own rather than a convenience, the well-formedness predicate being stated once here instead of at each consumer. A malformed application contributes no row, which is what makes the relation safe to read without re-checking it: the detection that reports the malformation reads the entries, not this.'),
+  ('graphitron_connection_facet', 'carrier-facet', 'graphitron',
+   'Which facets one connection carrier surfaces, and in which order: one row per @asFacet application reachable from the carrier''s own filter arguments.',
+   'For example films(filter: FilmFilter) @asConnection surfaces every facet FilmFilter declares, in emission order.',
+   'Moved out of the intent_ family by the arc that owns macro expansion. That family has no owning gatherer and is being retired, and what this derives from is graphitron''s own vocabulary decoded, so this is where the fact belongs and the graphitron gatherer, which runs the expansion, is who answers for it. The carrier population is the expansion rather than the directive: graphitron_minted_field holds a row at a field''s own coordinate exactly where @asConnection rewrote that field, so an application that expanded nothing carries no facets here and neither does a structural Connection return type. Reachability is one hop, the facet field being declared on a type an argument of the carrier names, which is the expansion''s own walk and not a closure through nested inputs. position is dense per carrier and is the emission order, which is what lets a consumer fold these rows into a file and get the same bytes twice. A name repeated across one carrier''s filters collapses to its first occurrence, which is a backstop rather than a rule: a duplicate is rejected with a named diagnostic before it can reach an accepted schema.'),
+  ('graphitron_synthesized_federation_key', 'synthesized-federation-key', 'graphitron',
+   'Federation''s node-entity rule as a relation: which node types get a @key(fields: "id") nobody wrote, federation needing the entity declaration visible in the emitted SDL and a node carrying a globally-unique id by definition.',
+   'For example a federation-linked graph whose Film is a node and declares no id key of its own gets one row.',
+   'Moved out of the intent_ family by the arc that owns macro expansion. That family has no owning gatherer and is being retired, and what this derives from is graphitron''s own vocabulary decoded, so this is where the fact belongs and the graphitron gatherer, which runs the expansion, is who answers for it. A derivation and not a capture: the rule reads the SDL claim rows and the node metadata a generated class publishes, so its inputs span two corpora and its output is computable from captured facts. Three conditions, all the live rule''s. The graph is federation-linked, read from the decode rather than the verbatim twin so no reader compensates for AST quoting. The type is a node. And no authored key already states the id contract, meaning no @key whose decode is exactly the single path id. A malformed fields: argument decodes to no field rows and so does not count as the id key, which sends the misuse to its detection instead of suppressing synthesis on a parse failure. This relation is its own provenance, which is what lets the synthesized application stay out of the transcription families entirely.'),
   ('graphitron_element_authored', 'expanded-element', 'graphitron',
    'One of the four sets graphitron_element is the union of: an element an author declared, at the coordinate the transcription spells for it, of a kind this family anchors.',
    'For example the Film in type Film { title: String } is one row, and the Film.title written inside it is another.',
