@@ -25,7 +25,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
-import static no.sikt.graphitron.model.Tables.INTENT_CARRIER_DATA_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CARRIER_DATA_FIELD;
 import static no.sikt.graphitron.model.Tables.INTENT_CARRIER_ROUTINE_HOP;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_CHAIN_NODE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_ROUTINE_METHOD;
@@ -253,7 +253,7 @@ public final class RoutineWriteFacts {
         var ch = INTENT_CARRIER_ROUTINE_HOP;
         var ct = SQL_TABLE.as("carrier_target");
         var cs = SQL_SCHEMA.as("carrier_schema");
-        var cd = INTENT_CARRIER_DATA_FIELD;
+        var cd = GRAPHITRON_CARRIER_DATA_FIELD;
         var df = GRAPHQL_FIELD.as("carrier_data_field");
         var mf = GRAPHQL_FIELD.as("mutation_field");
         return store.dsl()
@@ -495,7 +495,7 @@ public final class RoutineWriteFacts {
      */
     private static Map<Coordinate, List<KeyPair>> carrierPairs(StoreHandle store) {
         var s = INTENT_MUTATION_ROUTINE_SEAT;
-        var cd = INTENT_CARRIER_DATA_FIELD;
+        var cd = GRAPHITRON_CARRIER_DATA_FIELD;
         var ch = INTENT_CARRIER_ROUTINE_HOP;
         var nm = SQL_NAME_MATCHED_KEY_COLUMN;
         var src = SQL_COLUMN.as("source_column");

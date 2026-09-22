@@ -297,8 +297,13 @@ class DerivedReadCostTest {
      * reference stratum to go the same way. Four views reached the register only through it, which
      * is the three that name it plus the one that reaches it through them, and a rung its owner
      * writes in a capture stage buys no comparison for any of them.
+     *
+     * <p>Thirty-eight to thirty-four with the carrier data channel, four more views on the same
+     * mechanism. Three name that relation and a fourth reaches it through them, and none of the
+     * four reaches any other registration, so a rung its owner writes in a capture stage takes each
+     * of them out of this domain whole rather than reducing its row.
      */
-    private static final int READERS_WITH_CELLS = 38;
+    private static final int READERS_WITH_CELLS = 34;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix

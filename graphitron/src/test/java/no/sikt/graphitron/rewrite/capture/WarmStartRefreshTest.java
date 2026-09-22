@@ -112,6 +112,12 @@ class WarmStartRefreshTest {
           language: Language @reference(path: [{key: "film_language_id_fkey"}])
         }
         type Language @table(name: "language") { name: String }
+        type DbErr @error(handlers: [{handler: DATABASE}]) { path: [String!]! message: String! }
+        union WriteError = DbErr
+        type DeleteFilmPayload { deletedId: ID, errors: [WriteError] }
+        type Mutation {
+          deleteFilm(filmId: Int): DeleteFilmPayload @mutation(typeName: DELETE, table: "film")
+        }
         """;
 
     @Test
@@ -152,7 +158,10 @@ class WarmStartRefreshTest {
      *
      * <p>{@link #TABLE_BOUND_SDL} rather than {@link #SDL}, and its {@code @reference} path is why:
      * the reference stratum's relations are keyed at a path element, so on a schema authoring none
-     * this case would count zero against zero on exactly the relations it exists to hold.
+     * this case would count zero against zero on exactly the relations it exists to hold. Its
+     * mutation carrier is there for the same reason one rung up: the column-scope family's stages
+     * are keyed at a mutation payload's data channel, so a schema declaring no payload leaves them
+     * empty too.
      */
     @Test
     @DisplayName("a second capture of one graph leaves every relation's row count unchanged")
@@ -170,6 +179,8 @@ class WarmStartRefreshTest {
                 + " zero against zero on the relations it is here for")
             .containsEntry("GRAPHITRON_SPELLED_TABLE", 2)
             .hasEntrySatisfying("GRAPHITRON_FIELD_REFERENCE_STEP_HOP_KEYED",
+                rows -> assertThat(rows).isPositive())
+            .hasEntrySatisfying("GRAPHITRON_CARRIER_DATA_FIELD",
                 rows -> assertThat(rows).isPositive());
 
         Map<String, Integer> twice;

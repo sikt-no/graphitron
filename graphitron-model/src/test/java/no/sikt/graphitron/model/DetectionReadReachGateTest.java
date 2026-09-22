@@ -118,7 +118,7 @@ class DetectionReadReachGateTest {
             // from this component's reach: a captured relation counts once and truncates the tree
             // for every rule above it, where the derivation re-evaluated the chain per naming.
             "graphitron_node_type",
-            // Also refreshed through intent_carrier_data_field_live and
+            // Also read by the carrier data-channel stage's rule and refreshed through
             // intent_field_scope_table_live; expanded here once per container by memberNames.
             "intent_poly_member",
             "intent_record_slot_assignable",

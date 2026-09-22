@@ -322,7 +322,7 @@ class MutationRoutineSeatTest {
     /**
      * A return that is neither table-bound nor a payload declaring exactly one data channel is no
      * carrier at all. Here the payload declares two, which is the arity
-     * {@code intent_carrier_data_field} counts and this verdict reports.
+     * {@code graphitron_carrier_data_field} counts and this verdict reports.
      */
     @Test
     void aPayloadWithTwoDataChannelsIsNoCarrier() {

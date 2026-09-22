@@ -92,7 +92,6 @@ intent_authored_claim_rejection
 intent_authored_field_claim
 intent_authored_type_claim
 intent_bound_table
-intent_carrier_data_field
 intent_carrier_routine_hop
 intent_column_match_claim
 intent_condition_membership

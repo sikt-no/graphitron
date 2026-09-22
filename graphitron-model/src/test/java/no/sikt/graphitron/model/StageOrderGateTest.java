@@ -90,6 +90,8 @@ class StageOrderGateTest {
             Set.of("intent_type_backing_class")),
         new Step("AuthoredClaimRejectionRows", null,
             Set.of("intent_authored_claim_rejection")),
+        new Step("CarrierDataFields", "graphitron_carrier_data_field_rule",
+            Set.of("graphitron_carrier_data_field")),
         new Step("Materializations.refresh", null, REGISTERED_TARGETS),
         new Step("UnlowerableOrderingRejectionRows", null,
             Set.of("intent_field_unlowerable_ordering_rejection")));

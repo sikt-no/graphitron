@@ -395,8 +395,8 @@ class RelationRegistrationGateTest {
         registrations.put("intent_errors_field", Arm.DERIVED);
         registrations.put("intent_errors_field_member", Arm.DERIVED);
         registrations.put("intent_field_error_channel", Arm.DERIVED);
-        registrations.put("intent_carrier_data_field", Arm.DERIVED);
-        registrations.put("intent_carrier_data_field_live", Arm.DERIVED);
+        registrations.put("graphitron_carrier_data_field", Arm.DERIVED);
+        registrations.put("graphitron_carrier_data_field_rule", Arm.DERIVED);
         registrations.put("intent_carrier_routine_hop", Arm.DERIVED);
         registrations.put("intent_mutation_routine_seat", Arm.DERIVED);
         registrations.put("intent_column_match_claim", Arm.DERIVED);

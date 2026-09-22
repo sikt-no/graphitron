@@ -33,7 +33,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
-import static no.sikt.graphitron.model.Tables.INTENT_CARRIER_DATA_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CARRIER_DATA_FIELD;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_COLUMN_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING;
@@ -1049,7 +1049,7 @@ final class DiagnosticFacts {
     private static Field<List<FieldCoord>> sigilSiteArm(
         StoreHandle store, Collection<FieldCoord> sites
     ) {
-        var carrier = INTENT_CARRIER_DATA_FIELD;
+        var carrier = GRAPHITRON_CARRIER_DATA_FIELD;
         return multiset(selectDistinct(carrier.TYPE_NAME, carrier.FIELD_NAME)
             .from(carrier)
             .where(carrier.GRAPH_NAME.eq(store.graphName()))

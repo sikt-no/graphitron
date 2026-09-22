@@ -5,12 +5,12 @@ import org.jooq.Condition;
 
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.INTENT_CARRIER_DATA_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CARRIER_DATA_FIELD;
 import static org.jooq.impl.DSL.selectOne;
 
 /**
  * Whether a coordinate is where a mutation payload's data arrives, which is the one question the
- * {@code $source} sigil's surfaces ask: one read of {@code intent_carrier_data_field}, keyed on the
+ * {@code $source} sigil's surfaces ask: one read of {@code graphitron_carrier_data_field}, keyed on the
  * coordinate the cursor sits in.
  *
  * <p>Three of the relation's columns are read as the reading rather than as the answer, which is what
@@ -41,9 +41,9 @@ public final class CarrierDataField {
      * coordinate admits {@code $source}.
      */
     public static Condition sigilSite() {
-        return INTENT_CARRIER_DATA_FIELD.DATA_FIELDS.eq(1)
-            .and(INTENT_CARRIER_DATA_FIELD.FAMILY.eq("SERVICE"))
-            .and(INTENT_CARRIER_DATA_FIELD.ELEMENT_KIND.in(SIGIL_ELEMENTS));
+        return GRAPHITRON_CARRIER_DATA_FIELD.DATA_FIELDS.eq(1)
+            .and(GRAPHITRON_CARRIER_DATA_FIELD.FAMILY.eq("SERVICE"))
+            .and(GRAPHITRON_CARRIER_DATA_FIELD.ELEMENT_KIND.in(SIGIL_ELEMENTS));
     }
 
     /**
@@ -54,10 +54,10 @@ public final class CarrierDataField {
      */
     public static boolean admitsSigil(StoreHandle store, String typeName, String fieldName) {
         return store.dsl().fetchExists(selectOne()
-            .from(INTENT_CARRIER_DATA_FIELD)
-            .where(INTENT_CARRIER_DATA_FIELD.GRAPH_NAME.eq(store.graphName()))
-            .and(INTENT_CARRIER_DATA_FIELD.TYPE_NAME.eq(typeName))
-            .and(INTENT_CARRIER_DATA_FIELD.FIELD_NAME.eq(fieldName))
+            .from(GRAPHITRON_CARRIER_DATA_FIELD)
+            .where(GRAPHITRON_CARRIER_DATA_FIELD.GRAPH_NAME.eq(store.graphName()))
+            .and(GRAPHITRON_CARRIER_DATA_FIELD.TYPE_NAME.eq(typeName))
+            .and(GRAPHITRON_CARRIER_DATA_FIELD.FIELD_NAME.eq(fieldName))
             .and(sigilSite()));
     }
 }

@@ -103,8 +103,17 @@ class MaterializeRegistryGateTest {
      * {@code _live} view keeps its text under {@code graphitron_field_column_scope_rule}, and the
      * canonical name stays the table every reader spells. A reader of this fall should read it as
      * the register losing a row it was only ever scheduling, not as a rule leaving the schema.
+     *
+     * <p>Eighteen with the carrier data channel, the first rung of the column-scope family and the
+     * first conversion that had to be placed rather than merely written: its rule reaches
+     * {@code intent_type_backing_class} through the type binding, and a producer is what writes
+     * that, so the stage runs after the producers rather than at the front of the stratum where the
+     * field-site column scope sits. The conversion also took the row this file carried on
+     * {@link #NO_INDEX}: a target nobody refreshes is no longer a registered target, and the index
+     * argument moves onto the relation's own declaration in {@code meta_relation}, which is where a
+     * conversion puts the prose the register's reason had been carrying.
      */
-    private static final int REGISTRATIONS = 19;
+    private static final int REGISTRATIONS = 18;
 
     /**
      * Stages the refresh takes, the register's depth.
@@ -168,9 +177,15 @@ class MaterializeRegistryGateTest {
      * when it takes a rung off the longest chain, which is a property of the register rather than
      * of the rung being converted.
      *
+     * <p>Twelve with the carrier data channel, and this one does take a rung off the longest chain
+     * rather than off its front or its middle: the field-site scope registration reads it and the
+     * argument-site one reads that, so the whole column-scope family sat one stage further back
+     * than the rung it waits on. Converting the bottom of that family collapses the stage the
+     * family was waiting on rather than merely retiring a row.
+     *
      * @see #REGISTRATIONS
      */
-    private static final int REFRESH_STAGES = 13;
+    private static final int REFRESH_STAGES = 12;
 
     /**
      * The registered targets carrying no index, each with the argument that says why. A roster
@@ -218,12 +233,6 @@ class MaterializeRegistryGateTest {
      * <p>The rows that remain:
      *
      * <ul>
-     *   <li>{@code intent_carrier_data_field}: on the two coordinates its readers spell (the
-     *   error channel's graph, type and family; the sigil surface's graph, type and field), no
-     *   reader moves at all, to the scan: the seat, the hop, the error channel and the whole
-     *   read are identical with either shape declared and with none. The table is a dozen rows
-     *   and its readers arrive through joins the planner already orders correctly. Nothing to
-     *   weigh.</li>
      *   <li>{@code intent_argument_column_scope}: on the argument coordinate its one reader is
      *   keyed by, and on the resolved-table triple that reader could in principle seek, no reader
      *   moves at all, to the scan: {@code intent_argument_column_match} reads 5187 scans with
@@ -318,7 +327,6 @@ class MaterializeRegistryGateTest {
         "intent_argument_column_scope",
         "intent_argument_column_match",
         "intent_input_field_carrier_role",
-        "intent_carrier_data_field",
         "intent_input_field_resolving_table",
         "intent_mutation_payload_column",
         "intent_node_id_decode_column",

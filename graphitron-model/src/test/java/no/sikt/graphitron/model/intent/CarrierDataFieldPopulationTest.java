@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_CARRIER_DATA_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CARRIER_DATA_FIELD;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedBoundTable;
 import static no.sikt.graphitron.model.test.SeededStore.seedError;
@@ -19,7 +19,7 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Which types {@code intent_carrier_data_field} draws its population from, and how many data
+ * Which types {@code graphitron_carrier_data_field} draws its population from, and how many data
  * channels each of them is told it has.
  *
  * <p>A seeded case pinning the relation's own algebra rather than a shape a build reaches: the
@@ -179,7 +179,7 @@ class CarrierDataFieldPopulationTest {
      */
     private static List<String> carriers(DSLContext dsl, String typeName) {
         derive(dsl);
-        var c = INTENT_CARRIER_DATA_FIELD;
+        var c = GRAPHITRON_CARRIER_DATA_FIELD;
         var partition = c.GRAPH_NAME.eq(GRAPH);
         return dsl.select(c.fields())
             .from(c)

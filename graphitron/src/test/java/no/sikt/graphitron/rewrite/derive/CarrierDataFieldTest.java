@@ -17,11 +17,11 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.INTENT_CARRIER_DATA_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CARRIER_DATA_FIELD;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The registered agreement anchor for {@code intent_carrier_data_field}: where a mutation payload's
+ * The registered agreement anchor for {@code graphitron_carrier_data_field}: where a mutation payload's
  * data arrives. The relation answers the question a surface offering or judging the {@code $source}
  * sigil asks, and its boundary is most of what it claims, so half the cases here are payload shapes
  * that contribute nothing.
@@ -469,7 +469,7 @@ class CarrierDataFieldTest {
      * cannot hide behind a filter.
      */
     private static List<String> carriers(DSLContext dsl) {
-        var c = INTENT_CARRIER_DATA_FIELD;
+        var c = GRAPHITRON_CARRIER_DATA_FIELD;
         return dsl.select(c.fields())
             .from(c)
             .where(c.GRAPH_NAME.eq(GRAPH))

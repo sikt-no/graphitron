@@ -33,7 +33,7 @@ public final class MaterializedRegistryFixture {
      * <p>The routine-carrier cluster is a mutation-root {@code @routine} field per unit returning a
      * payload type that wraps one nullable data field beside an errors channel, the channel a union
      * whose one member carries {@code @error}. That shape is what populates
-     * {@code intent_errors_field} and the relations over it ({@code intent_carrier_data_field},
+     * {@code intent_errors_field} and the relations over it ({@code graphitron_carrier_data_field},
      * {@code intent_field_error_channel}, {@code intent_mutation_routine_seat},
      * {@code intent_carrier_routine_hop}), all of which held no rows here before it: the fixture's
      * only other {@code @routine} sits on the Query root, so the seat relation was empty, and

@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.capture;
 
 import no.sikt.graphitron.model.derive.ArgMappingCandidates;
 import no.sikt.graphitron.model.derive.AuthoredClaimRejectionRows;
+import no.sikt.graphitron.model.derive.CarrierDataFields;
 import no.sikt.graphitron.model.derive.ClassificationDomainCapture;
 import no.sikt.graphitron.model.derive.FieldColumnScopes;
 import no.sikt.graphitron.model.derive.InputOccurrencePaths;
@@ -98,6 +99,10 @@ public final class FactCapture {
             ArgMappingCandidates.derive(txDsl, graph.name());
             TypeBackingRows.derive(txDsl, graph.name());
             AuthoredClaimRejectionRows.derive(txDsl, graph.name());
+            // The stages whose rules reach a table one of the producers above writes, so they run
+            // after them rather than at the front of the stratum, and before the refresh because
+            // the registrations that survive read their rows.
+            CarrierDataFields.derive(txDsl, graph.name());
             if (!analysingCadence) {
                 Materializations.refresh(txDsl, graph.name(), refresh);
             }

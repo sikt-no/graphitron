@@ -6,6 +6,7 @@ import no.sikt.graphitron.model.derive.NameMatchedKeys;
 import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.TableTypes;
+import no.sikt.graphitron.model.derive.CarrierDataFields;
 import no.sikt.graphitron.model.derive.FieldColumnScopes;
 import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
 import no.sikt.graphitron.model.derive.FieldReferenceStepTargets;
@@ -258,6 +259,7 @@ public final class SeededStore {
             // where each one's rule reads from, and before the refresh because registrations
             // still read what they write.
             FieldColumnScopes.derive(dsl, graph);
+            CarrierDataFields.derive(dsl, graph);
         }
         Materializations.refreshAll(dsl);
     }

@@ -48,7 +48,8 @@ class StageAnswerAgreementTest {
 
     /** The stage-written tables and their rules, in the stratum's order. */
     private static final List<Stage> STAGES = List.of(
-        new Stage("graphitron_field_column_scope", "graphitron_field_column_scope_rule"));
+        new Stage("graphitron_field_column_scope", "graphitron_field_column_scope_rule"),
+        new Stage("graphitron_carrier_data_field", "graphitron_carrier_data_field_rule"));
 
     @Test
     @DisplayName("every stage-written table holds exactly its rule's rows, both directions")
@@ -84,6 +85,25 @@ class StageAnswerAgreementTest {
             .containsExactlyInAnyOrder("PATH_TERMINAL", "NAMED_TYPE_TABLE", "PARENT_BINDING"));
     }
 
+    /**
+     * The carrier stage's own non-vacuity case, on the axes its rule actually branches on: the
+     * producing family, which decides two of the rule's refusals, and the element kind, which is
+     * the three-armed walk the rule performs per channel. A comparison over an empty relation
+     * passes while asserting nothing, and one over a single family asserts one family's refusals.
+     */
+    @Test
+    @DisplayName("the fixture reaches two families and two element kinds of the carrier channel")
+    void theFixtureReachesMoreThanOneCarrierFamily() {
+        withCapturedStore(dsl -> assertThat(dsl
+                .select(org.jooq.impl.DSL.field(name("FAMILY"), String.class),
+                    org.jooq.impl.DSL.field(name("ELEMENT_KIND"), String.class))
+                .from(table(name("GRAPHITRON_CARRIER_DATA_FIELD")))
+                .fetch().map(row -> row.value1() + " " + row.value2()))
+            .as("the family and element kind pairs the fixture reaches; an agreement over one"
+                + " family asserts one family's refusals and passes all the same")
+            .containsExactlyInAnyOrder("SERVICE TABLE", "DML ID"));
+    }
+
     private static List<String> difference(DSLContext dsl, String left, String right) {
         return dsl.select(asterisk()).from(table(name(left.toUpperCase())))
             .except(select(asterisk()).from(table(name(right.toUpperCase()))))
@@ -101,10 +121,13 @@ class StageAnswerAgreementTest {
     }
 
     /**
-     * One schema reaching all three rules: an authored {@code @reference} path whose terminal
-     * element names a table (PATH_TERMINAL), an object-typed field whose named type carries its own
-     * binding (NAMED_TYPE_TABLE), and leaf fields resolving in their parent's binding
-     * (PARENT_BINDING).
+     * One schema reaching every arm each stage above branches on. For the field-site column scope,
+     * all three navigation rules: an authored {@code @reference} path whose terminal element names
+     * a table (PATH_TERMINAL), an object-typed field whose named type carries its own binding
+     * (NAMED_TYPE_TABLE), and leaf fields resolving in their parent's binding (PARENT_BINDING). For
+     * the carrier data channel, two of the three producing families and two of the three element
+     * kinds: a {@code @service} carrier wrapping a bound type, and a DELETE echo wrapping the
+     * {@code ID} scalar.
      */
     private static String sdl() {
         return """
@@ -122,6 +145,25 @@ class StageAnswerAgreementTest {
             }
             type Query {
               films: [Film!]!
+            }
+            type DbErr @error(handlers: [{handler: DATABASE}]) {
+              path: [String!]!
+              message: String!
+            }
+            union WriteError = DbErr
+            type CreateFilmPayload {
+              film: Film
+              errors: [WriteError]
+            }
+            type DeleteFilmPayload {
+              deletedId: ID
+              errors: [WriteError]
+            }
+            type Mutation {
+              createFilm: CreateFilmPayload
+                @service(service: {className: "com.example.FilmService", method: "create"})
+              deleteFilm(filmId: Int): DeleteFilmPayload
+                @mutation(typeName: DELETE, table: "film")
             }
             """;
     }

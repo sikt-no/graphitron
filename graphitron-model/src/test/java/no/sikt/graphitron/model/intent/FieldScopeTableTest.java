@@ -203,7 +203,7 @@ class FieldScopeTableTest {
 
     /**
      * A payload declaring two data channels is not a carrier, and the arity refusal is
-     * {@code intent_carrier_data_field}'s rather than one restated here. Asserted as no scope at
+     * {@code graphitron_carrier_data_field}'s rather than one restated here. Asserted as no scope at
      * all: picking one of the two channels would root the statement in a table the author never
      * said to write.
      */

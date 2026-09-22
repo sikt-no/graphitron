@@ -261,7 +261,7 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
  *       and half of both halves pins what the relations refuse to hold, a rule pairing every
  *       function against every keyed table being mostly boundary;
  *       {@code no.sikt.graphitron.rewrite.derive.CarrierDataFieldTest} binds
- *       {@code intent_carrier_data_field}, where a mutation payload's data arrives, over captured
+ *       {@code graphitron_carrier_data_field}, where a mutation payload's data arrives, over captured
  *       SDL against that same catalog and the test classes' own census, half its cases pinning the
  *       payload shapes that name nothing because a carrier's boundary is most of what the relation
  *       claims;
