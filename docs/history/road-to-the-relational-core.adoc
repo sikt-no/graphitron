@@ -372,6 +372,60 @@ R563, shipping in the same window, is where the leaf population finally fell, fr
 leaves to 40, with plan leaf references dropping from 156 to 124, after more than a year of
 growth.
 
+== The capture layer dissolves, September 2026
+
+The store shipped in August and by late August was carrying twenty-two registrations, each one a
+decision to store a rule rather than recompute it. R876 was filed on 2026-08-28 against the
+observation that every one of those decisions had answered the same question, should this rule be
+stored, and none had asked the prior one, why is one evaluation expensive at all. The audit behind
+it is `roadmap/audits/2026-08-28-derived-read-cost-premise.md`; the measurements taken while acting
+on it are in `roadmap/audits/2026-09-22-capture-dissolution-measurements.md`.
+
+The premise was half right, and the correction is the useful part. The item opened by saying the
+expensive relations were ones capture had never written. Running the arc showed capture had read the
+facts; what nobody had written was a relation stating them at a grain. Every relation the arc landed
+was filled by a select over populations already in the store, and the one candidate for a genuine
+capture gap, the written order of a field's directive applications, turned out to be in
+`graphql_field_directive` already with every position. So the work was placement rather than
+capture. That reading is also what the `intent_` family turned out to be: not a layer with 132
+relations to tidy, but the shape a pipeline takes when the facts are not written down.
+
+Three duplications fell in September, and each was found the same way, by measuring rather than
+arguing. The classpath was captured as a census of every public class on it, built for nameability
+and read by the editor, while the generator took every Java-facing decision by loading the class
+reflectively across a hundred-odd sites. One index with one scope rule serving two purposes, with
+`sql_table_record_supertype` existing to patch the place the purposes differed. It was replaced by a
+gatherer per thing an author writes, each declaring its own corpus, so the scope rule sits with the
+purpose. The `graphql_` anchors had two producers, a walk and a derivation, both upserting on every
+build, so every row a reader saw was the walk's and the derivation's was overwritten unexamined;
+what the duplication cost was never the wasted work but that a column added to an anchor had to be
+taught to two writers in two languages. The catalog family had the same defect again.
+
+Two results generalised past the arc. A recursive view is re-evaluated once per driving row of
+whatever joins it, so a rule composing two of them cost 529 milliseconds to produce 38 rows and 8
+milliseconds when the same SQL read two small tables instead; the rule that came out of it is that a
+recursive view has to terminate on the population the store can hold, not the one the subject would
+have. And a capture stage must not read the derivation family, for four reasons that stack, the
+sharpest being that a producer reading a consumer-layer relation lets a rule written to answer
+somebody's question become the definition of a captured fact.
+
+What the arc settled about writing a rule at all is that the question is two questions and not three
+kinds of thing. Where the rule's text lives is one: a view, unless a view cannot state it, because a
+view is the only form a catalog parse and the ownership gate can read. Who evaluates it and when is
+the other. A stored rule is still a rule stated in a view, with an insert from that view, which is
+what keeps an `EXCEPT` between the two runnable. Four separate sessions arrived at that split
+independently before anyone wrote it down, which is the argument for having written it down. It is
+stated now in xref:../architecture/explanation/writing-a-rule.adoc[Writing a rule].
+
+The arc's own worst habit is worth recording because it cost the most time. Statements scoped to one
+situation were repeatedly read as laws: a sentence describing fifteen existing rules read as a rule
+about how any rule must be written, a build flag documented for the sandbox read as universal, a
+convention living in one session's transcript misapplied by two sessions inside an hour. The
+dissolution also moved the store out from under the prose describing it, and nobody went back until
+the documentation was repaired in the same arc. A page that justified the whole declaration
+discipline by naming a mechanism the arc had itself deleted is the sharpest instance, and it had
+been wrong for days.
+
 == What the record can and cannot show yet
 
 The natural claim to make about an architecture like this is that it costs less per consumer,
@@ -464,6 +518,8 @@ not chosen in advance.
   they run today.
 * xref:../architecture/explanation/typed-rejection.adoc[Typed rejection] for the rejection
   taxonomy.
+* xref:../architecture/explanation/writing-a-rule.adoc[Writing a rule] for where a rule's text
+  lives and who evaluates it, which is what the September 2026 arc settled.
 * `roadmap/changelog.md` for the per-item record, including discards.
 * `roadmap/audits/` for the dated working papers cited above.
 * `graphitron-rewrite-history` and `pre-squash/tip-2`, `tip-3` and `tip-4` for the pre-squash
