@@ -11,7 +11,6 @@ import java.util.function.Consumer;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET;
-import static no.sikt.graphitron.model.Tables.INTENT_CONDITION_METHOD_ROUTE_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_TARGET;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
@@ -345,12 +344,6 @@ class ArgumentReferenceStepTargetTest {
             seedConditionPath(dsl, "Query", "films", "inActor", "filmToAnything");
 
             assertThat(chain(dsl, GRAPH)).isEmpty();
-            assertThat(dsl.fetchCount(INTENT_CONDITION_METHOD_ROUTE_DEFECT,
-                INTENT_CONDITION_METHOD_ROUTE_DEFECT.GRAPH_NAME.eq(GRAPH)
-                    .and(INTENT_CONDITION_METHOD_ROUTE_DEFECT.VERDICT
-                        .eq("WILDCARD_TARGET_PARAMETER"))))
-                .as("the silence is named next door rather than left to a reader")
-                .isEqualTo(1);
         });
     }
 
@@ -374,12 +367,6 @@ class ArgumentReferenceStepTargetTest {
             seedConditionPath(dsl, "Query", "films", "inActor", "bridge");
 
             assertThat(chain(dsl, GRAPH)).isEmpty();
-            assertThat(dsl.fetchCount(INTENT_CONDITION_METHOD_ROUTE_DEFECT,
-                INTENT_CONDITION_METHOD_ROUTE_DEFECT.GRAPH_NAME.eq(GRAPH)
-                    .and(INTENT_CONDITION_METHOD_ROUTE_DEFECT.VERDICT
-                        .eq("TARGET_DISAGREEMENT_ACROSS_OVERLOADS"))))
-                .as("the silence is named next door rather than left to a reader")
-                .isEqualTo(1);
         });
     }
 

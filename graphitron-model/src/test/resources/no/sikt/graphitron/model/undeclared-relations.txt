@@ -91,7 +91,6 @@ intent_carrier_routine_hop
 intent_column_match_claim
 intent_condition_membership
 intent_condition_method_route
-intent_condition_method_route_defect
 intent_condition_param_decode
 intent_declared_type_element
 intent_delivery_container
@@ -118,8 +117,6 @@ intent_foreign_key_column_pair
 intent_input_field_column_scope
 intent_input_occurrence_descent_order
 intent_input_occurrence_override
-intent_java_enum_class
-intent_jvm_ancestor
 intent_mutation_matched_key
 intent_mutation_routine_seat
 intent_mutation_write_agreement

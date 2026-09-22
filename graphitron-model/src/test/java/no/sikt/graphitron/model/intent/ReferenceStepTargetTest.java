@@ -12,7 +12,6 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
-import static no.sikt.graphitron.model.Tables.INTENT_CONDITION_METHOD_ROUTE_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_TABLE;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
@@ -363,11 +362,6 @@ class ReferenceStepTargetTest {
             seedConditionPath(dsl, "Film", "actorsByCondition", "filmToAnything");
 
             assertThat(chain(dsl, GRAPH)).isEmpty();
-            assertThat(dsl.fetchCount(INTENT_CONDITION_METHOD_ROUTE_DEFECT,
-                INTENT_CONDITION_METHOD_ROUTE_DEFECT.GRAPH_NAME.eq(GRAPH)
-                    .and(INTENT_CONDITION_METHOD_ROUTE_DEFECT.VERDICT
-                        .eq("WILDCARD_TARGET_PARAMETER"))))
-                .isEqualTo(1);
         });
     }
 

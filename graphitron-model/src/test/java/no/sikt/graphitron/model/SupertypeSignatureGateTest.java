@@ -384,7 +384,6 @@ class SupertypeSignatureGateTest {
         "intent_argument_filter_role|graphitron_argument_condition_entry,graphitron_field_condition_entry",
         "intent_condition_context_parameter|graphitron_argument_condition_context_arg_entry,graphitron_field_condition_context_arg_entry",
         "intent_condition_method_route|graphitron_argument_reference_step_entry,graphitron_field_reference_step_entry",
-        "intent_condition_method_route_defect|graphitron_argument_reference_step_entry,graphitron_field_reference_step_entry",
         "intent_condition_param_decode|graphitron_argument_condition_entry,graphitron_field_condition_entry",
         "intent_field_demand_rule|graphitron_external_field_entry,graphitron_service_entry",
         "intent_field_exemption_rule|graphitron_external_field_entry,graphitron_service_entry",
