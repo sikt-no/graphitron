@@ -300,3 +300,70 @@ worth taking first.
 
 Every one of the 875 rejections printed without file:line coordinates, because the fold's rejections
 carry `SourceLocation.EMPTY`. That is R523; sis is its motivating multi-file case.
+
+## Reviewer findings
+
+### Round 1 (2026-09-22, Spec -> Ready, reviewer session 01KrD23r4zJgrVAVMqLjcyja)
+
+Verdict: withhold. One blocking finding on question two. Question one passes cleanly: the goal reads
+without reconstruction from the plan (a schema whose argument or filter-input field is annotated with
+the tenant column, and which also carries an authored `@condition`, stops failing the build and starts
+routing to the tenant that argument names), the mechanism section matches the tree line for line, and
+every symbol, test, fixture and doc sentence the spec names exists as named.
+
+**Finding 1 (question two: architecture fit). The mint predicate is stated against the override
+guards only. Each of the three arms it names also carries a lookup-key clause, and the plan does not
+say which side of it the ledger sits on.**
+
+The Implementation section places the mints "before the `autoSuppressed` test" and "outside the
+`!enclosingOverride && condition().isEmpty()` guard". Neither guard has that shape in the tree:
+
+- `projectFilters`, `ColumnBackedArg` arm: `if (!autoSuppressed && !ca.isLookupKey())`
+  (`FieldBuilder.java:2809`). "Before the `autoSuppressed` test" is before both clauses.
+- `walkInputFieldConditions`, `ColumnBackedField` arm:
+  `!enclosingOverride && cf.condition().isEmpty() && !lookupBoundNames.contains(cf.name())`
+  (`FieldBuilder.java:2946-2948`). The Mechanism section quotes all three clauses correctly; the
+  Implementation section restates the same guard with the third dropped.
+- `ColumnBackedReferenceField` arm: the identical three-clause guard (`FieldBuilder.java:2992-2994`).
+
+One direction of the unstated choice is inert and the other is not, which is why the plan reads as
+safe on a first pass. Inert: a scalar `@lookupKey` argument and a `MapGroup` input field are already
+minted by `Fold.slotsFromLookup` under the same slot names with the same reads, and `directSlots`
+dedupes by slot name, so a duplicate ledger mint changes no verdict. Not inert: `LookupMappingResolver`
+routes a *composite* `@lookupKey` `ColumnBackedArg` and an input argument's
+`InputColumnBindingGroup.DecodedRecordGroup` to `LookupMapping.ColumnMapping.LookupArg.DecodedRecord`
+(`LookupMappingResolver.java:53-77`), and `slotsFromLookup` skips that arm deliberately: "Decoded
+node-id lookups carry per-id tenants (the per-row family), not a single argument value; they classify
+through the node dispatch facts, never as an ArgumentBound slot" (`TenantBindingIndex.java:700-703`).
+A ledger minted ahead of the lookup clause records those slots with the tenant column on them, the
+fold's ledger read turns them into an `ArgumentBound` slot, and a coordinate that today partitions per
+decoded id would route one statement on one key. A cross-tenant `ids:` batch then reads a single
+tenant's database. The shape is reachable inside this item's own subject matter, since the ledger row
+is read only where a `Condition` member exists and any `@condition` on such a field mints one, and it
+is not a row of the goal table.
+
+This is also what the plan's completeness argument rests on: "those two sites are exactly where the
+`BodyParam`s `slotsFromFilters` reads are constructed ... so the ledger's domain is the predicate
+path's domain by construction". Under the literal reading the ledger's domain is strictly larger than
+the predicate path's, and larger in the one direction where the lookup axis holds an explicit
+non-divining decision. That sentence is what a Done-gate reviewer would lean on instead of re-deriving
+the domain.
+
+What would satisfy it: state the mint predicate at each of the three arms with its lookup clause, and
+say which way the decoded-key shape goes. If lookup-bound slots stay out of the ledger, that is one
+clause per mint plus a sentence that the lookup axis keeps its single owner. If they go in, the goal
+table owes a row for the decoded-key shape saying what it classifies as today and after, and the plan
+owes what `readOf` returns for `CallSiteExtraction.NodeIdDecodeKeys` once the switch is made
+exhaustive, since that extraction reaches the `default` arm today and reads as `TopLevelArg`.
+
+**Non-blocking, noticed on the way past.**
+
+- `tilgangAdminOnly` resolves `table.field("rollekode", String.class)` off the table handed in
+  (`InputFieldConditionFixtures.java:192`), which is a routine result table at its existing call site.
+  On a `film`-bound field in `multitenant.graphqls` the emitted Java compiles, which is the whole of
+  what that tier asks, but the predicate names a column `film` does not carry. Harmless while the item
+  adds no execution case, as it says it does not; worth knowing if one is ever added there.
+- The not-computed sentinel check lives in the `Fold` constructor (`TenantBindingIndex.java:180`),
+  not in `compute`, which delegates to it. Nothing changes for the implementer.
+- `directSlots(List<OperationMember> members)` takes no coordinate; `armOf` holds it and would pass it
+  down. A signature change the plan does not mention and an implementer will not miss.
