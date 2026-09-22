@@ -1,7 +1,7 @@
 ---
 id: R958
 title: "The column-scope departures and the input-field and argument walks are gatherer-written rows, not registered views"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 2
 theme: model-cleanup
