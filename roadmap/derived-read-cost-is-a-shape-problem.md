@@ -5115,7 +5115,7 @@ side to tell an author to declare `Integer` rather than `int`. A type a person c
 that reader and to the editor surfaces, once, in the form they render; it is a different column from
 either of the two this arc removed, and nothing here supplies it.
 
-## The emitted schema has three readers, and two of them are closures (2026-09-22)
+## The emitted schema has three readers, and two of them are closures (2026-09-22, corrected the same day)
 
 The reader-side count above stopped at the generator's seventeen relation names in two files, and
 recorded that the layer behind them is 285 files, so a plan measuring progress by the generator's
@@ -5182,13 +5182,51 @@ settled placement, running after the producers, and they land in the gatherer wh
 is restructuring. That order is R955's to own: these two append to it rather than inserting into it,
 and the sequencing above is written so they can wait for it without blocking.
 
-**The order gets a gate, and it decides how these two are written.** R955 owes `StageOrderGateTest`,
-which reads the stratum's stage list in order, resolves each stage's rule view to the `graphitron_`
-tables it reads transitively, and fails the build when a stage reads a table a later stage or a
-producer writes. Landing before that gate exists leaves these two uncovered by it and owing it
-afterwards, which is a follow-up rather than a blocker. What is not a follow-up is the shape it
-implies: the gate works off a parse of stored view definitions, so a rule it can see is a stored rule
-view. A rule written as a Java insert is invisible to that parse and lands in the `HAND_WRITTEN`
-roster instead, which is the declared escape hatch for the hand-written producers the parse cannot
-read rather than the target for a new rule. Both of these are closures over captured rows and have no
-claim on it.
+**The order gets a gate, and how these two are written is a choice rather than a consequence.** R955
+owes `StageOrderGateTest`, which reads the stratum's stage list in order, resolves each stage's read
+set to the `graphitron_` tables it reads, and fails the build when a stage reads a table a later
+stage or a producer writes. It does not exist yet. Two shapes satisfy it. A stage that inserts from a
+stored rule view is resolved by the parse `MaterializeDependencies` already performs over view
+definitions, so its read set needs no declaration. A stage whose rule is jOOQ is opaque to that
+parse, and R955 designs for that case rather than excluding it: "The hand-written producers are jOOQ
+code the parse cannot see, so their write sets are declared to the gate by the same equality-pinned
+roster `HAND_WRITTEN` uses today, which is what that roster becomes." Declared, not parked. The
+shipped precedent for a new derivation is the second shape: R954's rungs are jOOQ `INSERT ... SELECT`
+with the rule in the Java, `SpelledTables` reading three relations directly through joins and a
+window function, and two of them taking an `intent_` view as an input rather than as their rule,
+three such views between them. So a view buys gate visibility without a declaration, which is a real
+advantage and probably the right call for two closures each expressible as one statement, but it buys
+it as a tradeoff and not as a requirement.
+
+**What the first version of this paragraph claimed, and why it was wrong.** It said the gate's parse
+forces the shape: that a rule the gate can see is necessarily a stored rule view, and that a rule
+written as a Java insert is invisible to the parse and lands in `HAND_WRITTEN`, described there as
+the escape hatch for producers the parse cannot read. All three parts were wrong, and the error is
+kept here rather than edited away because of how it was made. `HAND_WRITTEN` today is six `intent_`
+base tables whose enumeration "argues impossibility in its own table comment: no view could state its
+rule", which is a claim about six relations and not a holding pen; R955 reuses the name for a
+different job, and the future meaning got read back into the present one. A jOOQ stage declares its
+write set rather than hiding it. And R954 shipped seven producer classes, across eight calls, in
+the shape the paragraph called deviant. The generalisation came from R955's "It does not restate any rule in Java. Every stage
+inserts from a stored rule view", which is true of R955's own scope: fifteen rules that already exist
+as `_live` views, where converting one means inserting from the view that already states it. Reading
+a scoped statement as a law, from an item's prose, without checking what the item below it shipped,
+is the failure this arc keeps finding in the store's readers, and it is the same failure when the
+reader is this section's author.
+
+## A scoped statement read as a law (2026-09-22)
+
+Two readers generalised an item's prose past its own scope today, in opposite directions, and the
+shape is this item's thesis rather than a note about process. R955's "It does not restate any rule in
+Java. Every stage inserts from a stored rule view" describes R955's scope, the fifteen rules that
+already exist as `_live` views and are converted by inserting from the view that already states them.
+It was read as a law about how any rule must be written, which is the correction recorded in the
+section above. In the other direction, this item's own description of `meta_materialize` was read as
+a mechanism to build a validation-findings design on, when the item exists to delete it.
+
+A statement describing its author's scope carries no owner once a second reader has it, and this
+item's argument is that a rule with no owner rots. Prose is the same shape, and an item's description
+of a mechanism it is retiring is the sharpest case, because it reads as documentation of something
+current. What a reader can check is what shipped: both errors were found by reading the code under
+the claim rather than the claim, and in both cases the code said something narrower than the prose
+summarising it.
