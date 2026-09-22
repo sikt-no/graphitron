@@ -463,3 +463,95 @@ it as a surprise.
 
 Author and reviewer were the same session for round 1 and this revision, so the `Spec -> Ready`
 sign-off needs a session that has committed neither.
+
+### Round 2 (2026-09-22, Spec -> Ready, reviewer session 011oYfTpr6ETNvTtxnkJK7tR)
+
+Verdict: withhold. One blocking finding on question two. Round 1's finding is settled: the mint
+predicate now reads per arm with its lookup clause, the five arms and their guards match the tree
+verbatim (`FieldBuilder.java:2809`, `2846`, `2863`, `2946-2948`, `2992-2994`), the decoded-key
+exclusion is the ninth goal-table row, and the test that pins it is named. Question one passes: the
+goal states what changes for a consumer without reconstruction from the plan, and the sis provenance
+makes the value concrete.
+
+**Finding 2 (question two: architecture fit). The ledger admits `NodeIdDecodeKeys`-extraction
+carriers that `@lookupKey` does not exclude, and the plan justifies their read with a claim that is
+false about the emitted code.**
+
+The mint predicate keeps the *lookup* half of the decoded-key family out and lets the *filter* half
+in, on a discriminator (`isLookupKey`) that is orthogonal to the concern row nine exists for. Two
+carrier families reach the ledger with a `NodeIdDecodeKeys` extraction:
+
+- A same-table composite `@nodeId` `ColumnBackedArg` carries `isLookupKey == false` when `@nodeId`
+  targets the field's own table without an explicit `@lookupKey` (`FieldBuilder.java:2236-2240`, and
+  the comment at `2810-2816` says so). The mint predicate is `!ca.isLookupKey()`, so it mints.
+- Both `ColumnBackedReferenceArg` arms, and `InputField.ColumnBackedReferenceField`, declare their
+  extraction as `CallSiteExtraction.NodeIdDecodeKeys` at *every* arity (`ArgumentRef.java:183`), and
+  the plan mints on those arms unconditionally. This is not a composite-only corner.
+
+For both families the ledger row holds the key tuple, the fold keeps the component matching the
+tenant column, and `readOf(NodeIdDecodeKeys)` yields `TopLevelArg`. What `TopLevelArg` renders is
+`env.<Object>getArgument(name)` (`TenantAcquisitionFragments.java:124-125`), the *encoded* wire id.
+Nothing decodes it. So the plan's sentence, "the slot reads the whole top-level argument and the
+divined key is the tenant component of the tuple the decode produces", is wrong about the emitted
+code: the divined key is the base64 text. R966, already Ready on this same fold, states the same
+fact as a defect it fixes ("already mints a slot that reads the encoded ids as tenant keys ... it
+fails at request time on a schema that should route").
+
+It fails closed rather than leaking, which is why this is a correctness-of-the-plan finding and not
+a security one: `divinedTenant` parses a String to `Integer`/`Long` for a numeric tenant column and
+throws `NumberFormatException` (`ConnectionRuntimeClassGenerator.java:1982-1985`), and a String
+tenant column yields a key no tenant map holds.
+
+What makes it blocking is the reach and the tabling, not the runtime severity. Today these carriers
+mint a slot only where a body param survives, so a field-level or argument-level override rejects
+them at build time. After this item they classify `ArgumentBound` and fail at request time instead,
+which is a verdict change the goal table does not carry, on shapes constructible in the same sakila
+fixture catalog the table is measured against (`@node(keyColumns: ["actor_id", "film_id"])` with
+`film_id` as the tenant column, an FK-target `@nodeId` argument whose `FilterBinding.Local` tuple
+lifts `film_id`). The plan is not overlooking the family by accident: the ledger row's column list is
+justified by it ("a composite carrier (the node-key case) binds several columns at once"). It admits
+the family, states the wrong reason for the read being correct, and leaves the row out.
+
+Round 1's standard applies unchanged: row nine was added because "the mechanism below could reach it
+by accident and must not". The same argument reaches one carrier over, and `tenant-scoping.adoc:35`
+already promises that "node ids and federation representations carry their tenant inside the key and
+partition per row", which is the promise a single-tenant `ArgumentBound` verdict over an encoded id
+contradicts.
+
+The seam paragraph understates this in the same place. It reads the R966 collision as being about
+`readOf`'s signature and concludes "one fewer site and no change to its shape". The other half of
+the seam is `readOf`'s *answer* for `NodeIdDecodeKeys`: this item writes today's answer into an
+exhaustive switch as the deliberate one, with a justifying comment the implementer will put in the
+tree, and hands R966 more coordinates carrying the defect than it has today.
+
+What would satisfy it. Any of three, stated in the plan rather than left to the implementer:
+
+1. Keep `NodeIdDecodeKeys`-extraction carriers out of the ledger for the same reason row nine keeps
+   the lookup half out, making the discriminator the extraction rather than `isLookupKey`, with a
+   goal-table row for the non-`@lookupKey` composite and for the FK-target reference shape.
+2. Admit them deliberately, with goal-table rows saying the verdict moves from rejected to
+   `ArgumentBound` that fails at request time until R966 lands, and the `readOf` prose corrected to
+   say the answer is today's known-wrong one carried forward rather than the tenant component of the
+   decoded tuple.
+3. Depend on R966 and take its widened `readOf`, which resolves the projection axis and makes the
+   admission correct on arrival. This reverses the sequencing the Provenance section argues for, so
+   it needs that paragraph revised too.
+
+**Non-blocking, noticed on the way past.**
+
+- `readOf`'s exhaustive switch is worth having whichever way finding 2 goes, and the four
+  record-shaped arms throwing is the right call: `InputBeanResolver` and the fetcher generator mint
+  those for whole-input extractions that bind no single column, so no column-bound slot can carry
+  one.
+- Round 1's non-blocking item 1 stands and is now checkable: `SchemaSdlEmissionTest` iterates output
+  packages asserting no internal types leak, and `TenantDivinedRoutingExecutionTest` is per-named-
+  field, so adding the `multitenant.graphqls` field breaks neither. The `rollekode` predicate on a
+  `film`-bound field stays compile-only as the plan says.
+
+Verified along the way, so a later round need not redo it: every symbol, method, test, fixture, doc
+sentence and store relation the plan names exists as named; the five mint-site guards match the tree
+verbatim; `GraphitronSchemaBuilder.buildBundle` runs before `capturedFrom` in
+`GraphQLRewriteGenerator.runPipeline`, so the store really is unreachable at this stage order;
+`NodeIdDecodeLedger` is the first-mint-wins coordinate-keyed precedent the plan claims; the emitter
+audit holds, including `MultiTablePolymorphicEmitter` reaching the arm through
+`TenantDslEmitter.resolveByName` once per coordinate.
