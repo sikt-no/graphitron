@@ -146,6 +146,15 @@ rather than as lock contention, each thread's store being its own database. Clos
 not asking the catalog: the fixture would have to know which tables a case changed past H2's
 analysis threshold, which is a different design and wants its own measurement before it is taken.
 
+The full verification build on the tree that shipped: `mvn clean install -Plocal-db`, green,
+**30:13**, with `graphitron-model` at **7:57 against 11:42** in the pass above. The reactor total is
+not comparable to that pass's 28:13: the sandbox was recycled as the build started and the
+SessionStart hook's background reactor warm-up ran beside it on the same four cores (load average
+5.8 over the window), so every module the change does not touch came in 30 to 80% slower, `docs`
+and `roadmap-tool` included. The per-module A/B above is the instrument for this item, as its plan
+says; the reactor wall clock is recorded because the Verification section asked for it, with the
+confound named rather than the number dropped.
+
 ## Out of scope, filed elsewhere or left for the fifth pass write-up
 
 * R733 carries the build measurement passes and should receive this pass. Three of its fourth-pass
