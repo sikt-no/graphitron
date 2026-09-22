@@ -1,7 +1,7 @@
 ---
 id: R966
 title: "Write inputs keyed by a decoded node id divine the tenant"
-status: Spec
+status: Ready
 bucket: bug
 priority: 3
 theme: classification-model
@@ -146,3 +146,38 @@ A sis spike on 2026-09-22 configured `<tenantColumn>INSTITUSJONSNR_EIER</tenantC
 11 more are R965, the sibling gap where a field-level `@condition(override: true)` hides a column-bound argument from the fold. The two are independent. R965 is the smaller change and unblocks the wider cascade, so it is worth taking first.
 
 Every one of the 875 rejections printed without file:line coordinates, because the fold's rejections carry `SourceLocation.EMPTY`. That is R523; sis is its motivating multi-file case.
+
+## Reviewer findings
+
+### Round 1: Spec -> Ready, signed off. 2026-09-22, session_01VwNA15ya6xGVDSock8YxDn
+
+Both gate questions pass; no blocking findings.
+
+Question 1 (goal communicated and viable). The goal states the consumer change without
+reference to the plan: a mutation that names its rows by a node id instead of by a
+column-mapped input field currently fails the build under a configured `<tenantColumn>`,
+and after this item it builds and routes to the tenant sitting inside the decoded id, with
+a batch whose ids disagree on tenant refused before any SQL. The `DeleteFilmActorByNodeIdInput`
+/ `InventoryCreateInput` minimal pair carries that contrast better than the prose does. Every
+code claim behind it checks out against the tree: the three named defects reproduce by reading
+the source, and the quoted javadoc and comment fragments are verbatim.
+
+Question 2 (architectural fit). Two independent components on `BoundSlot` rather than a fourth
+`SlotRead` arm is the "Orthogonal facts are independent axes" principle applied directly, and
+the rejection of the spliced-permit alternative is argued on that ground rather than on taste.
+`whereKeyColumns()` / `outerArgName()` as `Dml` defaults extends what that interface already
+does for `table()` and `listInput()`, over the same structurally different input surfaces its
+javadoc names. Routing the projection through `CompositeDecodeHelperRegistry` rather than a new
+generated `TenantConnections` member preserves `NodeIdDecodeFailure`'s stated one-message
+invariant. Nothing here stands a parallel mechanism beside an existing one.
+
+Non-blocking, bearing on question 2 only as a caution to the implementer, not as a design
+change: the Emission section's "Both switches are exhaustive, so the compiler forces the second
+one open" does not hold under the design this item chooses. `SlotRead` keeps its three arms, so
+`RoutineWriteCommands.slotReadOf`'s switch over them is undisturbed by a new `BoundSlot`
+component and would keep compiling while dropping the projection. A compiler force does exist
+under the same paragraph's proposal, since adding plain-data projection components to
+`TenantAcquisition.SlotRead`'s arms breaks the three constructions in `slotReadOf` on arity, but
+that is a different mechanism. The site is named, the package constraint is stated, the fallback
+is stated, and the Tests section pins the routine-write path separately, so nothing about what
+gets built changes.
