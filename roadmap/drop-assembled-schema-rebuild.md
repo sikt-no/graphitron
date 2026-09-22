@@ -6,7 +6,7 @@ bucket: cleanup
 priority: 10
 theme: pagination
 depends-on: []
-last-updated: 2026-08-06
+last-updated: 2026-09-22
 ---
 
 # Drop the assembled-schema rebuild in favour of per-variant graphql-java forms
@@ -23,3 +23,14 @@ Worth picking up when a concrete signal pushes the trade, e.g. an emitter explic
 
 The awaited concrete signal arrived: capture walks the type-definition registry (assembly is the superlinear half capture never pays) and owns macro expansion with synthesis provenance, so the coherent assembled `GraphQLSchema` stops being the model. Re-evaluate around which un-migrated consumers still need `assembled.getType()`; the rebuild retires with them.
 Context and the whole-board picture: `roadmap/audits/2026-08-06-fact-base-impact-sweep.md`.
+
+## The consumers were counted (2026-09-22)
+
+Three live readers of the rebuilt schema, plus a `Bundle.assembled` field with no production reader:
+`rejectUnregisteredScalarReferences`, `EntityResolutionBuilder.build` and
+`ArgumentReachableInputs.compute`. Two of the three are transitive closures over the emitted element
+population, which the `graphitron_` anchors already hold, so they convert to gatherer-written facts
+rather than needing a coherent `GraphQLSchema` at all. That leaves federation entity resolution as
+the one consumer the trade in the body above is actually about, which is a smaller question than the
+one this item was filed to hold open. R876's section "The emitted schema has three readers, and two
+of them are closures" carries the count and the order.

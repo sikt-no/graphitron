@@ -7,7 +7,7 @@ priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-09-16
+last-updated: 2026-09-22
 ---
 
 # Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject
@@ -5114,3 +5114,81 @@ array and a type variable, and `ArgmappingProjectionDefects` distinguishes them 
 side to tell an author to declare `Integer` rather than `int`. A type a person can read is owed to
 that reader and to the editor surfaces, once, in the form they render; it is a different column from
 either of the two this arc removed, and nothing here supplies it.
+
+## The emitted schema has three readers, and two of them are closures (2026-09-22)
+
+The reader-side count above stopped at the generator's seventeen relation names in two files, and
+recorded that the layer behind them is 285 files, so a plan measuring progress by the generator's
+read count reports nothing for a long time and then everything at once. This is a way in that
+reports sooner, found by asking a smaller question: not what the generator reads from the store, but
+what it reads from the *schema*, and which schema.
+
+The builder holds two. `ctx.schema` is what the author wrote, assembled. The other is that schema
+transformed so `@asConnection` carriers name their minted connection, which
+`ConnectionPromoter.rebuildAssembledForConnections` produces with `SchemaTransformer`. Which one a
+consumer gets is decided by which local variable its call site passes, and the distinction survives
+only as prose: `ArrivalIndex` is commented "pre-connection-promotion", `OperationMemberRelation`
+"over the pre-rewrite schema's definition nodes".
+
+Nine consumers, five to four:
+
+| schema | consumers |
+|---|---|
+| authored | the classification walk, `ArrivalIndex`, `OperationMemberRelation`, `DeliveryFactRelation`, `TenantBindingIndex` |
+| emitted | `rejectUnregisteredScalarReferences`, `EntityResolutionBuilder.build`, `ArgumentReachableInputs.compute`, the `Bundle.assembled` field |
+
+**The split is not validation against emission.** That was the first guess and is worth recording as
+wrong, because it is the guess a reader of the call sites makes: one of the nine is a validation
+rule. The split is closure against coordinate. Two of the three live emitted readers compute a
+transitive closure over the emitted population; the authored readers are folds keyed to coordinates
+an author wrote and an earlier gather already keyed.
+
+That matters because a closure is what the store computes in a statement and what a Java reader
+computes with a worklist. `ArgumentReachableInputs.compute` is an `ArrayDeque` seeded from every
+object field's arguments, closing through nested input components. `rejectUnregisteredScalarReferences`
+names itself a "reference closure over the scalar axis". R954's round-2 review settled the shape both
+take: a recursive rule stays a single SQL statement rather than a Java loop.
+
+**The scalar guard is already rebuilding the emitted population by hand.** It cannot sweep the
+assembled schema and says why: that schema "is a strict superset of what is emitted
+(federation-injected `_`-prefixed types, strictly internal directive-support inputs, demoted names),
+so sweeping it would fail builds whose generated schema assembles fine". So it iterates classified
+variants, drops `_`-prefixed names, skips two variant arms, and resolves each back to a graphql-java
+form. What it reconstructs is `graphitron_type`, `graphitron_field` and `graphitron_argument`, which
+are that population by construction. It also names its own missing join: "There is no registration
+command row to join against yet, so the two filters have to agree by inspection; the generator's loop
+carries the reciprocal note." An invariant held by two comments agreeing with each other is the shape
+this item converts.
+
+**What this changes about the order.** The first design drafted for the switch was to name the two
+schemas on `BuildContext` so every consumer states which it reads. That is withdrawn. The store
+models the distinction already, `graphql_` against `graphitron_`, and a rule written as a query picks
+its population in the `FROM` clause; naming them again in Java is a second model of a distinction
+that has one, and the second model is the one that goes stale. The move is subtractive instead:
+
+1. `ArgumentReachableInputs` becomes a gatherer-written fact. Pure closure, no diagnostics, one
+   consumer set. The closure surface is complete: `graphql_field` carries a `default_value_sdl`
+   column, so input-object fields and output fields are one relation rather than two.
+2. `rejectUnregisteredScalarReferences` follows, and its by-inspection agreement becomes the join it
+   says it wants.
+3. What still wants a transformed `GraphQLSchema` is then `EntityResolutionBuilder` and a `Bundle`
+   field with no production reader, at which point R10 is a judgment rather than a project.
+
+The walk keeps the authored schema throughout, and needs no new vocabulary to do it.
+
+**Two rules, not fifteen.** These are new rules rather than registrations, so they fall outside
+R955's scope, which is the twenty-three `meta_materialize` rows. They take R955's method and its
+settled placement, running after the producers, and they land in the gatherer whose stage order R955
+is restructuring. That order is R955's to own: these two append to it rather than inserting into it,
+and the sequencing above is written so they can wait for it without blocking.
+
+**The order gets a gate, and it decides how these two are written.** R955 owes `StageOrderGateTest`,
+which reads the stratum's stage list in order, resolves each stage's rule view to the `graphitron_`
+tables it reads transitively, and fails the build when a stage reads a table a later stage or a
+producer writes. Landing before that gate exists leaves these two uncovered by it and owing it
+afterwards, which is a follow-up rather than a blocker. What is not a follow-up is the shape it
+implies: the gate works off a parse of stored view definitions, so a rule it can see is a stored rule
+view. A rule written as a Java insert is invisible to that parse and lands in the `HAND_WRITTEN`
+roster instead, which is the declared escape hatch for the hand-written producers the parse cannot
+read rather than the target for a new rule. Both of these are closures over captured rows and have no
+claim on it.
