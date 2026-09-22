@@ -6,7 +6,7 @@ bucket: cleanup
 priority: 2
 depends-on: []
 created: 2026-08-24
-last-updated: 2026-08-25
+last-updated: 2026-09-22
 ---
 
 # A mutation test seeds film_actor rows a query test asserts the absence of
@@ -40,6 +40,17 @@ same reader (`childRoutineThenHopsChainJoinsOutOfRoutineResultPerParent`, actor 
 already-listed `(2, 3)` pair), so on that machine the two classes overlap more often than not. The
 fix should inventory every `seedFilmActor` call rather than the two pairs first observed, and the
 reader set is every per-parent film assertion in the module, not one condition-join case.
+
+A fourth occurrence, 2026-09-22, moves the race onto a second table and so widens what the fix has
+to cover. The same writer class inserts and deletes `film` rows with `language_id = 1` around its
+bulk-insert cases, and `OptionalNodeIdProjectionExecutionTest.anOmittedNodeIdReachesAConditionMethodAsNull`
+read across that window: its unconstrained query returned `[1, 2, 3, 4, 5]` where the query
+constrained to English returned `[1, 2, 3, 4, 5, 58]`, which is impossible from one database state,
+an unconstrained read being a superset of a constrained one by construction. Observed on a full
+`mvn install -Plocal-db`; the class on its own and the whole module on the same tree both pass. So
+the inventory the paragraph above asks for is not only `seedFilmActor`: it is every row the writer
+class touches, `film` included, and the reader set is every execution case that compares two reads
+of one table rather than only the per-parent film assertions.
 
 Adjacent to R823, which records a different execution-tier test reading a mutating table; whether
 the two want one answer (a convention about which rows an execution test may write) or two is for
