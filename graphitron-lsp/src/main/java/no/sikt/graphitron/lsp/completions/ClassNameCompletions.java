@@ -11,7 +11,7 @@ import org.jooq.Field;
 import java.util.ArrayList;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.JVM_CLASS;
+import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.min;
@@ -62,15 +62,15 @@ public final class ClassNameCompletions {
         // which jar" without the projection's one-bit flattening.
         Field<Integer> rank = min(when(STORE_SOURCE.SOURCE_KIND.eq(JAR), inline(1)).otherwise(inline(0)));
         var rows = store.dsl()
-            .select(JVM_CLASS.CLASS_NAME, rank)
-            .from(JVM_CLASS)
-            .join(STORE_SOURCE).on(STORE_SOURCE.SOURCE_NAME.eq(JVM_CLASS.SOURCE_NAME))
-            .where(store.reads(JVM_CLASS.SOURCE_NAME))
+            .select(CODE_CLASS.CLASS_NAME, rank)
+            .from(CODE_CLASS)
+            .join(STORE_SOURCE).on(STORE_SOURCE.SOURCE_NAME.eq(CODE_CLASS.SOURCE_NAME))
+            .where(store.reads(CODE_CLASS.SOURCE_NAME))
             // Grouped by name, not listed per source: one FQN reachable from both the reactor and a
             // jar is one candidate, and the reactor copy is the one that would load, so the lower
             // rank wins. The projection could only offer it twice.
-            .groupBy(JVM_CLASS.CLASS_NAME)
-            .orderBy(rank, JVM_CLASS.CLASS_NAME)
+            .groupBy(CODE_CLASS.CLASS_NAME)
+            .orderBy(rank, CODE_CLASS.CLASS_NAME)
             .fetch();
         var items = new ArrayList<CompletionItem>(rows.size());
         for (var row : rows) {

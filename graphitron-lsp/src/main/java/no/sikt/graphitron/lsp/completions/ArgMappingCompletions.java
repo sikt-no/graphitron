@@ -19,7 +19,7 @@ import org.eclipse.lsp4j.Range;
 import java.util.List;
 
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.STRING_VALUE;
-import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
+import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 
 /**
  * Completion inside an {@code argMapping} string literal
@@ -103,14 +103,14 @@ public final class ArgMappingCompletions {
         var target = ArgMappingSupport.siblingMethodTarget(vocabulary, directive, pos, coord, source);
         if (target.isEmpty()) return List.of();
         var names = store.dsl()
-            .select(JVM_METHOD_PARAMETER.PARAMETER_NAME)
-            .from(JVM_METHOD_PARAMETER)
-            .where(store.reads(JVM_METHOD_PARAMETER.SOURCE_NAME))
-            .and(JVM_METHOD_PARAMETER.CLASS_NAME.eq(target.get().className()))
-            .and(JVM_METHOD_PARAMETER.METHOD_NAME.eq(target.get().methodName()))
-            .and(JVM_METHOD_PARAMETER.PARAMETER_NAME.isNotNull())
-            .orderBy(JVM_METHOD_PARAMETER.DESCRIPTOR, JVM_METHOD_PARAMETER.POSITION)
-            .fetch(JVM_METHOD_PARAMETER.PARAMETER_NAME);
+            .select(CODE_METHOD_PARAMETER.PARAMETER_NAME)
+            .from(CODE_METHOD_PARAMETER)
+            .where(store.reads(CODE_METHOD_PARAMETER.SOURCE_NAME))
+            .and(CODE_METHOD_PARAMETER.CLASS_NAME.eq(target.get().className()))
+            .and(CODE_METHOD_PARAMETER.METHOD_NAME.eq(target.get().methodName()))
+            .and(CODE_METHOD_PARAMETER.PARAMETER_NAME.isNotNull())
+            .orderBy(CODE_METHOD_PARAMETER.DESCRIPTOR, CODE_METHOD_PARAMETER.POSITION)
+            .fetch(CODE_METHOD_PARAMETER.PARAMETER_NAME);
         return names.stream().distinct()
             .filter(name -> !name.isEmpty())
             .map(name -> CompletionItems.replacing(name, CompletionItemKind.Variable, replaceRange))

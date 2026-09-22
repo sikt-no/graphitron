@@ -14,6 +14,7 @@ import java.util.regex.Pattern;
 import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTION;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
+import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_SLOT;
@@ -68,20 +69,29 @@ public final class CodeRows {
             for (CompletionData.Method method : at.methods()) {
                 var positions = positionsOf(method.returnTypeRefs());
                 write(dsl, at.sourceName(), at.className(), method.name(), method.descriptor(),
-                    positions, readAt);
+                    positions, method.declaredReturnType(), readAt);
+                // What the method takes, which a stated census carries and this projection used to
+                // drop. A reader asking for a signature wants both halves of it.
+                int ordinal = 0;
+                for (CompletionData.Parameter taken : method.parameters()) {
+                    parameter(dsl, at.sourceName(), at.className(), method.name(),
+                        method.descriptor(), ordinal++, taken.name(),
+                        positionsOf(taken.typeRefs()), taken.declaredType(), readAt);
+                }
                 if (isRecord) {
                     continue;
                 }
                 if (method.parameters().isEmpty()) {
                     slot(dsl, at.sourceName(), at.className(), method.name(), method.descriptor(),
                         beanProperty(method.name()),
-                        resultTypeName(positions, method.descriptor()), "BEAN_ACCESSOR", readAt);
+                        statedType(positions, method.declaredReturnType()), "BEAN_ACCESSOR", readAt);
                     continue;
                 }
                 String filled = setterProperty(method);
                 if (filled != null) {
-                    var bound = positionsOf(method.parameters().getFirst().typeRefs());
-                    String boundType = resultTypeName(bound, "()Ljava/lang/Object;");
+                    var first = method.parameters().getFirst();
+                    String boundType = statedType(positionsOf(first.typeRefs()),
+                        first.declaredType());
                     type(dsl, at.sourceName(), boundType, readAt);
                     construction(dsl, at.sourceName(), at.className(), "SETTERS", "()V", readAt);
                     writeSlot(dsl, at.sourceName(), at.className(), method.name(),
@@ -96,17 +106,18 @@ public final class CodeRows {
                 var positions = positionsOf(component.typeRefs());
                 String descriptor = accessorDescriptor(positions);
                 write(dsl, at.sourceName(), at.className(), component.name(), descriptor,
-                    positions, readAt);
+                    positions, component.declaredType(), readAt);
                 slot(dsl, at.sourceName(), at.className(), component.name(), descriptor,
-                    component.name(), resultTypeName(positions, descriptor), "RECORD_COMPONENT",
-                    readAt);
+                    component.name(), statedType(positions, component.declaredType()),
+                    "RECORD_COMPONENT", readAt);
                 // And the write side of the same component. A record is made in one call, so the
                 // component is both what you read off one and what you pass to make one, and the
                 // census states it once for both.
                 construction(dsl, at.sourceName(), at.className(), "POSITIONAL", "<canonical>",
                     readAt);
                 writeSlot(dsl, at.sourceName(), at.className(), "<init>", "<canonical>",
-                    position++, component.name(), resultTypeName(positions, descriptor), readAt);
+                    position++, component.name(), statedType(positions, component.declaredType()),
+                    readAt);
             }
         }
     }
@@ -120,8 +131,16 @@ public final class CodeRows {
     public static void write(DSLContext dsl, String sourceName, String className, String methodName,
                              String descriptor, Map<String, String> positions,
                              LocalDateTime readAt) {
+        write(dsl, sourceName, className, methodName, descriptor, positions, null, readAt);
+    }
+
+    /** The same over a census that states its types as names rather than as resolved positions. */
+    public static void write(DSLContext dsl, String sourceName, String className, String methodName,
+                             String descriptor, Map<String, String> positions, String stated,
+                             LocalDateTime readAt) {
         clazz(dsl, sourceName, className, readAt);
-        String typeName = resultTypeName(positions, descriptor);
+        String typeName = stated != null ? statedType(positions, stated)
+            : resultTypeName(positions, descriptor);
         dsl.insertInto(CODE_TYPE)
             .set(CODE_TYPE.SOURCE_NAME, sourceName)
             .set(CODE_TYPE.TYPE_NAME, typeName)
@@ -227,6 +246,44 @@ public final class CodeRows {
             .execute();
     }
 
+    /**
+     * One parameter of a seeded method, at the neutral role and extraction.
+     *
+     * <p>Neutral because a stated census says what a signature is and not what any directive makes
+     * of it: a case about the condition arm's roles states those itself, and whichever statement
+     * lands first is the one kept.
+     */
+    public static void parameter(DSLContext dsl, String sourceName, String className,
+                                 String methodName, String descriptor, int position,
+                                 String parameterName, Map<String, String> positions,
+                                 LocalDateTime readAt) {
+        parameter(dsl, sourceName, className, methodName, descriptor, position, parameterName,
+            positions, null, readAt);
+    }
+
+    /** The same over a census that states its types as names rather than as resolved positions. */
+    public static void parameter(DSLContext dsl, String sourceName, String className,
+                                 String methodName, String descriptor, int position,
+                                 String parameterName, Map<String, String> positions, String stated,
+                                 LocalDateTime readAt) {
+        String typeName = stated != null ? statedType(positions, stated)
+            : resultTypeName(positions, "()Ljava/lang/Object;");
+        type(dsl, sourceName, typeName, readAt);
+        dsl.insertInto(CODE_METHOD_PARAMETER)
+            .set(CODE_METHOD_PARAMETER.SOURCE_NAME, sourceName)
+            .set(CODE_METHOD_PARAMETER.CLASS_NAME, className)
+            .set(CODE_METHOD_PARAMETER.METHOD_NAME, methodName)
+            .set(CODE_METHOD_PARAMETER.DESCRIPTOR, descriptor)
+            .set(CODE_METHOD_PARAMETER.POSITION, position)
+            .set(CODE_METHOD_PARAMETER.PARAMETER_NAME, parameterName)
+            .set(CODE_METHOD_PARAMETER.PARAMETER_TYPE, typeName)
+            .set(CODE_METHOD_PARAMETER.ROLE, "OTHER")
+            .set(CODE_METHOD_PARAMETER.EXTRACTION, "DIRECT")
+            .set(CODE_METHOD_PARAMETER.TOUCHED_AT, readAt)
+            .onDuplicateKeyIgnore()
+            .execute();
+    }
+
     /** One class the reading read, idempotently; the anchor everything class-keyed points at. */
     public static void clazz(DSLContext dsl, String sourceName, String className,
                              LocalDateTime readAt) {
@@ -297,6 +354,19 @@ public final class CodeRows {
     private static String resultTypeName(Map<String, String> positions, String descriptor) {
         return positions.containsKey("") ? renderPosition(positions, "")
             : descriptorReturn(descriptor);
+    }
+
+    /**
+     * What a type is called, preferring the positions where a reading resolved them and falling
+     * back to what the census spelled.
+     *
+     * <p>Two censuses reach here and they know different things. A classfile scan resolves every
+     * position to a qualified class, so the name is rendered from the tree. A census stated by a
+     * caller carries the spelling and nothing under it, and that spelling is the whole of what it
+     * knows, so parsing a descriptor it never meant as one would invent an answer.
+     */
+    private static String statedType(Map<String, String> positions, String stated) {
+        return positions.containsKey("") ? renderPosition(positions, "") : stated;
     }
 
     private static String renderPosition(Map<String, String> positions, String path) {

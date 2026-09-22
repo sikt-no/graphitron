@@ -28,7 +28,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_SEED;
 import static no.sikt.graphitron.model.Tables.JAVA_CLASS_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JAVA_FIELD_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JAVA_METHOD_DECLARATION;
-import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
+import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.jooq.impl.DSL.exists;
@@ -526,11 +526,11 @@ public final class DeclarationFacts {
     ) {
         if (coord.memberName() == null) return null;
         var arity = field(selectCount()
-            .from(JVM_METHOD_PARAMETER)
-            .where(JVM_METHOD_PARAMETER.SOURCE_NAME.eq(INTENT_FIELD_PRODUCER_METHOD.SOURCE_NAME))
-            .and(JVM_METHOD_PARAMETER.CLASS_NAME.eq(INTENT_FIELD_PRODUCER_METHOD.CLASS_NAME))
-            .and(JVM_METHOD_PARAMETER.METHOD_NAME.eq(INTENT_FIELD_PRODUCER_METHOD.METHOD_NAME))
-            .and(JVM_METHOD_PARAMETER.DESCRIPTOR.eq(INTENT_FIELD_PRODUCER_METHOD.DESCRIPTOR)));
+            .from(CODE_METHOD_PARAMETER)
+            .where(CODE_METHOD_PARAMETER.SOURCE_NAME.eq(INTENT_FIELD_PRODUCER_METHOD.SOURCE_NAME))
+            .and(CODE_METHOD_PARAMETER.CLASS_NAME.eq(INTENT_FIELD_PRODUCER_METHOD.CLASS_NAME))
+            .and(CODE_METHOD_PARAMETER.METHOD_NAME.eq(INTENT_FIELD_PRODUCER_METHOD.METHOD_NAME))
+            .and(CODE_METHOD_PARAMETER.DESCRIPTOR.eq(INTENT_FIELD_PRODUCER_METHOD.DESCRIPTOR)));
         return multiset(select(INTENT_FIELD_PRODUCER_REFERENCE.CLASS_NAME,
                 INTENT_FIELD_PRODUCER_REFERENCE.METHOD_NAME, arity)
             .from(INTENT_FIELD_PRODUCER_REFERENCE)

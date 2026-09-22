@@ -5,8 +5,9 @@ import no.sikt.graphitron.model.read.StoreHandle;
 import java.util.ArrayList;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.JVM_METHOD;
-import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
+import static no.sikt.graphitron.model.Tables.CODE_METHOD;
+import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
+import static no.sikt.graphitron.model.Tables.CODE_TYPE;
 
 /**
  * The methods a class declares, as the classpath census holds them: one query over
@@ -43,29 +44,40 @@ public final class ClasspathMethods {
     }
 
     /**
-     * The one join the two relations answer together. The left join keeps a no-argument method,
-     * whose parameter side is absent rather than empty; {@code selectDistinct} collapses a class
+     * The one join these relations answer together. The left join keeps a no-argument method, whose
+     * parameter side is absent rather than empty; {@code selectDistinct} collapses a class
      * reachable under two classpath entries, which would otherwise fold one method's parameters in
-     * twice, the same duplication the class-name census groups away.
+     * twice, the same duplication the class-name read groups away.
+     *
+     * <p>A type is joined rather than read off the method, twice and under two names, because how a
+     * type renders is the type's own property and both a result and a parameter want it. Both joins
+     * are on whole primary keys, so neither can widen what the class declares.
      */
     private static List<Method> read(StoreHandle store, String classFqn, String methodName) {
-        var condition = store.reads(JVM_METHOD.SOURCE_NAME).and(JVM_METHOD.CLASS_NAME.eq(classFqn));
+        var result = CODE_TYPE.as("result_type");
+        var bound = CODE_TYPE.as("parameter_type");
+        var condition = store.reads(CODE_METHOD.SOURCE_NAME)
+            .and(CODE_METHOD.CLASS_NAME.eq(classFqn));
         if (methodName != null) {
-            condition = condition.and(JVM_METHOD.METHOD_NAME.eq(methodName));
+            condition = condition.and(CODE_METHOD.METHOD_NAME.eq(methodName));
         }
         var rows = store.dsl()
-            .selectDistinct(JVM_METHOD.METHOD_NAME, JVM_METHOD.DESCRIPTOR, JVM_METHOD.RETURN_TYPE,
-                JVM_METHOD_PARAMETER.POSITION, JVM_METHOD_PARAMETER.PARAMETER_NAME,
-                JVM_METHOD_PARAMETER.PARAMETER_TYPE, JVM_METHOD.DECLARED_RETURN_TYPE,
-                JVM_METHOD_PARAMETER.DECLARED_PARAMETER_TYPE)
-            .from(JVM_METHOD)
-            .leftJoin(JVM_METHOD_PARAMETER)
-            .on(JVM_METHOD_PARAMETER.SOURCE_NAME.eq(JVM_METHOD.SOURCE_NAME))
-            .and(JVM_METHOD_PARAMETER.CLASS_NAME.eq(JVM_METHOD.CLASS_NAME))
-            .and(JVM_METHOD_PARAMETER.METHOD_NAME.eq(JVM_METHOD.METHOD_NAME))
-            .and(JVM_METHOD_PARAMETER.DESCRIPTOR.eq(JVM_METHOD.DESCRIPTOR))
+            .selectDistinct(CODE_METHOD.METHOD_NAME, CODE_METHOD.DESCRIPTOR, result.DISPLAY_NAME,
+                CODE_METHOD_PARAMETER.POSITION, CODE_METHOD_PARAMETER.PARAMETER_NAME,
+                bound.DISPLAY_NAME)
+            .from(CODE_METHOD)
+            .join(result).on(result.SOURCE_NAME.eq(CODE_METHOD.SOURCE_NAME))
+            .and(result.TYPE_NAME.eq(CODE_METHOD.RESULT_TYPE))
+            .leftJoin(CODE_METHOD_PARAMETER)
+            .on(CODE_METHOD_PARAMETER.SOURCE_NAME.eq(CODE_METHOD.SOURCE_NAME))
+            .and(CODE_METHOD_PARAMETER.CLASS_NAME.eq(CODE_METHOD.CLASS_NAME))
+            .and(CODE_METHOD_PARAMETER.METHOD_NAME.eq(CODE_METHOD.METHOD_NAME))
+            .and(CODE_METHOD_PARAMETER.DESCRIPTOR.eq(CODE_METHOD.DESCRIPTOR))
+            .leftJoin(bound).on(bound.SOURCE_NAME.eq(CODE_METHOD_PARAMETER.SOURCE_NAME))
+            .and(bound.TYPE_NAME.eq(CODE_METHOD_PARAMETER.PARAMETER_TYPE))
             .where(condition)
-            .orderBy(JVM_METHOD.METHOD_NAME, JVM_METHOD.DESCRIPTOR, JVM_METHOD_PARAMETER.POSITION)
+            .orderBy(CODE_METHOD.METHOD_NAME, CODE_METHOD.DESCRIPTOR,
+                CODE_METHOD_PARAMETER.POSITION)
             .fetch();
 
         var methods = new ArrayList<Method>();
@@ -74,13 +86,14 @@ public final class ClasspathMethods {
         for (var row : rows) {
             String key = row.value1() + row.value2();
             if (!key.equals(currentKey)) {
-                current = new Method(row.value1(), row.value2(), row.value3(), row.value7(),
-                    new ArrayList<>());
+                current = new Method(row.value1(), row.value2(), row.value3(), new ArrayList<>());
                 methods.add(current);
                 currentKey = key;
             }
-            if (row.value6() != null) {
-                current.parameters().add(new Parameter(row.value5(), row.value6(), row.value8()));
+            // The position is what says a parameter row was there at all; the name may legitimately
+            // be absent, the class having been compiled without parameter names.
+            if (row.value4() != null) {
+                current.parameters().add(new Parameter(row.value5(), row.value6()));
             }
         }
         return methods;
@@ -91,16 +104,16 @@ public final class ClasspathMethods {
      * declaration, and how a signature reads to an author is this language server's business rather
      * than a fact anything else should inherit.
      *
-     * <p>Both type forms are carried because the surfaces want different ones. Rendering wants the
-     * declared form; a check on whether a method returns a particular type wants the erasure, which
-     * is the form that answers the identity question without a spelling in it.
+     * <p>One type form, the declared one, because that is the only one any surface here reads. The
+     * erasure was carried beside it for checks on a type's identity and no such check was ever
+     * written, so it went with the relation that had it.
      *
      * @param descriptor the census's overload discriminator, carried so a surface can correlate one
      *     method to what another relation says about it. Never rendered: a descriptor is the key a
      *     classfile keys by, and an author reads {@link #signature()}
      */
-    public record Method(String name, String descriptor, String returnType,
-                         String declaredReturnType, List<Parameter> parameters) {
+    public record Method(String name, String descriptor, String declaredReturnType,
+                         List<Parameter> parameters) {
 
         /** How many parameters the method declares, which is what joins the source-side Javadoc. */
         public int arity() {
@@ -117,10 +130,9 @@ public final class ClasspathMethods {
          * Java signature as the author declared it, {@code ReturnType name(Type arg0, ...)}, type
          * arguments kept. A parameter with no name falls back to {@code arg<i>}.
          *
-         * <p>The declared form, not the erasure: an author looking at a signature is reading their
-         * own source back, and {@code List} where they wrote {@code List<Film>} is the one place
-         * this surface could show less than the editor beside it. The erasure stays reachable for
-         * the checks that want a type's identity rather than its spelling.
+         * <p>The declared form: an author looking at a signature is reading their own source back,
+         * and {@code List} where they wrote {@code List<Film>} is the one place this surface could
+         * show less than the editor beside it.
          */
         public String signature() {
             var sb = new StringBuilder();
@@ -135,9 +147,6 @@ public final class ClasspathMethods {
         }
     }
 
-    /**
-     * One parameter: its type in both forms, and its name where the classfile kept one.
-     * {@code type} is the erasure, {@code declaredType} what the source declared.
-     */
-    public record Parameter(String name, String type, String declaredType) {}
+    /** One parameter: what the source declared it as, and its name where the classfile kept one. */
+    public record Parameter(String name, String declaredType) {}
 }

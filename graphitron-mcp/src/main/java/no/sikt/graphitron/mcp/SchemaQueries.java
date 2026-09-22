@@ -39,8 +39,8 @@ import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_DEMAND;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_TYPE_DEMAND;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CONFLICT;
-import static no.sikt.graphitron.model.Tables.JVM_METHOD;
-import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
+import static no.sikt.graphitron.model.Tables.CODE_METHOD;
+import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static org.jooq.impl.DSL.concat;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
@@ -918,17 +918,17 @@ final class SchemaQueries {
      */
     private static Field<List<MethodBinding>> conditionMethods(StoreHandle store) {
         return multiset(
-            select(JVM_METHOD.CLASS_NAME, JVM_METHOD.METHOD_NAME,
-                arity(JVM_METHOD.SOURCE_NAME, JVM_METHOD.CLASS_NAME, JVM_METHOD.METHOD_NAME,
-                    JVM_METHOD.DESCRIPTOR),
+            select(CODE_METHOD.CLASS_NAME, CODE_METHOD.METHOD_NAME,
+                arity(CODE_METHOD.SOURCE_NAME, CODE_METHOD.CLASS_NAME, CODE_METHOD.METHOD_NAME,
+                    CODE_METHOD.DESCRIPTOR),
                 inline(CONDITION), conditionCandidates(store))
                 .from(GRAPHITRON_FIELD_CONDITION_ENTRY)
-                .join(JVM_METHOD)
-                .on(JVM_METHOD.CLASS_NAME.eq(GRAPHITRON_FIELD_CONDITION_ENTRY.CLASS_NAME)
-                    .and(JVM_METHOD.METHOD_NAME.eq(GRAPHITRON_FIELD_CONDITION_ENTRY.METHOD)))
+                .join(CODE_METHOD)
+                .on(CODE_METHOD.CLASS_NAME.eq(GRAPHITRON_FIELD_CONDITION_ENTRY.CLASS_NAME)
+                    .and(CODE_METHOD.METHOD_NAME.eq(GRAPHITRON_FIELD_CONDITION_ENTRY.METHOD)))
                 .where(ofField(GRAPHITRON_FIELD_CONDITION_ENTRY.GRAPH_NAME,
                     GRAPHITRON_FIELD_CONDITION_ENTRY.TYPE_NAME, GRAPHITRON_FIELD_CONDITION_ENTRY.FIELD_NAME)
-                    .and(store.reads(JVM_METHOD.SOURCE_NAME))))
+                    .and(store.reads(CODE_METHOD.SOURCE_NAME))))
             .convertFrom(r -> r.map(Records.mapping(MethodBinding::new)));
     }
 
@@ -941,7 +941,7 @@ final class SchemaQueries {
      * being the size of the match set the row is one of.
      */
     private static Field<Integer> conditionCandidates(StoreHandle store) {
-        var match = JVM_METHOD.as("condition_match");
+        var match = CODE_METHOD.as("condition_match");
         return field(selectCount()
             .from(match)
             .where(match.CLASS_NAME.eq(GRAPHITRON_FIELD_CONDITION_ENTRY.CLASS_NAME)
@@ -962,11 +962,11 @@ final class SchemaQueries {
         Field<String> descriptor
     ) {
         return field(selectCount()
-            .from(JVM_METHOD_PARAMETER)
-            .where(JVM_METHOD_PARAMETER.SOURCE_NAME.eq(source)
-                .and(JVM_METHOD_PARAMETER.CLASS_NAME.eq(className))
-                .and(JVM_METHOD_PARAMETER.METHOD_NAME.eq(methodName))
-                .and(JVM_METHOD_PARAMETER.DESCRIPTOR.eq(descriptor))));
+            .from(CODE_METHOD_PARAMETER)
+            .where(CODE_METHOD_PARAMETER.SOURCE_NAME.eq(source)
+                .and(CODE_METHOD_PARAMETER.CLASS_NAME.eq(className))
+                .and(CODE_METHOD_PARAMETER.METHOD_NAME.eq(methodName))
+                .and(CODE_METHOD_PARAMETER.DESCRIPTOR.eq(descriptor))));
     }
 
     /** A schema-qualified table name composed in SQL, the form every tool hands a table back as. */

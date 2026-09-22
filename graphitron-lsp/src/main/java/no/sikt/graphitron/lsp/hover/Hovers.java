@@ -39,7 +39,7 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
-import static no.sikt.graphitron.model.Tables.JVM_CLASS;
+import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
@@ -283,12 +283,12 @@ public final class Hovers {
         String fqn = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (fqn.isEmpty()) return Optional.empty();
         var row = store.dsl()
-            .select(SourceDeclarations.classJavadocOf(JVM_CLASS.CLASS_NAME))
-            .from(JVM_CLASS)
-            .where(store.reads(JVM_CLASS.SOURCE_NAME))
-            .and(JVM_CLASS.CLASS_NAME.eq(fqn))
+            .select(SourceDeclarations.classJavadocOf(CODE_CLASS.CLASS_NAME))
+            .from(CODE_CLASS)
+            .where(store.reads(CODE_CLASS.SOURCE_NAME))
+            .and(CODE_CLASS.CLASS_NAME.eq(fqn))
             // A class reachable under two classpath entries is two rows with one answer.
-            .orderBy(JVM_CLASS.SOURCE_NAME)
+            .orderBy(CODE_CLASS.SOURCE_NAME)
             .limit(1)
             .fetchOne();
         if (row == null) return Optional.empty();

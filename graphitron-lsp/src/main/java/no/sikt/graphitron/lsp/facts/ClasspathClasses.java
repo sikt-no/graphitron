@@ -2,7 +2,7 @@ package no.sikt.graphitron.lsp.facts;
 
 import no.sikt.graphitron.model.read.StoreHandle;
 
-import static no.sikt.graphitron.model.Tables.JVM_CLASS;
+import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 
 /**
  * Whether the classpath census holds a class under the FQN an author wrote: one read of
@@ -52,11 +52,11 @@ public final class ClasspathClasses {
      * read here that is not case-insensitive.
      */
     public static Presence presenceOf(StoreHandle store, String classFqn) {
-        if (store.dsl().fetchExists(JVM_CLASS,
-                store.reads(JVM_CLASS.SOURCE_NAME).and(JVM_CLASS.CLASS_NAME.eq(classFqn)))) {
+        if (store.dsl().fetchExists(CODE_CLASS,
+                store.reads(CODE_CLASS.SOURCE_NAME).and(CODE_CLASS.CLASS_NAME.eq(classFqn)))) {
             return Presence.KNOWN;
         }
-        return store.dsl().fetchExists(JVM_CLASS, store.reads(JVM_CLASS.SOURCE_NAME))
+        return store.dsl().fetchExists(CODE_CLASS, store.reads(CODE_CLASS.SOURCE_NAME))
             ? Presence.UNKNOWN
             : Presence.NO_CENSUS;
     }

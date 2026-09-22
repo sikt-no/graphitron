@@ -38,9 +38,9 @@ import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_COLUMN_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_SEED;
-import static no.sikt.graphitron.model.Tables.JVM_CLASS;
-import static no.sikt.graphitron.model.Tables.JVM_METHOD;
-import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
+import static no.sikt.graphitron.model.Tables.CODE_CLASS;
+import static no.sikt.graphitron.model.Tables.CODE_METHOD;
+import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
@@ -703,13 +703,13 @@ final class DiagnosticFacts {
                 foreignKeySpellings(store, questions.foreignKeyNames),
                 censusHolds(selectOne().from(SQL_REFERENTIAL_CONSTRAINT)
                     .where(store.reads(SQL_REFERENTIAL_CONSTRAINT.SOURCE_NAME))),
-                multiset(selectDistinct(JVM_CLASS.CLASS_NAME)
-                    .from(JVM_CLASS)
-                    .where(store.reads(JVM_CLASS.SOURCE_NAME))
-                    .and(JVM_CLASS.CLASS_NAME.in(questions.classNames))
-                    .orderBy(JVM_CLASS.CLASS_NAME))
+                multiset(selectDistinct(CODE_CLASS.CLASS_NAME)
+                    .from(CODE_CLASS)
+                    .where(store.reads(CODE_CLASS.SOURCE_NAME))
+                    .and(CODE_CLASS.CLASS_NAME.in(questions.classNames))
+                    .orderBy(CODE_CLASS.CLASS_NAME))
                     .convertFrom(rows -> rows.map(Record1::value1)),
-                censusHolds(selectOne().from(JVM_CLASS).where(store.reads(JVM_CLASS.SOURCE_NAME))),
+                censusHolds(selectOne().from(CODE_CLASS).where(store.reads(CODE_CLASS.SOURCE_NAME))),
                 parameterArm(store, questions.methods),
                 nodeTypeBindingArm(store, questions.nodeTypeNames),
                 overrideArm(store, questions.memberSites),
@@ -907,21 +907,21 @@ final class DiagnosticFacts {
     ) {
         Condition named = falseCondition();
         for (var method : methods) {
-            named = named.or(JVM_METHOD.CLASS_NAME.eq(method.className())
-                .and(JVM_METHOD.METHOD_NAME.eq(method.methodName())));
+            named = named.or(CODE_METHOD.CLASS_NAME.eq(method.className())
+                .and(CODE_METHOD.METHOD_NAME.eq(method.methodName())));
         }
-        return multiset(select(JVM_METHOD.CLASS_NAME, JVM_METHOD.METHOD_NAME, JVM_METHOD.DESCRIPTOR,
-                JVM_METHOD_PARAMETER.POSITION, JVM_METHOD_PARAMETER.PARAMETER_NAME)
-            .from(JVM_METHOD)
-            .leftJoin(JVM_METHOD_PARAMETER)
-            .on(JVM_METHOD_PARAMETER.SOURCE_NAME.eq(JVM_METHOD.SOURCE_NAME))
-            .and(JVM_METHOD_PARAMETER.CLASS_NAME.eq(JVM_METHOD.CLASS_NAME))
-            .and(JVM_METHOD_PARAMETER.METHOD_NAME.eq(JVM_METHOD.METHOD_NAME))
-            .and(JVM_METHOD_PARAMETER.DESCRIPTOR.eq(JVM_METHOD.DESCRIPTOR))
-            .where(store.reads(JVM_METHOD.SOURCE_NAME))
+        return multiset(select(CODE_METHOD.CLASS_NAME, CODE_METHOD.METHOD_NAME, CODE_METHOD.DESCRIPTOR,
+                CODE_METHOD_PARAMETER.POSITION, CODE_METHOD_PARAMETER.PARAMETER_NAME)
+            .from(CODE_METHOD)
+            .leftJoin(CODE_METHOD_PARAMETER)
+            .on(CODE_METHOD_PARAMETER.SOURCE_NAME.eq(CODE_METHOD.SOURCE_NAME))
+            .and(CODE_METHOD_PARAMETER.CLASS_NAME.eq(CODE_METHOD.CLASS_NAME))
+            .and(CODE_METHOD_PARAMETER.METHOD_NAME.eq(CODE_METHOD.METHOD_NAME))
+            .and(CODE_METHOD_PARAMETER.DESCRIPTOR.eq(CODE_METHOD.DESCRIPTOR))
+            .where(store.reads(CODE_METHOD.SOURCE_NAME))
             .and(named)
-            .orderBy(JVM_METHOD.CLASS_NAME, JVM_METHOD.METHOD_NAME, JVM_METHOD.DESCRIPTOR,
-                JVM_METHOD_PARAMETER.POSITION))
+            .orderBy(CODE_METHOD.CLASS_NAME, CODE_METHOD.METHOD_NAME, CODE_METHOD.DESCRIPTOR,
+                CODE_METHOD_PARAMETER.POSITION))
             .convertFrom(rows -> rows.map(Records.mapping(ParameterRow::new)));
     }
 
