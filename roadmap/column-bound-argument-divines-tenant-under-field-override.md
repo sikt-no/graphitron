@@ -825,3 +825,127 @@ consultation, is owed either way.
 
 Author and reviewer were the same session for round 2 and this revision, at the user's direction, so
 `Spec -> Ready` needs a session that has committed neither.
+
+### Round 3 (2026-09-22, Spec -> Ready, reviewer session 019isgQ8XRLDYQn2F4kVtpEz)
+
+Verdict: withhold. One blocking finding on question two, and it is not a finding about the plan's
+judgment: R966 landed on trunk while this item sat in review, and the contingency this plan wrote
+down for that case has fired.
+
+Question one passes, and nothing below disturbs it. The Goal states what changes for a consumer
+without reconstruction from the plan: a field whose argument or filter-input field is annotated with
+the tenant column, and which also carries an authored `@condition` that replaces the implicit
+predicate for that argument, stops failing the build and starts routing to the tenant that argument
+names. The outcome is still reachable, and the bug is still live at the site the plan names:
+`collectFromFilters` (round 2 read it as `slotsFromFilters`) still derives the slot by walking
+`gcf.bodyParams()`, and `FieldBuilder` is untouched by R966, so every mint-site claim in the
+Mechanism section holds as written.
+
+**Finding 3 (question two: architecture fit). The plan's Implementation is specified against a
+resolver R966 replaced, and the defect its decode clause exists to contain is fixed, so the plan
+cannot be handed to an implementer without the rebase it anticipates but cannot perform on itself.**
+
+R966 landed at `4bb378e` ("a bound tenant slot carries its transform, not just its location") and
+moved to In Review at `04882fa`. It rewrote the fold this item edits. What changed under the plan:
+
+- `readOf` no longer exists. Its replacement is
+  `accessOf(CallSiteExtraction extraction, TenantBinding.SlotRead fallbackRead, int decodeSlot)`,
+  returning a `SlotAccess` carrying both axes. The plan's central Implementation paragraph, "The row
+  carries the extraction, and `readOf` stays the one resolver", specifies an arm-by-arm exhaustive
+  switch over a one-axis function that is gone, and asserts that `readOf` "keeps its name and its
+  single-home property".
+- `accessOf` resolves a `NodeIdDecodeKeys` extraction to
+  `TenantBinding.SlotProjection.DecodedKeySlot(nid.decodeMethod(), decodeSlot)`, and
+  `TenantDslEmitter.projected` renders the class's own decode helper for it. The claim the whole
+  decode clause rests on, that such a slot's read hands `divinedTenant` the encoded text rather than
+  the decoded component, is no longer true about the tree.
+- `slotsFromFilters`, `slotsFromLookup`, `slotsFromTableInput` and `directSlots` are all renamed to
+  the `collect*` family around a `SlotCollector`. The `## Retired vocabulary` section declares
+  symbols R966 already retired, and "What stays" names two descents by names they no longer carry.
+- The fold gained a fourth collection arm (`OperationMember.Write.Dml` through
+  `collectFromWhereKeys`) and a `declineRoutineWriteDecodes` pass, so "two direct-slot descents where
+  it has three today" is no longer the count the change is measured against.
+
+The plan is not silent on this. The seam section says exactly what this item looks like on the other
+side: "If R966 lands first instead, this item rebases onto the widened `readOf`, the clause is never
+written, and the eleventh row and its test move with it." That reasoning still looks right to me, and
+declining the `depends-on` to keep 11 sis roots out from behind 105 still looks like the better call.
+What a plan cannot do is apply its own contingency. As the text stands, the mint predicate carries a
+decode clause at all five arms, `decodesAKey` is specified as a function with five callers and a
+comment to write, goal-table rows ten and eleven carry decoded-key verdicts, and three of the four
+fixtures `## Tests` calls the weightiest exist to pin a defect that is fixed.
+
+What makes it blocking rather than a stale citation is that one of those fixtures now contradicts
+trunk. Row ten is the preservation pin, asserting `ArgumentBound` "with the slot reading
+`TopLevelArg`", and its "assertion pins the defective read deliberately". R966 landed
+`sameTableNodeIdFilterDivinesTheDecodedSlot` in the same file, asserting the same shape divines the
+decoded slot. An implementer following the plan writes a test that fails against a test already
+green beside it, and the plan gives them no signal that the fixture, rather than their work, is what
+moved.
+
+There is also a shape in the tree now that the plan would want and could not have known to ask for.
+`SlotAccess.Declined` and `SlotCollector.decline` give the fold a first-class "this slot is reached
+and cannot route" channel, which `accessOf` already uses for `PruneOnMismatch`. Any exclusion this
+item still needs has a home there, in the fold, rather than as a predicate in `FieldBuilder`. That is
+a better answer than `decodesAKey` to the question round 2 asked, and it arrived while the plan sat
+in review.
+
+What would satisfy it. Rebase the plan body onto the post-R966 fold and state the four decisions the
+rebase forces, none of which I should settle for you:
+
+1. What the ledger row hands `accessOf`, and where its `decodeSlot` index comes from. Today that
+   index is the tenant column's position in the tuple, derived at the read site by `collectFromRow`.
+   A row recording a column list can carry it or let the fold derive it, and the plan should say
+   which.
+2. Whether the decode clause survives at all. By the plan's own seam paragraph it does not, which
+   collapses `decodesAKey`, its five callers and its comment, and makes the mint predicate uniform.
+   If something is still owed for these carriers, say what and put it in `SlotAccess.Declined`.
+3. What goal-table rows nine, ten and eleven say now. Row nine's lookup exclusion still stands and
+   still needs the lookup clause: `collectFromLookup` still skips `DecodedRecord` deliberately. Rows
+   ten and eleven are the ones R966 moved, and row eleven is the one this item makes `ArgumentBound`.
+4. Which fixtures `## Tests` pins, given that row ten's is now R966's and asserts the opposite. The
+   containment pin is unaffected in substance and still worth having; it now reads
+   `collectFromFilters`.
+
+Verified along the way, so the next round need not redo it. Everything in the Mechanism section
+holds against today's `FieldBuilder`, which R966 did not touch: the five mint-site guards read
+verbatim as quoted (`2809`, `2846`, `2863`, `2946-2948`, `2992-2994`); the five-arm census is exact
+(`bodyParams` appended at `2825`, `2832`, `2852`, `2868`, and through `implicitBodyParams` at `2954`
+and `3011` folded in at `2772` and `2788`, nowhere else); `projectFilters` is the sole construction
+site of `GeneratedConditionFilter` (`2881`), and its two `walkInputFieldConditions` call sites are
+its only ones, so the completeness argument closes. The mint predicate as stated is implied by each
+arm's emit guard at all five arms, so the containment pin holds by construction and is a drift
+enforcer rather than an oracle, which is the shape `fact-model.adoc` asks for (quote checked
+verbatim at line 39). `CallSiteExtraction` has exactly the ten arms the plan counts, and the four
+record-shaped ones are minted only in `ServiceCatalog`, `TypeFetcherGenerator` and
+`InputBeanResolver`, never on a column-bound carrier, so the invariant throw is dead by
+construction. The extraction is the right discriminator for the reason given: an arity-1 same-table
+`@nodeId` produces a `ColumnBackedArg` with a `NodeIdDecodeKeys` extraction
+(`FieldBuilder.java:2344-2349`), and `InputField.ColumnBackedReferenceField` declares a plain
+`CallSiteExtraction` (`InputField.java:163`) where `ArgumentRef.ScalarArg.ColumnBackedReferenceArg`
+narrows (`ArgumentRef.java:183`). The stage-order argument is sound: `GraphitronSchemaBuilder.buildBundle`
+runs at `GraphQLRewriteGenerator.java:563` and `capturedFrom` at `590`, so the store really is
+unreachable here. `NodeIdDecodeLedger` is the precedent the plan claims, held on `BuildContext` with
+a package-private accessor and keyed first-mint-wins by `putIfAbsent`. The rejection message the Goal
+quotes is verbatim at `TenantBindingIndex.java:314`, the `tenant-scoping.adoc` promise at line 35,
+and `tilgangAdminOnly(Table<?>)` binds no argument as the compile-tier fixture needs
+(`InputFieldConditionFixtures.java:192`).
+
+**Non-blocking, noticed on the way past.**
+
+- The "Other solutions" section does not consider carrying the slots as a component on
+  `OperationMember.Condition` itself, which is the narrowest "ride an existing surface" option and
+  the one a reader may reach for before the ledger. The facts that rule it out are already nearby:
+  the member is keyed `(coordinate, table)` with one member per polymorphic participant while the
+  ledger is coordinate-keyed, and its constructor refuses an empty filter surface. Worth a line if
+  the section is being edited anyway; it changes nothing an implementer builds.
+- A load-bearing fact the plan leaves implicit: the ledger read fires only where a `Condition` member
+  exists, and that member exists only where filters are non-empty. It is sound, because every
+  suppression in this item's scope comes from an authored `@condition` that itself contributes a
+  filter, so a member always exists where a row matters. `## Tests` leans on it for the decoded-key
+  fixtures without ever stating it as the general reason.
+- The plan's sentence about what `TopLevelArg` renders elides a hop: the fold's type is
+  `TenantBinding.SlotRead` and the renderer's is `TenantAcquisition.SlotRead`, mapped by
+  `RoutineWriteCommands.slotReadOf`. Accurate in substance, and both types exist as named.
+- Round 1's non-blocking item 1 stands and is confirmed: `rollekode` is not a `film` column, and the
+  fixture stays compile-only as the plan says.
