@@ -1,13 +1,13 @@
 ---
 id: R677
 title: "Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see"
-status: Ready
+status: Spec
 bucket: validation
 priority: 3
 theme: codegen-correctness
 depends-on: []
 created: 2026-08-14
-last-updated: 2026-09-08
+last-updated: 2026-09-22
 ---
 
 # Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see
@@ -20,9 +20,10 @@ states an invariant, a list result is never unsorted, and the two build-time che
 key on a population that misses most of the ways it breaks. Three things change over the item's
 three phases; two of them have shipped.
 
-**Phases 1 and 2 have shipped, and this item is in review for those two only.** Phase 3 remains and
-waits on R682, so sign-off returns the item to `Ready` rather than taking it to `Done`; the file is
-not deleted at this gate.
+**Phases 1 and 2 have shipped and are signed off.** Phase 3 remains, and the item is back at `Spec`
+for phase 3 alone: the plan section for it was written against a store that has since declared the
+family the section files its two new relations in to be going away. See "Reopened 2026-09-22" below
+for what has to be re-decided; the file is not deleted, and phases 1 and 2 are not reopened.
 
 **An ordering the coordinate cannot honour fails the build.** Shipped in phase 1. Before it, this
 
@@ -62,8 +63,8 @@ read coordinate, so the rule stops depending on a read resolving against exactly
 consumer this shows up as coordinates that used to slip past the check now failing it, each with a
 message that names which remedy applies.
 
-Phase 3 waits on R682. The `In Review` transition happens per phase, per the multi-phase convention
-in `roadmap/workflow.adoc`.
+Phase 3 waits on R682 and now also on its own re-spec. The `In Review` transition happens per phase,
+per the multi-phase convention in `roadmap/workflow.adoc`.
 ## Why today's checks miss most of it
 
 Two checks enforce the invariant today, `GraphitronSchemaValidator.validateListRequiresOrdering` and
@@ -382,7 +383,8 @@ this coordinate" is the same derivation `LauncherCommands` performs today, and d
 sources is how the two ends drift. So phase 3 does not start until R682's launcher step has landed, and
 if that step lands the ordering derivation under a different name or grain than this section assumes,
 **this item returns to `Spec`** before phase 3 is implemented rather than being reconciled in flight.
-Phases 1 and 2 are unaffected by that trigger: neither reads a launcher fact.
+Phases 1 and 2 are unaffected by that trigger: neither reads a launcher fact. That step has not
+landed, and a second premise gave way first; see "Reopened 2026-09-22" below.
 
 **What phase 3 retires.** `validateListRequiresOrdering`, `validatePaginationRequiresOrdering` and
 `listOrderingDiagnostic` are replaced, not kept beside the view: two rules with two populations is the
@@ -394,6 +396,64 @@ capability.
 population turns out to catch, which is measurable only once the view exists. An exemption list is
 acceptable if each entry names the item that removes it, and unacceptable otherwise. Take the count
 before writing the rejection, on the sakila example schema and on the fixture corpus.
+
+## Reopened 2026-09-22: phase 3's shape predates the store's ownership rule
+
+Phase 3 was picked up for implementation on 2026-09-22 and put back at `Spec` without a line of it
+written. Two premises the round-3 sign-off rested on no longer hold, and the section above cannot be
+followed as written. The reopen is `Ready -> Spec` per the unguarded transition in
+`roadmap/workflow.adoc`, so the next `Spec -> Ready` needs a fresh independent sign-off on whatever
+replaces the shape section. Nothing here touches phases 1 and 2, which read no launcher fact and mint
+no new relation.
+
+**The stated dependency is still unmet, which is the lesser half.** R682 is `In Progress` and its
+launcher step has not landed. `LauncherCommands.orderingOf` still computes the slot in the plan tier
+off the leaf's own `OrderBySpec`, `LauncherCommands` reads no store relation at all, and no relation
+in `graphitron-model.sql` answers the launcher question. So the reason phase 3 was sequenced behind
+that step, that deciding "does an ordering resolve here" twice from two sources is how the two ends
+drift, is exactly as live as it was at Spec time. On its own this would leave the item at `Ready`
+waiting, not send it back.
+
+**What sends it back is that the `intent_` family is being retired.** Landed 2026-09-21, one day
+before the pickup, in the commit whose subject is that the family says it has no owner. The family
+header in `graphitron-model.sql` now reads "DEPRECATED, THE WHOLE FAMILY" and states the rule for a
+rule arriving after it: do not. The shape section above mints `intent_field_ordering_rule` and
+`intent_resolved_field_ordering`, two new relations in that family, and that is not a naming detail
+to fix in flight. The ownership section of `docs/architecture/explanation/fact-model.adoc` replaces
+the prefix with a rule that decides where each part of a rule goes: a view reading relations from one
+family is a view of that family, a rule whose facts appear to cross families has a single-family part
+inside it that has not been separated out, and the cut is made by expanding through every `intent_`
+relation the rule names until only captured relations are left. Phase 3's population is a crossing
+read by that test, naming `graphitron_default_order_entry` and `graphitron_order_by_entry` in
+`graphitron_`, `sql_primary_key` in `sql_`, and `intent_type_domain`, `intent_field_scope_table`,
+`intent_bound_table` and `intent_field_chain_terminus` in the family being dissolved. So the phase's
+one piece of genuine modelling work is precisely the work whose filing rule changed underneath it.
+
+Two precisions, so the re-spec is not argued against a stronger claim than the tree supports:
+
+* **This is not a build failure waiting to happen.** The misfiling census is unenforced: nothing
+  fails today when a rule reading one family is filed under `intent_`, and a `derivation` owner
+  exists in `meta_gatherer_dependency` with a read edge to every corpus gatherer, so the two
+  relations could be declared and would pass `MetaDeclarationGateTest`'s owner-dependency gate. What
+  refuses them is the rule the store and the architecture page now state, and the page says the
+  `derivation`-owner reading is itself retired and that the relations that arc reached were deleted
+  rather than refiled. Landing two more under the prefix would be an implementer overruling a
+  settled rule, which is the user's call and not an implementer's.
+* **The re-spec is a filing question, not a re-derivation.** Nothing established about the *verdict*
+  is in doubt: the five rule arms, the `ORDERED`/`UNORDERED` reduction, the precedence order, the
+  coverage gate, the population predicate and the three retirement targets all survive. What has to
+  be re-decided is where each part is written and how early, which is the cut the ownership section
+  prescribes, and whether that cut leaves anything for a view to compose at read time at all.
+
+**Round 3's first non-blocking finding is answered, and the answer survives the reopen.** The finding
+was that phase 3's population still names `graphql_field.is_list`, the relation
+`ExpandedPopulationReaderGateTest` refuses to a new reader, and that phase 1 had already hit and
+answered that wall. The answer is the one phase 1 took: `graphitron_field` carries `is_list` as a
+column of its own, with `item_non_null` beside it and a `CHECK` tying the two, so the population
+reads the route relation and names no transcription. Whoever re-specs should write that into the
+population predicate rather than leaving the question open a second time. The other two findings are
+about phase 1 and 2 code and are untouched by this reopen; the third in particular, the empty
+`OrderBySpec.Fixed` on a list multiset, is still the unmeasured one.
 
 ## Tests
 
@@ -616,6 +676,10 @@ materialized relation; and both relations are declared in `meta_relation`, which
 their short comments and puts the essay in the declaration's own rationale. The confirmation recipe
 found the sixth census site real, which is the one open question in the plan the delivery answered
 by measurement rather than by argument.
+
+Reopened 2026-09-22 at pickup, `Ready -> Spec`, for phase 3 alone. The section of that name records
+both premises that gave way, the unmet launcher dependency and the `intent_` family's retirement, and
+what the re-spec does and does not have to re-decide.
 
 ## Reviewer findings
 
