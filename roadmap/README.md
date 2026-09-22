@@ -14,6 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
+| `R967` | The per-case statistics reset ALTERs every column of every base table, and is most of the store-heavy test build; reset only the columns that drifted | Spec | 2026-09-22 | [plan](statistics-reset-alters-only-drifted-columns.md) |
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-09-22 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |
 | `R923` | A grain declares its corpora, so a cross-corpus grain can say so | Spec | 2026-09-05 | [plan](grain-declares-its-corpora.md) |
@@ -711,6 +712,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R616` [**Landed-note SHA citations die when a branch is rebased before its gate**](collapsed-plan-sha-citations.md) — Backlog, process
 - `R768` [**The build boots the fact schema 1051 times, and a reset costs a fraction of a boot**](store-boots-once-per-test-not-once-per-build.md) — Backlog, dx
+- `R967` [**The per-case statistics reset ALTERs every column of every base table, and is most of the store-heavy test build; reset only the columns that drifted**](statistics-reset-alters-only-drifted-columns.md) — Spec, dx
 - `R857` [**A dev round refreshes what the edit touched**](refresh-what-the-edit-touched.md) — Spec, dx, blocked by [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)
 - `R776` [**An agent cannot run SQL against the fact store, only the queries we anticipated**](store-query-mcp-tool.md) — Spec, dx
 - `R913` [**An agent re-reads every diagnostic to learn what one edit changed**](mcp-diagnostics-delta-and-capture-notification.md) — Backlog, mcp
