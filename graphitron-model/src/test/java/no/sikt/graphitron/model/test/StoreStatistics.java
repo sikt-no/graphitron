@@ -38,9 +38,18 @@ public final class StoreStatistics {
     private StoreStatistics() {}
 
     /**
-     * Puts every base table's every column back to {@link #UNANALYSED} and restates the partition
-     * declaration a created store carries. Views are skipped because a view has no selectivity of
-     * its own to state.
+     * Puts every base table's every column back to the state a created store carries, touching only
+     * the columns that have left it: {@link #UNANALYSED} everywhere except the partition column,
+     * which goes back to {@link GraphPartition#DECLARED_SELECTIVITY}. Views are skipped because a
+     * view has no selectivity of its own to state.
+     *
+     * <p>One statement finds the drifted columns and one {@code ALTER} per hit puts each back, so a
+     * case whose writes never crossed H2's own analysis threshold, which is nearly every case, pays
+     * a single catalog read and issues nothing. The end state is exactly what
+     * {@link #resetIncludingTheDeclaration} followed by {@link #declarePartitionSelectivity} leave,
+     * at a fraction of the statements: walking every column instead cost about three quarters of a
+     * second per clear on a schema past two thousand columns, and was most of the store-heavy
+     * modules' test time.
      *
      * <p>The restatement is what makes this a cold <em>store</em> rather than a state no store can
      * be in. A bare reset models a store created before the declaration existed: every plan measured
@@ -48,8 +57,21 @@ public final class StoreStatistics {
      * own effect as the baseline.
      */
     public static void reset(DSLContext dsl) {
-        resetEveryColumn(dsl);
-        declarePartitionSelectivity(dsl);
+        dsl.fetch("""
+            SELECT c.TABLE_NAME, c.COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS c
+            JOIN INFORMATION_SCHEMA.TABLES t
+              ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME
+            WHERE c.TABLE_SCHEMA = 'PUBLIC' AND t.TABLE_TYPE = 'BASE TABLE'
+              AND c.SELECTIVITY <> CASE WHEN c.COLUMN_NAME = ? THEN ? ELSE ? END
+            ORDER BY c.TABLE_NAME, c.ORDINAL_POSITION
+            """, GraphPartition.COLUMN, GraphPartition.DECLARED_SELECTIVITY, UNANALYSED)
+            .forEach(row -> {
+                String column = row.get(1, String.class);
+                int selectivity = GraphPartition.COLUMN.equals(column)
+                    ? GraphPartition.DECLARED_SELECTIVITY : 0;
+                dsl.execute("ALTER TABLE \"" + row.get(0) + "\" ALTER COLUMN \"" + column
+                    + "\" SELECTIVITY " + selectivity);
+            });
     }
 
     /**

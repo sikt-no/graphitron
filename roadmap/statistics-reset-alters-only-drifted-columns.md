@@ -125,6 +125,27 @@ One file, `graphitron-model/src/test/java/no/sikt/graphitron/model/test/StoreSta
 * The full verification build before publishing, and its wall clock recorded here against the 28:13
   of this pass.
 
+### Measured, at the implementation
+
+`mvn test -pl :graphitron-model`, same box, same day as the baselines above, 1315 tests green in
+every run:
+
+| Arm | Runs |
+|---|---|
+| reset as landed by `fa1656f`, every column | 611 s, 621 s |
+| reset of drifted columns only, this item | **275 s, 272 s** |
+| no reset at all, the floor | 183 s, 184 s |
+
+Isolated on `DemandRuleTest`, single-threaded, JFR method timing: `StoreStatistics.reset` **749 ms to
+81.5 ms** per call, `ThreadConfinedStore.clear()` 749 ms to 105 ms. What remains is the one
+`INFORMATION_SCHEMA.COLUMNS` scan per clear that asking the catalog what drifted costs; H2
+materialises the whole meta-table before filtering it. Under four-way class concurrency the residual
+is larger than the isolated figure projects (about 90 s of wall clock against 1138 clears at 81.5 ms),
+which reads as allocation pressure from building the meta-table's values on four threads at once
+rather than as lock contention, each thread's store being its own database. Closing that gap means
+not asking the catalog: the fixture would have to know which tables a case changed past H2's
+analysis threshold, which is a different design and wants its own measurement before it is taken.
+
 ## Out of scope, filed elsewhere or left for the fifth pass write-up
 
 * R733 carries the build measurement passes and should receive this pass. Three of its fourth-pass
