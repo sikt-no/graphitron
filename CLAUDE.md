@@ -83,6 +83,24 @@ Reach for the deeper docs only when the task requires it:
 
 **Javadoc `{@link}` reference gate.** The `verify` phase runs a doclint reference check (maven-javadoc-plugin, `reference` group only) across the in-scope modules and fails the build on a dangling `{@link}`/`{@see}`, so a link that names a live symbol is build-enforced. It forks javadoc per module and costs real wall-clock; for a fast inner loop skip it with `-Pquick` (which sets `maven.javadoc.skip`, and also skips tests). When the gate fires, repoint the link to the current symbol; only downgrade to `{@code}` when the target genuinely is not a resolvable symbol (generated-only, or another module's non-dependency internals), never merely to silence the tool.
 
+## Adding a relation to the fact store
+
+Before writing a rule, ask the prior question: **does a stage upstream already hold this fact and throw it away?** If it does, the fix is a captured fact rather than a cleverer rule, because capture removes the evaluation instead of relocating it. An unbounded walk down a tree is the usual tell.
+
+Then decide where the rule's text lives and who evaluates it. These are two questions, not one. **The rule's text goes in a view** unless a view cannot state it; a view is the only form a catalog parse and the ownership gate can read. Storing the result is a separate decision, and when you take it the writer should be `INSERT INTO target SELECT ... FROM <the rule's view>` rather than a second statement of the rule in jOOQ.
+
+Storing has exactly three reasons and no default. Ask in order, and expect "no":
+
+1. **Does it read a corpus?** A view cannot open a file, a jar or a catalog.
+2. **Does it establish a key its own references do not already cover?** A key they cover is composed and needs no table; a key they do not cover is established, and a foreign key cannot reference a view.
+3. **Has a read cost been measured?** Measured, not feared, against the criterion that a consumer's query gets simpler or a timed reader gets faster.
+
+All three no means it is a view. Aggregation, recursion and window functions are **not** triggers: the store has many of each inside ordinary views, and treating the construct as the rule would convert dozens of them wrongly.
+
+A stored relation owes an owner (computed, not chosen: the latest in gatherer dependency order among the owners of what it reads), a grain with a key that is its sentence's natural key, and a mark and sweep. The sweep is the one that gets forgotten and the one no test checks: add the relation to its gatherer's sweep list or it accumulates every reading's rows forever.
+
+Full version, including which gates catch what and which do not: `docs/architecture/explanation/writing-a-rule.adoc`.
+
 ## Writing style
 
 Do not write em dashes (—) into prose you author. Use a comma, semicolon, colon, or restructure the sentence instead. This binds what you write; it is style guidance with no build gate, and the em dashes already in the tree are not a cleanup backlog. Leave them alone unless you are rewriting the sentence anyway.

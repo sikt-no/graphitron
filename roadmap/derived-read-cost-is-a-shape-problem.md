@@ -5230,3 +5230,86 @@ of a mechanism it is retiring is the sharpest case, because it reads as document
 current. What a reader can check is what shipped: both errors were found by reading the code under
 the claim rather than the claim, and in both cases the code said something narrower than the prose
 summarising it.
+
+## The documentation the dissolution broke, and the page it never had (2026-09-22)
+
+The section above is about a scoped statement read as a law. This one is its sequel and the
+concrete instance: dissolving `meta_materialize` and the walk's writers moved the store out from
+under the prose describing it, and nobody went back. Three sessions spent a day arguing a question
+this item had already answered in forty lines, because those forty lines are at line 52 of a file
+that is now 5232 lines long and contradicts itself in twenty places.
+
+### What was found false, and repaired
+
+Each verified against the code before being touched, not taken from a reading.
+
+- `fact-model.adoc` justified the whole declaration discipline with "the SDL walk's clear asks
+  `meta_relation` which relations belong to a gatherer that sweeps its own rows". It does not.
+  `meta_relation` and `meta_grain` have no reader in any `src/main`, and `StoreRefresh`, the class
+  that read them, was deleted by this item's own work. The page now says the declaration is a
+  build-time gate whose only reader is `MetaDeclarationGateTest`, and states plainly what that
+  still buys: a new relation cannot arrive without an owner.
+- **This item says the same false thing**, and it is worth recording rather than editing away.
+  "The declaration is the mechanism, not the documentation" was true when written and is not now.
+  The mechanism it named is gone; the declaration survived it as a gate.
+- `graphitron_spelled_table` was called a view in two places and has been a table throughout the
+  arc. Repaired in `fact-model.adoc` and `naming-the-row.adoc`. The filed backlog item naming only
+  the second was itself an undercount.
+- `fact-model.adoc` narrated a 5.4 s refresh of `intent_node_id_decode_endpoint` as the measured
+  case for choosing what to register. The relation is a view again and carries no registration, so
+  the figures now say they record what the lever bought when it was pulled.
+- Four register counts, twenty in one place and twenty-four in three, against nineteen at the time
+  of writing. These are removed rather than updated, on the page's own rule that an unguarded census
+  rots silently. The page warns against exactly this defect two sections above the first instance of
+  it. The one count kept as a figure, a sample console line in `dev-loop-internals.adoc`, was updated
+  to nineteen and was wrong again four hours later when R958 took the register to fifteen. It now
+  carries no number. That is the rule demonstrating itself inside one working day, and it is the
+  reason the others were deleted rather than corrected.
+- `MetaDeclarationGateTest.aDeclaredViewReadsOnlyWhatItsOwnerMay` handed the hand-written producers
+  to `CaptureCorpusIsolationTest` to cover. That test's scope is `graphql_` by prefix and
+  `graphitron_*_entry` by name, so the catalog, classpath and code families fall in neither
+  population. Three sessions disproved this sentence independently within a day. The javadoc now
+  states both narrowings and says what is checked by nothing.
+
+### The page that never existed
+
+`docs/architecture/explanation/writing-a-rule.adoc`, in `naming-the-row.adoc`'s shape, with a
+`.claude/skills/adding-a-relation` skill carrying the procedure and a short section in `CLAUDE.md`
+carrying it inline. Three concepts had no home in any hand-written doc before it: **mark and
+sweep**, which appears nowhere in `docs/` despite being one of the three gates this item names;
+**composed against established**, which existed only at line 61 here; and the **calculated column**
+as a fork against a view, in a store with 59 generated columns.
+
+Two things the page states that this item's own summary did not.
+
+The first is that the split is two independent questions and not three kinds. Where the rule's text
+lives is one question, answered "a view" unless a view cannot state it. Who evaluates it and when is
+the other. A rule stored is still a rule stated in a view, and the writer is an insert from that
+view. Session C reached this independently from the seven anchoring classes, and the two example
+pairs converge: `FieldColumnScopes` inserts from a rule view and can be checked against it with an
+`EXCEPT`; `graphitron_field_navigation`, ten lines away in the same gatherer, restates its rule in
+jOOQ with nothing to diff against.
+
+The second is that **aggregation, recursion and window functions are not the trigger.** Current
+trunk carries six recursive views, 58 window occurrences and 29 grouped views. The construct list
+is a useful instinct about what may prove slow; the criterion that fires is the one the DDL header
+already states, that a view cannot express the rule or expresses it correctly and too slowly. The
+distinction matters because the construct reading, applied literally, converts dozens of correct
+views into tables.
+
+### Found and not fixed
+
+Recorded so they are findable rather than left in three transcripts.
+
+- **Nothing enforces mark and sweep.** No gate checks that a stored relation's rows are swept. One
+  gatherer's clear set is re-derived from source text and compared; the other lists are unchecked.
+  This is one of the three gates stated at line 88 and it has no enforcer.
+- The ownership gate's population is the declared views, 27 of 410 relations, and within those it
+  skips reads of relations still on the undeclared roster. A hand-written jOOQ producer is outside
+  it entirely.
+- Nothing checks that a declared grain is the right grain. The key gate compares two authored
+  strings, and the views are excluded from it.
+- `graphitron_field_navigation` is a stored derivation at an existing grain with no rule view and no
+  registration, which is the departure its own sibling refuses in javadoc. Worth an item.
+- The backlog stub for the gate javadoc is still unowned. The javadoc is now accurate; whether to
+  close the coverage hole is a separate question and nobody has filed it.

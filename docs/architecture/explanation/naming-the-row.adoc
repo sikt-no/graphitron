@@ -93,7 +93,7 @@ The store instead holds the ingredients and derives the answer:
 
 * `graphitron_table_entry` holds what the author wrote: `@table` on a type, with the name they spelled.
 * `sql_table` holds what the catalog actually declares.
-* `graphitron_spelled_table` is a view that answers a small, general question: how does a written
+* `graphitron_spelled_table` answers a small, general question: how does a written
   table name meet the catalog? The same rule whether the name was written in `@table`, in a
   `@reference` path, or as a mutation's target.
 * `intent_bound_table` is a view one layer up: which catalog table does *this type's* binding
@@ -164,7 +164,9 @@ also state where the tree currently falls short of them.
 == Where to go next
 
 The strict statement of all of this, each rule with its enforcing test named, is
-xref:fact-model.adoc[The fact model]. The rendered
+xref:fact-model.adoc[The fact model]. Once a row's sentence is settled, the next decision is
+whether the rule that produces it is a view or something stored, which is
+xref:writing-a-rule.adoc[Writing a rule]. The rendered
 xref:../reference/schema/index.adoc[schema reference] shows every relation with its sentence. And
 the store is a database you can simply open: a running session can serve it over the PostgreSQL
 wire protocol (see `StoreConsole` in `graphitron-model`), and `psql` plus `INFORMATION_SCHEMA`

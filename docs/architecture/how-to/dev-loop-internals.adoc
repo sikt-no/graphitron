@@ -249,7 +249,7 @@ Two lines per pass, on a capture and on a `graphitron:dev` start alike:
 
 [source,text]
 ----
-[INFO] graphitron: refreshing 20 materializations for graph 'orders'
+[INFO] graphitron: refreshing N materializations for graph 'orders'
 [INFO] graphitron: materialization refresh done in 3.4 s
 ----
 

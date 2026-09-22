@@ -156,10 +156,18 @@ class MetaDeclarationGateTest {
 
     /**
      * The fact model page's ownership rule as a query: a view belongs to its owner, so what it
-     * reads must be the owner's own or something the owner declares a dependency on. Binds only
-     * where both ends are declared, so its reach grows with the migration; the hand-written
-     * producers read through jOOQ code no stored definition exposes, and stay
-     * {@code CaptureCorpusIsolationTest}'s to cover.
+     * reads must be the owner's own or something the owner declares a dependency on.
+     *
+     * <p>Two narrowings, both worth knowing before reading a pass here as the rule holding. The
+     * population is the declared views, so a relation filled by hand-written jOOQ is outside it:
+     * what such a producer reads is in no stored definition and no catalog parse can see it.
+     * Within the views, an offender needs both ends declared, so a read of a relation still on the
+     * undeclared roster is skipped rather than judged.
+     *
+     * <p>{@code CaptureCorpusIsolationTest} asks the same question differentially for the SDL
+     * families and the graphitron entry half, which is the scope it states. The catalog, classpath
+     * and code families fall in neither population, so what those producers read is currently
+     * checked by nothing.
      */
     @Test
     @DisplayName("a declared view reads only relations its owner owns or depends on")
