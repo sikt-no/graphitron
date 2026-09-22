@@ -409,13 +409,12 @@ have. And a capture stage must not read the derivation family, for four reasons 
 sharpest being that a producer reading a consumer-layer relation lets a rule written to answer
 somebody's question become the definition of a captured fact.
 
-What the arc settled about writing a rule at all is that the question is two questions and not three
-kinds of thing. Where the rule's text lives is one: a view, unless a view cannot state it, because a
-view is the only form a catalog parse and the ownership gate can read. Who evaluates it and when is
-the other. A stored rule is still a rule stated in a view, with an insert from that view, which is
-what keeps an `EXCEPT` between the two runnable. Four separate sessions arrived at that split
-independently before anyone wrote it down, which is the argument for having written it down. It is
-stated now in xref:../architecture/explanation/writing-a-rule.adoc[Writing a rule].
+What the arc settled is that provenance decides everything else. A fact either comes from a corpus
+outside the store or is derived from facts already in it, and the rest follows: a corpus is captured
+into a family shaped by the questions we expect to ask of it, and deriving is kept apart from
+gathering and happens in the anchoring phase, once the base facts for the whole corpus are in. It is
+stated now in xref:../architecture/explanation/modeling-discipline.adoc[The modeling discipline],
+which the arc owed and had not written.
 
 The arc's own worst habit is worth recording because it cost the most time. Statements scoped to one
 situation were repeatedly read as laws: a sentence describing fifteen existing rules read as a rule
@@ -518,8 +517,8 @@ not chosen in advance.
   they run today.
 * xref:../architecture/explanation/typed-rejection.adoc[Typed rejection] for the rejection
   taxonomy.
-* xref:../architecture/explanation/writing-a-rule.adoc[Writing a rule] for where a rule's text
-  lives and who evaluates it, which is what the September 2026 arc settled.
+* xref:../architecture/explanation/modeling-discipline.adoc[The modeling discipline] for how a fact gets
+  into the store, which is what the September 2026 arc settled.
 * `roadmap/changelog.md` for the per-item record, including discards.
 * `roadmap/audits/` for the dated working papers cited above.
 * `graphitron-rewrite-history` and `pre-squash/tip-2`, `tip-3` and `tip-4` for the pre-squash

@@ -1,0 +1,200 @@
+= The modeling discipline
+:description: Every fact in the store is there because somebody decided it was worth modeling. Where it came from decides how it gets captured, and gathering a corpus is kept apart from deriving.
+:!toc:
+
+Every fact in the store is there because somebody decided it was worth capturing in our model. That
+is the first thing to understand about the store and the last thing to forget: nothing arrives
+because it was available. This page is the discipline that follows from it. The strict statement of
+the model is xref:fact-model.adoc[The fact model] and the naming habit is
+xref:naming-the-row.adoc[Naming the row]; this page is how a fact gets in.
+
+== Provenance is the only question that matters first
+
+A fact has one of two provenances, and everything else follows from which.
+
+Either it comes from a **corpus** outside the store, which is the SDL documents, the classpath, the
+jOOQ catalog, the configuration, the Java sources. Or it is **derived** from facts the store already
+holds.
+
+That is the whole fork. It is the same cut `fact-model.adoc` calls stratum one against stratum two,
+asked about one relation instead of about the store.
+
+== A corpus is captured into a family shaped by the questions
+
+When the facts come from a corpus, the discipline is not to mirror the corpus. It is to capture into
+a **family model designed to support the questions we expect to ask against that corpus.**
+
+This is the part that is easy to get wrong, because mirroring the corpus feels neutral and is not.
+
+The worked example is the classpath, and it is a model we are still replacing.
+
+The `jvm_` family describes the classpath: classes, their supertypes, methods, parameters, record
+components, declared type references. It is an accurate description and it makes **no affordance
+toward what any of it is for.** Nothing in it says whether a method may be named in `@service`, or
+whether it can serve as a condition. So every consumer that needed to know worked it out at query
+time, and worked out the same thing again, from the same rows, on every question it asked.
+
+The `code_` family was built the other way round. It **started with a relation for each use site**,
+one per place an author can name a method, so the fact a consumer wanted was a row rather than a
+predicate it had to re-derive. Only then was it normalized: supertypes extracted and shared facts
+lifted out, driven by the queries the generator, the LSP and the MCP server actually make against it.
+
+Each use-site arm is its key and nothing else:
+
+[source,sql]
+----
+CREATE TABLE code_service_method (
+  source_name VARCHAR NOT NULL, class_name  VARCHAR NOT NULL,
+  method_name VARCHAR NOT NULL, descriptor  VARCHAR NOT NULL,
+  touched_at  TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name, method_name, descriptor),
+  FOREIGN KEY (source_name, class_name, method_name, descriptor)
+    REFERENCES code_method (...) ON DELETE CASCADE
+);
+----
+
+Membership is the only thing the relation has to say, because what a method returns and takes does
+not vary by the directive that reached it. That lives once, in `code_method`. `code_condition_method`
+and `code_external_field_method` are the same shape for the other two sites.
+
+So a family carries **both the base facts and the aggregated and derived facts we know we need**.
+`code_type`, `code_method` and `code_method_parameter` are read off the classfiles; `code_type_element`
+peels a generic signature down to what it delivers, `code_throwable_supertype` closes a hierarchy
+transitively, and the three arms answer the use-site question that nothing in `jvm_` would answer.
+One family, both kinds, because the questions are what the family is for.
+
+The `jvm_` family is being eaten away as this proceeds, from thirteen relations to six so far.
+
+Normalizing is mostly mechanical once you know which facts you
+are holding: extract the supertype, lift out what does not vary, key it. Deciding **which facts the
+model has to carry at all** is the part nothing tells you except the questions, and it is the same
+decision this page opens with.
+
+== Otherwise the facts are derived
+
+When the inputs are already in the store, the fact is a derivation. Nothing has to be read again and
+nothing outside the store is consulted.
+
+== Gathering and deriving are kept apart
+
+The discipline that makes the two provenances tractable is that a gatherer does not mix them. Put the
+base facts in the store first. Derive what you need afterwards, in the **anchoring phase**, which is
+the gatherer's last step rather than a gatherer of its own. It is last because aggregating needs the
+base facts for the whole corpus, not for one document.
+
+Base facts and aggregated facts answer different questions, and facts are additive. Gathering puts
+the base facts in; anchoring adds the aggregated ones beside them. Neither replaces the other, and a
+consumer reads whichever answers its question.
+
+The other reason is that SQL is very good at deriving tables. Once the base facts are in the store,
+the aggregation is a statement rather than code.
+
+== The anchoring phase is where upstream families may be read
+
+Gathering reads one corpus. Anchoring may read what earlier gatherers have settled, and that
+permission is declared rather than assumed: `meta_gatherer_dependency` names the upstream families
+each gatherer may reach. The `code` gatherer declares `classpath-source` and `jooq`, which is what
+lets an arm of its anchoring step key a method's parameter to the catalog table the parameter names.
+
+Upstream is the operative word. Reading a family that runs later does not work: best case the rows
+are not there yet, worst case they are there and subtly wrong.
+
+A row in the roster can lag the design. While the classpath model is mid-transition it still carries
+a dependency on the family being replaced.
+
+== Entries and anchors
+
+To make this concrete, take the `graphql_` family. Its entries are at the source document grain,
+which is what lets the store hold the fact that two documents declare the same field:
+
+[source,sql]
+----
+graphql_ast_field_definition_entry   PRIMARY KEY (graph_name, source_name, source_line, source_column)
+graphql_field                        PRIMARY KEY (graph_name, type_name, field_name)
+----
+
+Two documents declaring `Film.title` are two entry rows and one anchor row. The anchor is at the
+grain a consumer asks at, and the anchoring phase is what gets there.
+
+How a collision resolves is the decision that matters, and it differs from family to family. In this
+one the oldest file wins: the newer definition is the one a developer changed most recently, so that
+is where the error was introduced. Files are ordered by when they were last written, with the name as
+a tie-break, so the winner never depends on how a directory happened to list them.
+
+=== Why an anchor is a table and never a view
+
+Because a table can carry constraints and a view cannot.
+
+Anchoring into a table buys a primary key, foreign keys, uniques and checks, which is how the store
+encodes its integrity rules in the database rather than in the code that fills it. None of that is
+available to a relation that is only a query. An illegal state is unwritable rather than merely
+unexpected.
+
+That is the reason, and it is not a performance reason. A view can be fast and still cannot be an
+anchor.
+
+Two useful consequences of the split. What an author got wrong is the anti-join between the two
+halves, and it is the only place a diagnostic can find it. And a corpus that does not build still has
+anchors, because they are derived from the entries rather than from a successful assembly.
+
+== What a stored relation owes
+
+Anything the store keeps rows for owes three things.
+
+**An owner**, which is the code that writes it. It is declared in `meta_relation`, so a new relation
+cannot arrive without somebody owning it.
+
+**A grain**, said as a sentence. One row per field, one row per foreign-key hop. If the sentence does
+not finish cleanly the relation is holding two facts.
+
+**A mark and a sweep.** This is what makes deletion work at all. A reading marks what it wrote and
+sweeps what it did not, so a thing removed from a corpus is removed from the store and
+`ON DELETE CASCADE` collects everything that hung off it. The sweep is the root of that collection:
+without it the cascade never fires, because nothing ever deletes the parent.
+
+Where an orphan should not vanish quietly, the reference uses `ON DELETE SET NULL` instead. The row
+stands with its reference emptied, so a source going away flags every reading of it rather than
+silently deleting them, and the owner can reclaim them deliberately on its next pass.
+
+== Where it pinches
+
+It would be dishonest to present this as enforced. Most of it is not.
+
+It would also be misleading to present the store as though every relation in it followed the page.
+The `intent_` family does not. It accumulated before this discipline was settled, it is the place
+rules went when nobody decided where they belonged, and it is dissolving: a rule that reads one
+family's facts moves into that family, and the ones this work has reached have been deleted rather
+than improved. It is the second largest family in the store, so a reader will meet it early. Do not
+model on it, and do not take a shape found there as precedent.
+
+
+What holds, and holds well, is that a **new** relation cannot arrive without an owner and a grain.
+`MetaDeclarationGateTest` compares every observed relation against the declarations, the register and
+a frozen roster of relations nobody has got to yet, and that roster only shrinks. If you add a
+relation, this is the gate you will meet.
+
+What does not hold:
+
+* *Nothing enforces the sweep.* Not one gate checks that a stored relation's rows are swept. One
+  gatherer's clear set is re-derived from its own source text and compared; the other lists are
+  unchecked.
+* *The ownership gate binds on declared views only*, and within those, only where both ends are
+  declared. A relation filled by hand-written jOOQ is outside it, because what such a producer reads
+  is in no stored definition for a parse to find.
+* *Nothing checks that a declared grain is the right grain.* The gate compares the declared key
+  against the actual primary key, which is two authored strings agreeing with each other. Writing the
+  reader's query first is what exposes a wrong key.
+* Roughly half the schema stands on the undeclared roster, so a claim about "every relation" is today
+  a claim about the declared half.
+
+The declaration is a gate rather than a mechanism: nothing that runs reads `meta_relation`. That is
+still worth doing, because the gate is what stops a relation arriving unowned, but it is not
+load-bearing at run time.
+
+== Where to go next
+
+xref:fact-model.adoc[The fact model] for the strict statement with each rule's enforcing test named,
+xref:naming-the-row.adoc[Naming the row] for the sentence a grain is written as, and
+xref:pipeline-overview.adoc[Pipeline overview] for where gathering and anchoring sit in a run.
+
+xref:index.adoc[← Explanation index]

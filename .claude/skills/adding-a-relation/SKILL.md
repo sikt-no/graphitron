@@ -1,124 +1,105 @@
 ---
 name: adding-a-relation
-description: Decide whether a new fact-store rule is a view, a table, or a fact somebody upstream should have captured, and what the relation owes once it is stored. Use before adding any relation, view or GENERATED ALWAYS AS column to graphitron-model.sql, and whenever you are about to argue that no view can state a rule. Not for diagnosing a slow relation that already exists, which is store-performance.
+description: Decide how a new fact gets into the store: which family it belongs to, whether it is captured from a corpus or derived in the anchoring phase, and what a stored relation owes. Use before adding any relation or view to graphitron-model.sql, and before adding a query that re-derives something at read time. Not for diagnosing a slow relation that already exists, which is store-performance.
 ---
 
 # Adding a relation
 
-The decision this skill exists for gets made silently, which is why it gets made wrong. Storing has
-three possible reasons and no default. The prose version, with worked examples and the honest gate
-coverage, is `docs/architecture/explanation/writing-a-rule.adoc`; this is the procedure.
+Every fact in the store is there because somebody decided it was worth capturing in the model.
+Nothing arrives because it was available. The prose version, with worked examples and an honest
+account of what is enforced, is `docs/architecture/explanation/modeling-discipline.adoc`.
 
-## 0. The prior question, before anything else
+## 1. Provenance
 
-**Does a stage upstream already hold this fact and throw it away?**
+Either the fact comes from a **corpus** outside the store, or it is **derived** from facts the store
+already holds. The corpora are the SDL documents, the classpath, the jOOQ catalog, the configuration
+and the Java sources.
 
-If yes, stop. The rule does not need a home, it needs an owner. A captured fact removes the
-evaluation; every other lever relocates it. This is the first rung of the store's lever order and
-it is ahead of indexing, rewriting and registering for that reason.
+Everything below follows from which of the two it is.
 
-The tell is an unbounded descent through a structure. If a rule walks a tree, ask who had that tree
-in hand while reading it. A rule stated at the reading can be total where a query form has to stop
-at a fixed depth.
+## 2. From a corpus: capture into a family shaped by the questions
 
-**Do not skip this step because the rule looks small.** A rule that reconstructs what capture could
-have written is a modelling defect whether or not anything is currently slow.
+Not shaped by the corpus. Mirroring the source feels neutral and is not.
 
-## 1. Two questions, not one kind
+A family that describes its source accurately, and says nothing about what any of it is for, pushes
+the real work onto every consumer, which then derives the same thing again from the same rows on
+every question it asks. The `jvm_` family is that mistake and is being replaced.
 
-Answer both. They are independent, and collapsing them is the most common error.
+**The order that works:** start with a relation per use site, so the fact a consumer wants is a row
+rather than a predicate it has to re-derive. Then normalize, against the queries the generator, the
+LSP and the MCP server actually make. Normalizing is mostly mechanical once you know which facts you
+are holding; deciding which facts the model has to carry is the hard part, and only the questions
+tell you.
 
-**Where does the rule's text live?** A view, unless a view cannot state it. A view states the rule
-once, in the catalog, where a parse can read what it reads and a gate can hold it to its owner.
-A rule spelled in Java or hand-written jOOQ is invisible to every catalog parse in the tree.
+A family carries **both the base facts and the aggregated facts we know we need**. Both kinds belong
+in it, because the questions are what the family is for.
 
-**Who evaluates it, and when?** A reader on read, unless one of the three below applies.
+## 3. Otherwise it is derived, in the anchoring phase
 
-Storing the result is not a reason to stop stating the rule in SQL. When you store, the writer is:
+Gathering and deriving are kept apart. Put the base facts in the store first; derive afterwards, in
+the **anchoring phase**, which is the gatherer's last step rather than a gatherer of its own.
 
-```
-INSERT INTO <target> SELECT <the rule view's columns> FROM <the rule view>
-```
+It is last because aggregating needs the base facts for the whole corpus, not for one document.
 
-not a second statement of the rule. The payoff is that an `EXCEPT` between the target and the rule
-view stays runnable for as long as both exist, so the table can be checked rather than believed.
+Two reasons for the separation:
 
-## 2. The three reasons to store
+- Base facts and aggregated facts answer different questions, and facts are additive. Neither
+  replaces the other; a consumer reads whichever answers its question.
+- SQL is very good at deriving tables. Once the base facts are in, the aggregation is a statement
+  rather than code.
 
-Ask in order. Expect "no". All three no means it is a view, and writing it as anything else is a
-defect.
+## 4. Entries and anchors, where a corpus has many documents
 
-1. **Does it read a corpus?** A view cannot open a file, a jar or a catalog. A rule reading one
-   outside the store is a table filled by a gatherer.
-2. **Does it establish a key its own references do not already cover?** A key they cover is
-   *composed* and needs no table. A key they do not cover is *established*, and a foreign key
-   cannot reference a view. Decide this from the declared keys and the foreign keys between them;
-   it is decidable, not declared.
-3. **Has a read cost been measured?** Measured, not feared, against the criterion that a
-   consumer's query gets simpler or a timed reader gets faster. If you are here, use
-   `store-performance` to do the measuring before you act on it.
+Where a corpus is many documents that can say different things about the same thing, entries sit at
+the source document grain so the store can hold what each document said, and anchors sit at the
+grain a consumer asks at.
 
-### Not triggers
+**How a collision resolves is the decision that matters, and it differs from family to family.** In
+`graphql_` the oldest file wins, because the newer definition is the one a developer changed most
+recently, so that is where the error was introduced. Decide this deliberately for whatever you are
+adding; do not inherit another family's rule by accident.
 
-Aggregation, recursion and window functions are **not** on that list. The store has recursive
-views, dozens of windowed views and dozens of grouped views, all correctly views. Treating the
-construct as the rule would convert dozens of them wrongly.
+## 5. Anchor into a table, never a view
 
-They are a useful instinct about what may prove slow, which is question 3, and question 3 is
-settled by measuring. The DDL header admits exactly two answers for a post-capture relation: a view
-cannot express the rule, or a view expresses it correctly and too slowly. A stored relation states
-which.
+A table carries a primary key, foreign keys, uniques and checks. That is how integrity lives in the
+database rather than in the code that fills it, and it makes an illegal state unwritable rather than
+merely unexpected. A view carries none of it.
 
-For recursion specifically, the real constraint is that a recursive view must terminate on the
-population **the store can hold**, not the one the subject would have. A subject-level invariant
-("a class hierarchy is acyclic") is not the same claim when the relation spans every source ever
-read.
+This is not a performance argument. A view can be fast and still cannot be an anchor.
 
-## 3. What the relation owes once stored
+## 6. Reads go upstream only
 
-- **An owner.** Computed, not chosen: the latest, in gatherer dependency order, of the owners of
-  the relations it reads. A rule reading one family's facts belongs to that family. A rule crossing
-  families belongs to the gatherer that runs last among them. Do not invent a gatherer to run last.
-- **A grain.** One sentence saying what a single row is about, with a key that is that sentence's
-  natural key. Write the reader's query first: that is what exposes a wrong key, and nothing
-  downstream will.
-- **A mark and a sweep.** Add the relation to its gatherer's sweep list. Nothing checks this and
-  nothing will fail if you forget; the relation will simply accumulate every reading's rows
-  forever. A cascade is not a substitute: it corrects a row whose parent went, not a row whose
-  parent stands and which this reading no longer derives.
+`meta_gatherer_dependency` names the upstream families a gatherer may reach while anchoring.
 
-Anchoring runs as a gatherer's **last step**, after that gatherer's own sweep, over the rows that
-survived. It is not a gatherer of its own.
+Reading a family that runs later does not work: best case the rows are not there yet, worst case
+they are there and subtly wrong.
 
-## 4. A calculated column
+## 7. What a stored relation owes
 
-A `GENERATED ALWAYS AS` column earns its place where a comparison needs it at the relation that
-owns the value: the case fold that lets an authored spelling meet a catalog name through an index
-seek is the store's clear case.
+- **An owner**, which is the code that writes it, declared in `meta_relation`.
+- **A grain**, said as a sentence. One row per field, one row per foreign-key hop. If the sentence
+  does not finish cleanly the relation is holding two facts. Write the reader's query first: that is
+  what exposes a wrong key.
+- **A mark and a sweep.** A reading marks what it wrote and sweeps what it did not, so a thing
+  removed from a corpus is removed from the store and `ON DELETE CASCADE` collects what hung off it.
+  Where an orphan should survive to be noticed, the reference uses `ON DELETE SET NULL` instead.
 
-It does not earn its place as somewhere to put a rule so an index can serve it. If a computation
-had to become a column to be fast, go back to step 0: the side that knows the answer should
-probably have written it down.
+## 8. What will actually stop you
 
-## 5. What will actually stop you
+`MetaDeclarationGateTest` will stop a new relation with no owner and no grain. The undeclared roster
+only shrinks, so a new arrival has nowhere to hide. That gate works and you will meet it.
 
-Know this so a green build is not mistaken for a correct relation.
-
-`MetaDeclarationGateTest` **will** stop a new relation with no owner and no grain. The undeclared
-roster only shrinks, so a new arrival has nowhere to hide. This gate works and you will meet it.
-
-It will **not** catch:
-
-- a missing sweep (no gate anywhere checks this)
-- a wrong grain, as opposed to a declared key disagreeing with the actual primary key
-- what a hand-written jOOQ producer reads, which no catalog parse can see
-- a declared view reading a relation still on the undeclared roster
-
-So the build passing means the declaration exists and is internally consistent. It does not mean
+It will not catch a missing sweep, a wrong grain as opposed to a key disagreeing with its
+declaration, what a hand-written jOOQ producer reads, or a declared view reading a relation still on
+the roster. A green build means the declaration exists and is internally consistent. It does not mean
 the relation is right.
+
+## Do not model on `intent_`
+
+That family accumulated before this discipline settled and is dissolving. It is large, so you will
+meet it early. Do not take a shape found there as precedent.
 
 ## Boundary with `store-performance`
 
-This skill decides **whether a relation should exist and in what form**. `store-performance`
-diagnoses **an existing relation that is slow** and picks a lever. If you arrive at question 3 and
-need a number, that skill owns the measuring; come back here with the number.
+This skill decides **how a fact gets into the store**. `store-performance` diagnoses **an existing
+relation that is slow**.

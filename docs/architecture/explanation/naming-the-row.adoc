@@ -164,9 +164,8 @@ also state where the tree currently falls short of them.
 == Where to go next
 
 The strict statement of all of this, each rule with its enforcing test named, is
-xref:fact-model.adoc[The fact model]. Once a row's sentence is settled, the next decision is
-whether the rule that produces it is a view or something stored, which is
-xref:writing-a-rule.adoc[Writing a rule]. The rendered
+xref:fact-model.adoc[The fact model]. Once a row's sentence is settled, the next question is
+where its facts come from, which is xref:modeling-discipline.adoc[The modeling discipline]. The rendered
 xref:../reference/schema/index.adoc[schema reference] shows every relation with its sentence. And
 the store is a database you can simply open: a running session can serve it over the PostgreSQL
 wire protocol (see `StoreConsole` in `graphitron-model`), and `psql` plus `INFORMATION_SCHEMA`

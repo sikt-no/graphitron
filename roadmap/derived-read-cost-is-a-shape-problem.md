@@ -173,7 +173,7 @@ this. What moved:
   `roadmap/audits/2026-09-22-capture-dissolution-measurements.md`.
 * Narrative and retired approaches to the September 2026 chapter of
   `docs/history/road-to-the-relational-core.adoc`.
-* The discipline itself to `docs/architecture/explanation/writing-a-rule.adoc`, with the procedure in
+* The discipline itself to `docs/architecture/explanation/modeling-discipline.adoc`, with the procedure in
   `.claude/skills/adding-a-relation` and a short form in `CLAUDE.md`.
 * Everything else is in git, which the deletion-at-Done convention already names as the archive.
 

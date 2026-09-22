@@ -85,21 +85,23 @@ Reach for the deeper docs only when the task requires it:
 
 ## Adding a relation to the fact store
 
-Before writing a rule, ask the prior question: **does a stage upstream already hold this fact and throw it away?** If it does, the fix is a captured fact rather than a cleverer rule, because capture removes the evaluation instead of relocating it. An unbounded walk down a tree is the usual tell.
+Every fact in the store is there because somebody decided it was worth capturing in the model. Nothing arrives because it was available.
 
-Then decide where the rule's text lives and who evaluates it. These are two questions, not one. **The rule's text goes in a view** unless a view cannot state it; a view is the only form a catalog parse and the ownership gate can read. Storing the result is a separate decision, and when you take it the writer should be `INSERT INTO target SELECT ... FROM <the rule's view>` rather than a second statement of the rule in jOOQ.
+**Start with provenance.** Either the fact comes from a corpus outside the store (the SDL documents, the classpath, the jOOQ catalog, the configuration, the Java sources) or it is derived from facts the store already holds. Everything else follows from which.
 
-Storing has exactly three reasons and no default. Ask in order, and expect "no":
+**From a corpus:** capture it into a family shaped by the questions we expect to ask against that corpus, not by the shape the corpus happens to have. Mirroring the corpus feels neutral and is not: a family that describes its source without saying what any of it is for leaves every consumer deriving the same thing again at query time. Start from the use sites, then normalize against the queries that actually get written.
 
-1. **Does it read a corpus?** A view cannot open a file, a jar or a catalog.
-2. **Does it establish a key its own references do not already cover?** A key they cover is composed and needs no table; a key they do not cover is established, and a foreign key cannot reference a view.
-3. **Has a read cost been measured?** Measured, not feared, against the criterion that a consumer's query gets simpler or a timed reader gets faster.
+**Otherwise it is derived,** and gathering is kept apart from deriving. Put the base facts in first; derive in the anchoring phase, which is the gatherer's last step. It is last because aggregating needs the base facts for the whole corpus, not for one document. Base and aggregated facts answer different questions and facts are additive, so neither replaces the other. And SQL is very good at deriving tables: once the base facts are in, the aggregation is a statement rather than code.
 
-All three no means it is a view. Aggregation, recursion and window functions are **not** triggers: the store has many of each inside ordinary views, and treating the construct as the rule would convert dozens of them wrongly.
+**Anchor into a table, never a view.** A table carries a primary key, foreign keys, uniques and checks, which is how integrity rules live in the database rather than in the code that fills it. A view carries none of them.
 
-A stored relation owes an owner (computed, not chosen: the latest in gatherer dependency order among the owners of what it reads), a grain with a key that is its sentence's natural key, and a mark and sweep. The sweep is the one that gets forgotten and the one no test checks: add the relation to its gatherer's sweep list or it accumulates every reading's rows forever.
+**Reads go upstream only.** `meta_gatherer_dependency` names the upstream families a gatherer may reach during anchoring. Reading a family that runs later does not work: best case the rows are not there yet, worst case they are there and subtly wrong.
 
-Full version, including which gates catch what and which do not: `docs/architecture/explanation/writing-a-rule.adoc`.
+**A stored relation owes three things:** an owner, which is the code that writes it, declared in `meta_relation`; a grain, said as a sentence that finishes cleanly; and a mark and a sweep, which is what makes deletion work, since the sweep is what lets `ON DELETE CASCADE` collect anything that hung off a thing the corpus no longer has.
+
+The `intent_` family follows none of this. It accumulated before the discipline settled and is dissolving; do not take a shape found there as precedent.
+
+Full version: `docs/architecture/explanation/modeling-discipline.adoc`.
 
 ## Writing style
 
