@@ -1,13 +1,13 @@
 ---
 id: R955
 title: "The register empties bottom-up: every remaining registered rule becomes a fact the graphitron gatherer writes in stage order, and meta_materialize has no rows left"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 2
 theme: model-cleanup
-depends-on: []
+depends-on: [column-scope-and-input-field-walks-are-stored-rows]
 created: 2026-09-16
-last-updated: 2026-09-17
+last-updated: 2026-09-22
 ---
 
 # The register empties bottom-up: every remaining registered rule becomes a fact the graphitron gatherer writes in stage order, and meta_materialize has no rows left
@@ -91,44 +91,54 @@ is it. What is still owed is an enforcer for the order once it is statement orde
 
 ## What is in scope
 
-The fifteen registered rules R954 does not reach. The *rung* of a relation is one more than the
-highest rung of any registration its rule reads, directly or through plain views; a rule reading no
-registration is rung 0. Computed from the shipped `_live` view bodies with SQL comments stripped, and
-for the implementer to recompute at pickup rather than trust. This counts only registrations, where
-R954's ladder counts the plain views between them as rungs of their own, so the same relation carries
-a different number in the two bodies and neither is wrong; every rung number below is this item's.
-R954's eight occupy rungs 0 to 6 under this counting and are listed in its own body; two of this
-item's fifteen sit *inside* that range, which is stated below rather than smoothed over.
+The fifteen registered rules the `@reference` stratum's own conversions do not reach. The *rung* of a
+relation is one more than the highest rung of any registration its rule reads, directly or through
+plain views; a rule reading no registration is rung 0. This counts only registrations, where the
+`@reference` stratum's ladder counts the plain views between them as rungs of their own, so the same
+relation can carry a different number in two bodies and neither is wrong; every rung number below is
+this item's.
+
+Recomputed from the shipped DDL at pickup on 2026-09-22, which is what the instruction to recompute
+rather than trust is for, and the numbers moved. The register holds **twenty** rows rather than
+twenty-three: R954 landed four of its eight (`intent_spelled_table`, both hop arms and
+`intent_resolved_type_binding`) and left the rest with **R958**, which holds the other five registered
+rules this item does not (`intent_carrier_data_field`, `intent_field_scope_table`,
+`intent_argument_scope_table`, `intent_input_field_resolving_table` and
+`intent_argument_reference_step_target`). Five plus this item's fifteen partitions the register
+exactly. Every rung below therefore counts a shorter ladder than the numbers this table first
+carried, and the reads column names only registrations that are still registrations.
 
 [cols="1,4,5,1,2"]
 |===
 | rung | relation | registered rules it reads (direct; then through plain views) | view readers | key today
 
-| 3 | `intent_field_column_scope` | `intent_resolved_type_binding`; `intent_field_reference_step_hop` | 3 | primary key
-| 5 | `intent_mutation_write_payload` | `intent_field_scope_table` | 4 | none
-| 7 | `intent_argument_column_scope` | `intent_argument_reference_step_target`, `intent_argument_scope_table` | 1 | primary key
-| 7 | `intent_input_field_column_match` | none direct; `intent_input_field_resolving_table`, `intent_field_reference_step_hop` through `intent_input_field_column_scope` | 2 | one index
-| 7 | `intent_node_id_instruction` | `intent_argument_reference_step_target`, `intent_argument_scope_table`; `intent_resolved_type_binding`, `intent_field_reference_step_hop` | 8, and one Java reader | one index
-| 8 | `intent_argument_column_match` | `intent_argument_column_scope` | 1 | none
-| 8 | `intent_input_field_filter_role` | `intent_input_field_column_match`, `intent_node_id_instruction`, and three of R954's | 4 | one index
-| 8 | `intent_node_id_decode_hop` | `intent_argument_reference_step_target`; `intent_node_id_instruction` and three of R954's | 2 | primary key
-| 9 | `intent_node_id_decode_hop_column` | `intent_node_id_decode_hop` | 1 | one index
-| 10 | `intent_node_id_decode_column` | `intent_node_id_decode_hop_column`; `intent_node_id_instruction` | 4 | none
-| 11 | `intent_input_field_carrier_role` | `intent_input_field_filter_role`, `intent_node_id_decode_column` | 2 | none
-| 12 | `intent_mutation_payload_refusal` | `intent_input_field_carrier_role`, `intent_input_field_filter_role`, `intent_mutation_write_payload`, `intent_input_field_resolving_table` | 2 | one index
-| 13 | `intent_mutation_payload_column` | `intent_mutation_payload_refusal` and five below it | 3 | none
-| 14 | `intent_mutation_payload_key_membership` | `intent_mutation_payload_column` | 2 | none
-| 15 | `intent_mutation_write_destination` | `intent_mutation_payload_column`, `intent_mutation_payload_key_membership` | 1 | one index
+| 0 | `intent_field_column_scope` | none | 3 | primary key
+| 2 | `intent_mutation_write_payload` | `intent_field_scope_table` | 4 | none
+| 4 | `intent_argument_column_scope` | `intent_argument_reference_step_target`, `intent_argument_scope_table` | 1 | primary key
+| 4 | `intent_input_field_column_match` | none direct; `intent_input_field_resolving_table` through `intent_input_field_column_scope` | 2 | one index
+| 4 | `intent_node_id_instruction` | `intent_argument_reference_step_target`, `intent_argument_scope_table` | 8, and one Java reader | one index
+| 5 | `intent_argument_column_match` | `intent_argument_column_scope` | 1 | none
+| 5 | `intent_input_field_filter_role` | `intent_input_field_column_match`, `intent_node_id_instruction`, `intent_argument_scope_table`, `intent_input_field_resolving_table` | 4 | one index
+| 5 | `intent_node_id_decode_hop` | `intent_argument_reference_step_target`, `intent_node_id_instruction`, `intent_argument_scope_table`, `intent_input_field_resolving_table` | 2 | primary key
+| 6 | `intent_node_id_decode_hop_column` | `intent_node_id_decode_hop` | 1 | one index
+| 7 | `intent_node_id_decode_column` | `intent_node_id_decode_hop_column`; `intent_node_id_instruction`, `intent_argument_scope_table` | 4 | none
+| 8 | `intent_input_field_carrier_role` | `intent_input_field_filter_role`, `intent_node_id_decode_column` and three of R958's | 2 | none
+| 9 | `intent_mutation_payload_refusal` | `intent_input_field_carrier_role`, `intent_input_field_filter_role`, `intent_mutation_write_payload`, `intent_input_field_resolving_table` | 2 | one index
+| 10 | `intent_mutation_payload_column` | `intent_mutation_payload_refusal` and five below it | 3 | none
+| 11 | `intent_mutation_payload_key_membership` | `intent_mutation_payload_column` | 2 | none
+| 12 | `intent_mutation_write_destination` | `intent_mutation_payload_column`, `intent_mutation_payload_key_membership` | 1 | one index
 |===
 
-**The two rungs inside R954's range.** `intent_field_column_scope` reads no registration above
-`intent_resolved_type_binding`, and `intent_mutation_write_payload` none above `intent_field_scope_table`,
-so both are convertible before R954 finishes, and the `depends-on:` edge is on R954's phases rather
-than on its Done: this item's first commit can land once `intent_resolved_type_binding` and the hop are
-tables, its second once `intent_field_scope_table` is. The other thirteen wait for the top of R954's
-ladder, and the mutation write chain at the top is the deepest thing in the store, twenty registrations
-below it in the transitive closure, so it converts last because everything it reads has to be a table
-first.
+**One rung is reachable today and fourteen wait on R958.** `intent_field_column_scope` reads no
+registration at all now that the type binding and the hop are stage-written tables, so it is rung 0
+and converts on its own. Every other rung reads one of R958's five, directly or through a plain view,
+and a stage may not read a table the refresh refills after it. So R958 is this item's real
+predecessor where the body said R954, and the fourteen are startable rung by rung as R958's five
+become tables rather than all at once when it lands: `intent_mutation_write_payload` the moment
+`intent_field_scope_table` is one, the argument and `@nodeId` rungs once
+`intent_argument_scope_table` and `intent_argument_reference_step_target` are, and the input-field
+roles once `intent_input_field_resolving_table` is. The mutation write chain at the top is the
+deepest thing in the store, so it converts last because everything it reads has to be a table first.
 
 **Three verdict families, landing in ladder order.** The column-scope pair and the mutation write
 payload; then the `@nodeId` decode chain, instruction through hop, hop column and decode column; then
@@ -440,7 +450,13 @@ Relation names, renamed by the move: the fifteen `intent_` names in the table ab
 
 ## Relation to other items
 
-**R954** is the bottom of this ladder and this item depends on it in the front-matter. Its eight
+**R958** is the bottom of this ladder and is what the front-matter depends on. R954 shipped four of
+the eight rungs under the `@reference` stratum and left the column-scope departures and the two
+remaining walks with R958, whose five registrations are what make fourteen of the fifteen here
+reachable without a seam; each becomes convertible as the relation under it becomes a table, as
+"What is in scope" states.
+
+**R954** shipped the bottom four and is where the method comes from. Its eight
 conversions are what make thirteen of the fifteen here reachable without a seam, and two of this
 item's rungs become convertible part-way through it, as "What is in scope" states. Its round-2 review
 found two things this body takes as settled: that rungs reaching a hand-written table run after the
