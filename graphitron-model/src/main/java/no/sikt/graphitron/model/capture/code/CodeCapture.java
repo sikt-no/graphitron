@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD_PARAMETER_TABLE;
 import static no.sikt.graphitron.model.Tables.CODE_EXTERNAL_FIELD_METHOD;
@@ -260,6 +261,7 @@ public final class CodeCapture {
      */
     private static void methods(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
                                 ClassAncestry ancestry, LocalDateTime touchedAt) {
+        classes(dsl, classes, touchedAt);
         record Declared(String source, String className, ClassfileCensus.MethodAt at) {}
         var found = new ArrayList<Declared>();
         for (ClassfileCensus.ClassAt at : classes) {
@@ -429,15 +431,10 @@ public final class CodeCapture {
         // inherited accessor was read from the base class's entry, so its result type was written
         // down under that one, and a slot is partitioned by where the class an author names was
         // found rather than by where the method behind it was.
-        var slotTypes = new ArrayList<Named>();
-        for (Slot row : found) {
-            slotTypes.add(new Named(row.source(), row.at().qualifiedReturnType(),
-                row.at().declaredReturnType()));
-            // And the offering class, which this relation keys to: a class offering members is one
-            // the store names, rather than a name appearing here and in no type relation at all.
-            slotTypes.add(new Named(row.source(), row.className(), simpleName(row.className())));
-        }
-        writeTypes(dsl, slotTypes, touchedAt);
+        writeTypes(dsl, found.stream()
+            .map(row -> new Named(row.source(), row.at().qualifiedReturnType(),
+                row.at().declaredReturnType()))
+            .toList(), touchedAt);
         var t = CODE_TYPE_SLOT;
         var rows = found.stream().collect(Rows.toRowList(
             row -> val(row.source(), t.SOURCE_NAME),
@@ -750,6 +747,32 @@ public final class CodeCapture {
             return null;
         }
         return propertyAfter(method.name(), "set");
+    }
+
+    /**
+     * Every class the reading read, which is the anchor the rest of the family keys a class to.
+     *
+     * <p>First, because everything below names a class and now says which one. Its own relation
+     * rather than a column somewhere, because three readers want the bare fact and nothing else:
+     * an editor asking whether a name an author typed is on the classpath, a completion listing
+     * what is there, and a route telling "no such method on that class" apart from "no such class",
+     * which no relation of candidates can say by itself.
+     */
+    private static void classes(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
+                                LocalDateTime touchedAt) {
+        if (classes.isEmpty()) {
+            return;
+        }
+        var c = CODE_CLASS;
+        var rows = classes.stream().collect(Rows.toRowList(
+            at -> val(at.source(), c.SOURCE_NAME),
+            at -> val(at.className(), c.CLASS_NAME),
+            at -> val(touchedAt, c.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(c, c.SOURCE_NAME, c.CLASS_NAME, c.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(c.TOUCHED_AT, excluded(c.TOUCHED_AT)));
     }
 
     /** One type as this gatherer names it: where it was read, its key, and how it renders. */
@@ -1109,7 +1132,7 @@ public final class CodeCapture {
                 CODE_TYPE_SLOT,
                 CODE_SERVICE_METHOD, CODE_CONDITION_METHOD, CODE_EXTERNAL_FIELD_METHOD,
                 CODE_METHOD, CODE_TYPE_ELEMENT, CODE_TYPE,
-                CODE_THROWABLE_SUPERTYPE, CODE_THROWABLE, CODE_SCALAR_CONSTANT)) {
+                CODE_THROWABLE_SUPERTYPE, CODE_THROWABLE, CODE_SCALAR_CONSTANT, CODE_CLASS)) {
             dsl.deleteFrom(table)
                 .where(table.field(CODE_METHOD.SOURCE_NAME).in(sources))
                 .and(table.field(CODE_METHOD.TOUCHED_AT).ne(touchedAt))

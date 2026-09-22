@@ -2679,6 +2679,7 @@ public final class SeededStore {
             .set(JVM_CLASS.CLASS_KIND, classKind)
             .set(JVM_CLASS.TOUCHED_AT, SEEDED_READING)
             .execute();
+        CodeRows.clazz(dsl, sourceName, className, SEEDED_READING);
     }
 
     /**

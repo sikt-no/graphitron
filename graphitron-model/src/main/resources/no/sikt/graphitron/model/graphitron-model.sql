@@ -6418,6 +6418,18 @@ COMMENT ON COLUMN jvm_record_component.declared_type IS 'the component type as t
 -- affordable and what keeps it from being a census: the classpath's other hundred thousand
 -- methods are nobody's to name.
 
+CREATE TABLE code_class (
+  source_name VARCHAR NOT NULL,
+  class_name  VARCHAR NOT NULL,
+  touched_at  TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+);
+COMMENT ON TABLE code_class IS 'One class the reading read, under the entry it was read from. For example a consumer''s FilmService on the reactor''s own output, beside a jOOQ interface on a declared jar.';
+COMMENT ON COLUMN code_class.source_name IS 'the classpath entry the class was read from; the key''s leading dimension, and the reason one name declared by two entries is two classes. A graph reaches it through store_graph_source like any source-keyed fact';
+COMMENT ON COLUMN code_class.class_name IS 'the fully-qualified binary name as the classfile spells it';
+COMMENT ON COLUMN code_class.touched_at IS 'when the reading that produced this row ran; swept with the entry it was read from';
+
 CREATE TABLE code_type (
   source_name  VARCHAR NOT NULL,
   type_name    VARCHAR NOT NULL,
@@ -6458,7 +6470,8 @@ CREATE TABLE code_method (
   result_type VARCHAR NOT NULL,
   touched_at  TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, class_name, method_name, descriptor),
-  FOREIGN KEY (source_name) REFERENCES store_source (source_name),
+  FOREIGN KEY (source_name, class_name)
+    REFERENCES code_class (source_name, class_name) ON DELETE CASCADE,
   FOREIGN KEY (source_name, result_type) REFERENCES code_type (source_name, type_name)
 );
 COMMENT ON TABLE code_method IS 'One public method of a class the reactor built, which is the population every directive naming Java draws its candidates from. For example filmsByRating(DSLContext, String) on a consumer''s FilmService.';
@@ -6511,13 +6524,14 @@ CREATE TABLE code_type_slot (
   origin          VARCHAR NOT NULL,
   touched_at      TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, class_name, method_name, descriptor),
-  FOREIGN KEY (source_name, class_name) REFERENCES code_type (source_name, type_name),
+  FOREIGN KEY (source_name, class_name)
+    REFERENCES code_class (source_name, class_name) ON DELETE CASCADE,
   FOREIGN KEY (source_name, slot_type) REFERENCES code_type (source_name, type_name),
   CHECK (origin IN ('RECORD_COMPONENT', 'BEAN_ACCESSOR'))
 );
 COMMENT ON TABLE code_type_slot IS 'One member name a class offers an author, the method that reads it and what reading it yields. For example a Film record offering title through its title() accessor, or a FilmDto offering it through getTitle().';
 COMMENT ON COLUMN code_type_slot.source_name IS 'the entry the declaring class was read from, as on code_method; the key''s leading dimension';
-COMMENT ON COLUMN code_type_slot.class_name IS 'the class offering the member, which is the class an author names and not always the class the accessor is written on. A member a base class declares is one the subclass offers, so this is where the walk found it rather than where it was declared. Keyed into the type relation, a class being a type with no arguments, which is what the write side gets by keying through its construction: a reader holding a slot can reach the offering class''s own rendering, and a class offering members is one the store has heard of rather than a name appearing here and nowhere else';
+COMMENT ON COLUMN code_type_slot.class_name IS 'the class offering the member, which is the class an author names and not always the class the accessor is written on. A member a base class declares is one the subclass offers, so this is where the walk found it rather than where it was declared. Keyed into code_class, so a class offering members is one the reading actually read rather than a name appearing here and nowhere else';
 COMMENT ON COLUMN code_type_slot.method_name IS 'the method that reads the member. The accessor is the key rather than the name an author writes, because the name is the part that is not unique: a class spelling one property getTitle and isTitle offers title twice';
 COMMENT ON COLUMN code_type_slot.descriptor IS 'the method''s descriptor, completing the key: two accessors of one name on one class are two slots, which is what overloading is';
 COMMENT ON COLUMN code_type_slot.declaring_class IS 'the class the accessor is written on, which is the class a jump to the member''s own source lands in. Equal to the offering class wherever the class declares its own member and different wherever it inherits one. No foreign key, for the reason the write side names the call it makes without keying to it: a base class may be read from a different classpath entry than the class offering its members, so the method''s own row sits under a key this one does not carry, and a constraint would refuse exactly the inheritance this column exists to record';
@@ -15825,6 +15839,10 @@ INSERT INTO meta_relation VALUES
    'One position in a method''s parameter list: the type bound there, the name it is bound under, and what the type alone says the position is for.',
    'For example position 0 of filmTitleContains, named film and playing the TABLE_CONCRETE role.',
    'A method''s parameters are the method''s own fact, so they are held once and the arms read them. Written rather than derived because a descriptor states types and nothing else: the name a binding targets is in the MethodParameters attribute, and the role is an assignability question the descriptor cannot answer. The role vocabulary is four values and they are exclusive because no type satisfies two; it is one column rather than one per arm because a position typed as a jOOQ table is typed that way whether the method is reached at @condition or anywhere else, and the arm''s reading of what that means is the arm''s. Keyed on position and not on name, since the name is exactly the part a classfile may omit.'),
+  ('code_class', 'classpath-class', 'code',
+   'One class the reading read, under the entry it was read from.',
+   'For example a consumer''s FilmService on the reactor''s own output, beside a jOOQ interface on a declared jar.',
+   'The anchor the rest of the family keys a class to. Three readers wanted it independently and none of them wants anything else about a class: an editor asking whether a name an author typed is one the classpath has, a completion listing what there is, and a condition route telling "this class declares no such method" apart from "this class is not here at all", which a relation of candidates cannot say by itself. Carries no kind and no rendering, because a class''s declared form is already the decision code_type_slot.origin records and no reader has wanted the evidence behind it. Distinct from code_type on population rather than on subject: a type is what a signature names, so it holds java.util.List<Film> which is no class, and a class the reading read that no signature mentions is here and not there.'),
   ('code_type', 'declared-type', 'code',
    'One type the signatures of an entry''s methods mention, as the source wrote it.',
    'For example java.util.List<no.sikt.example.Film>, beside the plain java.lang.String and the int that other positions carry.',

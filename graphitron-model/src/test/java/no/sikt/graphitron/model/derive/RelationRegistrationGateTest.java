@@ -246,6 +246,7 @@ class RelationRegistrationGateTest {
         // arm's own rule rather than by a census's. GraphitronSchema has no counterpart because the
         // walk it came from resolved a reference only once an author had written one, where an arm
         // states the candidates whether or not anybody has. What pins it is CodeCaptureTest.
+        registrations.put("code_class", Arm.UNSHADOWED);
         registrations.put("code_scalar_constant", Arm.UNSHADOWED);
         registrations.put("code_method", Arm.UNSHADOWED);
         registrations.put("code_type", Arm.UNSHADOWED);

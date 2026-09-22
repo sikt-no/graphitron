@@ -11,6 +11,7 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTION;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE;
@@ -62,6 +63,7 @@ public final class CodeRows {
     public static void writeStated(DSLContext dsl, List<CompletionData.ExternalReference> census,
                                    LocalDateTime readAt) {
         for (CompletionData.ExternalReference at : census) {
+            clazz(dsl, at.sourceName(), at.className(), readAt);
             boolean isRecord = "RECORD".equals(at.classKind());
             for (CompletionData.Method method : at.methods()) {
                 var positions = positionsOf(method.returnTypeRefs());
@@ -118,6 +120,7 @@ public final class CodeRows {
     public static void write(DSLContext dsl, String sourceName, String className, String methodName,
                              String descriptor, Map<String, String> positions,
                              LocalDateTime readAt) {
+        clazz(dsl, sourceName, className, readAt);
         String typeName = resultTypeName(positions, descriptor);
         dsl.insertInto(CODE_TYPE)
             .set(CODE_TYPE.SOURCE_NAME, sourceName)
@@ -163,9 +166,7 @@ public final class CodeRows {
             return;
         }
         type(dsl, sourceName, slotType, readAt);
-        // And the offering class, which this relation keys to as well: a class offering members is
-        // one the type relation names.
-        type(dsl, sourceName, className, readAt);
+        clazz(dsl, sourceName, className, readAt);
         dsl.insertInto(CODE_TYPE_SLOT)
             .set(CODE_TYPE_SLOT.SOURCE_NAME, sourceName)
             .set(CODE_TYPE_SLOT.CLASS_NAME, className)
@@ -222,6 +223,17 @@ public final class CodeRows {
             .set(CODE_WRITE_SLOT.SLOT_NAME, slotName)
             .set(CODE_WRITE_SLOT.SLOT_TYPE, slotType)
             .set(CODE_WRITE_SLOT.TOUCHED_AT, readAt)
+            .onDuplicateKeyIgnore()
+            .execute();
+    }
+
+    /** One class the reading read, idempotently; the anchor everything class-keyed points at. */
+    public static void clazz(DSLContext dsl, String sourceName, String className,
+                             LocalDateTime readAt) {
+        dsl.insertInto(CODE_CLASS)
+            .set(CODE_CLASS.SOURCE_NAME, sourceName)
+            .set(CODE_CLASS.CLASS_NAME, className)
+            .set(CODE_CLASS.TOUCHED_AT, readAt)
             .onDuplicateKeyIgnore()
             .execute();
     }
