@@ -321,9 +321,13 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_field_reference_step_target", Arm.DERIVED);
         registrations.put("graphitron_field_reference_step_target_keyed", Arm.DERIVED);
         registrations.put("graphitron_field_reference_step_target_keyless", Arm.DERIVED);
+        registrations.put("graphitron_argument_reference_step_target_keyed", Arm.DERIVED);
+        registrations.put("graphitron_argument_reference_step_target_keyless", Arm.DERIVED);
+        registrations.put("graphitron_input_field_reference_step_target_keyed", Arm.DERIVED);
+        registrations.put("graphitron_input_field_reference_step_target_keyless", Arm.DERIVED);
         registrations.put("intent_field_reference_step_fanout", Arm.DERIVED);
         registrations.put("intent_argument_reference_step_hop", Arm.DERIVED);
-        registrations.put("intent_argument_reference_step_target", Arm.DERIVED);
+        registrations.put("graphitron_argument_reference_step_target", Arm.DERIVED);
         registrations.put("intent_field_chain_start", Arm.DERIVED);
         registrations.put("intent_field_chain_node", Arm.DERIVED);
         registrations.put("intent_field_chain_terminus", Arm.DERIVED);
@@ -340,11 +344,10 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_argument_scope_table", Arm.DERIVED);
         registrations.put("graphitron_input_field_resolving_table", Arm.DERIVED);
         registrations.put("graphitron_input_field_resolving_table_rule", Arm.DERIVED);
-        registrations.put("intent_input_field_reference_step_target", Arm.DERIVED);
+        registrations.put("graphitron_input_field_reference_step_target", Arm.DERIVED);
         registrations.put("intent_input_field_column_scope", Arm.DERIVED);
         registrations.put("intent_input_field_column_match", Arm.DERIVED);
         registrations.put("intent_input_field_column_match_live", Arm.DERIVED);
-        registrations.put("intent_argument_reference_step_target_live", Arm.DERIVED);
         registrations.put("intent_input_field_filter_role", Arm.DERIVED);
         registrations.put("intent_input_field_carrier_role", Arm.DERIVED);
         registrations.put("intent_condition_membership", Arm.DERIVED);

@@ -6,6 +6,7 @@ import org.jooq.DSLContext;
 import org.jooq.Name;
 import org.jooq.Query;
 import org.jooq.QueryPart;
+import org.jooq.Schema;
 import org.jooq.Select;
 import org.jooq.Table;
 import org.jooq.TableField;
@@ -199,8 +200,26 @@ public final class ViewReferences {
      *         a run caused
      */
     public static List<Reference> readBy(DSLContext dsl, String viewName) {
-        Query query = parse(dsl, viewName, definitionOf(dsl, viewName));
+        return readBy(dsl, parse(dsl, viewName, definitionOf(dsl, viewName)));
+    }
 
+    /**
+     * {@link #readBy(DSLContext, String)} over a statement handed in rather than one read out of
+     * the catalog, which is the same walk over the same object: the stored-definition half of that
+     * method is a prologue that turns a view name into a {@link Query}, and everything below this
+     * line is a function of the query alone.
+     *
+     * <p>It exists because a rule stated as jOOQ has no stored definition to parse, and a stage
+     * whose rule is jOOQ would otherwise have a read set nothing can derive. A deriver exposes the
+     * statements it runs beside the method that runs them, and an instrument reading them here is
+     * reading the object the capture executes rather than a transcription of it.
+     *
+     * <p>A statement that writes names its target too, an {@code INSERT INTO t SELECT ...} visiting
+     * {@code t} like any other relation. That is the honest reading of the query and a caller
+     * asking specifically what a stage <em>reads</em> subtracts the relations it writes, which it
+     * knows and this walk does not.
+     */
+    public static List<Reference> readBy(DSLContext dsl, Query query) {
         List<Visit> visits = new ArrayList<>();
         List<Visit> terms = new ArrayList<>();
         Map<QueryPart, Set<String>> boundAt = new IdentityHashMap<>();
@@ -239,8 +258,20 @@ public final class ViewReferences {
      * reading it once impose the same ordering.
      */
     public static Set<String> relationsReadBy(DSLContext dsl, String viewName) {
+        return relationsOf(readBy(dsl, viewName));
+    }
+
+    /**
+     * {@link #relationsReadBy(DSLContext, String)} over a statement handed in, for the caller that
+     * wants a jOOQ rule's relation names and not its positions.
+     */
+    public static Set<String> relationsReadBy(DSLContext dsl, Query query) {
+        return relationsOf(readBy(dsl, query));
+    }
+
+    private static Set<String> relationsOf(List<Reference> references) {
         Set<String> relations = new TreeSet<>();
-        readBy(dsl, viewName).forEach(reference -> relations.add(reference.relation()));
+        references.forEach(reference -> relations.add(reference.relation()));
         return relations;
     }
 
@@ -277,7 +308,7 @@ public final class ViewReferences {
         if (visited instanceof QOM.JoinTable<?, ?>) {
             return;
         }
-        Name qualified = visited.getQualifiedName();
+        Name qualified = qualifiedName(visited);
         String unqualified = normalize(visited.getUnqualifiedName());
         innermostLevel(ancestors).ifPresent(level ->
             boundAt.computeIfAbsent(level, l -> new TreeSet<>()).add(unqualified));
@@ -439,6 +470,32 @@ public final class ViewReferences {
             .filter(part -> part instanceof CommonTableExpression<?>)
             .map(part -> normalize(((CommonTableExpression<?>) part).getUnqualifiedName()))
             .toList();
+    }
+
+    /**
+     * A visited table's name with its schema on it, in the one shape the tests below compare.
+     *
+     * <p>The two sources this walk reads spell a qualified name differently, and only one of them
+     * puts the schema in the name itself. A parsed definition builds its tables from the two-part
+     * name the catalog stored, so the schema is there to read. A generated table is constructed
+     * from its own unqualified name and reports its schema separately, rendering the qualification
+     * at render time; asked for a qualified name it answers with one part. Reading only the first
+     * shape would classify every relation a jOOQ statement names as an alias, which is a read set
+     * that comes back empty rather than wrong, and an empty read set passes every check over it.
+     *
+     * <p>An alias has to keep its one part, which is what the alias test here is for and not the
+     * schema: a generated table clears its schema when aliased, but a parsed one is wrapped in an
+     * alias that still answers with the wrapped table's schema, so qualifying on a schema alone
+     * would turn every alias in every stored definition into a read of a relation named after it.
+     * A common table expression is neither and never had a schema to begin with.
+     */
+    private static Name qualifiedName(Table<?> visited) {
+        Name qualified = visited.getQualifiedName();
+        Schema schema = visited.getSchema();
+        return qualified.parts().length == 1 && schema != null
+                && !(visited instanceof QOM.TableAlias<?>)
+            ? name(schema.getName(), qualified.last())
+            : qualified;
     }
 
     /** A name as this walk compares them: last segment, upper case, quoting discarded. */

@@ -7438,7 +7438,7 @@ SELECT s.graph_name, s.type_name, s.field_name, s.argument_name, s.ordinal, s.po
   JOIN intent_condition_method_route r
     ON r.graph_name = s.graph_name AND r.class_name = s.class_name AND r.method = s.method
  WHERE s.class_name IS NOT NULL AND s.key_ref IS NULL AND s.table_ref IS NULL;
-COMMENT ON VIEW intent_argument_reference_step_hop IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. One argument-site @reference path element''s local resolution: the field-site sibling''s rule at the other coordinate a @reference can be written on. Every arm, every namespace precedence and every orientation is that view''s, and its comment is where they are argued; what differs here is only the relation the elements come from and the key they are keyed by, an argument being its own site. A sibling relation rather than an argument_name column on the field-site view, on the discipline intent_input_occurrence_path_step states for its own shape: the two sites'' coordinates are different lengths, so one relation over both would carry a column that is NULL by kind on half its rows and every reader of either site would then have to say which kind it meant. Two relations say it once each. The duplication is the SQL body and not the rule, which is the trade this schema makes wherever a rule is coordinate-shaped: a reader comparing the two finds them textually identical arm for arm, and the anchor test asserts that the two answer the same path shape the same way rather than leaving the agreement to inspection. Where a resolution genuinely is shared it is already a relation of its own and both views join it, graphitron_spelled_table for a written table name, sql_name_matched_key_column for a function result''s column pairing and intent_condition_method_route for the route a condition method''s signature declares, so what remains here is the coordinate-shaped part alone. Separate from intent_argument_reference_step_target for the reason its field-site counterpart is: the local resolution has no recursion in it, and keeping the two apart lets that view''s recursive term be a single join rather than a copy of these arms.';
+COMMENT ON VIEW intent_argument_reference_step_hop IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. One argument-site @reference path element''s local resolution: the field-site sibling''s rule at the other coordinate a @reference can be written on. Every arm, every namespace precedence and every orientation is that view''s, and its comment is where they are argued; what differs here is only the relation the elements come from and the key they are keyed by, an argument being its own site. A sibling relation rather than an argument_name column on the field-site view, on the discipline intent_input_occurrence_path_step states for its own shape: the two sites'' coordinates are different lengths, so one relation over both would carry a column that is NULL by kind on half its rows and every reader of either site would then have to say which kind it meant. Two relations say it once each. The duplication is the SQL body and not the rule, which is the trade this schema makes wherever a rule is coordinate-shaped: a reader comparing the two finds them textually identical arm for arm, and the anchor test asserts that the two answer the same path shape the same way rather than leaving the agreement to inspection. Where a resolution genuinely is shared it is already a relation of its own and both views join it, graphitron_spelled_table for a written table name, sql_name_matched_key_column for a function result''s column pairing and intent_condition_method_route for the route a condition method''s signature declares, so what remains here is the coordinate-shaped part alone. Separate from graphitron_argument_reference_step_target for the reason its field-site counterpart is: the local resolution has no recursion in it, and keeping the two apart lets that view''s recursive term be a single join rather than a copy of these arms.';
 COMMENT ON COLUMN intent_argument_reference_step_hop.graph_name IS 'the owning graph''s partition, carried from graphitron_argument_reference_step_entry';
 COMMENT ON COLUMN intent_argument_reference_step_hop.type_name IS 'the type owning the field the argument sits on';
 COMMENT ON COLUMN intent_argument_reference_step_hop.field_name IS 'the field owning the argument the @reference is applied to';
@@ -9223,15 +9223,15 @@ COMMENT ON COLUMN graphitron_argument_scope_table.table_name IS 'the scope table
 
 CREATE INDEX ix_argument_scope_table_coordinate ON graphitron_argument_scope_table
   (graph_name, type_name, field_name, argument_name);
-COMMENT ON INDEX ix_argument_scope_table_coordinate IS 'Serves the argument coordinate its three readers all join on: intent_node_id_instruction in three arms, intent_node_id_decode_endpoint, and intent_argument_reference_step_target, which adds the resolved table''s own three columns after these four. Measured on the read-cost gate''s twelve-unit fixture with statistics current, the five indexes this file declares against none of them: intent_node_id_decode_endpoint costs 5439 scans without them and 3120 with them, intent_node_id_decode_hop 5824 against 3293, intent_argument_reference_step_target 114 against 8. The last of those three is this index alone and the first two are shared with the spelling index above, both readers reaching a spelling as well as an argument coordinate. Not UNIQUE, because it is a prefix of the grain rather than the whole of it: a coordinate carries one row per table its field''s statement is rooted in, one where a single table answers and one per branch under a polymorphic root. What separates those rows is the table, not basis, which is a function of the coordinate and the table both here and on the relation this fans out; an earlier version of this note said basis was the discriminator and named a pair of values that belong to intent_argument_column_scope''s vocabulary rather than to this one.';
+COMMENT ON INDEX ix_argument_scope_table_coordinate IS 'Serves the argument coordinate its three readers all join on: intent_node_id_instruction in three arms, intent_node_id_decode_endpoint, and graphitron_argument_reference_step_target, which adds the resolved table''s own three columns after these four. Measured on the read-cost gate''s twelve-unit fixture with statistics current, the five indexes this file declares against none of them: intent_node_id_decode_endpoint costs 5439 scans without them and 3120 with them, intent_node_id_decode_hop 5824 against 3293, graphitron_argument_reference_step_target 114 against 8. The last of those three is this index alone and the first two are shared with the spelling index above, both readers reaching a spelling as well as an argument coordinate. Not UNIQUE, because it is a prefix of the grain rather than the whole of it: a coordinate carries one row per table its field''s statement is rooted in, one where a single table answers and one per branch under a polymorphic root. What separates those rows is the table, not basis, which is a function of the coordinate and the table both here and on the relation this fans out; an earlier version of this note said basis was the discriminator and named a pair of values that belong to intent_argument_column_scope''s vocabulary rather than to this one.';
 
-CREATE TABLE intent_argument_reference_step_target (
+CREATE TABLE graphitron_argument_reference_step_target_keyed (
   graph_name       VARCHAR NOT NULL,
   type_name        VARCHAR NOT NULL,
   field_name       VARCHAR NOT NULL,
   argument_name    VARCHAR NOT NULL,
-  ordinal          INT     NOT NULL,
-  position         INT     NOT NULL,
+  ordinal          INTEGER NOT NULL,
+  position         INTEGER NOT NULL,
   via              VARCHAR NOT NULL,
   key_matched_by   VARCHAR,
   from_source_name VARCHAR NOT NULL,
@@ -9240,99 +9240,118 @@ CREATE TABLE intent_argument_reference_step_target (
   to_source_name   VARCHAR NOT NULL,
   to_schema        VARCHAR NOT NULL,
   to_table         VARCHAR NOT NULL,
-  constraint_name  VARCHAR,
-  fk_on_from       BOOLEAN,
-  targets          INT     NOT NULL,
-  candidates       INT     NOT NULL,
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+  constraint_name  VARCHAR NOT NULL,
+  fk_on_from       BOOLEAN NOT NULL,
+  targets          INTEGER NOT NULL,
+  candidates       INTEGER NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, argument_name, ordinal, position,
+               from_source_name, from_schema, from_table,
+               to_source_name, to_schema, to_table, constraint_name, fk_on_from),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  CHECK (via IN ('KEY', 'TABLE')),
+  CHECK (key_matched_by IS NULL OR key_matched_by IN ('SQL_NAME', 'JOOQ_NAME')),
+  -- A KEY element resolved a namespace, the rule computing it from the constraint it matched,
+  -- and a TABLE element wrote no name to match one against.
+  CHECK ((key_matched_by IS NOT NULL) = (via = 'KEY'))
 );
+COMMENT ON TABLE graphitron_argument_reference_step_target_keyed IS 'One foreign-key route one argument-site @reference path element reaches, in one orientation: the element the chain walked to, with the key it joins through. For example Query.films(actorId:) over @reference(path: [{key: "film_actor_actor_id_fkey"}]) draws one row per position, each departing where the one before it arrived.';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyed.graph_name IS 'the graph_name of a row of this arm, presented on graphitron_argument_reference_step_target.graph_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyed.type_name IS 'the type_name of a row of this arm, presented on graphitron_argument_reference_step_target.type_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyed.field_name IS 'the field_name of a row of this arm, presented on graphitron_argument_reference_step_target.field_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyed.argument_name IS 'the argument_name of a row of this arm, presented on graphitron_argument_reference_step_target.argument_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyed.ordinal IS 'the ordinal of a row of this arm, presented on graphitron_argument_reference_step_target.ordinal, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyed.position IS 'the position of a row of this arm, presented on graphitron_argument_reference_step_target.position, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyed.via IS 'the via of a row of this arm, presented on graphitron_argument_reference_step_target.via, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyed.key_matched_by IS 'the key_matched_by of a row of this arm, presented on graphitron_argument_reference_step_target.key_matched_by, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyed.from_source_name IS 'the from_source_name of a row of this arm, presented on graphitron_argument_reference_step_target.from_source_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyed.from_schema IS 'the from_schema of a row of this arm, presented on graphitron_argument_reference_step_target.from_schema, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyed.from_table IS 'the from_table of a row of this arm, presented on graphitron_argument_reference_step_target.from_table, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyed.to_source_name IS 'the to_source_name of a row of this arm, presented on graphitron_argument_reference_step_target.to_source_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyed.to_schema IS 'the to_schema of a row of this arm, presented on graphitron_argument_reference_step_target.to_schema, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyed.to_table IS 'the to_table of a row of this arm, presented on graphitron_argument_reference_step_target.to_table, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyed.constraint_name IS 'the constraint_name of a row of this arm, presented on graphitron_argument_reference_step_target.constraint_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyed.fk_on_from IS 'the fk_on_from of a row of this arm, presented on graphitron_argument_reference_step_target.fk_on_from, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyed.targets IS 'the targets of a row of this arm, presented on graphitron_argument_reference_step_target.targets, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyed.candidates IS 'the candidates of a row of this arm, presented on graphitron_argument_reference_step_target.candidates, whose comment carries what the value means';
 
-CREATE VIEW intent_argument_reference_step_target_live
+CREATE TABLE graphitron_argument_reference_step_target_keyless (
+  graph_name       VARCHAR NOT NULL,
+  type_name        VARCHAR NOT NULL,
+  field_name       VARCHAR NOT NULL,
+  argument_name    VARCHAR NOT NULL,
+  ordinal          INTEGER NOT NULL,
+  position         INTEGER NOT NULL,
+  via              VARCHAR NOT NULL,
+  from_source_name VARCHAR NOT NULL,
+  from_schema      VARCHAR NOT NULL,
+  from_table       VARCHAR NOT NULL,
+  to_source_name   VARCHAR NOT NULL,
+  to_schema        VARCHAR NOT NULL,
+  to_table         VARCHAR NOT NULL,
+  targets          INTEGER NOT NULL,
+  candidates       INTEGER NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, argument_name, ordinal, position,
+               from_source_name, from_schema, from_table,
+               to_source_name, to_schema, to_table),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  CHECK (via IN ('NAME_MATCH', 'CONDITION'))
+);
+COMMENT ON TABLE graphitron_argument_reference_step_target_keyless IS 'One table pair one argument-site @reference path element reaches without a foreign key: the element the chain walked to, by column-name match from a function result or by the route a condition method declares. For example a chain-ending element carrying only a @condition draws one row arriving at the table that method''s second parameter names.';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyless.graph_name IS 'the graph_name of a row of this arm, presented on graphitron_argument_reference_step_target.graph_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyless.type_name IS 'the type_name of a row of this arm, presented on graphitron_argument_reference_step_target.type_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyless.field_name IS 'the field_name of a row of this arm, presented on graphitron_argument_reference_step_target.field_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyless.argument_name IS 'the argument_name of a row of this arm, presented on graphitron_argument_reference_step_target.argument_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyless.ordinal IS 'the ordinal of a row of this arm, presented on graphitron_argument_reference_step_target.ordinal, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyless.position IS 'the position of a row of this arm, presented on graphitron_argument_reference_step_target.position, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyless.via IS 'the via of a row of this arm, presented on graphitron_argument_reference_step_target.via, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyless.from_source_name IS 'the from_source_name of a row of this arm, presented on graphitron_argument_reference_step_target.from_source_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyless.from_schema IS 'the from_schema of a row of this arm, presented on graphitron_argument_reference_step_target.from_schema, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyless.from_table IS 'the from_table of a row of this arm, presented on graphitron_argument_reference_step_target.from_table, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyless.to_source_name IS 'the to_source_name of a row of this arm, presented on graphitron_argument_reference_step_target.to_source_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyless.to_schema IS 'the to_schema of a row of this arm, presented on graphitron_argument_reference_step_target.to_schema, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyless.to_table IS 'the to_table of a row of this arm, presented on graphitron_argument_reference_step_target.to_table, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyless.targets IS 'the targets of a row of this arm, presented on graphitron_argument_reference_step_target.targets, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_argument_reference_step_target_keyless.candidates IS 'the candidates of a row of this arm, presented on graphitron_argument_reference_step_target.candidates, whose comment carries what the value means';
+
+CREATE VIEW graphitron_argument_reference_step_target
   (graph_name, type_name, field_name, argument_name, ordinal, position, via, key_matched_by,
    from_source_name, from_schema, from_table,
    to_source_name, to_schema, to_table, constraint_name, fk_on_from,
    targets, candidates) AS
-WITH RECURSIVE chain (graph_name, type_name, field_name, argument_name, ordinal, position,
-   via, key_matched_by, from_source_name, from_schema, from_table,
-   to_source_name, to_schema, to_table, constraint_name, fk_on_from) AS (
-  SELECT h.graph_name, h.type_name, h.field_name, h.argument_name, h.ordinal, h.position,
-         h.via, h.key_matched_by, h.from_source_name, h.from_schema, h.from_table,
-         h.to_source_name, h.to_schema, h.to_table, h.constraint_name, h.fk_on_from
-    FROM intent_argument_reference_step_hop h
-    JOIN graphitron_argument_scope_table sc
-      ON sc.graph_name = h.graph_name AND sc.type_name = h.type_name
-     AND sc.field_name = h.field_name AND sc.argument_name = h.argument_name
-     AND sc.table_source_name = h.from_source_name AND sc.table_schema = h.from_schema
-     AND sc.table_name = h.from_table
-   WHERE h.position = 0
-  UNION
-  SELECT h.graph_name, h.type_name, h.field_name, h.argument_name, h.ordinal, h.position,
-         h.via, h.key_matched_by, h.from_source_name, h.from_schema, h.from_table,
-         h.to_source_name, h.to_schema, h.to_table, h.constraint_name, h.fk_on_from
-    FROM chain p
-    JOIN intent_argument_reference_step_hop h
-      ON h.graph_name = p.graph_name AND h.type_name = p.type_name
-     AND h.field_name = p.field_name AND h.argument_name = p.argument_name
-     AND h.ordinal = p.ordinal AND h.position = p.position + 1
-     AND h.from_source_name = p.to_source_name AND h.from_schema = p.to_schema
-     AND h.from_table = p.to_table
-)
 SELECT graph_name, type_name, field_name, argument_name, ordinal, position, via, key_matched_by,
        from_source_name, from_schema, from_table,
        to_source_name, to_schema, to_table, constraint_name, fk_on_from,
-       CAST(MAX(target_rank) OVER (
-         PARTITION BY graph_name, type_name, field_name, argument_name,
-                      ordinal, position) AS INT),
-       CAST(COUNT(*) OVER (
-         PARTITION BY graph_name, type_name, field_name, argument_name,
-                      ordinal, position) AS INT)
-  FROM (SELECT c.*, DENSE_RANK() OVER (
-                 PARTITION BY c.graph_name, c.type_name, c.field_name, c.argument_name,
-                              c.ordinal, c.position
-                 ORDER BY c.to_source_name, c.to_schema, c.to_table) AS target_rank
-          FROM chain c) ranked;
-COMMENT ON VIEW intent_argument_reference_step_target_live IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. This states the rule and is evaluated on demand. The canonical name intent_argument_reference_step_target beside it is the table this view is materialized into on the capture cadence, which is what every reader spells and what the registration in meta_materialize records; a reader naming this relation instead is asking for on-demand evaluation and will get it. The rule itself, and what each column means, is documented on intent_argument_reference_step_target.';
-COMMENT ON COLUMN intent_argument_reference_step_target_live.graph_name IS 'the graph_name of a row of this rule, materialized into intent_argument_reference_step_target.graph_name, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_reference_step_target_live.type_name IS 'the type_name of a row of this rule, materialized into intent_argument_reference_step_target.type_name, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_reference_step_target_live.field_name IS 'the field_name of a row of this rule, materialized into intent_argument_reference_step_target.field_name, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_reference_step_target_live.argument_name IS 'the argument_name of a row of this rule, materialized into intent_argument_reference_step_target.argument_name, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_reference_step_target_live.ordinal IS 'the ordinal of a row of this rule, materialized into intent_argument_reference_step_target.ordinal, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_reference_step_target_live.position IS 'the position of a row of this rule, materialized into intent_argument_reference_step_target.position, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_reference_step_target_live.via IS 'the via of a row of this rule, materialized into intent_argument_reference_step_target.via, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_reference_step_target_live.key_matched_by IS 'the key_matched_by of a row of this rule, materialized into intent_argument_reference_step_target.key_matched_by, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_reference_step_target_live.from_source_name IS 'the from_source_name of a row of this rule, materialized into intent_argument_reference_step_target.from_source_name, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_reference_step_target_live.from_schema IS 'the from_schema of a row of this rule, materialized into intent_argument_reference_step_target.from_schema, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_reference_step_target_live.from_table IS 'the from_table of a row of this rule, materialized into intent_argument_reference_step_target.from_table, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_reference_step_target_live.to_source_name IS 'the to_source_name of a row of this rule, materialized into intent_argument_reference_step_target.to_source_name, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_reference_step_target_live.to_schema IS 'the to_schema of a row of this rule, materialized into intent_argument_reference_step_target.to_schema, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_reference_step_target_live.to_table IS 'the to_table of a row of this rule, materialized into intent_argument_reference_step_target.to_table, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_reference_step_target_live.constraint_name IS 'the constraint_name of a row of this rule, materialized into intent_argument_reference_step_target.constraint_name, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_reference_step_target_live.fk_on_from IS 'the fk_on_from of a row of this rule, materialized into intent_argument_reference_step_target.fk_on_from, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_reference_step_target_live.targets IS 'the targets of a row of this rule, materialized into intent_argument_reference_step_target.targets, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_reference_step_target_live.candidates IS 'the candidates of a row of this rule, materialized into intent_argument_reference_step_target.candidates, whose comment carries what the value means';
-COMMENT ON TABLE intent_argument_reference_step_target IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Where each element of an argument-site @reference path actually lands: intent_argument_reference_step_hop walked one element at a time, so a row exists only for an element the chain can be shown to reach. The field-site sibling''s comment argues the walk, and everything it says about recursion, about absence meaning "not reached" rather than "resolves to nothing in particular", and about a condition-only element resolving through intent_condition_method_route, holds here unchanged, with one exception in this view''s favour: the projection-site declared target that view sets aside is a preference a filter site never has, so this walk reads the whole of the resolver''s filter-path rule. One thing does not, and it is the whole reason this view is not that one with a column added: the departure. A field-site path departs from the enclosing type''s own binding, because the field is a projection off that type''s row. An argument-site path departs from the table the argument''s own content binds against, because an argument filters what the field returns rather than what its parent is; the resolver states the same thing by passing the field''s target table as the path''s source. So a filter argument on a root field, whose parent type is bound to nothing at all, has a departure here where the field-site rule would give it none, and reading one view for both sites would have made that departure a case rather than the rule. That departure is graphitron_argument_scope_table''s whole subject and is read from it rather than restated: the field''s binding read through intent_field_navigated_type so a connection-returning field departs its element type''s table and not the wrapper''s, and below it the @mutation(table:) spelling, which is what gives a delete surface''s argument a departure at all where its return type binds nothing. Reading the relation rather than spelling the upper rung inline is also what stops the two spellings of one rule from drifting, the rule having a second reader now. It costs one demand the earlier spelling did not make, and the demand is the scope relation''s and correct: a departure is a table a predicate is emitted on, so an ambiguously bound named type is no departure rather than two, which is intent_field_reference_discovery''s stance on the same question. The field-site sibling still admits the ambiguity, its departure being the enclosing type''s binding read directly and its arities counting what that reached. It gains one shape from the same relation and does not yet answer it fully, which is stated here rather than left to be discovered: an argument on a field returning a multi-table polymorphic container departs from one table per branch, so such a path is walked once per branch and each walk lands wherever that branch''s own keys reach. The rows come out; the two arity columns do not follow. They are counted per element and position and not per departure, so two branches walking the same element at the same position fall in one partition and their candidate counts are conflated, which would read as an ambiguity at a step that is unambiguous on each branch taken alone. Putting the departure in that partition is what would close it, and it is not done here because it would also split the candidate set at an ambiguous mid-chain landing, which is a change to what the arity means on a shape the tree does exercise. No graph in the tree writes an argument-site path at such a coordinate, so this is an unexercised limit rather than a wrong answer anybody reads, and it is the first thing to fix for whoever needs one.';
-COMMENT ON COLUMN intent_argument_reference_step_target.graph_name IS 'the owning graph''s partition, carried from the hop view';
-COMMENT ON COLUMN intent_argument_reference_step_target.type_name IS 'the type owning the field the argument sits on. Not the type whose binding started the chain, which is the field''s named type: the difference from the field-site sibling, where the two are one';
-COMMENT ON COLUMN intent_argument_reference_step_target.field_name IS 'the field owning the argument the @reference is applied to; also the field whose named type''s binding started the chain';
-COMMENT ON COLUMN intent_argument_reference_step_target.argument_name IS 'the argument the @reference is applied to';
-COMMENT ON COLUMN intent_argument_reference_step_target.ordinal IS 'the owning @reference application''s ordinal, as on the hop view';
-COMMENT ON COLUMN intent_argument_reference_step_target.position IS 'the element''s 0-based position within its application''s path; positions are contiguous from 0 up to wherever the chain stopped';
-COMMENT ON COLUMN intent_argument_reference_step_target.via IS 'which arm resolved the element, as on the hop view: KEY, TABLE, NAME_MATCH or CONDITION';
-COMMENT ON COLUMN intent_argument_reference_step_target.key_matched_by IS 'for a KEY element, the namespace that answered; NULL on a TABLE, NAME_MATCH or CONDITION element. As on the hop view';
-COMMENT ON COLUMN intent_argument_reference_step_target.from_source_name IS 'the departing table''s catalog partition; the argument''s own scope table at position 0, the previous element''s arrival after that';
-COMMENT ON COLUMN intent_argument_reference_step_target.from_schema IS 'the departing table''s SQL schema';
-COMMENT ON COLUMN intent_argument_reference_step_target.from_table IS 'the departing table''s SQL name';
-COMMENT ON COLUMN intent_argument_reference_step_target.to_source_name IS 'the arriving table''s catalog partition, first column of its sql_table key';
-COMMENT ON COLUMN intent_argument_reference_step_target.to_schema IS 'the arriving table''s SQL schema';
-COMMENT ON COLUMN intent_argument_reference_step_target.to_table IS 'the arriving table''s SQL name. At the path''s last position this is the table the argument''s own column name resolves against, which is where a filter predicate binds';
-COMMENT ON COLUMN intent_argument_reference_step_target.constraint_name IS 'the foreign key this element joins on, named or discovered; NULL on a NAME_MATCH or CONDITION element, as on the hop view';
-COMMENT ON COLUMN intent_argument_reference_step_target.fk_on_from IS 'TRUE when the departing table declares the foreign key; the element''s direction. NULL on a NAME_MATCH or CONDITION element, as on the hop view';
-COMMENT ON COLUMN intent_argument_reference_step_target.targets IS 'how many distinct tables this element reaches, this row''s arrival being one of them; 1 where the destination is certain. Separate from candidates for the reason the field-site sibling states: an element with three foreign keys connecting the same pair of tables reaches one table by three routes, and a reader that only needs the destination can trust that where one that has to render the join cannot';
-COMMENT ON COLUMN intent_argument_reference_step_target.candidates IS 'how many rows this element resolved to, counting routes and not just destinations; 1 is the requirement for an expressible hop';
+       targets, candidates
+  FROM graphitron_argument_reference_step_target_keyed
+UNION ALL
+SELECT graph_name, type_name, field_name, argument_name, ordinal, position, via,
+       CAST(NULL AS VARCHAR),
+       from_source_name, from_schema, from_table,
+       to_source_name, to_schema, to_table, CAST(NULL AS VARCHAR), CAST(NULL AS BOOLEAN),
+       targets, candidates
+  FROM graphitron_argument_reference_step_target_keyless;
 
-CREATE INDEX ix_argument_reference_step_target_coordinate ON intent_argument_reference_step_target
-  (graph_name, type_name, field_name, argument_name, ordinal, position);
-COMMENT ON INDEX ix_argument_reference_step_target_coordinate IS 'Serves the element coordinate its three readers hold, which is this relation''s grain up to the target rank the collapse leaves off: intent_node_id_instruction joins it at the argument site to find where the path lands, intent_node_id_decode_hop reaches it for the same path one rung further out, and intent_argument_column_scope drives from it. The shape is ix_argument_scope_table_coordinate''s, one column further in, and the reason is that relation''s too: a registered target is scanned whole unless a key lets a probe reach its rows, where the rule it replaces was evaluated restricted with the probe pushed into its terms. Not UNIQUE, the collapse admitting one row per element per distinct arriving table, which is what targets counts.';
+
+COMMENT ON VIEW graphitron_argument_reference_step_target IS 'Where each element of an argument''s @reference path actually lands: the hops walked from the table the argument''s own content binds against, one element at a time, so a row exists only for an element the chain can be shown to reach. For example a path of two key elements draws one row at each position, the second departing where the first arrived, and an element that resolves to nothing ends the chain and draws none.';
+COMMENT ON COLUMN graphitron_argument_reference_step_target.graph_name IS 'the owning graph''s partition, carried from the hop view';
+COMMENT ON COLUMN graphitron_argument_reference_step_target.type_name IS 'the type owning the field the argument sits on. Not the type whose binding started the chain, which is the field''s named type: the difference from the field-site sibling, where the two are one';
+COMMENT ON COLUMN graphitron_argument_reference_step_target.field_name IS 'the field owning the argument the @reference is applied to; also the field whose named type''s binding started the chain';
+COMMENT ON COLUMN graphitron_argument_reference_step_target.argument_name IS 'the argument the @reference is applied to';
+COMMENT ON COLUMN graphitron_argument_reference_step_target.ordinal IS 'the owning @reference application''s ordinal, as on the hop view';
+COMMENT ON COLUMN graphitron_argument_reference_step_target.position IS 'the element''s 0-based position within its application''s path; positions are contiguous from 0 up to wherever the chain stopped';
+COMMENT ON COLUMN graphitron_argument_reference_step_target.via IS 'which arm resolved the element, as on the hop view: KEY, TABLE, NAME_MATCH or CONDITION';
+COMMENT ON COLUMN graphitron_argument_reference_step_target.key_matched_by IS 'for a KEY element, the namespace that answered; NULL on a TABLE, NAME_MATCH or CONDITION element. As on the hop view';
+COMMENT ON COLUMN graphitron_argument_reference_step_target.from_source_name IS 'the departing table''s catalog partition; the argument''s own scope table at position 0, the previous element''s arrival after that';
+COMMENT ON COLUMN graphitron_argument_reference_step_target.from_schema IS 'the departing table''s SQL schema';
+COMMENT ON COLUMN graphitron_argument_reference_step_target.from_table IS 'the departing table''s SQL name';
+COMMENT ON COLUMN graphitron_argument_reference_step_target.to_source_name IS 'the arriving table''s catalog partition, first column of its sql_table key';
+COMMENT ON COLUMN graphitron_argument_reference_step_target.to_schema IS 'the arriving table''s SQL schema';
+COMMENT ON COLUMN graphitron_argument_reference_step_target.to_table IS 'the arriving table''s SQL name. At the path''s last position this is the table the argument''s own column name resolves against, which is where a filter predicate binds';
+COMMENT ON COLUMN graphitron_argument_reference_step_target.constraint_name IS 'the foreign key this element joins on, named or discovered; NULL on a NAME_MATCH or CONDITION element, as on the hop view';
+COMMENT ON COLUMN graphitron_argument_reference_step_target.fk_on_from IS 'TRUE when the departing table declares the foreign key; the element''s direction. NULL on a NAME_MATCH or CONDITION element, as on the hop view';
+COMMENT ON COLUMN graphitron_argument_reference_step_target.targets IS 'how many distinct tables this element reaches, this row''s arrival being one of them; 1 where the destination is certain. Separate from candidates for the reason the field-site sibling states: an element with three foreign keys connecting the same pair of tables reaches one table by three routes, and a reader that only needs the destination can trust that where one that has to render the join cannot';
+COMMENT ON COLUMN graphitron_argument_reference_step_target.candidates IS 'how many rows this element resolved to, counting routes and not just destinations; 1 is the requirement for an expressible hop';
+
 
 CREATE TABLE intent_argument_column_scope (
   graph_name        VARCHAR NOT NULL,
@@ -9354,7 +9373,7 @@ CREATE VIEW intent_argument_column_scope_live
 SELECT DISTINCT tg.graph_name, tg.type_name, tg.field_name, tg.argument_name,
        'PATH_TERMINAL',
        tg.to_source_name, tg.to_schema, tg.to_table
-  FROM intent_argument_reference_step_target tg
+  FROM graphitron_argument_reference_step_target tg
   JOIN (SELECT graph_name, type_name, field_name, argument_name, COUNT(*) AS applications
           FROM graphitron_argument_reference_entry
          GROUP BY graph_name, type_name, field_name, argument_name) only_application
@@ -9384,7 +9403,7 @@ SELECT sc.graph_name, sc.type_name, sc.field_name, sc.argument_name,
                       AND s.type_name = sc.type_name
                       AND s.field_name = sc.field_name
                       AND s.argument_name = sc.argument_name);
-COMMENT ON TABLE intent_argument_column_scope IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Which table the column name written at an argument''s site resolves against: the argument''s own navigation, answered at every site where such a name resolves at all. The argument-site twin of graphitron_field_column_scope, and a second relation for the reason intent_argument_reference_step_target is one rather than that view with a column added: the departure differs. A field''s names resolve in the navigation off its own parent''s row, an argument''s in the navigation off the table its content binds against, which graphitron_argument_scope_table answers and which the argument of a root field has where the field-site rule would give it none. Two rules, disjoint rather than ranked, so this relation is a plain union with no windowed collapse over it and carries the one-row-per-site property its twin stands on. What counts as the site is the argument together with the table its content binds against, on intent_input_field_column_scope''s terms: a departure that is not a function of the coordinate puts the departing table in the key, and at a multi-table polymorphic root the argument''s scope is one table per branch rather than one table. So one row per argument is what a monomorphic coordinate has and not what the relation guarantees, and the property being kept is that no site resolves twice, not that no argument does. An authored @reference path resolves to its terminal element''s table, demanding the terminal reach exactly one table rather than exactly one row, so an element joining two tables by three keys still names its destination; an element that resolved to several rows all reaching one table is one row here, the arm taking DISTINCT over a projection that keeps only the table. An argument with no path element resolves in its own scope table, read from graphitron_argument_scope_table rather than restated, so the two spellings of that precedence cannot drift and the demands it makes hold here unchanged. One thing this relation does not inherit from its twin, and the difference belongs to the site rather than being a choice made here: repetition. A repeated @reference on a field composes an ordered chain and the field-site rule takes the first application. Repeated on an argument it is a conflict the resolver rejects outright, order composition having no meaning on an argument, so there is no first application to prefer and a site carrying two has no row here at all. The count is over the applications and not over their elements, so an author writing an empty one beside a real one is a conflict here too, which is the resolver''s own reading of that pair. Declining says "no answer", which is what a site the validator must reject deserves, where preferring one would encode a precedence the site does not have. An element-less @reference(path: []) is legal SDL and inert, and this relation reads it as the resolver does: the anti-join is on the path''s elements and never on the directive''s presence, so such a site takes the scope rule and resolves against the argument''s own table, which is the bare predicate a directive-less argument would have produced. Nothing here says the argument''s content is column-shaped, which is graphitron_argument_scope_table''s stance and holds one rung up: this relation answers where a name would resolve if one is written, and which arguments write one is each consumer''s own question. Two consumers ask different halves of that. intent_argument_column_match asks which column the name reaches; a predicate binding asks whether the resolved table is the one the field already selects from or somewhere a join away, which is basis read directly. Deriving the navigation once is what stops those two disagreeing at a path reaching two tables, where a presence test over the captured elements says "moved" and the resolution says "nowhere". Materialized: this relation is a table refilled from intent_argument_column_scope_live on the capture cadence, per graph, under the registration in meta_materialize, which carries why. The rule above is stated once, in that view; these rows are what it computed for each captured graph.';
+COMMENT ON TABLE intent_argument_column_scope IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Which table the column name written at an argument''s site resolves against: the argument''s own navigation, answered at every site where such a name resolves at all. The argument-site twin of graphitron_field_column_scope, and a second relation for the reason graphitron_argument_reference_step_target is one rather than that view with a column added: the departure differs. A field''s names resolve in the navigation off its own parent''s row, an argument''s in the navigation off the table its content binds against, which graphitron_argument_scope_table answers and which the argument of a root field has where the field-site rule would give it none. Two rules, disjoint rather than ranked, so this relation is a plain union with no windowed collapse over it and carries the one-row-per-site property its twin stands on. What counts as the site is the argument together with the table its content binds against, on intent_input_field_column_scope''s terms: a departure that is not a function of the coordinate puts the departing table in the key, and at a multi-table polymorphic root the argument''s scope is one table per branch rather than one table. So one row per argument is what a monomorphic coordinate has and not what the relation guarantees, and the property being kept is that no site resolves twice, not that no argument does. An authored @reference path resolves to its terminal element''s table, demanding the terminal reach exactly one table rather than exactly one row, so an element joining two tables by three keys still names its destination; an element that resolved to several rows all reaching one table is one row here, the arm taking DISTINCT over a projection that keeps only the table. An argument with no path element resolves in its own scope table, read from graphitron_argument_scope_table rather than restated, so the two spellings of that precedence cannot drift and the demands it makes hold here unchanged. One thing this relation does not inherit from its twin, and the difference belongs to the site rather than being a choice made here: repetition. A repeated @reference on a field composes an ordered chain and the field-site rule takes the first application. Repeated on an argument it is a conflict the resolver rejects outright, order composition having no meaning on an argument, so there is no first application to prefer and a site carrying two has no row here at all. The count is over the applications and not over their elements, so an author writing an empty one beside a real one is a conflict here too, which is the resolver''s own reading of that pair. Declining says "no answer", which is what a site the validator must reject deserves, where preferring one would encode a precedence the site does not have. An element-less @reference(path: []) is legal SDL and inert, and this relation reads it as the resolver does: the anti-join is on the path''s elements and never on the directive''s presence, so such a site takes the scope rule and resolves against the argument''s own table, which is the bare predicate a directive-less argument would have produced. Nothing here says the argument''s content is column-shaped, which is graphitron_argument_scope_table''s stance and holds one rung up: this relation answers where a name would resolve if one is written, and which arguments write one is each consumer''s own question. Two consumers ask different halves of that. intent_argument_column_match asks which column the name reaches; a predicate binding asks whether the resolved table is the one the field already selects from or somewhere a join away, which is basis read directly. Deriving the navigation once is what stops those two disagreeing at a path reaching two tables, where a presence test over the captured elements says "moved" and the resolution says "nowhere". Materialized: this relation is a table refilled from intent_argument_column_scope_live on the capture cadence, per graph, under the registration in meta_materialize, which carries why. The rule above is stated once, in that view; these rows are what it computed for each captured graph.';
 COMMENT ON COLUMN intent_argument_column_scope.graph_name IS 'the owning graph''s partition, carried from both rules'' base relations';
 COMMENT ON COLUMN intent_argument_column_scope.type_name IS 'the type owning the field the argument sits on. Not the type whose binding started the navigation, which is the field''s named type: the difference from the field-site twin, where the two are one';
 COMMENT ON COLUMN intent_argument_column_scope.field_name IS 'the field the argument sits on';
@@ -10283,84 +10302,148 @@ COMMENT ON COLUMN graphitron_input_field_resolving_table.table_source_name IS 't
 COMMENT ON COLUMN graphitron_input_field_resolving_table.table_schema IS 'the resolving table''s SQL schema';
 COMMENT ON COLUMN graphitron_input_field_resolving_table.table_name IS 'the resolving table''s SQL name; with the two columns above this is sql_table''s full key, and with the two coordinate columns it is this relation''s grain';
 
-CREATE VIEW intent_input_field_reference_step_target
+CREATE TABLE graphitron_input_field_reference_step_target_keyed (
+  graph_name            VARCHAR NOT NULL,
+  type_name             VARCHAR NOT NULL,
+  field_name            VARCHAR NOT NULL,
+  resolving_source_name VARCHAR NOT NULL,
+  resolving_schema      VARCHAR NOT NULL,
+  resolving_table       VARCHAR NOT NULL,
+  ordinal               INTEGER NOT NULL,
+  position              INTEGER NOT NULL,
+  via                   VARCHAR NOT NULL,
+  key_matched_by        VARCHAR,
+  from_source_name      VARCHAR NOT NULL,
+  from_schema           VARCHAR NOT NULL,
+  from_table            VARCHAR NOT NULL,
+  to_source_name        VARCHAR NOT NULL,
+  to_schema             VARCHAR NOT NULL,
+  to_table              VARCHAR NOT NULL,
+  constraint_name       VARCHAR NOT NULL,
+  fk_on_from            BOOLEAN NOT NULL,
+  targets               INTEGER NOT NULL,
+  candidates            INTEGER NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name,
+               resolving_source_name, resolving_schema, resolving_table, ordinal, position,
+               from_source_name, from_schema, from_table,
+               to_source_name, to_schema, to_table, constraint_name, fk_on_from),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  CHECK (via IN ('KEY', 'TABLE')),
+  CHECK (key_matched_by IS NULL OR key_matched_by IN ('SQL_NAME', 'JOOQ_NAME')),
+  -- A KEY element resolved a namespace, the rule computing it from the constraint it matched,
+  -- and a TABLE element wrote no name to match one against.
+  CHECK ((key_matched_by IS NOT NULL) = (via = 'KEY'))
+);
+COMMENT ON TABLE graphitron_input_field_reference_step_target_keyed IS 'One foreign-key route one input-field @reference path element reaches, in one orientation and under one resolving table: the element the chain walked to, with the key it joins through. For example a FilmFilter field carrying @reference(path: [{key: "film_language_id_fkey"}]) draws one row per position under each table the field is classified against.';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyed.graph_name IS 'the graph_name of a row of this arm, presented on graphitron_input_field_reference_step_target.graph_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyed.type_name IS 'the type_name of a row of this arm, presented on graphitron_input_field_reference_step_target.type_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyed.field_name IS 'the field_name of a row of this arm, presented on graphitron_input_field_reference_step_target.field_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyed.resolving_source_name IS 'the resolving_source_name of a row of this arm, presented on graphitron_input_field_reference_step_target.resolving_source_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyed.resolving_schema IS 'the resolving_schema of a row of this arm, presented on graphitron_input_field_reference_step_target.resolving_schema, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyed.resolving_table IS 'the resolving_table of a row of this arm, presented on graphitron_input_field_reference_step_target.resolving_table, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyed.ordinal IS 'the ordinal of a row of this arm, presented on graphitron_input_field_reference_step_target.ordinal, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyed.position IS 'the position of a row of this arm, presented on graphitron_input_field_reference_step_target.position, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyed.via IS 'the via of a row of this arm, presented on graphitron_input_field_reference_step_target.via, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyed.key_matched_by IS 'the key_matched_by of a row of this arm, presented on graphitron_input_field_reference_step_target.key_matched_by, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyed.from_source_name IS 'the from_source_name of a row of this arm, presented on graphitron_input_field_reference_step_target.from_source_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyed.from_schema IS 'the from_schema of a row of this arm, presented on graphitron_input_field_reference_step_target.from_schema, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyed.from_table IS 'the from_table of a row of this arm, presented on graphitron_input_field_reference_step_target.from_table, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyed.to_source_name IS 'the to_source_name of a row of this arm, presented on graphitron_input_field_reference_step_target.to_source_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyed.to_schema IS 'the to_schema of a row of this arm, presented on graphitron_input_field_reference_step_target.to_schema, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyed.to_table IS 'the to_table of a row of this arm, presented on graphitron_input_field_reference_step_target.to_table, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyed.constraint_name IS 'the constraint_name of a row of this arm, presented on graphitron_input_field_reference_step_target.constraint_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyed.fk_on_from IS 'the fk_on_from of a row of this arm, presented on graphitron_input_field_reference_step_target.fk_on_from, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyed.targets IS 'the targets of a row of this arm, presented on graphitron_input_field_reference_step_target.targets, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyed.candidates IS 'the candidates of a row of this arm, presented on graphitron_input_field_reference_step_target.candidates, whose comment carries what the value means';
+
+CREATE TABLE graphitron_input_field_reference_step_target_keyless (
+  graph_name            VARCHAR NOT NULL,
+  type_name             VARCHAR NOT NULL,
+  field_name            VARCHAR NOT NULL,
+  resolving_source_name VARCHAR NOT NULL,
+  resolving_schema      VARCHAR NOT NULL,
+  resolving_table       VARCHAR NOT NULL,
+  ordinal               INTEGER NOT NULL,
+  position              INTEGER NOT NULL,
+  via                   VARCHAR NOT NULL,
+  from_source_name      VARCHAR NOT NULL,
+  from_schema           VARCHAR NOT NULL,
+  from_table            VARCHAR NOT NULL,
+  to_source_name        VARCHAR NOT NULL,
+  to_schema             VARCHAR NOT NULL,
+  to_table              VARCHAR NOT NULL,
+  targets               INTEGER NOT NULL,
+  candidates            INTEGER NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name,
+               resolving_source_name, resolving_schema, resolving_table, ordinal, position,
+               from_source_name, from_schema, from_table,
+               to_source_name, to_schema, to_table),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  CHECK (via IN ('NAME_MATCH', 'CONDITION'))
+);
+COMMENT ON TABLE graphitron_input_field_reference_step_target_keyless IS 'One table pair one input-field @reference path element reaches without a foreign key, under one resolving table: the element the chain walked to, by column-name match from a function result or by the route a condition method declares. For example a chain-ending element carrying only a @condition draws one row arriving at the table that method''s second parameter names.';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyless.graph_name IS 'the graph_name of a row of this arm, presented on graphitron_input_field_reference_step_target.graph_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyless.type_name IS 'the type_name of a row of this arm, presented on graphitron_input_field_reference_step_target.type_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyless.field_name IS 'the field_name of a row of this arm, presented on graphitron_input_field_reference_step_target.field_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyless.resolving_source_name IS 'the resolving_source_name of a row of this arm, presented on graphitron_input_field_reference_step_target.resolving_source_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyless.resolving_schema IS 'the resolving_schema of a row of this arm, presented on graphitron_input_field_reference_step_target.resolving_schema, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyless.resolving_table IS 'the resolving_table of a row of this arm, presented on graphitron_input_field_reference_step_target.resolving_table, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyless.ordinal IS 'the ordinal of a row of this arm, presented on graphitron_input_field_reference_step_target.ordinal, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyless.position IS 'the position of a row of this arm, presented on graphitron_input_field_reference_step_target.position, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyless.via IS 'the via of a row of this arm, presented on graphitron_input_field_reference_step_target.via, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyless.from_source_name IS 'the from_source_name of a row of this arm, presented on graphitron_input_field_reference_step_target.from_source_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyless.from_schema IS 'the from_schema of a row of this arm, presented on graphitron_input_field_reference_step_target.from_schema, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyless.from_table IS 'the from_table of a row of this arm, presented on graphitron_input_field_reference_step_target.from_table, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyless.to_source_name IS 'the to_source_name of a row of this arm, presented on graphitron_input_field_reference_step_target.to_source_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyless.to_schema IS 'the to_schema of a row of this arm, presented on graphitron_input_field_reference_step_target.to_schema, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyless.to_table IS 'the to_table of a row of this arm, presented on graphitron_input_field_reference_step_target.to_table, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyless.targets IS 'the targets of a row of this arm, presented on graphitron_input_field_reference_step_target.targets, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target_keyless.candidates IS 'the candidates of a row of this arm, presented on graphitron_input_field_reference_step_target.candidates, whose comment carries what the value means';
+
+CREATE VIEW graphitron_input_field_reference_step_target
   (graph_name, type_name, field_name,
    resolving_source_name, resolving_schema, resolving_table,
    ordinal, position, via, key_matched_by,
    from_source_name, from_schema, from_table,
    to_source_name, to_schema, to_table, constraint_name, fk_on_from,
    targets, candidates) AS
-WITH RECURSIVE chain (graph_name, type_name, field_name,
-   resolving_source_name, resolving_schema, resolving_table,
-   ordinal, position, via, key_matched_by,
-   from_source_name, from_schema, from_table,
-   to_source_name, to_schema, to_table, constraint_name, fk_on_from) AS (
-  SELECT h.graph_name, h.type_name, h.field_name,
-         rt.table_source_name, rt.table_schema, rt.table_name,
-         h.ordinal, h.position, h.via, h.key_matched_by,
-         h.from_source_name, h.from_schema, h.from_table,
-         h.to_source_name, h.to_schema, h.to_table, h.constraint_name, h.fk_on_from
-    FROM graphitron_field_reference_step_hop h
-    JOIN graphitron_input_field_resolving_table rt
-      ON rt.graph_name = h.graph_name AND rt.type_name = h.type_name
-     AND rt.field_name = h.field_name
-     AND rt.table_source_name = h.from_source_name AND rt.table_schema = h.from_schema
-     AND rt.table_name = h.from_table
-   WHERE h.position = 0
-  UNION
-  SELECT h.graph_name, h.type_name, h.field_name,
-         p.resolving_source_name, p.resolving_schema, p.resolving_table,
-         h.ordinal, h.position, h.via, h.key_matched_by,
-         h.from_source_name, h.from_schema, h.from_table,
-         h.to_source_name, h.to_schema, h.to_table, h.constraint_name, h.fk_on_from
-    FROM chain p
-    JOIN graphitron_field_reference_step_hop h
-      ON h.graph_name = p.graph_name AND h.type_name = p.type_name
-     AND h.field_name = p.field_name AND h.ordinal = p.ordinal
-     AND h.position = p.position + 1
-     AND h.from_source_name = p.to_source_name AND h.from_schema = p.to_schema
-     AND h.from_table = p.to_table
-)
 SELECT graph_name, type_name, field_name,
        resolving_source_name, resolving_schema, resolving_table,
        ordinal, position, via, key_matched_by,
        from_source_name, from_schema, from_table,
        to_source_name, to_schema, to_table, constraint_name, fk_on_from,
-       CAST(MAX(target_rank) OVER (
-         PARTITION BY graph_name, type_name, field_name,
-                      resolving_source_name, resolving_schema, resolving_table,
-                      ordinal, position) AS INT),
-       CAST(COUNT(*) OVER (
-         PARTITION BY graph_name, type_name, field_name,
-                      resolving_source_name, resolving_schema, resolving_table,
-                      ordinal, position) AS INT)
-  FROM (SELECT c.*, DENSE_RANK() OVER (
-                 PARTITION BY c.graph_name, c.type_name, c.field_name,
-                              c.resolving_source_name, c.resolving_schema, c.resolving_table,
-                              c.ordinal, c.position
-                 ORDER BY c.to_source_name, c.to_schema, c.to_table) AS target_rank
-          FROM chain c) ranked;
-COMMENT ON VIEW intent_input_field_reference_step_target IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Where each element of an input field''s @reference path actually lands: the same hop relation the two older walks read, chained from the table the input field is classified against. The third of three sibling walks and the third departure, which is the only thing that separates them. A field-site path departs from the enclosing type''s own binding; an argument-site path departs from the table the argument''s content binds against; an input-field path departs from the table its consuming field handed the expansion, because an input object type binds nothing and the walk would otherwise have no table to start from at all. That departure is graphitron_input_field_resolving_table''s whole subject and is read from it rather than restated. The hops are the field-site relation''s and not a fourth capture: an input field is a graphql_field row on an INPUT_OBJECT parent, so its @reference elements land in the same step relation an output field''s do and graphitron_field_reference_step_hop already enumerates their candidate joins. Only the seed differs, which is why this view exists and a fourth hop relation does not. The departure is part of the key here where the two siblings need no such column: their departure is a function of the coordinate, and this one''s is not, an input field reached under two arguments on different tables walking two different chains from one authored path. Everything the field-site sibling''s comment argues about the recursion holds unchanged: an element that resolves to nothing ends the chain, so absence means "not reached" and never "resolves to nothing in particular", and a condition-only element resolves through intent_condition_method_route, whose rule is the filter-path one this site wants: an input field is read as a filter, so the projection-site declared target the field-site walk sets aside is a preference this walk must not have either, which is why that rung sits at the field walk rather than in the hop relation both walks read. Terminal-element readers project the maximum position per application, as there. One thing about this shape is worth a reader''s attention and is why the departure relation is a materialized table rather than the view it was written as. An anchor term is not evaluated once: H2 re-evaluates it alongside the recursive term, so a view named in an anchor is expanded on every iteration where the same join written as an ordinary query is planned once. Measured on the sakila example schema, the anchor join as a plain SELECT costs a millisecond whether the departure is a view or a table, and as this walk''s anchor it costs 39 milliseconds against the view and one against the table. The registration in meta_materialize carries the rest of those figures and is argued on this reader.';
-COMMENT ON COLUMN intent_input_field_reference_step_target.graph_name IS 'the owning graph''s partition, carried from the hop relation';
-COMMENT ON COLUMN intent_input_field_reference_step_target.type_name IS 'the input object type owning the field the @reference is applied to';
-COMMENT ON COLUMN intent_input_field_reference_step_target.field_name IS 'the input field the @reference is applied to';
-COMMENT ON COLUMN intent_input_field_reference_step_target.resolving_source_name IS 'the catalog partition of the table this chain departed from; part of the key, unlike on either sibling walk, because an input field''s departure is its consuming site''s and not its own';
-COMMENT ON COLUMN intent_input_field_reference_step_target.resolving_schema IS 'the departing table''s SQL schema; part of the key, as above';
-COMMENT ON COLUMN intent_input_field_reference_step_target.resolving_table IS 'the departing table''s SQL name; part of the key, as above. Equal to from_table at position 0 and unrelated to it after that';
-COMMENT ON COLUMN intent_input_field_reference_step_target.ordinal IS 'the owning @reference application''s ordinal, since the directive is repeatable at capture; repetition on an input field is a conflict the resolver rejects, so a reader wanting the authored path counts applications rather than trusting this column to be zero';
-COMMENT ON COLUMN intent_input_field_reference_step_target.position IS 'the element''s 0-based position within its application''s path; positions are contiguous from 0 up to wherever the chain stopped';
-COMMENT ON COLUMN intent_input_field_reference_step_target.via IS 'which arm resolved the element, as on the hop relation: KEY, TABLE, NAME_MATCH or CONDITION';
-COMMENT ON COLUMN intent_input_field_reference_step_target.key_matched_by IS 'for a KEY element, the namespace that answered; NULL on a TABLE, NAME_MATCH or CONDITION element. As on the hop relation';
-COMMENT ON COLUMN intent_input_field_reference_step_target.from_source_name IS 'the departing table''s catalog partition for this element: the resolving table at position 0, the previous element''s arrival after that';
-COMMENT ON COLUMN intent_input_field_reference_step_target.from_schema IS 'this element''s departing SQL schema';
-COMMENT ON COLUMN intent_input_field_reference_step_target.from_table IS 'this element''s departing SQL table name';
-COMMENT ON COLUMN intent_input_field_reference_step_target.to_source_name IS 'the arriving table''s catalog partition, first column of its sql_table key';
-COMMENT ON COLUMN intent_input_field_reference_step_target.to_schema IS 'the arriving table''s SQL schema';
-COMMENT ON COLUMN intent_input_field_reference_step_target.to_table IS 'the arriving table''s SQL name. At the path''s last position this is the table the input field''s effective name resolves its column against';
-COMMENT ON COLUMN intent_input_field_reference_step_target.constraint_name IS 'the foreign key this element joins on, named or discovered; NULL on a NAME_MATCH or CONDITION element, as on the hop relation';
-COMMENT ON COLUMN intent_input_field_reference_step_target.fk_on_from IS 'TRUE when the departing table declares the foreign key; the element''s direction. NULL on a NAME_MATCH or CONDITION element, as on the hop relation';
-COMMENT ON COLUMN intent_input_field_reference_step_target.targets IS 'how many distinct tables this element reaches, this row''s arrival being one of them; 1 where the destination is certain. Separate from candidates for the reason the sibling walks state: a reader that only needs the destination can trust a certain one where a reader that has to render the join cannot';
-COMMENT ON COLUMN intent_input_field_reference_step_target.candidates IS 'how many rows this element resolved to, counting routes and not just destinations; 1 is the walk''s requirement for an expressible hop';
+       targets, candidates
+  FROM graphitron_input_field_reference_step_target_keyed
+UNION ALL
+SELECT graph_name, type_name, field_name,
+       resolving_source_name, resolving_schema, resolving_table,
+       ordinal, position, via, CAST(NULL AS VARCHAR),
+       from_source_name, from_schema, from_table,
+       to_source_name, to_schema, to_table, CAST(NULL AS VARCHAR), CAST(NULL AS BOOLEAN),
+       targets, candidates
+  FROM graphitron_input_field_reference_step_target_keyless;
+
+COMMENT ON VIEW graphitron_input_field_reference_step_target IS 'Where each element of an input field''s @reference path actually lands: the hops walked from the table that field is classified against, one element at a time, so a row exists only for an element the chain can be shown to reach. For example one input field reached under two arguments selecting from different tables walks two chains from one authored path, and an element that resolves to nothing ends its own chain and draws none.';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target.graph_name IS 'the owning graph''s partition, carried from the hop relation';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target.type_name IS 'the input object type owning the field the @reference is applied to';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target.field_name IS 'the input field the @reference is applied to';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target.resolving_source_name IS 'the catalog partition of the table this chain departed from; part of the key, unlike on either sibling walk, because an input field''s departure is its consuming site''s and not its own';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target.resolving_schema IS 'the departing table''s SQL schema; part of the key, as above';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target.resolving_table IS 'the departing table''s SQL name; part of the key, as above. Equal to from_table at position 0 and unrelated to it after that';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target.ordinal IS 'the owning @reference application''s ordinal, since the directive is repeatable at capture; repetition on an input field is a conflict the resolver rejects, so a reader wanting the authored path counts applications rather than trusting this column to be zero';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target.position IS 'the element''s 0-based position within its application''s path; positions are contiguous from 0 up to wherever the chain stopped';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target.via IS 'which arm resolved the element, as on the hop relation: KEY, TABLE, NAME_MATCH or CONDITION';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target.key_matched_by IS 'for a KEY element, the namespace that answered; NULL on a TABLE, NAME_MATCH or CONDITION element. As on the hop relation';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target.from_source_name IS 'the departing table''s catalog partition for this element: the resolving table at position 0, the previous element''s arrival after that';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target.from_schema IS 'this element''s departing SQL schema';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target.from_table IS 'this element''s departing SQL table name';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target.to_source_name IS 'the arriving table''s catalog partition, first column of its sql_table key';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target.to_schema IS 'the arriving table''s SQL schema';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target.to_table IS 'the arriving table''s SQL name. At the path''s last position this is the table the input field''s effective name resolves its column against';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target.constraint_name IS 'the foreign key this element joins on, named or discovered; NULL on a NAME_MATCH or CONDITION element, as on the hop relation';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target.fk_on_from IS 'TRUE when the departing table declares the foreign key; the element''s direction. NULL on a NAME_MATCH or CONDITION element, as on the hop relation';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target.targets IS 'how many distinct tables this element reaches, this row''s arrival being one of them; 1 where the destination is certain. Separate from candidates for the reason the sibling walks state: a reader that only needs the destination can trust a certain one where a reader that has to render the join cannot';
+COMMENT ON COLUMN graphitron_input_field_reference_step_target.candidates IS 'how many rows this element resolved to, counting routes and not just destinations; 1 is the walk''s requirement for an expressible hop';
 
 CREATE VIEW intent_input_field_column_scope
   (graph_name, type_name, field_name,
@@ -10370,7 +10453,7 @@ SELECT DISTINCT tg.graph_name, tg.type_name, tg.field_name,
        tg.resolving_source_name, tg.resolving_schema, tg.resolving_table,
        'PATH_TERMINAL',
        tg.to_source_name, tg.to_schema, tg.to_table
-  FROM intent_input_field_reference_step_target tg
+  FROM graphitron_input_field_reference_step_target tg
   JOIN (SELECT graph_name, type_name, field_name, COUNT(*) AS applications
           FROM graphitron_field_reference_entry
          GROUP BY graph_name, type_name, field_name) only_application
@@ -10906,7 +10989,7 @@ slot_table (graph_name, site, type_name, field_name, argument_name, path,
   SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
          tg.to_source_name, tg.to_schema, tg.to_table
     FROM instructed i
-    JOIN intent_argument_reference_step_target tg
+    JOIN graphitron_argument_reference_step_target tg
       ON tg.graph_name = i.graph_name AND tg.type_name = i.type_name
      AND tg.field_name = i.field_name AND tg.argument_name = i.argument_name
      AND tg.position = (SELECT MAX(s.position) FROM graphitron_argument_reference_step_entry s
@@ -11279,12 +11362,12 @@ SELECT graph_name, site, type_name, field_name, argument_name, path, use_site,
                     THEN COALESCE(tg.fk_on_from, itg.fk_on_from)
                     ELSE TRUE END AS fk_on_from
           FROM intent_node_id_decode_endpoint e
-          LEFT JOIN intent_argument_reference_step_target tg
+          LEFT JOIN graphitron_argument_reference_step_target tg
             ON e.navigation = 'AUTHORED_PATH' AND e.site = 'ARGUMENT'
            AND tg.graph_name = e.graph_name AND tg.type_name = e.type_name
            AND tg.field_name = e.field_name AND tg.argument_name = e.argument_name
            AND tg.ordinal = 0 AND tg.candidates = 1
-          LEFT JOIN intent_input_field_reference_step_target itg
+          LEFT JOIN graphitron_input_field_reference_step_target itg
             ON e.navigation = 'AUTHORED_PATH' AND e.site = 'INPUT_FIELD'
            AND itg.graph_name = e.graph_name AND itg.type_name = e.type_name
            AND itg.field_name = e.field_name
@@ -14346,9 +14429,7 @@ INSERT INTO meta_materialize VALUES
   ('intent_mutation_write_destination_live', 'intent_mutation_write_destination',
    'One reader, and it names this rule four times and correlates into it, which is the registration case at its narrowest. intent_mutation_write_agreement reduces these rows against themselves: it filters them to the predicate side, self-joins that side to settle a contested pin, and joins the relation back whole for the reference side, so one read of the agreement rule expands this one four times over and re-evaluates most of those expansions once per driving row. Measured against a store captured from the example schema, 66 rows here over 24 write surfaces: that read is 12983 milliseconds with this relation a view and 5.4 with it a table, and the refresh, which is one evaluation of the rule, is 56 milliseconds. The rewrite came first, as the row above this one says it must. The agreement rule was written driving from this relation with its own derived pin on the inner side of the join, which measured 75741 milliseconds; reversing that one join, so the small derived side drives and this relation is probed, is what took it to the 13 seconds the registration then took to 5.4. An index is declared on the target and argued at its own site: unlike the two registrations above it this one does leave a probe behind, the reversed join seeking a write coordinate and a column, and declaring it takes the reader from 5.4 milliseconds to 1.8. Priced against the register of twenty: removing it alone changes the refresh by less than the instrument''s own spread and makes its one reader about sixty times dearer.'),
   ('intent_input_field_column_match_live', 'intent_input_field_column_match',
-   'Two readers, and the dearest registration in the pass was one of them. The rule collapses its matches with a ROW_NUMBER, so no outer predicate prunes it and every naming expands it whole: intent_input_field_filter_role names it three times, twice correlated on the six columns the collapse partitions by and once as an arm of its own, and intent_mutation_payload_column joins it on those same six. Measured on a consumer store of 1802 input-field sites, driven through the refresh in one transaction, that filter role costs 24.4 s with this rule a view and 0.13 s with it a table, which is the whole of that registration and about half the pass. Two rewrites were tried against it first and both lost, which is why this row exists rather than a cleverer rule: reading the two correlated sites as arity-preserving left joins instead, which the collapse makes safe, moved 24.4 s to 22.2 s and moved the whole pass by nothing at all, 23.9 s against 23.8 s, so that pair is the run-to-run spread rather than a gain; dropping the correlated authored-condition probe as well moved it to 20.6 s; with the rule a table the correlated form costs 0.13 s and the left-join form 0.17 s, so the rewrite is not the lever and is marginally the worse shape once this row lands. What costs is the rule being re-expanded as an unindexable derived table per probe rather than the correlation itself, which is the case this register exists for.'),
-  ('intent_argument_reference_step_target_live', 'intent_argument_reference_step_target',
-   'A recursive walk named by three view bodies, two of them the registrations that carried this consumer''s pass, and every naming expands it whole: intent_node_id_instruction reaches it eighty instantiations deep, intent_node_id_decode_hop is the whole of its own ninety-one, and intent_argument_column_scope drives from it. Its own breadth is two namings of the recursive intent_argument_reference_step_hop, so registering the target is what stops that walk being re-run per naming rather than per refresh; the hop below it is left a view deliberately, the counter-case being a registration below the relation still being expanded, and the measurement says the rung above is where the cost is. Measured on a consumer store of 2606 field scopes and 968 argument scopes, driven through the refresh in one transaction and taken after intent_input_field_column_match was registered so the two levers are not counted twice: the pass falls 22.7 s to 16.9 s, the node-id instruction rule 5.8 s to 3.8 s and the decode hop 5.1 s to 3.5 s, for a refresh of its own of 25 milliseconds over two rows. Two rows is the point rather than an objection: this relation''s cost was never its output, it is a recursive term re-evaluated per reader, and a registration is what turns per-naming into per-pass.');
+   'Two readers, and the dearest registration in the pass was one of them. The rule collapses its matches with a ROW_NUMBER, so no outer predicate prunes it and every naming expands it whole: intent_input_field_filter_role names it three times, twice correlated on the six columns the collapse partitions by and once as an arm of its own, and intent_mutation_payload_column joins it on those same six. Measured on a consumer store of 1802 input-field sites, driven through the refresh in one transaction, that filter role costs 24.4 s with this rule a view and 0.13 s with it a table, which is the whole of that registration and about half the pass. Two rewrites were tried against it first and both lost, which is why this row exists rather than a cleverer rule: reading the two correlated sites as arity-preserving left joins instead, which the collapse makes safe, moved 24.4 s to 22.2 s and moved the whole pass by nothing at all, 23.9 s against 23.8 s, so that pair is the run-to-run spread rather than a gain; dropping the correlated authored-condition probe as well moved it to 20.6 s; with the rule a table the correlated form costs 0.13 s and the left-join form 0.17 s, so the rewrite is not the lever and is marginally the worse shape once this row lands. What costs is the rule being re-expanded as an unindexable derived table per probe rather than the correlation itself, which is the case this register exists for.');
 
 INSERT INTO meta_grain VALUES
   ('facet-binding',
@@ -14364,11 +14445,11 @@ INSERT INTO meta_grain VALUES
    'one field one type declares, in one graph',
    'graph_name, type_name, field_name', 'sdl'),
   ('field-scope-table',
-   'one table one field''''s own generated SQL binds against, in one graph',
+   'one table one field''s own generated SQL binds against, in one graph',
    'graph_name, type_name, field_name, table_source_name, table_schema, table_name',
    'catalog'),
   ('argument-scope-table',
-   'one table one argument''''s column-shaped content binds against, in one graph',
+   'one table one argument''s column-shaped content binds against, in one graph',
    'graph_name, type_name, field_name, argument_name, table_source_name, table_schema, table_name',
    'catalog'),
   ('input-field-resolving-table',
@@ -14456,6 +14537,30 @@ INSERT INTO meta_grain VALUES
   ('reference-step-target',
    'one candidate route one field-site @reference path element reaches, foreign-key or not, in one graph',
    'graph_name, type_name, field_name, ordinal, position, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table, constraint_name, fk_on_from', 'catalog'),
+  ('argument-reference-step-keyed-target',
+   'one keyed route one argument-site @reference path element reaches, in one graph',
+   'graph_name, type_name, field_name, argument_name, ordinal, position, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table, constraint_name, fk_on_from',
+   'catalog'),
+  ('argument-reference-step-keyless-target',
+   'one keyless table pair one argument-site @reference path element reaches, in one graph',
+   'graph_name, type_name, field_name, argument_name, ordinal, position, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table',
+   'catalog'),
+  ('argument-reference-step-target',
+   'one route one argument-site @reference path element reaches, in one graph',
+   'graph_name, type_name, field_name, argument_name, ordinal, position, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table, constraint_name, fk_on_from',
+   'catalog'),
+  ('input-field-reference-step-keyed-target',
+   'one keyed route one input-field @reference path element reaches, under one resolving table, in one graph',
+   'graph_name, type_name, field_name, resolving_source_name, resolving_schema, resolving_table, ordinal, position, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table, constraint_name, fk_on_from',
+   'catalog'),
+  ('input-field-reference-step-keyless-target',
+   'one keyless table pair one input-field @reference path element reaches, under one resolving table, in one graph',
+   'graph_name, type_name, field_name, resolving_source_name, resolving_schema, resolving_table, ordinal, position, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table',
+   'catalog'),
+  ('input-field-reference-step-target',
+   'one route one input-field @reference path element reaches, under one resolving table, in one graph',
+   'graph_name, type_name, field_name, resolving_source_name, resolving_schema, resolving_table, ordinal, position, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table, constraint_name, fk_on_from',
+   'catalog'),
   ('reference-step-hop',
    'one candidate route one field-site @reference path element could take, foreign-key or not, in one graph',
    'graph_name, type_name, field_name, ordinal, position, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table, constraint_name, fk_on_from', 'catalog'),
@@ -15141,6 +15246,30 @@ INSERT INTO meta_relation VALUES
    'One row the input-field resolving-table rule computes, in the shape graphitron_input_field_resolving_table stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_input_field_resolving_table, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
    'The rule, kept in the catalog rather than moved into the stage that runs it. The stage is INSERT INTO graphitron_input_field_resolving_table SELECT * FROM this view WHERE graph_name = ?, so the rule is stated once in one language and what the stage adds is who evaluates it and when. Keeping it a stored view is what leaves ViewReferences, the declared-view ownership gate and the stage-order gate a read set to parse, and what keeps the EXCEPT oracle between rule and table runnable for as long as both exist rather than for the one commit that converts. It was a registered rule until then, refilled into the canonical name by the register on the same cadence. The stage pays one evaluation per capture where the register paid one too; what goes is the row that scheduled it.'),
+  ('graphitron_argument_reference_step_target_keyed', 'argument-reference-step-keyed-target', 'graphitron',
+   'One foreign-key route one argument-site @reference path element reaches, in one orientation: the element the chain walked to, with the key it joins through.',
+   'For example Query.films(actorId:) over @reference(path: [{key: "film_actor_actor_id_fkey"}]) draws one row per position, each departing where the one before it arrived.',
+   'The foreign-key half of a split the walk''s two key shapes force, inherited through a recursion that carries the hop''s columns forward unchanged. Where a foreign key identifies the route, its name and its orientation are identity exactly as they are one rung down; where none does, those columns are absent rather than null, which is the keyless sibling. One relation over all four arms would carry three columns that are identity on two of them and inapplicable on the other two, so it could hold no primary key and refuse no duplicate row, which is what a stage-written relation has to do: the walk is evaluated once per capture and the rows are on disk afterwards, so nothing downstream would notice a doubling. The key is not the field-site walk''s. It carries argument_name, because an argument''s path departs from what the argument''s own content binds against rather than from the enclosing type''s binding, so two arguments of one field walk two chains from one authored path. Both counts beside the key are over the element''s whole partition, both arms included, which is why the two statements that fill these tables rank first and filter afterwards.'),
+  ('graphitron_argument_reference_step_target_keyless', 'argument-reference-step-keyless-target', 'graphitron',
+   'One table pair one argument-site @reference path element reaches without a foreign key: the element the chain walked to, by column-name match from a function result or by the route a condition method declares.',
+   'For example a chain-ending element carrying only a @condition draws one row arriving at the table that method''s second parameter names.',
+   'The keyless half of that split. Where no foreign key identifies the route there is none to enumerate, so the element coordinate with the departing and arriving table triples is already total and the constraint columns are absent rather than null. Two arms and one relation, because a function-result departure matched by column name and a route read off a condition method''s signature are the same shape of fact, a table pair with no constraint behind it, and they share one key shape, which is the axis the split is on. The union view under the canonical name presents this half with key_matched_by, constraint_name and fk_on_from cast to NULL, so no reader is edited and the padding lives at the one surface that has to present eighteen columns.'),
+  ('graphitron_argument_reference_step_target', 'argument-reference-step-target', 'graphitron',
+   'Where each element of an argument''s @reference path actually lands: the hops walked from the table the argument''s own content binds against, one element at a time, so a row exists only for an element the chain can be shown to reach.',
+   'For example a path of two key elements draws one row at each position, the second departing where the first arrived, and an element that resolves to nothing ends the chain and draws none.',
+   'One name over two relations, for the reason the hop below it is two: the rows have two key shapes and a relation carrying both could hold no key. Every reader spells this name and reads what it read when the name was a registered table, the three columns the keyless half does not have being cast to NULL between the ones the readers expect. What changed under it is who evaluates the recursion. It was a rule the register refilled on the capture cadence, which bought the same per-capture evaluation at the cost of a refresh pass nobody owns and a rung every relation above it could not cross. The rows are written by a stage of the graphitron gatherer now and every reader seeks into them on the nine leading columns of both keys. Neither arm carries an index beside its key: the coordinate every reader holds is the key''s own leading six columns, so an index on it would be a prefix, which is what the hop arms one rung down measured as buying nothing and what the index this conversion deleted had been.'),
+  ('graphitron_input_field_reference_step_target_keyed', 'input-field-reference-step-keyed-target', 'graphitron',
+   'One foreign-key route one input-field @reference path element reaches, in one orientation and under one resolving table: the element the chain walked to, with the key it joins through.',
+   'For example a FilmFilter field carrying @reference(path: [{key: "film_language_id_fkey"}]) draws one row per position under each table the field is classified against.',
+   'The foreign-key half of the split the walk''s two key shapes force, on the field-site pair''s terms: where a foreign key identifies the route its name and its orientation are identity, and where none does those columns are absent rather than null. The key is neither sibling''s. The whole departure triple is in it, because an input field''s departure is its consuming site''s and not its own: one input field reached under two arguments whose fields select from different tables walks two chains from one authored path, and a key transcribed from the field walk would keep one of them and lose the other. Both counts beside the key are over the element''s whole partition, that triple included and both arms counted, which is why the two statements that fill these tables rank first and filter afterwards.'),
+  ('graphitron_input_field_reference_step_target_keyless', 'input-field-reference-step-keyless-target', 'graphitron',
+   'One table pair one input-field @reference path element reaches without a foreign key, under one resolving table: the element the chain walked to, by column-name match from a function result or by the route a condition method declares.',
+   'For example a chain-ending element carrying only a @condition draws one row arriving at the table that method''s second parameter names.',
+   'The keyless half of that split. Where no foreign key identifies the route there is none to enumerate, so the element coordinate with the resolving triple and both endpoint triples is already total and the constraint columns are absent rather than null. The union view under the canonical name presents this half with key_matched_by, constraint_name and fk_on_from cast to NULL, so no reader is edited and the padding lives at the one surface that has to present twenty columns.'),
+  ('graphitron_input_field_reference_step_target', 'input-field-reference-step-target', 'graphitron',
+   'Where each element of an input field''s @reference path actually lands: the hops walked from the table that field is classified against, one element at a time, so a row exists only for an element the chain can be shown to reach.',
+   'For example one input field reached under two arguments selecting from different tables walks two chains from one authored path, and an element that resolves to nothing ends its own chain and draws none.',
+   'One name over two relations, for the reason the walks beside it are two: the rows have two key shapes and a relation carrying both could hold no key. What changed under it is who evaluates the recursion, and this relation was the one place in the family where nobody did: it was a plain view, not even a registration, so the @nodeId decode-hop rule re-walked it once per driving row rather than once per naming. The rows are written by a stage of the graphitron gatherer now and every reader seeks into them. Neither arm carries an index beside its key: the coordinate every reader holds is the key''s own leading columns, so an index on it would be a prefix, which is what the hop arms one rung down measured as buying nothing.'),
   ('graphitron_resolved_type_binding', 'resolved-type-binding', 'graphitron',
    'Which catalog table stands for a graph''s type, from either population that can answer: one row per candidate table.',
    'For example a type carrying @table(name: "film") is one row naming film, and a type standing for a @routine chain''s result is one row naming the table that chain lands on.',

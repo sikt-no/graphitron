@@ -118,8 +118,14 @@ class MaterializeRegistryGateTest {
      * the input-field resolving table reads the argument-site scope, so each conversion is what
      * releases the next. The input-field resolving table takes a row off {@link #NO_INDEX} with it,
      * on the carrier channel's terms.
+     *
+     * <p>Fourteen with the argument-site reference walk, and the rung beside it takes nothing off
+     * this figure because it was never on it: the input-field walk was a plain view, not a
+     * registration, so nobody was refreshing it and the decode-hop rule re-walked it once per
+     * driving row. That rung converts a relation the register never scheduled, which is why the
+     * ladder's last two steps move this number by one between them.
      */
-    private static final int REGISTRATIONS = 15;
+    private static final int REGISTRATIONS = 14;
 
     /**
      * Stages the refresh takes, the register's depth.
@@ -153,7 +159,7 @@ class MaterializeRegistryGateTest {
      * displaces nothing. A registration lengthens the pass only when it stages the longest chain,
      * and that is a property of the register rather than of the rule being registered.
      *
-     * <p>Sixteen since {@code intent_argument_reference_step_target} was registered, and by that
+     * <p>Sixteen since {@code graphitron_argument_reference_step_target} was registered, and by that
      * mechanism a fourth time: it sat between the registered {@code graphitron_argument_scope_table}
      * it reads and the registered {@code intent_node_id_instruction} and
      * {@code intent_node_id_decode_hop} that read it, so it is exactly the unregistered
@@ -196,9 +202,15 @@ class MaterializeRegistryGateTest {
      * the refresh still waits on starts at the deepest registration still reading a rule, which is
      * the node-id family and the mutation payloads above it.
      *
+     * <p>Nine with the argument-site reference walk, which sat between the argument scope it reads
+     * and the node-id instruction and decode-hop registrations that read it: exactly the
+     * intermediate the reachability walk had to wait for. Converting it takes that wait out of the
+     * middle of the remaining chain rather than off its front, which is the one shape that shortens
+     * this figure without shortening the register.
+     *
      * @see #REGISTRATIONS
      */
-    private static final int REFRESH_STAGES = 10;
+    private static final int REFRESH_STAGES = 9;
 
     /**
      * The registered targets carrying no index, each with the argument that says why. A roster

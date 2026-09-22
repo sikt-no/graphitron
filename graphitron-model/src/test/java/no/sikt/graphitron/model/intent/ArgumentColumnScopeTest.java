@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.INTENT_ARGUMENT_COLUMN_SCOPE;
-import static no.sikt.graphitron.model.Tables.INTENT_ARGUMENT_REFERENCE_STEP_TARGET;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentReference;
@@ -223,10 +223,10 @@ class ArgumentColumnScopeTest {
             seedTablePath(dsl, "Query", "films", "inVenue", "venue");
 
             assertThat(rows(dsl)).isEmpty();
-            assertThat(dsl.select(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.TARGETS)
-                    .from(INTENT_ARGUMENT_REFERENCE_STEP_TARGET)
-                    .where(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.GRAPH_NAME.eq(GRAPH))
-                    .fetch(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.TARGETS))
+            assertThat(dsl.select(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.TARGETS)
+                    .from(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET)
+                    .where(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.GRAPH_NAME.eq(GRAPH))
+                    .fetch(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.TARGETS))
                 .as("the premise of the absence above: the element resolved, and it resolved to two"
                     + " destinations. Without this the case would pass just as well on a path that"
                     + " reached nothing at all, which is a different rule declining")

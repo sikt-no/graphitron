@@ -1,12 +1,9 @@
 package no.sikt.graphitron.model.derive;
 
-import org.jooq.CommonTableExpression;
 import org.jooq.DSLContext;
-import org.jooq.Field;
-import org.jooq.Name;
+import org.jooq.Query;
 import org.jooq.Record;
 import org.jooq.Select;
-import org.jooq.Table;
 
 import java.util.List;
 
@@ -14,16 +11,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_HO
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_TARGET_KEYED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_TARGET_KEYLESS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESOLVED_TYPE_BINDING;
-import static org.jooq.impl.DSL.count;
-import static org.jooq.impl.DSL.denseRank;
-import static org.jooq.impl.DSL.field;
-import static org.jooq.impl.DSL.max;
-import static org.jooq.impl.DSL.name;
-import static org.jooq.impl.DSL.partitionBy;
-import static org.jooq.impl.DSL.table;
-import static org.jooq.impl.SQLDataType.BOOLEAN;
-import static org.jooq.impl.SQLDataType.INTEGER;
-import static org.jooq.impl.SQLDataType.VARCHAR;
 
 /**
  * The capture-cadence writer of the two field-site reference-target relations: where each element
@@ -42,33 +29,18 @@ import static org.jooq.impl.SQLDataType.VARCHAR;
  * other two there is no key to enumerate, so the coordinate with both table triples is already
  * total. The view over the two carries the canonical name every reader spells.
  *
- * <p>Two statements per graph, each carrying the same walk, the same ranking over it and the same
- * two arities, and differing only in a closing arm filter. The filter separates the rows and must
- * not narrow what the arities are taken over: an element the walk reaches by one route on each arm
- * is reached by two routes, and saying one on each is the reading every arity gate here would act
- * on. That is why the arities sit a level below the filter rather than beside it, which
- * {@link #counted} states where an implementer meets it. Two statements evaluate the walk twice
- * per capture, which is measured in hundredths of a second, against a staged intermediate that
- * would have to be reconciled like a third relation.
+ * <p>The walk itself is {@link ReferenceStepWalk}'s, which is where the recursion, the ranking, the
+ * two arities and the hazard that the arities sit a level below the arm filter are all stated. This
+ * class is the first of three callers and carries the shallowest coordinate of them: the field's
+ * own, with nothing handed down from the seed.
  */
 public final class FieldReferenceStepTargets {
 
     private FieldReferenceStepTargets() {}
 
-    /** The walk's own columns, in the order every statement here carries them. */
-    private static final List<String> CHAIN_COLUMNS = List.of(
-        "graph_name", "type_name", "field_name", "ordinal", "position", "via", "key_matched_by",
-        "from_source_name", "from_schema", "from_table",
-        "to_source_name", "to_schema", "to_table", "constraint_name", "fk_on_from");
-
-    /** One of the chain's columns, qualified by the recursive term's own name. */
-    private static Field<?> chainField(Name chain, String column) {
-        return switch (column) {
-            case "ordinal", "position" -> field(chain.append(column), INTEGER);
-            case "fk_on_from" -> field(chain.append(column), BOOLEAN);
-            default -> field(chain.append(column), VARCHAR);
-        };
-    }
+    /** The element coordinate this walk is at, ahead of the hop columns every walk carries. */
+    private static final List<String> PREFIX =
+        List.of("graph_name", "type_name", "field_name", "ordinal");
 
     /** Reconciles the graph's reference targets: clears both partitions, then re-derives them. */
     public static void derive(DSLContext dsl, String graphName) {
@@ -76,97 +48,46 @@ public final class FieldReferenceStepTargets {
         var keyless = GRAPHITRON_FIELD_REFERENCE_STEP_TARGET_KEYLESS;
         dsl.deleteFrom(keyed).where(keyed.GRAPH_NAME.eq(graphName)).execute();
         dsl.deleteFrom(keyless).where(keyless.GRAPH_NAME.eq(graphName)).execute();
-
-        dsl.insertInto(keyed, List.of(keyed.GRAPH_NAME, keyed.TYPE_NAME, keyed.FIELD_NAME,
-                keyed.ORDINAL, keyed.POSITION, keyed.VIA, keyed.KEY_MATCHED_BY,
-                keyed.FROM_SOURCE_NAME, keyed.FROM_SCHEMA, keyed.FROM_TABLE,
-                keyed.TO_SOURCE_NAME, keyed.TO_SCHEMA, keyed.TO_TABLE,
-                keyed.CONSTRAINT_NAME, keyed.FK_ON_FROM, keyed.TARGETS, keyed.CANDIDATES))
-            .select(walked(dsl, graphName, true))
-            .execute();
-        dsl.insertInto(keyless, List.of(keyless.GRAPH_NAME, keyless.TYPE_NAME, keyless.FIELD_NAME,
-                keyless.ORDINAL, keyless.POSITION, keyless.VIA,
-                keyless.FROM_SOURCE_NAME, keyless.FROM_SCHEMA, keyless.FROM_TABLE,
-                keyless.TO_SOURCE_NAME, keyless.TO_SCHEMA, keyless.TO_TABLE,
-                keyless.TARGETS, keyless.CANDIDATES))
-            .select(walked(dsl, graphName, false))
-            .execute();
+        statements(dsl, graphName).forEach(Query::execute);
     }
 
     /**
-     * The counted walk with one arm taken out of it. One text for both arms, so the two
-     * statements cannot drift apart about what the chain is or what the arities are over.
+     * The inserts {@link #derive} runs, exposed beside it so an instrument can read what this stage
+     * reads off the same object the capture executes. {@code StageOrderGateTest} is that
+     * instrument, and without this a stage stated as jOOQ would have a placement nothing checks.
      */
-    private static Select<? extends Record> walked(DSLContext dsl, String graphName,
-                                                   boolean keyedArm) {
-        Name chain = name("chain");
-        var counted = counted(dsl, chain).asTable("counted");
-        List<Field<?>> projected = new java.util.ArrayList<>();
-        for (String column : CHAIN_COLUMNS) {
-            if (!keyedArm && (column.equals("key_matched_by") || column.equals("constraint_name")
-                || column.equals("fk_on_from"))) {
-                continue;
-            }
-            projected.add(counted.field(column));
-        }
-        projected.add(counted.field("targets"));
-        projected.add(counted.field("candidates"));
+    public static List<Query> statements(DSLContext dsl, String graphName) {
+        var keyed = GRAPHITRON_FIELD_REFERENCE_STEP_TARGET_KEYED;
+        var keyless = GRAPHITRON_FIELD_REFERENCE_STEP_TARGET_KEYLESS;
+        return List.of(
+            dsl.insertInto(keyed, List.of(keyed.GRAPH_NAME, keyed.TYPE_NAME, keyed.FIELD_NAME,
+                    keyed.ORDINAL, keyed.POSITION, keyed.VIA, keyed.KEY_MATCHED_BY,
+                    keyed.FROM_SOURCE_NAME, keyed.FROM_SCHEMA, keyed.FROM_TABLE,
+                    keyed.TO_SOURCE_NAME, keyed.TO_SCHEMA, keyed.TO_TABLE,
+                    keyed.CONSTRAINT_NAME, keyed.FK_ON_FROM, keyed.TARGETS, keyed.CANDIDATES))
+                .select(ReferenceStepWalk.walked(dsl, coordinate(dsl, graphName), true)),
+            dsl.insertInto(keyless, List.of(keyless.GRAPH_NAME, keyless.TYPE_NAME,
+                    keyless.FIELD_NAME, keyless.ORDINAL, keyless.POSITION, keyless.VIA,
+                    keyless.FROM_SOURCE_NAME, keyless.FROM_SCHEMA, keyless.FROM_TABLE,
+                    keyless.TO_SOURCE_NAME, keyless.TO_SCHEMA, keyless.TO_TABLE,
+                    keyless.TARGETS, keyless.CANDIDATES))
+                .select(ReferenceStepWalk.walked(dsl, coordinate(dsl, graphName), false)));
+    }
 
-        var arm = counted.field("via", String.class).in(keyedArm
-            ? List.of("KEY", "TABLE") : List.of("NAME_MATCH", "CONDITION"));
-        return dsl.withRecursive(chainOf(dsl, chain, graphName))
-            .select(projected)
-            .from(counted)
-            .where(arm);
+    /** This walk's coordinate: keyed at the field, seeded on the enclosing type's binding. */
+    private static ReferenceStepWalk.Coordinate coordinate(DSLContext dsl, String graphName) {
+        return new ReferenceStepWalk.Coordinate(PREFIX, List.of(),
+            GRAPHITRON_FIELD_REFERENCE_STEP_HOP, seed(dsl, graphName));
     }
 
     /**
-     * The ranked chain with both arities beside every row, each over the element's whole
-     * partition and both arms.
-     *
-     * <p>A level of its own rather than columns of the level above it, and that is the whole point
-     * of the nesting: a {@code WHERE} is evaluated before the window functions of the
-     * {@code SELECT} it sits in, so an arm filter beside these two would count the arm where the
-     * relation means to count the element. Filtering outside the ranking is not enough on its own,
-     * because the ranking is not where the arities are computed.
+     * The elements at position zero: the hops departing the enclosing type's own table binding,
+     * which is the one departure in the chain that is known without walking.
      */
-    private static Select<? extends Record> counted(DSLContext dsl, Name chain) {
-        var ranked = ranked(dsl, chain).asTable("ranked");
-        List<Field<?>> projected = new java.util.ArrayList<>(
-            CHAIN_COLUMNS.stream().map(column -> ranked.field(column)).toList());
-        var coordinate = List.<Field<?>>of(ranked.field("graph_name"), ranked.field("type_name"),
-            ranked.field("field_name"), ranked.field("ordinal"), ranked.field("position"));
-        projected.add(max(ranked.field("target_rank", Integer.class)).over(partitionBy(coordinate))
-            .cast(INTEGER).as("targets"));
-        projected.add(count().over(partitionBy(coordinate)).cast(INTEGER).as("candidates"));
-        return dsl.select(projected).from(ranked);
-    }
-
-    /** The finished chain with each element's arrivals ranked, which is what both counts read. */
-    private static Select<? extends Record> ranked(DSLContext dsl, Name chain) {
-        List<Field<?>> projected = new java.util.ArrayList<>(
-            CHAIN_COLUMNS.stream().map(column -> chainField(chain, column)).toList());
-        projected.add(denseRank().over(partitionBy(chainField(chain, "graph_name"),
-                chainField(chain, "type_name"), chainField(chain, "field_name"),
-                chainField(chain, "ordinal"), chainField(chain, "position"))
-            .orderBy(chainField(chain, "to_source_name"), chainField(chain, "to_schema"),
-                chainField(chain, "to_table")))
-            .as("target_rank"));
-        return dsl.select(projected).from(table(chain));
-    }
-
-    /**
-     * The chain itself: the hops departing the enclosing type's binding, then every hop whose
-     * departure is a reached arrival one position further along.
-     */
-    private static CommonTableExpression<?> chainOf(DSLContext dsl, Name chain,
-                                                         String graphName) {
+    private static Select<? extends Record> seed(DSLContext dsl, String graphName) {
         var hop = GRAPHITRON_FIELD_REFERENCE_STEP_HOP;
-        var step = GRAPHITRON_FIELD_REFERENCE_STEP_HOP.as("step");
         var bound = GRAPHITRON_RESOLVED_TYPE_BINDING;
-        var previous = table(chain).as("p");
-
-        var seed = dsl
+        return dsl
             .select(hop.GRAPH_NAME, hop.TYPE_NAME, hop.FIELD_NAME, hop.ORDINAL, hop.POSITION,
                 hop.VIA, hop.KEY_MATCHED_BY, hop.FROM_SOURCE_NAME, hop.FROM_SCHEMA, hop.FROM_TABLE,
                 hop.TO_SOURCE_NAME, hop.TO_SCHEMA, hop.TO_TABLE, hop.CONSTRAINT_NAME,
@@ -179,28 +100,5 @@ public final class FieldReferenceStepTargets {
                 .and(bound.TABLE_NAME.eq(hop.FROM_TABLE))
             .where(hop.POSITION.eq(0))
             .and(hop.GRAPH_NAME.eq(graphName));
-
-        var recursive = dsl
-            .select(step.GRAPH_NAME, step.TYPE_NAME, step.FIELD_NAME, step.ORDINAL, step.POSITION,
-                step.VIA, step.KEY_MATCHED_BY, step.FROM_SOURCE_NAME, step.FROM_SCHEMA,
-                step.FROM_TABLE, step.TO_SOURCE_NAME, step.TO_SCHEMA, step.TO_TABLE,
-                step.CONSTRAINT_NAME, step.FK_ON_FROM)
-            .from(previous)
-            .join(step).on(step.GRAPH_NAME.eq(walkedField(previous, "graph_name", VARCHAR)))
-                .and(step.TYPE_NAME.eq(walkedField(previous, "type_name", VARCHAR)))
-                .and(step.FIELD_NAME.eq(walkedField(previous, "field_name", VARCHAR)))
-                .and(step.ORDINAL.eq(walkedField(previous, "ordinal", INTEGER)))
-                .and(step.POSITION.eq(walkedField(previous, "position", INTEGER).plus(1)))
-                .and(step.FROM_SOURCE_NAME.eq(walkedField(previous, "to_source_name", VARCHAR)))
-                .and(step.FROM_SCHEMA.eq(walkedField(previous, "to_schema", VARCHAR)))
-                .and(step.FROM_TABLE.eq(walkedField(previous, "to_table", VARCHAR)));
-
-        return chain.fields(CHAIN_COLUMNS.toArray(String[]::new)).as(seed.union(recursive));
-    }
-
-    /** One column of the accumulated chain, qualified by the alias the recursive term joins it as. */
-    private static <T> Field<T> walkedField(Table<?> previous, String column,
-                                            org.jooq.DataType<T> type) {
-        return field(name(previous.getName(), column), type);
     }
 }

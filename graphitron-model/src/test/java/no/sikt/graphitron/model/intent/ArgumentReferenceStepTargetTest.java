@@ -10,7 +10,7 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
-import static no.sikt.graphitron.model.Tables.INTENT_ARGUMENT_REFERENCE_STEP_TARGET;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET;
 import static no.sikt.graphitron.model.Tables.INTENT_CONDITION_METHOD_ROUTE_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_TARGET;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
@@ -34,7 +34,7 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@code intent_argument_reference_step_hop} and {@code intent_argument_reference_step_target}
+ * What {@code intent_argument_reference_step_hop} and {@code graphitron_argument_reference_step_target}
  * return: the same resolution the field-site pair performs, at the coordinate an argument occupies.
  *
  * <p>The hop view has no test of its own here, on the reasoning
@@ -66,16 +66,16 @@ class ArgumentReferenceStepTargetTest {
                 "film_actor_film_id_fkey", "film_actor_actor_id_fkey");
 
             var rows = chain(dsl, GRAPH);
-            assertThat(rows.map(r -> r.get(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.POSITION)))
+            assertThat(rows.map(r -> r.get(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.POSITION)))
                 .containsExactly(0, 1);
             assertThat(rows.map(ArgumentReferenceStepTargetTest::hop))
                 .containsExactly("film->film_actor", "film_actor->actor");
-            assertThat(rows.map(r -> r.get(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.FK_ON_FROM)))
+            assertThat(rows.map(r -> r.get(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.FK_ON_FROM)))
                 .as("film declares neither key; film_actor declares both")
                 .containsExactly(false, true);
-            assertThat(rows.map(r -> r.get(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.VIA)))
+            assertThat(rows.map(r -> r.get(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.VIA)))
                 .containsExactly("KEY", "KEY");
-            assertThat(rows.map(r -> r.get(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.CANDIDATES)))
+            assertThat(rows.map(r -> r.get(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.CANDIDATES)))
                 .containsExactly(1, 1);
         });
     }
@@ -196,9 +196,9 @@ class ArgumentReferenceStepTargetTest {
             var rows = chain(dsl, GRAPH);
             assertThat(rows).hasSize(2);
             assertThat(rows.map(ArgumentReferenceStepTargetTest::hop)).containsOnly("film->language");
-            assertThat(rows.map(r -> r.get(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.TARGETS)))
+            assertThat(rows.map(r -> r.get(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.TARGETS)))
                 .containsExactly(1, 1);
-            assertThat(rows.map(r -> r.get(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.CANDIDATES)))
+            assertThat(rows.map(r -> r.get(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.CANDIDATES)))
                 .containsExactly(2, 2);
         });
     }
@@ -223,14 +223,14 @@ class ArgumentReferenceStepTargetTest {
             var rows = chain(dsl, GRAPH);
             assertThat(rows).hasSize(1);
             assertThat(hop(rows.getFirst())).isEqualTo("film->actor");
-            assertThat(rows.getFirst().get(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.VIA))
+            assertThat(rows.getFirst().get(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.VIA))
                 .isEqualTo("CONDITION");
-            assertThat(rows.getFirst().get(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.CONSTRAINT_NAME))
+            assertThat(rows.getFirst().get(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.CONSTRAINT_NAME))
                 .as("an authored predicate is not a foreign key")
                 .isNull();
-            assertThat(rows.getFirst().get(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.FK_ON_FROM))
+            assertThat(rows.getFirst().get(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.FK_ON_FROM))
                 .isNull();
-            assertThat(rows.getFirst().get(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.KEY_MATCHED_BY))
+            assertThat(rows.getFirst().get(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.KEY_MATCHED_BY))
                 .isNull();
         });
     }
@@ -258,7 +258,7 @@ class ArgumentReferenceStepTargetTest {
             var rows = chain(dsl, GRAPH);
             assertThat(rows.map(ArgumentReferenceStepTargetTest::hop))
                 .containsExactly("film->film_actor", "film_actor->actor");
-            assertThat(rows.map(r -> r.get(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.VIA)))
+            assertThat(rows.map(r -> r.get(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.VIA)))
                 .containsExactly("KEY", "CONDITION");
         });
     }
@@ -285,7 +285,7 @@ class ArgumentReferenceStepTargetTest {
             assertThat(hop(rows.getFirst()))
                 .as("the key routes it; the condition method's own target is not read")
                 .isEqualTo("film->film_actor");
-            assertThat(rows.getFirst().get(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.VIA))
+            assertThat(rows.getFirst().get(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.VIA))
                 .isEqualTo("KEY");
         });
     }
@@ -363,7 +363,7 @@ class ArgumentReferenceStepTargetTest {
             var rows = chain(dsl, GRAPH);
             assertThat(rows.map(ArgumentReferenceStepTargetTest::hop))
                 .containsExactly("film->actor");
-            assertThat(rows.map(r -> r.get(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.TARGETS)))
+            assertThat(rows.map(r -> r.get(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.TARGETS)))
                 .containsExactly(1);
         });
     }
@@ -382,7 +382,7 @@ class ArgumentReferenceStepTargetTest {
             seedTablePath(dsl, "Query", "films", "titled", "film_translation");
 
             var rows = chain(dsl, GRAPH);
-            assertThat(rows.map(r -> r.get(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.ARGUMENT_NAME)))
+            assertThat(rows.map(r -> r.get(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.ARGUMENT_NAME)))
                 .containsExactly("inActor", "titled");
             assertThat(rows.map(ArgumentReferenceStepTargetTest::hop))
                 .containsExactly("film->film_actor", "film->film_translation");
@@ -503,13 +503,13 @@ class ArgumentReferenceStepTargetTest {
 
     private static Result<Record> chain(DSLContext dsl, String graphName) {
         derive(dsl);
-        return dsl.select(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.fields())
-            .from(INTENT_ARGUMENT_REFERENCE_STEP_TARGET)
-            .where(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.GRAPH_NAME.eq(graphName))
-            .orderBy(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.ARGUMENT_NAME,
-                INTENT_ARGUMENT_REFERENCE_STEP_TARGET.POSITION,
-                INTENT_ARGUMENT_REFERENCE_STEP_TARGET.TO_SCHEMA,
-                INTENT_ARGUMENT_REFERENCE_STEP_TARGET.CONSTRAINT_NAME)
+        return dsl.select(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.fields())
+            .from(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET)
+            .where(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.GRAPH_NAME.eq(graphName))
+            .orderBy(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.ARGUMENT_NAME,
+                GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.POSITION,
+                GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.TO_SCHEMA,
+                GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.CONSTRAINT_NAME)
             .fetch();
     }
 
@@ -519,7 +519,7 @@ class ArgumentReferenceStepTargetTest {
      * deliberately not in it: they are what differs by construction.
      */
     private static List<String> argumentSiteShape(DSLContext dsl) {
-        var t = INTENT_ARGUMENT_REFERENCE_STEP_TARGET;
+        var t = GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET;
         return dsl.select(t.fields())
             .from(t)
             .where(t.GRAPH_NAME.eq(GRAPH))
@@ -549,7 +549,7 @@ class ArgumentReferenceStepTargetTest {
     }
 
     private static String hop(Record row) {
-        return row.get(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.FROM_TABLE) + "->"
-            + row.get(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.TO_TABLE);
+        return row.get(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.FROM_TABLE) + "->"
+            + row.get(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.TO_TABLE);
     }
 }

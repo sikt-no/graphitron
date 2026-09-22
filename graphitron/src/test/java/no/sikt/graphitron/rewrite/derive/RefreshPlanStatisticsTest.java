@@ -136,6 +136,10 @@ class RefreshPlanStatisticsTest {
      * {@code Materializations.analyse}'s own javadoc describes, arriving where that call cannot
      * reach: an index without statistics, costing most of the gain the index exists for.
      *
+     * <p>That statement has since left the set, for the reason the last paragraph here records, and
+     * the example stays because it is still the clearest statement of the mechanism the remaining
+     * members are in the set for. What it stops being is a description of this rule today.
+     *
      * <p><b>The cold regime is not the no-statistics regime any more, and the set moved in both
      * directions when it changed.</b> A created store declares the partition dimension's
      * selectivity on every graph-keyed base table, before any capture and outside any
@@ -152,10 +156,12 @@ class RefreshPlanStatisticsTest {
      * these three it still does; what changed is which plan it gets when they are missing.
      *
      * <p>The rows visited say the direction that costs anything is the other one. On the decode hop,
-     * the reader this set's worked example follows, the cold regime visits 1105 rows against 1107
-     * analysed, where a store told nothing about the partition column visits 1499.
-     * {@link PartitionSelectivityWorthTest} holds that pair and carries why it is a fifth of what
-     * the same measurement gave before the hop became two keyed tables.
+     * the reader this set's worked example follows, the cold regime visits 512 rows against 512
+     * analysed, where a store told nothing about the partition column visits 524.
+     * {@link PartitionSelectivityWorthTest} holds that pair and carries how it got there: the
+     * figures were 1105, 1107 and 1499 while the {@code @reference} walks were registered targets,
+     * and each key that landed under this reader took another part of the gap until the file
+     * stopped being able to hold a control at all.
      *
      * <p>{@code intent_node_id_decode_hop_column_live} carried that mechanism until the hop itself
      * was registered, and the swap is one statement inheriting it from another rather than anything
@@ -232,12 +238,28 @@ class RefreshPlanStatisticsTest {
      * longer a refresh statement at all and there is no refresh plan of its own left to measure.
      * Every rule that reads it reads a base table the pass can have analysed, which is the same
      * conclusion this measurement keeps reaching, one rung at a time.
+     *
+     * <p><b>Two, and both {@code @nodeId} readers left together</b> when the argument-site and
+     * input-field {@code @reference} walks became capture stages. Neither is a new kind of
+     * departure: the decode hop joins both walks and the instruction rule the argument-site one,
+     * each of them a registered target whose statistics only the refresh could have written, and
+     * each is a base table the pass analyses before the refresh begins now. The decode hop is the statement the first paragraph
+     * works through and the instruction rule is the one that joined when the walk was first stored,
+     * so between them they are most of this set's history, and what took them out is the boundary
+     * moving rather than either rule changing. {@link PartitionSelectivityWorthTest} watched the
+     * same event through its own instrument and lost its control to it, which is worth reading
+     * beside this: one conversion, two gates, and the reading on both is that a rung stopped being
+     * on the refresh's side of the transaction.
+     *
+     * <p>What is left is the two {@code @mutation} payload rules, which are the shape this set was
+     * always about: each reads registered targets, and no statement before the refresh can have
+     * analysed one. A set this small is worth a sentence rather than a shrug. Every departure above
+     * restates one conclusion, that a rung moving to its owner takes a member out with it, and what
+     * remains is the rules for which no such move has been made.
      */
     private static final Set<String> PLAN_DEPENDS_ON_STATISTICS = Set.of(
         "intent_mutation_payload_column_live",
-        "intent_mutation_payload_refusal_live",
-        "intent_node_id_decode_hop_live",
-        "intent_node_id_instruction_live");
+        "intent_mutation_payload_refusal_live");
 
     @TempDir
     static Path tmp;

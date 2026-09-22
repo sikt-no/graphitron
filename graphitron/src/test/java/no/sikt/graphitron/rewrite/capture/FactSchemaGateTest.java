@@ -996,7 +996,7 @@ class FactSchemaGateTest {
      * of a {@code Film}-returning field; and the {@code @reference} whose element names a table a
      * foreign key reaches is what puts one in {@code graphitron_field_reference_step_hop}; and the
      * {@code byFilmTitle} argument, whose own {@code @reference} walks the same foreign key from
-     * the argument's side, is what puts one in {@code intent_argument_reference_step_target}, the
+     * the argument's side, is what puts one in {@code graphitron_argument_reference_step_target}, the
      * field-site reference above reaching only the field-site walk. Without any
      * of them the case above passes over an empty
      * relation, which is exactly what its own non-empty assertion refuses to let happen quietly.

@@ -197,7 +197,7 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
  *       by side;
  *       {@code no.sikt.graphitron.model.intent.ArgumentReferenceStepTargetTest} binds the
  *       argument-site pair ({@code intent_argument_reference_step_hop} and
- *       {@code intent_argument_reference_step_target}, the hop view pinned through the chain for the
+ *       {@code graphitron_argument_reference_step_target}, the hop view pinned through the chain for the
  *       same reason) against that same catalog, and additionally binds the two views to each other:
  *       the arms are textually parallel, so one case seeds one path shape at both sites and asserts
  *       the shared columns come back equal, which is what keeps a change to one from silently

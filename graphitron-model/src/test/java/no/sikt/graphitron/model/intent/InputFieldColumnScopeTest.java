@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.INTENT_INPUT_FIELD_COLUMN_SCOPE;
-import static no.sikt.graphitron.model.Tables.INTENT_INPUT_FIELD_REFERENCE_STEP_TARGET;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_INPUT_FIELD_REFERENCE_STEP_TARGET;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedConstraint;
@@ -213,10 +213,10 @@ class InputFieldColumnScopeTest {
                 new OccurrenceStep("FilmFilter", "inVenue", "String"));
 
             assertThat(rows(dsl)).isEmpty();
-            assertThat(dsl.select(INTENT_INPUT_FIELD_REFERENCE_STEP_TARGET.TARGETS)
-                    .from(INTENT_INPUT_FIELD_REFERENCE_STEP_TARGET)
-                    .where(INTENT_INPUT_FIELD_REFERENCE_STEP_TARGET.GRAPH_NAME.eq(GRAPH))
-                    .fetch(INTENT_INPUT_FIELD_REFERENCE_STEP_TARGET.TARGETS))
+            assertThat(dsl.select(GRAPHITRON_INPUT_FIELD_REFERENCE_STEP_TARGET.TARGETS)
+                    .from(GRAPHITRON_INPUT_FIELD_REFERENCE_STEP_TARGET)
+                    .where(GRAPHITRON_INPUT_FIELD_REFERENCE_STEP_TARGET.GRAPH_NAME.eq(GRAPH))
+                    .fetch(GRAPHITRON_INPUT_FIELD_REFERENCE_STEP_TARGET.TARGETS))
                 .as("the premise of the absence above: the element resolved, and it resolved to two"
                     + " destinations. Without this the case would pass just as well on a path that"
                     + " reached nothing at all, which is a different rule declining")

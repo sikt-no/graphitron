@@ -182,6 +182,22 @@ class SupertypeSignatureGateTest {
         // the way the pair above did, when a conversion took both out of the register and made them
         // tables this gate's scan reaches.
         Set.of("graphitron_argument_scope_table", "graphitron_field_scope_table"),
+        // Where a @reference path element lands, under the three keys the three sites ask it by:
+        // a field's own coordinate, an argument's, and an input field's with the resolving table
+        // it was handed. One set per arm of the split, because the split is on key shape and the
+        // arms keep their own: the keyed three carry the constraint and its orientation, the
+        // keyless three do not. The payload grouping each set is the walk itself, which is the
+        // point rather than a coincidence: one builder states it and three coordinates call it, so
+        // the schema showing three relations with one payload is that claim arriving where a gate
+        // can see it. No supertype is owed, for the reason the pairs above give twice over: a
+        // relation over all three would carry an argument name null on two thirds of its rows and a
+        // resolving triple null on the other two thirds, and no reader could key into it.
+        Set.of("graphitron_argument_reference_step_target_keyed",
+               "graphitron_field_reference_step_target_keyed",
+               "graphitron_input_field_reference_step_target_keyed"),
+        Set.of("graphitron_argument_reference_step_target_keyless",
+               "graphitron_field_reference_step_target_keyless",
+               "graphitron_input_field_reference_step_target_keyless"),
         // The five application sites, which keep their own signature now that a supertype carries
         // the name they share: each still holds the parent hop as a foreign key into the relation
         // its own site declares, and that is the payload grouping them here. The row stays because

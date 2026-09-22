@@ -1,8 +1,11 @@
 package no.sikt.graphitron.model;
 
+import no.sikt.graphitron.model.derive.ArgumentReferenceStepTargets;
+import no.sikt.graphitron.model.derive.InputFieldReferenceStepTargets;
 import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.model.derive.ViewReferences;
 import org.jooq.DSLContext;
+import org.jooq.Query;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -14,7 +17,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Collection;
 import java.util.Set;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -33,13 +38,15 @@ import static org.jooq.impl.DSL.table;
  * satisfy by construction once statement order in one method is the ordering.
  *
  * <p><b>Why statement order is enough here, where the fact model rules out hand-kept orderings.</b>
- * The objection to a hand-kept ordering is that it has no derivable source. This one has one for
- * the half that matters: a stage inserts from a stored rule view, so what it reads is in the
- * catalog and {@link ViewReferences} parses it. The hand-written producers are jOOQ code no stored
- * definition exposes, so their write sets are declared below, on the same equality-pinned footing
- * {@code MaterializeRegistryGateTest}'s rosters stand on; the refresh's write set is not declared
- * at all, being the register's own rows. So the order is checked against a parse on one side and a
- * roster on the other, and the roster is the part a reviewer has to read.
+ * The objection to a hand-kept ordering is that it has no derivable source. This one has one, and
+ * it has two shapes. A stage that inserts from a stored rule view has its read set in the catalog,
+ * where {@link ViewReferences} parses it. A stage whose rule is jOOQ has no stored definition, so
+ * the deriver exposes the statements it runs beside the method that runs them, and this gate reads
+ * its read set off the same objects the capture executes. That is the stronger of the two: there is
+ * no transcription between what is checked and what runs. What is left undeclared is the
+ * hand-written producers whose rule is a Java loop rather than a statement, whose write sets are
+ * declared below on the same equality-pinned footing {@code MaterializeRegistryGateTest}'s rosters
+ * stand on, and the refresh, whose write set is the register's own rows.
  *
  * <p><b>What this does not claim.</b> It does not read {@link
  * no.sikt.graphitron.model.capture.FactCapture} and cannot: {@link #STRATUM} is the statement order
@@ -57,7 +64,23 @@ class StageOrderGateTest {
      * @param ruleView the stored view a stage inserts from, or null for a step whose rule is jOOQ
      *                 code or, in the refresh's case, a roster of rules
      */
-    private record Step(String name, String ruleView, Set<String> writes) {}
+    private record Step(String name, String ruleView,
+                        BiFunction<DSLContext, String, List<Query>> statements,
+                        Set<String> writes) {
+
+        /** A step whose rule is a stored view, or one the gate cannot read at all. */
+        Step(String name, String ruleView, Set<String> writes) {
+            this(name, ruleView, null, writes);
+        }
+
+        /** Whether this step states a read set the order can be checked against. */
+        boolean readable() {
+            return ruleView != null || statements != null;
+        }
+    }
+
+    /** The graph a statement is built for; the gate renders the query rather than running it. */
+    private static final String GRAPH = "the stage order gate's graph";
 
     /**
      * A sentinel for the one step whose write set is data rather than a declaration. Replaced per
@@ -106,6 +129,13 @@ class StageOrderGateTest {
             Set.of("graphitron_argument_scope_table")),
         new Step("InputFieldResolvingTables", "graphitron_input_field_resolving_table_rule",
             Set.of("graphitron_input_field_resolving_table")),
+        new Step("ArgumentReferenceStepTargets", null, ArgumentReferenceStepTargets::statements,
+            Set.of("graphitron_argument_reference_step_target_keyed",
+                "graphitron_argument_reference_step_target_keyless")),
+        new Step("InputFieldReferenceStepTargets", null,
+            InputFieldReferenceStepTargets::statements,
+            Set.of("graphitron_input_field_reference_step_target_keyed",
+                "graphitron_input_field_reference_step_target_keyless")),
         new Step("UnlowerableOrderingRejectionRows", null,
             Set.of("intent_field_unlowerable_ordering_rejection")),
         new Step("Materializations.refresh", null, REGISTERED_TARGETS));
@@ -127,11 +157,36 @@ class StageOrderGateTest {
     @Test
     @DisplayName("every stage's rule reaches stored relations the order can be checked against")
     void everyStageRuleReachesStoredRelations() {
-        withStore(dsl -> STRATUM.stream().filter(step -> step.ruleView() != null).forEach(step ->
-            assertThat(storedRelationsReachedBy(dsl, step.ruleView()))
-                .as(step.name() + "'s rule " + step.ruleView() + " reaches no stored relation,"
-                    + " so the order above was checked against nothing")
+        withStore(dsl -> STRATUM.stream().filter(Step::readable).forEach(step ->
+            assertThat(readSetOf(dsl, step))
+                .as(step.name() + " reaches no stored relation, so the order above was checked"
+                    + " against nothing")
                 .isNotEmpty()));
+    }
+
+    /**
+     * The jOOQ half of the read set, shown reading a real dependency rather than merely being
+     * non-empty. A stage stated as jOOQ is where the seam could fail silently: a walk that named no
+     * relation this gate recognised would give an empty read set, and the case above and the order
+     * check would both pass on it. So one statement's read set is asserted to hold the relation its
+     * seed joins, which is exactly the edge that decides where the stage may sit.
+     */
+    @Test
+    @DisplayName("a jOOQ stage's read set holds the relation its seed departs from")
+    void aJooqStageReadsWhatItsSeedJoins() {
+        withStore(dsl -> {
+            assertThat(readSetOf(dsl, stepNamed("ArgumentReferenceStepTargets")))
+                .as("the argument-site walk seeds on the table an argument's own content binds"
+                    + " against, and the read set derived from its statements has to say so")
+                .contains("graphitron_argument_scope_table");
+            assertThat(readSetOf(dsl, stepNamed("InputFieldReferenceStepTargets")))
+                .as("the input-field walk seeds on the table an input field is classified against")
+                .contains("graphitron_input_field_resolving_table");
+        });
+    }
+
+    private static Step stepNamed(String name) {
+        return STRATUM.stream().filter(step -> step.name().equals(name)).findFirst().orElseThrow();
     }
 
     /**
@@ -173,21 +228,44 @@ class StageOrderGateTest {
         var offenders = new ArrayList<String>();
         for (int position = 0; position < steps.size(); position++) {
             Step step = steps.get(position);
-            if (step.ruleView() == null) {
+            if (!step.readable()) {
                 continue;
             }
             Set<String> later = steps.subList(position + 1, steps.size()).stream()
                 .flatMap(s -> s.writes().stream())
                 .collect(Collectors.toSet());
-            for (String read : storedRelationsReachedBy(dsl, step.ruleView())) {
+            for (String read : readSetOf(dsl, step)) {
                 if (later.contains(read)) {
-                    offenders.add(step.name() + " inserts from " + step.ruleView()
-                        + ", which reads " + read + ", written by a later step of the same"
-                        + " pass; it would read the previous capture's rows");
+                    offenders.add(step.name() + " reads " + read + ", written by a later step of"
+                        + " the same pass; it would read the previous capture's rows");
                 }
             }
         }
         return offenders;
+    }
+
+    /**
+     * Every stored relation a step reads, whichever way it states its rule: through the catalog for
+     * a stage inserting from a stored view, and off the rendered statements for one stated as jOOQ.
+     *
+     * <p>A writing statement names its own target, an {@code INSERT INTO t SELECT ...} visiting
+     * {@code t} like any other relation, so the step's own writes come back out. That subtraction
+     * is the gate's to make rather than the walk's: what a statement reads is a question about the
+     * statement, and what a step writes is a declaration this file holds.
+     */
+    private static Set<String> readSetOf(DSLContext dsl, Step step) {
+        if (step.ruleView() != null) {
+            return storedRelationsReachedBy(dsl, step.ruleView());
+        }
+        if (step.statements() == null) {
+            return Set.of();
+        }
+        var named = new LinkedHashSet<String>();
+        for (Query query : step.statements().apply(dsl, GRAPH)) {
+            named.addAll(ViewReferences.relationsReadBy(dsl, query));
+        }
+        named.removeAll(step.writes());
+        return storedRelationsReachedBy(dsl, named);
     }
 
     /**
@@ -295,11 +373,17 @@ class StageOrderGateTest {
      * tables underneath every view it names.
      */
     private static Set<String> storedRelationsReachedBy(DSLContext dsl, String viewName) {
+        var reached = storedRelationsReachedBy(dsl, List.of(viewName));
+        reached.remove(viewName);
+        return reached;
+    }
+
+    /** The same walk from the relations a statement named directly. */
+    private static Set<String> storedRelationsReachedBy(DSLContext dsl, Collection<String> seeds) {
         var kinds = relationKinds(dsl);
         var tables = new LinkedHashSet<String>();
         var seen = new HashSet<String>();
-        var pending = new ArrayDeque<String>();
-        pending.add(viewName);
+        var pending = new ArrayDeque<String>(seeds);
         while (!pending.isEmpty()) {
             String relation = pending.poll();
             if (!seen.add(relation)) {
@@ -311,7 +395,6 @@ class StageOrderGateTest {
             }
             ViewReferences.relationsReadBy(dsl, relation).forEach(pending::add);
         }
-        tables.remove(viewName);
         return tables;
     }
 

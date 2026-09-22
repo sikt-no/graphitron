@@ -309,8 +309,14 @@ class DerivedReadCostTest {
      * register through. It is the same mechanism a fourth, fifth and sixth time rather than a new
      * one, and what is left in this domain is the node-id and mutation-payload families, which is
      * where the register still is.
+     *
+     * <p>Twenty-five to twenty-three with the two reference walks. Both are gatherer-written now,
+     * so a view that reached the register only through the argument-site walk stops being a reader
+     * in this domain; the input-field walk contributes none of the two, having been a plain view
+     * before and after, and what it changes is that its rows are on disk, which moves the cells
+     * below rather than this count.
      */
-    private static final int READERS_WITH_CELLS = 25;
+    private static final int READERS_WITH_CELLS = 23;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
@@ -453,8 +459,14 @@ class DerivedReadCostTest {
      * of them went with it. The rules are all still in the schema, each under a {@code _rule} name
      * beside its target; what is gone is the refresh that was buying their rows, and a stage is not
      * a shape this matrix prices.
+     *
+     * <p>51 to 48 with the two reference walks, and the three cells are the argument-site one's:
+     * the views that reached the register through it stop having a comparison to make about it,
+     * the same mechanism a fifth time. The input-field walk removes none, having never been a
+     * registration to charge a cell to, which is the whole of what made it the worst rung of the
+     * six: a rule nobody refreshed and every reader of the decode hop re-walked.
      */
-    private static final int CELLS = 51;
+    private static final int CELLS = 48;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -757,8 +769,20 @@ class DerivedReadCostTest {
      * guards against on the other axis. A wide unique index changing an inlined rule's plan by fifty
      * times is its own question and is not answered here; until it is, the three rows stay and state
      * something true.
+     *
+     * <p>Two pairs arrived with the input-field reference walk, and they are the general form above
+     * read the other way round: not a target dearer than its rule, but a rule that got cheap enough
+     * to beat its target. {@code intent_input_field_carrier_role_live} reads that walk, which was a
+     * recursive view over a recursive view and is two keyed tables now, so the unregistered side of
+     * every cell charged to that target collapsed while the registered side, a scan of the target,
+     * stayed where it was. The registration's margin inverted without the registration or its
+     * readers being touched. That is information for the rung that converts this target rather than
+     * a regression to answer here: a registration whose rule has become cheap is one whose refresh
+     * is buying less than it was, which is the case for converting it and not against it.
      */
     private static final Set<String> KNOWN_NON_MONOTONIC = Set.of(
+        "intent_input_field_carrier_role|intent_mutation_payload_column_live",
+        "intent_input_field_carrier_role|intent_mutation_payload_refusal_live",
         // graphitron_argmapping_entry|intent_argmapping_bound_parameter_type stood here on the pruning an
         // inlined body offered and a table cannot. It left with the registration itself: the rule
         // had become a projection of one captured table, so materializing it copied rows into rows,

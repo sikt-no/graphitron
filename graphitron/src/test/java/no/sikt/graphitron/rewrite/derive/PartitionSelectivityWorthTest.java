@@ -50,8 +50,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <ul>
  *   <li><b>bare</b>: every column of every base table back to H2's unanalysed default, the partition
- *       column included. The control, and a store no run can open any more: it is what a cold store
- *       was before the declaration existed. {@link StoreStatistics#resetIncludingTheDeclaration} is
+ *       column included. The regime the control was taken against, and a store no run can open any
+ *       more: it is what a cold store was before the declaration existed. {@link StoreStatistics#resetIncludingTheDeclaration} is
  *       the only caller of that reset for exactly this reason.
  *   <li><b>declared</b>: the same, with the partition declaration restored and nothing analysed.
  *       This is a cold store as a run meets one, and the regime the claim is about.
@@ -59,31 +59,42 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       statistics a store can carry.
  * </ul>
  *
- * <p><b>The two readers, and why the figures differ in kind between them.</b>
+ * <p><b>The two readers, and why neither of them moves any more.</b>
  * {@code intent_node_id_decode_hop_live} and {@code intent_node_id_instruction_live} both reach
- * {@code graphitron_field_reference_step_hop} through the same chain, and on a consumer-size store both
- * paid the cliff; the instruction view is the one an instrumented round measured at 592 s. On this
- * repository's twelve-unit fixture only the decode hop moves. Measured: the decode hop visits 1499
- * rows bare, 1105 declared and 1107 analysed, so the declaration reaches the analysed cost and
- * slightly past it; the instruction view visits 2151 bare, 2151 declared and 2226 analysed, its
- * plan moving where its count does not.
+ * {@code graphitron_field_reference_step_hop} through the same chain, and on a consumer-size store
+ * both paid the cliff; the instruction view is the one an instrumented round measured at 592 s. On
+ * this repository's twelve-unit fixture neither moves. Measured: the decode hop visits 524 rows
+ * bare, 512 declared and 512 analysed, so the declaration reaches the analysed cost exactly and the
+ * bare regime sits twelve rows above it; the instruction view visits 2151 bare, 2151 declared and
+ * 2226 analysed, its plan moving where its count does not and the declaration costing it less than
+ * a full analysis does.
  *
- * <p><b>Those figures are much smaller than the ones that opened this question, and the reason is a
- * second lever landing underneath this one.</b> On the single hop table this measurement was first
- * taken on, the same bare read visited 10939 rows against 1113 declared, a factor of 9.8. The hop is
- * two keyed tables under a union view now, and their keys lead with the coordinate the reader seeks
- * on, so the planner reaches a seekable ordering whether or not it has been told what the partition
- * column holds. What is left for the declaration to buy here is the 1499 against 1105 above. Both
- * facts are worth keeping: a key on the target removes most of this cliff where it exists, and the
- * declaration is still the only statement of that column available to a pass that plans inside a
- * transaction, where no {@code ANALYZE} can run at all.
+ * <p><b>That is the third fall in a row, and each one is a key landing underneath this measurement
+ * rather than a weaker reading of the same shape.</b> On the single hop table the question opened
+ * on, the bare read visited 10939 rows against 1113 declared, a factor of 9.8. The hop became two
+ * keyed tables under a union view and the factor fell to 1.36. The input-field resolving table
+ * gained the key that declaring it forced and it fell to 1.13. Then both {@code @reference} walk
+ * targets became keyed tables whose keys lead with the columns this rule joins them on, and what
+ * was left went with them. Every time, the planner gained a seekable ordering it can reach without
+ * being told what the partition column holds, and every time that was one less thing the
+ * declaration was buying.
  *
- * <p>What the fixture does not say is what either is worth at consumer scale, for the reason
+ * <p><b>So this file no longer holds a cost control, and says so rather than lowering a floor to
+ * keep one.</b> Twelve rows out of 524 cannot tell two plans from one. The note the previous fall
+ * left here said what to read when the ratio reached one, and this is that: the declaration has
+ * stopped being worth measuring at this fixture size, which is not a reason to widen the control
+ * until it passes. What the file keeps is the safety property, that the declared regime never costs
+ * more than the analysed one, and both counts pinned as figures, so a change that makes the
+ * declaration matter here again fails this test and gets stated rather than passing quietly.
+ *
+ * <p><b>Which leaves the acceptance evidence for the declaration elsewhere, and that is worth
+ * saying plainly.</b> {@code RefreshPlanStatisticsTest} holds which statements plan differently by
+ * plan text, and no key touched that; the consumer-scale round behind this work stands as a
+ * measurement on the single-table shape; and the declaration remains the only statement of that
+ * column available to a pass planning inside a transaction, where no {@code ANALYZE} can run at
+ * all. What has no fixture evidence any more is the cost claim, for the reason
  * {@code RefreshPlanStatisticsTest} states last: a per-driving-row cost is linear in driving rows,
- * and a fixture whose partitions are small is precisely where a partition scan is cheap. The
- * consumer-side figures behind this work were taken on the single-table shape and are not a claim
- * about the shape that ships. So the control is asserted where the instrument has signal, and the
- * instruction view is asserted to be unmoved rather than quietly left out.
+ * and a fixture whose partitions are small is precisely where a partition scan is cheap.
  */
 @PipelineTier
 class PartitionSelectivityWorthTest {
@@ -92,8 +103,10 @@ class PartitionSelectivityWorthTest {
     private static final int UNITS = 12;
 
     /**
-     * The reader the instrument has signal on: the rule whose read of
-     * {@code graphitron_field_reference_step_hop} is the index choice the declaration decides.
+     * The reader the cliff was visible on until keys on the relations it reads took it: the rule
+     * whose read of {@code graphitron_field_reference_step_hop} was the index choice the
+     * declaration decided. It also joins both {@code @reference} walk targets, on the columns their
+     * keys lead with, which is how the last fall below reached it.
      */
     private static final String DECODE_HOP = "intent_node_id_decode_hop_live";
 
@@ -102,28 +115,21 @@ class PartitionSelectivityWorthTest {
 
     /**
      * How far the declared regime may sit above the analysed one, as measured and not as guessed:
-     * the decode hop visits 1105 rows declared against 1107 analysed, so the declaration reaches the
-     * analysed plan's cost and slightly past it, and the instruction view visits fewer declared than
-     * analysed. A tenth is slack for a plan that shifts without the claim failing.
+     * the decode hop visits 512 rows under either, and the instruction view visits 2151 declared
+     * against 2226 analysed, so the declaration reaches the analysed plan's cost on one reader and
+     * sits below it on the other. A tenth is slack for a plan that shifts without the claim
+     * failing.
      */
     private static final double DECLARED_WITHIN = 1.1;
 
     /**
-     * How far below the bare regime the declared one has to sit for the claim above to say anything.
-     * Measured at 1.13 (1748 rows against 1551); 1.08 is the floor the assertion holds, low enough
-     * that a fixture detail moving the ratio does not fail the build and high enough that the two
-     * regimes cannot be the same plan.
-     *
-     * <p>It was 9.8 on the single hop table and 1.36 on the keyed arm tables, and the direction is
-     * the same both times: this is the residue after a key on a target the rule reads took the
-     * rest, not a weaker reading of the same shape. The latest fall is the input-field resolving
-     * table gaining the primary key that declaring it forced, which is one more seek this rule's
-     * bare regime can make and so one less thing the partition declaration is buying. A floor that
-     * keeps falling for that reason is the instrument reporting its subject being fixed underneath
-     * it; the reading to take when it reaches one is that the declaration has stopped being worth
-     * measuring here, not that the control should be widened again.
+     * How close to the declared regime the bare one reads now, which is the figure that replaced
+     * this file's control. Measured at 1.023 on the decode hop, 524 rows against 512, and at
+     * exactly one on the instruction view. A twentieth is slack for a fixture detail; a bare regime
+     * that climbs past it is the cliff coming back, which is a figure to state here rather than a
+     * change to absorb silently.
      */
-    private static final double CONTROL_AT_LEAST = 1.08;
+    private static final double UNMOVED_WITHIN = 1.05;
 
     @TempDir
     static Path tmp;
@@ -180,24 +186,30 @@ class PartitionSelectivityWorthTest {
     }
 
     /**
-     * The control, and the reason the claim above is not a tautology about a planner that was going
-     * to pick the same index anyway. Without the declaration the same read takes the partition
-     * column's own one-column index and scans the graph's partition per driving row.
+     * What the control became. Without the declaration this read used to take the partition column's
+     * own one-column index and scan the graph's partition per driving row, and the gap that opened
+     * was the defect stated as a test. Three keys on relations this rule reads have since closed it,
+     * the last two arriving together when both {@code @reference} walk targets became keyed tables.
+     * Asserting the collapse rather than deleting the case is what keeps the figure pinned: the gap
+     * returning fails here and has to be restated, where a deleted case would let it pass.
      */
     @Test
-    @DisplayName("without the declaration the same read visits measurably more")
-    void withoutItTheSameReadScansThePartition() {
+    @DisplayName("the declaration no longer moves this reader's count at this fixture size")
+    void theDecodeHopIsNoLongerMovedEither() {
         assertThat((double) bare.get(DECODE_HOP))
             .as("rows visited reading %s with nothing stated about the partition column at all"
-                + " (%d), against %d with the declaration. This is the defect, stated as a test",
-                DECODE_HOP, bare.get(DECODE_HOP), declared.get(DECODE_HOP))
-            .isGreaterThanOrEqualTo(declared.get(DECODE_HOP) * CONTROL_AT_LEAST);
+                + " (%d), against %d with the declaration. These differed by enough to hold a"
+                + " control until keys on the relations it reads closed the gap; a gap reappearing"
+                + " is a figure to state", DECODE_HOP, bare.get(DECODE_HOP),
+                declared.get(DECODE_HOP))
+            .isLessThanOrEqualTo(declared.get(DECODE_HOP) * UNMOVED_WITHIN);
     }
 
     /**
-     * What the fixture cannot show, asserted rather than omitted. The reader a consumer-size round
-     * was measured on visits the same rows declared as bare here, so the control above would mean
-     * nothing over it; a later fixture on which it does move is a figure to state, not a surprise.
+     * The same fact on the other reader, where it held from the start rather than arriving with a
+     * key. The reader a consumer-size round was measured on visits the same rows declared as bare
+     * here, exactly rather than within a slack, which is why it never carried the control. A later
+     * fixture on which it does move is a figure to state, not a surprise.
      */
     @Test
     @DisplayName("the reader the round was measured on is unmoved by the declaration at this size")
@@ -205,7 +217,7 @@ class PartitionSelectivityWorthTest {
         assertThat(declared.get(INSTRUCTION))
             .as("rows visited reading %s under the declaration, against %d with nothing stated at"
                 + " all. Equal: at this fixture size the declaration moves its plan and not its"
-                + " count, which is what keeps the control below on the decode hop", INSTRUCTION,
+                + " count, which is now what both readers do", INSTRUCTION,
                 bare.get(INSTRUCTION))
             .isEqualTo(bare.get(INSTRUCTION));
     }
