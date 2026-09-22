@@ -13,6 +13,7 @@ import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.DomainReturnType;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
+import no.sikt.graphitron.rewrite.model.FilterBinding;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -279,9 +280,27 @@ public record TenantBindingIndex(
                 return null;
             }
             var members = operationMembers.membersOf(coord);
-            var slots = directSlots(members);
-            if (!slots.isEmpty()) {
-                return new TenantBinding.ArgumentBound(slots);
+            var direct = directBinding(members);
+            if (anyTenant && !direct.declines().isEmpty()) {
+                // A declined shape names the tenant column but cannot route on it. Each decline
+                // carries its own detail rather than falling through to the generic
+                // "nothing names the tenant" text, which would send an author looking for a
+                // binding they already wrote. Only where the statement needs a tenant at all:
+                // a field whose own SQL stays on the default source has nothing to route, so
+                // the shape that could not route it is moot.
+                String tenantTable = reach.stream().filter(this::tenantScoped).findFirst()
+                    .map(TableRef::tableName).orElse(scopes.columnName());
+                for (String detail : direct.declines()) {
+                    rejections.add(new ValidationError(
+                        coord.getTypeName() + "." + coord.getFieldName(),
+                        Rejection.noTenantBinding(
+                            coord.getTypeName() + "." + coord.getFieldName(), tenantTable, detail),
+                        graphql.language.SourceLocation.EMPTY));
+                }
+                return null;
+            }
+            if (direct.divines()) {
+                return new TenantBinding.ArgumentBound(direct.slots());
             }
             if (hasKind(members, OperationMember.Kind.NODE_RESOLVE)) {
                 // Node dispatch spans types; the arm exists iff every tenant-scoped node
@@ -418,7 +437,7 @@ public record TenantBindingIndex(
                     "'" + coordinate + "' reaches no tenant-scoped table: its data is global,"
                         + " so there is nothing to fan out over.");
             }
-            var slots = directSlots(members);
+            var slots = directBinding(members).slots();
             if (!slots.isEmpty()) {
                 return rejectFanOut(coordinate, List.of(BuildContext.DIR_TENANT_FAN_OUT),
                     "'" + coordinate + "' already binds the tenant column through "
@@ -474,7 +493,7 @@ public record TenantBindingIndex(
         private boolean edgeDivinesTenant(FieldCoordinates edge) {
             if (fields.get(edge) instanceof OutputField) {
                 var members = operationMembers.membersOf(edge);
-                if (!directSlots(members).isEmpty()) {
+                if (directBinding(members).divines()) {
                     return true;
                 }
                 if (hasKind(members, OperationMember.Kind.NODE_RESOLVE)) {
@@ -564,6 +583,10 @@ public record TenantBindingIndex(
                 case ChildField.BatchedInterfaceField f -> addParticipantTables(f.participants(), tables);
                 case ChildField.BatchedUnionField f -> addParticipantTables(f.participants(), tables);
                 case ChildField.PivotSpecField f -> tables.add(f.pivot().table());
+                // A DML write whose return is an encoded id claims no Record return target, so
+                // the early Record arm above misses it; the statement still runs against the
+                // write target, and that is what decides whether it needs a tenant.
+                case MutationField.DmlTableField f -> tables.add(f.write().table());
                 default -> { }
             }
             return tables;
@@ -591,117 +614,238 @@ public record TenantBindingIndex(
         // ===== Direct bindings off the coordinate's operation member rows =====
 
         /**
+         * One coordinate's direct-binding read: the slots that divine a tenant, and the shapes
+         * that name the tenant column but cannot route on it.
+         *
+         * <p>A decline is not an absent binding. The author did name the tenant; the shape just
+         * has no single value to acquire a connection from, so it gets its own rejection text
+         * rather than the generic "nothing maps to the tenant column". A coordinate carrying one
+         * also stops divining for its subtree, which is what {@link #divines()} states: it
+         * rejects, so nothing is handed down and a child inheriting from it would inherit a value
+         * that is never computed.
+         */
+        private record DirectBinding(List<TenantBinding.BoundSlot> slots, List<String> declines) {
+
+            static final DirectBinding NONE = new DirectBinding(List.of(), List.of());
+
+            /** Whether this coordinate establishes a tenant its subtree can inherit. */
+            boolean divines() {
+                return declines.isEmpty() && !slots.isEmpty();
+            }
+        }
+
+        /**
+         * The two axes one bound slot resolves to, or the reason its shape cannot route.
+         * {@link Resolved} carries <em>where</em> the value is read and <em>what transform</em>
+         * yields the tenant from it; nothing mints a slot from one axis alone.
+         */
+        private sealed interface SlotAccess {
+            record Resolved(TenantBinding.SlotRead read, TenantBinding.SlotProjection projection)
+                implements SlotAccess {}
+
+            record Declined(String detail) implements SlotAccess {}
+        }
+
+        /** Accumulates one coordinate's slots and declines, deduping slots by name. */
+        private static final class SlotCollector {
+            private final List<TenantBinding.BoundSlot> slots = new ArrayList<>();
+            private final List<String> declines = new ArrayList<>();
+            private final Set<String> seenNames = new HashSet<>();
+
+            void add(String slotName, ColumnRef column, SlotAccess access) {
+                switch (access) {
+                    case SlotAccess.Resolved r -> {
+                        if (seenNames.add(slotName)) {
+                            slots.add(new TenantBinding.BoundSlot(slotName, column, r.read(),
+                                r.projection()));
+                        }
+                    }
+                    case SlotAccess.Declined d -> decline(d.detail());
+                }
+            }
+
+            void decline(String detail) {
+                if (!declines.contains(detail)) {
+                    declines.add(detail);
+                }
+            }
+
+            DirectBinding result() {
+                return slots.isEmpty() && declines.isEmpty()
+                    ? DirectBinding.NONE
+                    : new DirectBinding(List.copyOf(slots), List.copyOf(declines));
+            }
+        }
+
+        /**
          * The tenant-divining slots across the coordinate's whole member set: every condition
          * member's filter surface (a polymorphic root carries one condition member per
          * participant, so the per-participant filters need no fallback), the lookup member's
-         * key mapping, and an INSERT / UPSERT write member's {@code @table} input. Deduped by
-         * slot name across members (the same argument typically binds on every polymorphic
-         * participant, and one slot per name suffices for the agreement fold).
+         * key mapping, an INSERT / UPSERT write member's {@code @table} input, and the WHERE
+         * surface of the two verbs that have one. Deduped by slot name across members (the same
+         * argument typically binds on every polymorphic participant, and one slot per name
+         * suffices for the agreement fold).
          */
-        private List<TenantBinding.BoundSlot> directSlots(List<OperationMember> members) {
-            var slots = new ArrayList<TenantBinding.BoundSlot>();
-            var seenNames = new HashSet<String>();
+        private DirectBinding directBinding(List<OperationMember> members) {
+            var collector = new SlotCollector();
             for (OperationMember member : members) {
-                List<TenantBinding.BoundSlot> found = switch (member) {
-                    case OperationMember.Condition c -> slotsFromFilters(c.filters());
-                    case OperationMember.Lookup l -> slotsFromLookup(l.lookupMapping());
-                    case OperationMember.Write.Insert i -> slotsFromTableInput(i.input());
-                    case OperationMember.Write.Upsert u -> slotsFromTableInput(u.input());
-                    default -> List.of();
-                };
-                for (TenantBinding.BoundSlot slot : found) {
-                    if (seenNames.add(slot.slotName())) {
-                        slots.add(slot);
-                    }
+                switch (member) {
+                    case OperationMember.Condition c -> collectFromFilters(c.filters(), collector);
+                    case OperationMember.Lookup l -> collectFromLookup(l.lookupMapping(), collector);
+                    case OperationMember.Write.Insert i -> collectFromTableInput(i.input(), collector);
+                    case OperationMember.Write.Upsert u -> collectFromTableInput(u.input(), collector);
+                    // The WHERE-keyed verbs (UPDATE, DELETE) share one body over
+                    // Dml.whereKeyColumns(), so a third WHERE-bearing write arm is covered on
+                    // arrival rather than falling silently to the no-op default below.
+                    case OperationMember.Write.Dml dml -> collectFromWhereKeys(dml, collector);
+                    default -> { }
                 }
             }
-            return slots;
+            declineRoutineWriteDecodes(members, collector);
+            return collector.result();
+        }
+
+        /**
+         * A routine write whose tenant sits inside a node id is declined. Its entry point renders
+         * its acquisition through the command vocabulary, which carries the slot's location as
+         * plain data and cannot reach the generated decode helper across the build-enforced
+         * package boundary; routing it would need a second decode-failure vocabulary at a site
+         * that runs before the carrier reads its input.
+         */
+        private static void declineRoutineWriteDecodes(List<OperationMember> members,
+                                                       SlotCollector collector) {
+            if (members.stream().noneMatch(m -> m instanceof OperationMember.Write.RoutineWrite)) {
+                return;
+            }
+            for (TenantBinding.BoundSlot slot : collector.slots) {
+                if (slot.projection() instanceof TenantBinding.SlotProjection.DecodedKeySlot) {
+                    collector.decline(
+                        "the tenant value sits inside the node id '" + slot.slotName() + "' names,"
+                            + " and a @routine write acquires its connection before the routine"
+                            + " call reads its input, where the decode is out of reach. Name the"
+                            + " tenant column directly on this field, or key the routine by a"
+                            + " plain column.");
+                }
+            }
         }
 
         private static boolean hasKind(List<OperationMember> members, OperationMember.Kind kind) {
             return members.stream().anyMatch(m -> m.kind() == kind);
         }
 
-        private List<TenantBinding.BoundSlot> slotsFromFilters(List<WhereFilter> filters) {
-            var slots = new ArrayList<TenantBinding.BoundSlot>();
+        private void collectFromFilters(List<WhereFilter> filters, SlotCollector collector) {
             for (WhereFilter filter : filters) {
                 if (!(filter instanceof GeneratedConditionFilter gcf)) continue;
                 for (BodyParam param : gcf.bodyParams()) {
-                    collectFromBodyParam(param, slots);
+                    collectFromBodyParam(param, collector);
                 }
             }
-            return slots;
         }
 
-        private void collectFromBodyParam(BodyParam param, List<TenantBinding.BoundSlot> slots) {
+        private void collectFromBodyParam(BodyParam param, SlotCollector collector) {
             switch (param) {
                 case BodyParam.Eq eq -> {
                     if (matchesTenantColumn(eq.column())) {
-                        slots.add(new TenantBinding.BoundSlot(eq.name(), eq.column(), readOf(eq.extraction())));
+                        collector.add(eq.name(), eq.column(), accessOf(eq.extraction(),
+                            TenantBinding.SlotRead.TopLevelArg.INSTANCE, 0));
                     }
                 }
                 case BodyParam.In in -> {
                     if (matchesTenantColumn(in.column())) {
-                        slots.add(new TenantBinding.BoundSlot(in.name(), in.column(), readOf(in.extraction())));
+                        collector.add(in.name(), in.column(), accessOf(in.extraction(),
+                            TenantBinding.SlotRead.TopLevelArg.INSTANCE, 0));
                     }
                 }
-                case BodyParam.RowEq rowEq -> {
-                    for (ColumnRef col : rowEq.columns()) {
-                        if (matchesTenantColumn(col)) {
-                            slots.add(new TenantBinding.BoundSlot(rowEq.name(), col, readOf(rowEq.extraction())));
-                        }
-                    }
-                }
-                case BodyParam.RowIn rowIn -> {
-                    for (ColumnRef col : rowIn.columns()) {
-                        if (matchesTenantColumn(col)) {
-                            slots.add(new TenantBinding.BoundSlot(rowIn.name(), col, readOf(rowIn.extraction())));
-                        }
-                    }
-                }
+                case BodyParam.RowEq rowEq -> collectFromRow(rowEq.name(), rowEq.columns(),
+                    rowEq.extraction(), collector);
+                case BodyParam.RowIn rowIn -> collectFromRow(rowIn.name(), rowIn.columns(),
+                    rowIn.extraction(), collector);
                 case BodyParam.RemoteColumnPredicate remote ->
                     // The predicate lands on a joined table's column; a tenant column reached
                     // through a @reference path still divines the operation's tenant.
-                    collectFromBodyParam(remote.inner(), slots);
+                    collectFromBodyParam(remote.inner(), collector);
             }
         }
 
         /**
-         * The slot's runtime read, resolved from the filter parameter's
-         * {@link CallSiteExtraction} at mint time so the routing emitter renders it rather
-         * than re-walking the carrier.
+         * A tuple-shaped predicate: the tenant column's position in the tuple is the slot of the
+         * decode record the carrier's extraction produces, so the projection is read off the same
+         * index the predicate binds.
          */
-        private static TenantBinding.SlotRead readOf(CallSiteExtraction extraction) {
-            return switch (extraction) {
-                case CallSiteExtraction.NestedInputField nested ->
-                    new TenantBinding.SlotRead.NestedInput(nested.outerArgName(), nested.path());
-                case CallSiteExtraction.ContextArg ignored -> TenantBinding.SlotRead.ContextArg.INSTANCE;
-                // Direct and the coercing leaves (JooqConvert, EnumValueOf, ...) all read the
-                // raw top-level argument: the divined key equality/lookup runs on the wire
-                // value, whose Java type the generated divinedTenant guard checks against the
-                // tenant column type.
-                default -> TenantBinding.SlotRead.TopLevelArg.INSTANCE;
+        private void collectFromRow(String name, List<ColumnRef> columns,
+                                    CallSiteExtraction extraction, SlotCollector collector) {
+            for (int i = 0; i < columns.size(); i++) {
+                if (matchesTenantColumn(columns.get(i))) {
+                    collector.add(name, columns.get(i), accessOf(extraction,
+                        TenantBinding.SlotRead.TopLevelArg.INSTANCE, i));
+                }
+            }
+        }
+
+        /**
+         * Both axes of one slot's runtime read, resolved from the carrier's
+         * {@link CallSiteExtraction} at mint time so the routing emitters render them rather than
+         * re-walking the carrier. The extraction states the location where it has one (a nested
+         * input path, a context argument) and {@code fallbackRead} supplies it otherwise; the
+         * leaf states the transform.
+         *
+         * @param decodeSlot the tenant column's 0-based position in the key tuple a node-id
+         *     decode returns, ignored by every other leaf
+         */
+        private static SlotAccess accessOf(CallSiteExtraction extraction,
+                                           TenantBinding.SlotRead fallbackRead, int decodeSlot) {
+            TenantBinding.SlotRead read;
+            CallSiteExtraction leaf;
+            switch (extraction) {
+                case CallSiteExtraction.NestedInputField nested -> {
+                    read = new TenantBinding.SlotRead.NestedInput(nested.outerArgName(), nested.path());
+                    leaf = nested.leaf();
+                }
+                case CallSiteExtraction.ContextArg ignored -> {
+                    read = TenantBinding.SlotRead.ContextArg.INSTANCE;
+                    leaf = extraction;
+                }
+                default -> {
+                    read = fallbackRead;
+                    leaf = extraction;
+                }
+            }
+            return switch (leaf) {
+                // A pruning leaf exists because the same wire id decodes differently per
+                // polymorphic branch; there is no single decode to route the one connection on.
+                case CallSiteExtraction.PruneOnMismatch ignored -> new SlotAccess.Declined(
+                    "the tenant column is reached through a @nodeId argument of a multi-table"
+                        + " polymorphic field, whose participants decode the same id as different"
+                        + " node types: there is no single decode to route the statement on."
+                        + " Bind the tenant with an argument mapping to the tenant column.");
+                case CallSiteExtraction.NodeIdDecodeKeys nid -> new SlotAccess.Resolved(read,
+                    new TenantBinding.SlotProjection.DecodedKeySlot(nid.decodeMethod(), decodeSlot));
+                // Direct and the coercing leaves (JooqConvert, EnumValueOf, ...) read a wire
+                // value that already is the tenant value, whose Java type the generated
+                // divinedTenant guard checks against the tenant column type.
+                default -> new SlotAccess.Resolved(read, TenantBinding.SlotProjection.Raw.INSTANCE);
             };
         }
 
-        private List<TenantBinding.BoundSlot> slotsFromLookup(LookupMapping mapping) {
+        private void collectFromLookup(LookupMapping mapping, SlotCollector collector) {
             if (!(mapping instanceof LookupMapping.ColumnMapping cm)) {
-                return List.of();
+                return;
             }
-            var slots = new ArrayList<TenantBinding.BoundSlot>();
             for (var arg : cm.args()) {
                 switch (arg) {
                     case LookupMapping.ColumnMapping.LookupArg.ScalarLookupArg s -> {
                         if (matchesTenantColumn(s.targetColumn())) {
-                            slots.add(new TenantBinding.BoundSlot(s.argName(), s.targetColumn(),
-                                TenantBinding.SlotRead.TopLevelArg.INSTANCE));
+                            collector.add(s.argName(), s.targetColumn(), accessOf(s.extraction(),
+                                TenantBinding.SlotRead.TopLevelArg.INSTANCE, 0));
                         }
                     }
                     case LookupMapping.ColumnMapping.LookupArg.MapInput mi -> {
                         for (InputColumnBinding.MapBinding b : mi.bindings()) {
                             if (matchesTenantColumn(b.targetColumn())) {
-                                slots.add(new TenantBinding.BoundSlot(b.fieldName(), b.targetColumn(),
-                                    new TenantBinding.SlotRead.NestedInput(mi.argName(), List.of(b.fieldName()))));
+                                collector.add(b.fieldName(), b.targetColumn(), accessOf(b.extraction(),
+                                    new TenantBinding.SlotRead.NestedInput(mi.argName(),
+                                        List.of(b.fieldName())),
+                                    b.decodeSlot()));
                             }
                         }
                     }
@@ -711,56 +855,111 @@ public record TenantBindingIndex(
                     case LookupMapping.ColumnMapping.LookupArg.DecodedRecord ignored -> { }
                 }
             }
-            return slots;
         }
 
-        private List<TenantBinding.BoundSlot> slotsFromTableInput(
-                ArgumentRef.InputTypeArg.TableInputArg input) {
-            var slots = new ArrayList<TenantBinding.BoundSlot>();
-            var seenNames = new HashSet<String>();
+        /**
+         * The WHERE surface of a DML statement. An UPDATE divines from its WHERE partition only:
+         * routing on a SET-side tenant column would send the statement to the destination tenant
+         * and update a row that is not there, and under database-per-tenant a row cannot change
+         * tenant by an UPDATE at all, since the destination row lives in another database.
+         */
+        private void collectFromWhereKeys(OperationMember.Write.Dml dml, SlotCollector collector) {
+            if (dml instanceof OperationMember.Write.Update update) {
+                for (var set : update.updateRows().setColumns()) {
+                    if (matchesTenantColumn(set.targetColumn())) {
+                        collector.decline(
+                            "input field '" + set.sdlFieldName() + "' writes tenant column '"
+                                + scopes.columnName() + "' in the UPDATE's SET clause. Under"
+                                + " database-per-tenant the destination row lives in another"
+                                + " database, so no UPDATE can move a row between tenants; remove"
+                                + " the field, or delete and re-insert the row.");
+                    }
+                }
+            }
+            for (var key : dml.whereKeyColumns()) {
+                if (!matchesTenantColumn(key.targetColumn())) continue;
+                collector.add(key.sdlFieldName(), key.targetColumn(), accessOf(key.extraction(),
+                    new TenantBinding.SlotRead.NestedInput(dml.outerArgName(),
+                        List.of(key.sdlFieldName())),
+                    key.decodeSlot()));
+            }
+        }
+
+        private void collectFromTableInput(ArgumentRef.InputTypeArg.TableInputArg input,
+                                           SlotCollector collector) {
             for (InputColumnBindingGroup group : input.fieldBindings()) {
                 if (!(group instanceof InputColumnBindingGroup.MapGroup mg)) continue;
                 for (InputColumnBinding.MapBinding b : mg.bindings()) {
-                    if (matchesTenantColumn(b.targetColumn()) && seenNames.add(b.fieldName())) {
-                        slots.add(new TenantBinding.BoundSlot(b.fieldName(), b.targetColumn(),
-                            new TenantBinding.SlotRead.NestedInput(input.name(), List.of(b.fieldName()))));
+                    if (matchesTenantColumn(b.targetColumn())) {
+                        collector.add(b.fieldName(), b.targetColumn(), accessOf(b.extraction(),
+                            new TenantBinding.SlotRead.NestedInput(input.name(),
+                                List.of(b.fieldName())),
+                            b.decodeSlot()));
                     }
                 }
             }
             // INSERT / UPSERT: fieldBindings is structurally empty (the VALUES emission walks
-            // fields() directly), so the divining slots come from the same envelope: a plain
-            // input field whose column mapping lands on the tenant column routes the mutation.
-            collectFromInputFields(input.fields(), new ArrayDeque<>(), input.name(), slots, seenNames);
-            return slots;
+            // fields() directly), so the divining slots come from the same envelope: an input
+            // field whose column mapping lands on the tenant column routes the mutation.
+            collectFromInputFields(input.fields(), new ArrayDeque<>(), input.name(), collector);
         }
 
         private void collectFromInputFields(List<InputField> fields,
                                             ArrayDeque<String> path,
                                             String argName,
-                                            List<TenantBinding.BoundSlot> slots,
-                                            HashSet<String> seenNames) {
+                                            SlotCollector collector) {
             for (InputField field : fields) {
                 switch (field) {
-                    case InputField.ColumnBackedField cf when !cf.isComposite() -> {
-                        if (matchesTenantColumn(cf.columns().get(0)) && seenNames.add(cf.name())) {
-                            var keys = new ArrayList<>(path);
-                            keys.add(cf.name());
-                            slots.add(new TenantBinding.BoundSlot(cf.name(), cf.columns().get(0),
-                                new TenantBinding.SlotRead.NestedInput(argName, keys)));
+                    case InputField.ColumnBackedField cf ->
+                        collectFromCarrier(cf.name(), cf.columns(), cf.extraction(), path, argName,
+                            collector);
+                    case InputField.ColumnBackedReferenceField rf -> {
+                        switch (rf.binding()) {
+                            // The own-table tuple is positionally aligned with what the extraction
+                            // produces, so the FK columns a decoded key lifts onto this table are
+                            // read at the decode slot their position names.
+                            case FilterBinding.Local local ->
+                                collectFromCarrier(rf.name(), local.ownTableColumns(),
+                                    rf.extraction(), path, argName, collector);
+                            case FilterBinding.Remote ignored -> {
+                                if (rf.columns().stream().anyMatch(this::matchesTenantColumn)) {
+                                    collector.decline(
+                                        "input field '" + rf.name() + "' reaches tenant column '"
+                                            + scopes.columnName() + "' through a join, so this"
+                                            + " statement's own table holds no value to route on"
+                                            + " and the connection would have to be acquired"
+                                            + " before the join could be read. Name the tenant"
+                                            + " column on this table's own input.");
+                                }
+                            }
                         }
                     }
                     // A nested grouping input flattens onto the same table; descend with the
                     // grouping's key on the read path.
                     case InputField.NestingField nf -> {
                         path.addLast(nf.name());
-                        collectFromInputFields(nf.fields(), path, argName, slots, seenNames);
+                        collectFromInputFields(nf.fields(), path, argName, collector);
                         path.removeLast();
                     }
-                    // Composite NodeId tuples and non-column fields never divine a single
-                    // argument value; those shapes belong to the per-row family and the
-                    // deliberate fan-out arm.
                     default -> { }
                 }
+            }
+        }
+
+        /**
+         * One input-field carrier's contribution: the tenant column's position in the carrier's
+         * column tuple is both the column it binds and the decode slot its extraction projects,
+         * so an arity-1 {@code @nodeId} carrier and a composite one are the same line.
+         */
+        private void collectFromCarrier(String name, List<ColumnRef> columns,
+                                        CallSiteExtraction extraction, ArrayDeque<String> path,
+                                        String argName, SlotCollector collector) {
+            for (int i = 0; i < columns.size(); i++) {
+                if (!matchesTenantColumn(columns.get(i))) continue;
+                var keys = new ArrayList<>(path);
+                keys.add(name);
+                collector.add(name, columns.get(i),
+                    accessOf(extraction, new TenantBinding.SlotRead.NestedInput(argName, keys), i));
             }
         }
 
@@ -919,7 +1118,7 @@ public record TenantBindingIndex(
             }
             if (fields.get(edge) instanceof OutputField) {
                 var members = operationMembers.membersOf(edge);
-                if (!directSlots(members).isEmpty()) {
+                if (directBinding(members).divines()) {
                     return true;
                 }
                 if (hasKind(members, OperationMember.Kind.NODE_RESOLVE)) {

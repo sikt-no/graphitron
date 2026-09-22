@@ -253,6 +253,118 @@ class TenantDivinedRoutingExecutionTest {
             .isEqualTo(1);
     }
 
+    // ===== Decoded-slot routing: the tenant sits inside the node id the write already decodes =====
+
+    @Test
+    void bulkDeleteByNodeId_idsAgreeingOnOneTenant_deletesOnlyThere() {
+        try (var t1 = DSL.using(tenantUrl("tenant_1"), jdbcUser, jdbcPassword)) {
+            t1.execute("insert into film_actor values (11, 1), (12, 1)");
+        }
+        String first = NodeIdEncoder.encodeFilmActor(11, 1);
+        String second = NodeIdEncoder.encodeFilmActor(12, 1);
+
+        var result = execute("mutation { deleteFilmActorsByNodeId(in: ["
+            + "{ id: \"" + first + "\" }, { id: \"" + second + "\" }]) }");
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        assertThat((List<?>) ((Map<String, Object>) result.getData()).get("deleteFilmActorsByNodeId"))
+            .as("the mutation names no tenant; the routing decodes it out of the ids")
+            .hasSize(2);
+        assertThat(TENANT_2_OPENED.get())
+            .as("the tenant is slot 1 of the decoded key, so the other database is never opened")
+            .isZero();
+
+        try (var t1 = DSL.using(tenantUrl("tenant_1"), jdbcUser, jdbcPassword)) {
+            assertThat(t1.fetchCount(DSL.table("film_actor"),
+                    DSL.field("actor_id").in(11, 12)))
+                .as("the rows went from the divined tenant's database")
+                .isZero();
+        }
+    }
+
+    @Test
+    void bulkDeleteByNodeId_idsMixingTenants_refusedBeforeAnySql() {
+        String t1Actor = NodeIdEncoder.encodeFilmActor(10, 1);
+        String t2Actor = NodeIdEncoder.encodeFilmActor(20, 2);
+
+        var result = execute("mutation { deleteFilmActorsByNodeId(in: ["
+            + "{ id: \"" + t1Actor + "\" }, { id: \"" + t2Actor + "\" }]) }");
+        assertThat(result.getErrors())
+            .as("a write is one statement on one connection, so a batch spanning tenants has no"
+                + " correct execution and is refused rather than partitioned")
+            .isNotEmpty();
+        assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get())
+            .as("the disagreement is found before any connection is acquired")
+            .isZero();
+
+        try (var t1 = DSL.using(tenantUrl("tenant_1"), jdbcUser, jdbcPassword)) {
+            assertThat(t1.fetchCount(DSL.table("film_actor"), DSL.field("actor_id").eq(10)))
+                .as("neither tenant's row was touched").isEqualTo(1);
+        }
+        try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
+            assertThat(t2.fetchCount(DSL.table("film_actor"), DSL.field("actor_id").eq(20)))
+                .isEqualTo(1);
+        }
+    }
+
+    @Test
+    void malformedNodeId_surfacesTheOneDecodeFailureMessage() {
+        var result = execute(
+            "mutation { deleteFilmActorByNodeId(in: { id: \"not-a-node-id\" }) }");
+        assertThat(result.getErrors())
+            .as("routing decodes before the carrier does, so its failure is what the client sees;"
+                + " it must be the same message the carrier's own decode would have raised")
+            .isNotEmpty();
+        assertThat(result.getErrors().toString())
+            .contains("not a valid FilmActor id");
+        assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get()).isZero();
+    }
+
+    @Test
+    void updateKeyedByNodeId_routesOnTheArityOneDecodedKey() {
+        var result = execute("mutation { updateFilmByNodeId(in: { id: \""
+            + NodeIdEncoder.encodeFilm(2) + "\", title: \"Retitled Two\" }) { title } }");
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        assertThat((Map<String, Object>) ((Map<String, Object>) result.getData()).get("updateFilmByNodeId"))
+            .extracting(m -> m.get("title")).isEqualTo("Retitled Two");
+        assertThat(TENANT_1_OPENED.get())
+            .as("the decoded key is the tenant itself; the other database is never opened")
+            .isZero();
+
+        try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
+            t2.execute("update film set title = 'Tenant Two Film' where film_id = 2");
+        }
+    }
+
+    @Test
+    void insertWithFkTargetNodeIdReference_routesOnTheLiftedColumn() {
+        var result = execute("mutation { createInventoryByFilmRef(in: { filmRef: \""
+            + NodeIdEncoder.encodeFilm(2) + "\", storeId: 9 }) { inventoryId } }");
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+
+        try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
+            assertThat(t2.fetchCount(DSL.table("inventory"), DSL.field("store_id").eq(9)))
+                .as("the decoded Film key lifted onto inventory.film_id, which is the tenant")
+                .isEqualTo(1);
+            t2.execute("delete from inventory where store_id = 9");
+        }
+        assertThat(TENANT_1_OPENED.get()).isZero();
+    }
+
+    @Test
+    void readFilteredByNodeIds_routesOnTheDecodedSlot() {
+        var result = execute("{ filmActorsByNodeId(ids: [\""
+            + NodeIdEncoder.encodeFilmActor(20, 2) + "\"]) { actorId } }");
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        assertThat((List<Map<String, Object>>)
+                ((Map<String, Object>) result.getData()).get("filmActorsByNodeId"))
+            .extracting(m -> m.get("actorId"))
+            .containsExactly(20);
+        assertThat(TENANT_1_OPENED.get())
+            .as("before the projection axis this handed the base64 id to the tenant lookup and"
+                + " failed at request time")
+            .isZero();
+    }
+
     // ===== helpers =====
 
     private static String tenantUrl(String database) {

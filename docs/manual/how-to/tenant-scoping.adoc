@@ -32,7 +32,9 @@ var graphql = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
 
 Per request, pass your `<sessionState>` mount's payload through the owned-connection factory (`Graphitron.newOwnedExecutionInput(claims, ...)`; the parameter names and types are your mount method's own). Connections are taken lazily, one per distinct tenant the operation actually touches, and your mount runs on each, so sessions, row-level security, and transaction boundaries behave exactly as in single-tenant operation, per tenant. A `$session`-bound service parameter likewise receives the handle of the tenant connection its call runs on, never a neighbor's.
 
-Routing is divined from the operation: an argument bound to the tenant column routes the statement and hands the tenant down its subtree; node ids and federation representations carry their tenant inside the key and partition per row; global tables read the default source. A tenant-scoped field that nothing routes is a build error, never a silent read of the wrong database.
+Routing is divined from the operation: an argument bound to the tenant column routes the statement and hands the tenant down its subtree; global tables read the default source. A tenant-scoped field that nothing routes is a build error, never a silent read of the wrong database.
+
+A node id (and a federation representation) carries its tenant inside the key, and what happens next turns on where it arrives. At a dispatch surface (`node`, `nodes`, `_entities`) the batch partitions per decoded tenant, one statement per tenant. Anywhere else, a write keyed by ids or a filter reading them, the call is one statement on one connection, so every id in it must decode to the same tenant; a call mixing tenants is refused before any SQL runs, naming the disagreement. The asymmetry is the one between reads and writes: a read can be split across databases, and a write cannot.
 
 == 3. Fan a field out across tenants
 

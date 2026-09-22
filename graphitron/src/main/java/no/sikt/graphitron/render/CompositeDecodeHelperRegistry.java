@@ -46,7 +46,25 @@ public final class CompositeDecodeHelperRegistry {
 
     public enum Mode { SKIP, THROW }
 
-    record Key(ClassName encoderClass, String methodName, Mode mode, boolean list) {}
+    /**
+     * What the helper projects off the decoded key record. {@link WholeKey} is the predicate
+     * shape the filter and lookup call sites bind against; {@link Slot} is the single-column read
+     * tenant routing needs, which reaches the connection before any carrier reads its input and
+     * so must raise the same decode failure every other grain raises.
+     */
+    sealed interface Projection {
+
+        /** {@code key.value1()} at arity 1, {@code key.valuesRow()} above it. */
+        record WholeKey() implements Projection {
+            static final WholeKey INSTANCE = new WholeKey();
+        }
+
+        /** One 0-based slot of the decoded key: {@code key.value<slot + 1>()}. */
+        record Slot(int index) implements Projection {}
+    }
+
+    record Key(ClassName encoderClass, String methodName, Mode mode, boolean list,
+               Projection projection) {}
 
     private final Map<Key, String> helperNames = new LinkedHashMap<>();
     private final Map<Key, MethodSpec> helpers = new LinkedHashMap<>();
@@ -86,13 +104,73 @@ public final class CompositeDecodeHelperRegistry {
      * method name.
      */
     public String register(HelperRef.Decode decode, Mode mode, boolean list) {
-        Key key = new Key(decode.encoderClass(), decode.methodName(), mode, list);
+        Key key = new Key(decode.encoderClass(), decode.methodName(), mode, list,
+            Projection.WholeKey.INSTANCE);
         String existing = helperNames.get(key);
         if (existing != null) return existing;
         String name = helperName(decode.methodName(), mode, list, decode.outputColumnShape().size());
         helperNames.put(key, name);
         helpers.put(key, buildHelper(decode, mode, list, name));
         return name;
+    }
+
+    /**
+     * Registers the tenant-routing projection of {@code decode}: the helper decodes the wire id
+     * and returns slot {@code slot} of the key tuple, the value the generated {@code divinedTenant}
+     * fold routes on. Distinct from {@link #register} by {@link Key}, because the body is a
+     * different projection of the same decode; the two coexist on one host class when a field both
+     * routes on an id and filters by it.
+     *
+     * <p>One helper serves the scalar and the batch wire shapes: a bulk write's slot walk hands
+     * back a list of ids, which the body maps over and the divining fold flattens. The mode is
+     * always {@link Mode#THROW}, since routing runs before the carrier's own decode and a
+     * malformed id must fail the same way here as it would there.
+     */
+    public String registerTenantSlot(HelperRef.Decode decode, int slot) {
+        Key key = new Key(decode.encoderClass(), decode.methodName(), Mode.THROW, false,
+            new Projection.Slot(slot));
+        String existing = helperNames.get(key);
+        if (existing != null) return existing;
+        String name = "decode" + strippedTypeName(decode.methodName()) + "TenantSlot" + slot
+            + "OrThrow";
+        helperNames.put(key, name);
+        helpers.put(key, buildTenantSlotHelper(decode, slot, name));
+        return name;
+    }
+
+    /**
+     * The tenant-slot body: flatten a batch wire shape by recursion, guard the scalar shape,
+     * decode, and project one value. An absent or non-id wire value returns {@code null}, which
+     * the divining fold reports as an absent binding; a present but undecodable one raises
+     * {@link NodeIdDecodeFailure}'s one message.
+     */
+    private MethodSpec buildTenantSlotHelper(HelperRef.Decode decode, int slot, String name) {
+        ClassName arrayList = ClassName.get(java.util.ArrayList.class);
+        TypeName listOfObject = ParameterizedTypeName.get(ClassName.get(List.class),
+            ClassName.get(Object.class));
+        return MethodSpec.methodBuilder(name)
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(Object.class)
+            .addParameter(Object.class, "wire")
+            .beginControlFlow("if (wire instanceof $T<?> nodeIds)", List.class)
+            .addComment("A batch input's slot walk hands back one id per row; the divining fold")
+            .addComment("flattens the result and guards that every element agrees.")
+            .addStatement("$T out = new $T<>()", listOfObject, arrayList)
+            .beginControlFlow("for (Object element : nodeIds)")
+            .addStatement("out.add($L(element))", name)
+            .endControlFlow()
+            .addStatement("return out")
+            .endControlFlow()
+            .beginControlFlow("if (!(wire instanceof String nodeId))")
+            .addStatement("return null")
+            .endControlFlow()
+            .addStatement("$T key = $T.$L(nodeId)", typedRecord(decode.outputColumnShape()),
+                decode.encoderClass(), decode.methodName())
+            .beginControlFlow("if (key == null)")
+            .addCode(decodeFailureThrow(decode, "nodeId", "nodeId"))
+            .endControlFlow()
+            .addStatement("return key.value$L()", slot + 1)
+            .build();
     }
 
     /** All collected helper specs in registration order. Empty when nothing was registered. */

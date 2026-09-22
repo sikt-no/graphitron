@@ -120,8 +120,23 @@ public final class RoutineWriteCommands {
         };
     }
 
-    /** One bound slot's runtime read, restated in the command vocabulary the renderer reads. */
+    /**
+     * One bound slot's runtime read, restated in the command vocabulary the renderer reads.
+     *
+     * <p>Only the location axis crosses: a slot whose tenant value has to be decoded out of a
+     * node id never reaches here, because the classifier declines that shape on a {@code @routine}
+     * write and rejects the coordinate with a located error. The restatement states that rather
+     * than dropping the projection silently, which would route the encoded id as the tenant key.
+     */
     private static TenantAcquisition.SlotRead slotReadOf(TenantBinding.BoundSlot slot) {
+        if (slot.projection() instanceof TenantBinding.SlotProjection.DecodedKeySlot) {
+            throw new IllegalStateException(
+                "the routine-write slot '" + slot.slotName() + "' routes on a slot of a decoded"
+                + " node id; the classifier declines that shape on a @routine write and the"
+                + " validator rejects the coordinate, so a plan produced for it ran past"
+                + " validation, and restating the read without its decode would hand the encoded"
+                + " id to the connection lookup as the tenant key");
+        }
         return switch (slot.read()) {
             case TenantBinding.SlotRead.TopLevelArg ignored ->
                 new TenantAcquisition.SlotRead.TopLevelArg(slot.slotName());

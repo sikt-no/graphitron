@@ -130,6 +130,72 @@ class TenantRoutedFetcherPipelineTest {
     }
 
     @Test
+    void deleteKeyedByNodeIdRoutesThroughTheClassOwnDecodeHelper() {
+        // The routed acquisition reads the id off the input and hands it to the same per-class
+        // decode helper the WHERE clause uses, so a malformed id fails with one message whichever
+        // of the two reads it first.
+        var schema = multiTenant("""
+            type FilmActor implements Node @table(name: "film_actor")
+                    @node(keyColumns: ["actor_id", "film_id"]) {
+                id: ID! @nodeId
+            }
+            type Language @table(name: "language") { name: String }
+            type Query { languages: [Language!]! }
+            type Mutation {
+                deleteFilmActors(in: [DeleteFilmActorInput!]!): [ID!]!
+                    @mutation(typeName: DELETE, table: "film_actor")
+            }
+            input DeleteFilmActorInput { id: ID! @nodeId(typeName: "FilmActor") }
+            """);
+
+        assertThat(render(schema, "MutationFetchers", "deleteFilmActors"))
+            .contains("divinedTenant(decodeFilmActorTenantSlot1OrThrow("
+                + "fake.code.generated.schema.TenantConnections.tenantSlot(env.getArgument(\"in\"), \"id\")))")
+            .contains("dslFor(env, _divinedTenant)")
+            .doesNotContain("getDslContext(env)");
+    }
+
+    @Test
+    void theTenantSlotHelperLandsOnTheFetcherClassThatCallsIt() {
+        // The helper is registered into the host class's collector, so the call site above names a
+        // method the same class declares; a dropped registration would compile here and fail at
+        // the consumer.
+        var schema = multiTenant("""
+            type FilmActor implements Node @table(name: "film_actor")
+                    @node(keyColumns: ["actor_id", "film_id"]) {
+                id: ID! @nodeId
+            }
+            type Language @table(name: "language") { name: String }
+            type Query { languages: [Language!]! }
+            type Mutation {
+                deleteFilmActors(in: [DeleteFilmActorInput!]!): [ID!]!
+                    @mutation(typeName: DELETE, table: "film_actor")
+            }
+            input DeleteFilmActorInput { id: ID! @nodeId(typeName: "FilmActor") }
+            """);
+
+        assertThat(render(schema, "MutationFetchers", "decodeFilmActorTenantSlot1OrThrow"))
+            .contains("return key.value2()");
+    }
+
+    @Test
+    void nodeIdFilteredReadRoutesThroughTheDecodedSlot() {
+        var schema = multiTenant("""
+            type FilmActor implements Node @table(name: "film_actor")
+                    @node(keyColumns: ["actor_id", "film_id"]) {
+                id: ID! @nodeId
+            }
+            type Query {
+                filmActorsByNodeId(ids: [ID!] @nodeId(typeName: "FilmActor")): [FilmActor!]!
+            }
+            """);
+
+        assertThat(render(schema, "QueryFetchers", "filmActorsByNodeId"))
+            .contains("divinedTenant(decodeFilmActorTenantSlot1OrThrow(env.<Object>getArgument(\"ids\")))")
+            .doesNotContain("getDslContext(env)");
+    }
+
+    @Test
     void inheritedBatchedChildPartitionsItsLoaderNamePerTenant() {
         var schema = multiTenant("""
             type Film @table(name: "film") {

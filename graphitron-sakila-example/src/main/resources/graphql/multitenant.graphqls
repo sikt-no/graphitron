@@ -7,7 +7,12 @@
 
 interface Node { id: ID! }
 
-type Film @table(name: "film") {
+# @node with the tenant column as its whole key: decoding one of its ids yields the tenant
+# directly. Serves two shapes below, an UPDATE keyed by its own id and an INSERT naming it as an
+# FK target, and widens the node-dispatch coverage beside FilmActor from a composite key to a
+# single-column one.
+type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+    id: ID! @nodeId
     title: String
     # Inherited arm: a batched child below the divining root. The DataLoader registration reads
     # the tenant-partitioned loader name and the rows method re-acquires from the handed-down
@@ -57,6 +62,10 @@ input InventoryCreateInput {
 type Query {
     # ArgumentBound root: filter argument mapping to the tenant column routes the subtree.
     films(filmId: Int! @field(name: "film_id")): [Film!]!
+    # The read-side decoded-slot arm: a same-table composite @nodeId filter whose key embeds the
+    # tenant column. The wire value is an encoded key rather than the tenant value, so the routed
+    # acquisition decodes it and reads slot 1; every id in one call must decode to one tenant.
+    filmActorsByNodeId(ids: [ID!] @nodeId(typeName: "FilmActor")): [FilmActor!]!
     # FanOut arm: the query runs once per tenant in the request's fan-out domain (the factory's
     # tenant collection intersected with the tenant map) and the results union in domain order;
     # each row carries its tenant as per-element localContext, so children (the @splitQuery
@@ -76,6 +85,34 @@ type Query {
     nodes(ids: [ID!]!): [Node]!
 }
 
+# The decoded-key write inputs. Each identifies its rows by a node id whose key embeds the
+# tenant column, so the tenant is a slot of the decode the carrier already performs rather than
+# a value the input names.
+input DeleteFilmActorByNodeIdInput {
+    id: ID! @nodeId(typeName: "FilmActor")
+}
+
+# The arity-1 carrier: the decoded key is one column and that column is the tenant, so the read
+# is the whole decode's slot 0. Rides the WHERE partition; the SET partition is the title.
+input UpdateFilmByNodeIdInput {
+    id: ID! @nodeId(typeName: "Film")
+    title: String @field(name: "title")
+}
+
+# The FK-target reference carrier: the decoded Film key lifts onto inventory.film_id through
+# inventory_film_id_fkey, and that lifted own-table column is the tenant column, so the INSERT
+# routes without naming film_id at all.
+input InventoryCreateByFilmRefInput {
+    filmRef: ID! @nodeId(typeName: "Film")
+    storeId: Int! @field(name: "store_id")
+}
+
 type Mutation {
     createInventory(in: InventoryCreateInput!): Inventory @mutation(typeName: INSERT)
+    createInventoryByFilmRef(in: InventoryCreateByFilmRefInput!): Inventory @mutation(typeName: INSERT, table: "inventory")
+    # Single and bulk: the bulk form is where the agreement guard earns its keep, refusing a
+    # batch whose ids decode to two tenants before any SQL runs.
+    deleteFilmActorByNodeId(in: DeleteFilmActorByNodeIdInput!): ID @mutation(typeName: DELETE, table: "film_actor")
+    deleteFilmActorsByNodeId(in: [DeleteFilmActorByNodeIdInput!]!): [ID!]! @mutation(typeName: DELETE, table: "film_actor")
+    updateFilmByNodeId(in: UpdateFilmByNodeIdInput!): Film @mutation(typeName: UPDATE, table: "film")
 }

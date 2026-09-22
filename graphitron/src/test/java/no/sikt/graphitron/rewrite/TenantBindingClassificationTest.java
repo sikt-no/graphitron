@@ -6,6 +6,8 @@ import no.sikt.graphitron.rewrite.model.TenantBinding;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -296,6 +298,227 @@ class TenantBindingClassificationTest {
         assertThat(entityBinding).isNotNull();
         assertThat(entityBinding.alternatives())
             .containsExactly(new TenantBinding.EntityRepBound.AlternativeSlot(0, 1));
+    }
+
+    // ===== The decoded-key projection: the tenant sits inside a node id =====
+
+    @Test
+    void deleteKeyedByCompositeNodeIdDivinesTheDecodedSlot() {
+        // film_actor's node key is (actor_id, film_id), so decoding the id the DELETE already
+        // decodes for its WHERE clause yields the tenant at slot 1.
+        var schema = build("""
+            type FilmActor implements Node @table(name: "film_actor")
+                    @node(keyColumns: ["actor_id", "film_id"]) {
+                id: ID! @nodeId
+            }
+            type Language @table(name: "language") { name: String }
+            type Query { languages: [Language!]! }
+            type Mutation {
+                deleteFilmActor(in: DeleteFilmActorInput!): ID
+                    @mutation(typeName: DELETE, table: "film_actor")
+            }
+            input DeleteFilmActorInput { id: ID! @nodeId(typeName: "FilmActor") }
+            """);
+
+        var bound = (TenantBinding.ArgumentBound) schema.tenantBindingOf("Mutation", "deleteFilmActor");
+        assertThat(bound.primary().slotName()).isEqualTo("id");
+        assertThat(bound.primary().column().sqlName()).isEqualTo("film_id");
+        assertThat(bound.primary().read())
+            .isEqualTo(new TenantBinding.SlotRead.NestedInput("in", List.of("id")));
+        assertThat(bound.primary().projection())
+            .isInstanceOfSatisfying(TenantBinding.SlotProjection.DecodedKeySlot.class,
+                decoded -> assertThat(decoded.slot()).isEqualTo(1));
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void bulkDeleteKeyedByNodeIdDivinesTheSameSlot() {
+        // The batch form: one slot read over a list of inputs, whose values the generated
+        // agreement fold flattens and requires to agree before any SQL runs.
+        var schema = build("""
+            type FilmActor implements Node @table(name: "film_actor")
+                    @node(keyColumns: ["actor_id", "film_id"]) {
+                id: ID! @nodeId
+            }
+            type Language @table(name: "language") { name: String }
+            type Query { languages: [Language!]! }
+            type Mutation {
+                deleteFilmActors(in: [DeleteFilmActorInput!]!): [ID!]!
+                    @mutation(typeName: DELETE, table: "film_actor")
+            }
+            input DeleteFilmActorInput { id: ID! @nodeId(typeName: "FilmActor") }
+            """);
+
+        var bound = (TenantBinding.ArgumentBound) schema.tenantBindingOf("Mutation", "deleteFilmActors");
+        assertThat(bound.primary().projection())
+            .isInstanceOfSatisfying(TenantBinding.SlotProjection.DecodedKeySlot.class,
+                decoded -> assertThat(decoded.slot()).isEqualTo(1));
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void updateKeyedByArityOneNodeIdDivinesTheDecodedSlot() {
+        // The arity-1 carrier: the decoded key is one column and that column is the tenant. Before
+        // the projection axis this minted a raw read of the base64 id as the tenant value.
+        var schema = build("""
+            type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+                id: ID! @nodeId
+                title: String
+            }
+            type Language @table(name: "language") { name: String }
+            type Query { languages: [Language!]! }
+            type Mutation {
+                updateFilm(in: UpdateFilmInput!): Film @mutation(typeName: UPDATE, table: "film")
+            }
+            input UpdateFilmInput {
+                id: ID! @nodeId(typeName: "Film")
+                title: String @field(name: "title")
+            }
+            """);
+
+        var bound = (TenantBinding.ArgumentBound) schema.tenantBindingOf("Mutation", "updateFilm");
+        assertThat(bound.primary().slotName()).isEqualTo("id");
+        assertThat(bound.primary().projection())
+            .isInstanceOfSatisfying(TenantBinding.SlotProjection.DecodedKeySlot.class,
+                decoded -> assertThat(decoded.slot()).isZero());
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void insertWithFkTargetNodeIdReferenceDivinesTheLiftedColumn() {
+        // The decoded Film key lifts onto inventory.film_id through inventory_film_id_fkey, and
+        // that lifted own-table column is the tenant column; the INSERT never names film_id.
+        var schema = build("""
+            type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+                id: ID! @nodeId
+            }
+            type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
+            type Language @table(name: "language") { name: String }
+            type Query { languages: [Language!]! }
+            type Mutation {
+                createInventory(in: InventoryCreateByRefInput!): Inventory
+                    @mutation(typeName: INSERT, table: "inventory")
+            }
+            input InventoryCreateByRefInput {
+                filmRef: ID! @nodeId(typeName: "Film")
+                storeId: Int! @field(name: "store_id")
+            }
+            """);
+
+        var bound = (TenantBinding.ArgumentBound) schema.tenantBindingOf("Mutation", "createInventory");
+        assertThat(bound.primary().slotName()).isEqualTo("filmRef");
+        assertThat(bound.primary().column().sqlName()).isEqualTo("film_id");
+        assertThat(bound.primary().projection())
+            .isInstanceOfSatisfying(TenantBinding.SlotProjection.DecodedKeySlot.class,
+                decoded -> assertThat(decoded.slot()).isZero());
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void sameTableNodeIdFilterDivinesTheDecodedSlot() {
+        // The read-side half of the same omission: before the projection axis this minted a slot
+        // that handed the encoded ids to the tenant lookup and blew up at request time.
+        var schema = build("""
+            type FilmActor implements Node @table(name: "film_actor")
+                    @node(keyColumns: ["actor_id", "film_id"]) {
+                id: ID! @nodeId
+            }
+            type Query {
+                filmActorsByNodeId(ids: [ID!] @nodeId(typeName: "FilmActor")): [FilmActor!]!
+            }
+            """);
+
+        var bound = (TenantBinding.ArgumentBound)
+            schema.tenantBindingOf("Query", "filmActorsByNodeId");
+        assertThat(bound.primary().slotName()).isEqualTo("ids");
+        assertThat(bound.primary().read()).isEqualTo(TenantBinding.SlotRead.TopLevelArg.INSTANCE);
+        assertThat(bound.primary().projection())
+            .isInstanceOfSatisfying(TenantBinding.SlotProjection.DecodedKeySlot.class,
+                decoded -> assertThat(decoded.slot()).isEqualTo(1));
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void plainTenantColumnOnADeleteDivinesRaw() {
+        // The gap the walker-carrier verbs had was the arm, not the node-id-ness: a DELETE whose
+        // plain input field maps to the tenant column was equally unbound.
+        var schema = build("""
+            type FilmActor implements Node @table(name: "film_actor")
+                    @node(keyColumns: ["actor_id", "film_id"]) {
+                id: ID! @nodeId
+            }
+            type Language @table(name: "language") { name: String }
+            type Query { languages: [Language!]! }
+            type Mutation {
+                deleteFilmActor(in: DeleteFilmActorByColumnsInput!): ID
+                    @mutation(typeName: DELETE, table: "film_actor")
+            }
+            input DeleteFilmActorByColumnsInput {
+                actorId: Int! @field(name: "actor_id")
+                filmId: Int! @field(name: "film_id")
+            }
+            """);
+
+        var bound = (TenantBinding.ArgumentBound) schema.tenantBindingOf("Mutation", "deleteFilmActor");
+        assertThat(bound.primary().slotName()).isEqualTo("filmId");
+        assertThat(bound.primary().projection())
+            .isEqualTo(TenantBinding.SlotProjection.Raw.INSTANCE);
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void childBelowANodeIdKeyedWriteInherits() {
+        // The cascade: the every-path fold reads the same direct-binding predicate, so a write
+        // that now divines establishes a context for its whole subtree instead of cascading the
+        // root's rejection down it.
+        var schema = build("""
+            type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+                id: ID! @nodeId
+                title: String
+                inventories: [Inventory!]! @splitQuery
+                    @reference(path: [{key: "inventory_film_id_fkey"}])
+            }
+            type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
+            type Language @table(name: "language") { name: String }
+            type Query { languages: [Language!]! }
+            type Mutation {
+                updateFilm(in: UpdateFilmInput!): Film @mutation(typeName: UPDATE, table: "film")
+            }
+            input UpdateFilmInput {
+                id: ID! @nodeId(typeName: "Film")
+                title: String @field(name: "title")
+            }
+            """);
+
+        assertThat(schema.tenantBindingOf("Film", "inventories"))
+            .isInstanceOf(TenantBinding.Inherited.class);
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void tenantColumnInAnUpdateSetPartitionRejects() {
+        // Routing on a SET-side tenant column would send the statement to the destination tenant
+        // and update a row that is not there; under database-per-tenant no UPDATE can move a row
+        // between databases at all.
+        var schema = build("""
+            type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
+            type Language @table(name: "language") { name: String }
+            type Query { languages: [Language!]! }
+            type Mutation {
+                updateInventory(in: UpdateInventoryFilmInput!): Inventory
+                    @mutation(typeName: UPDATE, table: "inventory")
+            }
+            input UpdateInventoryFilmInput {
+                inventoryId: Int! @field(name: "inventory_id")
+                filmId: Int! @field(name: "film_id")
+            }
+            """);
+
+        assertThat(schema.tenantBindingOf("Mutation", "updateInventory")).isNull();
+        assertThat(schema.tenantBindings().rejections())
+            .anyMatch(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding r
+                && r.coordinate().equals("Mutation.updateInventory")
+                && r.detail().contains("SET clause"));
     }
 
     @Test

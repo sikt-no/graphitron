@@ -171,6 +171,48 @@ class CompositeDecodeHelperRegistryTest {
     }
 
     @Test
+    void registerTenantSlot_staysDistinctFromThePredicateHelperForTheSameType() {
+        // Same decode, different projection: the predicate helper hands back the whole key, the
+        // tenant helper one slot of it. Two bodies, so two helpers; the dedup key says so.
+        var registry = new CompositeDecodeHelperRegistry(OUTPUT_PACKAGE);
+        var decode = decodeFilmActor();
+        String predicate = registry.register(decode, CompositeDecodeHelperRegistry.Mode.THROW, true);
+        String tenant = registry.registerTenantSlot(decode, 1);
+        assertThat(predicate).isEqualTo("decodeFilmActorRowsOrThrow");
+        assertThat(tenant).isEqualTo("decodeFilmActorTenantSlot1OrThrow");
+        assertThat(registry.emit()).hasSize(2);
+    }
+
+    @Test
+    void registerTenantSlot_sameSlotTwice_sharesOneHelper_differentSlotsDoNot() {
+        var registry = new CompositeDecodeHelperRegistry(OUTPUT_PACKAGE);
+        var decode = decodeFilmActor();
+        assertThat(registry.registerTenantSlot(decode, 1))
+            .isEqualTo(registry.registerTenantSlot(decode, 1));
+        registry.registerTenantSlot(decode, 0);
+        assertThat(registry.emit()).hasSize(2);
+    }
+
+    @Test
+    void emit_tenantSlotHelper_flattensABatchAndProjectsTheNamedSlot() {
+        var registry = new CompositeDecodeHelperRegistry(OUTPUT_PACKAGE);
+        registry.registerTenantSlot(decodeFilmActor(), 1);
+        MethodSpec helper = registry.emit().iterator().next();
+        assertThat(helper.returnType().toString())
+            .as("the divining fold takes Object, and one helper serves the scalar and batch shapes")
+            .isEqualTo("java.lang.Object");
+        String body = helper.code().toString();
+        assertThat(body)
+            .contains("wire instanceof java.util.List<?> nodeIds")
+            .contains("decodeFilmActorTenantSlot1OrThrow(element)")
+            .contains("wire instanceof String nodeId")
+            .contains("NodeIdEncoder.decodeFilmActor(nodeId)")
+            .contains("no.sikt.example.schema.GraphitronClientException")
+            .contains("not a valid FilmActor id")
+            .contains("return key.value2()");
+    }
+
+    @Test
     void emit_arity1ScalarThrowHelper_throwsClientExceptionWithTwoBranchMessage() {
         var registry = new CompositeDecodeHelperRegistry(OUTPUT_PACKAGE);
         registry.register(decodeFilm(), CompositeDecodeHelperRegistry.Mode.THROW, false);

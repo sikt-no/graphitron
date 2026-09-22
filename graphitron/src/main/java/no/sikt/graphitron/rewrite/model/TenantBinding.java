@@ -30,9 +30,56 @@ public sealed interface TenantBinding {
      * resolved tenant column the slot binds; {@code read} is the resolved runtime read for the
      * slot's value, minted where the slot is discovered so the routing emitter renders it
      * instead of re-walking the classifier's carriers (one traversal, one home, no
-     * classification-versus-emission drift).
+     * classification-versus-emission drift); {@code projection} is what turns that read value
+     * into the tenant value.
+     *
+     * <p>{@code read} and {@code projection} are independent axes, <em>where</em> the value is
+     * read and <em>what transform</em> yields the tenant from it, deliberately not one fused
+     * arm: a decoded node id can arrive at a top-level argument, inside an input object, or
+     * behind a context argument, and fusing the two would make the permit set their
+     * cross-product. Both are resolved together at every minting site, so a site cannot read
+     * one axis and drop the other.
      */
-    record BoundSlot(String slotName, ColumnRef column, SlotRead read) {}
+    record BoundSlot(String slotName, ColumnRef column, SlotRead read, SlotProjection projection) {
+        public BoundSlot {
+            java.util.Objects.requireNonNull(read, "read");
+            java.util.Objects.requireNonNull(projection, "projection");
+        }
+    }
+
+    /**
+     * What turns a bound slot's read value into the tenant value. Sealed and resolved at
+     * classification time beside {@link SlotRead}; the emitters are a render over these arms.
+     */
+    sealed interface SlotProjection {
+
+        /**
+         * The read's value <em>is</em> the tenant value. Every shape the axis was built on: a
+         * column-mapped argument, an input field naming the tenant column, a coercing leaf whose
+         * wire value still is the tenant value.
+         */
+        record Raw() implements SlotProjection {
+            public static final Raw INSTANCE = new Raw();
+        }
+
+        /**
+         * The read's value is an encoded node id; the tenant is slot {@code slot} (0-based) of
+         * the key tuple {@code decode} returns. The decode itself is the one the carrier already
+         * performs for its own predicate, so routing and the carrier read one wire value through
+         * one generated helper and one failure message.
+         */
+        record DecodedKeySlot(HelperRef.Decode decode, int slot) implements SlotProjection {
+            public DecodedKeySlot {
+                java.util.Objects.requireNonNull(decode, "decode");
+                if (slot < 0 || slot >= decode.outputColumnShape().size()) {
+                    throw new IllegalArgumentException(
+                        "DecodedKeySlot slot " + slot + " is outside the key tuple "
+                        + decode.methodName() + " returns (arity "
+                        + decode.outputColumnShape().size() + ")");
+                }
+            }
+        }
+    }
 
     /**
      * How a bound slot's runtime value is read at the fetcher site. Sealed and resolved at

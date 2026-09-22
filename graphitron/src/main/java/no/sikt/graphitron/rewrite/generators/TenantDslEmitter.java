@@ -331,22 +331,49 @@ final class TenantDslEmitter {
                                              TenantBinding.ArgumentBound bound, ClassName tenantConnections) {
         var reads = new ArrayList<CodeBlock>();
         for (TenantBinding.BoundSlot slot : bound.bindings()) {
-            reads.add(switch (slot.read()) {
+            CodeBlock read = switch (slot.read()) {
                 case TenantBinding.SlotRead.TopLevelArg ignored ->
                     CodeBlock.of("env.<Object>getArgument($S)", slot.slotName());
                 case TenantBinding.SlotRead.NestedInput nested -> {
-                    var read = CodeBlock.builder()
+                    var walk = CodeBlock.builder()
                         .add("$T.tenantSlot(env.getArgument($S)", tenantConnections, nested.outerArgName());
                     for (String key : nested.path()) {
-                        read.add(", $S", key);
+                        walk.add(", $S", key);
                     }
-                    yield read.add(")").build();
+                    yield walk.add(")").build();
                 }
                 case TenantBinding.SlotRead.ContextArg ignored ->
                     CodeBlock.of("$L.getContextArgument(env, $S)",
                         ctx.graphitronContextCall(), slot.slotName());
-            });
+            };
+            reads.add(projected(ctx, slot, read));
         }
         return reads;
+    }
+
+    /**
+     * The slot's read put through its transform: the read value itself where it already is the
+     * tenant value, and the class's own node-id decode helper where the tenant is a slot of an
+     * encoded key. The helper is the one {@code CompositeDecodeHelperRegistry} mints for every
+     * other grain that decodes this node type, so a malformed id routed here fails with the same
+     * message it would have failed with at the carrier's own decode, one statement later.
+     */
+    private static CodeBlock projected(TypeFetcherEmissionContext ctx,
+                                       TenantBinding.BoundSlot slot, CodeBlock read) {
+        return switch (slot.projection()) {
+            case TenantBinding.SlotProjection.Raw ignored -> read;
+            case TenantBinding.SlotProjection.DecodedKeySlot decoded -> {
+                var registry = ctx.nodeIdDecodeHelpers();
+                if (registry == null) {
+                    throw new IllegalStateException(
+                        "Graphitron generator bug (tenant routing): the slot '" + slot.slotName()
+                        + "' routes on a decoded node id, but this emission context opened no"
+                        + " decode-helper collector, so the helper would be dropped and the call"
+                        + " site would name a method the class does not declare");
+                }
+                yield CodeBlock.of("$L($L)",
+                    registry.registerTenantSlot(decoded.decode(), decoded.slot()), read);
+            }
+        };
     }
 }

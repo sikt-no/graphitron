@@ -292,6 +292,35 @@ public sealed interface OperationMember {
                     case Delete d -> d.inputArg().list();
                 };
             }
+
+            /** The SDL name of the argument the write's input arrives on. */
+            default String outerArgName() {
+                return switch (this) {
+                    case Insert i -> i.input().name();
+                    case Upsert u -> u.input().name();
+                    case Update u -> u.inputArg().name();
+                    case Delete d -> d.inputArg().name();
+                };
+            }
+
+            /**
+             * The WHERE-side column contributions the input fills, over the two verbs that have a
+             * WHERE clause: an UPDATE's matched-key partition and a DELETE's admitted-column set,
+             * which {@link UpdateRows#keyColumns()} and {@link DeleteRows#whereColumns()} name
+             * differently for reasons local to each carrier. A reader that only needs "what does
+             * this statement filter on" reads it here once rather than re-deriving the two names,
+             * and a third WHERE-bearing write arm answers it on arrival instead of falling
+             * silently to an empty default. INSERT and UPSERT have no WHERE clause and state that
+             * as the empty list.
+             */
+            default List<KeyColumn> whereKeyColumns() {
+                return switch (this) {
+                    case Insert ignored -> List.of();
+                    case Upsert ignored -> List.of();
+                    case Update u -> u.updateRows().keyColumns();
+                    case Delete d -> d.deleteRows().whereColumns();
+                };
+            }
         }
 
         /** A DML INSERT write. */
