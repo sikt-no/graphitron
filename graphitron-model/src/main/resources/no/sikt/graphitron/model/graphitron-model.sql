@@ -3337,7 +3337,7 @@ CREATE TABLE graphitron_field_binding_entry (
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_field_binding_entry IS '@field on an output or input-object field: the slot''s bound name. A column, a Java accessor, or a Java member depending on the backing, which is classification''s business; the $source / $errors sigil forms are stored as written, their recognition being a prefix test SQL can express.';
+COMMENT ON TABLE graphitron_field_binding_entry IS '@field on an output or input-object field: the slot''s bound name. A column, a Java accessor, or a Java member depending on the backing, which is classification''s business; the $source / $errors sigil forms are stored as written, their recognition being a prefix test SQL can express. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_field_binding_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
 COMMENT ON COLUMN graphitron_field_binding_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_field_binding_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_field_binding_entry.field_name IS 'the field name within the owning type';
@@ -3362,7 +3362,7 @@ CREATE TABLE graphitron_argument_binding_entry (
     REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_argument_binding_entry IS '@field on an argument: the filter argument''s bound column.';
+COMMENT ON TABLE graphitron_argument_binding_entry IS '@field on an argument: the filter argument''s bound column. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_argument_binding_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_argument_binding_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_argument_binding_entry.field_name IS 'the field name within the owning type';
@@ -3385,7 +3385,7 @@ CREATE TABLE graphitron_enum_value_binding_entry (
   FOREIGN KEY (graph_name, type_name, value_name) REFERENCES graphql_enum_value_element (graph_name, type_name, value_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_enum_value_binding_entry IS '@field on an enum value: the database string (or Java constant) the value maps to. The pivot vocabulary decode reads this relation too.';
+COMMENT ON TABLE graphitron_enum_value_binding_entry IS '@field on an enum value: the database string (or Java constant) the value maps to. The pivot vocabulary decode reads this relation too. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_enum_value_binding_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
 COMMENT ON COLUMN graphitron_enum_value_binding_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_enum_value_binding_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_enum_value_binding_entry.value_name IS 'the enum value name within the owning enum type';
@@ -3444,7 +3444,7 @@ CREATE TABLE graphitron_enum_entry (
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_enum_entry IS '@enum on an enum type. The full ExternalCodeReference is captured as written, though today only argmapping is consumed (to reject a non-blank value; the Java binding is derived by reflection and the per-value mapping comes from graphitron_enum_value_binding_entry).';
+COMMENT ON TABLE graphitron_enum_entry IS '@enum on an enum type. The full ExternalCodeReference is captured as written, though today only argmapping is consumed (to reject a non-blank value; the Java binding is derived by reflection and the per-value mapping comes from graphitron_enum_value_binding_entry). Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_enum_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
 COMMENT ON COLUMN graphitron_enum_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_enum_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_enum_entry.source_name IS 'half of the site FK, so NOT NULL; a graphitron application always has an SDL position';
@@ -3471,7 +3471,7 @@ CREATE TABLE graphitron_field_condition_entry (
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_field_condition_entry IS '@condition on a field or input field (shared coordinate; the parent kind decides which SDL site this was).';
+COMMENT ON TABLE graphitron_field_condition_entry IS '@condition on a field or input field (shared coordinate; the parent kind decides which SDL site this was). Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_field_condition_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
 COMMENT ON COLUMN graphitron_field_condition_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_field_condition_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_field_condition_entry.field_name IS 'the field name within the owning type';
@@ -3494,7 +3494,7 @@ CREATE TABLE graphitron_field_condition_context_arg_entry (
     REFERENCES graphitron_field_condition_entry (graph_name, type_name, field_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_field_condition_context_arg_entry IS 'An ordered context argument of a field-site @condition.';
+COMMENT ON TABLE graphitron_field_condition_context_arg_entry IS 'An ordered context argument of a field-site @condition. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_field_condition_context_arg_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
 COMMENT ON COLUMN graphitron_field_condition_context_arg_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_field_condition_context_arg_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_field_condition_context_arg_entry.field_name IS 'the field name within the owning type';
@@ -3518,7 +3518,7 @@ CREATE TABLE graphitron_argument_condition_entry (
     REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_argument_condition_entry IS '@condition on an argument: the same decode over the three-part coordinate.';
+COMMENT ON TABLE graphitron_argument_condition_entry IS '@condition on an argument: the same decode over the three-part coordinate. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_argument_condition_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_argument_condition_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_argument_condition_entry.field_name IS 'the field name within the owning type';
@@ -3543,7 +3543,7 @@ CREATE TABLE graphitron_argument_condition_context_arg_entry (
     REFERENCES graphitron_argument_condition_entry (graph_name, type_name, field_name, argument_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_argument_condition_context_arg_entry IS 'An ordered context argument of an argument-site @condition.';
+COMMENT ON TABLE graphitron_argument_condition_context_arg_entry IS 'An ordered context argument of an argument-site @condition. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_argument_condition_context_arg_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_argument_condition_context_arg_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_argument_condition_context_arg_entry.field_name IS 'the field name within the owning type';
@@ -3586,7 +3586,7 @@ CREATE TABLE graphitron_field_reference_entry (
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_field_reference_entry IS '@reference on a field or input field: one row per application, because an application is a fact of its own. An empty path means FK auto-discovery between the endpoints, and the rule that every application in a multi-application chain must carry an element is per-application; both are invisible in a flat concatenated chain. The effective chain the consumers read is the steps ordered by (ordinal, position), and the written-order interleaving with @routine applications on the same field is an ORDER BY over the two relations'' source positions.';
+COMMENT ON TABLE graphitron_field_reference_entry IS '@reference on a field or input field: one row per application, because an application is a fact of its own. An empty path means FK auto-discovery between the endpoints, and the rule that every application in a multi-application chain must carry an element is per-application; both are invisible in a flat concatenated chain. The effective chain the consumers read is the steps ordered by (ordinal, position), and the written-order interleaving with @routine applications on the same field is an ORDER BY over the two relations'' source positions. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_field_reference_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_field_reference_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_field_reference_entry.field_name IS 'the field name within the owning type';
@@ -3619,7 +3619,7 @@ CREATE TABLE graphitron_field_reference_step_entry (
     REFERENCES graphitron_field_reference_entry (graph_name, type_name, field_name, ordinal)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_field_reference_step_entry IS 'An ordered path element of one @reference application; the step''s ExternalCodeReference condition flattens in place.';
+COMMENT ON TABLE graphitron_field_reference_step_entry IS 'An ordered path element of one @reference application; the step''s ExternalCodeReference condition flattens in place. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_field_reference_step_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_field_reference_step_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_field_reference_step_entry.field_name IS 'the field name within the owning type';
@@ -3653,7 +3653,7 @@ CREATE TABLE graphitron_argument_reference_entry (
     REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_argument_reference_entry IS '@reference on an argument: the same family over the three-part coordinate.';
+COMMENT ON TABLE graphitron_argument_reference_entry IS '@reference on an argument: the same family over the three-part coordinate. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_argument_reference_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_argument_reference_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_argument_reference_entry.field_name IS 'the field name within the owning type';
@@ -3688,7 +3688,7 @@ CREATE TABLE graphitron_argument_reference_step_entry (
     REFERENCES graphitron_argument_reference_entry (graph_name, type_name, field_name, argument_name, ordinal)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_argument_reference_step_entry IS 'An ordered path element of one argument-site @reference application; the step''s ExternalCodeReference condition flattens in place.';
+COMMENT ON TABLE graphitron_argument_reference_step_entry IS 'An ordered path element of one argument-site @reference application; the step''s ExternalCodeReference condition flattens in place. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_argument_reference_step_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_argument_reference_step_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_argument_reference_step_entry.field_name IS 'the field name within the owning type';
@@ -3722,7 +3722,7 @@ CREATE TABLE graphitron_reference_for_entry (
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_reference_for_entry IS '@referenceFor at a field coordinate: an explicit join path for one participant of a multi-table interface or union. Two populations share the relation, and they share it because graphql_field spans both: an output field, where the path runs from the parent''s table to the participant''s, and a @nodeId filter input field, where it runs from the participant''s own table to the decoded target''s. Which of the two a row is about is a fact of the owning coordinate''s type kind and is not restated as a column here, on graphql_field''s own terms: the join decides. Keyed by ordinal per the repeatable rule; the consumption-side keying by participant makes a repeated participant a detection, never a collision.';
+COMMENT ON TABLE graphitron_reference_for_entry IS '@referenceFor at a field coordinate: an explicit join path for one participant of a multi-table interface or union. Two populations share the relation, and they share it because graphql_field spans both: an output field, where the path runs from the parent''s table to the participant''s, and a @nodeId filter input field, where it runs from the participant''s own table to the decoded target''s. Which of the two a row is about is a fact of the owning coordinate''s type kind and is not restated as a column here, on graphql_field''s own terms: the join decides. Keyed by ordinal per the repeatable rule; the consumption-side keying by participant makes a repeated participant a detection, never a collision. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_reference_for_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_reference_for_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_reference_for_entry.field_name IS 'the field name within the owning type';
@@ -3756,7 +3756,7 @@ CREATE TABLE graphitron_reference_for_step_entry (
     REFERENCES graphitron_reference_for_entry (graph_name, type_name, field_name, ordinal)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_reference_for_step_entry IS 'An ordered path element of one @referenceFor application: the participant''s complete path from the parent''s table, read as the same element grammar as @reference.';
+COMMENT ON TABLE graphitron_reference_for_step_entry IS 'An ordered path element of one @referenceFor application: the participant''s complete path from the parent''s table, read as the same element grammar as @reference. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_reference_for_step_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_reference_for_step_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_reference_for_step_entry.field_name IS 'the field name within the owning type';
@@ -3791,7 +3791,7 @@ CREATE TABLE graphitron_argument_reference_for_entry (
     REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_argument_reference_for_entry IS '@referenceFor on an argument: the same family over the four-part coordinate. A sibling relation rather than an argument_name column on graphitron_reference_for_entry, on the discipline the argument-site @reference family already keeps: the two coordinates are different lengths, so one relation over both would carry a column NULL by kind on half its rows and every reader would have to say which kind it meant. The participant set this row''s spelling is checked against is the consuming field''s own, which at this coordinate is the field the argument sits on rather than a set reached through the occurrence paths, so the whole-schema detection the input-field population needs is a local join here.';
+COMMENT ON TABLE graphitron_argument_reference_for_entry IS '@referenceFor on an argument: the same family over the four-part coordinate. A sibling relation rather than an argument_name column on graphitron_reference_for_entry, on the discipline the argument-site @reference family already keeps: the two coordinates are different lengths, so one relation over both would carry a column NULL by kind on half its rows and every reader would have to say which kind it meant. The participant set this row''s spelling is checked against is the consuming field''s own, which at this coordinate is the field the argument sits on rather than a set reached through the occurrence paths, so the whole-schema detection the input-field population needs is a local join here. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_argument_reference_for_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_argument_reference_for_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_argument_reference_for_entry.field_name IS 'the field name within the owning type';
@@ -3827,7 +3827,7 @@ CREATE TABLE graphitron_argument_reference_for_step_entry (
     REFERENCES graphitron_argument_reference_for_entry (graph_name, type_name, field_name, argument_name, ordinal)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_argument_reference_for_step_entry IS 'An ordered path element of one argument-site @referenceFor application: the participant''s complete path, read as the same element grammar as @reference. The direction is the coordinate''s and not this relation''s: at the one coordinate an argument-site application is admitted on today, a @nodeId decode leaf, the path departs the participant''s own table and reaches the decoded target''s.';
+COMMENT ON TABLE graphitron_argument_reference_for_step_entry IS 'An ordered path element of one argument-site @referenceFor application: the participant''s complete path, read as the same element grammar as @reference. The direction is the coordinate''s and not this relation''s: at the one coordinate an argument-site application is admitted on today, a @nodeId decode leaf, the path departs the participant''s own table and reaches the decoded target''s. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_argument_reference_for_step_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_argument_reference_for_step_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_argument_reference_for_step_entry.field_name IS 'the field name within the owning type';
@@ -3862,7 +3862,7 @@ CREATE TABLE graphitron_service_entry (
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_service_entry IS '@service on a field: the external service reference.';
+COMMENT ON TABLE graphitron_service_entry IS '@service on a field: the external service reference. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_service_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
 COMMENT ON COLUMN graphitron_service_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_service_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_service_entry.field_name IS 'the field name within the owning type';
@@ -3883,7 +3883,7 @@ CREATE TABLE graphitron_service_context_arg_entry (
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphitron_service_entry (graph_name, type_name, field_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_service_context_arg_entry IS 'An ordered contextArguments entry of a @service application; the value is supplied on the GraphQLContext at run time.';
+COMMENT ON TABLE graphitron_service_context_arg_entry IS 'An ordered contextArguments entry of a @service application; the value is supplied on the GraphQLContext at run time. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_service_context_arg_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
 COMMENT ON COLUMN graphitron_service_context_arg_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_service_context_arg_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_service_context_arg_entry.field_name IS 'the field name within the owning type';
@@ -3904,7 +3904,7 @@ CREATE TABLE graphitron_external_field_entry (
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_external_field_entry IS '@externalField on a field: the static jOOQ-Field method. The omitted-method fallback (the field name) is a derivation; argmapping is inert here (raw column only, its rejection is presence-triggered).';
+COMMENT ON TABLE graphitron_external_field_entry IS '@externalField on a field: the static jOOQ-Field method. The omitted-method fallback (the field name) is a derivation; argmapping is inert here (raw column only, its rejection is presence-triggered). Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_external_field_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
 COMMENT ON COLUMN graphitron_external_field_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_external_field_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_external_field_entry.field_name IS 'the field name within the owning type';
@@ -3952,7 +3952,7 @@ CREATE TABLE graphitron_facet_entry (
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_facet_entry IS '@asFacet on an input field: a marker; the bound column comes from graphitron_field_binding_entry, and every misuse arm is a detection.';
+COMMENT ON TABLE graphitron_facet_entry IS '@asFacet on an input field: a marker; the bound column comes from graphitron_field_binding_entry, and every misuse arm is a detection. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_facet_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_facet_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_facet_entry.field_name IS 'the field name within the owning type';
@@ -3973,7 +3973,7 @@ CREATE TABLE graphitron_order_by_entry (
     REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_order_by_entry IS '@orderBy on an argument: a marker; the input shape rules are detections.';
+COMMENT ON TABLE graphitron_order_by_entry IS '@orderBy on an argument: a marker; the input shape rules are detections. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_order_by_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_order_by_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_order_by_entry.field_name IS 'the field name within the owning type';
@@ -3995,7 +3995,7 @@ CREATE TABLE graphitron_order_entry (
   FOREIGN KEY (graph_name, type_name, value_name) REFERENCES graphql_enum_value_element (graph_name, type_name, value_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_order_entry IS '@order on an enum value: a sorting specification. The exactly-one-of rule over index, fields, and primaryKey is a detection.';
+COMMENT ON TABLE graphitron_order_entry IS '@order on an enum value: a sorting specification. The exactly-one-of rule over index, fields, and primaryKey is a detection. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_order_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
 COMMENT ON COLUMN graphitron_order_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_order_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_order_entry.value_name IS 'the enum value name within the owning enum type';
@@ -4017,7 +4017,7 @@ CREATE TABLE graphitron_order_field_entry (
   FOREIGN KEY (graph_name, type_name, value_name) REFERENCES graphitron_order_entry (graph_name, type_name, value_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_order_field_entry IS 'An ordered FieldSort entry of an @order.';
+COMMENT ON TABLE graphitron_order_field_entry IS 'An ordered FieldSort entry of an @order. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_order_field_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
 COMMENT ON COLUMN graphitron_order_field_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_order_field_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_order_field_entry.value_name IS 'the enum value name within the owning enum type';
@@ -4038,7 +4038,7 @@ CREATE TABLE graphitron_index_entry (
   FOREIGN KEY (graph_name, type_name, value_name) REFERENCES graphql_enum_value_element (graph_name, type_name, value_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_index_entry IS '@index on an enum value: the deprecated alias of @order(index:), still honoured when @order is absent; the deprecation is a lint detection.';
+COMMENT ON TABLE graphitron_index_entry IS '@index on an enum value: the deprecated alias of @order(index:), still honoured when @order is absent; the deprecation is a lint detection. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_index_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
 COMMENT ON COLUMN graphitron_index_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_index_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_index_entry.value_name IS 'the enum value name within the owning enum type';
@@ -4147,7 +4147,7 @@ CREATE TABLE graphitron_error_entry (
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_error_entry IS '@error on an object type: presence; the handlers list decodes into the ordered child, and every cross-field handler rule is a detection.';
+COMMENT ON TABLE graphitron_error_entry IS '@error on an object type: presence; the handlers list decodes into the ordered child, and every cross-field handler rule is a detection. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_error_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_error_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_error_entry.source_name IS 'half of the site FK, so NOT NULL; a graphitron application always has an SDL position';
@@ -4170,7 +4170,7 @@ CREATE TABLE graphitron_error_handler_entry (
   FOREIGN KEY (graph_name, type_name) REFERENCES graphitron_error_entry (graph_name, type_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_error_handler_entry IS 'An ordered ErrorHandler of an @error application.';
+COMMENT ON TABLE graphitron_error_handler_entry IS 'An ordered ErrorHandler of an @error application. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_error_handler_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_error_handler_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_error_handler_entry.position IS '0-based position within the owning list';
@@ -4238,7 +4238,7 @@ CREATE TABLE graphitron_field_node_id_entry (
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_field_node_id_entry IS '@nodeId on a field or input field.';
+COMMENT ON TABLE graphitron_field_node_id_entry IS '@nodeId on a field or input field. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_field_node_id_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
 COMMENT ON COLUMN graphitron_field_node_id_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_field_node_id_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_field_node_id_entry.field_name IS 'the field name within the owning type';
@@ -4261,7 +4261,7 @@ CREATE TABLE graphitron_argument_node_id_entry (
     REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_argument_node_id_entry IS '@nodeId on an argument.';
+COMMENT ON TABLE graphitron_argument_node_id_entry IS '@nodeId on an argument. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_argument_node_id_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_argument_node_id_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_argument_node_id_entry.field_name IS 'the field name within the owning type';
@@ -4284,7 +4284,7 @@ CREATE TABLE graphitron_argument_lookup_key_entry (
     REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_argument_lookup_key_entry IS '@lookupKey on an argument: the live site, a marker.';
+COMMENT ON TABLE graphitron_argument_lookup_key_entry IS '@lookupKey on an argument: the live site, a marker. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_argument_lookup_key_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_argument_lookup_key_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_argument_lookup_key_entry.field_name IS 'the field name within the owning type';
@@ -4304,7 +4304,7 @@ CREATE TABLE graphitron_field_lookup_key_entry (
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_field_lookup_key_entry IS '@lookupKey on an input field: the retired site; the sole consumer is the located migration rejection.';
+COMMENT ON TABLE graphitron_field_lookup_key_entry IS '@lookupKey on an input field: the retired site; the sole consumer is the located migration rejection. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_field_lookup_key_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_field_lookup_key_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_field_lookup_key_entry.field_name IS 'the field name within the owning type';
@@ -4323,7 +4323,7 @@ CREATE TABLE graphitron_split_query_entry (
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_split_query_entry IS '@splitQuery on a field: a marker.';
+COMMENT ON TABLE graphitron_split_query_entry IS '@splitQuery on a field: a marker. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_split_query_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_split_query_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_split_query_entry.field_name IS 'the field name within the owning type';
@@ -4342,7 +4342,7 @@ CREATE TABLE graphitron_tenant_fan_out_entry (
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_tenant_fan_out_entry IS '@tenantFanOut on a field: a marker; its many conflict arms are detections.';
+COMMENT ON TABLE graphitron_tenant_fan_out_entry IS '@tenantFanOut on a field: a marker; its many conflict arms are detections. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_tenant_fan_out_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_tenant_fan_out_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_tenant_fan_out_entry.field_name IS 'the field name within the owning type';
@@ -4461,7 +4461,7 @@ CREATE TABLE graphitron_discriminate_entry (
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_discriminate_entry IS '@discriminate on an interface or union: the discriminator column.';
+COMMENT ON TABLE graphitron_discriminate_entry IS '@discriminate on an interface or union: the discriminator column. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_discriminate_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
 COMMENT ON COLUMN graphitron_discriminate_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_discriminate_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_discriminate_entry.source_name IS 'half of the site FK, so NOT NULL; a graphitron application always has an SDL position';
@@ -4487,7 +4487,7 @@ CREATE TABLE graphitron_discriminator_entry (
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_discriminator_entry IS '@discriminator on an object type: the participant''s discriminator value.';
+COMMENT ON TABLE graphitron_discriminator_entry IS '@discriminator on an object type: the participant''s discriminator value. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_discriminator_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
 COMMENT ON COLUMN graphitron_discriminator_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_discriminator_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_discriminator_entry.source_name IS 'half of the site FK, so NOT NULL';
@@ -4515,7 +4515,7 @@ CREATE TABLE graphitron_federation_key_entry (
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_federation_key_entry IS 'Federation @key as the author wrote it, decoded for consumption (its verbatim twin lives in graphql_type_directive for re-emission; a gate query pins agreement). Authored applications alone, which is what this family''s charter says a decode is: the key federation synthesizes for a node type is a derivation over these rows and the node metadata, and it lives in graphitron_synthesized_federation_key. A reader wanting every key the emitted schema carries reads intent_federation_key, which unions the two.';
+COMMENT ON TABLE graphitron_federation_key_entry IS 'Federation @key as the author wrote it, decoded for consumption (its verbatim twin lives in graphql_type_directive for re-emission; a gate query pins agreement). Authored applications alone, which is what this family''s charter says a decode is: the key federation synthesizes for a node type is a derivation over these rows and the node metadata, and it lives in graphitron_synthesized_federation_key. A reader wanting every key the emitted schema carries reads intent_federation_key, which unions the two. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_federation_key_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
 COMMENT ON COLUMN graphitron_federation_key_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_federation_key_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_federation_key_entry.ordinal IS '@key is repeatable; document order';
@@ -4537,7 +4537,7 @@ CREATE TABLE graphitron_federation_key_field_entry (
     REFERENCES graphitron_federation_key_entry (graph_name, type_name, ordinal)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_federation_key_field_entry IS 'An ordered element of a @key field set (the field-set grammar is a parse boundary, so the decode happens at capture). One row per leaf selection, in written order, and the row is the position alone: what the selection names is the segment child, because the grammar admits nesting and a decoded grammar lands as rows rather than as a rendered string. A top-level selection is one segment, so the child is never empty. That today''s consumer rejects nesting is a detection, not a capture limit.';
+COMMENT ON TABLE graphitron_federation_key_field_entry IS 'An ordered element of a @key field set (the field-set grammar is a parse boundary, so the decode happens at capture). One row per leaf selection, in written order, and the row is the position alone: what the selection names is the segment child, because the grammar admits nesting and a decoded grammar lands as rows rather than as a rendered string. A top-level selection is one segment, so the child is never empty. That today''s consumer rejects nesting is a detection, not a capture limit. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_federation_key_field_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_federation_key_field_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_federation_key_field_entry.ordinal IS 'capture-assigned position in document order';
@@ -4555,7 +4555,7 @@ CREATE TABLE graphitron_federation_key_field_segment_entry (
     REFERENCES graphitron_federation_key_field_entry (graph_name, type_name, ordinal, position)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_federation_key_field_segment_entry IS 'What one @key selection names, segment by segment: the nesting the field-set parser computes, recorded rather than rendered. A reader asking which leaf a key selects, and under what parent, joins instead of splitting a dotted string, which is the whole reason the parser''s prefix stack reaches the store at all. Positions are dense from zero and a selection always has a position-zero segment, an unnested one having only that.';
+COMMENT ON TABLE graphitron_federation_key_field_segment_entry IS 'What one @key selection names, segment by segment: the nesting the field-set parser computes, recorded rather than rendered. A reader asking which leaf a key selects, and under what parent, joins instead of splitting a dotted string, which is the whole reason the parser''s prefix stack reaches the store at all. Positions are dense from zero and a selection always has a position-zero segment, an unnested one having only that. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_federation_key_field_segment_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_federation_key_field_segment_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_federation_key_field_segment_entry.ordinal IS 'the owning @key application''s ordinal';
@@ -4573,7 +4573,7 @@ CREATE TABLE graphitron_link_entry (
   PRIMARY KEY (graph_name, ordinal),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
 );
-COMMENT ON TABLE graphitron_link_entry IS '@link on the schema definition, decoded. All @link applications decode here (the verbatim twin sits in graphql_schema_directive); whether a link is the federation opt-in is a predicate over url, a derivation. @tag and @shareable get no decoded relations: their only readers are the expansion machinery itself, which is the capture walk with the AST in hand, so downstream consumers see them only as fidelity rows for re-emission.';
+COMMENT ON TABLE graphitron_link_entry IS '@link on the schema definition, decoded. All @link applications decode here (the verbatim twin sits in graphql_schema_directive); whether a link is the federation opt-in is a predicate over url, a derivation. @tag and @shareable get no decoded relations: their only readers are the expansion machinery itself, which is the capture walk with the AST in hand, so downstream consumers see them only as fidelity rows for re-emission. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_link_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
 COMMENT ON COLUMN graphitron_link_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_link_entry.ordinal IS '@link is repeatable; document order';
 COMMENT ON COLUMN graphitron_link_entry.source_name IS 'the SDL file the row was captured from';
@@ -4591,7 +4591,7 @@ CREATE TABLE graphitron_link_import_entry (
   FOREIGN KEY (graph_name, link_ordinal) REFERENCES graphitron_link_entry (graph_name, ordinal)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_link_import_entry IS 'An ordered import entry of an @link, covering both the string form and the object form.';
+COMMENT ON TABLE graphitron_link_import_entry IS 'An ordered import entry of an @link, covering both the string form and the object form. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_link_import_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
 COMMENT ON COLUMN graphitron_link_import_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_link_import_entry.link_ordinal IS 'the owning @link application''s ordinal';
 COMMENT ON COLUMN graphitron_link_import_entry.position IS '0-based position within the owning list';
@@ -4617,7 +4617,7 @@ CREATE TABLE graphitron_multitable_reference_entry (
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_multitable_reference_entry IS '@multitableReference (removed) on a field; routes is never read.';
+COMMENT ON TABLE graphitron_multitable_reference_entry IS '@multitableReference (removed) on a field; routes is never read. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_multitable_reference_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_multitable_reference_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_multitable_reference_entry.field_name IS 'the field name within the owning type';
@@ -4664,7 +4664,7 @@ CREATE TABLE graphitron_undecoded_argument_entry (
   PRIMARY KEY (graph_name, source_name, source_line, source_column, directive_name, directive_argument_name),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
 );
-COMMENT ON TABLE graphitron_undecoded_argument_entry IS 'The tolerant-decode overflow: a graphitron application argument whose literal does not fit the declared shape decodes to NULL in its typed column and quarantines its raw text here, so the authored value is never lost and the malformed-literal detection has its row. Empty while assembly runs upstream.';
+COMMENT ON TABLE graphitron_undecoded_argument_entry IS 'The tolerant-decode overflow: a graphitron application argument whose literal does not fit the declared shape decodes to NULL in its typed column and quarantines its raw text here, so the authored value is never lost and the malformed-literal detection has its row. Empty while assembly runs upstream. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_undecoded_argument_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_undecoded_argument_entry.source_name IS 'the application''s position identifies the row; authored applications always have one';
 COMMENT ON COLUMN graphitron_undecoded_argument_entry.source_line IS 'line of the application carrying the undecodable literal';
@@ -5236,7 +5236,7 @@ CREATE TABLE graphitron_spelled_reference_entry (
 );
 CREATE INDEX graphitron_spelled_reference_entry_name_ix
   ON graphitron_spelled_reference_entry (graph_name, name_part_upper);
-COMMENT ON TABLE graphitron_spelled_reference_entry IS 'Every table or routine name this graph authors anywhere, once per distinct spelling: the fact underneath @table(name:), a @reference path element''s table, its argument-site and @referenceFor siblings, @mutation''s delete target and @routine(name:). Seven relations carry a spelling of this shape and none of them is the spelling; each is a site that wrote one, keyed by where it was written. Keyed by the spelling itself and by nothing else, on the terms graphitron_spelled_table already argues: the resolution does not vary by site, so a spelling written at five coordinates is one fact and one row here, and a reader asking what a name resolves to never has to say which directive wrote it. That is why this relation carries no site discriminator where graphitron_argmapping_entry carries one; the difference between them is whether the shared question has a per-site answer, and here it does not. Arrives already split, capture writing the namespace half and the name half beside the value, so a reader matches on stored folded columns rather than on a fold computed per candidate row. The namespace half is null on an unqualified spelling, which matches on its name half alone. Written by capture at the moment each site is read, deduplicated there rather than by a reader: the same spelling authored twice is one row, and the primary key is what says so. graphitron_routine_entry spells its own site''s column routine_ref where the other six spell theirs table_ref; the two are the same fact and this relation is where that is settled, a name having only one spelling once there is a relation to hold it.';
+COMMENT ON TABLE graphitron_spelled_reference_entry IS 'Every table or routine name this graph authors anywhere, once per distinct spelling: the fact underneath @table(name:), a @reference path element''s table, its argument-site and @referenceFor siblings, @mutation''s delete target and @routine(name:). Seven relations carry a spelling of this shape and none of them is the spelling; each is a site that wrote one, keyed by where it was written. Keyed by the spelling itself and by nothing else, on the terms graphitron_spelled_table already argues: the resolution does not vary by site, so a spelling written at five coordinates is one fact and one row here, and a reader asking what a name resolves to never has to say which directive wrote it. That is why this relation carries no site discriminator where graphitron_argmapping_entry carries one; the difference between them is whether the shared question has a per-site answer, and here it does not. Arrives already split, capture writing the namespace half and the name half beside the value, so a reader matches on stored folded columns rather than on a fold computed per candidate row. The namespace half is null on an unqualified spelling, which matches on its name half alone. Written by capture at the moment each site is read, deduplicated there rather than by a reader: the same spelling authored twice is one row, and the primary key is what says so. graphitron_routine_entry spells its own site''s column routine_ref where the other six spell theirs table_ref; the two are the same fact and this relation is where that is settled, a name having only one spelling once there is a relation to hold it. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_spelled_reference_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_spelled_reference_entry.spelling IS 'the name exactly as the author wrote it, qualifier and all; with the graph the whole key, one row per distinct spelling however many sites wrote it';
 COMMENT ON COLUMN graphitron_spelled_reference_entry.namespace_part IS 'the qualifier half of the spelling as written, null on an unqualified name; a null here is the author having written no qualifier and never a qualifier withheld';
@@ -5298,7 +5298,7 @@ CREATE INDEX graphitron_argmapping_entry_site_ix
   ON graphitron_argmapping_entry (graph_name, site);
 CREATE INDEX graphitron_argmapping_entry_use_ix
   ON graphitron_argmapping_entry (graph_name, use_site);
-COMMENT ON TABLE graphitron_argmapping_entry IS 'One entry of one argMapping: a method parameter bound to an argument path, at the position its site lists it. The written member of the argMapping triple, whose other two are graphitron_argmapping_candidate for what a right-hand side may name and graphitron_argmapping_match for where a written one landed. Nine kinds of site can spell an entry and all nine state the same three facts, differing only in the key saying which site owns the row, so this is one relation over them rather than the eight it replaced. The site column is that discriminator, closed, and total against the family rather than the population: one value has no rows because the validator rejects its coordinate, and it is listed so a reader switching on site meets every kind. The collapse cost a foreign key, since one cannot span nine parents chosen by a column. An entry''s reference back to its site is therefore an invariant capture maintains and a test checks over a captured store, not one the engine enforces. That trade runs one way only: a constraint is not data, so losing it does not buy a subtype its table back. Written by capture at the site it came from, so it cannot be stale against that site and needs no refresh.';
+COMMENT ON TABLE graphitron_argmapping_entry IS 'One entry of one argMapping: a method parameter bound to an argument path, at the position its site lists it. The written member of the argMapping triple, whose other two are graphitron_argmapping_candidate for what a right-hand side may name and graphitron_argmapping_match for where a written one landed. Nine kinds of site can spell an entry and all nine state the same three facts, differing only in the key saying which site owns the row, so this is one relation over them rather than the eight it replaced. The site column is that discriminator, closed, and total against the family rather than the population: one value has no rows because the validator rejects its coordinate, and it is listed so a reader switching on site meets every kind. The collapse cost a foreign key, since one cannot span nine parents chosen by a column. An entry''s reference back to its site is therefore an invariant capture maintains and a test checks over a captured store, not one the engine enforces. That trade runs one way only: a constraint is not data, so losing it does not buy a subtype its table back. Written by capture at the site it came from, so it cannot be stale against that site and needs no refresh. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_argmapping_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_argmapping_entry.site IS 'which kind of site declared the entry, in a closed vocabulary of nine, one per directive that can carry argMapping. The whole of what says how to read ordinal and step_position beside it, exactly as jvm_declared_type_ref.owner_kind does for its three, and the whole of what says which of the nine a coordinate''s two shapes came from, three of them sitting on an argument and six on a field. A reader that means one kind filters on it and owns having chosen';
 COMMENT ON COLUMN graphitron_argmapping_entry.use_site IS 'the site spelled as one string, in the site''s own grammar: Type.field, Type.field(argument), Type.field#ordinal, or those with the step position appended in brackets. Total by construction, which is what lets it key this relation where the decomposed columns beside it cannot, three of them being null on the sites that have no such part. A reader joining on the parts joins the parts; this column is the key and the thing a diagnostic prints';
@@ -5339,7 +5339,7 @@ CREATE TABLE graphitron_method_reference_entry (
 );
 CREATE INDEX graphitron_method_reference_entry_method_ix
   ON graphitron_method_reference_entry (graph_name, class_name, method);
-COMMENT ON TABLE graphitron_method_reference_entry IS 'A Java method named by a directive: the class and the method as the author spelled them, at the site that spelled them. Eleven kinds of site can name one and every one of them states the same two facts, so this is those two facts with a uniform key over them, which is what lets a reader asking what methods a graph names scan one relation instead of unioning ten and synthesising a key in each. Three readers were doing exactly that, at six arms, five and five, and each of the three had written the union out by hand. Keyed on the site and its own spelling, deliberately the same key graphitron_argmapping_entry carries: a pair and the method it binds into are two facts about one site, so a reader holding a pair reaches its method by joining the key it already has rather than by switching on the site to pick a relation. That is the whole of what the six-arm reconstruction was. A pair at the ROUTINE site names a database routine and no Java method, so it has no row here and an inner join drops it; the absence of a row is what used to be six site literals. Nine of the ten relations that spell a method keep their own tables, on the rule the section above states: each carries data this relation cannot hold, an override flag at the two condition sites, a table or key reference at the four step sites, a declaration coordinate at the enum, an authored argMapping string at three. The tenth, the source row, carried nothing beyond what is here and became rows of this relation; SOURCE_ROW is its site value. What this relation does not claim is that the method exists: it records what an author wrote, and whether the classpath census has a matching signature is a resolution the intent layer states, which is why nothing here joins jvm_method and why a name that resolves to nothing is a row rather than a silence.';
+COMMENT ON TABLE graphitron_method_reference_entry IS 'A Java method named by a directive: the class and the method as the author spelled them, at the site that spelled them. Eleven kinds of site can name one and every one of them states the same two facts, so this is those two facts with a uniform key over them, which is what lets a reader asking what methods a graph names scan one relation instead of unioning ten and synthesising a key in each. Three readers were doing exactly that, at six arms, five and five, and each of the three had written the union out by hand. Keyed on the site and its own spelling, deliberately the same key graphitron_argmapping_entry carries: a pair and the method it binds into are two facts about one site, so a reader holding a pair reaches its method by joining the key it already has rather than by switching on the site to pick a relation. That is the whole of what the six-arm reconstruction was. A pair at the ROUTINE site names a database routine and no Java method, so it has no row here and an inner join drops it; the absence of a row is what used to be six site literals. Nine of the ten relations that spell a method keep their own tables, on the rule the section above states: each carries data this relation cannot hold, an override flag at the two condition sites, a table or key reference at the four step sites, a declaration coordinate at the enum, an authored argMapping string at three. The tenth, the source row, carried nothing beyond what is here and became rows of this relation; SOURCE_ROW is its site value. What this relation does not claim is that the method exists: it records what an author wrote, and whether the classpath census has a matching signature is a resolution the intent layer states, which is why nothing here joins jvm_method and why a name that resolves to nothing is a row rather than a silence. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_method_reference_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_method_reference_entry.site IS 'which kind of site named the method, in a closed vocabulary of eleven, one per directive spelling that can carry a class and a method. The whole of what says how to read type_name, field_name, argument_name, ordinal and step_position beside it, on graphitron_argmapping_entry.site''s terms. A reader that means one kind filters on it and owns having chosen; a reader that means the condition family filters on the six condition spellings, which is the filter three intent views spell';
 COMMENT ON COLUMN graphitron_method_reference_entry.use_site IS 'the site spelled as one string, in the site''s own grammar and in exactly the spelling graphitron_argmapping_entry.use_site uses, so the two relations join on a key neither has to translate: Type.field, Type.field(argument), Type.field#ordinal, or those with the step position appended in brackets. The enum site is the one form that relation has no counterpart for, its coordinate being a type, so its spelling is the bare type name. Total by construction, which is what lets it key this relation where the decomposed columns beside it cannot';
