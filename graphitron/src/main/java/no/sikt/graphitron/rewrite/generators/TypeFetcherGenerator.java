@@ -104,40 +104,7 @@ import java.util.Set;
  */
 public class TypeFetcherGenerator {
 
-    /**
-     * Legacy two-arg overload used by unit-tier tests that build only the model (no assembled
-     * schema). The validator pre-step falls back to the legacy Map-based walk when the
-     * assembled schema is unavailable; tests that need the typed-record pre-step shape rely on
-     * the three-arg overload below.
-     */
-    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
-        return generate(schema, null, outputPackage);
-    }
 
-    /**
-     * Overload for callers that hold no {@link no.sikt.graphitron.plan.EmitPlan}. The
-     * {@code assembled} parameter is the graphql-java {@link graphql.schema.GraphQLSchema} the
-     * rewrite is being generated against; the validator pre-step reads it via
-     * {@link TypeFetcherEmissionContext#assembledSchema()} to resolve each SDL arg's
-     * input-type-ness and switch input-typed args to the typed-record walk target
-     * ({@code <InputName>.fromMap(...)}). Produces the launcher relation the root emission
-     * dispatches on from the same schema (and defaults the command registry to a per-call
-     * throwaway), so test callers exercise the real row-presence routing.
-     */
-    public static List<TypeSpec> generate(GraphitronSchema schema, graphql.schema.GraphQLSchema assembled, String outputPackage) {
-        var typeUnits = no.sikt.graphitron.plan.TypeUnitCommands.produce(schema, outputPackage);
-        return generate(schema, assembled, outputPackage,
-            no.sikt.graphitron.plan.LauncherCommands.produce(schema,
-                no.sikt.graphitron.plan.ConditionCommands.produce(schema, outputPackage), outputPackage),
-            typeUnits.fetchers(),
-            typeUnits.errorFetchers(),
-            // Rowless: the routine-write relation is read from the fact store, and this overload
-            // holds no handle to one. A @routine-writing coordinate reaching here therefore fails
-            // the dispatch's drift guard by its name rather than emitting something plausible;
-            // such a caller wants the store-backed plan instead.
-            no.sikt.graphitron.plan.RoutineWriteCommands.produce(null, schema, outputPackage),
-            no.sikt.graphitron.command.KeyProjectionRelation.empty());
-    }
 
     /**
      * Canonical entry point. {@code launchers} is the plan's launcher command relation: a

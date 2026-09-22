@@ -138,6 +138,24 @@ public final class TestSchemaHelper {
     }
 
     /**
+     * Runs {@code body} against a store captured over {@code schemaText}, for a fixture whose
+     * subject is a relation the store states rather than a fold the builder used to carry. Captures
+     * the same text {@link #buildBundle} does, prelude included, so a membership read here is the
+     * one the bundle's own emission would see.
+     */
+    public static <T> T withStoreOver(String schemaText,
+            java.util.function.Function<no.sikt.graphitron.model.read.StoreHandle, T> body) {
+        String captured = (schemaText.contains("interface Node") ? "" : NODE_INTERFACE) + schemaText;
+        try (var store = no.sikt.graphitron.model.test.CapturedStore.ownStore(
+                java.nio.file.Files.createTempDirectory("relation"), captured)) {
+            return body.apply(new no.sikt.graphitron.model.read.StoreHandle(store.dsl(),
+                no.sikt.graphitron.model.test.CapturedStore.GRAPH));
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+    }
+
+    /**
      * The plan a run produces for {@code schemaText}, store-backed: capture fills a store against
      * the test catalog, the plan's producers read it, and the store closes behind them, the
      * relations it yielded being values.
@@ -182,7 +200,7 @@ public final class TestSchemaHelper {
      * store-backed plan.
      *
      * <p>The arm to reach for whenever the emission under test is one the plan dispatches on by row
-     * presence. {@code TypeFetcherGenerator.generate(schema, outputPackage)} plans no store, so any
+     * presence. {@code TypeFetcherRenderTestSupport.generate(schema, outputPackage)} plans no store, so any
      * relation read from one comes back empty there, and a coordinate the classifier still calls a
      * routine write then meets a dispatch with no row to render from. That is the generator's own
      * drift guard firing, correctly, on a fixture that simply never opened a store.

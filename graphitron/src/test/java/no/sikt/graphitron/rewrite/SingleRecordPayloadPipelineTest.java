@@ -421,7 +421,7 @@ class SingleRecordPayloadPipelineTest {
             """.formatted(directReturnInputBody(kind), mutationName(kind), kind.name());
 
         var schema = TestSchemaHelper.buildSchema(sdl);
-        var mutationFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        var mutationFetchers = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("MutationFetchers"))
             .findFirst()
             .orElseThrow();
@@ -661,7 +661,7 @@ class SingleRecordPayloadPipelineTest {
             CARRIER_WALK_LOCAL_CONTEXT_ERRORS
             + "type FilmPayload { film: Film errors: [CarrierError!] }"));
 
-        var generated = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE);
+        var generated = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE);
         var mutationFetchers = generated.stream()
             .filter(t -> t.name().equals("MutationFetchers"))
             .findFirst().orElseThrow().toString();
@@ -680,7 +680,7 @@ class SingleRecordPayloadPipelineTest {
         // The payload's ErrorsField with Transport.LocalContext is reified onto
         // FilmPayloadFetchers as an env-dependent method (return env.getLocalContext()); the
         // schema-level wiring registers a method reference into it rather than an inline lambda.
-        var wirings = no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter.emit(
+        var wirings = SchemaShapeRenderTestSupport.fetcherRegistrations(
             schema, DEFAULT_OUTPUT_PACKAGE);
         var filmPayloadWiring = wirings.get("FilmPayload");
         assertThat(filmPayloadWiring).as("FilmPayload wiring present").isNotNull();

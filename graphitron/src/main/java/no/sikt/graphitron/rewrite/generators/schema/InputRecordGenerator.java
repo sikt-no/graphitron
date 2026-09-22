@@ -61,7 +61,7 @@ public final class InputRecordGenerator {
 
     /**
      * Renders one input-record row's class: the membership decision (argument-reachable, per
-     * the schema's {@code argumentReachableInputs} fold, intersected with the record-shape
+     * the store's argument-reachable input types, intersected with the record-shape
      * capability) was made by the type-unit producer; this method builds the body for the type
      * the row names. Throws on a non-carrier type: a row for a type without a record shape is
      * a producer bug, since the producer's membership requires the capability.

@@ -99,17 +99,17 @@ class DunderFreeEmissionPipelineTest {
         List<TypeSpec> emitted = new ArrayList<>();
 
         GraphitronSchema referenceSchema = TestSchemaHelper.buildSchema(REFERENCE_SDL);
-        emitted.addAll(TypeFetcherGenerator.generate(referenceSchema, DEFAULT_OUTPUT_PACKAGE));
+        emitted.addAll(TypeFetcherRenderTestSupport.generate(referenceSchema, DEFAULT_OUTPUT_PACKAGE));
         emitted.addAll(ProjectionRenderTestSupport.renderProjections(referenceSchema, DEFAULT_OUTPUT_PACKAGE));
 
         var validatorBundle = TestSchemaHelper.buildBundle(VALIDATOR_INPUT_SDL);
-        emitted.addAll(TypeFetcherGenerator.generate(
+        emitted.addAll(TypeFetcherRenderTestSupport.generate(
             validatorBundle.model(), validatorBundle.assembled(), DEFAULT_OUTPUT_PACKAGE));
         emitted.addAll(InputRecordRenderTestSupport.renderInputRecords(
-            validatorBundle.model(), DEFAULT_OUTPUT_PACKAGE));
+            VALIDATOR_INPUT_SDL, validatorBundle.model(), DEFAULT_OUTPUT_PACKAGE));
 
         GraphitronSchema polymorphicSchema = TestSchemaHelper.buildSchema(POLYMORPHIC_SDL);
-        emitted.addAll(TypeFetcherGenerator.generate(polymorphicSchema, DEFAULT_OUTPUT_PACKAGE));
+        emitted.addAll(TypeFetcherRenderTestSupport.generate(polymorphicSchema, DEFAULT_OUTPUT_PACKAGE));
 
         assertThat(emitted)
             .as("In-process generation produced no TypeSpecs — the scan would pass vacuously.")

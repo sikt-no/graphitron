@@ -115,28 +115,6 @@ public final class ObjectTypeGenerator {
             + "; the producer's form switch and the render-side resolution disagree");
     }
 
-    /**
-     * Convenience overload for tests: derives the object-family schema-shape rows through the
-     * producer, so test membership equals the relation production folds over. {@code fetcherBodies}
-     * maps each type name to its {@code registerFetchers} body; names not present get no method.
-     */
-    public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled,
-                                          Map<String, CodeBlock> fetcherBodies) {
-        return no.sikt.graphitron.plan.TypeUnitCommands.produce(schema, "").schemaShapes().stream()
-            .filter(r -> r.form() == TypeUnitCommand.SchemaShapeForm.OBJECT
-                      || r.form() == TypeUnitCommand.SchemaShapeForm.INTERFACE
-                      || r.form() == TypeUnitCommand.SchemaShapeForm.UNION)
-            .map(r -> generateFor(schema, assembled, r, fetcherBodies.get(r.typeName())))
-            .toList();
-    }
-
-    /**
-     * Convenience overload for tests that don't need {@code registerFetchers} emission.
-     */
-    public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled) {
-        return generate(schema, assembled, Map.of());
-    }
-
     // ===== Object =====
 
     private static TypeSpec buildObjectTypeSpec(GraphQLObjectType objectType, CodeBlock fetcherBody,

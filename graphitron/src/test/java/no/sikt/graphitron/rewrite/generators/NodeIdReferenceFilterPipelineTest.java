@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.rewrite.TypeFetcherRenderTestSupport;
 import no.sikt.graphitron.rewrite.ProjectionRenderTestSupport;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.model.config.RunContext;
@@ -85,7 +86,7 @@ class NodeIdReferenceFilterPipelineTest {
         // Same landing as the inline twin: one helper on the glue class, none on the rows
         // method's host.
         assertDecodeHelperOnGlueClassOnly(schema,
-            TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+            TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
                 .filter(t -> t.name().equals("BazFetchers")).findFirst().orElseThrow());
     }
 
@@ -117,7 +118,7 @@ class NodeIdReferenceFilterPipelineTest {
 
         assertThatCode(() -> {
             ProjectionRenderTestSupport.renderProjections(schema, DEFAULT_OUTPUT_PACKAGE);
-            TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE);
+            TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE);
         }).doesNotThrowAnyException();
     }
 

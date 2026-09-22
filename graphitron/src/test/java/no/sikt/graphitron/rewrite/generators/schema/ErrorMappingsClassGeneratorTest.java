@@ -258,7 +258,7 @@ class ErrorMappingsClassGeneratorTest {
     @Test
     void byTypeConstant_isMintedForAnErrorTypeNoChannelMaps() {
         // The per-type grain is keyed on the schema's @error registry, not on channel reach. An
-        // @error type no channel maps still gets a fetchers class (TypeUnitCommands mints one per
+        // @error type no channel maps still gets a fetchers class (FetchersPlanner mints one per
         // registered @error type), and that class's message body names this constant, so a
         // channel-keyed mint would leave it naming something that does not exist.
         var mapped = errorType("FilmFkViolation", FILM_FK_FQN,

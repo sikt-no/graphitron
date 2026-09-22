@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
+import no.sikt.graphitron.rewrite.SchemaShapeRenderTestSupport;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
@@ -65,7 +66,7 @@ class FetcherRegistrationsEmitterTest {
 
     private static Map<String, CodeBlock> bodiesFor(String sdl) {
         GraphitronSchema schema = TestSchemaHelper.buildSchema(sdl);
-        return FetcherRegistrationsEmitter.emit(schema, DEFAULT_OUTPUT_PACKAGE);
+        return SchemaShapeRenderTestSupport.fetcherRegistrations(schema, DEFAULT_OUTPUT_PACKAGE);
     }
 
     private static void assertNoEmptyValues(Map<String, CodeBlock> bodies) {

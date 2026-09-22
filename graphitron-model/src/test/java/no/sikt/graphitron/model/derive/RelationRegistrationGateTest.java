@@ -412,6 +412,7 @@ class RelationRegistrationGateTest {
         registrations.put("intent_argument_filter_role", Arm.DERIVED);
         registrations.put("graphitron_facet_binding", Arm.DERIVED);
         registrations.put("graphitron_connection_facet", Arm.DERIVED);
+        registrations.put("graphitron_argument_reachable_input", Arm.DERIVED);
         registrations.put("intent_field_column_table", Arm.DERIVED);
         registrations.put("intent_field_separate_fetch", Arm.DERIVED);
         registrations.put("intent_field_producer_reference", Arm.DERIVED);

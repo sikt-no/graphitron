@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.rewrite.TypeFetcherRenderTestSupport;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
@@ -34,7 +35,7 @@ class TenantRoutedFetcherPipelineTest {
     }
 
     private static String render(GraphitronSchema schema, String className, String methodName) {
-        TypeSpec spec = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        TypeSpec spec = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> className.equals(t.name()))
             .findFirst()
             .orElseThrow(() -> new AssertionError("no generated class named " + className));
@@ -177,7 +178,7 @@ class TenantRoutedFetcherPipelineTest {
     }
 
     private static MethodSpec method(GraphitronSchema schema, String className, String methodName) {
-        TypeSpec spec = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        TypeSpec spec = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> className.equals(t.name()))
             .findFirst()
             .orElseThrow(() -> new AssertionError("no generated class named " + className));

@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.rewrite.TypeFetcherRenderTestSupport;
 import no.sikt.graphitron.rewrite.ProjectionRenderTestSupport;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
@@ -168,7 +169,7 @@ class InlineFilterArgumentSourcePipelineTest {
         assertThatCode(() -> {
             var schema = TestSchemaHelper.buildSchema(JOOQ_CONVERT_LIST_SDL);
             ProjectionRenderTestSupport.renderProjections(schema, DEFAULT_OUTPUT_PACKAGE);
-            TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE);
+            TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE);
         }).doesNotThrowAnyException();
     }
 
@@ -178,7 +179,7 @@ class InlineFilterArgumentSourcePipelineTest {
         assertThatCode(() -> {
             var schema = TestSchemaHelper.buildSchema(LIST_FILTER_SDL, FIXTURE_CTX);
             ProjectionRenderTestSupport.renderProjections(schema, DEFAULT_OUTPUT_PACKAGE);
-            TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE);
+            TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE);
         }).doesNotThrowAnyException();
     }
 }

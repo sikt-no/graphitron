@@ -128,10 +128,10 @@ class RecordParentMultiTablePolymorphicPipelineTest {
             }
             type Query { film: Film }
             """);
-        var recordSpec = TypeFetcherGenerator.generate(recordParentSchema, DEFAULT_OUTPUT_PACKAGE).stream()
+        var recordSpec = TypeFetcherRenderTestSupport.generate(recordParentSchema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst().orElseThrow();
-        var tableSpec = TypeFetcherGenerator.generate(tableParentSchema, DEFAULT_OUTPUT_PACKAGE).stream()
+        var tableSpec = TypeFetcherRenderTestSupport.generate(tableParentSchema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst().orElseThrow();
         var recordReferrers = recordSpec.methodSpecs().stream()
@@ -360,7 +360,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
         // The PolymorphicSelectionSet wrap itself is asserted at the source-emitter level by
         // PolymorphicProjectionFilterPinTest; here we pin that the full classify → generate
         // pipeline yields both helpers so the wrap reaches both branches.
-        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        var filmFetchers = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst().orElseThrow();
         var helperNames = filmFetchers.methodSpecs().stream()

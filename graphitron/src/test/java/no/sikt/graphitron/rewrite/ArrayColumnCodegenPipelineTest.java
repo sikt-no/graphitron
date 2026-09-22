@@ -51,11 +51,11 @@ class ArrayColumnCodegenPipelineTest {
     @Test
     void tableRecordKeyExtraction_overArrayColumnRow_emitsWithoutBestGuessCrash() {
         assertThatCode(() ->
-            TypeFetcherGenerator.generate(TestSchemaHelper.buildSchema(SDL), DEFAULT_OUTPUT_PACKAGE))
+            TypeFetcherRenderTestSupport.generate(TestSchemaHelper.buildSchema(SDL), DEFAULT_OUTPUT_PACKAGE))
             .as("generation over a typed-record service parent whose row carries array columns completes")
             .doesNotThrowAnyException();
 
-        var fetchers = TypeFetcherGenerator.generate(TestSchemaHelper.buildSchema(SDL), DEFAULT_OUTPUT_PACKAGE);
+        var fetchers = TypeFetcherRenderTestSupport.generate(TestSchemaHelper.buildSchema(SDL), DEFAULT_OUTPUT_PACKAGE);
         assertThat(fetchers)
             .as("the ArrayHolder datafetcher class emits despite the parent row carrying array columns")
             .anyMatch(t -> t.name().contains("ArrayHolder"));

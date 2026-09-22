@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
+import no.sikt.graphitron.rewrite.SchemaShapeRenderTestSupport;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import org.junit.jupiter.api.Test;
@@ -74,12 +75,12 @@ class DefaultValueEmissionTest {
 
     private static String findObjectBody(String sdl, String typeName) {
         var bundle = TestSchemaHelper.buildBundle(sdl);
-        return findBody(ObjectTypeGenerator.generate(bundle.model(), bundle.assembled()), typeName);
+        return findBody(SchemaShapeRenderTestSupport.objectTypes(bundle.model(), bundle.assembled()), typeName);
     }
 
     private static String findInputBody(String sdl, String typeName) {
         var bundle = TestSchemaHelper.buildBundle(sdl);
-        return findBody(InputTypeGenerator.generate(bundle.model()), typeName);
+        return findBody(SchemaShapeRenderTestSupport.inputTypes(bundle.model()), typeName);
     }
 
     private static String findBody(List<TypeSpec> specs, String typeName) {

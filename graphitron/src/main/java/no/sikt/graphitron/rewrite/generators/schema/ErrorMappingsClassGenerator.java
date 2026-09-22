@@ -55,7 +55,7 @@ import java.util.TreeMap;
  *
  * <p>Membership for the per-type grain is the model's own {@code errorTypes()} fold, unioned with
  * every type any channel maps. That fold alone is the population
- * {@code TypeUnitCommands.fetchersRows} mints a fetchers class for, so it is the population whose
+ * {@code FetchersPlanner} mints a fetchers class for, so it is the population whose
  * {@code message} body names a {@code ByType} constant; the channel side is unioned in so the
  * concatenation is total no matter which population is the wider, rather than resting on an
  * argument that the two agree. Array content is determined by the {@code @error} type's name (the

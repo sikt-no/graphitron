@@ -65,15 +65,15 @@ class FetcherRegistrationsPipelineTest {
 
     private static void assertBidirectionalInvariant(String sdl) {
         var bundle = TestSchemaHelper.buildBundle(sdl);
-        Map<String, CodeBlock> bodies = FetcherRegistrationsEmitter.emit(
+        Map<String, CodeBlock> bodies = SchemaShapeRenderTestSupport.fetcherRegistrations(
             bundle.model(), DEFAULT_OUTPUT_PACKAGE);
 
-        var schemaClass = GraphitronSchemaClassGenerator.generate(
+        var schemaClass = SchemaShapeRenderTestSupport.schemaClass(
             bundle.model(), bundle.assembled(), bodies.keySet(),
             DEFAULT_OUTPUT_PACKAGE, false);
         Set<String> callSiteTypes = collectCallSiteTypeNames(schemaClass);
 
-        var objectTypes = ObjectTypeGenerator.generate(
+        var objectTypes = SchemaShapeRenderTestSupport.objectTypes(
             bundle.model(), bundle.assembled(), bodies);
         Set<String> methodEmittingTypes = collectMethodEmittingTypeNames(objectTypes);
 

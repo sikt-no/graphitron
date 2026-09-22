@@ -84,7 +84,6 @@ public record GraphitronSchema(
     Map<FieldCoordinates, Set<ReachableSourceShape>> reachableSourceShapes,
     TenantScopes tenantScopes,
     TenantBindingIndex tenantBindings,
-    Set<String> argumentReachableInputs,
     ConnectionSynthesisRelation connectionSynthesis,
     OperationMemberRelation operationMembers,
     DeliveryFactRelation deliveryFacts,
@@ -96,7 +95,6 @@ public record GraphitronSchema(
         // other caller (unit tier, hand-built schemas) defaults to single-tenant.
         tenantScopes = tenantScopes == null ? TenantScopes.None.INSTANCE : tenantScopes;
         tenantBindings = tenantBindings == null ? TenantBindingIndex.EMPTY : tenantBindings;
-        argumentReachableInputs = argumentReachableInputs == null ? Set.of() : argumentReachableInputs;
         connectionSynthesis = connectionSynthesis == null ? ConnectionSynthesisRelation.EMPTY : connectionSynthesis;
         operationMembers = operationMembers == null ? OperationMemberRelation.EMPTY : operationMembers;
         deliveryFacts = deliveryFacts == null ? DeliveryFactRelation.EMPTY : deliveryFacts;
@@ -138,7 +136,7 @@ public record GraphitronSchema(
     public GraphitronSchema(Map<String, GraphitronType> types, Map<FieldCoordinates, GraphitronField> fields) {
         this(types, fields, groupByType(fields), Map.of(), List.of(),
             ContextArgumentClassifier.classify(fields.values()), List.of(), Map.of(), Map.of(),
-            TenantScopes.None.INSTANCE, TenantBindingIndex.EMPTY, Set.of(),
+            TenantScopes.None.INSTANCE, TenantBindingIndex.EMPTY,
             ConnectionSynthesisRelation.EMPTY, OperationMemberRelation.EMPTY,
             DeliveryFactRelation.EMPTY, SessionHooks.NotConfigured.INSTANCE);
     }
@@ -160,7 +158,8 @@ public record GraphitronSchema(
 
     /**
      * The {@link GraphitronSchemaBuilder} constructor: the seven-arg field-grouping form plus
-     * {@code tenantScopes} and {@code tenantBindings}.
+     * {@code tenantScopes} and {@code tenantBindings}. Defaults the connection-synthesis relation
+     * empty.
      */
     public GraphitronSchema(Map<String, GraphitronType> types,
                             Map<FieldCoordinates, GraphitronField> fields,
@@ -172,26 +171,7 @@ public record GraphitronSchema(
                             TenantScopes tenantScopes,
                             TenantBindingIndex tenantBindings) {
         this(types, fields, entitiesByType, warnings, diagnostics, arrivals, reachableSourceShapes,
-            tenantScopes, tenantBindings, Set.of());
-    }
-
-    /**
-     * The {@link GraphitronSchemaBuilder} constructor with the argument-reachability fold
-     * ({@link ArgumentReachableInputs}); the nine-arg form defaults it empty for callers with
-     * no assembled schema to walk. Defaults the connection-synthesis relation empty.
-     */
-    public GraphitronSchema(Map<String, GraphitronType> types,
-                            Map<FieldCoordinates, GraphitronField> fields,
-                            Map<String, EntityResolution> entitiesByType,
-                            List<BuildWarning> warnings,
-                            List<ValidationError> diagnostics,
-                            Map<String, Arrival> arrivals,
-                            Map<FieldCoordinates, Set<ReachableSourceShape>> reachableSourceShapes,
-                            TenantScopes tenantScopes,
-                            TenantBindingIndex tenantBindings,
-                            Set<String> argumentReachableInputs) {
-        this(types, fields, entitiesByType, warnings, diagnostics, arrivals, reachableSourceShapes,
-            tenantScopes, tenantBindings, argumentReachableInputs, ConnectionSynthesisRelation.EMPTY);
+            tenantScopes, tenantBindings, ConnectionSynthesisRelation.EMPTY);
     }
 
     /**
@@ -208,10 +188,9 @@ public record GraphitronSchema(
                             Map<FieldCoordinates, Set<ReachableSourceShape>> reachableSourceShapes,
                             TenantScopes tenantScopes,
                             TenantBindingIndex tenantBindings,
-                            Set<String> argumentReachableInputs,
                             ConnectionSynthesisRelation connectionSynthesis) {
         this(types, fields, entitiesByType, warnings, diagnostics, arrivals, reachableSourceShapes,
-            tenantScopes, tenantBindings, argumentReachableInputs, connectionSynthesis,
+            tenantScopes, tenantBindings, connectionSynthesis,
             OperationMemberRelation.EMPTY);
     }
 
@@ -229,11 +208,10 @@ public record GraphitronSchema(
                             Map<FieldCoordinates, Set<ReachableSourceShape>> reachableSourceShapes,
                             TenantScopes tenantScopes,
                             TenantBindingIndex tenantBindings,
-                            Set<String> argumentReachableInputs,
                             ConnectionSynthesisRelation connectionSynthesis,
                             OperationMemberRelation operationMembers) {
         this(types, fields, entitiesByType, warnings, diagnostics, arrivals, reachableSourceShapes,
-            tenantScopes, tenantBindings, argumentReachableInputs, connectionSynthesis,
+            tenantScopes, tenantBindings, connectionSynthesis,
             operationMembers, DeliveryFactRelation.EMPTY);
     }
 
@@ -251,12 +229,11 @@ public record GraphitronSchema(
                             Map<FieldCoordinates, Set<ReachableSourceShape>> reachableSourceShapes,
                             TenantScopes tenantScopes,
                             TenantBindingIndex tenantBindings,
-                            Set<String> argumentReachableInputs,
                             ConnectionSynthesisRelation connectionSynthesis,
                             OperationMemberRelation operationMembers,
                             DeliveryFactRelation deliveryFacts) {
         this(types, fields, entitiesByType, warnings, diagnostics, arrivals, reachableSourceShapes,
-            tenantScopes, tenantBindings, argumentReachableInputs, connectionSynthesis,
+            tenantScopes, tenantBindings, connectionSynthesis,
             operationMembers, deliveryFacts, SessionHooks.NotConfigured.INSTANCE);
     }
 
@@ -276,7 +253,6 @@ public record GraphitronSchema(
                             Map<FieldCoordinates, Set<ReachableSourceShape>> reachableSourceShapes,
                             TenantScopes tenantScopes,
                             TenantBindingIndex tenantBindings,
-                            Set<String> argumentReachableInputs,
                             ConnectionSynthesisRelation connectionSynthesis,
                             OperationMemberRelation operationMembers,
                             DeliveryFactRelation deliveryFacts,
@@ -284,7 +260,7 @@ public record GraphitronSchema(
         this(types, fields, groupByType(fields), Map.copyOf(entitiesByType), List.copyOf(warnings),
             ContextArgumentClassifier.classify(fields.values(), sessionHooks), List.copyOf(diagnostics),
             Map.copyOf(arrivals), Map.copyOf(reachableSourceShapes), tenantScopes, tenantBindings,
-            argumentReachableInputs, connectionSynthesis, operationMembers, deliveryFacts, sessionHooks);
+            connectionSynthesis, operationMembers, deliveryFacts, sessionHooks);
     }
 
     /**
@@ -311,7 +287,7 @@ public record GraphitronSchema(
                             ContextArgumentClassifier.Classification contextArguments,
                             List<ValidationError> diagnostics) {
         this(types, fields, fieldsByType, entitiesByType, warnings, contextArguments, diagnostics, Map.of(), Map.of(),
-            TenantScopes.None.INSTANCE, TenantBindingIndex.EMPTY, Set.of(), ConnectionSynthesisRelation.EMPTY,
+            TenantScopes.None.INSTANCE, TenantBindingIndex.EMPTY, ConnectionSynthesisRelation.EMPTY,
             OperationMemberRelation.EMPTY, DeliveryFactRelation.EMPTY, SessionHooks.NotConfigured.INSTANCE);
     }
 

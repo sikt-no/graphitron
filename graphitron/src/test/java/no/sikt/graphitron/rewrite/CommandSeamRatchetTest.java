@@ -59,8 +59,18 @@ class CommandSeamRatchetTest {
      * model for the TypeResolver, error-fetcher and scalar registration reads) and an unused
      * set-taking convenience overload left; the per-type emitters' whole-population entry
      * points became test conveniences that derive their rows through the producer.
+     * <p>18 to 9 when those test conveniences left the emitters. A convenience that derives its
+     * rows through the producer is still an emitter calling a planner, and the label made it look
+     * like scaffolding rather than a layering choice: an emitter executes commands and the
+     * generator is what calls planners in order and hands the results over. The seven of them,
+     * five schema-shape entry points and the fetchers one that orchestrated four producers at
+     * once, are {@code SchemaShapeRenderTestSupport} and {@code TypeFetcherRenderTestSupport} in
+     * the test sources now, where a fixture may hold both ends. One breach is left and is not in
+     * this count's shape: {@code TypeFetcherGenerator} builds a launcher relation mid-emit for
+     * nesting-reached types, which is the plan carrying too little rather than a call in the wrong
+     * place, and it has its own item.
      */
-    private static final int MODEL_TAKING_ENTRY_POINTS = 18;
+    private static final int MODEL_TAKING_ENTRY_POINTS = 9;
 
     /**
      * {@code instanceof} sites in {@code generators/} naming a leaf of the seven hierarchies.
@@ -159,7 +169,7 @@ class CommandSeamRatchetTest {
      * dozen restated permits) collapsed into the one membership-and-production switch
      * ({@link no.sikt.graphitron.plan.LauncherCommands}), whose totality with no default is the
      * membership enforcer. Raised to 61 when the type-unit producer
-     * ({@link no.sikt.graphitron.plan.TypeUnitCommands}) relocated the fetchers kind's variant
+     * ({@link no.sikt.graphitron.plan.FetchersPlanner}) relocated the fetchers kind's variant
      * membership (the four hosting classifications, the error and connection arms) out of the
      * retired two-pass loops. Raised to 85 when the schema-shape kind joined it: the total form
      * switch over the classification's eighteen leaf permits (including the two deliberate

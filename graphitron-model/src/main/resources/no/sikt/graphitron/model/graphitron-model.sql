@@ -10723,6 +10723,32 @@ COMMENT ON COLUMN graphitron_argmapping_match.node_type_ref IS 'the typeName: th
 COMMENT ON COLUMN graphitron_argmapping_match.leaf_named_type IS 'the bound element''s own SDL named type, wrappers stripped, carried from the candidate. What a message needs in order to say what the author tried to open: an ID that declares no @nodeId is told to annotate it, while a String is told it has nothing to open at all, and those are two remedies for one shape';
 COMMENT ON COLUMN graphitron_argmapping_match.leaf_is_list IS 'whether the bound element''s SDL type carries a list wrapper. Read where the binding is a node id with one name trailing: a list of node ids names the list of that key column across the decoded ids, which is a coherent request and not an author mistake, so nothing here rejects it and the consumer that knows which emitters exist defers on it';
 
+
+-- The reachability of an input type is a property of the emitted schema rather than of any one
+-- coordinate, so it is stated once here rather than folded per reader. UNION ALL with a path guard
+-- rather than UNION, on intent_authored_field_claim's terms: an input type may declare a field of
+-- its own type, and the recursion needs the cycle stopped rather than deduplicated after the fact.
+CREATE VIEW graphitron_argument_reachable_input (graph_name, type_name) AS
+WITH RECURSIVE reached (graph_name, type_name, path) AS (
+  SELECT DISTINCT a.graph_name, a.named_type, '/' || a.named_type || '/'
+    FROM graphitron_argument a
+    JOIN graphitron_type t
+      ON t.graph_name = a.graph_name AND t.type_name = a.named_type AND t.kind = 'INPUT_OBJECT'
+  UNION ALL
+  SELECT f.graph_name, f.named_type, r.path || f.named_type || '/'
+    FROM graphitron_field f
+    JOIN reached r
+      ON r.graph_name = f.graph_name AND r.type_name = f.type_name
+    JOIN graphitron_type t
+      ON t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind = 'INPUT_OBJECT'
+   WHERE POSITION('/' || f.named_type || '/' IN r.path) = 0
+)
+SELECT DISTINCT graph_name, type_name FROM reached;
+COMMENT ON VIEW graphitron_argument_reachable_input IS 'Which input types the emitted schema can reach from a field argument, directly or through the input fields of one it reaches. For example a FilmFilter named by Query.films(filter:) is one row, and a RatingFilter that FilmFilter declares a field of is another, while an input type nothing names is absent.';
+COMMENT ON COLUMN graphitron_argument_reachable_input.graph_name IS 'the owning graph''s partition; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_argument_reachable_input.type_name IS 'the reachable input type''s name, which with the graph is the grain. One row per type however many arguments and input fields reach it, the reaching paths being what the recursion consumes rather than what it reports';
+
+
 CREATE VIEW intent_argmapping_key_column_candidate
   (graph_name, site, use_site, type_name, field_name, position, written_path,
    bound_kind, bound_type_name, bound_field_name, bound_argument_name,
@@ -14421,6 +14447,9 @@ INSERT INTO meta_grain VALUES
   ('synthesized-federation-key',
    'one synthesized federation key, on one type, in one graph',
    'graph_name, type_name', 'sdl'),
+  ('reachable-input-type',
+   'one input type some field argument reaches, in one graph',
+   'graph_name, type_name', 'sdl'),
   ('graph-field',
    'one field one type declares, in one graph',
    'graph_name, type_name, field_name', 'sdl'),
@@ -15138,6 +15167,10 @@ INSERT INTO meta_relation VALUES
    'Which facets one connection carrier surfaces, and in which order: one row per @asFacet application reachable from the carrier''s own filter arguments.',
    'For example films(filter: FilmFilter) @asConnection surfaces every facet FilmFilter declares, in emission order.',
    'Moved out of the intent_ family by the arc that owns macro expansion. That family has no owning gatherer and is being retired, and what this derives from is graphitron''s own vocabulary decoded, so this is where the fact belongs and the graphitron gatherer, which runs the expansion, is who answers for it. The carrier population is the expansion rather than the directive: graphitron_minted_field holds a row at a field''s own coordinate exactly where @asConnection rewrote that field, so an application that expanded nothing carries no facets here and neither does a structural Connection return type. Reachability is one hop, the facet field being declared on a type an argument of the carrier names, which is the expansion''s own walk and not a closure through nested inputs. position is dense per carrier and is the emission order, which is what lets a consumer fold these rows into a file and get the same bytes twice. A name repeated across one carrier''s filters collapses to its first occurrence, which is a backstop rather than a rule: a duplicate is rejected with a named diagnostic before it can reach an accepted schema.'),
+  ('graphitron_argument_reachable_input', 'reachable-input-type', 'graphitron',
+   'Which input types the emitted schema can reach from a field argument, directly or through the input fields of one it reaches.',
+   'For example a FilmFilter named by Query.films(filter:) is one row, and a RatingFilter that FilmFilter declares a field of is another, while an input type nothing names is absent.',
+   'A view because nothing in the model derives from it. A consumer''s query reads it and that is all it is for, so it carries the rule and no table carries the rows. The moment another derivation builds on it, it is an anchor and owes a table: an anchor is what other derivations stand on, and a table is what holds a key, a foreign key and a check so an illegal state is unwritable rather than merely unexpected. That is the condition to test when adding the second reader, and it is not a question of how many consumers ask: a hundred queries reading it directly leave it a view, and one derivation standing on it does not. Stated over the emitted family rather than the transcription, because a macro mints arguments and an input reached only through a minted one is reachable in the schema the generator emits and absent from the one the author wrote. The recursion carries a path and unions all, rather than unioning distinct, because an input type may declare a field of its own type and the cycle has to be stopped as it is walked; the path is what the recursion consumes and the grain reports neither it nor how many ways a type was reached. What is deliberately not here is any bound by classification: the Java fold this replaces closed through classified input types and stopped where classification had yielded none, which narrowed it on schemas that were failing for other reasons, and nothing states that bound as intended.'),
   ('graphitron_synthesized_federation_key', 'synthesized-federation-key', 'graphitron',
    'Federation''s node-entity rule as a relation: which node types get a @key(fields: "id") nobody wrote, federation needing the entity declaration visible in the emitted SDL and a node carrying a globally-unique id by definition.',
    'For example a federation-linked graph whose Film is a node and declares no id key of its own gets one row.',

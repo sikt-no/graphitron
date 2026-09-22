@@ -152,7 +152,7 @@ class ParticipantAliasOwnerPipelineTest {
         // computations.
         var schema = TestSchemaHelper.buildSchema(OWNER_SDL);
         var projections = ProjectionRenderTestSupport.renderProjections(schema, DEFAULT_OUTPUT_PACKAGE);
-        var fetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE);
+        var fetchers = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE);
 
         for (var typeName : new String[] {"Alpha", "Beta"}) {
             for (var field : schema.fieldsOf(typeName)) {

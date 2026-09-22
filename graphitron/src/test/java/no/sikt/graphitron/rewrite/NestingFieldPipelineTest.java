@@ -157,6 +157,6 @@ class NestingFieldPipelineTest {
     }
 
     private static Map<String, CodeBlock> fetcherBodies(String sdl) {
-        return FetcherRegistrationsEmitter.emit(TestSchemaHelper.buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE);
+        return SchemaShapeRenderTestSupport.fetcherRegistrations(TestSchemaHelper.buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE);
     }
 }

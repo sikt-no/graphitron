@@ -404,7 +404,14 @@ class SupertypeSignatureGateTest {
         // to carry it, so the fold names the field-site relation, and one with arguments names the
         // argument-site one. It is a reconstruction of the set above by this gate's reading and a
         // rule with two cases by its own, and it arrived with that set rather than being written.
-        "intent_condition_membership|graphitron_argument_scope_table,graphitron_field_scope_table");
+        "intent_condition_membership|graphitron_argument_scope_table,graphitron_field_scope_table",
+        // The reachability closure's two arms, which are its seed and its step rather than two
+        // answers to one question: an argument names the input type a reach starts from, and an
+        // input field names the one it continues to. A supertype here would have to carry every
+        // typed element in the schema in order to state a rule that reads one column of two of
+        // them, and the recursion would still want the arms apart, a reach seeding from arguments
+        // alone and never from the fields it steps through.
+        "graphitron_argument_reachable_input|graphitron_argument,graphitron_field");
 
     @Test
     @DisplayName("the capture tables sharing a payload are exactly the recorded subtype sets")

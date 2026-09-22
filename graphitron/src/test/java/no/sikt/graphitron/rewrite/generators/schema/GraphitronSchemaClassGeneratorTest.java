@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
+import no.sikt.graphitron.rewrite.SchemaShapeRenderTestSupport;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
@@ -21,7 +22,7 @@ class GraphitronSchemaClassGeneratorTest {
     @Test
     void generate_returnsExactlyOneClassNamedGraphitronSchema() {
         var bundle = TestSchemaHelper.buildBundle("type Query { x: String }");
-        List<TypeSpec> result = GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled(), Set.of(), OUTPUT_PKG);
+        List<TypeSpec> result = SchemaShapeRenderTestSupport.schemaClass(bundle.model(), bundle.assembled(), Set.of(), OUTPUT_PKG);
         assertThat(result).hasSize(1);
         var spec = result.get(0);
         assertThat(spec.name()).isEqualTo("GraphitronSchema");
@@ -119,7 +120,7 @@ class GraphitronSchemaClassGeneratorTest {
             directive @auth(roles: [String!]) on FIELD_DEFINITION
             type Query { secret: String @auth(roles: ["admin"]) }
             """);
-        var body = GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled()).get(0).toString();
+        var body = SchemaShapeRenderTestSupport.schemaClass(bundle.model(), bundle.assembled()).get(0).toString();
         assertThat(body)
             .contains(".additionalDirective(")
             .contains(".name(\"auth\")");
@@ -140,7 +141,7 @@ class GraphitronSchemaClassGeneratorTest {
             extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
             type Query { x: String }
             """);
-        var body = GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled()).get(0).toString();
+        var body = SchemaShapeRenderTestSupport.schemaClass(bundle.model(), bundle.assembled()).get(0).toString();
         assertThat(body)
             .contains(".withSchemaAppliedDirectives(java.util.List.of(")
             .contains("graphql.schema.GraphQLAppliedDirective.newDirective()")
@@ -162,14 +163,14 @@ class GraphitronSchemaClassGeneratorTest {
     @Test
     void build_skipsWithSchemaAppliedDirectives_whenNoSchemaLevelSurvivors() {
         var bundle = TestSchemaHelper.buildBundle("type Query { x: String }");
-        var body = GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled()).get(0).toString();
+        var body = SchemaShapeRenderTestSupport.schemaClass(bundle.model(), bundle.assembled()).get(0).toString();
         assertThat(body).doesNotContain(".withSchemaAppliedDirectives(");
     }
 
     @Test
     void build_skipsAdditionalDirective_forGeneratorOnlyDirectives() {
         var bundle = TestSchemaHelper.buildBundle("type Query { x: String }");
-        var body = GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled()).get(0).toString();
+        var body = SchemaShapeRenderTestSupport.schemaClass(bundle.model(), bundle.assembled()).get(0).toString();
         assertThat(body).doesNotContain(".name(\"table\")");
         assertThat(body).doesNotContain(".name(\"field\")");
         assertThat(body).doesNotContain(".name(\"condition\")");
@@ -185,7 +186,7 @@ class GraphitronSchemaClassGeneratorTest {
             type Film @table(name: "film") { title: String }
             type Person @table(name: "actor") { firstName: String }
             """);
-        var body = GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled(), Set.of("Film", "Person", "Query"), OUTPUT_PKG)
+        var body = SchemaShapeRenderTestSupport.schemaClass(bundle.model(), bundle.assembled(), Set.of("Film", "Person", "Query"), OUTPUT_PKG)
             .get(0).toString();
         assertThat(body).contains("com.example.schema.FilmType.registerFetchers(codeRegistry)");
         assertThat(body).contains("com.example.schema.PersonType.registerFetchers(codeRegistry)");
@@ -200,7 +201,7 @@ class GraphitronSchemaClassGeneratorTest {
     @Test
     void build_callsRegisterFetchersBeforeAnySchemaBuilderSetup() {
         var bundle = TestSchemaHelper.buildBundle("type Query { x: String }");
-        var body = GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled(), Set.of("Query"), OUTPUT_PKG)
+        var body = SchemaShapeRenderTestSupport.schemaClass(bundle.model(), bundle.assembled(), Set.of("Query"), OUTPUT_PKG)
             .get(0).toString();
         int registerIdx = body.indexOf("registerFetchers(codeRegistry)");
         int schemaBuilderIdx = body.indexOf("schemaBuilder = graphql.schema.GraphQLSchema.newSchema()");
@@ -577,7 +578,7 @@ class GraphitronSchemaClassGeneratorTest {
     @Test
     void federation_emitsTwoMethodsWhenFederationLinkTrue() {
         var bundle = TestSchemaHelper.buildBundle("type Query { x: String }");
-        var spec = GraphitronSchemaClassGenerator.generate(
+        var spec = SchemaShapeRenderTestSupport.schemaClass(
             bundle.model(), bundle.assembled(), Set.of(), OUTPUT_PKG, true).get(0);
         assertThat(publicBuilds(spec)).extracting(MethodSpec::name)
             .containsExactly("build", "build");
@@ -586,7 +587,7 @@ class GraphitronSchemaClassGeneratorTest {
     @Test
     void federation_oneArgMethodDelegatesToTwoArgForm() {
         var bundle = TestSchemaHelper.buildBundle("type Query { x: String }");
-        var builds = publicBuilds(GraphitronSchemaClassGenerator.generate(
+        var builds = publicBuilds(SchemaShapeRenderTestSupport.schemaClass(
             bundle.model(), bundle.assembled(), Set.of(), OUTPUT_PKG, true).get(0));
         var oneArg = builds.get(0);
         assertThat(oneArg.parameters()).hasSize(1);
@@ -596,7 +597,7 @@ class GraphitronSchemaClassGeneratorTest {
     @Test
     void federation_twoArgBodyCallsFederationTransform() {
         var bundle = TestSchemaHelper.buildBundle("type Query { x: String }");
-        var builds = publicBuilds(GraphitronSchemaClassGenerator.generate(
+        var builds = publicBuilds(SchemaShapeRenderTestSupport.schemaClass(
             bundle.model(), bundle.assembled(), Set.of(), OUTPUT_PKG, true).get(0));
         var twoArg = builds.get(1);
         assertThat(twoArg.parameters()).hasSize(2);
@@ -610,7 +611,7 @@ class GraphitronSchemaClassGeneratorTest {
     @Test
     void federation_twoArgBodyInvokesFederationCustomizerBeforeBuild() {
         var bundle = TestSchemaHelper.buildBundle("type Query { x: String }");
-        var builds = publicBuilds(GraphitronSchemaClassGenerator.generate(
+        var builds = publicBuilds(SchemaShapeRenderTestSupport.schemaClass(
             bundle.model(), bundle.assembled(), Set.of(), OUTPUT_PKG, true).get(0));
         var body = builds.get(1).code().toString();
         int customizerIdx = body.indexOf("federationCustomizer.accept(fb)");
@@ -700,7 +701,7 @@ class GraphitronSchemaClassGeneratorTest {
 
     private static TypeSpec generate(String sdl) {
         var bundle = TestSchemaHelper.buildBundle(sdl);
-        return GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled(), Set.of(), OUTPUT_PKG).get(0);
+        return SchemaShapeRenderTestSupport.schemaClass(bundle.model(), bundle.assembled(), Set.of(), OUTPUT_PKG).get(0);
     }
 
     /**

@@ -35,7 +35,7 @@ class SessionHandleGuardPipelineTest {
             }
             """);
 
-        var queryFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        var queryFetchers = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("QueryFetchers"))
             .findFirst()
             .orElseThrow();
@@ -59,7 +59,7 @@ class SessionHandleGuardPipelineTest {
             type Query { films: [Film!]! }
             """);
 
-        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        var filmFetchers = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst()
             .orElseThrow();

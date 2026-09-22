@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
+import no.sikt.graphitron.rewrite.SchemaShapeRenderTestSupport;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import org.junit.jupiter.api.Test;
@@ -104,7 +105,7 @@ class InputTypeGeneratorTest {
 
     private static List<TypeSpec> generateFor(String sdl) {
         var bundle = TestSchemaHelper.buildBundle(sdl);
-        return InputTypeGenerator.generate(bundle.model());
+        return SchemaShapeRenderTestSupport.inputTypes(bundle.model());
     }
 
     private static TypeSpec findByName(List<TypeSpec> specs, String name) {

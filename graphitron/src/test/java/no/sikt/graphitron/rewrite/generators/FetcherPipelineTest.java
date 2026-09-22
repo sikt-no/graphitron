@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.rewrite.TypeFetcherRenderTestSupport;
+import no.sikt.graphitron.rewrite.SchemaShapeRenderTestSupport;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
@@ -965,7 +967,7 @@ class FetcherPipelineTest {
     // ===== Helpers =====
 
     private List<String> generate(String sdl) {
-        return TypeFetcherGenerator.generate(buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE).stream()
+        return TypeFetcherRenderTestSupport.generate(buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE).stream()
             .map(TypeSpec::name)
             .toList();
     }
@@ -1038,7 +1040,7 @@ class FetcherPipelineTest {
             """;
         var bundle = TestSchemaHelper.buildBundle(sdl);
         var classes = no.sikt.graphitron.rewrite.InputRecordRenderTestSupport
-            .renderInputRecords(bundle.model(), DEFAULT_OUTPUT_PACKAGE)
+            .renderInputRecords(sdl, bundle.model(), DEFAULT_OUTPUT_PACKAGE)
             .stream().map(TypeSpec::name).toList();
         assertThat(classes).contains("ReachedInput");
         assertThat(classes).doesNotContain("UnreachedInput");
@@ -1078,7 +1080,7 @@ class FetcherPipelineTest {
             }
             """;
         var bundle = TestSchemaHelper.buildBundle(sdl);
-        var specs = TypeFetcherGenerator.generate(bundle.model(), bundle.assembled(), DEFAULT_OUTPUT_PACKAGE);
+        var specs = TypeFetcherRenderTestSupport.generate(bundle.model(), bundle.assembled(), DEFAULT_OUTPUT_PACKAGE);
         var mutationFetchers = specs.stream()
             .filter(t -> t.name().equals("MutationFetchers"))
             .findFirst()
@@ -1107,7 +1109,7 @@ class FetcherPipelineTest {
     private TypeSpec inputRecordSpec(String typeName, String sdl) {
         var bundle = TestSchemaHelper.buildBundle(sdl);
         var specs = no.sikt.graphitron.rewrite.InputRecordRenderTestSupport
-            .renderInputRecords(bundle.model(), DEFAULT_OUTPUT_PACKAGE);
+            .renderInputRecords(sdl, bundle.model(), DEFAULT_OUTPUT_PACKAGE);
         return specs.stream()
             .filter(t -> t.name().equals(typeName))
             .findFirst()
@@ -1117,7 +1119,7 @@ class FetcherPipelineTest {
     }
 
     private TypeSpec findSpec(String className, String sdl) {
-        return TypeFetcherGenerator.generate(buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE).stream()
+        return TypeFetcherRenderTestSupport.generate(buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals(className))
             .findFirst()
             .orElseThrow(() -> new AssertionError("Class not found: " + className));
@@ -1131,7 +1133,7 @@ class FetcherPipelineTest {
     }
 
     private java.util.Map<String, CodeBlock> fetcherBodies(String sdl) {
-        return FetcherRegistrationsEmitter.emit(buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE);
+        return SchemaShapeRenderTestSupport.fetcherRegistrations(buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE);
     }
 
     private GraphitronSchema buildSchema(String schemaText) {

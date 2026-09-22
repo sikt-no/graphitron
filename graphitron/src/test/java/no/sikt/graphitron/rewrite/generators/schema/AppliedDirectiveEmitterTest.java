@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
+import no.sikt.graphitron.rewrite.SchemaShapeRenderTestSupport;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import org.junit.jupiter.api.Test;
@@ -163,8 +164,8 @@ class AppliedDirectiveEmitterTest {
             type Query { x: String }
             """;
         var bundle = TestSchemaHelper.buildBundle(sdl);
-        String rendered = GraphitronSchemaClassGenerator
-            .generate(bundle.model(), bundle.assembled()).get(0).toString();
+        String rendered = SchemaShapeRenderTestSupport
+            .schemaClass(bundle.model(), bundle.assembled()).get(0).toString();
         assertThat(rendered)
             .contains(".withSchemaAppliedDirectives(")
             .contains(".name(\"link\")")
@@ -178,14 +179,14 @@ class AppliedDirectiveEmitterTest {
     void applicationsForSchema_skipsGeneratorOnlyDirectives() {
         String sdl = "type Query { x: String }";
         var bundle = TestSchemaHelper.buildBundle(sdl);
-        String rendered = GraphitronSchemaClassGenerator
-            .generate(bundle.model(), bundle.assembled()).get(0).toString();
+        String rendered = SchemaShapeRenderTestSupport
+            .schemaClass(bundle.model(), bundle.assembled()).get(0).toString();
         assertThat(rendered).doesNotContain(".withSchemaAppliedDirectives(");
     }
 
     private static String findTypeBody(String sdl, String typeName) {
         var bundle = TestSchemaHelper.buildBundle(sdl);
-        var specs = ObjectTypeGenerator.generate(bundle.model(), bundle.assembled());
+        var specs = SchemaShapeRenderTestSupport.objectTypes(bundle.model(), bundle.assembled());
         TypeSpec spec = specs.stream()
             .filter(s -> s.name().equals(typeName))
             .findFirst()
@@ -199,6 +200,6 @@ class AppliedDirectiveEmitterTest {
     @SuppressWarnings("unused")
     private static List<TypeSpec> all(String sdl) {
         var bundle = TestSchemaHelper.buildBundle(sdl);
-        return ObjectTypeGenerator.generate(bundle.model(), bundle.assembled());
+        return SchemaShapeRenderTestSupport.objectTypes(bundle.model(), bundle.assembled());
     }
 }

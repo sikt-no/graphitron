@@ -22,9 +22,9 @@ public sealed interface TypeUnitCommand {
 
     /**
      * The input-record carrier class ({@code <pkg>.inputs.<Input>}): emitted for an SDL input
-     * type exactly when it is argument-reachable (the schema's
-     * {@code argumentReachableInputs} fold, a transitive closure over field arguments and
-     * nested input components) and carries a record shape. Non-reachable inputs are dead schema
+     * type exactly when it is argument-reachable ({@code graphitron_argument_reachable_input},
+     * the store's transitive closure over field arguments and nested input components, which
+     * {@link no.sikt.graphitron.plan.InputRecordPlanner} queries) and carries a record shape. Non-reachable inputs are dead schema
      * and get no row.
      */
     record InputRecordUnit(String typeName, UnitRef unit) implements TypeUnitCommand {

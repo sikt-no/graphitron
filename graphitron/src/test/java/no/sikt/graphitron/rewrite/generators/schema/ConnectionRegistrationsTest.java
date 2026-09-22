@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
+import no.sikt.graphitron.rewrite.SchemaShapeRenderTestSupport;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
@@ -81,7 +82,7 @@ class ConnectionRegistrationsTest {
 
     private static String bodyFor(String sdl, String connectionTypeName) {
         GraphitronSchema schema = TestSchemaHelper.buildSchema(sdl);
-        Map<String, CodeBlock> bodies = FetcherRegistrationsEmitter.emit(
+        Map<String, CodeBlock> bodies = SchemaShapeRenderTestSupport.fetcherRegistrations(
             schema, DEFAULT_OUTPUT_PACKAGE);
         var block = bodies.get(connectionTypeName);
         if (block == null) {

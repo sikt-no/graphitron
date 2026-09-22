@@ -3,7 +3,6 @@ package no.sikt.graphitron.rewrite.generators.schema;
 import no.sikt.graphitron.command.TypeUnitCommand;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.plan.TypeUnitCommands;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.generators.FetcherEmitter;
 import no.sikt.graphitron.rewrite.generators.ParentSourceBinding;
@@ -127,14 +126,6 @@ public final class FetcherRegistrationsEmitter {
         return result;
     }
 
-    /**
-     * Convenience overload for tests: derives the schema-shape rows through the producer so the
-     * rendered body set is the flagged-row set production uses.
-     */
-    public static Map<String, CodeBlock> emit(GraphitronSchema schema, String outputPackage) {
-        return emit(schema, outputPackage,
-            TypeUnitCommands.produce(schema, outputPackage).schemaShapes());
-    }
 
     private static Optional<CodeBlock> typeBody(GraphitronSchema schema, String typeName,
             no.sikt.graphitron.plan.GeneratedUnits units, String outputPackage, NestedTypeWiring dualWiring) {

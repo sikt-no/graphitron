@@ -39,17 +39,6 @@ public final class EnumTypeGenerator {
         return buildEnumTypeSpec(et);
     }
 
-    /**
-     * Convenience overload for tests: derives the enum-form schema-shape rows through the
-     * producer, so test membership equals the relation production folds over.
-     */
-    public static List<TypeSpec> generate(GraphitronSchema schema) {
-        return no.sikt.graphitron.plan.TypeUnitCommands.produce(schema, "").schemaShapes().stream()
-            .filter(r -> r.form() == no.sikt.graphitron.command.TypeUnitCommand.SchemaShapeForm.ENUM)
-            .map(r -> generateFor((GraphitronType.EnumType) schema.type(r.typeName())))
-            .toList();
-    }
-
     private static TypeSpec buildEnumTypeSpec(GraphitronType.EnumType et) {
         var schemaType = et.schemaType();
         var sink = new HelperMethodSink();

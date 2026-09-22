@@ -383,33 +383,6 @@ public final class GraphitronSchemaClassGenerator {
         return List.of(classBuilder.build());
     }
 
-    /**
-     * Convenience overload for tests: derives the schema-shape rows through the producer with
-     * the {@code registersFetchers} flag overridden to {@code typesWithFetchers} containment,
-     * so a test can pin the registration call sites for a chosen name set without building the
-     * registration bodies. Production passes the plan's rows to the canonical method instead.
-     */
-    public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled,
-                                          Set<String> typesWithFetchers, String outputPackage,
-                                          boolean federationLink) {
-        var rows = no.sikt.graphitron.plan.TypeUnitCommands.produce(schema, outputPackage)
-            .schemaShapes().stream()
-            .map(r -> new no.sikt.graphitron.command.TypeUnitCommand.SchemaShapeUnit(
-                r.typeName(), r.unit(), r.form(), typesWithFetchers.contains(r.typeName())))
-            .toList();
-        return generate(schema, assembled, rows, outputPackage, federationLink);
-    }
-
-    /** Convenience overload for tests — empty fetcher set, no output-package prefix. */
-    public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled) {
-        return generate(schema, assembled, Set.of(), "", false);
-    }
-
-    /** Convenience overload for tests that pass a fetcher set and an output-package but no federation. */
-    public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled,
-                                          Set<String> typesWithFetchers, String outputPackage) {
-        return generate(schema, assembled, typesWithFetchers, outputPackage, false);
-    }
 
     /**
      * True for a {@link UnionType} or {@link InterfaceType} whose participants are all classified

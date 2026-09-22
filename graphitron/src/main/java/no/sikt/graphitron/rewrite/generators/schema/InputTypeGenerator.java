@@ -55,17 +55,6 @@ public final class InputTypeGenerator {
         return buildInputTypeSpec(it.schemaType());
     }
 
-    /**
-     * Convenience overload for tests: derives the input-form schema-shape rows through the
-     * producer, so test membership equals the relation production folds over.
-     */
-    public static List<TypeSpec> generate(GraphitronSchema schema) {
-        return no.sikt.graphitron.plan.TypeUnitCommands.produce(schema, "").schemaShapes().stream()
-            .filter(r -> r.form() == no.sikt.graphitron.command.TypeUnitCommand.SchemaShapeForm.INPUT)
-            .map(r -> generateFor((GraphitronType.InputType) schema.type(r.typeName())))
-            .toList();
-    }
-
     private static TypeSpec buildInputTypeSpec(GraphQLInputObjectType inputType) {
         var sink = new HelperMethodSink();
         var body = CodeBlock.builder();

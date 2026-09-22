@@ -96,7 +96,7 @@ public final class SessionHooksFixtures {
     public static GraphitronSchema withHooks(GraphitronSchema model, SessionHooks hooks) {
         return new GraphitronSchema(model.types(), model.fields(), model.entitiesByType(),
             model.warnings(), model.diagnostics(), model.arrivals(), model.reachableSourceShapes(),
-            model.tenantScopes(), model.tenantBindings(), model.argumentReachableInputs(),
+            model.tenantScopes(), model.tenantBindings(),
             model.connectionSynthesis(), model.operationMembers(), model.deliveryFacts(), hooks);
     }
 }

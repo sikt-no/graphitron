@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
+import no.sikt.graphitron.rewrite.SchemaShapeRenderTestSupport;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import org.junit.jupiter.api.Test;
@@ -111,7 +112,7 @@ class EnumTypeGeneratorTest {
     }
 
     private static List<TypeSpec> generateFor(String sdl) {
-        return EnumTypeGenerator.generate(TestSchemaHelper.buildBundle(sdl).model());
+        return SchemaShapeRenderTestSupport.enumTypes(TestSchemaHelper.buildBundle(sdl).model());
     }
 
     private static TypeSpec findByName(List<TypeSpec> specs, String name) {

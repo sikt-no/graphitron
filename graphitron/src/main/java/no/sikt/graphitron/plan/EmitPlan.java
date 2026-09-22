@@ -6,6 +6,7 @@ import no.sikt.graphitron.command.LaunchSource;
 import no.sikt.graphitron.command.GlobalUnitKind;
 import no.sikt.graphitron.command.UnitRef;
 import no.sikt.graphitron.model.read.StoreHandle;
+
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.model.derive.ResolvedKeyProjections;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -82,13 +83,25 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
      * bundle's schema-level facts; the schema's resolved session-hook carrier
      * ({@link GraphitronSchema#sessionHooks()}) decides the connection runtime's hook unit;
      * {@code outputPackage} anchors every unit name. {@code projections} is the store's resolved
-     * key projections and {@code store} the open handle a producer reads its own facts through;
-     * both arrive from the fact store rather than from the walk, and
-     * {@link #produceWithoutStore} is the arm for a caller that has neither.
+     * key projections and {@code store} the open handle each planner reads its own facts through;
+     * both arrive from the fact store rather than from the walk, and {@link #produceWithoutStore}
+     * is the arm for a caller that has neither.
      *
-     * <p>The handle is the direction of travel: each producer that converts stops reading the
-     * classified schema and starts reading the store through this parameter, so a conversion is a
-     * change here and in that producer rather than a change to how the plan is called.
+     * <p>A planner's query is its own. What one needs is its business, so this method hands the
+     * handle down rather than reading on anyone's behalf, and a second planner wanting the same
+     * rows writes its own query rather than borrowing one. A derivation two of them would share is
+     * a fact missing from the model rather than a helper missing from this package, and pushing it
+     * down is the fix: {@code graphitron_argument_reachable_input} is that move, and the query
+     * over it is four lines in the planner that wanted it. {@link RoutineWriteFacts} is the
+     * standing exception, a query surface built for reuse, and is the shape to dissolve rather
+     * than to copy.
+     *
+     * <p>A command relation is the result and holds no handle: {@link TypeUnitRelation} and its
+     * siblings are immutable data a caller reads, never a thing that asks the store something.
+     *
+     * <p>The handle is the direction of travel: each planner that converts stops reading the
+     * classified schema and starts reading what the store states, which is a change here and in
+     * that planner rather than a change to how the plan is called.
      */
     public static EmitPlan produce(GraphitronSchema schema,
                                    boolean federationLink,
@@ -160,7 +173,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
             projectionRelation,
             launchers,
             FetcherEdgeCommands.produce(schema, conditions, outputPackage),
-            TypeUnitCommands.produce(schema, outputPackage),
+            typeUnits(store, schema, outputPackage),
             routineWrites,
             keyProjections);
     }
@@ -205,6 +218,22 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
                     + " stops here instead");
             }
         }
+    }
+
+    /**
+     * The per-type compilation units this run emits, composed from the three planners that decide
+     * them. Composed here rather than in one producer: input-record membership is a reach fact,
+     * the fetcher arms ask which types host fetchers, and a schema shape asks which have a
+     * graphql-java form. Three questions, three planners, and this method is the only place that
+     * wants all three answers at once.
+     */
+    private static TypeUnitRelation typeUnits(StoreHandle store, GraphitronSchema schema,
+                                              String outputPackage) {
+        var rows = new java.util.ArrayList<no.sikt.graphitron.command.TypeUnitCommand>();
+        rows.addAll(InputRecordPlanner.produce(store, schema, outputPackage));
+        rows.addAll(FetchersPlanner.produce(schema, outputPackage));
+        rows.addAll(SchemaShapePlanner.produce(schema, outputPackage));
+        return new TypeUnitRelation(rows);
     }
 
     /**

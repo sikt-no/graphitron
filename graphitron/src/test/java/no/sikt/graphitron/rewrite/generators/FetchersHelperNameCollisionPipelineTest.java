@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.rewrite.TypeFetcherRenderTestSupport;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
@@ -152,7 +153,7 @@ class FetchersHelperNameCollisionPipelineTest {
 
     private static TypeSpec findSpec(String className, String sdl) {
         GraphitronSchema schema = TestSchemaHelper.buildSchema(sdl, multiSchemaContext());
-        return TypeFetcherGenerator.generate(schema, MULTI_OUTPUT_PACKAGE).stream()
+        return TypeFetcherRenderTestSupport.generate(schema, MULTI_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals(className))
             .findFirst()
             .orElseThrow(() -> new AssertionError("Class not found: " + className));

@@ -35,7 +35,7 @@ class BatchedTableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        var filmFetchers = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst()
             .orElseThrow();
@@ -55,7 +55,7 @@ class BatchedTableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var fetcherMethod = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        var fetcherMethod = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst().orElseThrow()
             .methodSpecs().stream()
@@ -79,7 +79,7 @@ class BatchedTableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var rowsMethod = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        var rowsMethod = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst().orElseThrow()
             .methodSpecs().stream()
@@ -109,7 +109,7 @@ class BatchedTableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        var filmFetchers = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst()
             .orElseThrow();
@@ -134,7 +134,7 @@ class BatchedTableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        var filmFetchers = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst()
             .orElseThrow();
@@ -155,7 +155,7 @@ class BatchedTableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var plainFilmFetchers = TypeFetcherGenerator.generate(schemaPlain, DEFAULT_OUTPUT_PACKAGE).stream()
+        var plainFilmFetchers = TypeFetcherRenderTestSupport.generate(schemaPlain, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst().orElseThrow();
 
@@ -180,7 +180,7 @@ class BatchedTableFieldPipelineTest {
             type Query { customer: Customer }
             """);
 
-        var customerFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        var customerFetchers = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("CustomerFetchers"))
             .findFirst().orElseThrow();
 
@@ -210,7 +210,7 @@ class BatchedTableFieldPipelineTest {
             type Query { customer: Customer }
             """);
 
-        var fetcherMethod = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        var fetcherMethod = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("CustomerFetchers"))
             .findFirst().orElseThrow()
             .methodSpecs().stream()
@@ -240,7 +240,7 @@ class BatchedTableFieldPipelineTest {
             type Query { customer: Customer }
             """);
 
-        var customerFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        var customerFetchers = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("CustomerFetchers"))
             .findFirst().orElseThrow();
 
@@ -258,7 +258,7 @@ class BatchedTableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        var filmFetchers = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst()
             .orElseThrow();
@@ -283,7 +283,7 @@ class BatchedTableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        var filmFetchers = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst().orElseThrow();
 
@@ -317,7 +317,7 @@ class BatchedTableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        var filmFetchers = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst().orElseThrow();
 
@@ -361,7 +361,7 @@ class BatchedTableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        var filmFetchers = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst().orElseThrow();
 
@@ -389,7 +389,7 @@ class BatchedTableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var all = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE);
+        var all = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE);
 
         var filmInfoFetchers = all.stream()
             .filter(t -> t.name().equals("FilmInfoFetchers"))
@@ -412,7 +412,7 @@ class BatchedTableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        var filmFetchers = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst()
             .orElseThrow();

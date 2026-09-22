@@ -363,10 +363,6 @@ public class GraphitronSchemaBuilder {
         var tenantBindings = TenantBindingIndex.compute(
             ctx.schema, dedupedFields, entitiesByType, ctx.types, ctx.tenantScopes, operationMembers,
             columnBindings);
-        // The argument-reachability closure over input types: a type-grain fact with more than
-        // one consumer (the input-record emit membership today, the compile graph's inputRecord
-        // nodes at the graph's migration), computed once here so no emit-side site re-derives it.
-        var argumentReachableInputs = ArgumentReachableInputs.compute(ctx.types, rebuiltAssembled);
         // The session-hook resolution: the authored <sessionState> strings arrive on
         // RunContext and are reflected here, the stage that owns ServiceCatalog, into the
         // total resolved carrier the emit-side readers switch on. A reflection failure drains
@@ -385,7 +381,7 @@ public class GraphitronSchemaBuilder {
         var model = new GraphitronSchema(
             ctx.types, Collections.unmodifiableMap(dedupedFields), entitiesByType, ctx.warnings(),
             ctx.diagnostics(), arrivals, reachableSourceShapes, ctx.tenantScopes, tenantBindings,
-            argumentReachableInputs, connectionSynthesis, operationMembers, deliveryFacts,
+            connectionSynthesis, operationMembers, deliveryFacts,
             sessionHookResolution.hooks());
         return new BuildResult(model, rebuiltAssembled);
     }

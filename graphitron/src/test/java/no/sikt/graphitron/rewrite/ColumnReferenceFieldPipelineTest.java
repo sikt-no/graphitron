@@ -37,7 +37,7 @@ class ColumnReferenceFieldPipelineTest {
 
     @Test
     void directColumnReference_singleHop_reifiesReadMethod() {
-        var filmFetchers = TypeFetcherGenerator.generate(
+        var filmFetchers = TypeFetcherRenderTestSupport.generate(
                 TestSchemaHelper.buildSchema(SINGLE_HOP_SDL), DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst()
@@ -50,7 +50,7 @@ class ColumnReferenceFieldPipelineTest {
 
     @Test
     void directColumnReference_singleHop_fetcherValueIsEnvDependentReference() {
-        var bodies = FetcherRegistrationsEmitter.emit(
+        var bodies = SchemaShapeRenderTestSupport.fetcherRegistrations(
             TestSchemaHelper.buildSchema(SINGLE_HOP_SDL), DEFAULT_OUTPUT_PACKAGE);
         assertThat(TypeSpecAssertions.wiringFor(bodies, "Film", "languageName"))
             .as("the read is result-key-aware (reads env.getField().getResultKey()), so it binds "

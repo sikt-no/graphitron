@@ -3,9 +3,12 @@ package no.sikt.graphitron.plan;
 import no.sikt.graphitron.command.TypeUnitCommand;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+
+import java.nio.file.Path;
 import no.sikt.graphitron.rewrite.model.HasInputRecordShape;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -20,36 +23,35 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TypeUnitMembershipTest {
 
     @Test
-    void inputRecords_argumentReachabilityIntersectedWithTheRecordShapeCapability() {
+    void inputRecords_argumentReachabilityIntersectedWithTheRecordShapeCapability(
+            @TempDir Path directory) {
         // Boundary shapes: a directly argument-referenced input, an input reached only
         // transitively through a nested component, and a declared-but-unreachable input (dead
         // schema, no row).
-        var schema = TestSchemaHelper.buildSchema("""
+        var sdl = """
             input FilmFilter { title: String nested: NestedFilter }
             input NestedFilter { rating: String }
             input OrphanInput { unused: String }
             type Film @table(name: "film") { title: String }
             type Query { films(filter: FilmFilter): [Film!]! }
-            """);
+            """;
+        var schema = TestSchemaHelper.buildSchema(sdl);
 
-        var relation = TypeUnitCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
+        // Read through a store-backed plan rather than the planner directly: reachability is
+        // a relation the store states, so a fixture that opens no store reads it empty and the
+        // membership below would pass for the wrong reason.
+        var relation = TestSchemaHelper.storeBackedPlan(directory, sdl).typeUnits();
 
-        // Forward: every row is argument-reachable and carries the capability, and its ref is
-        // the minted inputs address.
+        // Forward: every row carries the capability, and its ref is the minted inputs address.
         for (var row : relation.inputRecords()) {
-            assertThat(schema.argumentReachableInputs()).contains(row.typeName());
             assertThat(schema.type(row.typeName())).isInstanceOf(HasInputRecordShape.class);
             assertThat(row.unit().fqcn()).isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".inputs." + row.typeName());
         }
-        // Backward: every reachable capability carrier has exactly one row; the unreachable
-        // input has none.
+        // Backward, and the reach rule itself: transitive through a nested component, and the
+        // declared-but-unreachable input is dead schema with no row.
         assertThat(relation.inputRecords())
             .extracting(TypeUnitCommand.InputRecordUnit::typeName)
             .containsExactly("FilmFilter", "NestedFilter");
-        // The reach fold itself: transitive through nested components, dead schema excluded.
-        assertThat(schema.argumentReachableInputs())
-            .contains("FilmFilter", "NestedFilter")
-            .doesNotContain("OrphanInput");
     }
 
     @Test
@@ -60,7 +62,7 @@ class TypeUnitMembershipTest {
             type Query { films: [Film!]! @asConnection @defaultOrder(primaryKey: true) }
             """);
 
-        var relation = TypeUnitCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
+        var relation = new TypeUnitRelation(FetchersPlanner.produce(schema, DEFAULT_OUTPUT_PACKAGE));
 
         // Forward: the hosting classifications (Query the root, Film the table) and the
         // nesting-reached FilmDetails each have exactly one plain row at the fetchers address.
@@ -99,14 +101,14 @@ class TypeUnitMembershipTest {
             type Query { films(filter: FilmFilter, rating: Rating): [Film!]! @asConnection @defaultOrder(primaryKey: true) }
             """);
 
-        var relation = TypeUnitCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
-        var byName = relation.schemaShapes().stream()
+        var schemaShapes = SchemaShapePlanner.produce(schema, DEFAULT_OUTPUT_PACKAGE);
+        var byName = schemaShapes.stream()
             .collect(java.util.stream.Collectors.toMap(
                 TypeUnitCommand.SchemaShapeUnit::typeName, row -> row));
 
         // Forward: every row's ref is the minted schema address, and no row names a scalar,
         // an unclassified verdict, or an underscore-internal type.
-        for (var row : relation.schemaShapes()) {
+        for (var row : schemaShapes) {
             assertThat(row.unit().fqcn())
                 .isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".schema." + row.typeName() + "Type");
             assertThat(schema.type(row.typeName()))
@@ -127,11 +129,11 @@ class TypeUnitMembershipTest {
         // The registersFetchers flag: hosting classifications with a classified coordinate and
         // the reach-fold owner are true; connection and edge carriers are unconditionally true;
         // PageInfo, enums, inputs and plain interfaces carry no registration body.
-        var connection = relation.schemaShapes().stream()
+        var connection = schemaShapes.stream()
             .filter(row -> schema.type(row.typeName())
                 instanceof no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType)
             .findFirst().orElseThrow();
-        var edge = relation.schemaShapes().stream()
+        var edge = schemaShapes.stream()
             .filter(row -> schema.type(row.typeName())
                 instanceof no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType)
             .findFirst().orElseThrow();

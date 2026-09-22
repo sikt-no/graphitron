@@ -130,7 +130,7 @@ class TableOnInputIgnoredNestingTest {
 
     /** Every generated fetcher class, rendered, so two schemas can be compared as emitted output. */
     private static String fetchers(String sdl) {
-        return TypeFetcherGenerator.generate(TestSchemaHelper.buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE)
+        return TypeFetcherRenderTestSupport.generate(TestSchemaHelper.buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE)
             .stream()
             .map(TypeSpec::toString)
             .reduce("", String::concat);

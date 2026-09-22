@@ -137,8 +137,8 @@ class SchemaEmissionChainDepthPipelineTest {
     @Test
     void chainDepthBound_holdsOnGraphitronSchemaClass_federationFixture() {
         var bundle = TestSchemaHelper.buildBundle(FEDERATION_SDL);
-        String rendered = GraphitronSchemaClassGenerator
-            .generate(bundle.model(), bundle.assembled(), Set.of(), "com.example", false)
+        String rendered = SchemaShapeRenderTestSupport
+            .schemaClass(bundle.model(), bundle.assembled(), Set.of(), "com.example", false)
             .get(0).toString();
         assertThat(maxChainDepth(rendered))
             .as("GraphitronSchema chain depth must stay within bound; "
@@ -149,8 +149,8 @@ class SchemaEmissionChainDepthPipelineTest {
     @Test
     void chainDepthBound_holdsOnGraphitronSchemaClass_largeFixture() {
         var bundle = TestSchemaHelper.buildBundle(LARGE_SDL);
-        String rendered = GraphitronSchemaClassGenerator
-            .generate(bundle.model(), bundle.assembled(), Set.of(), "com.example", false)
+        String rendered = SchemaShapeRenderTestSupport
+            .schemaClass(bundle.model(), bundle.assembled(), Set.of(), "com.example", false)
             .get(0).toString();
         assertThat(maxChainDepth(rendered))
             .as("GraphitronSchema chain depth must stay within bound on a large schema")
@@ -170,9 +170,9 @@ class SchemaEmissionChainDepthPipelineTest {
     private static void assertPerTypeChainDepth(String sdl) {
         var bundle = TestSchemaHelper.buildBundle(sdl);
         var perType = new ArrayList<TypeSpec>();
-        perType.addAll(ObjectTypeGenerator.generate(bundle.model(), bundle.assembled()));
-        perType.addAll(InputTypeGenerator.generate(bundle.model()));
-        perType.addAll(EnumTypeGenerator.generate(bundle.model()));
+        perType.addAll(SchemaShapeRenderTestSupport.objectTypes(bundle.model(), bundle.assembled()));
+        perType.addAll(SchemaShapeRenderTestSupport.inputTypes(bundle.model()));
+        perType.addAll(SchemaShapeRenderTestSupport.enumTypes(bundle.model()));
 
         assertThat(perType).isNotEmpty();
         for (var spec : perType) {
@@ -202,8 +202,8 @@ class SchemaEmissionChainDepthPipelineTest {
 
     private static int buildMethodStatementCount(String sdl) {
         var bundle = TestSchemaHelper.buildBundle(sdl);
-        var spec = GraphitronSchemaClassGenerator
-            .generate(bundle.model(), bundle.assembled(), Set.of(), "com.example", false)
+        var spec = SchemaShapeRenderTestSupport
+            .schemaClass(bundle.model(), bundle.assembled(), Set.of(), "com.example", false)
             .get(0);
         var build = spec.methodSpecs().stream()
             .filter(m -> "build".equals(m.name()))

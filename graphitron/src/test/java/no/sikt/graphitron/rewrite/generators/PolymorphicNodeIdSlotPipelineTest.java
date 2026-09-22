@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.rewrite.TypeFetcherRenderTestSupport;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
@@ -481,7 +482,7 @@ class PolymorphicNodeIdSlotPipelineTest {
     }
 
     private static TypeSpec findSpec(String className, String sdl) {
-        return TypeFetcherGenerator.generate(TestSchemaHelper.buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE)
+        return TypeFetcherRenderTestSupport.generate(TestSchemaHelper.buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE)
             .stream()
             .filter(t -> t.name().equals(className))
             .findFirst()

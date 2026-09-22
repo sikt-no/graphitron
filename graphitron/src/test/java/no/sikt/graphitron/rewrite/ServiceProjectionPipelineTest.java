@@ -245,7 +245,7 @@ class ServiceProjectionPipelineTest {
             }
             """);
 
-        var languageFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        var languageFetchers = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("LanguageFetchers"))
             .findFirst()
             .orElseThrow(() -> new AssertionError("LanguageFetchers not generated"));
