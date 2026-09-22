@@ -29,9 +29,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  * answer and not ours. It re-resolves for any session that did not already compile the view, which is
  * what makes a reader minted after the swap the contract {@link UnregisteredRelation} states.
  *
- * <p>The relation under test is {@code graphitron_resolved_type_binding}, chosen because it is named from
- * thirteen view bodies, so the dependent-view half of the claim is exercised over a real reader rather
- * than a fixture written to have one.
+ * <p>The relation under test is {@code intent_argument_scope_table}, chosen because it is named from
+ * seven view bodies, so the dependent-view half of the claim is exercised over a real reader rather
+ * than a fixture written to have one. It is a registration, which is what this helper's contract is
+ * about; the subject moves each time a conversion takes the previous one out of the register.
+ *
+ * <p>Neither relation here carries a written position, and that is a constraint on the subject
+ * rather than a coincidence. The two stores below are captured into directories of their own, so a
+ * relation carrying {@code source_name} renders rows that differ by the fixture's own path and the
+ * comparison fails on the one difference this case is not about.
  *
  * <p>{@code RunawayRelation}, the helper this one follows, has no case of its own in the model tree at
  * all: it is a test-jar helper exercised only through the fixtures that install it. This case lives
@@ -42,10 +48,10 @@ class UnregisteredRelationTest {
     @TempDir
     Path tmp;
 
-    private static final String TARGET = "intent_field_column_scope";
+    private static final String TARGET = "intent_argument_scope_table";
 
     /** A view naming the target, so the swap is exercised through a reader and not only directly. */
-    private static final String DEPENDENT = "intent_field_column_table";
+    private static final String DEPENDENT = "intent_node_id_decode_endpoint";
 
     @Test
     void reversingARegistrationKeepsBothTheRelationsAnswerAndItsReadersAnswer() {

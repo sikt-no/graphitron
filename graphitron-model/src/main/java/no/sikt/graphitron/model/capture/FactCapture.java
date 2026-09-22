@@ -3,6 +3,7 @@ package no.sikt.graphitron.model.capture;
 import no.sikt.graphitron.model.derive.ArgMappingCandidates;
 import no.sikt.graphitron.model.derive.AuthoredClaimRejectionRows;
 import no.sikt.graphitron.model.derive.ClassificationDomainCapture;
+import no.sikt.graphitron.model.derive.FieldColumnScopes;
 import no.sikt.graphitron.model.derive.InputOccurrencePaths;
 import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.model.derive.RefreshProgress;
@@ -85,6 +86,12 @@ public final class FactCapture {
             // catalog, the corpus and both entry strata, both sets of anchors and the resolution
             // stages, and the catalog's key closure, which the pass runs where it belongs, right
             // after the catalog it closes over. What is left is the derivations nothing else runs.
+
+            // The stage stratum, ahead of the hand-written producers because its rule reads only
+            // what the gatherers already wrote and a later step may read its rows. A stage is an
+            // INSERT over the view stating its rule; StageOrderGateTest holds the order against
+            // each rule's parsed read set and each producer's declared write set.
+            FieldColumnScopes.derive(txDsl, graph.name());
             ClassificationDomainCapture.derive(txDsl, graph.name(),
                 assembly instanceof SchemaAssembly.Assembled a ? a.schema() : null);
             InputOccurrencePaths.derive(txDsl, graph.name());

@@ -140,6 +140,20 @@ become tables rather than all at once when it lands: `intent_mutation_write_payl
 roles once `intent_input_field_resolving_table` is. The mutation write chain at the top is the
 deepest thing in the store, so it converts last because everything it reads has to be a table first.
 
+**Shipped: rung 0.** `intent_field_column_scope` is `graphitron_field_column_scope`, a table a
+stage in the derivation stratum fills from `graphitron_field_column_scope_rule`, and the register is
+nineteen rows. Four things the next rung inherits rather than re-deriving. The stage runs *first* in
+the stratum, ahead of the hand-written producers, because its rule bottoms out in captured facts
+alone; the position in "Implementation" is the floor a rule reaching a producer's table needs, not a
+rule every stage follows. Both relations are declared in `meta_relation`, the rule view included:
+with no register there is no exemption for a rule view, the frozen undeclared roster only shrinks,
+so a `_rule` view is an ordinary declared relation whose comment is its grain sentence and its
+example like any other. The table leaves `Materializations.analyse`'s roster with its registration
+and stands on the partition selectivity `GraphitronModelStore.create` declares, which is where every
+relation the `@reference` stratum converted already stands; the roster change is the last commit's
+and this is the shape until then. And `DerivedReadCostTest` moved the got-cheaper way, 42 readers to
+38 and 84 cells to 80, each figure recorded where it sits.
+
 **Three verdict families, landing in ladder order.** The column-scope pair and the mutation write
 payload; then the `@nodeId` decode chain, instruction through hop, hop column and decode column; then
 the input-field roles and the mutation payload chain that reads them. The decode chain is where the
@@ -150,12 +164,16 @@ from a recursive view, which "Implementation" prices.
 
 **Also in scope, because they exist only to serve the register:**
 
-- `Materializations` (535 lines) and `RefreshProgress` (185) in `graphitron-model`, and the four call
-  sites: `FactCapture.capture`'s refresh and its empty-store cadence, `GraphitronModelStore`'s
-  boot-time `MaterializeDependencies.populate`, `StoreRefresh`, and `DevMojo`'s `refreshAll` at
-  session start. `StoreRefresh` is a read of the register rather than a call into it, and it is
-  executable rather than prose: its warm-pass clear queries `meta_materialize` to decide what not to
-  empty. "The last commit" says what replaces that query.
+- `Materializations` (535 lines) and `RefreshProgress` (185) in `graphitron-model`, and the call
+  sites: `FactCapture.derive`'s refresh and its empty-store cadence, `GraphitronModelStore`'s
+  boot-time `MaterializeDependencies.populate`, and `DevMojo`'s `refreshAll` at session start.
+  `StoreRefresh`, which this body named as a fourth, no longer exists: no main source outside
+  `Materializations`, `MaterializeDependencies`, `ViewReferences` and `GraphitronModelStore` reads
+  `meta_materialize` at all, and the wholesale warm-pass clear whose exemption it queried has been
+  replaced by per-gatherer clears that empty exactly what their own gatherer refills. Rung 0
+  confirmed the consequence rather than assuming it: its table left the register and nothing
+  empties it but its own stage, which `WarmStartRefreshTest`'s warm-against-cold and
+  second-capture cases both cover on a fixture that populates it.
   `MaterializeDependencies` (261 lines) is not deleted: its parse of stored view
   definitions into read sets is the derivable source the stage order's gate needs, and it is repointed
   rather than retired. `ModelCapture.capture`, the entry point R876 is moving the run onto, calls no
@@ -197,11 +215,13 @@ the DDL that is each view body counted in the table above, in Java it is one sit
 `Tables.INTENT_NODE_ID_INSTRUCTION`, the only one of the fifteen any main source names.
 
 **Where the stages run, and why that position is current for every input.** All fifteen bottom out in
-at least one hand-written table except `intent_field_column_scope`, and `FactCapture.capture` writes
-those tables *after* `GraphitronFactCapture.capture` returns. So the stages go after the five producers
-in the derivation stratum, in ladder order, not inside the gatherer's eight stages: the position
+at least one hand-written table except `intent_field_column_scope`, and `FactCapture.derive` writes
+those tables in the derivation stratum. So a stage whose rule reaches one of them goes after the five
+producers, in ladder order, not inside the gatherer's eight stages: the position
 `ArgMappingCandidates.derive` already occupies, and the one R954's round-2 review names for its own
-rungs 4 and 5. One class per verdict family under `derive/`, each exposing `derive(dsl, graphName)` on
+rungs 4 and 5. A stage whose rule reaches none of them goes at the head of the stratum instead, which
+is where the shipped rung sits, because that is the position a later step can read its rows from. The
+rule decides, not the roster: each stage's placement is read off its own closure and gated. One class per verdict family under `derive/`, each exposing `derive(dsl, graphName)` on
 that precedent, called from the stratum in the order the ladder gives. The invariant every placement
 satisfies: **no stage reads a table a later step of the pass writes, registered or hand-written.**
 Whether the gatherer's eight stages, the five producers and these fifteen become one list under one
@@ -299,7 +319,7 @@ are no neighbours to re-price.
 
 **What each stage owes on landing.** A `meta_relation` row naming `graphitron` as owner and stating the
 grain, since the frozen undeclared roster only shrinks and a renamed relation is a new one to it. A
-primary key where the grain admits one: twelve of the fifteen carry none today, only
+primary key where the grain admits one: twelve of the fifteen carried none at filing, only
 `intent_field_column_scope`, `intent_argument_column_scope` and `intent_node_id_decode_hop` having one,
 and R876's burn-down item 9
 records that nothing refuses a duplicate row in them, and a stage-written table is the moment to fix
@@ -317,26 +337,17 @@ a line in the stage order's gate roster where the writer is jOOQ code rather tha
   start, whose own comment says it exists because "a warm partition whose capture was skipped because
   nothing changed refreshes nothing of its own", and a stage-written table holds the previous capture's
   rows in exactly that case, the clear below running only when a capture does.
-- **Repoint `StoreRefresh`'s exemption, which is code and not a comment.** Its warm-pass graph-scoped
-  clear subtracts `refilled(dsl)`, a method whose whole body selects `meta_materialize.target_table_name`,
-  so that a relation whose owner empties it itself is not emptied twice per pass with nothing writing it
-  in between. Dropping the register takes that method's only source away, and every converted relation
-  declares `graphitron` as its owner in `meta_relation`, so without a replacement the clear starts
-  covering exactly the tables the stages are about to delete and refill, which that comment measures at
-  24 ms over 2780 rows on the sakila example and expects to be a consumer store's largest relations.
-  The replacement is the stage roster the order gate and the analyse loop already need: the exemption
-  keeps its meaning and its measured argument, and only where it reads the list from changes. The
-  method is renamed for what it now names and its comment rewritten with it. Its foreign-key safety
-  argument carries across unchanged, the converted relations being the same tables under new names,
-  each declaring one foreign key and it to `store_graph`, which this clear never deletes. Making
-  `graphitron` a `SELF_SWEEPING` gatherer instead is the wrong shape here and is not done, and the
-  reason is worth stating because the name reads as though it fits. That set is read from the declared
-  owner, and the sixteen relations declaring `graphitron` today are the base tables the gatherer's own
-  eight stages write, from `graphitron_element` through `graphitron_argmapping_candidate`. None of them
-  empties its partition first; this clear is what empties them, which is what it means by still
-  covering 205 relations. Declaring the gatherer self-sweeping would stop the clear reaching those
-  sixteen while nothing else empties them, and the set only grows as R877 declares more. The exemption
-  belongs to the relations a stage refills, which is the roster, not to the gatherer.
+- **Nothing left to repoint in the warm-pass clear.** This body carried a bullet on `StoreRefresh`'s
+  exemption, a `refilled(dsl)` whose whole body selected `meta_materialize.target_table_name` so that
+  a relation its owner empties is not emptied twice per pass with nothing writing it in between.
+  That class and that wholesale clear are gone from the tree: each gatherer empties exactly what it
+  refills, so a converted relation is emptied by its own stage and by nothing else, and dropping the
+  register takes no exemption's source away. Rung 0 is the evidence, having left the register with
+  no replacement exemption written and `WarmStartRefreshTest` green on a fixture that populates it.
+  What survives of that bullet is the reason not to reach for a `SELF_SWEEPING` declaration on the
+  `graphitron` gatherer if a wholesale clear is ever reintroduced: such a set is read from the
+  declared owner, and the relations declaring `graphitron` include the base tables the gatherer's own
+  stages write without emptying a partition first.
 - Move `UnlowerableOrderingRejectionRows` into the stage order.
 - Delete `MaterializeRegistryGateTest`, `MaterializationOrderTest`, `MaterializationProgressTest`,
   `RefreshPlanStatisticsTest`, `UnregisteredRelationTest`, `CandidateCutSetTest` and the
@@ -392,15 +403,24 @@ a line in the stage order's gate roster where the writer is jOOQ code rather tha
 ## Tests
 
 - **Answer preservation, per conversion.** `EXCEPT` in both directions between the stage-written table
-  and its rule view, per graph, over a populated store. Because the rule view survives the conversion,
-  this is a standing assertion rather than a one-commit check: a test in `graphitron`'s pipeline tier
-  runs it over every stage-written table on the captured fixture store, and it is the successor to the
-  agreement `FactCaptureAgreementTest.REGISTRATIONS` pins today.
+  and its rule view, over a populated store. Because the rule view survives the conversion, this is a
+  standing assertion rather than a one-commit check. Built with rung 0 as `StageAnswerAgreementTest`
+  in `graphitron-model`, over a captured store rather than in the generator's pipeline tier, which is
+  where the captured-store fixtures and the stage roster both already are; a conversion adds a row
+  and the fixture grows to reach the new rule's arms. It carries a non-vacuity case of its own,
+  because a comparison between two empty relations passes while asserting nothing and one over a
+  single arm asserts a third of the rule.
 - **The relation tests already pinning each verdict** at the coordinate grain pass with no edit beyond
   the rename. A test whose expectations move is a signal that a conversion moved an answer.
-- **`StageOrderGateTest`**, new, above: the stratum's order against each stage's parsed read set and the
-  producers' declared write sets, failing on a stage that reads a table a later step writes. It binds
-  from the first conversion, not the last.
+- **`StageOrderGateTest`**, built with rung 0: the stratum's order against each stage's parsed read
+  set and the producers' declared write sets, failing on a stage that reads a table a later step
+  writes. It also holds the column shapes `INSERT ... SELECT *` rests on, one writer per relation,
+  and that every declared name is an observed relation of the right kind, which is what keeps the
+  transcribed stratum from rotting silently under a rename. Two things it does not do, stated so a
+  later rung does not assume them: it does not read `FactCapture.derive`, so the step list is the
+  statement order transcribed rather than derived, and it prices nothing. Its own firing case puts a
+  rule that does read a registered target in a stage ahead of the refresh and watches the gate name
+  it, which is also the standing demonstration of why the fourteen remaining rungs are blocked.
 - **`DerivedReadCostTest`** prices every pair of a registration and a relation reaching its target. Every
   retirement moves its pinned set, which is the confrontation it exists to force; when the register is
   empty its subject is gone and it is deleted with the mechanism. What replaces it is the rule bench

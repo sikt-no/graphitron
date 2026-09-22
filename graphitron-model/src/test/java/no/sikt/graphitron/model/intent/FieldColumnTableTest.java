@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_COLUMN_SCOPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_COLUMN_SCOPE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_COLUMN_TABLE;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedConstraint;
@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * What {@code intent_field_column_table} returns: which table a column name written at a field's
  * site resolves against, when that table is not the one the field's own parent is bound to. It pins
- * {@code intent_field_column_scope} with it, the navigation the override reads and the structural
+ * {@code graphitron_field_column_scope} with it, the navigation the override reads and the structural
  * column-match classifier reads too. Two relations in one class because they are one derivation seen
  * twice: the cases above pin the override's boundary, and the section near the tail pins the third
  * rule that boundary drops, the precedence among the three, and the one place the two deliberately
@@ -73,7 +73,7 @@ class FieldColumnTableTest {
             assertThat(row.get(INTENT_FIELD_COLUMN_TABLE.TABLE_NAME))
                 .isEqualToIgnoringCase("language");
             assertThat(scopeRow(dsl, "Film", "languageName").orElseThrow()
-                .get(INTENT_FIELD_COLUMN_SCOPE.TABLE_NAME))
+                .get(GRAPHITRON_FIELD_COLUMN_SCOPE.TABLE_NAME))
                 .as("film declares two keys to language, and one destination is one row")
                 .isEqualToIgnoringCase("language");
         });
@@ -151,7 +151,7 @@ class FieldColumnTableTest {
             assertThat(row.get(INTENT_FIELD_COLUMN_TABLE.TABLE_NAME))
                 .isEqualToIgnoringCase("film_actor");
             assertThat(scopeRow(dsl, "Film", "credits").orElseThrow()
-                .get(INTENT_FIELD_COLUMN_SCOPE.BASIS))
+                .get(GRAPHITRON_FIELD_COLUMN_SCOPE.BASIS))
                 .as("and it wins by the other rule standing down, not by outranking it")
                 .isEqualTo("PATH_TERMINAL");
         });
@@ -233,7 +233,7 @@ class FieldColumnTableTest {
             seedField(dsl, GRAPH, "Film", "languages", "LanguageConnection", false);
 
             assertThat(scopeRow(dsl, "Film", "languages").orElseThrow()
-                .get(INTENT_FIELD_COLUMN_SCOPE.TABLE_NAME))
+                .get(GRAPHITRON_FIELD_COLUMN_SCOPE.TABLE_NAME))
                 .as("the element type's table, reached with no synthesis row to read")
                 .isEqualToIgnoringCase("language");
             var row = row(dsl, "Film", "languages").orElseThrow();
@@ -403,8 +403,8 @@ class FieldColumnTableTest {
             seedField(dsl, GRAPH, "Film", "title");
 
             var row = scopeRow(dsl, "Film", "title").orElseThrow();
-            assertThat(row.get(INTENT_FIELD_COLUMN_SCOPE.BASIS)).isEqualTo("PARENT_BINDING");
-            assertThat(row.get(INTENT_FIELD_COLUMN_SCOPE.TABLE_NAME)).isEqualToIgnoringCase("film");
+            assertThat(row.get(GRAPHITRON_FIELD_COLUMN_SCOPE.BASIS)).isEqualTo("PARENT_BINDING");
+            assertThat(row.get(GRAPHITRON_FIELD_COLUMN_SCOPE.TABLE_NAME)).isEqualToIgnoringCase("film");
         });
     }
 
@@ -450,10 +450,10 @@ class FieldColumnTableTest {
             seedField(dsl, GRAPH, "Film", "languages", "Language", true);
 
             var row = scopeRow(dsl, "Film", "languages").orElseThrow();
-            assertThat(row.get(INTENT_FIELD_COLUMN_SCOPE.BASIS))
+            assertThat(row.get(GRAPHITRON_FIELD_COLUMN_SCOPE.BASIS))
                 .as("an object-typed field is the named-type rule's, never the parent rule's")
                 .isEqualTo("NAMED_TYPE_TABLE");
-            assertThat(row.get(INTENT_FIELD_COLUMN_SCOPE.TABLE_NAME))
+            assertThat(row.get(GRAPHITRON_FIELD_COLUMN_SCOPE.TABLE_NAME))
                 .isEqualToIgnoringCase("language");
         });
     }
@@ -474,7 +474,7 @@ class FieldColumnTableTest {
                 .as("the override view goes silent while the claims disagree")
                 .isEqualTo("CONFLICTED");
             assertThat(scopeRow(dsl, "Film", "title").orElseThrow()
-                .get(INTENT_FIELD_COLUMN_SCOPE.BASIS))
+                .get(GRAPHITRON_FIELD_COLUMN_SCOPE.BASIS))
                 .as("the navigation is unchanged by what claims the field")
                 .isEqualTo("PARENT_BINDING");
         });
@@ -608,11 +608,11 @@ class FieldColumnTableTest {
     /** The navigation row for a coordinate, at the same grain as the override above it. */
     private static Optional<Record> scopeRow(DSLContext dsl, String typeName, String fieldName) {
         derive(dsl);
-        var rows = dsl.select(INTENT_FIELD_COLUMN_SCOPE.fields())
-            .from(INTENT_FIELD_COLUMN_SCOPE)
-            .where(INTENT_FIELD_COLUMN_SCOPE.GRAPH_NAME.eq(GRAPH))
-            .and(INTENT_FIELD_COLUMN_SCOPE.TYPE_NAME.eq(typeName))
-            .and(INTENT_FIELD_COLUMN_SCOPE.FIELD_NAME.eq(fieldName))
+        var rows = dsl.select(GRAPHITRON_FIELD_COLUMN_SCOPE.fields())
+            .from(GRAPHITRON_FIELD_COLUMN_SCOPE)
+            .where(GRAPHITRON_FIELD_COLUMN_SCOPE.GRAPH_NAME.eq(GRAPH))
+            .and(GRAPHITRON_FIELD_COLUMN_SCOPE.TYPE_NAME.eq(typeName))
+            .and(GRAPHITRON_FIELD_COLUMN_SCOPE.FIELD_NAME.eq(fieldName))
             .fetch();
         assertThat(rows.size())
             .as("the navigation carries at most one row per coordinate")

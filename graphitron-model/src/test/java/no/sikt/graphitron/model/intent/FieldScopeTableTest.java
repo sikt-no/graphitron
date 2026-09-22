@@ -38,7 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Two further sections carry what is this relation's own rather than inherited. One is the grain:
  * a field with no arguments at all resolves a scope here, which is the fact the argument-grain
  * spelling could not hold and the reason this relation exists. The other is the boundary against
- * {@code intent_field_column_scope}, whose name is close enough that a reader could take one for the
+ * {@code graphitron_field_column_scope}, whose name is close enough that a reader could take one for the
  * other; the two disagree on a scalar leaf field, and a case pins the disagreement so neither can be
  * quietly widened into the other.
  */
@@ -306,7 +306,7 @@ class FieldScopeTableTest {
     // ===== The boundary against the column scope =====
 
     /**
-     * A scalar leaf field of a bound parent has no row here, where {@code intent_field_column_scope}
+     * A scalar leaf field of a bound parent has no row here, where {@code graphitron_field_column_scope}
      * answers it with the parent's binding. The two relations part company exactly there, and the
      * difference is the question: a column name written at this site resolves against the parent's
      * table, while the field's own statement is not rooted in a table at all, a scalar field being a

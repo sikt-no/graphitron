@@ -94,8 +94,17 @@ class MaterializeRegistryGateTest {
      * and the reduction thirteen view bodies point at, and it took the primary key its own rule
      * always implied: the union under it dedupes, so the type and the table triple are unique by
      * construction and the count beside them is a payload the partition determines.
+     *
+     * <p>Nineteen since the field-site column scope became a capture stage, and it is the first
+     * fall this figure has taken outside the {@code @reference} stratum. The rung reads no
+     * registration at all once the type binding and the reference walk are tables, so nothing
+     * ordered it but the refresh, and what refills it now is one statement in the derivation
+     * stratum over the view that states its rule. The rule did not move and is not restated: the
+     * {@code _live} view keeps its text under {@code graphitron_field_column_scope_rule}, and the
+     * canonical name stays the table every reader spells. A reader of this fall should read it as
+     * the register losing a row it was only ever scheduling, not as a rule leaving the schema.
      */
-    private static final int REGISTRATIONS = 20;
+    private static final int REGISTRATIONS = 19;
 
     /**
      * Stages the refresh takes, the register's depth.
@@ -152,6 +161,13 @@ class MaterializeRegistryGateTest {
      * takes another stage off the front rather than out of the middle. What the pass still waits on
      * is the column-scope family and what reads it, which no rung of this conversion reaches.
      *
+     * <p>Still thirteen with the field-site column scope converted, and the reason is the one the
+     * input-field column match's paragraph above gives from the other side: that rung read no
+     * registration and no registration read it, so it sat in the first stage with everything else
+     * that waits on nothing and staged nothing behind it. A conversion shortens this figure only
+     * when it takes a rung off the longest chain, which is a property of the register rather than
+     * of the rung being converted.
+     *
      * @see #REGISTRATIONS
      */
     private static final int REFRESH_STAGES = 13;
@@ -202,9 +218,6 @@ class MaterializeRegistryGateTest {
      * <p>The rows that remain:
      *
      * <ul>
-     *   <li>{@code intent_field_column_scope}: on the field coordinate its three readers join,
-     *   with or without {@code basis}, it takes {@code intent_field_reference_discovery} from 148
-     *   scans to 246 and returns 59 elsewhere. Nothing to weigh.</li>
      *   <li>{@code intent_carrier_data_field}: on the two coordinates its readers spell (the
      *   error channel's graph, type and family; the sigil surface's graph, type and field), no
      *   reader moves at all, to the scan: the seat, the hop, the error channel and the whole
@@ -302,7 +315,6 @@ class MaterializeRegistryGateTest {
      */
     private static final Set<String> NO_INDEX = Set.of(
         "intent_node_id_decode_hop",
-        "intent_field_column_scope",
         "intent_argument_column_scope",
         "intent_argument_column_match",
         "intent_input_field_carrier_role",

@@ -6,6 +6,7 @@ import no.sikt.graphitron.model.derive.NameMatchedKeys;
 import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.TableTypes;
+import no.sikt.graphitron.model.derive.FieldColumnScopes;
 import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
 import no.sikt.graphitron.model.derive.FieldReferenceStepTargets;
 import no.sikt.graphitron.model.derive.Materializations;
@@ -253,6 +254,10 @@ public final class SeededStore {
             FieldReferenceStepHops.deriveKeyless(dsl, graph);
             ResolvedTypeBindings.derive(dsl, graph);
             FieldReferenceStepTargets.derive(dsl, graph);
+            // The derivation stratum's stages, after the gatherer's own above because that is
+            // where each one's rule reads from, and before the refresh because registrations
+            // still read what they write.
+            FieldColumnScopes.derive(dsl, graph);
         }
         Materializations.refreshAll(dsl);
     }

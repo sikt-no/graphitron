@@ -253,9 +253,12 @@ Two lines per pass, on a capture and on a `graphitron:dev` start alike:
 [INFO] graphitron: materialization refresh done in 3.4 s
 ----
 
-A console showing the first line and not the second is inside the refresh. That
-alone is worth having, because a refresh runs inside the capture transaction and
-the phases either side of it print nothing that would distinguish it.
+A console showing the first line and not the second is inside the refresh, or in
+one of the capture stages that run just ahead of it. That alone is worth having,
+because both run inside the capture transaction and the phases either side print
+nothing that would distinguish them. A stage prints no line of its own yet, so
+rule out the refresh first with the grep below: a run stuck in a stage reaches
+this tier with no per-registration line at all.
 
 To name the registration, re-run with `-X` and grep for the per-registration
 lines, which the same pass prints at debug:
@@ -267,13 +270,15 @@ mvn generate-sources -X | grep 'graphitron: *[0-9]*/'
 
 [source,text]
 ----
-[DEBUG] graphitron:  4/20 intent_node_id_decode_hop_live -> intent_node_id_decode_hop, graph 'orders'
-[DEBUG] graphitron:  4/20 done in 3.1 s, deleted 812 rows in 4 ms, inserted 812 rows in 3.1 s
+[DEBUG] graphitron:  4/19 intent_node_id_decode_hop_live -> intent_node_id_decode_hop, graph 'orders'
+[DEBUG] graphitron:  4/19 done in 3.1 s, deleted 812 rows in 4 ms, inserted 812 rows in 3.1 s
 ----
 
 The name is printed before the statements are issued and the durations after they
-return, so the last `n/20` line with no `done in` line under it is the relation the
-run is stuck in. That is the whole recipe: no thread dump, no profiler, and no
+return, so the last `n/N` line with no `done in` line under it is the relation the
+run is stuck in. `N` is how many registrations the register holds, and it falls as
+rules move into capture stages, so read the denominator off the run rather than
+off this page. That is the whole recipe: no thread dump, no profiler, and no
 reconstruction of the refresh order. Two lines per registration per graph is why
 this tier is not on by default and not a reason to raise it.
 

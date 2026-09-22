@@ -108,7 +108,6 @@ intent_field_accessor_hop
 intent_field_chain_node
 intent_field_chain_start
 intent_field_chain_terminus
-intent_field_column_scope
 intent_field_column_table
 intent_field_demand_rule
 intent_field_error_channel

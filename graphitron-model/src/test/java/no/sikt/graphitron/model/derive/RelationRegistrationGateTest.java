@@ -383,7 +383,7 @@ class RelationRegistrationGateTest {
         registrations.put("intent_node_id_decode_hop_column_live", Arm.DERIVED);
         registrations.put("intent_node_id_decode_column_live", Arm.DERIVED);
         registrations.put("intent_input_field_carrier_role_live", Arm.DERIVED);
-        registrations.put("intent_field_column_scope_live", Arm.DERIVED);
+        registrations.put("graphitron_field_column_scope_rule", Arm.DERIVED);
         registrations.put("intent_node_id_instruction_live", Arm.DERIVED);
         registrations.put("graphitron_argmapping_match", Arm.DERIVED);
         registrations.put("intent_argmapping_bound_parameter_type", Arm.DERIVED);
@@ -400,7 +400,7 @@ class RelationRegistrationGateTest {
         registrations.put("intent_carrier_routine_hop", Arm.DERIVED);
         registrations.put("intent_mutation_routine_seat", Arm.DERIVED);
         registrations.put("intent_column_match_claim", Arm.DERIVED);
-        registrations.put("intent_field_column_scope", Arm.DERIVED);
+        registrations.put("graphitron_field_column_scope", Arm.DERIVED);
         registrations.put("intent_argument_column_scope", Arm.DERIVED);
         registrations.put("intent_argument_column_scope_live", Arm.DERIVED);
         registrations.put("intent_argument_column_match", Arm.DERIVED);

@@ -73,9 +73,11 @@ import static org.jooq.impl.DSL.select;
  * a tree with the fix removed. So a ceiling added here for a new surface is not finished when it
  * passes; it is finished when it has been seen to fail.
  *
- * <p>Re-measured whole, both shapes, with the two registrations the inlay read depends on
- * ({@code graphitron_spelled_table} and {@code intent_field_column_scope}) removed for the guarded
- * side. Every ceiling below is between its pair: goto-definition on a type at 122 against 288,
+ * <p>Re-measured whole, both shapes, with the two relations the inlay read depends on
+ * ({@code graphitron_spelled_table} and {@code graphitron_field_column_scope}) removed for the guarded
+ * side. Both were registrations when the figures were taken and both are capture stages now, which
+ * changes who writes their rows and not that the guarded side reads them off disk, so the pairs
+ * below still say what they said. Every ceiling below is between its pair: goto-definition on a type at 122 against 288,
  * on a member at 567 against 1490, hover at 172 against 421, the whole-file inlay at 482 against
  * 1744, diagnostics at 219 against 1426. Which corrects a claim this paragraph's neighbour used to
  * make, that the five surfaces other than the inlay had only the net because their ceilings passed

@@ -223,7 +223,7 @@ class ColumnMatchShadowTest {
      * which is the rule
      * {@code docs/architecture/explanation/fact-model.adoc} states for a derivation this deep:
      * {@code intent_column_match_claim} collapses its matches with a window over
-     * {@code intent_field_column_scope}, and a window sees its whole partition whatever predicate
+     * {@code graphitron_field_column_scope}, and a window sees its whole partition whatever predicate
      * the reader applies outside it, so a per-graph read pays every graph's rows once per graph.
      * The rows are identical either way: both anti-joins already correlate on {@code graph_name}
      * themselves, so the outer graph predicate only ever chose which of these rows a caller looked

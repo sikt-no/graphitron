@@ -141,8 +141,9 @@ class RefreshPlanStatisticsTest {
      * selectivity on every graph-keyed base table, before any capture and outside any
      * {@code ANALYZE}, so the cold leg below is what a run actually meets rather than a store that
      * was told nothing. {@code intent_node_id_instruction_live} left the set on that change: the
-     * declaration is the whole of what its cold plan was missing. Three joined it,
-     * {@code intent_field_column_scope_live}, {@code intent_input_field_carrier_role_live} and
+     * declaration is the whole of what its cold plan was missing. Three joined it, the field-site
+     * column-scope rule that has since become a capture stage,
+     * {@code intent_input_field_carrier_role_live} and
      * {@code intent_input_field_column_match_live}, and they are the same kind of member as the rest
      * rather than three new statements: their cold plans already differed from the analysed ones,
      * the difference was the partition column's default, and stating that column moved the cold plan

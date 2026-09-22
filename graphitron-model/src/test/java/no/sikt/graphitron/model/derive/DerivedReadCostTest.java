@@ -292,8 +292,13 @@ class DerivedReadCostTest {
      * register through, and it is a gatherer-written table now. The walk itself contributes none of
      * the eight, having been a plain view before and after; what it changes is that its own rows are
      * on disk, which is why the count falls rather than merely moving.
+     *
+     * <p>Forty-two to thirty-eight with the field-site column scope, the first rung outside the
+     * reference stratum to go the same way. Four views reached the register only through it, which
+     * is the three that name it plus the one that reaches it through them, and a rung its owner
+     * writes in a capture stage buys no comparison for any of them.
      */
-    private static final int READERS_WITH_CELLS = 42;
+    private static final int READERS_WITH_CELLS = 38;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
@@ -424,8 +429,14 @@ class DerivedReadCostTest {
      * was a registration eighteen cells were charged to, and a rung its owner writes buys no cells
      * at all. What is left is the column-scope and node-id families and the mutation payloads,
      * which is where the register still is.
+     *
+     * <p>84 to 80 with the field-site column scope, four cells on the same mechanism a third time.
+     * Its three view readers and the one that reaches it through them were each a comparison
+     * between reading a refilled target and re-evaluating the rule behind it; the rule is still
+     * there, under {@code graphitron_field_column_scope_rule}, but no refresh is buying its rows
+     * and the stage that does is not a shape this matrix prices.
      */
-    private static final int CELLS = 84;
+    private static final int CELLS = 80;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -828,15 +839,14 @@ class DerivedReadCostTest {
         // refresh from 24.4 s to 0.13 s, and these two cells are the instrument noticing that a
         // plan moved, which is what it is for.
         "intent_mutation_write_payload|intent_mutation_payload_column_live",
-        "intent_node_id_decode_column|intent_mutation_payload_column_live",
-        // A cell the reference walk's storing created, and the counter reading rows rather than
-        // work is the whole of it. The discovery rule reaches the column-scope registration and
-        // costs 172 scans with that target registered against 124 with it a rule, so it is
-        // non-monotonic by 48 rows; the clock says the opposite and more loudly, 2 milliseconds
-        // against 18. What the unregistered side loses is the rows the registered target makes it
-        // visit to answer at all, which is the reading the two pairs above carry and the same one
-        // the reference-step cells carried before their rung stopped being registered.
-        "intent_field_column_scope|intent_field_reference_discovery");
+        "intent_node_id_decode_column|intent_mutation_payload_column_live");
+        // A cell the reference walk's storing created left with the field-site column scope's own
+        // conversion, which is the second time this set has lost a row to a rung ceasing to be a
+        // registration rather than to a measurement. The discovery rule reached that target at 172
+        // scans against 124 with it a rule, non-monotonic by 48 rows, where the clock said the
+        // opposite and more loudly, 2 milliseconds against 18. Recorded here rather than dropped
+        // silently: the reading was the counter counting rows and not work, and it is the same
+        // reading the two pairs above carry.
         // Three readers reached through the navigation relation stood here and have gone, and how
         // they went is the second kind of departure this set records: a lever landed, rather than
         // the fixture moving under them. They were the counter-against-clock case, stating the
@@ -1019,14 +1029,14 @@ class DerivedReadCostTest {
         var ctx = TestRunContext.of();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         var registration = registrations.stream()
-            .filter(r -> r.targetTableName().equals("intent_field_column_scope"))
+            .filter(r -> r.targetTableName().equals("intent_field_scope_table"))
             .findFirst().orElseThrow();
 
         try (var store = CapturedStore.ownStoreOfCatalog(
                 tmp.resolve("runaway"), scaledSdl(1), jooq)) {
             UnregisteredRelation.install(store.dsl(), registration);
             RunawayRelation.install(store.dsl(), "intent_field_navigated_type");
-            var timed = scans(store, "intent_field_column_scope",
+            var timed = scans(store, "intent_field_scope_table",
                 new ReadBudget.Bounded(RUNAWAY_BUDGET_MILLIS));
             assertThat(timed.exhausted())
                 .as("a cell whose unregistered side cannot terminate is recorded, not compared")

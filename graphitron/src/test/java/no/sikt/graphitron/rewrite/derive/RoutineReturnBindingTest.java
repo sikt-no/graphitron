@@ -16,7 +16,7 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_COLUMN_SCOPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_COLUMN_SCOPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESOLVED_TYPE_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
@@ -257,8 +257,8 @@ class RoutineReturnBindingTest {
         withCaptured(routineReturning("Row", ""), dsl -> {
             var scopes = columnScope(dsl, "Row", "title");
             assertThat(scopes).hasSize(1);
-            assertThat(scopes.getFirst().get(INTENT_FIELD_COLUMN_SCOPE.BASIS)).isEqualTo("PARENT_BINDING");
-            assertThat(lower(scopes.getFirst().get(INTENT_FIELD_COLUMN_SCOPE.TABLE_NAME)))
+            assertThat(scopes.getFirst().get(GRAPHITRON_FIELD_COLUMN_SCOPE.BASIS)).isEqualTo("PARENT_BINDING");
+            assertThat(lower(scopes.getFirst().get(GRAPHITRON_FIELD_COLUMN_SCOPE.TABLE_NAME)))
                 .isEqualTo("films_for_actor");
         });
     }
@@ -350,11 +350,11 @@ class RoutineReturnBindingTest {
     }
 
     private static Result<Record> columnScope(DSLContext dsl, String typeName, String fieldName) {
-        return dsl.select(INTENT_FIELD_COLUMN_SCOPE.fields())
-            .from(INTENT_FIELD_COLUMN_SCOPE)
-            .where(INTENT_FIELD_COLUMN_SCOPE.GRAPH_NAME.eq(CapturedStore.GRAPH))
-            .and(INTENT_FIELD_COLUMN_SCOPE.TYPE_NAME.eq(typeName))
-            .and(INTENT_FIELD_COLUMN_SCOPE.FIELD_NAME.eq(fieldName))
+        return dsl.select(GRAPHITRON_FIELD_COLUMN_SCOPE.fields())
+            .from(GRAPHITRON_FIELD_COLUMN_SCOPE)
+            .where(GRAPHITRON_FIELD_COLUMN_SCOPE.GRAPH_NAME.eq(CapturedStore.GRAPH))
+            .and(GRAPHITRON_FIELD_COLUMN_SCOPE.TYPE_NAME.eq(typeName))
+            .and(GRAPHITRON_FIELD_COLUMN_SCOPE.FIELD_NAME.eq(fieldName))
             .fetch();
     }
 

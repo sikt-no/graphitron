@@ -268,7 +268,7 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
  *       {@code no.sikt.graphitron.model.intent.FieldColumnTableTest} binds
  *       {@code intent_field_column_table}, the override a column name's site resolves through, half
  *       its cases pinning the coordinates that produce no row because the boundary of an override
- *       is what the relation claims, together with {@code intent_field_column_scope}, the
+ *       is what the relation claims, together with {@code graphitron_field_column_scope}, the
  *       navigation the override reads and the column-match classifier reads with it, whose own
  *       cases are the third rule the override drops and the precedence between the three; it reads
  *       both seeded in the module whose DDL declares them, several of the states a boundary case

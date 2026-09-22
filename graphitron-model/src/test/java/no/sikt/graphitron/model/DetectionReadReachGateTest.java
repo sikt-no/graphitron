@@ -76,8 +76,8 @@ class DetectionReadReachGateTest {
     static {
         REACH.put("AuthoredClaimConflicts", Set.of(
             "intent_authored_claim_conflict",
-            // Also refreshed through intent_field_column_scope_live, and expanded here per violated
-            // field coordinate by claimsAt.
+            // Also expanded by graphitron_field_column_scope_rule, which a capture stage inserts
+            // from, and expanded here per violated field coordinate by claimsAt.
             "intent_authored_field_claim",
             "intent_authored_type_claim"));
 
