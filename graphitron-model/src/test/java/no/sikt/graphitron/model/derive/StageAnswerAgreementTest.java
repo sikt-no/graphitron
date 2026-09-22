@@ -49,7 +49,11 @@ class StageAnswerAgreementTest {
     /** The stage-written tables and their rules, in the stratum's order. */
     private static final List<Stage> STAGES = List.of(
         new Stage("graphitron_field_column_scope", "graphitron_field_column_scope_rule"),
-        new Stage("graphitron_carrier_data_field", "graphitron_carrier_data_field_rule"));
+        new Stage("graphitron_carrier_data_field", "graphitron_carrier_data_field_rule"),
+        new Stage("graphitron_field_scope_table", "graphitron_field_scope_table_rule"),
+        new Stage("graphitron_argument_scope_table", "graphitron_argument_scope_table_rule"),
+        new Stage("graphitron_input_field_resolving_table",
+            "graphitron_input_field_resolving_table_rule"));
 
     @Test
     @DisplayName("every stage-written table holds exactly its rule's rows, both directions")
@@ -101,7 +105,65 @@ class StageAnswerAgreementTest {
                 .fetch().map(row -> row.value1() + " " + row.value2()))
             .as("the family and element kind pairs the fixture reaches; an agreement over one"
                 + " family asserts one family's refusals and passes all the same")
-            .containsExactlyInAnyOrder("SERVICE TABLE", "DML ID"));
+            .containsExactlyInAnyOrder("SERVICE TABLE", "DML TABLE", "DML ID"));
+    }
+
+    /**
+     * The field-site scope stage's own non-vacuity case, over all four bases: the three ranked
+     * rungs and the participant arm that sits beside them. A comparison over one basis asserts one
+     * rung of a rule whose whole shape is which rung answers where.
+     */
+    @Test
+    @DisplayName("the fixture reaches all four bases of the field-site scope")
+    void theFixtureReachesEveryBasisOfTheFieldScope() {
+        withCapturedStore(dsl -> assertThat(dsl
+                .selectDistinct(org.jooq.impl.DSL.field(name("BASIS"), String.class))
+                .from(table(name("GRAPHITRON_FIELD_SCOPE_TABLE")))
+                .fetch(0, String.class))
+            .as("the bases the fixture reaches; an agreement over one rung asserts a quarter of"
+                + " the rule and passes all the same")
+            .containsExactlyInAnyOrder("NAMED_TYPE_TABLE", "PAYLOAD_TABLE", "MUTATION_TABLE",
+                "PARTICIPANT_TABLE"));
+    }
+
+    /**
+     * The argument-site fan-out's own non-vacuity case. It is a fan-out and not a rule, so what it
+     * can get wrong is which arguments a field's rows reach rather than which rung answered; the
+     * bases are asserted all the same, because a fan-out over one basis is a fan-out over one arm
+     * of the relation it fans.
+     *
+     * <p>Three of the four rather than all four, and the missing one is the participant arm: it
+     * answers at a field returning a multi-table container, and reaching it through the fan-out
+     * needs such a field to declare an argument. The case above pins that arm on the relation whose
+     * rule it is, which is where the arm is stated.
+     */
+    @Test
+    @DisplayName("the fixture fans three bases of the field-site scope out over arguments")
+    void theFixtureReachesMoreThanOneBasisOfTheArgumentScope() {
+        withCapturedStore(dsl -> assertThat(dsl
+                .selectDistinct(org.jooq.impl.DSL.field(name("BASIS"), String.class))
+                .from(table(name("GRAPHITRON_ARGUMENT_SCOPE_TABLE")))
+                .fetch(0, String.class))
+            .as("the bases the fan-out reaches; an agreement over one of them is an agreement over"
+                + " one arm of the relation being fanned out")
+            .containsExactlyInAnyOrder("NAMED_TYPE_TABLE", "PAYLOAD_TABLE", "MUTATION_TABLE"));
+    }
+
+    /**
+     * The input-field resolving table's own non-vacuity case, on the property its key exists for: a
+     * field resolves against a table it is handed, so the relation is only asserting anything once
+     * the fixture reaches an input type from an argument whose field is rooted somewhere.
+     */
+    @Test
+    @DisplayName("the fixture reaches an input field under a resolving table")
+    void theFixtureReachesAnInputFieldResolvingTable() {
+        withCapturedStore(dsl -> assertThat(dsl
+                .selectDistinct(org.jooq.impl.DSL.field(name("TABLE_NAME"), String.class))
+                .from(table(name("GRAPHITRON_INPUT_FIELD_RESOLVING_TABLE")))
+                .fetch(0, String.class))
+            .as("the tables the fixture classifies an input field against; an agreement over an"
+                + " empty relation asserts nothing at all")
+            .containsExactly("film"));
     }
 
     private static List<String> difference(DSLContext dsl, String left, String right) {
@@ -126,12 +188,15 @@ class StageAnswerAgreementTest {
      * a table (PATH_TERMINAL), an object-typed field whose named type carries its own binding
      * (NAMED_TYPE_TABLE), and leaf fields resolving in their parent's binding (PARENT_BINDING). For
      * the carrier data channel, two of the three producing families and two of the three element
-     * kinds: a {@code @service} carrier wrapping a bound type, and a DELETE echo wrapping the
-     * {@code ID} scalar.
+     * kinds: a {@code @service} carrier wrapping a bound type, an INSERT carrier wrapping the same,
+     * and a DELETE echo wrapping the {@code ID} scalar. For the field-site scope, all four bases:
+     * the INSERT carrier is the payload rung, the DELETE echo the {@code @mutation(table:)} rung,
+     * every object-typed field into a bound type the named-type rung, and the interface over two
+     * bound implementers the participant arm beside them.
      */
     private static String sdl() {
         return """
-            type Film @table(name: "film") {
+            type Film implements Media @table(name: "film") {
               title: String
               language: Language
               actors: [Actor!]! @reference(path: [{key: "film_actor_film_id_fkey"},
@@ -140,11 +205,18 @@ class StageAnswerAgreementTest {
             type Language @table(name: "language") {
               name: String
             }
-            type Actor @table(name: "actor") {
-              firstName: String
+            type Actor implements Media @table(name: "actor") {
+              title: String @field(name: "first_name")
+            }
+            interface Media {
+              title: String
             }
             type Query {
-              films: [Film!]!
+              films(title: String): [Film!]!
+              media: [Media!]!
+            }
+            input FilmInput {
+              title: String
             }
             type DbErr @error(handlers: [{handler: DATABASE}]) {
               path: [String!]!
@@ -155,6 +227,10 @@ class StageAnswerAgreementTest {
               film: Film
               errors: [WriteError]
             }
+            type InsertFilmPayload {
+              film: Film
+              errors: [WriteError]
+            }
             type DeleteFilmPayload {
               deletedId: ID
               errors: [WriteError]
@@ -162,6 +238,8 @@ class StageAnswerAgreementTest {
             type Mutation {
               createFilm: CreateFilmPayload
                 @service(service: {className: "com.example.FilmService", method: "create"})
+              insertFilm(in: FilmInput!): InsertFilmPayload
+                @mutation(typeName: INSERT, table: "film")
               deleteFilm(filmId: Int): DeleteFilmPayload
                 @mutation(typeName: DELETE, table: "film")
             }

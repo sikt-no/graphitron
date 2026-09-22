@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_INPUT_FIELD_RESOLVING_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_INPUT_FIELD_RESOLVING_TABLE;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
@@ -27,7 +27,7 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@code intent_input_field_resolving_table} answers: which table an input field is classified
+ * What {@code graphitron_input_field_resolving_table} answers: which table an input field is classified
  * against. The pair of coordinate and table is the grain, and the cases here are about that pair
  * rather than about either half of it, because the pair is the whole reason the relation exists.
  *
@@ -73,7 +73,7 @@ class InputFieldResolvingTableTest {
 
     /**
      * The argument's own occurrence is not an input field and gets no row. Depth 0 is the argument
-     * standing for itself, whose table is {@code intent_argument_scope_table}'s answer and already
+     * standing for itself, whose table is {@code graphitron_argument_scope_table}'s answer and already
      * has a relation; repeating it here would make the grain half coordinate and half argument.
      */
     @Test
@@ -250,19 +250,19 @@ class InputFieldResolvingTableTest {
 
     private static Result<Record> rowsIn(DSLContext dsl, String graphName) {
         derive(dsl);
-        return dsl.select(INTENT_INPUT_FIELD_RESOLVING_TABLE.fields())
-            .from(INTENT_INPUT_FIELD_RESOLVING_TABLE)
-            .where(INTENT_INPUT_FIELD_RESOLVING_TABLE.GRAPH_NAME.eq(graphName))
-            .orderBy(INTENT_INPUT_FIELD_RESOLVING_TABLE.TYPE_NAME,
-                INTENT_INPUT_FIELD_RESOLVING_TABLE.FIELD_NAME,
-                INTENT_INPUT_FIELD_RESOLVING_TABLE.TABLE_NAME)
+        return dsl.select(GRAPHITRON_INPUT_FIELD_RESOLVING_TABLE.fields())
+            .from(GRAPHITRON_INPUT_FIELD_RESOLVING_TABLE)
+            .where(GRAPHITRON_INPUT_FIELD_RESOLVING_TABLE.GRAPH_NAME.eq(graphName))
+            .orderBy(GRAPHITRON_INPUT_FIELD_RESOLVING_TABLE.TYPE_NAME,
+                GRAPHITRON_INPUT_FIELD_RESOLVING_TABLE.FIELD_NAME,
+                GRAPHITRON_INPUT_FIELD_RESOLVING_TABLE.TABLE_NAME)
             .fetch();
     }
 
     /** The input coordinate and the table it is classified against: the claim of every case here. */
     private static String render(Record row) {
-        return row.get(INTENT_INPUT_FIELD_RESOLVING_TABLE.TYPE_NAME) + "."
-            + row.get(INTENT_INPUT_FIELD_RESOLVING_TABLE.FIELD_NAME) + " "
-            + row.get(INTENT_INPUT_FIELD_RESOLVING_TABLE.TABLE_NAME);
+        return row.get(GRAPHITRON_INPUT_FIELD_RESOLVING_TABLE.TYPE_NAME) + "."
+            + row.get(GRAPHITRON_INPUT_FIELD_RESOLVING_TABLE.FIELD_NAME) + " "
+            + row.get(GRAPHITRON_INPUT_FIELD_RESOLVING_TABLE.TABLE_NAME);
     }
 }

@@ -31,7 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * mutation rather than by a field, and the cases divide the same way the relation's own population
  * rule does.
  *
- * <p>The write-target section asserts which rung of {@code intent_field_scope_table} answered, by
+ * <p>The write-target section asserts which rung of {@code graphitron_field_scope_table} answered, by
  * asserting the table a coordinate whose rungs disagree resolves; the rung itself is not a column
  * here, so the claim is made through a fixture where only one rung could have produced the answer.
  * The DELETE cases carry the load there: a DELETE has no return-derived rung at all, so a DELETE
@@ -67,7 +67,7 @@ class MutationWritePayloadTest {
 
     /**
      * An UPDATE returning a carrier payload writes the table its data channel binds. The shape the
-     * store could not see at all before {@code intent_field_scope_table} gained the payload rung,
+     * store could not see at all before {@code graphitron_field_scope_table} gained the payload rung,
      * and the reason this relation is worth pinning against that one rather than only against the
      * classifier.
      */

@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_ARGUMENT_SCOPE_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_SCOPE_TABLE;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedConstraint;
@@ -24,7 +24,7 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@code intent_argument_scope_table} resolves: the table an argument's column-shaped content
+ * What {@code graphitron_argument_scope_table} resolves: the table an argument's column-shaped content
  * binds against, which is where a predicate built from it correlates and where a path departing it
  * starts.
  *
@@ -224,22 +224,22 @@ class ArgumentScopeTableTest {
 
     private static Result<Record> rowsIn(DSLContext dsl, String graphName) {
         derive(dsl);
-        return dsl.select(INTENT_ARGUMENT_SCOPE_TABLE.fields())
-            .from(INTENT_ARGUMENT_SCOPE_TABLE)
-            .where(INTENT_ARGUMENT_SCOPE_TABLE.GRAPH_NAME.eq(graphName))
-            .orderBy(INTENT_ARGUMENT_SCOPE_TABLE.TYPE_NAME,
-                INTENT_ARGUMENT_SCOPE_TABLE.FIELD_NAME,
-                INTENT_ARGUMENT_SCOPE_TABLE.ARGUMENT_NAME,
-                INTENT_ARGUMENT_SCOPE_TABLE.TABLE_NAME)
+        return dsl.select(GRAPHITRON_ARGUMENT_SCOPE_TABLE.fields())
+            .from(GRAPHITRON_ARGUMENT_SCOPE_TABLE)
+            .where(GRAPHITRON_ARGUMENT_SCOPE_TABLE.GRAPH_NAME.eq(graphName))
+            .orderBy(GRAPHITRON_ARGUMENT_SCOPE_TABLE.TYPE_NAME,
+                GRAPHITRON_ARGUMENT_SCOPE_TABLE.FIELD_NAME,
+                GRAPHITRON_ARGUMENT_SCOPE_TABLE.ARGUMENT_NAME,
+                GRAPHITRON_ARGUMENT_SCOPE_TABLE.TABLE_NAME)
             .fetch();
     }
 
     /** The coordinate, which rung answered, and the table it reached: the claim of every case here. */
     private static String render(Record row) {
-        return row.get(INTENT_ARGUMENT_SCOPE_TABLE.TYPE_NAME) + "."
-            + row.get(INTENT_ARGUMENT_SCOPE_TABLE.FIELD_NAME) + "("
-            + row.get(INTENT_ARGUMENT_SCOPE_TABLE.ARGUMENT_NAME) + ") "
-            + row.get(INTENT_ARGUMENT_SCOPE_TABLE.BASIS) + " "
-            + row.get(INTENT_ARGUMENT_SCOPE_TABLE.TABLE_NAME);
+        return row.get(GRAPHITRON_ARGUMENT_SCOPE_TABLE.TYPE_NAME) + "."
+            + row.get(GRAPHITRON_ARGUMENT_SCOPE_TABLE.FIELD_NAME) + "("
+            + row.get(GRAPHITRON_ARGUMENT_SCOPE_TABLE.ARGUMENT_NAME) + ") "
+            + row.get(GRAPHITRON_ARGUMENT_SCOPE_TABLE.BASIS) + " "
+            + row.get(GRAPHITRON_ARGUMENT_SCOPE_TABLE.TABLE_NAME);
     }
 }

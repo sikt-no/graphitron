@@ -119,7 +119,7 @@ class DetectionReadReachGateTest {
             // for every rule above it, where the derivation re-evaluated the chain per naming.
             "graphitron_node_type",
             // Also read by the carrier data-channel stage's rule and refreshed through
-            // intent_field_scope_table_live; expanded here once per container by memberNames.
+            // graphitron_field_scope_table_rule; expanded here once per container by memberNames.
             "intent_poly_member",
             "intent_record_slot_assignable",
             "intent_resolved_node_key_shape"));
@@ -144,7 +144,7 @@ class DetectionReadReachGateTest {
 
         REACH.put("ReferenceForParticipantDefects", Set.of(
             "intent_field_navigated_type",
-            // Also refreshed through intent_field_scope_table_live, and expanded here once per
+            // Also refreshed through graphitron_field_scope_table_rule, and expanded here once per
             // consumer of an application row by participantsOf.
             "intent_field_participant_scope_table",
             "intent_poly_member",
@@ -253,12 +253,12 @@ class DetectionReadReachGateTest {
                 .isEmpty();
             // A registered target is a table too, so a reader meeting one evaluates no body.
             assertThat(MaterializeDependencies.viewsEvaluatedBy(dsl,
-                List.of("intent_field_scope_table"))).isEmpty();
+                List.of("graphitron_field_scope_table"))).isEmpty();
             // The source view behind that same target is a view, so a reader naming it evaluates
             // the rule the target holds the rows of. That difference is the whole subject.
             assertThat(MaterializeDependencies.viewsEvaluatedBy(dsl,
-                List.of("intent_field_scope_table_live")))
-                .contains("intent_field_scope_table_live");
+                List.of("graphitron_field_scope_table_rule")))
+                .contains("graphitron_field_scope_table_rule");
             // A name the catalog does not hold is ignored on the same footing as a table.
             assertThat(MaterializeDependencies.viewsEvaluatedBy(dsl,
                 List.of("intent_no_such_relation"))).isEmpty();

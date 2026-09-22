@@ -76,6 +76,14 @@ class StageOrderGateTest {
      * the producers write has to run after the producer that writes it, and a rule bottoming out in
      * captured facts alone may run first, where later steps can read its rows. The gate below is
      * what says which of those each stage actually is.
+     *
+     * <p>{@code UnlowerableOrderingRejectionRows} is inside the stratum rather than after the
+     * refresh, and the rung that converted the field-site scope is what put it there: it renders a
+     * view reading that relation, which the refresh used to be what filled, so its own transaction
+     * after the refresh was the earliest point at which it could see the capture's rows. With the
+     * scope a stage the reason is gone, and a step sitting after the refresh for a dependency that
+     * no longer exists is a stale rationale nothing can catch, this producer being jOOQ with no
+     * parsed read set.
      */
     private static final List<Step> STRATUM = List.of(
         new Step("FieldColumnScopes", "graphitron_field_column_scope_rule",
@@ -92,9 +100,15 @@ class StageOrderGateTest {
             Set.of("intent_authored_claim_rejection")),
         new Step("CarrierDataFields", "graphitron_carrier_data_field_rule",
             Set.of("graphitron_carrier_data_field")),
-        new Step("Materializations.refresh", null, REGISTERED_TARGETS),
+        new Step("FieldScopeTables", "graphitron_field_scope_table_rule",
+            Set.of("graphitron_field_scope_table")),
+        new Step("ArgumentScopeTables", "graphitron_argument_scope_table_rule",
+            Set.of("graphitron_argument_scope_table")),
+        new Step("InputFieldResolvingTables", "graphitron_input_field_resolving_table_rule",
+            Set.of("graphitron_input_field_resolving_table")),
         new Step("UnlowerableOrderingRejectionRows", null,
-            Set.of("intent_field_unlowerable_ordering_rejection")));
+            Set.of("intent_field_unlowerable_ordering_rejection")),
+        new Step("Materializations.refresh", null, REGISTERED_TARGETS));
 
     @Test
     @DisplayName("no stage reads a table a later step of the pass writes")

@@ -1,10 +1,13 @@
 package no.sikt.graphitron.model.capture;
 
 import no.sikt.graphitron.model.derive.ArgMappingCandidates;
+import no.sikt.graphitron.model.derive.ArgumentScopeTables;
 import no.sikt.graphitron.model.derive.AuthoredClaimRejectionRows;
 import no.sikt.graphitron.model.derive.CarrierDataFields;
 import no.sikt.graphitron.model.derive.ClassificationDomainCapture;
 import no.sikt.graphitron.model.derive.FieldColumnScopes;
+import no.sikt.graphitron.model.derive.FieldScopeTables;
+import no.sikt.graphitron.model.derive.InputFieldResolvingTables;
 import no.sikt.graphitron.model.derive.InputOccurrencePaths;
 import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.model.derive.RefreshProgress;
@@ -103,6 +106,14 @@ public final class FactCapture {
             // after them rather than at the front of the stratum, and before the refresh because
             // the registrations that survive read their rows.
             CarrierDataFields.derive(txDsl, graph.name());
+            FieldScopeTables.derive(txDsl, graph.name());
+            ArgumentScopeTables.derive(txDsl, graph.name());
+            InputFieldResolvingTables.derive(txDsl, graph.name());
+            // The one producer that used to run alone after the refresh, for a dependency that no
+            // longer exists: the view it renders reads the field-site scope, which the refresh was
+            // what filled and which the stage above it fills now. Its position here is the read set
+            // it always had, met one step earlier.
+            UnlowerableOrderingRejectionRows.derive(txDsl, graph.name());
             if (!analysingCadence) {
                 Materializations.refresh(txDsl, graph.name(), refresh);
             }
@@ -129,16 +140,6 @@ public final class FactCapture {
         // path it is the idempotent restatement of what that pass already analysed, kept so that one
         // call states the whole register's statistics on every path out of a capture.
         Materializations.analyse(dsl);
-        // The one capture-cadence writer that cannot run beside its siblings above, and the reason
-        // is a dependency rather than a preference: the view it renders reads
-        // intent_field_scope_table, which the refresh above is what fills, so a call inside the
-        // load transaction would render the previous capture's rows. Its own transaction after the
-        // refresh, and after the analyse so the read is planned against current statistics, is
-        // therefore the earliest point at which it can see what this capture landed. Nothing the
-        // build path reads waits on it: the rejection it stores is for the diagnostics surface, and
-        // the error stream mints the same value off the view directly, so a reader arriving in the
-        // window between the refresh and this write sees the diagnostic missing rather than wrong.
-        dsl.transaction(tx -> UnlowerableOrderingRejectionRows.derive(tx.dsl(), graph.name()));
     }
 
     /**

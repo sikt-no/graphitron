@@ -302,8 +302,15 @@ class DerivedReadCostTest {
      * mechanism. Three name that relation and a fourth reaches it through them, and none of the
      * four reaches any other registration, so a rung its owner writes in a capture stage takes each
      * of them out of this domain whole rather than reducing its row.
+     *
+     * <p>Thirty-four to twenty-five with the three rungs above it, and the fall is the whole
+     * column-scope family leaving at once: the field-site scope, the argument-site fan-out over it
+     * and the input-field resolving table were the rung every one of those nine views reached the
+     * register through. It is the same mechanism a fourth, fifth and sixth time rather than a new
+     * one, and what is left in this domain is the node-id and mutation-payload families, which is
+     * where the register still is.
      */
-    private static final int READERS_WITH_CELLS = 34;
+    private static final int READERS_WITH_CELLS = 25;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
@@ -440,8 +447,14 @@ class DerivedReadCostTest {
      * between reading a refilled target and re-evaluating the rule behind it; the rule is still
      * there, under {@code graphitron_field_column_scope_rule}, but no refresh is buying its rows
      * and the stage that does is not a shape this matrix prices.
+     *
+     * <p>80 to 51 with the column-scope family, which is the largest fall this figure has taken and
+     * the same mechanism throughout: four registrations left at once, and every cell charged to one
+     * of them went with it. The rules are all still in the schema, each under a {@code _rule} name
+     * beside its target; what is gone is the refresh that was buying their rows, and a stage is not
+     * a shape this matrix prices.
      */
-    private static final int CELLS = 80;
+    private static final int CELLS = 51;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -706,7 +719,7 @@ class DerivedReadCostTest {
      *
      * <p>A trio left a second way, which is worth knowing because nothing was measured to send it.
      * Three readers of {@code intent_node_id_instruction} stood here charged to
-     * {@code intent_argument_scope_table}: the encode, the decode slot, and the decode defect above
+     * {@code graphitron_argument_scope_table}: the encode, the decode slot, and the decode defect above
      * it. All three were small and flat, the instrument's own floor rather than work, H2 charging a
      * table visit at least one scan per naming where a view whose evaluation short-circuits is
      * charged none. Registering {@code intent_node_id_instruction} removed them by removing their
@@ -721,7 +734,7 @@ class DerivedReadCostTest {
      * about the registration it was charged to.
      *
      * <p>A third trio left a third way, and it is the one this set was built to see. The three
-     * readers charged to {@code intent_argument_scope_table} left when that target was given a
+     * readers charged to {@code graphitron_argument_scope_table} left when that target was given a
      * primary key, which is the whole of the change: no reader was restructured, no index was added
      * beside the target, and the coordinate index it already carried is a prefix of the key rather
      * than a replacement for it. Registered against unregistered, in scans: the argument reference
@@ -1014,9 +1027,12 @@ class DerivedReadCostTest {
     }
 
     /**
-     * The pass-on-exhaustion arm, shown firing rather than asserted in prose. A relation the decode
-     * family reads is made non-terminating by {@link RunawayRelation}, whose swap is structural rather
-     * than slow, and the cell is then recorded as unmeasurable instead of failing the gate.
+     * The pass-on-exhaustion arm, shown firing rather than asserted in prose. A relation a
+     * registration's rule reads is made non-terminating by {@link RunawayRelation}, whose swap is
+     * structural rather than slow, and the cell is then recorded as unmeasurable instead of failing
+     * the gate. The subject moves each time a conversion takes the registration this case used out
+     * of the register, which is what took it off the column-scope family and onto the argument-site
+     * column scope, whose rule reads the argument scope this case makes non-terminating.
      *
      * <p>Passing is the only reading of a non-terminating unregistered side that is not a lie:
      * non-termination is the strongest possible form of "materializing did not make this worse". What
@@ -1034,14 +1050,14 @@ class DerivedReadCostTest {
         var ctx = TestRunContext.of();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         var registration = registrations.stream()
-            .filter(r -> r.targetTableName().equals("intent_field_scope_table"))
+            .filter(r -> r.targetTableName().equals("intent_argument_column_scope"))
             .findFirst().orElseThrow();
 
         try (var store = CapturedStore.ownStoreOfCatalog(
                 tmp.resolve("runaway"), scaledSdl(1), jooq)) {
             UnregisteredRelation.install(store.dsl(), registration);
-            RunawayRelation.install(store.dsl(), "intent_field_navigated_type");
-            var timed = scans(store, "intent_field_scope_table",
+            RunawayRelation.install(store.dsl(), "graphitron_argument_scope_table");
+            var timed = scans(store, "intent_argument_column_scope",
                 new ReadBudget.Bounded(RUNAWAY_BUDGET_MILLIS));
             assertThat(timed.exhausted())
                 .as("a cell whose unregistered side cannot terminate is recorded, not compared")

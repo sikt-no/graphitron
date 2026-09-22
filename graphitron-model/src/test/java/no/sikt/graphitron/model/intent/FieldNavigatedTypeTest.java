@@ -8,7 +8,7 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ELEMENT_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_NAVIGATED_TYPE;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_SCOPE_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SCOPE_TABLE;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedConstraint;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
@@ -321,12 +321,12 @@ class FieldNavigatedTypeTest {
     /** The scope relation, rendered the way its own test renders it. */
     private static List<String> scopeRows(DSLContext dsl) {
         derive(dsl);
-        return dsl.select(INTENT_FIELD_SCOPE_TABLE.TYPE_NAME, INTENT_FIELD_SCOPE_TABLE.FIELD_NAME,
-                INTENT_FIELD_SCOPE_TABLE.BASIS, INTENT_FIELD_SCOPE_TABLE.TABLE_NAME)
-            .from(INTENT_FIELD_SCOPE_TABLE)
-            .where(INTENT_FIELD_SCOPE_TABLE.GRAPH_NAME.eq(GRAPH))
-            .orderBy(INTENT_FIELD_SCOPE_TABLE.TYPE_NAME, INTENT_FIELD_SCOPE_TABLE.FIELD_NAME,
-                INTENT_FIELD_SCOPE_TABLE.TABLE_NAME)
+        return dsl.select(GRAPHITRON_FIELD_SCOPE_TABLE.TYPE_NAME, GRAPHITRON_FIELD_SCOPE_TABLE.FIELD_NAME,
+                GRAPHITRON_FIELD_SCOPE_TABLE.BASIS, GRAPHITRON_FIELD_SCOPE_TABLE.TABLE_NAME)
+            .from(GRAPHITRON_FIELD_SCOPE_TABLE)
+            .where(GRAPHITRON_FIELD_SCOPE_TABLE.GRAPH_NAME.eq(GRAPH))
+            .orderBy(GRAPHITRON_FIELD_SCOPE_TABLE.TYPE_NAME, GRAPHITRON_FIELD_SCOPE_TABLE.FIELD_NAME,
+                GRAPHITRON_FIELD_SCOPE_TABLE.TABLE_NAME)
             .fetch(r -> r.value1() + "." + r.value2() + " " + r.value3() + " " + r.value4());
     }
 }

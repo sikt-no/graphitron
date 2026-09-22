@@ -173,6 +173,15 @@ class SupertypeSignatureGateTest {
         // it. They became visible together when both stopped being registered targets and became
         // tables this gate's scan reaches.
         Set.of("graphitron_resolved_type_binding", "graphitron_spelled_table"),
+        // Which table a site's own content binds against, under the two keys the question is asked
+        // by: the field's coordinate and the argument's. The payload is the same because the
+        // argument-site relation is the field-site one fanned out over the field's arguments and
+        // adds nothing else, and the keys differ because a predicate is emitted per argument. No
+        // supertype is owed here either: a relation over both would carry an argument name that is
+        // null on half its rows, and neither reader could key into it. They became visible together
+        // the way the pair above did, when a conversion took both out of the register and made them
+        // tables this gate's scan reaches.
+        Set.of("graphitron_argument_scope_table", "graphitron_field_scope_table"),
         // The five application sites, which keep their own signature now that a supertype carries
         // the name they share: each still holds the parent hop as a foreign key into the relation
         // its own site declares, and that is the payload grouping them here. The row stays because
@@ -366,7 +375,13 @@ class SupertypeSignatureGateTest {
         // question of the same resolution, one by the type a field's site navigates to and one by
         // a spelling an author wrote at that site, and coalescing them is the precedence between
         // the two questions rather than a supertype nobody wrote.
-        "intent_field_scope_table_live|graphitron_resolved_type_binding,graphitron_spelled_table");
+        "graphitron_field_scope_table_rule|graphitron_resolved_type_binding,graphitron_spelled_table",
+        // The condition membership fold, which reads both scope relations at the grain each is
+        // keyed at: a @condition on a field with no arguments has a table to filter and no argument
+        // to carry it, so the fold names the field-site relation, and one with arguments names the
+        // argument-site one. It is a reconstruction of the set above by this gate's reading and a
+        // rule with two cases by its own, and it arrived with that set rather than being written.
+        "intent_condition_membership|graphitron_argument_scope_table,graphitron_field_scope_table");
 
     @Test
     @DisplayName("the capture tables sharing a payload are exactly the recorded subtype sets")

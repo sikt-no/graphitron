@@ -112,8 +112,14 @@ class MaterializeRegistryGateTest {
      * {@link #NO_INDEX}: a target nobody refreshes is no longer a registered target, and the index
      * argument moves onto the relation's own declaration in {@code meta_relation}, which is where a
      * conversion puts the prose the register's reason had been carrying.
+     *
+     * <p>Fifteen with the three rungs above it, and they fall together for the reason the ladder is
+     * one: the field-site scope reads the carrier channel, the argument-site scope reads that, and
+     * the input-field resolving table reads the argument-site scope, so each conversion is what
+     * releases the next. The input-field resolving table takes a row off {@link #NO_INDEX} with it,
+     * on the carrier channel's terms.
      */
-    private static final int REGISTRATIONS = 18;
+    private static final int REGISTRATIONS = 15;
 
     /**
      * Stages the refresh takes, the register's depth.
@@ -142,13 +148,13 @@ class MaterializeRegistryGateTest {
      * worth a line because the three registrations above moved this figure and the reasoning that
      * moved them does not apply here. That rule is an unregistered intermediate under two
      * registrations, so it looks like the same shape; what makes it not is that both of its readers
-     * already wait on {@code intent_input_field_resolving_table}, which is deeper, so the chain
+     * already wait on {@code graphitron_input_field_resolving_table}, which is deeper, so the chain
      * through the new registration is shorter than the one the depth is measured on and staging it
      * displaces nothing. A registration lengthens the pass only when it stages the longest chain,
      * and that is a property of the register rather than of the rule being registered.
      *
      * <p>Sixteen since {@code intent_argument_reference_step_target} was registered, and by that
-     * mechanism a fourth time: it sat between the registered {@code intent_argument_scope_table}
+     * mechanism a fourth time: it sat between the registered {@code graphitron_argument_scope_table}
      * it reads and the registered {@code intent_node_id_instruction} and
      * {@code intent_node_id_decode_hop} that read it, so it is exactly the unregistered
      * intermediate the reachability walk was seeing straight through. Depth bought the same kind
@@ -183,9 +189,16 @@ class MaterializeRegistryGateTest {
      * than the rung it waits on. Converting the bottom of that family collapses the stage the
      * family was waiting on rather than merely retiring a row.
      *
+     * <p>Ten with the three rungs above it, and two of those stages go for the reason the first
+     * one did: the chain that ran through the carrier channel ran on through the field-site scope,
+     * the argument-site fan-out and the input-field resolving table, so converting the family takes
+     * its whole run off the front of the longest chain rather than a rung out of the middle. What
+     * the refresh still waits on starts at the deepest registration still reading a rule, which is
+     * the node-id family and the mutation payloads above it.
+     *
      * @see #REGISTRATIONS
      */
-    private static final int REFRESH_STAGES = 12;
+    private static final int REFRESH_STAGES = 10;
 
     /**
      * The registered targets carrying no index, each with the argument that says why. A roster
@@ -284,7 +297,7 @@ class MaterializeRegistryGateTest {
      *   installs costs more than the scan it replaces. What would change the answer is a driving
      *   side larger than the target, which is the same shape {@code intent_argument_column_match}'s
      *   row above names, and on a consumer schema both sides grow. Nothing here is the hazard the
-     *   register met on {@code intent_field_scope_table}, where an unindexed target was worse than
+     *   register met on {@code graphitron_field_scope_table}, where an unindexed target was worse than
      *   the view it replaced: this target unindexed takes its expensive reader from 85 milliseconds
      *   to 25.</li>
      *   <li>{@code intent_node_id_decode_column}: an index stood here and was deleted when the
@@ -327,7 +340,6 @@ class MaterializeRegistryGateTest {
         "intent_argument_column_scope",
         "intent_argument_column_match",
         "intent_input_field_carrier_role",
-        "intent_input_field_resolving_table",
         "intent_mutation_payload_column",
         "intent_node_id_decode_column",
         "intent_mutation_write_payload",

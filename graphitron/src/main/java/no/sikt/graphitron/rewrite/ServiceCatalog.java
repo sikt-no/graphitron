@@ -1536,7 +1536,7 @@ class ServiceCatalog {
      * The node type a bare {@code @nodeId} names at this carrier, inferred the way the fact model's
      * {@code TARGET_TABLE_NODE_TYPE} basis infers it: the table the slot's own scope resolves to,
      * then the one node type over that table. Which table that is comes from the same two rungs
-     * {@code intent_argument_scope_table} ranks, in that order, so the walk and the store answer
+     * {@code graphitron_argument_scope_table} ranks, in that order, so the walk and the store answer
      * from one rule rather than two.
      *
      * <ul>

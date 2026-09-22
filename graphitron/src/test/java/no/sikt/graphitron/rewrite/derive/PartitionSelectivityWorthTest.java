@@ -110,13 +110,20 @@ class PartitionSelectivityWorthTest {
 
     /**
      * How far below the bare regime the declared one has to sit for the claim above to say anything.
-     * Measured at 1.36 (1499 rows against 1105) on the keyed arm tables; 1.2 is the floor the
-     * assertion holds, low enough that a fixture detail moving the ratio does not fail the build and
-     * high enough that the two regimes cannot be the same plan. It was 9.8 on the single hop table,
-     * and the class note above carries what moved it: this is the residue after a key on the target
-     * took the rest, not a weaker reading of the same shape.
+     * Measured at 1.13 (1748 rows against 1551); 1.08 is the floor the assertion holds, low enough
+     * that a fixture detail moving the ratio does not fail the build and high enough that the two
+     * regimes cannot be the same plan.
+     *
+     * <p>It was 9.8 on the single hop table and 1.36 on the keyed arm tables, and the direction is
+     * the same both times: this is the residue after a key on a target the rule reads took the
+     * rest, not a weaker reading of the same shape. The latest fall is the input-field resolving
+     * table gaining the primary key that declaring it forced, which is one more seek this rule's
+     * bare regime can make and so one less thing the partition declaration is buying. A floor that
+     * keeps falling for that reason is the instrument reporting its subject being fixed underneath
+     * it; the reading to take when it reaches one is that the declaration has stopped being worth
+     * measuring here, not that the control should be widened again.
      */
-    private static final double CONTROL_AT_LEAST = 1.2;
+    private static final double CONTROL_AT_LEAST = 1.08;
 
     @TempDir
     static Path tmp;

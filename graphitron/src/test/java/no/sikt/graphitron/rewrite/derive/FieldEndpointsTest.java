@@ -14,7 +14,7 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TABLE;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_SCOPE_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SCOPE_TABLE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -127,7 +127,7 @@ class FieldEndpointsTest {
     @DisplayName("the targets are exactly the derivation's, whatever each calls the rule")
     void theTargetsAgreeWithTheDerivation() {
         withCaptured(dsl -> {
-            var s = INTENT_FIELD_SCOPE_TABLE;
+            var s = GRAPHITRON_FIELD_SCOPE_TABLE;
             List<String> derived = dsl
                 .select(s.TYPE_NAME, s.FIELD_NAME, s.TABLE_NAME).from(s)
                 .where(s.GRAPH_NAME.eq(CapturedStore.GRAPH))

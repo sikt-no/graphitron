@@ -215,7 +215,7 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
  *       pairing complete: a pair that routes draws no row, so the two relations partition the
  *       authored population rather than overlapping on it;
  *       {@code no.sikt.graphitron.model.intent.ArgumentScopeTableTest} binds
- *       {@code intent_argument_scope_table}, which table an argument's column-shaped content binds
+ *       {@code graphitron_argument_scope_table}, which table an argument's column-shaped content binds
  *       against, one case per rung plus the cases where the rungs compete, the precedence being the
  *       claim rather than the table that came out;
  *       {@code no.sikt.graphitron.model.intent.NodeIdInstructionTest} binds

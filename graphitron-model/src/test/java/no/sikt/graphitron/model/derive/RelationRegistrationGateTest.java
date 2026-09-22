@@ -336,10 +336,10 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_resolved_type_binding", Arm.DERIVED);
         registrations.put("intent_resolved_node_key_shape", Arm.DERIVED);
         registrations.put("intent_field_participant_scope_table", Arm.DERIVED);
-        registrations.put("intent_field_scope_table", Arm.DERIVED);
-        registrations.put("intent_argument_scope_table", Arm.DERIVED);
-        registrations.put("intent_input_field_resolving_table", Arm.DERIVED);
-        registrations.put("intent_input_field_resolving_table_live", Arm.DERIVED);
+        registrations.put("graphitron_field_scope_table", Arm.DERIVED);
+        registrations.put("graphitron_argument_scope_table", Arm.DERIVED);
+        registrations.put("graphitron_input_field_resolving_table", Arm.DERIVED);
+        registrations.put("graphitron_input_field_resolving_table_rule", Arm.DERIVED);
         registrations.put("intent_input_field_reference_step_target", Arm.DERIVED);
         registrations.put("intent_input_field_column_scope", Arm.DERIVED);
         registrations.put("intent_input_field_column_match", Arm.DERIVED);
@@ -348,7 +348,7 @@ class RelationRegistrationGateTest {
         registrations.put("intent_input_field_filter_role", Arm.DERIVED);
         registrations.put("intent_input_field_carrier_role", Arm.DERIVED);
         registrations.put("intent_condition_membership", Arm.DERIVED);
-        registrations.put("intent_field_scope_table_live", Arm.DERIVED);
+        registrations.put("graphitron_field_scope_table_rule", Arm.DERIVED);
         registrations.put("intent_mutation_write_payload", Arm.DERIVED);
         registrations.put("intent_mutation_write_payload_live", Arm.DERIVED);
         registrations.put("intent_mutation_payload_refusal", Arm.DERIVED);
@@ -378,7 +378,7 @@ class RelationRegistrationGateTest {
         registrations.put("intent_reference_for_application", Arm.DERIVED);
         registrations.put("intent_foreign_key_column_pair", Arm.DERIVED);
         registrations.put("intent_node_id_encode", Arm.DERIVED);
-        registrations.put("intent_argument_scope_table_live", Arm.DERIVED);
+        registrations.put("graphitron_argument_scope_table_rule", Arm.DERIVED);
         registrations.put("intent_node_id_decode_hop_live", Arm.DERIVED);
         registrations.put("intent_node_id_decode_hop_column_live", Arm.DERIVED);
         registrations.put("intent_node_id_decode_column_live", Arm.DERIVED);

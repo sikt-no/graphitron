@@ -226,9 +226,14 @@ class RefreshPlanStatisticsTest {
      * walk stored its plan turns on what the targets it still reads are known to hold. A rule
      * joining this set is not a rule that got dearer, it is a rule whose plan has something to
      * depend on.
+     *
+     * <p>Four again with the column-scope family, and the field-site scope leaves this set the way
+     * the four above it did rather than by getting cheaper: it is a capture stage now, so it is no
+     * longer a refresh statement at all and there is no refresh plan of its own left to measure.
+     * Every rule that reads it reads a base table the pass can have analysed, which is the same
+     * conclusion this measurement keeps reaching, one rung at a time.
      */
     private static final Set<String> PLAN_DEPENDS_ON_STATISTICS = Set.of(
-        "intent_field_scope_table_live",
         "intent_mutation_payload_column_live",
         "intent_mutation_payload_refusal_live",
         "intent_node_id_decode_hop_live",

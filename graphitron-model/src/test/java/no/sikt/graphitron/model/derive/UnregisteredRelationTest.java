@@ -29,10 +29,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * answer and not ours. It re-resolves for any session that did not already compile the view, which is
  * what makes a reader minted after the swap the contract {@link UnregisteredRelation} states.
  *
- * <p>The relation under test is {@code intent_argument_scope_table}, chosen because it is named from
- * seven view bodies, so the dependent-view half of the claim is exercised over a real reader rather
- * than a fixture written to have one. It is a registration, which is what this helper's contract is
- * about; the subject moves each time a conversion takes the previous one out of the register.
+ * <p>The relation under test is {@code intent_node_id_decode_column}, so the dependent-view half of
+ * the claim is exercised over a real reader rather than a fixture written to have one. It is a
+ * registration, which is what this helper's contract is about; the subject moves each time a
+ * conversion takes the previous one out of the register, and it has moved twice on that account.
  *
  * <p>Neither relation here carries a written position, and that is a constraint on the subject
  * rather than a coincidence. The two stores below are captured into directories of their own, so a
@@ -48,10 +48,10 @@ class UnregisteredRelationTest {
     @TempDir
     Path tmp;
 
-    private static final String TARGET = "intent_argument_scope_table";
+    private static final String TARGET = "intent_node_id_decode_column";
 
     /** A view naming the target, so the swap is exercised through a reader and not only directly. */
-    private static final String DEPENDENT = "intent_node_id_decode_endpoint";
+    private static final String DEPENDENT = "intent_node_id_decode";
 
     @Test
     void reversingARegistrationKeepsBothTheRelationsAnswerAndItsReadersAnswer() {

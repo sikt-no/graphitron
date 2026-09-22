@@ -8,9 +8,9 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_ARGUMENT_SCOPE_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_SCOPE_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PARTICIPANT_SCOPE_TABLE;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_SCOPE_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SCOPE_TABLE;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedConstraint;
@@ -38,7 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * participant, so a case asserting the tables alone would pass with the participants transposed.
  *
  * <p>Two sections carry what makes this an arm rather than a rung. One is the pair of preconditions
- * that keep it disjoint from both of {@code intent_field_scope_table}'s ranked rungs, and the cases
+ * that keep it disjoint from both of {@code graphitron_field_scope_table}'s ranked rungs, and the cases
  * there are declines: the container that binds its own table is the single-table discriminated
  * interface, whose participants share one filter surface, and the field naming a resolving
  * {@code @mutation(table:)} has an author's answer already. The other is the projection into that
@@ -338,35 +338,35 @@ class FieldParticipantScopeTableTest {
     /** The scope relation this arm is unioned into, rendered the way its own test renders it. */
     private static List<String> scopeRows(DSLContext dsl) {
         derive(dsl);
-        return dsl.select(INTENT_FIELD_SCOPE_TABLE.fields())
-            .from(INTENT_FIELD_SCOPE_TABLE)
-            .where(INTENT_FIELD_SCOPE_TABLE.GRAPH_NAME.eq(GRAPH))
-            .orderBy(INTENT_FIELD_SCOPE_TABLE.TYPE_NAME,
-                INTENT_FIELD_SCOPE_TABLE.FIELD_NAME,
-                INTENT_FIELD_SCOPE_TABLE.TABLE_NAME)
+        return dsl.select(GRAPHITRON_FIELD_SCOPE_TABLE.fields())
+            .from(GRAPHITRON_FIELD_SCOPE_TABLE)
+            .where(GRAPHITRON_FIELD_SCOPE_TABLE.GRAPH_NAME.eq(GRAPH))
+            .orderBy(GRAPHITRON_FIELD_SCOPE_TABLE.TYPE_NAME,
+                GRAPHITRON_FIELD_SCOPE_TABLE.FIELD_NAME,
+                GRAPHITRON_FIELD_SCOPE_TABLE.TABLE_NAME)
             .fetch()
-            .map(row -> row.get(INTENT_FIELD_SCOPE_TABLE.TYPE_NAME) + "."
-                + row.get(INTENT_FIELD_SCOPE_TABLE.FIELD_NAME) + " "
-                + row.get(INTENT_FIELD_SCOPE_TABLE.BASIS) + " "
-                + row.get(INTENT_FIELD_SCOPE_TABLE.TABLE_NAME));
+            .map(row -> row.get(GRAPHITRON_FIELD_SCOPE_TABLE.TYPE_NAME) + "."
+                + row.get(GRAPHITRON_FIELD_SCOPE_TABLE.FIELD_NAME) + " "
+                + row.get(GRAPHITRON_FIELD_SCOPE_TABLE.BASIS) + " "
+                + row.get(GRAPHITRON_FIELD_SCOPE_TABLE.TABLE_NAME));
     }
 
     /** The argument-grain fan-out, rendered the way its own test renders it. */
     private static List<String> argumentRows(DSLContext dsl) {
         derive(dsl);
-        return dsl.select(INTENT_ARGUMENT_SCOPE_TABLE.fields())
-            .from(INTENT_ARGUMENT_SCOPE_TABLE)
-            .where(INTENT_ARGUMENT_SCOPE_TABLE.GRAPH_NAME.eq(GRAPH))
-            .orderBy(INTENT_ARGUMENT_SCOPE_TABLE.TYPE_NAME,
-                INTENT_ARGUMENT_SCOPE_TABLE.FIELD_NAME,
-                INTENT_ARGUMENT_SCOPE_TABLE.ARGUMENT_NAME,
-                INTENT_ARGUMENT_SCOPE_TABLE.TABLE_NAME)
+        return dsl.select(GRAPHITRON_ARGUMENT_SCOPE_TABLE.fields())
+            .from(GRAPHITRON_ARGUMENT_SCOPE_TABLE)
+            .where(GRAPHITRON_ARGUMENT_SCOPE_TABLE.GRAPH_NAME.eq(GRAPH))
+            .orderBy(GRAPHITRON_ARGUMENT_SCOPE_TABLE.TYPE_NAME,
+                GRAPHITRON_ARGUMENT_SCOPE_TABLE.FIELD_NAME,
+                GRAPHITRON_ARGUMENT_SCOPE_TABLE.ARGUMENT_NAME,
+                GRAPHITRON_ARGUMENT_SCOPE_TABLE.TABLE_NAME)
             .fetch()
-            .map(row -> row.get(INTENT_ARGUMENT_SCOPE_TABLE.TYPE_NAME) + "."
-                + row.get(INTENT_ARGUMENT_SCOPE_TABLE.FIELD_NAME) + "("
-                + row.get(INTENT_ARGUMENT_SCOPE_TABLE.ARGUMENT_NAME) + ") "
-                + row.get(INTENT_ARGUMENT_SCOPE_TABLE.BASIS) + " "
-                + row.get(INTENT_ARGUMENT_SCOPE_TABLE.TABLE_NAME));
+            .map(row -> row.get(GRAPHITRON_ARGUMENT_SCOPE_TABLE.TYPE_NAME) + "."
+                + row.get(GRAPHITRON_ARGUMENT_SCOPE_TABLE.FIELD_NAME) + "("
+                + row.get(GRAPHITRON_ARGUMENT_SCOPE_TABLE.ARGUMENT_NAME) + ") "
+                + row.get(GRAPHITRON_ARGUMENT_SCOPE_TABLE.BASIS) + " "
+                + row.get(GRAPHITRON_ARGUMENT_SCOPE_TABLE.TABLE_NAME));
     }
 
     /** The coordinate, the participant, and the table its branch is rooted in. */
