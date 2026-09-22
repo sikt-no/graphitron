@@ -1,7 +1,7 @@
 ---
 id: R966
 title: "Write inputs keyed by a decoded node id divine the tenant"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 3
 theme: classification-model
@@ -138,6 +138,13 @@ The fixture gap is why none of this was caught: `multitenant.graphqls` carries n
 **Per-row partitioning of a mixed-tenant write batch.** The per-row family's posture, applied to writes: split the batch by decoded tenant and run one statement per tenant. Rejected as the default because it makes one mutation call a multi-database write with no transaction spanning it, so a partial failure leaves some tenants written and others not and nothing in the response says which. The agreement guard makes that shape impossible to reach by accident. The precedent is the hand-written sis v9 `QueryInspector.getUniqueId`, which threw on a mixed-tenant batch; sis does not need partitioning, and this item states that rather than leaving the arm open. A later item can add it behind an explicit opt-in if a consumer ever wants it.
 
 **Reusing `NodeIdBound` for the write.** Would avoid touching `BoundSlot`, but `NodeIdBound` is the verdict alone: it carries no read, and its consumers are the dispatch generators, which partition. Making it carry a coordinate-keyed payload would give one arm two meanings.
+
+## Retired vocabulary
+
+Private names inside `TenantBindingIndex.Fold`, renamed because each now returns or accumulates
+both axes rather than a list of reads: `directSlots` -> `directBinding`, `readOf` -> `accessOf`,
+`slotsFromFilters` -> `collectFromFilters`, `slotsFromLookup` -> `collectFromLookup`,
+`slotsFromTableInput` -> `collectFromTableInput`. Nothing outside the class named any of them.
 
 ## Provenance
 
