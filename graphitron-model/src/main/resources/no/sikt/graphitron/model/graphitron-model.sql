@@ -6511,12 +6511,13 @@ CREATE TABLE code_type_slot (
   origin          VARCHAR NOT NULL,
   touched_at      TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, class_name, method_name, descriptor),
+  FOREIGN KEY (source_name, class_name) REFERENCES code_type (source_name, type_name),
   FOREIGN KEY (source_name, slot_type) REFERENCES code_type (source_name, type_name),
   CHECK (origin IN ('RECORD_COMPONENT', 'BEAN_ACCESSOR'))
 );
 COMMENT ON TABLE code_type_slot IS 'One member name a class offers an author, the method that reads it and what reading it yields. For example a Film record offering title through its title() accessor, or a FilmDto offering it through getTitle().';
 COMMENT ON COLUMN code_type_slot.source_name IS 'the entry the declaring class was read from, as on code_method; the key''s leading dimension';
-COMMENT ON COLUMN code_type_slot.class_name IS 'the class offering the member, which is the class an author names and not always the class the accessor is written on. A member a base class declares is one the subclass offers, so this is where the walk found it rather than where it was declared';
+COMMENT ON COLUMN code_type_slot.class_name IS 'the class offering the member, which is the class an author names and not always the class the accessor is written on. A member a base class declares is one the subclass offers, so this is where the walk found it rather than where it was declared. Keyed into the type relation, a class being a type with no arguments, which is what the write side gets by keying through its construction: a reader holding a slot can reach the offering class''s own rendering, and a class offering members is one the store has heard of rather than a name appearing here and nowhere else';
 COMMENT ON COLUMN code_type_slot.method_name IS 'the method that reads the member. The accessor is the key rather than the name an author writes, because the name is the part that is not unique: a class spelling one property getTitle and isTitle offers title twice';
 COMMENT ON COLUMN code_type_slot.descriptor IS 'the method''s descriptor, completing the key: two accessors of one name on one class are two slots, which is what overloading is';
 COMMENT ON COLUMN code_type_slot.declaring_class IS 'the class the accessor is written on, which is the class a jump to the member''s own source lands in. Equal to the offering class wherever the class declares its own member and different wherever it inherits one. No foreign key, for the reason the write side names the call it makes without keying to it: a base class may be read from a different classpath entry than the class offering its members, so the method''s own row sits under a key this one does not carry, and a constraint would refuse exactly the inheritance this column exists to record';

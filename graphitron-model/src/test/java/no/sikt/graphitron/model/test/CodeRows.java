@@ -163,6 +163,9 @@ public final class CodeRows {
             return;
         }
         type(dsl, sourceName, slotType, readAt);
+        // And the offering class, which this relation keys to as well: a class offering members is
+        // one the type relation names.
+        type(dsl, sourceName, className, readAt);
         dsl.insertInto(CODE_TYPE_SLOT)
             .set(CODE_TYPE_SLOT.SOURCE_NAME, sourceName)
             .set(CODE_TYPE_SLOT.CLASS_NAME, className)

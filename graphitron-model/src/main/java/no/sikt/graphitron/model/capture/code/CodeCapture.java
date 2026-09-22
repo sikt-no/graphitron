@@ -429,10 +429,15 @@ public final class CodeCapture {
         // inherited accessor was read from the base class's entry, so its result type was written
         // down under that one, and a slot is partitioned by where the class an author names was
         // found rather than by where the method behind it was.
-        writeTypes(dsl, found.stream()
-            .map(row -> new Named(row.source(), row.at().qualifiedReturnType(),
-                row.at().declaredReturnType()))
-            .toList(), touchedAt);
+        var slotTypes = new ArrayList<Named>();
+        for (Slot row : found) {
+            slotTypes.add(new Named(row.source(), row.at().qualifiedReturnType(),
+                row.at().declaredReturnType()));
+            // And the offering class, which this relation keys to: a class offering members is one
+            // the store names, rather than a name appearing here and in no type relation at all.
+            slotTypes.add(new Named(row.source(), row.className(), simpleName(row.className())));
+        }
+        writeTypes(dsl, slotTypes, touchedAt);
         var t = CODE_TYPE_SLOT;
         var rows = found.stream().collect(Rows.toRowList(
             row -> val(row.source(), t.SOURCE_NAME),
