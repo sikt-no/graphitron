@@ -1,7 +1,7 @@
 ---
 id: R966
 title: "Write inputs keyed by a decoded node id divine the tenant"
-status: Backlog
+status: Spec
 bucket: bug
 priority: 3
 theme: classification-model
@@ -14,45 +14,130 @@ last-updated: 2026-09-22
 
 ## Goal
 
-A mutation that identifies its rows by a node id classifies as tenant-bound when the tenant column sits inside that id. Today it is rejected at build time with "no argument or input field maps to tenant column 'X'", although the tenant value is right there in the key the mutation already decodes, so an UPDATE, DELETE or `@nodeId`-keyed INSERT against a tenant-scoped table does not generate at all. *Tenant binding* is how a generated resolver knows which tenant database to route a write to; a *tenant-scoped* table is one carrying the column named by the Mojo's `<tenantColumn>`; a *node id* is graphitron's opaque global identifier, which encodes the row's key columns and is decoded back into them at the call site. When a tenant-scoped table's key includes the tenant column, decoding the id yields the tenant, and the write should route on it.
+A mutation that identifies its rows by a node id builds, and routes its write to the tenant sitting inside that id. Today it does not build at all: the generator rejects it with "no argument or input field maps to tenant column 'X'", although the tenant value is right there in the key the mutation already decodes. *Tenant binding* is how a generated resolver knows which tenant database to route a statement to; a *tenant-scoped* table is one carrying the column named by the Mojo's `<tenantColumn>`; a *node id* is graphitron's opaque global identifier, which encodes a row's key columns and is decoded back into them at the call site. When a tenant-scoped table's key includes the tenant column, decoding the id yields the tenant, and the write routes on it.
 
-Three real sis shapes (2026-09-22 spike, `<tenantColumn>INSTITUSJONSNR_EIER</tenantColumn>`):
+The shape, using the in-tree `FilmActor` node type whose key is `["actor_id", "film_id"]` with `film_id` playing the tenant column (`graphitron-sakila-example/src/main/resources/graphql/multitenant.graphqls`, and the `DeleteFilmActorByNodeIdInput` fixture in `schema.graphqls`):
 
 ```graphql
-type Mutation {
-  # DELETE of PERMISJON, keyed by node id
-  slettPermisjoner(input: [SlettPermisjonerInput!]!): SlettPermisjonerPayload
-
-  # UPDATE of PERSON, keyed by node id
-  angiBankkontonummerForPersonProfil(input: AngiBankkontonummerInput!): ...
-
-  # INSERT of KULL, with a @nodeId reference field
-  opprettKull(input: OpprettKullInput!): ...
+input DeleteFilmActorByNodeIdInput {
+    id: ID! @nodeId(typeName: "FilmActor")
 }
 
-input SlettPermisjonerInput { id: ID! }
-input OpprettKullInput { studieprogramId: ID! @nodeId(typeName: "Studieprogram") ... }
+type Mutation {
+    # Rejected today. After this item: the id decodes to (actor_id, film_id), film_id is the
+    # tenant, and the DELETE runs on that tenant's database.
+    deleteFilmActorsByNodeId(in: [DeleteFilmActorByNodeIdInput!]!): [ID!]!
+        @mutation(typeName: DELETE, table: "film_actor")
+}
 ```
 
-The rejection received for the first: "'Mutation.slettPermisjoner' reaches tenant-scoped table 'PERMISJON' with no tenant binding in scope: no argument or input field maps to tenant column 'INSTITUSJONSNR_EIER', and no ancestor established a tenant context."
+The contrast that shows what the classifier is missing is the same mutation with the tenant column named directly, which already builds and routes:
+
+```graphql
+input InventoryCreateInput {
+    filmId: Int! @field(name: "film_id")
+    storeId: Int! @field(name: "store_id")
+}
+
+type Mutation {
+    createInventory(in: InventoryCreateInput!): Inventory @mutation(typeName: INSERT)
+}
+```
+
+Both name the same tenant. One spells it as a column value, the other encodes it inside a key. Only the first routes.
+
+What a consumer sees when this lands: the three write verbs keyed by a node id generate, and one mutation call routes to one tenant. Every id in a batch must decode to the same tenant; a batch mixing tenants is refused before any SQL runs, with an error naming the disagreement. That is agreement-guarded routing, not per-row partitioning: a write is one statement on one connection, so the mixed batch has no correct execution and is a client error rather than a fan-out. One read-side shape is carried along, because it turns out to be the same omission: a query filtering a tenant-scoped table by node ids whose key embeds the tenant builds today but fails at request time, and after this item it routes.
+
+The rejection received for the first sis shape (2026-09-22 spike, `<tenantColumn>INSTITUSJONSNR_EIER</tenantColumn>`): "'Mutation.slettPermisjoner' reaches tenant-scoped table 'PERMISJON' with no tenant binding in scope: no argument or input field maps to tenant column 'INSTITUSJONSNR_EIER', and no ancestor established a tenant context."
 
 ## Mechanism (verified against the tree, 2026-09-22)
 
-Three sites, each a separate half of the same omission:
+`TenantBindingIndex.Fold.directSlots` is the single chokepoint for "this field divines a tenant". Its result decides the `TenantBinding.ArgumentBound` arm in `classify`, and it is also what `edgeDivinesTenant` and `edgeEstablishesOrTransmitsContext` read, so the every-path fold in `tenantContextOf` cascades a missing slot down the whole subtree. That is why 105 unbound roots produced 875 rejections: fixing `directSlots` fixes the children with no further work.
 
-- `TenantBindingIndex.Fold.directSlots` switches over the operation's members and mints slots for `OperationMember.Write.Insert` and `Write.Upsert` only; `Write.Update(inputArg, UpdateRows)` and `Write.Delete(inputArg, DeleteRows)` fall to `default -> List.of()`. Both carriers already hold `KeyColumn` rows naming the SDL field, the target column, a `CallSiteExtraction.NodeIdDecodeKeys` extraction and the decode slot, so the tenant column's position inside the id is already stated where the fold could read it.
-- `slotsFromTableInput` (the INSERT/UPSERT arm) reads `InputColumnBindingGroup.MapGroup` and skips `InputColumnBindingGroup.DecodedRecordGroup`, which is the `@nodeId`-on-an-input-field case.
-- `collectFromInputFields` matches `InputField.ColumnBackedField cf when !cf.isComposite()` and drops the rest, its `default` arm reasoning that composite node-id tuples "belong to the per-row family and the deliberate fan-out arm". No per-row arm exists for a write input: `TenantBinding.NodeIdBound` is assigned only where the members carry `OperationMember.Kind.NODE_RESOLVE`, which a mutation does not.
+Underneath the four symptoms below sits one omission. A bound slot records *where* its value is read (`TenantBinding.SlotRead`: a top-level argument, a path into an input object, a context argument) and nothing about *what transform turns the wire value into the tenant value*. For every shape the axis was built on, the wire value is the tenant value, so the second question never came up. A node id is the shape where it is not: the wire value is an opaque encoded key, and the tenant is one slot of what decoding it returns. The producer type already separates the two. `CallSiteExtraction.NestedInputField(outerArgName, path, leaf)` is the location and its `leaf` (`Direct`, `NodeIdDecodeKeys`, `EnumValueOf`, `JooqConvert`) is the transform, and `TenantBindingIndex.readOf` reads the location off it and drops the leaf on the floor. That dropped leaf is the fact this item needs.
 
-## Direction (to be developed at Spec)
+Four sites, three verbs and one read path.
 
-Add a `TenantBinding.SlotRead` variant for a decoded node id, carrying the outer argument name, the access path to the id field, the decode method and the decode slot. Mint it from the `KeyColumn` rows of `Write.Update` / `Write.Delete` and from `DecodedRecordGroup` bindings whose target column matches the tenant column. `TenantDslEmitter.slotReads` renders it as a walk of the input list that decodes each id and takes the slot, and hands the resulting collection to the existing `TenantConnections.divinedTenant`, which already flattens a collection and checks the values agree.
+**The walker-carrier verbs mint nothing.** `directSlots` switches over the operation's members and handles `Condition`, `Lookup`, `Write.Insert` and `Write.Upsert`; `Write.Update(inputArg, UpdateRows)` and `Write.Delete(inputArg, DeleteRows)` fall to `default -> List.of()`. Both carriers already hold what the fold needs: `UpdateRows.keyColumns()` and `DeleteRows.whereColumns()` are lists of `KeyColumn(sdlFieldName, targetColumn, extraction, decodeSlot)`, where a composite `@nodeId` input field contributes one row per decoded column, all sharing an `sdlFieldName`, each stating its own `decodeSlot`. `KeyColumn.extraction()` is a bare `CallSiteExtraction.NodeIdDecodeKeys` for a top-level leaf and a `NestedInputField` wrapping one for a leaf inside a nested grouping input, so the access path is stated too, and `InputArgRef.name()` supplies the outer argument name. The gap is the arm rather than the node-id-ness: an UPDATE or DELETE whose *plain* input field maps to the tenant column is equally unbound today.
 
-That gives agreement-guarded routing: one tenant per mutation call, and a batch mixing tenants rejected before any SQL runs. The precedent is the hand-written `QueryInspector.getUniqueId` in sis v9, which threw on a mixed-tenant batch. Per-row partitioning of a mixed batch is a possible follow-up; sis does not need it, and the Spec should say so rather than leave the arm open.
+**The INSERT arm drops two carrier shapes.** `collectFromInputFields` walks the `TableInputArg`'s `fields()` envelope, matches `InputField.ColumnBackedField cf when !cf.isComposite()` and sends everything else to `default -> { }`. So an `InputField.ColumnBackedReferenceField` never mints a slot, which is the FK-target `@nodeId` reference shape (`studieprogramId: ID! @nodeId(typeName: "Studieprogram")` on an INSERT input) whose `FilterBinding.Local` own-table columns are the FK columns the decoded key lifts onto this table, permuted into node-key order, and can be or include the tenant column.
+
+**The arm it does match is transform-blind.** It reads `cf.columns().get(0)` and mints a `SlotRead.NestedInput` without looking at `cf.extraction()`. An arity-1 `@nodeId` carrier whose single key column is the tenant column (the `ColumnBackedField`-with-`NodeIdDecodeKeys` shape `CreateKeyedNodeInput` exercises) emits a read of the base64 id string as the tenant value, which the generated `divinedTenant` hands to `Integer.valueOf` at request time.
+
+**The condition arm has the same blindness, on the read side, today.** `readOf`'s `default` arm folds `NodeIdDecodeKeys` in with `Direct` and the coercing leaves and returns `TopLevelArg`, on the stated reasoning that those "all read the raw top-level argument". True of `JooqConvert` and `EnumValueOf`, whose wire value is the tenant value needing a cast; false of a node id. So a query root filtering on a same-table composite `@nodeId` whose key embeds the tenant column, which reaches `collectFromBodyParam` as a `BodyParam.RowEq` or `RowIn`, already mints a slot that reads the encoded ids as tenant keys. It fails closed rather than routing to the wrong tenant, because `divinedTenant`'s numeric coercion throws on the base64 text, but it fails at request time on a schema that should route. No fixture has that shape, which is why nothing has caught it.
+
+Two corrections to the Backlog reading, so the implementer does not go looking for work that is not there. `slotsFromTableInput`'s skip of `InputColumnBindingGroup.DecodedRecordGroup` is *not* the INSERT gap: `FieldBuilder.resolveInsertWriteTarget` constructs the INSERT `TableInputArg` with an empty `fieldBindings` list ("For INSERT the binding set is structurally empty (VALUES emission walks fields() directly, never fieldBindings())"), and `Write.Upsert` is never constructed in main sources at all (`ExemptionRegistry` records it as retired). Both group arms of `slotsFromTableInput` are unreachable from the arms that call it; the whole INSERT surface is `collectFromInputFields`. And `collectFromInputFields`'s `default` comment, which defers composite node-id tuples to "the per-row family and the deliberate fan-out arm", points at nothing: `TenantBinding.NodeIdBound` is assigned only where the members carry `OperationMember.Kind.NODE_RESOLVE`, which a mutation never does.
+
+## Implementation
+
+**Add the transform as its own axis, rather than a fourth location arm.** `TenantBinding.SlotRead` keeps its three arms and its meaning, pure location. `BoundSlot` gains a second component:
+
+```java
+record BoundSlot(String slotName, ColumnRef column, SlotRead read, SlotProjection projection) {}
+
+sealed interface SlotProjection {
+    /** The read's value is the tenant value. Every shape the axis was built on. */
+    record Raw() implements SlotProjection {}
+    /** The read's value is an encoded node id; the tenant is slot {@code slot} of the decode. */
+    record DecodedKeySlot(HelperRef.Decode decode, int slot) implements SlotProjection {}
+}
+```
+
+The alternative, a `SlotRead.DecodedNodeId(outerArgName, path, decodeMethod, decodeSlot)` arm, fuses the two axes into one permit name and makes the permit set their cross-product: a decoded id at a top-level argument is a fourth arm, one reached through a context argument a fifth, and the next coercing leaf that has to survive to the routing site a sixth. Two components instead of one leaf keeps them independent, and it is why all four sites above are one fix.
+
+**One resolver, every minting site.** `readOf(CallSiteExtraction)` widens from returning a `SlotRead` to returning both axes: it reads the location as it does today, and reads the leaf it currently discards into a `SlotProjection`. Every site that mints a `BoundSlot` calls it: `collectFromBodyParam` (which closes the read-side defect), `slotsFromLookup`, and `collectFromInputFields`. The transform-blindness above is then unwritable rather than fixed, because no minting site reads one axis without the other. That is the reason the arity-1 defect rides this item: under this shape it is not a separable fix, it is the same line.
+
+**`TenantBindingIndex.Fold`, the write arms.**
+
+- `UpdateRows.keyColumns()` and `DeleteRows.whereColumns()` are one fact under two names; `KeyColumn`'s own javadoc already says the two families share the carrier. Expose it uniformly on `OperationMember.Write.Dml`, which is exactly what that interface exists for ("The two facts every DML reader needs are exposed uniformly here, once, over the arms' structurally different input surfaces", today `table()` and `listInput()`): a `whereKeyColumns()` default returning the carrier's rows for `Update` / `Delete` and an empty list for `Insert` / `Upsert`, plus `outerArgName()`. The fold then has one body for both WHERE-keyed verbs, and a third WHERE-bearing write shape is covered on arrival instead of falling to `default -> List.of()` the way these two did.
+- That body: for each `KeyColumn` whose `targetColumn` matches the tenant column, resolve both axes through the widened `readOf`, defaulting the location to the `Dml`'s outer argument name and `[sdlFieldName]` where the extraction is a bare leaf, and take the projection's slot from `KeyColumn.decodeSlot()` rather than from the row's position.
+- `collectFromInputFields` gains a `ColumnBackedReferenceField` arm over the `FilterBinding.Local` own-table columns, minting through the same resolver. A `FilterBinding.Remote` carrier is declined: it reaches its value through a join and has no own-table value for a statement that must already be on one connection.
+
+**UPDATE divines from the WHERE partition only, and rejects a tenant column in SET.** `UpdateRows` partitions its input columns: the matched key goes to WHERE, everything else to SET. Routing on a SET-side tenant column would send the statement to the destination tenant and update a row that is not there. Under database-per-tenant a row cannot change tenant by an UPDATE at all, since the destination row lives in another database, so an UPDATE whose `setColumns()` include the tenant column rejects. This rung exists because this item creates the exposure: today such an UPDATE rejects for want of any binding, and once the WHERE side binds, the SET side would run.
+
+**Every declined shape gets its own rejection message.** A root mutation coordinate whose shape this change declines still rejects rather than leaking, because `tenantContextOf` short-circuits on root types, so the `Inherited` and `Untenanted` rungs below are unreachable from `Mutation`. What is at stake is the message, and the `@tenantFanOut` ladder in the same class is the precedent for giving each rung its own text instead of one generic detail. Three shapes need one: a `FilterBinding.Remote` reference carrier reaching the tenant column, a `CallSiteExtraction.PruneOnMismatch` leaf reaching a tenant slot (that arm's whole definition is that there is no single decode to route on), and the command-side arm below if it takes the rejection option.
+
+**Emission: one home for the decode, two emitters.** The decode-and-project is not new generated code. `CompositeDecodeHelperRegistry` already mints per-node-type decode helpers on a host class, carrying the `wire instanceof String` / list-shaped guards and a mismatch branch that raises the generated `GraphitronClientException` through `NodeIdDecodeFailure`, whose javadoc states the invariant directly: "several host families decode a node id and one bad id must fail the same way at every grain … a message that differed between them would tell a client that one spelling of a filter validates its ids and another does not." Tenant routing is a fourth such host and it runs *first*, before the carrier reads its input, so whatever it does is what the client sees. The registry projects `value1()` at arity 1 and `valuesRow()` above it; a `DecodedKeySlot` projection needs one more projection mode, "slot N", and gets the guards and the failure for free. The call site stays `<helper>(TenantConnections.tenantSlot(env.getArgument("in"), "id"))`.
+
+That deliberately drops the earlier sketch of a `decodedTenantSlot(Object, String, Function, int)` member on `TenantConnections`. It would have been the first higher-order member on a class whose every other member is a plain value walk, and a consumer breakpointing generated routing would step through a lambda to reach the decode. More decisively, it would restate the mismatch message at a site that runs ahead of the one home for it.
+
+Two emitters read `SlotRead`, not one, and the second sits behind a build-enforced package boundary. `TenantDslEmitter.slotReads` renders the fetcher-site declaration; `RoutineWriteCommands.slotReadOf` restates every arm into `TenantAcquisition.SlotRead`, which `TenantAcquisitionFragments.slotRead` renders for the routine-write entry points. Both switches are exhaustive, so the compiler forces the second one open. `no.sikt.graphitron.command` may not import `HelperRef` (the allowlist in its `package-info` is closed and names seven ref types, and `HelperRef.Decode` carries javapoet types besides), so the command-side projection carries the decode as plain data: the encoder class as a string, the helper method name, and the slot. `TenantAcquisitionFragments` lives in `render`, which may import `HelperRef` and already does so in the registry, and reconstructs what it needs there. The facts are carried, not recomputed. If that restatement turns out to cost more than it is worth, the honest fallback is to reject a routine write whose tenant slot needs a decode, with its own message under the rung above; a bare `throw` there would be a latent trap.
+
+**The arm stays in the `ArgumentBound` family**, not the per-row family (`NodeIdBound`, `EntityRepBound`). Two structural reasons, beyond the "one statement" intuition. `NodeIdBound` is the verdict alone, and the decoded positions its consumers read live in `byEntityType`, keyed by *type name*; a write's tenant slot is keyed by coordinate and argument, which that map cannot hold without growing a second payload shape. And the per-row family's stated reason for existing is that a single batch at a *dispatch surface* spans tenants, so its consumers partition. Per-row-ness is a property of the dispatch, not of the decode. A DML UPDATE or DELETE is one statement on one connection.
+
+**Two reads of one wire value, deliberately.** The routing decode and the carrier's own decode both read the same encoded id. That is not redundancy to clean up later: the agreement guard has to fold the whole batch before any SQL is issued, while the carrier decodes per row inside its stream lambda. Hoisting the carrier's local to serve routing would mean materialising every row's decode before the tenant is known, on a connection not yet acquired. The registry's deduplication means both reads go through one helper.
+
+Generated sources target Java 17; everything above is available there.
 
 ## Tests
 
-`graphitron-sakila-example/src/main/resources/graphql/multitenant.graphqls` has no UPDATE or DELETE taking a node-id input, which is why this was never caught; add one, plus an `@nodeId` reference field on an INSERT input. The agreement guard needs an execution-tier case for the mixed-batch rejection, since the pre-SQL failure is the observable.
+The fixture gap is why none of this was caught: `multitenant.graphqls` carries no UPDATE or DELETE at all, its one INSERT names the tenant column directly, and no fixture anywhere filters a tenant-scoped read by a node id whose key embeds the tenant. The fixture already has most of what the new cases need, since `FilmActor` is `@node(keyColumns: ["actor_id", "film_id"])` with the tenant at position 1, and `film_actor.last_update` is a writable non-PK column.
+
+- **Classification** (`TenantBindingClassificationTest`): DELETE and UPDATE keyed by a composite `@nodeId` each yield `ArgumentBound` whose slot carries a `DecodedKeySlot` projection at the right slot; an INSERT with an FK-target `@nodeId` reference yields one too; the arity-1 `@nodeId` INSERT carrier yields a projected slot rather than today's raw read; a same-table composite `@nodeId` *filter* on a query root yields one, which is the read-side defect; a plain tenant-column input field on an UPDATE or DELETE yields a `Raw` projection. On the rejecting side: a tenant column in an UPDATE's SET partition, a `FilterBinding.Remote` reference carrier, and a `PruneOnMismatch` leaf each reject with their own message. One case must assert the cascade explicitly, since a child below a node-id-keyed write classifying `Inherited` rather than rejecting is the 750-rejection half of the sis count.
+- **Pipeline** (`TenantRoutedFetcherPipelineTest`): the rendered fetcher calls the registry-minted decode helper on the `tenantSlot` walk, then `dslFor(env, _divinedTenant)`, and contains no `getDslContext(env)`, matching how `insertMutationDivinesFromItsInputFieldAndRoutes` pins the existing arm. A routine-write entry point with a projected slot pins the second emitter, since that path renders through `TenantAcquisitionFragments` rather than `TenantDslEmitter`.
+- **Decode helper** (`CompositeDecodeHelperRegistry`'s own tests): the new slot-N projection mode, and that a tenant-slot helper and a predicate helper for the same node type dedupe or stay distinct as the `Key` says they should.
+- **Compilation** (`graphitron-sakila-example`): `multitenant.graphqls` gains the `@nodeId`-keyed DELETE in both single and bulk form, the `@nodeId`-keyed UPDATE setting `last_update`, an INSERT into `inventory` carrying `@nodeId(typeName: "Film")` as an FK-target reference over `inventory_film_id_fkey`, and a query root filtering on `[ID!] @nodeId(typeName: "FilmActor")`. The last two need `Film` declared a `@node` type in the fixture, which it is not today; its key is then the tenant column alone, so it also widens the existing `NodeIdBound` dispatch coverage from a composite key to a single-column one. This tier is the proof that the emitted routing is valid Java 17.
+- **Execution** (`TenantDivinedRoutingExecutionTest`): a bulk DELETE whose ids all decode to one tenant deletes only in that tenant's database and opens no other tenant's `DataSource`; a bulk DELETE mixing two tenants' ids returns an error and opens *neither*, since `divinedTenant` throws before `dslFor` runs. That second one is the assertion that makes the pre-SQL refusal a claim rather than a hope, and it is asserted on the observable (the error and the untouched connection counters), never on emitted method-body text. A malformed id surfaces `NodeIdDecodeFailure`'s message, which is the proof that the routing site did not mint a second failure vocabulary. The test class already builds ids with `NodeIdEncoder.encodeFilmActor(actorId, filmId)`, so the mixed batch is two calls to it.
+
+## User documentation (first-client check)
+
+`docs/manual/how-to/tenant-scoping.adoc` states the routing rules in one paragraph, whose middle clause currently reads "node ids and federation representations carry their tenant inside the key and partition per row". That is true of dispatch and false of every other place a node id can arrive, so the clause splits on where the id lands rather than on what it is: a node id carries its tenant inside the key; at a *dispatch* surface (`node`, `nodes`, `_entities`) the batch partitions per row, and anywhere else, a write keyed by ids or a filter reading them, every id in the call must decode to the same tenant, with a mixed batch refused before any SQL. If that distinction cannot be stated in a sentence a reader accepts, the design is wrong; the reading to check it against is that a read can be split across databases and a write cannot.
+
+## Out of scope, and why
+
+**Whether a tenant-scoped *read* keyed by node ids should partition rather than agree.** The condition-arm fix above gives a query root filtering on a same-table composite `@nodeId` the same agreement guard the writes get, which is strictly better than the request-time `NumberFormatException` it produces today. But a read genuinely can be split across databases, which is what `nodes()` already does, so agreement may be the wrong long-run answer there even though it is the right immediate one. The same question stands over `slotsFromLookup`'s `LookupArg.DecodedRecord` arm, which declines a decoded lookup key today on the reasoning that it belongs to the per-row family, although a lookup root carries no `NODE_RESOLVE` member and so reaches no per-row arm at all. Both want their own item: the change is behavioural for reads, the machinery is per-row partitioning rather than a projection, and neither is on the path to making the 105 sis mutations build.
+
+## Other solutions we've considered
+
+**A fourth `SlotRead` arm carrying the decode.** The shape this item was filed with: `DecodedNodeId(outerArgName, path, decodeMethod, decodeSlot)` beside `TopLevelArg`, `NestedInput` and `ContextArg`. Rejected because it splices two independent axes into one permit name, so the permit set becomes their cross-product and each further combination (a decoded id at a top-level argument, one behind a context argument, the next coercing leaf that must survive to the routing site) arrives as another arm. It would also have left the arity-1 transform-blindness as a separate fix, since the site that has it reads the location axis and never asks about the transform. Under the two-component shape that bug cannot be written.
+
+**A `decodedTenantSlot(Object, String, Function, int)` member on the generated `TenantConnections`.** Composes neatly with the existing `tenantSlot` and `divinedTenant`, and was the first sketch here. Rejected on two counts: it is the first higher-order member on a class whose every other member is a plain value walk, so a consumer breakpointing generated routing steps through a lambda to reach the decode; and it restates the node-id mismatch message at a site that runs ahead of `NodeIdDecodeFailure`, which exists precisely so that one bad id fails the same way at every grain. Routing the projection through `CompositeDecodeHelperRegistry` gets the wire guards, the list flattening and the message without any of that.
+
+**Falling through to `divinedTenant`'s absent-binding error on a bad id.** Would need no message decision at all. Rejected: a `NoSuchElementException` reading "the tenant binding value is absent" is not a `GraphQLError`, names neither the field nor the id, and would be what every malformed id on a routed write produced, since routing runs before the carrier's own decode.
+
+**Per-row partitioning of a mixed-tenant write batch.** The per-row family's posture, applied to writes: split the batch by decoded tenant and run one statement per tenant. Rejected as the default because it makes one mutation call a multi-database write with no transaction spanning it, so a partial failure leaves some tenants written and others not and nothing in the response says which. The agreement guard makes that shape impossible to reach by accident. The precedent is the hand-written sis v9 `QueryInspector.getUniqueId`, which threw on a mixed-tenant batch; sis does not need partitioning, and this item states that rather than leaving the arm open. A later item can add it behind an explicit opt-in if a consumer ever wants it.
+
+**Reusing `NodeIdBound` for the write.** Would avoid touching `BoundSlot`, but `NodeIdBound` is the verdict alone: it carries no read, and its consumers are the dispatch generators, which partition. Making it carry a coordinate-keyed payload would give one arm two meanings.
 
 ## Provenance
 
