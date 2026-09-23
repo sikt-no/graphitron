@@ -59,11 +59,12 @@ strategy, and every section below serves one of them:
 3. **The generator is plan → command → emit, FCIS.** A planner reads the store, ideally as a single
    query on the relation's own grain, and derives a list of command rows; the render shell folds
    over the rows and emits. No planner reads a leaf, no emitter reads anything but its command row.
-4. **Validation becomes views in the fact model** wherever a check is expressible as a relation
-   over captured facts, which is most of them. A check that genuinely cannot be a view (it needs
-   computation SQL cannot state) runs as a query over the store whose findings are inserted back
-   into the fact model as rows, and the error surface reads those rows. Either way the walk stops
-   being what validation reads.
+4. **Validation reads detections in the fact model.** A check becomes a detection: a relation
+   whose rows are the schema's defects, read by the error surface. The detection is the one kind of
+   relation this item writes, in the commit that deletes the validator arm it replaces and never
+   ahead of it, filed in the family whose facts it reads and never under `intent_`; its inputs are
+   never authored here. The exception and its bounds are stated under "What this item does not
+   author". Either way the walk stops being what validation reads.
 
 ### What "deleted, not migrated" forbids
 
@@ -78,9 +79,10 @@ The number that measures this item is leaf dispatch inside `plan/`, which counts
 reaching into the old model. A line count over condemned code measures the size of the thing being
 removed, not the progress of removing it.
 
-**They never read the store.** This holds by construction today: store reads under `rewrite/` are
-confined to `capture/`, `derive/`, `diagnostics/` and `compile/`, which are the fact writers and the
-new readers, while the walk itself holds no reference to any relation. Plumbing a relation into a
+**They never read the store.** This holds by construction today: the fact writers and the store
+readers live in `graphitron-model`, the only file under `rewrite/` naming the store's tables or its
+handle is `GraphQLRewriteGenerator`, the pipeline driver that opens it, and the walk itself holds no
+reference to any relation. Plumbing a relation into a
 condemned pass buys one spelling in a file with no future, and reuse between the old path and the
 new one is exactly what makes a cutover hard. When a derivation inside the walk looks like it wants
 to be a relation, the relation lands when the *new* path needs it, stated from facts on its own
@@ -116,7 +118,8 @@ does not violate the second rule: it is an output contract, not a derivation. No
 ### What this item does not author
 
 This item converts readers. It does not author facts, and the rule is absolute rather than a
-preference to be weighed per increment.
+preference to be weighed per increment, with one exception fixed by kind rather than judged per
+increment: a validator check's own detection, bounded below under "The one exception".
 
 **The store says so.** The `intent_` family header in `graphitron-model.sql` reads "DEPRECATED, THE
 WHOLE FAMILY" and states the rule for anything landing there: do not. A family with no owning
@@ -140,6 +143,43 @@ what stopped it: every increment in that arc was individually defensible and the
 terminating case. An arc that has authored a relation and not converted a producer is not making
 progress that the next increment will realise, it is accruing a debt that the census measures at
 zero.
+
+**The one exception: a validator check's own detection.** A validator check migrates by becoming a
+detection, a relation whose rows are the schema's defects, and this item writes that relation. The
+reason it cannot be a filing is measured, not argued: the seven detection families
+`StoreDetections` feeds into `ValidationReport` today all read `intent_` defect views, which the
+header closes, and the only detection a gatherer writes is `graphitron_minted_conflict`. So a
+validator half that only flipped checks onto detections the store already writes would flip
+almost none, and filing the rest would hand roughly seventy-seven checks to a programme with no
+arm that takes detections, leaving success criterion 3 with no owner. The exception is fixed by
+kind and bounded four ways, and each bound answers a way the conditions arc went wrong:
+
+* **Same commit as the arm it replaces.** A detection lands in the commit that deletes the
+  `GraphitronSchemaValidator` arm it replaces and adds its reader to `StoreDetections`, never
+  ahead of either. Its reader exists by construction, so a detection with no reader cannot land.
+  That commit is the arc's terminating case: one check in, one arm out, the validator-side pin
+  (under "Validator half") lower by it.
+* **The detection only, never its inputs.** A detection reads relations that already exist. A check
+  whose detection needs a verdict no relation states waits, and the verdict is filed exactly as in
+  the planner half. This is the bound that stops "one more relation": the arc's chain was
+  inputs authored for inputs, and here no input is authored at all.
+* **Filed by owner, never under `intent_`.** The detection goes in the family whose facts it reads
+  and is owned by that family's gatherer, per the ownership section of
+  `docs/architecture/explanation/fact-model.adoc`: a stage of that gatherer, in the
+  `graphitron_minted_conflict` shape, or a view of that family where the owner's form is a view,
+  declared in `meta_relation` either way. A check whose detection would read more than one family
+  has an unwritten single-family part inside it, which is an input and is therefore filed.
+* **Read or it fails the build.** The first detection lands with a gate: every detection relation
+  is named by some `StoreDetections` component's `READS`, a set difference over a roster that
+  already exists (`DetectionReadReachGateTest` reads it). How the gate recognises a detection is
+  that increment's to state, and a hand-kept list does not qualify.
+
+Most of the classify-time `Rejection` re-wraps sit at the edge of the second bound. A rejection is
+the declined side of a claim arm, and "validator mirrors classifier invariants" in the development
+principles asks that it derive from the same relation as the acceptance. Where the claim stratum
+states the declined verdict the detection reads it; where it does not, stating it is classifier
+modelling, which is an input and gets filed. The fourteen structural checks fit the exception
+cleanly, and the rejection re-wraps fit it only where the claim stratum already speaks.
 
 **Nothing here reaches into the store programme's work.** R958 (In Progress) converts six departures and
 walks into gatherer-written rows, five of which the conditions arc authored; R955 (In Progress)
@@ -186,9 +226,11 @@ The validator is the same story one stage earlier. `GraphitronSchemaValidator` i
 and drains `schema.diagnostics()`. It even reads *upward*: it calls two planners' collision checks
 (`ProjectionCommands.addressCollisions`, `LauncherCommands.methodCollisions`) and imports two
 emitters, a validator depending on planners and the shell. The successor channel already ships beside it: `StoreDetections.violations()` folds
-store-derived detections (`AuthoredClaimConflicts`, `ArgmappingProjectionDefects`) into the same
-`ValidationReport`, minting user-facing errors with no leaf anywhere in the derivation. And
-validation runs after `captureFactsAndDetect` in the pipeline, so the store is available to every
+seven store-derived detection families (`AuthoredClaimConflicts`, `ArgmappingProjectionDefects` and
+five more) into the same `ValidationReport`, minting user-facing errors with no leaf anywhere in the
+derivation. And
+validation runs after capture in `GraphQLRewriteGenerator.runPipeline`, which reads
+`StoreDetections.over` before `capturedFrom` pronounces the verdict, so the store is available to every
 check today; what is missing is the migration, not the plumbing.
 
 Those are one problem at three surfaces, which is why one item owns them. Converting the plan
@@ -516,23 +558,23 @@ families, not a consumer-shaped read.
 
 Two converted read paths already disagree about where store-reading code sits, and at one producer
 converted out of eight the fork is cheap to settle and expensive to inherit. The key-projection
-read lives in `rewrite/derive` (`ResolvedKeyProjections`, `StoreNodeTables`) with
+read lives in `graphitron-model`'s `no.sikt.graphitron.model.derive` (`ResolvedKeyProjections`,
+`StoreNodeTables`) with
 `plan/KeyProjectionCommands` a pure shape transform beside it; this item's positive dial for
 `plan/` (in "The closer") instead expects producers to query the store directly. Settled: **the
 producer's own run-scoped derivation queries live beside the producer in `plan/`.** The
 discriminator is the one "What the store must provide" already states, extended to package
 geography: a fact about the schema is store material, so Java that assembles one is a missing view
 wearing a jacket and gets pushed into the DDL rather than parked in `derive/`; a derivation of
-what this run emits is the producer's own `SELECT` and lives with the producer. `rewrite/derive`
-keeps what is neither: the store detections (`AuthoredClaimConflicts`,
-`ArgmappingProjectionDefects`) and the transitional walk-shadow writers already scheduled to
-retire. Under that rule `StoreNodeTables` and `ResolvedKeyProjections` get revisited by the
+what this run emits is the producer's own `SELECT` and lives with the producer. The `derive`
+package keeps what is neither: the store detections (the seven `StoreDetections` families) and the
+transitional walk-shadow writers already scheduled to retire. Under that rule `StoreNodeTables` and `ResolvedKeyProjections` get revisited by the
 increment that fixes their read shape (named in the planner half): their content is schema-grain
 fact assembly, so most of it becomes views.
 
 The heading says `derive/` shrinks, and it does, but it does not empty, which is worth stating
-because the name invites the opposite reading. Classified by what each file does, the package today
-is 1078 lines projecting a view's closed `verdict` vocabulary into located rejections with their
+because the name invites the opposite reading. Classified by what each file did when the package
+last sat under `rewrite/` (trunk `7f2ff35`), it was 1078 lines projecting a view's closed `verdict` vocabulary into located rejections with their
 prose, 420 lines reading the store into value objects, 392 lines of capture-cadence writers running
 a fixpoint, and 351 lines of support records. The largest file is 439 lines of which 187 are
 comments, and its only branching is a switch over the view's verdict plus a helper choosing "a" or
@@ -676,7 +718,7 @@ Four success criteria, and every deliverable is a step toward one of them:
 2. No emitter reads a classification leaf **and no emitter calls a planner**, with
    `PackageImportDirectionTest` covering the emitters' packages the way it already covers `render`.
    The second clause is not redundant: the tier rule in the opening sentence forbids both, the body
-   counts fourteen live sites where an emitter invokes a producer, and a criterion about leaf
+   counts fifteen live sites where an emitter invokes a producer, and a criterion about leaf
    *reads* alone would leave the inversion standing. The emitters' positive dial therefore excludes
    `plan`, which is also what makes the criterion checkable.
 
@@ -701,9 +743,10 @@ Four success criteria, and every deliverable is a step toward one of them:
    keeps the criterion clean and relocates a class this item's own retired-vocabulary list does not
    otherwise touch. Both answers cover the class whole, so the count sizes the edit rather than
    moving the decision; it is stated here so the guard extension does not discover it.
-3. Validation derives from the store: a view where SQL can state the check, a query-then-insert
-   where it cannot, the error surface reading their rows either way, with the minted-name
-   collision checks as the one stated exception (settled in the validator half).
+3. Validation derives from the store: each check reads a detection, written by this item under
+   "The one exception" and its bounds or filed where its inputs are missing, the error surface
+   reading their rows, with the minted-name collision checks as the one stated exception to this
+   criterion (settled in the validator half).
    `GraphitronSchemaValidator` stops taking a `GraphitronSchema`.
 4. The classification walk and the sealed leaf hierarchies are deleted, along with every resolver
    and transcription writer that existed only to feed or shadow them.
@@ -812,13 +855,16 @@ bind, because a command relation referencing another command relation survives c
 
 So the order is readiness, taken off the check:
 
-1. **Fetcher edges first.** The check found it needs nothing authored: its whole input is the
-   table-bound participants of a polymorphic coordinate, the return type name of a routine write,
-   and the glue classes it derives from the condition relation rather than from the schema. It is
-   277 lines, it carries 48 dispatch sites (over a third of the plan-side pin), and it names five of
-   the census's nineteen references, the largest single drop available. It is also the best test of
-   the one-statement-per-grain rule, because 48 sites resolving to four target shapes is precisely
-   the shape a mechanical transcription turns into 48 reads.
+1. **Fetcher edges first.** The check, re-run over which coordinates get a row as well as what a
+   row holds, found it needs nothing authored: its targets are the table-bound participants of a
+   polymorphic coordinate, the return type name of a routine write and the condition relation's
+   glue classes, and its membership is those same facts less the coordinates two sibling command
+   relations already own. It is 277 lines, it carries 48 dispatch sites (over a third of the
+   plan-side pin), and it names five of the census's nineteen references, the largest single drop
+   available. It is also the best test of the one-statement-per-grain rule, because 48 sites
+   resolving to four target shapes is precisely the shape a mechanical transcription turns into
+   48 reads. Its one reader is `PlanCompileGraph`, not an emitter, so converting it completes its
+   family outright, and the gate that pins it is not output identity (see Coverage).
 2. **Type units second, once two folds land.** It owes nesting reach and connection synthesis, both
    filings rather than authoring steps and both shared with projections and launchers, so one filing
    serves three producers. Its own halves are in good shape: the 18-arm schema-shape switch is
@@ -876,13 +922,14 @@ looked like the hard ordering constraint is a symptom of the walk, and it goes w
 
 **One production-path inversion falls outside that rule and does not dissolve with it.**
 `TypeFetcherGenerator.buildTableInterfaceReprojection` calls `LauncherCommands.discriminatedBranches`
-mid-emission to mint a `LaunchSource.DiscriminatedTable` payload, and hands it to
+and `LauncherCommands.selectionRestriction` mid-emission to mint a `LaunchSource.DiscriminatedTable`
+payload's two planner-derived components, and hands it to
 `render.DiscriminatedTableFragments`; the fold is reached from `TypeFetcherGenerator`'s
 discriminated-interface assembly and again from `MultiTablePolymorphicEmitter`, so it is production
 emission, not a test overload. Being neither a `produce*` call nor a schema-taking one, it is
 invisible to the census above and to all four ratchet pins, and neither retirement argument reaches
-it: there is no nesting-reached hole to close and no test to repoint. What retires it is the branch
-list arriving *on a command row* instead of being derived at the emitter, which needs the
+it: there is no nesting-reached hole to close and no test to repoint. What retires both calls is the
+branch list and the selection restriction arriving *on a command row* instead of being derived at the emitter, which needs the
 discriminated-table reprojection to be part of the fetcher family's command relation. That is inside
 this item's declared scope but is not yet named as a deliverable of any increment, and the family
 that owns it should name it. It is also the item's own motivating anecdote in miniature: a
@@ -977,15 +1024,46 @@ the answer its switch computes and not the name of the branch it took. But it me
 producer's facts relations?" cannot be answered by looking for the leaves, which is what makes the
 question per-producer and why the five answers below differ as much as they do.
 
-**Fetcher edges reads three facts, and the store states all three.** The 48 sites resolve to four
-target shapes, and the producer's whole input is: the table-bound participants of a polymorphic
+**Fetcher edges needs nothing authored, and the reason is two relations it does not yet take.**
+A row's targets are three facts the store states: the table-bound participants of a polymorphic
 coordinate (`intent_poly_member` joined to `intent_bound_table`, the joined-table and unbound arms
 contributing no target), the return type name of a routine write (`graphql_field.named_type`), and
-the coordinate's glue classes, which it derives from the condition relation and not from the schema
-at all. Nothing else. The 48 sites are a switch whose arms are overwhelmingly `null`, which is to
-say they are the *declaration* that a family is outside the relation, and a declaration costs
-emitter work rather than store work. This producer is the clean confirmation of the replan's
-predictor claim, from the extreme end.
+the coordinate's glue classes, read off the condition relation at the multi-table polymorphic roots
+and the mutation coordinates, which are the only arms that add glue today (a child's condition rows
+are not its fetcher's reference). Which coordinates get a row is the
+other half, and it is what the 48 sites decide: their `null` arms are membership, and a converted
+producer has to reproduce every one of them. Read against the tree, every arm reduces to a fact
+already stated or a command relation the plan already holds.
+
+* *Polymorphic coordinates with a table-bound participant* are the candidate set, and the
+  participant join above states it. Error unions fall out of it on their own, their participants
+  being `@error` types and never table-bound.
+* *Less the coordinates the launcher relation owns.* The discriminated arms split on this and on
+  nothing else: `QueryTableInterfaceField` and `ChildField.BatchedTableInterfaceField` are `null`
+  here because their participant projections ride their launcher rows, while their unbatched and
+  `@service` twins have no launcher row and mint one here. The classifier separates the child pair
+  on list cardinality, which is delivery's third trigger and has no store arm, but the producer
+  never needs that verdict: it needs to know whether the launcher relation owns the coordinate,
+  and `FetcherEdgeRelationTest` already pins the two key sets disjoint. So the converted producer
+  takes `LauncherRelation` as a parameter beside `ConditionRelation`. Reading it off the store
+  instead would restate the delivery rule in the producer's `SELECT`, which the nature test in
+  "Planners share relations, not queries" forbids.
+* *Node lookups* are the `Query` fields whose element type is the `Node` interface: the
+  classifier recognises them by that signature alone, one predicate over `graphql_field.named_type`
+  and `graphql_type.kind`, which is filtering and stays in the producer.
+* *Routine writes* are the `RoutineWriteCommand.ChainReread` rows of `RoutineWriteRelation`, a
+  second parameter; the carrier rows and the DML carriers are glue-only rows derived from the
+  condition relation, empty today by derivation, as the class javadoc states.
+* *The `@service` passthroughs and every non-polymorphic child* have no participant and no glue,
+  so they draw no row.
+
+Both new parameters are command relation referencing command relation, which "Planners share
+relations, not queries" names as the plan's own foreign keys, and neither orders any conversion:
+the parameter survives whichever producer converts first. The arms also stop restating the
+launcher's membership in a second place, which is a small gain the conversion buys by accident.
+This producer is the clean confirmation of the replan's predictor claim, from the extreme end,
+provided the check is run over membership and not over targets alone, which is where the first
+reading of it stopped.
 
 **Type units is second-readiest, and one of its two halves collapses on contact.** The schema-shape
 kind dispatches over all 18 type permits to pick one of five graphql-java forms, and the mapping is
@@ -1223,26 +1301,35 @@ Two instrument corrections the census surfaced, each owed to the first increment
   are the same class. The guard extension in "The closer" and the terminal deletion are what cover
   these files, because they forbid the import; the pins alone never would.
 
-### Validator half: views first, queries-then-inserts for the rest
+### Validator half: each check becomes its own detection
 
-The validator's three input channels map onto two migration moves, and the pattern for both already
-ships in `rewrite/derive`.
+The validator's three input channels (the `Rejection` each `Unclassified*` leaf carries, the
+structural checks over classified types and fields, and `schema.diagnostics()`) converge on one
+move, and its channel already ships: `StoreDetections` (now in `graphitron-model`, under
+`no.sikt.graphitron.model.derive`) folds seven detection families into `ValidationReport` through
+`violations()`, minting user-facing errors with no leaf anywhere in their derivation.
 
-* **A check expressible as a relation becomes a view.** Most of the fourteen structural checks and
-  most of the per-leaf arms are joins and anti-joins over facts capture already holds, which is a
-  detection view in the `intent_authored_claim_conflict` mould: the check lands at its own grain
-  and its literals form a closed vocabulary declared where it is read.
-* **A check that genuinely cannot be a view runs as a query whose findings are inserted back into
-  the fact model as rows.** That is the `StoreDetections` shape `AuthoredClaimConflicts` and
-  `ArgmappingProjectionDefects` already have: derivation in SQL plus Java where SQL cannot state
-  it, findings landing as rows, `ValidationReport` assembled from rows. "Cannot be a view" is a
-  claim to justify per check (a recursion H2 views cannot carry, a reflection probe), not a
-  default to reach for.
+* **A check becomes a detection at its own grain**, with its literals a closed vocabulary declared
+  where it is read, written by this item under "The one exception" and its four bounds. The form is
+  the owning gatherer's: a stage that writes rows (the `graphitron_minted_conflict` shape) where the
+  rule needs the corpus whole or computation SQL cannot state, a view of that family where it is a
+  join or anti-join over what the family already holds. The one form it never takes is a new
+  `intent_` view in the `intent_authored_claim_conflict` mould, whatever the seven existing families
+  look like; those belong to the store programme, which is re-placing them.
+* **Readiness orders the checks, as it orders the producers.** The first validator increment runs
+  the availability check over the checks, by the producers' method: per check, the relations its
+  detection would read, each present or missing, with membership counted alongside payload. A check
+  whose inputs are all present converts; a check missing one waits on a filing. The fourteen
+  structural checks are expected to lead and the rejection re-wraps to trail, for the reason the
+  exception's closing paragraph gives, but the check is what decides it.
+* **A check that already has a detection deletes against it, and is not a precedent.** Where a `StoreDetections` family
+  already reports what a validator arm reports, the arm deletes against the existing family and
+  nothing is written; the family's own placement stays the store programme's.
 
 Reaching the editor and the MCP is not free, and must not be claimed as such. The `diagnostic`
 surface is a hand-written `UNION ALL` with one arm per source relation, and
-`intent_argmapping_projection_defect` is *not* an arm of it today, so of the two exemplars above
-only the claim conflict reaches the LSP squiggle. Each migrated check's commit therefore states
+`intent_argmapping_projection_defect` is *not* an arm of it today, so of the existing families
+not every one reaches the LSP squiggle. Each migrated check's commit therefore states
 where its rows surface: joining `diagnostic` is part of the migrating commit wherever the defect is
 author-facing, and the union's arm set gains a mechanical pin so an unjoined detection is a build
 failure rather than a silent editor gap. And since this item retires `rejection_validation_error`,
@@ -1262,10 +1349,11 @@ mint, as the producer's hard failure, and any author-facing rejection for it der
 schema-grain fact needing no minted name. The validator's upward reads dissolve either way: no
 plan or emitter import survives in validation.
 
-The classify-time rejections are the same two moves seen from the other end. Today a rule the
-schema breaks demotes the coordinate to `Unclassified*` inside the walk, and the validator re-wraps
-the carried `Rejection`; store-side, the rule that demoted it becomes a detection over the captured
-facts that reports the same error at the same location. The `Rejection` hierarchy's vocabulary (16
+The classify-time rejections are the same move seen from the other end. Today a rule the schema
+breaks demotes the coordinate to `Unclassified*` inside the walk, and the validator re-wraps the
+carried `Rejection`; store-side, the rule that demoted it becomes a detection that reports the same
+error at the same location, reading the claim stratum's declined verdict where it states one and
+waiting on a filed verdict where it does not. The `Rejection` hierarchy's vocabulary (16
 leaves plus 9 error sub-seals) is re-expressed as those detections' closed literal vocabularies, the
 way `rejection_validation_error.kind` already transcribes it for the editor.
 
@@ -1394,9 +1482,11 @@ first commit" unanswerable. The inventory of producers stays an inventory; the s
 and a family is done when its facts are relations, its producer reads them, its emitters render its
 rows, and its dispatch sites are gone. Conditions and projections are families whose emitter side
 already sits in `render` (`ConditionGlueRenderer`, `ProjectionUnitRenderer`), so converting their
-producers completes them outright. Launchers, fetcher edges, type units and routine writes all feed
-the one large fetcher family, which is why that family is the item's real weight and why slice one
-takes the corner of it that detaches cleanly.
+producers completes them outright. Fetcher edges is the third such family, for a different reason:
+its one reader is `PlanCompileGraph`, which turns its rows into declared recompile edges and emits
+nothing, so its producer conversion is the whole family. Launchers, type units and routine writes
+feed the one large fetcher family, which is why that family is the item's real weight and why slice
+one takes the corner of it that detaches cleanly.
 
 The validator half is independent of the emit tiers and advances beside them, check by check; no
 emit-family increment waits on it and it waits on none of them. The terminal deletion comes last by
@@ -1437,13 +1527,14 @@ that programme which it cannot get for itself.
 
 ### The one line this item still draws for itself
 
-The validator half adds store relations and the planner half is banned from asking for them, which
-reads as a contradiction and is not. A defect is a fact about the *schema*: permanent,
-many-consumer, so it belongs in the store as a detection relation, filed like any other fact. A
-command row is a fact about *this run*: one-consumer, run-scoped, so the store never serves it, and
-`MULTISET` composition stays in the producer's `SELECT`. That line, not the identity of the consumer,
-decides where a derivation lives. What changed with this respec is only who writes the relation once
-the line has been drawn, never where the line falls.
+The validator half writes store relations and the planner half is banned from asking the store for
+plan-shaped ones, which reads as a contradiction and is not. A defect is a fact about the *schema*:
+permanent, many-consumer, so it belongs in the store as a detection relation, filed in its owner's
+family. A command row is a fact about *this run*: one-consumer, run-scoped, so the store never
+serves it, and `MULTISET` composition stays in the producer's `SELECT`. That line, not the identity
+of the consumer, decides where a derivation lives. Who writes the relation once the line is drawn
+is a separate question: a planner's missing input is filed, and a validator check's own detection
+is written here, under "The one exception", with its inputs filed like the planner's.
 
 ## Risks
 
@@ -1543,8 +1634,9 @@ the line has been drawn, never where the line falls.
   in the store, found that nothing computes to the derivation gatherer, and established the rule the
   `intent_` family header now states: a rule the last gatherer can compute in a stage is neither a
   view, nor a registration, nor a reader's join, but a fact that gatherer writes. This item files its
-  missing facts under that rule and authors none, which "What this item does not author" states in
-  full.
+  missing facts under that rule and authors none of them; the one relation it writes, a validator
+  check's own detection, is filed in its owner's family under the same rule, and "What this item
+  does not author" states both in full.
 
   **The store programme owns the placement of every relation this item has ever authored, renaming
   included.** R876's arc has already moved relations the conditions arc authored:
@@ -1706,6 +1798,16 @@ now owns them, and a sweep here that named them would claim a retirement this it
   the conversion fixes (then the expectation changes deliberately, with the requirement as its
   specification) or a conversion mistake, and neither earns a residue record or a standing shadow
   test.
+* **Not every producer reaches emitted output, and the one that does not names its own gate.**
+  `FetcherEdgeRelation` feeds only `PlanCompileGraph`'s declared recompile edges, so byte-identical
+  output cannot see a wrong fetcher-edge row. Its conversion is pinned by `FetcherEdgeRelationTest`
+  (the family witnesses and the disjointness from the launcher relation's keys),
+  `PlanCompileGraphTest`, and `IncrementalCompileHarnessTest`'s three-leg oracle, which refuses an
+  emitted cross-unit reference the graph lacks. `FetcherEdgeRelationTest`'s key-set leg derives its
+  expected coordinates from the model today; once the producer reads the store that leg is a live
+  store-versus-walk comparison, which the doctrine above refuses, so the converting commit restates
+  it as declared per-family coordinates over the test's own fixture. Any later producer whose rows
+  stop short of emitted source states its gate the same way.
 * **Output identity, per emitter family.** The emitter half changes no generated source, so the
   assertion is that it changes none: the family's existing pipeline-tier expectations hold verbatim
   across the cutover.
@@ -1720,10 +1822,12 @@ now owns them, and a sweep here that named them would claim a retirement this it
   model: an execute-listener count at producer grain, asserting the read count is a function of the
   producer's arms rather than of the corpus, landing in the same commit as the conversion. Output
   identity cannot see an N+1; this is the gate that can.
-* **No relation-authoring obligations, because no relations are authored here.** The agreement
-  anchor, the read-cost gate and the fact-model naming check attach to the increment that writes a
-  relation, which under "What this item does not author" is an increment of the store programme
-  rather than of this item. What this item owes instead is the reverse: a producer conversion is the
+* **Relation-authoring obligations only on detections.** The agreement anchor, the read-cost gate
+  and the fact-model naming check attach to the increment that writes a relation. Under "What this
+  item does not author" that is an increment of the store programme for every relation but one
+  kind: a validator check's own detection, whose increment owes all three plus the `meta_relation`
+  declaration, the `diagnostic` arm where the defect is author-facing, and the read-or-fail gate
+  the exception names. For the planner half, what this item owes instead is the reverse: a producer conversion is the
   first real consumer of the relations it reads, so its commit states which relations it read and
   whether any of them answered a question its grain could not support. That is the feedback the
   store programme cannot get for itself, and it replaces three obligations with one.
@@ -1966,6 +2070,14 @@ This respec is a plan change of a kind the Spec gate decides and no independent 
 did not route through a fresh gate because `In Progress` has no transition to `Spec`, so the next
 reviewer to touch this item should read the plan rather than only the delta.
 
+Revised 2026-09-23 against the Spec gate's first round, by a session that had reviewed the body
+before taking authorship. Two plan changes and a set of relocations. The fetcher-edges availability
+check was re-run over membership and the producer gains two command-relation parameters; the
+validator half gains the one authoring exception the item carries, bounded four ways, and its own
+readiness check. The store readers the body located under `rewrite/derive` now live in
+`graphitron-model`, and `StoreDetections` carries seven families rather than two; both are
+restated. Nothing in the goal, the architecture, or the planner half's non-authoring rule changed.
+
 ## Reviewer findings
 
 ### Spec → Ready, 2026-09-23, session_01VXfDQZjyhP4TkASpw4dNzo: revisions requested
@@ -2002,6 +2114,18 @@ is a filing, and re-rank if it is a filing. It should also name the gate that pi
 producer's behaviour (`PlanCompileGraphTest`, `IncrementalCompileHarnessTest`'s three-leg oracle,
 or a stated alternative), since byte-identical output does not.
 
+> *Author response (2026-09-23, session_01VXfDQZjyhP4TkASpw4dNzo).* Re-run over membership; the
+> readiness claim survives, and its evidence changes. The discriminated pair splits on whether the
+> launcher relation owns the coordinate and on nothing else (`FetcherEdgeRelationTest` already
+> pins the two key sets disjoint), so the converted producer takes `LauncherRelation` and
+> `RoutineWriteRelation` as parameters beside `ConditionRelation` rather than restating the delivery
+> verdict in its `SELECT`. Node lookups are a signature filter over captured columns; the glue arms
+> are scoped to the roots and mutation coordinates that take glue today. Nothing is filed and the
+> order stands. The gate is named in Coverage: `FetcherEdgeRelationTest`, `PlanCompileGraphTest`
+> and `IncrementalCompileHarnessTest`, with the test's model-derived key-set leg restated as
+> declared coordinates in the converting commit. The family line in "Sequencing between the halves"
+> is corrected: `PlanCompileGraph` is the family's one reader, so the conversion completes it.
+
 **2. The validator half contradicts the non-authoring rule (question 2, fit).** "What this item
 does not author" calls the rule absolute. "The one line this item still draws for itself" says a
 detection is "filed like any other fact". Coverage says no relations are authored here. But
@@ -2017,6 +2141,22 @@ ways. Either the validator half is a stated carve-out from the non-authoring rul
 family and owner detections land in. Or it files like the planner half, and then strategy point
 4, criterion 3 and the validator section have to say where those filings go and what this item
 does while they wait.
+
+> *Author response (2026-09-23, session_01VXfDQZjyhP4TkASpw4dNzo).* Carve-out, with a principles
+> pass consulted on the fork. Filing loses on measurement: all seven `StoreDetections` families read
+> `intent_` defect views and the only gatherer-written detection is `graphitron_minted_conflict`,
+> so a validator half that only flipped checks onto existing detections would flip almost none and
+> criterion 3 would have no owner. "The one exception" under "What this item does not author" now
+> states the carve-out and four bounds: the detection lands in the commit that deletes the arm it
+> replaces; it never authors its inputs, which are filed as in the planner half; it is filed in its
+> owner's family and never under `intent_`; and a gate fails the build on a detection no
+> `StoreDetections` component reads. Strategy point 4, criterion 3, the validator section (now
+> readiness-ordered by its own availability check), "The one line" and Coverage are aligned to it.
+> This narrows the respec's absolute rule by one kind, which is the owner's call to overturn if the
+> rule was meant to hold for detections too.
+
+> *Author response to the non-blocking note.* `selectionRestriction` is folded into the
+> inversion paragraph beside `discriminatedBranches`; the criterion-2 count reads fifteen.
 
 **Non-blocking.** `LauncherCommands.selectionRestriction` is a second mid-emission planner call
 beside `discriminatedBranches` in `TypeFetcherGenerator`. The inversion census does not count it,
