@@ -21,6 +21,37 @@ resolved library version against published security advisories) reports no open 
 anything we publish, and none against the reactor as a whole. Today fourteen advisories arrive
 with the Maven plugin and land on every consumer's classpath.
 
+## Implementation record
+
+Shipped as planned under Implementation below, at the Spec's versions:
+`version.com.fasterxml.jackson` 2.22.3, `version.tools.jackson` 3.2.3 and `version.postgresql`
+42.7.13 (each still the newest GA in Maven Central metadata at pickup), plus the two BOM imports in
+the root `<dependencyManagement>`, 2.x first. `CLAUDE.md` states 42.7.13. No module pom or source
+changed, and the direct-dependency fallback was not needed.
+
+Acceptance evidence, taken after the verification build on the implementation tree:
+
+- **Consumer path.** `mvn dependency:resolve-plugins -pl graphitron-sakila-example -Plocal-db`: the
+  `graphitron-maven-plugin` block lists `tools.jackson.core:jackson-databind`, `jackson-core` and
+  `tools.jackson.dataformat:jackson-dataformat-yaml` at 3.2.3, `com.fasterxml.jackson.core:jackson-core`
+  and `jackson-databind` at 2.22.3, and `jackson-annotations` at 2.22. The Quarkus plugin's block
+  keeps its own 2.22.2.
+- **Reactor.** `mvn dependency:tree -Plocal-db -Dincludes='com.fasterxml.jackson*,tools.jackson*,org.postgresql*'`:
+  `graphitron-mcp` and `graphitron-maven-plugin` show the same versions as above;
+  `graphitron-sakila-example` shows Quarkus's Jackson 2.22.2 (annotations 2.22) and
+  `org.postgresql:postgresql` 42.7.13 at test scope. `graphitron-sakila-db`'s jOOQ codegen plugin
+  dependency reads `${version.postgresql}` directly.
+- **Runtime compatibility.** The verification build (`mvn install -Plocal-db`) passed, including
+  `GraphitronMcpServerTest` (57 tests) and `CatalogSearchOnnxTest` in `graphitron-mcp`, and the
+  `graphitron-sakila-example` suite (942 run, 0 failures) against the 42.7.13 driver.
+
+Advisory recheck: the GitHub advisory API and OSV are not reachable from the implementing sandbox,
+so the chosen versions were checked against the patched versions this body records for each GHSA
+id, not against the advisory pages themselves. Every 2.x id is patched by 2.22.1 or earlier on the
+2.22 line (2.22.3 chosen), every 3.x id by 3.2.1 or earlier on the 3.2 line (3.2.3 chosen), and
+both pgjdbc ids by 42.7.12 (42.7.13 chosen). The reviewer should confirm the ranges on the
+advisory pages, or with a fresh Dependency-Track scan, if either is reachable.
+
 ## What is open, and where it comes from
 
 A Dependency-Track scan of the reactor, taken before R964 raised the example's Quarkus platform,

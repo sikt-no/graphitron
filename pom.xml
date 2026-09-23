@@ -50,10 +50,17 @@
         <version.org.codehaus.plexus.plexus-utils>3.6.1</version.org.codehaus.plexus.plexus-utils>
         <version.org.junit>6.0.3</version.org.junit>
         <version.ch.qos.logback>1.5.32</version.ch.qos.logback>
-        <version.postgresql>42.7.10</version.postgresql>
+        <version.postgresql>42.7.13</version.postgresql>
         <version.testcontainers.postgresql>2.0.4</version.testcontainers.postgresql>
         <version.io.modelcontextprotocol>2.0.0</version.io.modelcontextprotocol>
         <version.org.eclipse.jetty>12.0.36</version.org.eclipse.jetty>
+        <!--
+          Jackson, both lines, graphitron-mcp only and only transitively: langchain4j pulls 2.x and
+          the MCP SDK's mcp-json-jackson3 pulls 3.x. The lines release independently, hence two
+          properties. See the BOM imports in dependencyManagement.
+        -->
+        <version.com.fasterxml.jackson>2.22.3</version.com.fasterxml.jackson>
+        <version.tools.jackson>3.2.3</version.tools.jackson>
         <!--
           R372 RAG foundation (graphitron-mcp only). langchain4j ships the bge ONNX embedder as a
           self-contained module (model bundled in the jar, no network fetch); Lucene HNSW is the
@@ -112,6 +119,29 @@
                 <groupId>io.modelcontextprotocol.sdk</groupId>
                 <artifactId>mcp-bom</artifactId>
                 <version>${version.io.modelcontextprotocol}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!--
+              Jackson reaches graphitron-mcp (and so the published Maven plugin) only transitively:
+              langchain4j-core pulls the 2.x line, the MCP SDK's mcp-json-jackson3 and
+              json-schema-validator pull the 3.x line. No module declares Jackson; these imports
+              exist to lift those transitive versions coherently across each line. The 2.x BOM comes
+              first: both manage com.fasterxml.jackson.core:jackson-annotations (Jackson 3 keeps the
+              2.x annotations artifact), and among imports the first declaration wins, so the line
+              that owns that artifact decides it.
+            -->
+            <dependency>
+                <groupId>com.fasterxml.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${version.com.fasterxml.jackson}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>tools.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${version.tools.jackson}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>

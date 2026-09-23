@@ -12,7 +12,7 @@ The next-generation Graphitron generator: a Maven-based code generator that turn
 
 - **Java 25** for generator code (`<release>25</release>` in the root `pom.xml` and most child modules). Generator implementation may use Java 25 features freely. The parent pom's `requireJavaVersion` enforcer rule fails the build with a clear message when run on a JDK older than 25.
 - **Java 17** is the floor in two places, for two different reasons. Generated source files must target 17 because consumers may still be on 17 and we control what syntax appears in those files; `graphitron-sakila-example` compiles emitted sources with `<release>17</release>` to verify that. Separately, `graphitron-jakarta-rest` is hand-written runtime code that consumers put on their classpath, so its `default-compile` execution pins `<release>17</release>` too: **anything you type in that module must compile at 17**, Java 25 syntax there fails the build.
-- **jOOQ 3.20.11**, **GraphQL-Java 25.0**, **JUnit 6.0.3 + AssertJ 3.27.7**, **PostgreSQL 42.7.10** (Testcontainers 2.0.4). Versions are pinned in the root `pom.xml` properties; don't add dependencies without checking that pom first.
+- **jOOQ 3.20.11**, **GraphQL-Java 25.0**, **JUnit 6.0.3 + AssertJ 3.27.7**, **PostgreSQL 42.7.13** (Testcontainers 2.0.4). Versions are pinned in the root `pom.xml` properties; don't add dependencies without checking that pom first.
 
 ## Environment (agent sessions)
 
