@@ -1,7 +1,7 @@
 ---
 id: R966
 title: "Write inputs keyed by a decoded node id divine the tenant"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 theme: classification-model
