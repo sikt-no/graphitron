@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.diagnostics.Rejection;
+import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.TenantBinding;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
@@ -519,6 +520,114 @@ class TenantBindingClassificationTest {
             .anyMatch(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding r
                 && r.coordinate().equals("Mutation.updateInventory")
                 && r.detail().contains("SET clause"));
+    }
+
+    @Test
+    void insertWithArityOneNodeIdCarrierDivinesTheDecodedSlot() {
+        // The transform-blind site: an INSERT input field whose @nodeId decodes to a key that is
+        // the tenant column alone. Before the projection axis the input-field walk read the
+        // column off the carrier and minted a raw read of the base64 id as the tenant value.
+        var schema = build("""
+            type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+                id: ID! @nodeId
+            }
+            type Language @table(name: "language") { name: String }
+            type Query { languages: [Language!]! }
+            type Mutation {
+                createFilm(in: CreateKeyedFilmInput!): ID @mutation(typeName: INSERT, table: "film")
+            }
+            input CreateKeyedFilmInput {
+                id: ID! @nodeId(typeName: "Film")
+                title: String! @field(name: "title")
+            }
+            """);
+
+        var bound = (TenantBinding.ArgumentBound) schema.tenantBindingOf("Mutation", "createFilm");
+        assertThat(bound.primary().slotName()).isEqualTo("id");
+        assertThat(bound.primary().column().sqlName()).isEqualTo("film_id");
+        assertThat(bound.primary().read())
+            .isEqualTo(new TenantBinding.SlotRead.NestedInput("in", List.of("id")));
+        assertThat(bound.primary().projection())
+            .isInstanceOfSatisfying(TenantBinding.SlotProjection.DecodedKeySlot.class,
+                decoded -> assertThat(decoded.slot()).isZero());
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void insertReferenceCarrierReachingTheTenantThroughAJoinNeverReachesTheFold() {
+        // A Remote-bound reference carrier names the tenant column on the joined table, so the
+        // INSERT's own table has no column to route on. The fold has no decline for it because
+        // the mutation input gate refuses every Remote carrier first: the write never classifies,
+        // so the coordinate carries no tenant verdict and no tenant rejection of its own.
+        var schema = build("""
+            type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
+            type Language @table(name: "language") { name: String }
+            type Query { languages: [Language!]! }
+            type Mutation {
+                createInventory(in: InventoryCreateThroughJoinInput!): Inventory
+                    @mutation(typeName: INSERT, table: "inventory")
+            }
+            input InventoryCreateThroughJoinInput {
+                filmId: Int! @field(name: "film_id") @reference(path: [{key: "inventory_film_id_fkey"}])
+                storeId: Int! @field(name: "store_id")
+            }
+            """);
+
+        assertThat(schema.field("Mutation", "createInventory"))
+            .isInstanceOfSatisfying(GraphitronField.UnclassifiedField.class,
+                field -> assertThat(field.reason()).contains("written by a @mutation"));
+        assertThat(schema.tenantBindingOf("Mutation", "createInventory")).isNull();
+        assertThat(schema.tenantBindings().rejections())
+            .noneMatch(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding r
+                && r.coordinate().equals("Mutation.createInventory"));
+    }
+
+    @Test
+    void pruningNodeIdLeafOnAPolymorphicRootRejectsWithItsOwnMessage() {
+        // A bare @nodeId over Film | FilmActor means a different node type per branch: each
+        // participant keeps only the ids it can decode, so there is no one decode to route the
+        // statement's single connection on, although both keys embed the tenant column.
+        var schema = build("""
+            type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+                id: ID! @nodeId
+                title: String
+            }
+            type FilmActor implements Node @table(name: "film_actor")
+                    @node(keyColumns: ["actor_id", "film_id"]) {
+                id: ID! @nodeId
+            }
+            union FilmThing = Film | FilmActor
+            type Query { filmThingById(id: ID! @nodeId): FilmThing }
+            """);
+
+        assertThat(schema.tenantBindingOf("Query", "filmThingById")).isNull();
+        assertThat(schema.tenantBindings().rejections())
+            .anyMatch(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding r
+                && r.coordinate().equals("Query.filmThingById")
+                && r.detail().contains("no single decode to route the statement on"));
+    }
+
+    @Test
+    void routineWriteMintsNoSlotSoItsTenantIsNeverDecodedAtTheEntryPoint() {
+        // A @routine write's only operation member is the routine call, which carries no filter,
+        // lookup or input surface, so no argument ever mints a bound slot for it: even an argument
+        // whose value is the tenant key leaves a tenant-scoped routine write unbound. That is why
+        // the routine-write acquisition never meets a decoded projection.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+            type Query { rental: Rental }
+            type Mutation {
+              rentFilm(inventoryId: Int!, customerId: Int!): [Rental!]!
+                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+                @reference(path: [{table: "rental"}])
+            }
+            """, TestConfiguration.testContext().withTenantColumn("inventory_id"));
+
+        assertThat(schema.tenantBindingOf("Mutation", "rentFilm")).isNull();
+        assertThat(schema.tenantBindings().rejections())
+            .anyMatch(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding r
+                && r.coordinate().equals("Mutation.rentFilm")
+                && r.detail().contains("no argument or input field maps to tenant column"));
     }
 
     @Test

@@ -52,6 +52,14 @@ type FilmActor implements Node @table(name: "film_actor") @node(keyColumns: ["ac
     actorId: Int @field(name: "actor_id")
 }
 
+# A three-column key with the tenant in the middle (slot 1), whose note_txt is a writable non-key
+# column: the composite-key UPDATE keyed by a node id, beside the arity-1 Film UPDATE below.
+type FilmActorNote implements Node @table(name: "film_actor_note")
+        @node(keyColumns: ["actor_id", "film_id", "lang_code"]) {
+    id: ID! @nodeId
+    noteTxt: String @field(name: "note_txt")
+}
+
 # ArgumentBound mutation arm: the INSERT input's filmId maps to the tenant column and divines
 # the routing for the write (and its follow-up re-read, which reuses the pinned connection).
 input InventoryCreateInput {
@@ -99,6 +107,13 @@ input UpdateFilmByNodeIdInput {
     title: String @field(name: "title")
 }
 
+# The composite carrier on the WHERE partition: the decoded key is (actor_id, film_id, lang_code)
+# and the tenant is its slot 1; the SET partition is the note text.
+input UpdateFilmActorNoteByNodeIdInput {
+    id: ID! @nodeId(typeName: "FilmActorNote")
+    noteTxt: String @field(name: "note_txt")
+}
+
 # The FK-target reference carrier: the decoded Film key lifts onto inventory.film_id through
 # inventory_film_id_fkey, and that lifted own-table column is the tenant column, so the INSERT
 # routes without naming film_id at all.
@@ -115,4 +130,5 @@ type Mutation {
     deleteFilmActorByNodeId(in: DeleteFilmActorByNodeIdInput!): ID @mutation(typeName: DELETE, table: "film_actor")
     deleteFilmActorsByNodeId(in: [DeleteFilmActorByNodeIdInput!]!): [ID!]! @mutation(typeName: DELETE, table: "film_actor")
     updateFilmByNodeId(in: UpdateFilmByNodeIdInput!): Film @mutation(typeName: UPDATE, table: "film")
+    updateFilmActorNoteByNodeId(in: UpdateFilmActorNoteByNodeIdInput!): ID @mutation(typeName: UPDATE, table: "film_actor_note")
 }

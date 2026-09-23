@@ -701,32 +701,9 @@ public record TenantBindingIndex(
                     default -> { }
                 }
             }
-            declineRoutineWriteDecodes(members, collector);
+            // A @routine write contributes nothing here: its only member is the routine call,
+            // which carries no filter, lookup or input surface, so it mints no slot at all.
             return collector.result();
-        }
-
-        /**
-         * A routine write whose tenant sits inside a node id is declined. Its entry point renders
-         * its acquisition through the command vocabulary, which carries the slot's location as
-         * plain data and cannot reach the generated decode helper across the build-enforced
-         * package boundary; routing it would need a second decode-failure vocabulary at a site
-         * that runs before the carrier reads its input.
-         */
-        private static void declineRoutineWriteDecodes(List<OperationMember> members,
-                                                       SlotCollector collector) {
-            if (members.stream().noneMatch(m -> m instanceof OperationMember.Write.RoutineWrite)) {
-                return;
-            }
-            for (TenantBinding.BoundSlot slot : collector.slots) {
-                if (slot.projection() instanceof TenantBinding.SlotProjection.DecodedKeySlot) {
-                    collector.decline(
-                        "the tenant value sits inside the node id '" + slot.slotName() + "' names,"
-                            + " and a @routine write acquires its connection before the routine"
-                            + " call reads its input, where the decode is out of reach. Name the"
-                            + " tenant column directly on this field, or key the routine by a"
-                            + " plain column.");
-                }
-            }
         }
 
         private static boolean hasKind(List<OperationMember> members, OperationMember.Kind kind) {
@@ -921,17 +898,10 @@ public record TenantBindingIndex(
                             case FilterBinding.Local local ->
                                 collectFromCarrier(rf.name(), local.ownTableColumns(),
                                     rf.extraction(), path, argName, collector);
-                            case FilterBinding.Remote ignored -> {
-                                if (rf.columns().stream().anyMatch(this::matchesTenantColumn)) {
-                                    collector.decline(
-                                        "input field '" + rf.name() + "' reaches tenant column '"
-                                            + scopes.columnName() + "' through a join, so this"
-                                            + " statement's own table holds no value to route on"
-                                            + " and the connection would have to be acquired"
-                                            + " before the join could be read. Name the tenant"
-                                            + " column on this table's own input.");
-                                }
-                            }
+                            // Never reached: MutationInputResolver rejects a Remote-bound
+                            // carrier on every @mutation before the write classifies, since the
+                            // write has no own-table column to put the decoded key in.
+                            case FilterBinding.Remote ignored -> { }
                         }
                     }
                     // A nested grouping input flattens onto the same table; descend with the

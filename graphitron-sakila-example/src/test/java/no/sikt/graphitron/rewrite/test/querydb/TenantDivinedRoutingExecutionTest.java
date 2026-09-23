@@ -78,6 +78,9 @@ class TenantDivinedRoutingExecutionTest {
                     + " film_id int not null, store_id int not null)");
                 tenant.execute("create table film_actor (actor_id int not null, film_id int not null,"
                     + " primary key (actor_id, film_id))");
+                tenant.execute("create table film_actor_note (actor_id int not null, film_id int not null,"
+                    + " lang_code varchar(3) not null, note_txt varchar(255),"
+                    + " primary key (actor_id, film_id, lang_code))");
                 TenantSessionFixture.installSessionObjects(tenant);
             }
         }
@@ -89,6 +92,7 @@ class TenantDivinedRoutingExecutionTest {
         try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
             t2.execute("insert into film values (2, 'Tenant Two Film')");
             t2.execute("insert into film_actor values (20, 2)");
+            t2.execute("insert into film_actor_note values (20, 2, 'nob', 'Before')");
         }
 
         // Typed tenant key: Map<Integer, DataSource> compiles against the generated constructor
@@ -292,6 +296,9 @@ class TenantDivinedRoutingExecutionTest {
             .as("a write is one statement on one connection, so a batch spanning tenants has no"
                 + " correct execution and is refused rather than partitioned")
             .isNotEmpty();
+        assertThat(result.getErrors().toString())
+            .as("the refusal names the disagreement")
+            .contains("disagree");
         assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get())
             .as("the disagreement is found before any connection is acquired")
             .isZero();
@@ -332,6 +339,22 @@ class TenantDivinedRoutingExecutionTest {
 
         try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
             t2.execute("update film set title = 'Tenant Two Film' where film_id = 2");
+        }
+    }
+
+    @Test
+    void updateKeyedByNodeId_routesOnTheCompositeKeysMiddleSlot() {
+        var result = execute("mutation { updateFilmActorNoteByNodeId(in: { id: \""
+            + NodeIdEncoder.encodeFilmActorNote(20, 2, "nob") + "\", noteTxt: \"After\" }) }");
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        assertThat(TENANT_1_OPENED.get())
+            .as("the tenant is slot 1 of a three-column key; the other database is never opened")
+            .isZero();
+
+        try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
+            assertThat(t2.fetchValue("select note_txt from film_actor_note where actor_id = 20"))
+                .as("the row was updated in the divined tenant's database").isEqualTo("After");
+            t2.execute("update film_actor_note set note_txt = 'Before' where actor_id = 20");
         }
     }
 

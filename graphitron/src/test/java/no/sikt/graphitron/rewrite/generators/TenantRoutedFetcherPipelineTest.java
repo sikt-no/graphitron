@@ -1,12 +1,15 @@
 package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
+
+import javax.lang.model.element.Modifier;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -129,11 +132,16 @@ class TenantRoutedFetcherPipelineTest {
             .doesNotContain("getDslContext(env)");
     }
 
+    /**
+     * A routed write keyed by a node id acquires through the per-class decode helper the
+     * registry mints for the slot projection. The pin is structural: the helper is declared on the
+     * fetcher class that routes on it, with the one {@code Object} in and {@code Object} out the
+     * divining fold's walk hands it (a dropped registration would compile here and fail at the
+     * consumer). That the call site reads the id through it, and that the routed statement runs
+     * on the decoded tenant, is the compilation and execution tiers' to show.
+     */
     @Test
-    void deleteKeyedByNodeIdRoutesThroughTheClassOwnDecodeHelper() {
-        // The routed acquisition reads the id off the input and hands it to the same per-class
-        // decode helper the WHERE clause uses, so a malformed id fails with one message whichever
-        // of the two reads it first.
+    void deleteKeyedByNodeIdDeclaresTheTenantSlotHelperOnItsFetcherClass() {
         var schema = multiTenant("""
             type FilmActor implements Node @table(name: "film_actor")
                     @node(keyColumns: ["actor_id", "film_id"]) {
@@ -148,38 +156,12 @@ class TenantRoutedFetcherPipelineTest {
             input DeleteFilmActorInput { id: ID! @nodeId(typeName: "FilmActor") }
             """);
 
-        assertThat(render(schema, "MutationFetchers", "deleteFilmActors"))
-            .contains("divinedTenant(decodeFilmActorTenantSlot1OrThrow("
-                + "fake.code.generated.schema.TenantConnections.tenantSlot(env.getArgument(\"in\"), \"id\")))")
-            .contains("dslFor(env, _divinedTenant)")
-            .doesNotContain("getDslContext(env)");
+        assertIsTenantSlotHelper(
+            method(schema, "MutationFetchers", "decodeFilmActorTenantSlot1OrThrow"));
     }
 
     @Test
-    void theTenantSlotHelperLandsOnTheFetcherClassThatCallsIt() {
-        // The helper is registered into the host class's collector, so the call site above names a
-        // method the same class declares; a dropped registration would compile here and fail at
-        // the consumer.
-        var schema = multiTenant("""
-            type FilmActor implements Node @table(name: "film_actor")
-                    @node(keyColumns: ["actor_id", "film_id"]) {
-                id: ID! @nodeId
-            }
-            type Language @table(name: "language") { name: String }
-            type Query { languages: [Language!]! }
-            type Mutation {
-                deleteFilmActors(in: [DeleteFilmActorInput!]!): [ID!]!
-                    @mutation(typeName: DELETE, table: "film_actor")
-            }
-            input DeleteFilmActorInput { id: ID! @nodeId(typeName: "FilmActor") }
-            """);
-
-        assertThat(render(schema, "MutationFetchers", "decodeFilmActorTenantSlot1OrThrow"))
-            .contains("return key.value2()");
-    }
-
-    @Test
-    void nodeIdFilteredReadRoutesThroughTheDecodedSlot() {
+    void nodeIdFilteredReadDeclaresTheTenantSlotHelperOnItsFetcherClass() {
         var schema = multiTenant("""
             type FilmActor implements Node @table(name: "film_actor")
                     @node(keyColumns: ["actor_id", "film_id"]) {
@@ -190,9 +172,29 @@ class TenantRoutedFetcherPipelineTest {
             }
             """);
 
-        assertThat(render(schema, "QueryFetchers", "filmActorsByNodeId"))
-            .contains("divinedTenant(decodeFilmActorTenantSlot1OrThrow(env.<Object>getArgument(\"ids\")))")
-            .doesNotContain("getDslContext(env)");
+        assertIsTenantSlotHelper(
+            method(schema, "QueryFetchers", "decodeFilmActorTenantSlot1OrThrow"));
+    }
+
+    private static MethodSpec method(GraphitronSchema schema, String className, String methodName) {
+        TypeSpec spec = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+            .filter(t -> className.equals(t.name()))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("no generated class named " + className));
+        return spec.methodSpecs().stream()
+            .filter(m -> methodName.equals(m.name()))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError(
+                "no method " + methodName + " on " + className + "; has: "
+                    + spec.methodSpecs().stream().map(MethodSpec::name).toList()));
+    }
+
+    private static void assertIsTenantSlotHelper(MethodSpec helper) {
+        assertThat(helper.returnType()).isEqualTo(TypeName.OBJECT);
+        assertThat(helper.parameters())
+            .singleElement()
+            .satisfies(p -> assertThat(p.type()).isEqualTo(TypeName.OBJECT));
+        assertThat(helper.modifiers()).contains(Modifier.PRIVATE, Modifier.STATIC);
     }
 
     @Test

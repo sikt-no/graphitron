@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.render.CompositeDecodeHelperRegistry;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.HelperRef;
@@ -194,22 +195,23 @@ class CompositeDecodeHelperRegistryTest {
     }
 
     @Test
-    void emit_tenantSlotHelper_flattensABatchAndProjectsTheNamedSlot() {
+    void emit_tenantSlotHelper_takesAndReturnsObjectWhateverTheKeyArity() {
+        // The divining fold hands the helper whatever the slot walk read, a scalar id or a
+        // batch's list of them, and folds whatever comes back; so one Object-in, Object-out
+        // helper serves both wire shapes and every key arity. The body's decode, flattening and
+        // failure message are the compilation and execution tiers' to show.
         var registry = new CompositeDecodeHelperRegistry(OUTPUT_PACKAGE);
         registry.registerTenantSlot(decodeFilmActor(), 1);
-        MethodSpec helper = registry.emit().iterator().next();
-        assertThat(helper.returnType().toString())
-            .as("the divining fold takes Object, and one helper serves the scalar and batch shapes")
-            .isEqualTo("java.lang.Object");
-        String body = helper.code().toString();
-        assertThat(body)
-            .contains("wire instanceof java.util.List<?> nodeIds")
-            .contains("decodeFilmActorTenantSlot1OrThrow(element)")
-            .contains("wire instanceof String nodeId")
-            .contains("NodeIdEncoder.decodeFilmActor(nodeId)")
-            .contains("no.sikt.example.schema.GraphitronClientException")
-            .contains("not a valid FilmActor id")
-            .contains("return key.value2()");
+        registry.registerTenantSlot(decodeFilm(), 0);
+        assertThat(registry.emit())
+            .extracting(MethodSpec::name)
+            .containsExactly("decodeFilmActorTenantSlot1OrThrow", "decodeFilmTenantSlot0OrThrow");
+        for (MethodSpec helper : registry.emit()) {
+            assertThat(helper.returnType()).isEqualTo(TypeName.OBJECT);
+            assertThat(helper.parameters())
+                .singleElement()
+                .satisfies(p -> assertThat(p.type()).isEqualTo(TypeName.OBJECT));
+        }
     }
 
     @Test
