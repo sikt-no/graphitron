@@ -1301,7 +1301,8 @@ public final class ConnectionRuntimeClassGenerator {
                 .addMethod(logFanOutFailure(self))
                 .addMethod(staticDslFor(self, tenantKey))
                 .addMethod(divinedTenant(tenantKey))
-                .addMethod(divinedTenantAgree())
+                .addMethod(divinedTenantAgree(ClassName.get(self.packageName(),
+                    no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator.CLASS_NAME)))
                 .addMethod(tenantSlot())
                 .addMethod(loaderName())
                 .addMethod(tenantLoaderName())
@@ -1995,8 +1996,14 @@ public final class ConnectionRuntimeClassGenerator {
             .build();
     }
 
-    /** The recursive agree-fold behind {@code divinedTenant}: flattens collections, rejects disagreement. */
-    private static MethodSpec divinedTenantAgree() {
+    /**
+     * The recursive agree-fold behind {@code divinedTenant}: flattens collections, rejects
+     * disagreement. Disagreement is the caller's mistake (a batch whose ids decode to two tenants,
+     * or two bound arguments naming different ones), and one statement on one connection has no
+     * correct execution for it, so it raises the generated client-error type and the client reads
+     * which tenants disagreed rather than a redacted reference.
+     */
+    private static MethodSpec divinedTenantAgree(ClassName clientException) {
         var collection = ClassName.get("java.util", "Collection");
         return MethodSpec.methodBuilder("agreeOnTenant")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
@@ -2013,8 +2020,10 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("return current")
             .endControlFlow()
             .beginControlFlow("if (current != null && !current.equals(candidate))")
-            .addStatement("throw new $T($S + current + $S + candidate)", IllegalArgumentException.class,
-                "Tenant bindings disagree within one operation: '", "' vs '")
+            .addStatement("throw new $T($S + current + $S + candidate + $S)", clientException,
+                "Tenant bindings disagree within one operation: '", "' vs '",
+                "'. One call writes or reads one tenant database, so every tenant value it names"
+                    + " must be the same.")
             .endControlFlow()
             .addStatement("return candidate")
             .build();

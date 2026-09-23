@@ -70,7 +70,7 @@ Two corrections to the Backlog reading, so the implementer does not go looking f
 
 ## Implementation
 
-Shipped at `4bb378e`, with the round 2 rework (evidence and record, no design change) following it. Where the delivery departs from the plan below, the paragraph says so in place.
+Shipped at `4bb378e`, with the round 2 rework following it. The rework changes no design. It adds evidence and updates the record, and makes the one generated-code fix the evidence turned up (the mixed-tenant refusal reaches the client, see Tests). Where the delivery departs from the plan below, the paragraph says so in place.
 
 **Add the transform as its own axis, rather than a fourth location arm.** `TenantBinding.SlotRead` keeps its three arms and its meaning, pure location. `BoundSlot` gains a second component:
 
@@ -134,7 +134,7 @@ The fixture gap is why none of this was caught: `multitenant.graphqls` carries n
 - *The rejecting side is one message, not three.* `pruningNodeIdLeafOnAPolymorphicRootRejectsWithItsOwnMessage` covers the reachable decline. `insertReferenceCarrierReachingTheTenantThroughAJoinNeverReachesTheFold` pins the upstream gate that stands in for the Remote decline. The SET-partition rejection is covered as planned.
 - *The arity-1 INSERT carrier is its own case.* `insertWithArityOneNodeIdCarrierDivinesTheDecodedSlot` drives `collectFromCarrier` with a `NodeIdDecodeKeys` extraction, which is the transform-blind site the Mechanism section names. The arity-1 UPDATE case goes through `collectFromWhereKeys` instead.
 - *The compile-tier UPDATEs are an arity-1 `Film` UPDATE setting `title` and a composite `FilmActorNote` UPDATE setting `note_txt`, not a `FilmActor` UPDATE setting `last_update`.* `film_actor.last_update` is a `timestamp`, and the multitenant fixture declares no scalar for it. The execution tier's hand-built tenant databases also give `film_actor` no `last_update` column. `film_actor_note` has a three-column key with the tenant at slot 1 and a writable `varchar` column, so it covers the composite UPDATE at both the compile and execution tiers (`updateKeyedByNodeId_routesOnTheCompositeKeysMiddleSlot`), and it adds arity-3 coverage as well.
-- *The mixed-batch refusal asserts its message.* `bulkDeleteByNodeId_idsMixingTenants_refusedBeforeAnySql` now checks that the error says the bindings "disagree", which is what the Goal promises.
+- *The mixed-batch refusal asserts its message, and asserting it found a gap in the delivery.* `bulkDeleteByNodeId_idsMixingTenants_refusedBeforeAnySql` now checks that the error says the bindings "disagree", which is what the Goal promises. At `4bb378e` it did not: the generated `agreeOnTenant` threw a plain `IllegalArgumentException`, which the error router redacts, so the client read "An error occurred. Reference: …". The Goal calls a mixed batch a client error, so the rework makes it one. `agreeOnTenant` now raises the generated `GraphitronClientException`, which the router surfaces unredacted, the same way the node-id decode failure reaches the client. The guard is shared with co-bound arguments that name different tenants, which are the caller's mistake in the same way, so they get the visible message too. That is the rework's one change to generated code.
 
 ## User documentation (first-client check)
 

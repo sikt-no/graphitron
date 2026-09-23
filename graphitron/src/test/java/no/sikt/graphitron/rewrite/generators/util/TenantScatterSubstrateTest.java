@@ -73,6 +73,11 @@ class TenantScatterSubstrateTest {
         for (TypeSpec spec : GraphitronConnectionInstrumentationGenerator.generate(PACKAGE, true, hooks)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
+        // The tenant-agreement guard raises the client-error type, which a real build always
+        // emits beside the runtime.
+        for (TypeSpec spec : no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator.generate()) {
+            units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
+        }
         harness = EmittedCodeHarness.compile(units);
         runtimeClass = harness.load(SCHEMA_PACKAGE + ".GraphitronRuntime");
         tenantConnectionsClass = harness.load(SCHEMA_PACKAGE + ".TenantConnections");
