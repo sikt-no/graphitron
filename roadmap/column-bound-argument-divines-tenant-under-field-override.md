@@ -1198,3 +1198,78 @@ re-sources exactly that read.
 
 The reviewer of round 4 wrote this revision, so `Spec -> Ready` needs a session that has committed
 neither.
+
+### Round 5 (2026-09-23, Spec -> Ready, reviewer session 01VUCQBqSCcDLos3JxKYJXpS)
+
+Verdict: withhold. One blocking finding, on question one with a question-two root. Round 4's three
+findings are resolved: the `(FieldCoordinates, TableRef)` key reads back at `Condition.table()` on
+every classification path I followed (`FieldBuilder.java:1208` and `1224` for the participant loop,
+and `OperationMemberRelation.payloadsFor` returns `sgf.returnType().table()` for the single-table
+arms, including the routine chain, whose `routineChainComponents` passes
+`walk.tb().returnType().table()` as `rt`). The new fixture is tenant-scoped on both participants, and
+`ContextArg -> Raw` matches `accessOf`'s first switch.
+
+**Finding 7 (question one: the goal names a shape the plan does not reach; the root is in question
+two's mechanism). An input field that binds the tenant column and carries its own
+`@condition(override: true)` keeps rejecting, because the classifier drops its column before
+`projectFilters` ever sees it.**
+
+The goal promises that a field "whose argument, or whose filter input's field, is bound to the tenant
+column keeps its tenant binding whatever an authored `@condition` does to the predicate". The plan
+reaches that for arguments, but not for input fields. `BuildContext.classifyInputFieldInternal`
+(`BuildContext.java:3052-3060`) resolves the column and then, when the field's own condition is
+`override: true`, mints `InputField.ConditionOwnedField` instead of `ColumnBackedField`. The comment
+there says "the column is deliberately not recorded", and the record carries no `columns()`
+(`InputField.java:234-242`). The ledger mints only on the `ColumnBackedField` and
+`ColumnBackedReferenceField` arms of `walkInputFieldConditions`. Its `ConditionOwnedField` arm
+(`FieldBuilder.java:3023-3028`) holds nothing a row could be built from. The argument side does not
+have this asymmetry: a scalar argument under its own override stays `ColumnBackedArg` (only the
+no-route `@nodeId` case mints `ConditionOwnedArg`, `FieldBuilder.java:2223`). That is why goal-table
+row four moves and its input-field twin does not.
+
+Measured on this tree with `film_id` as the tenant column:
+`input FilmInput { filmId: ID @field(name: "film_id") @condition(condition: {...inputColumnCondition}, override: true) }`
+on `films(filter: FilmInput): [Film!]!` rejects with "no argument or input field maps to tenant
+column 'film_id'". That is the same rejection rows six and seven carry today. Under the plan as
+written it still rejects, and the goal table has no row saying so. Three statements in the spec are
+then untrue for this shape:
+
+- the goal's opening sentence;
+- the Mechanism's "The column binding survives every one of them". It lists three suppression sites
+  in `projectFilters`, but a fourth suppression happens at classification, where the binding does not
+  survive;
+- the Implementation's "the ledger's domain is the predicate path's domain plus the suppressed column
+  bindings". This is a suppressed column binding the ledger's domain excludes.
+
+The Documentation sentence planned for `condition-cascade.adoc` would also be false for it. That
+sentence says `override:` "never" governs the tenant routing a column-bound argument divines, and it
+sits in the section a reader of the input-field override semantics consults.
+
+This is not scope I would like to see added. The goal's own wording already covers the shape. It
+blocks because an implementer following the plan ships a documented guarantee that one natural shape
+breaks, and nothing in the plan's tests would show it: the containment pin reads `BodyParam`s, and
+this shape emits none.
+
+What would satisfy it: say which way this shape goes, and make the goal table, the Mechanism and the
+Documentation sentence agree with that.
+
+- If it should move, the classification has to keep the column. Either `ConditionOwnedField` carries
+  its resolved column (it currently shares a carrier with the column-miss outcome), or a
+  column-resolved override field stays `ColumnBackedField`, as the argument side does. Then name the
+  mint arm and the goal-table row. Either route touches a carrier `LeafRatchetTest` and
+  `GraphitronSchemaBuilderTest` (`CONDITION_OWNED_FIELD`,
+  `INPUT_IMPLICIT_CONDITION_EXPLICIT_OVERRIDE_SUPPRESSES_OWN`) pin, so the plan should say which.
+- If it should stay out, add a goal-table row (rejected, rejected) with the reason. Narrow the goal
+  sentence and the Documentation sentence to what does move. Then this item and the gap it leaves
+  can both be named in one sentence.
+
+Which one is the author's call.
+
+**Non-blocking.**
+
+- The emitter audit's service claim holds, and on firmer ground than the one it gives. A suppression
+  never changes a field's leaf type, and every shape this item moves has an unsuppressed twin that
+  classifies `ArgumentBound` today (rows one and two against rows three to seven). So no leaf type
+  newly reaches `ArgumentBound`, whichever emit site one audits.
+  `ChildField.ServiceTableField` is minted with `List.of()` filters (`FieldBuilder.java:7147-7148`),
+  so no service coordinate reaches `projectFilters`, as the spec says.
