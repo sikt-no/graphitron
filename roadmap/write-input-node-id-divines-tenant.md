@@ -1,7 +1,7 @@
 ---
 id: R966
 title: "Write inputs keyed by a decoded node id divine the tenant"
-status: In Review
+status: Ready
 bucket: bug
 priority: 3
 theme: classification-model
@@ -287,3 +287,43 @@ test check the stated goal.
 Retirement sweep: none of the five retired private names appears in javadoc, comments, `.adoc`,
 fixtures, or test names. The only hits are in R965's spec body, and R965's own round-3 finding
 already blocks on them, so they are that item's to fix, not this one's.
+
+### Round 3: In Review -> Ready, rework. 2026-09-23, session_017uJFxHtpRtcbvqN5mVwnze
+
+Everything the round 2 rework was asked for is delivered, and the goal is shown to hold. The
+verification build (`mvn install -Plocal-db`, on trunk at `2fbe17a`) is green, including all 14
+tests in `TenantDivinedRoutingExecutionTest`, the 28 in `TenantBindingClassificationTest` and the
+new structural pins in `TenantRoutedFetcherPipelineTest` and `CompositeDecodeHelperRegistryTest`.
+The delivered tests make no code-string assertions on generated bodies. The design is the one
+approved, the manual paragraph is split as the spec asked, and the retirement sweep is clean
+outside R965's own record. One finding blocks, and it is narrow.
+
+**Blocking, question 1 (scope the delivery added: its stated reason is false and nothing pins
+it).** "Scope added in delivery: the write target counts as reached" justifies the
+`MutationField.DmlTableField` arm in `reachedTables` with "every `@nodeId`-keyed DELETE in this
+item returns `ID`, so the goal needed the arm". It did not. `armOf` returns `ArgumentBound` on
+`direct.divines()` before it ever reads `anyTenant`, so a DML write that binds its tenant routes
+with or without the arm. Checked by experiment: with the arm commented out, all 109 `Tenant*Test`
+cases in `:graphitron` still pass, including every node-id-keyed DELETE and UPDATE case. What the
+arm actually does is separate from the goal, and it is worth having: it turns a tenant-scoped DML
+write that returns an id and binds *no* tenant from a silent `Untenanted` write on the default
+source into a `NoTenantBinding` rejection. It also lets the SET-partition decline fire on an
+UPDATE that returns an id. Probe: an `inventory` `@node(keyColumns: ["inventory_id"])` DELETE,
+input `inventoryId` only, returning `ID`, under `<tenantColumn>film_id`. With the arm it rejects
+with `NoTenantBinding`; without it, it classifies `Untenanted` and no test notices. So the item
+ships a consumer-visible behaviour change (schemas that built before now reject) whose reason, as
+recorded, is wrong, and removing it again would bring back a cross-tenant write silently. To
+satisfy:
+- add a `TenantBindingClassificationTest` case pinning the arm: a tenant-scoped DML write that
+  returns `ID`, binds no tenant, and rejects with `NoTenantBinding` (the probe above works as-is);
+- rewrite that paragraph to say what the arm is: a fix for an unbound, id-returning, tenant-scoped
+  write classifying `Untenanted`, which the goal does not depend on and which rides this item
+  because the item's fixtures are the first id-returning tenant-scoped writes. Keep the
+  consumer-impact sentence.
+
+No other rework is needed. The next reviewer can scope to this finding plus a green build.
+
+Non-blocking. `agreeOnTenant` on `TenantConnections` now names `GraphitronClientException`, but
+`PlanCompileGraph.addFixedKindEdges`'s `CONNECTION_RUNTIME` arm declares no edge from
+`TenantConnections` to `CLIENT_EXCEPTION`. That is harmless today, because `CLIENT_EXCEPTION` is
+in `FROZEN_SCAFFOLD_KINDS` and its ABI never moves, so it is noted rather than raised.
