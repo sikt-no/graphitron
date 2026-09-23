@@ -177,8 +177,13 @@ before, defaultPageSize, orderBy, extraFields, selection)` takes the sort fields
 columns as runtime lists and derives the seek from them. What is PK-typed is the emitter's build-time
 `Field<T> sortField` local in `buildRootConnectionFetcher` (the `pkColumnClass` computation), not the
 codec. Handing the codec a longer column list is therefore a change at the emitter only. The one
-constraint the codec does impose is that each cursor column arrive as a `Field<?>` carrying a
-`DataType`, which is what makes a build-time-typed slot (below) preferable to an untyped one.
+constraint the codec does impose is that each cursor column arrive as a `Field<?>` carrying the
+right `DataType`: `decodeCursor` converts through it and the seek binds through it. On the
+single-table path that is the table's own column, converter included. A field built from a Java
+class alone carries no converter, which for a forced-type column binds the user type against the
+database type. That is the failure R413 fixed on the DataLoader VALUES cells (the `init.sql`
+comment above `converter_org` records it), and it is why a slot below is typed by a participant
+column's own `getDataType()` rather than by a class.
 
 **Neither seam is root-only.** `branchProjection(participant, tableAlias)` is called from exactly
 two places, `buildStage1Block` and `buildStage1ConnectionBlock`, and the batched child paths carry
@@ -239,8 +244,9 @@ record PolymorphicOrdering(
     SlotOrder base)                       // the @defaultOrder, or the primary-key fallback
 record OrderingSlot(
     int ordinal,
-    String slotClass,                     // the one ColumnRef.columnClass every participant agrees on
+    String slotClass,                     // the one bound Java type every participant agrees on
     SequencedMap<ParticipantRef.TableBound, ColumnRef> columnByParticipant)
+                                          // first entry's column types the emitted slot field
 sealed interface SlotOrder {
     String name();                        // null on the base
     boolean uniformAsc();
@@ -320,15 +326,30 @@ other, and rejects on two counts:
 
 * **Arity.** Two participants' same-named indexes can project different numbers of columns. The
   fixed-slot projection assumes one slot count for the whole field, so unequal arity has to reject.
-* **Positional class.** `UNION ALL` requires the i-th projected column to be type-compatible across
-  branches, but what the emitter needs is stricter than what PostgreSQL will unify. Each slot becomes
-  one `DSL.field(DSL.name(<slot alias>), <slot class>)`, and `decodeCursor` converts each token
-  through that field's `DataType`, so a slot has to have exactly one Java class. The rule is
-  therefore equality of `ColumnRef.columnClass` across participants. `VARCHAR` against `TEXT`
-  passes, both being `String`. `INT` against `BIGINT` rejects even though PostgreSQL would widen
-  it, because `Integer` against `Long` leaves the emitter no single slot class, and widening is a
-  choice the generator should not guess on the author's behalf. The agreed class is what
-  `OrderingSlot.slotClass` carries.
+* **Positional type, on both sides of the binding.** `UNION ALL` requires the i-th projected column
+  to be type-compatible across branches, and what the emitter needs is stricter than what
+  PostgreSQL will unify. Each slot is emitted as one field typed by the first participant's column
+  `DataType` (see "Emission"), `decodeCursor` converts each token through it, and the seek binds
+  through it against every branch's rows. So every participant has to agree with that column on
+  two facts, and `ColumnRef.columnClass` states only one of them. It is `Field.getType()`, the Java
+  type *after* any converter, so a forced-type `bigint` exposed as `String` and a plain `varchar`
+  read the same there while their `UNION ALL` fails in the database. The rule is therefore
+  equality of the pair `JooqCatalog.columnFactsOf` reports per column, `sqlType` and
+  `bindingType`, which are the values the catalog capture already writes to `sql_column.sql_type`
+  and `sql_column.binding_type`; no new fact is minted. `sqlType` is `DataType.getTypeName()`,
+  which carries no length or precision, so `varchar(45)` against `varchar(50)` passes;
+  `VARCHAR` against `TEXT` rejects on `sqlType` even though both bind to `String`, and that is
+  accepted as the price of a rule stated over captured values rather than over PostgreSQL's
+  unification table; `INT` against `BIGINT` rejects, widening being a choice the generator should
+  not guess on the author's behalf; converted `bigint` against plain `varchar` rejects on
+  `sqlType`. The agreed binding type is what `OrderingSlot.slotClass` carries.
+
+  One residual is disclosed rather than closed. Two participants whose columns share both
+  `sqlType` and `bindingType` through *different* converters are not distinguishable from any
+  captured fact, and a cursor encoded off one participant's row would decode through the other's
+  converter. Closing it would mean capturing a column's converter as a catalog fact, a change to
+  the catalog family this item does not make; the case needs two distinct converters over one SQL
+  type to one Java type on columns an author orders a union by, which no known schema has.
 
 Direction and collation are not on this list. With the two-level carrier they are stated once per
 entry, and in the tree they cannot differ per participant anyway (see the model section above).
@@ -445,10 +466,23 @@ alias, and choose among the slots at runtime.**
   It is shared with the batched child connection arm, so the slots arrive as a list that is empty on
   the child call sites rather than as a second boolean beside `includeSortKey`.
 * An `OnSyntheticKey` order needs no slot; it selects the existing `__sort__`, in its own direction.
+* **A slot field is typed by a column, never by a class.** It is emitted as
+  `DSL.field(DSL.name(<slot alias>), <first participant's table>.<COLUMN>.getDataType())`, the
+  first participant being the first entry of the slot's sequenced column map, which is the
+  `table.COL.getDataType()` idiom `emitter-conventions.adoc` § "Column value binding" prescribes for
+  every bind. The converter rides the `DataType`, so `decodeCursor` turns a token back into the user
+  type and the seek binds it as the database type; a class-typed field would bind a converted
+  column's user type against its database type. The agreement rule above is what makes one
+  participant's `DataType` right for every branch.
+* **`__sort__` keeps its class typing, and that is a disclosed pre-existing gap, not this item's.**
+  `buildRootConnectionFetcher` types it off the first participant's key class, so a converter-backed
+  primary key on a multitable root connection already binds the user type in its seek today, with or
+  without an authored ordering. This item leaves that statement as it is; the fixtures below avoid a
+  converter-backed key so that they test the slots and not that gap.
 * The outer order-by and seek lists become runtime-chosen. A new per-field helper, sibling to
   `TypeFetcherGenerator.buildOrderByHelperMethod`, switches over the same named orders at build time
-  and returns the generated `OrderByResult` over `DSL.field(DSL.name(<slot alias>), <slot class>)`
-  rather than over an aliased table's columns. The `uniformAsc` fork that decides whether the runtime
+  and returns the generated `OrderByResult` over the slot fields rather than over an aliased
+  table's columns. The `uniformAsc` fork that decides whether the runtime
   `direction:` flips the spec carries over unchanged, being a property of the declaration and not of
   the table.
 * **`orderBy` and `extraFields` move together, always.** `pageRequest` derives `seekFields` from
@@ -473,7 +507,10 @@ alias, and choose among the slots at runtime.**
   reverse of `direction: ASC`, ties included. Everywhere else, a `Fixed` order and a named order that
   is not `uniformAsc`, they stay ascending. Either choice pages correctly, the seek following the
   sort list whatever its directions; this one is picked because the goal promises the reverse and
-  the tie fixture below shares its seed with the reversal case.
+  the tie fixture below shares its seed with the reversal case. A list-valued `@orderBy` argument
+  (`OrderBySpec.Argument.list()`) carries one direction per element and so has no single direction
+  to reverse; there the tiebreakers stay ascending, and the reversal promise is the single-valued
+  argument's.
 * **Nullable order columns take whatever jOOQ's `.seek()` gives them, as on every other path.**
   The seek is `.seek(page.seekFields())` with no `NULLS` handling anywhere in emission, and
   `encodeCursor` writes a `NULL` as a sentinel token, so paging over an order column holding `NULL`
@@ -572,9 +609,25 @@ leave it silently accepted. Narrow on the conjunction the item actually lowers:
   above; the last two reject a multitable return on their own today, but the conjunct names them
   anyway, because the rule it states is "reaches the multitable arm" and not "happens to fail
   elsewhere". Each is already a captured coordinate-keyed fact: `graphitron_service_entry`,
-  `graphitron_field_navigation.navigated_type_name = 'Node'`, `graphitron_argument_lookup_key_entry`
-  and `graphitron_routine_entry`, the same directive-entry stratum the view's
+  `graphitron_field.named_type = 'Node'`, `graphitron_argument_lookup_key_entry` and
+  `graphitron_routine_entry`, the same directive-entry stratum the view's
   `graphitron_default_order_entry` and `graphitron_order_by_entry` route arms already read.
+
+  Two of those four spellings are exact transcriptions only for a stated reason. The `Node` route
+  tests `baseTypeName(fieldDef)` over the type expression the classifier works with, which after
+  macro expansion is the connection's name for `[Node] @asConnection` or an authored
+  `NodeConnection`. So those roots reach the multitable arm and are lowered, and the clause has to
+  read `graphitron_field.named_type`, which carries the rewritten expression, not
+  `graphitron_field_navigation.navigated_type_name`, which strips the connection and would keep
+  rejecting them. The `@lookupKey` route fires through `LookupFacts.triggersFor`, which also
+  counts an argument whose input type carries `@lookupKey` on a field, transitively. That half is
+  not transcribed, for two reasons that each suffice. A coordinate the trigger fires on takes the
+  lookup route, and at a root `LookupKeyDirectiveResolver.resolveAtRoot` refuses any return that is
+  not table-bound, so a multitable root there fails the build on that route whatever this clause
+  says. And the input-field site is retired: `graphitron_field_lookup_key_entry` is documented as
+  such, and input-field classification refuses the directive outright. The argument entry is the
+  live site, and naming it keeps the clause's statement of the rule honest without a recursive
+  closure over input types that could only ever exclude coordinates that do not build.
 
 That second conjunct has a trap. It is **not** `graphitron_field.is_list` alone: that column says
 whether the type expression is a list, and the `@asConnection` expansion rewrites the field's type
@@ -633,7 +686,7 @@ WHERE NOT (shape.verdict = 'PARTICIPANT_FAN_OUT'
                         OR graphitron_field_navigation nav.basis = 'CONNECTION_ELEMENT')
            AND NOT EXISTS (earlier route, at the coordinate: graphitron_service_entry,
                             graphitron_argument_lookup_key_entry, graphitron_routine_entry,
-                            or graphitron_field_navigation nav.navigated_type_name = 'Node'))
+                            or graphitron_field f.named_type = 'Node'))
 ```
 
 The exclusion has a Java twin, and the two have to agree. The classifier lowers an ordering at
@@ -654,8 +707,8 @@ by construction and stays inert.
 
 What comes out with the narrowing, per slice: the *declared list-shaped root* cases in
 `FieldUnlowerableOrderingTest`, `UnlowerableOrderingsTest`, and
-`UnlowerableOrderingRejectionPipelineTest`. Three cases stay, each for its own reason, and each
-becomes load-bearing rather than incidental once the arm has a predicate:
+`UnlowerableOrderingRejectionPipelineTest`. The cases below stay, move, or arrive, each for its
+own reason, and each becomes load-bearing rather than incidental once the arm has a predicate:
 
 * `aMultitableChildFieldCarriesTheSameRow` stays and keeps failing the build. It was a guard against
   over-narrowing; it becomes the arm's primary case.
@@ -666,7 +719,14 @@ becomes load-bearing rather than incidental once the arm has a predicate:
 * A new case owes the single-valued declared root: it resolves no ordering, so it keeps its row.
 * New cases owe the list-shaped roots routed away from the multitable arm: a root `@service`
   returning a multitable interface list with `@defaultOrder`, and a `Node`-typed list root with one.
-  Both classify cleanly and neither lowers an ordering, so both keep their rows.
+  Both classify cleanly and neither lowers an ordering, so both keep their rows. The `Node` case is
+  a plain list of `Node`; a second case, `[Node] @asConnection` with
+  `@defaultOrder(primaryKey: true)`, pins the other side of the named-type spelling above: it
+  reaches the multitable arm, is lowered, and loses its row.
+* The route-grain pins move rather than go. `bothDeclarationsAtOneCoordinateAreTwoRows` and
+  `twoOrderByArgumentsOnOneCoordinateAreTwoRows` sit on a root today and would lose their rows with
+  the other root cases, taking the only statement of the view's one-row-per-route grain with them.
+  Re-seat both on the child multitable coordinate, where the rows survive.
 
 ## Documentation
 
@@ -676,7 +736,9 @@ simply deleted: each has to state the new, narrower truth.
 * `docs/manual/how-to/sort-results.adoc`, "Sort across polymorphism". Currently: "That ordering is
   not configurable. `@defaultOrder` and `@orderBy` are not lowered onto the participant branches, and
   declaring either on such a field fails the build rather than being ignored." Replacement states
-  that a root field lowers both, per participant, subject to every participant carrying the column;
+  that a root field lowers both, per participant, subject to every participant carrying the column
+  at the same SQL type and the same bound Java type (so a converter-backed column orders a union
+  only against columns bound the same way);
   that a child multitable field still rejects; and that the synthetic key stays appended after the
   author's columns as a tiebreaker. That last point is a real deviation from this page's own rule two
   sections up ("The rewrite does *not* auto-append a PK tie-breaker; it is a schema-author
@@ -704,8 +766,12 @@ can see that, so the execution tier is where this item is either delivered or no
   slots. Each of the three primary-key shapes (`@order(primaryKey: true)`,
   `@defaultOrder(primaryKey: true)`, and the fallback base of a field with `@orderBy` and no
   `@defaultOrder`) comes out `OnSyntheticKey` and mints no slot. Each agreement rule rejects with a
-  message naming the disagreeing participant: an absent column, unequal `index:` arity, and unequal
-  `columnClass` at one position (`INT` against `BIGINT` rejects; `VARCHAR` against `TEXT` does not).
+  message naming the disagreeing participant: an absent column, unequal `index:` arity, and an
+  unequal (`sqlType`, `bindingType`) pair at one position. `INT` against `BIGINT` rejects on both;
+  the converter case rejects on `sqlType` alone, a converter-backed `org_code_domain` column bound
+  to `String` against a plain `varchar` of the same name, which is the case a `columnClass`-only
+  rule would have admitted. The catalog has no plain column sharing a name with a converted one
+  today, so that fixture table is the implementer's to add to `init.sql`.
   Direction and collation have no case, the two-level carrier making their disagreement
   unrepresentable. Plus the single-valued declared multitable root, which lowers nothing and so
   keeps its rejection.
@@ -713,7 +779,8 @@ can see that, so the execution tier is where this item is either delivered or no
   `UnlowerableOrderingRejectionPipelineTest`: one declared-root case per list-shaped form (a list, an
   authored connection type, `@asConnection`) that loses its row; the single-valued declared root,
   the child multitable field, a root `@service` multitable interface list and a `Node`-typed list
-  root, which keep theirs; and after slice 1 only, a field carrying both
+  root, which keep theirs; `[Node] @asConnection`, which loses its row; the two route-grain cases
+  re-seated on the child coordinate; and after slice 1 only, a field carrying both
   `@defaultOrder` and an `@orderBy` argument whose `ORDER_BY_ARGUMENT` row survives. These are
   what hold the view's exclusion and the classifier's lowering to the same population.
 * **Membership**, on `ConditionMembershipTest`'s precedent: the operation-member census reports an
@@ -745,6 +812,13 @@ can see that, so the execution tier is where this item is either delivered or no
   - The inline single-cardinality child field over the same union returns the row it returns today.
     It shares `buildStage1Block` with the root list arm, and this is the case that fails if the
     root's slots or tiebreaker leak onto it.
+* **Execution tier, a converter-backed order column.** A union of `ConverterCampus` and a second
+  table keyed on a plain `serial` and carrying an `org_code_domain` column (new in `init.sql`; the
+  existing `ConverterOrg` is keyed on the converted column itself, which would put the test on
+  `__sort__`'s disclosed gap instead of on the slots), ordered by `org_code` through
+  `@asConnection`, paged to the end in pages smaller than the set, forward and backward. The first
+  page passes under a class-typed slot; the second is where the seek binds the cursor value, so
+  this is the case that fails if a slot is typed by its class rather than by its column.
 * **Composite-PK regression.** `Query.pagedItems` in the example schema is the composite-PK
   multitable root connection (`PagedA` on `paged_a` and `PagedB` on `paged_b`, both keyed on
   `(k1, k2)`), and it runs through `buildRootConnectionFetcher`'s JSONB `__sort__` path. That makes
@@ -1117,6 +1191,19 @@ case that pages past the first page under a converter-backed order column; a uni
 `__sort__` is typed the same way, off the first participant's key class. Whether this item changes
 that too is the author's call, but it should be a stated choice rather than inherited silently.
 
+*Author response (2026-09-23):* Taken. The agreement rule is now "Positional type, on both sides of
+the binding": equality of the (`sqlType`, `bindingType`) pair `JooqCatalog.columnFactsOf` reports,
+the values `sql_column` already captures, so no fact is minted. It rejects converted-against-plain
+on `sqlType`; `VARCHAR` against `TEXT` now rejects too, accepted as the price of a rule over
+captured values. Emission gains a bullet typing every slot field by the first participant's column
+`getDataType()`, citing the "Column value binding" convention, and "What the tree already has"
+says why a class is not enough. `__sort__` stays as it is and is disclosed as a pre-existing gap,
+so the fixtures avoid a converter-backed key. The one residual, distinct converters sharing both
+facts, is disclosed rather than closed. Tests gain the converter rejection in
+`MultiTableOrderingLoweringTest` and an execution case paging past the first page over a new
+`org_code_domain` table beside `ConverterCampus`; the manual's replacement sentence names the
+binding condition.
+
 **Non-blocking.**
 
 * **The `Node` route is spelled on the navigated type; the classifier tests the named type.**
@@ -1126,16 +1213,33 @@ that too is the author's call, but it should be a stated choice rather than inhe
   `graphitron_field_navigation.navigated_type_name = 'Node'` keeps rejecting them. It fails closed
   (the build stops, no wrong data), but "exactly the coordinates the view stops rejecting" is false
   there. `graphitron_field.named_type`, which carries the rewritten expression, is the transcription.
+
+  *Author response (2026-09-23):* Taken. The route conjunct and the SQL sketch read
+  `graphitron_field.named_type = 'Node'`, with a paragraph saying why the navigated type is the
+  wrong one, and a `[Node] @asConnection` case that loses its row pins the difference.
 * **The `@lookupKey` route has an input-field half.** The classifier's trigger is
   `LookupFacts.triggersFor`: an annotated argument, or an argument whose input type carries
   `@lookupKey` transitively. The conjunct names only `graphitron_argument_lookup_key_entry`. Both
   shapes reject a multitable return on their own today, so nothing goes silent, but the conjunct
   claims to state the rule, and this is the half it omits.
+
+  *Author response (2026-09-23):* Kept out of the clause, with the reason now in the body: a
+  coordinate the trigger fires on takes the lookup route, where `resolveAtRoot` refuses a
+  non-table-bound return, and the input-field site is retired and refused at input-field
+  classification. A recursive closure over input types could only exclude coordinates that do not
+  build.
 * **Tiebreaker direction under a list-valued `@orderBy` argument is unstated.**
   `OrderBySpec.Argument.list()` admits `[OccupantOrderBy!]`, whose elements carry their own
   directions, and "the tiebreakers flip with a `uniformAsc` order" is defined for one element.
   Either choice pages correctly; state one.
+
+  *Author response (2026-09-23):* Stated: under a list-valued argument the tiebreakers stay
+  ascending, and the reversal promise is the single-valued argument's. Added to the tiebreaker
+  bullet in "Emission".
 * **Re-seat the route-grain pins rather than delete them.** The root cases that come out of
   `FieldUnlowerableOrderingTest` include `bothDeclarationsAtOneCoordinateAreTwoRows` and
   `twoOrderByArgumentsOnOneCoordinateAreTwoRows`, which pin the view's per-route grain. Moving them
   onto the child coordinate keeps that pin once the root rows are gone.
+
+  *Author response (2026-09-23):* Taken, as a bullet in "The rejection this item narrows" and in
+  the narrowed-rejection test list.
