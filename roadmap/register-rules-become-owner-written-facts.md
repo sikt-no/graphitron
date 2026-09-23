@@ -1,7 +1,7 @@
 ---
 id: R955
 title: "The register empties bottom-up: every remaining registered rule becomes a fact the graphitron gatherer writes in stage order, and meta_materialize has no rows left"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 2
 theme: model-cleanup
