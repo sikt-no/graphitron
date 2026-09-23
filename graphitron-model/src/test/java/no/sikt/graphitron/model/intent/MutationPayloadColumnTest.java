@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_MUTATION_PAYLOAD_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_PAYLOAD_COLUMN;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
@@ -33,7 +33,7 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@code intent_mutation_payload_column} states: which columns of the write table a payload
+ * What {@code graphitron_mutation_payload_column} states: which columns of the write table a payload
  * actually puts a value on, at which decode slot, through a carrier of which kind.
  *
  * <p>The cases divide by what varies. The two arms differ in arity rather than in kind, so the
@@ -113,23 +113,23 @@ class MutationPayloadColumnTest {
 
     private static List<String> columns(DSLContext dsl) {
         derive(dsl);
-        return dsl.select(INTENT_MUTATION_PAYLOAD_COLUMN.fields())
-            .from(INTENT_MUTATION_PAYLOAD_COLUMN)
-            .where(INTENT_MUTATION_PAYLOAD_COLUMN.GRAPH_NAME.eq(GRAPH))
-            .orderBy(INTENT_MUTATION_PAYLOAD_COLUMN.PATH,
-                INTENT_MUTATION_PAYLOAD_COLUMN.POSITION)
+        return dsl.select(GRAPHITRON_MUTATION_PAYLOAD_COLUMN.fields())
+            .from(GRAPHITRON_MUTATION_PAYLOAD_COLUMN)
+            .where(GRAPHITRON_MUTATION_PAYLOAD_COLUMN.GRAPH_NAME.eq(GRAPH))
+            .orderBy(GRAPHITRON_MUTATION_PAYLOAD_COLUMN.PATH,
+                GRAPHITRON_MUTATION_PAYLOAD_COLUMN.POSITION)
             .fetch()
             .map(MutationPayloadColumnTest::render);
     }
 
     /** The occurrence, the slot, the column, and the two classifications the consumers fork on. */
     private static String render(Record row) {
-        return row.get(INTENT_MUTATION_PAYLOAD_COLUMN.PATH) + " "
-            + row.get(INTENT_MUTATION_PAYLOAD_COLUMN.ROLE) + "/"
-            + row.get(INTENT_MUTATION_PAYLOAD_COLUMN.CARRIER_ROLE) + " "
-            + row.get(INTENT_MUTATION_PAYLOAD_COLUMN.POSITION) + ":"
-            + row.get(INTENT_MUTATION_PAYLOAD_COLUMN.WRITE_TABLE) + "."
-            + row.get(INTENT_MUTATION_PAYLOAD_COLUMN.COLUMN_NAME);
+        return row.get(GRAPHITRON_MUTATION_PAYLOAD_COLUMN.PATH) + " "
+            + row.get(GRAPHITRON_MUTATION_PAYLOAD_COLUMN.ROLE) + "/"
+            + row.get(GRAPHITRON_MUTATION_PAYLOAD_COLUMN.CARRIER_ROLE) + " "
+            + row.get(GRAPHITRON_MUTATION_PAYLOAD_COLUMN.POSITION) + ":"
+            + row.get(GRAPHITRON_MUTATION_PAYLOAD_COLUMN.WRITE_TABLE) + "."
+            + row.get(GRAPHITRON_MUTATION_PAYLOAD_COLUMN.COLUMN_NAME);
     }
 
     // ===== The name-match arm =====
@@ -320,8 +320,8 @@ class MutationPayloadColumnTest {
             payloadField(dsl, "title", "String");
 
             derive(dsl);
-            assertThat(dsl.selectFrom(INTENT_MUTATION_PAYLOAD_COLUMN)
-                .where(INTENT_MUTATION_PAYLOAD_COLUMN.GRAPH_NAME.eq("other"))
+            assertThat(dsl.selectFrom(GRAPHITRON_MUTATION_PAYLOAD_COLUMN)
+                .where(GRAPHITRON_MUTATION_PAYLOAD_COLUMN.GRAPH_NAME.eq("other"))
                 .fetch()).isEmpty();
         });
     }

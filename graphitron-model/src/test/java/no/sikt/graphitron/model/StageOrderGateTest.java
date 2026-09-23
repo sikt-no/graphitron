@@ -150,6 +150,20 @@ class StageOrderGateTest {
             Set.of("graphitron_node_id_decode_hop_column")),
         new Step("NodeIdDecodeColumns", "graphitron_node_id_decode_column_rule",
             Set.of("graphitron_node_id_decode_column")),
+        new Step("InputFieldColumnMatches", "graphitron_input_field_column_match_rule",
+            Set.of("graphitron_input_field_column_match")),
+        new Step("InputFieldFilterRoles", "graphitron_input_field_filter_role_rule",
+            Set.of("graphitron_input_field_filter_role")),
+        new Step("InputFieldCarrierRoles", "graphitron_input_field_carrier_role_rule",
+            Set.of("graphitron_input_field_carrier_role")),
+        new Step("MutationPayloadRefusals", "graphitron_mutation_payload_refusal_rule",
+            Set.of("graphitron_mutation_payload_refusal")),
+        new Step("MutationPayloadColumns", "graphitron_mutation_payload_column_rule",
+            Set.of("graphitron_mutation_payload_column")),
+        new Step("MutationPayloadKeyMemberships", "graphitron_mutation_payload_key_membership_rule",
+            Set.of("graphitron_mutation_payload_key_membership")),
+        new Step("MutationWriteDestinations", "graphitron_mutation_write_destination_rule",
+            Set.of("graphitron_mutation_write_destination")),
         new Step("UnlowerableOrderingRejectionRows", null,
             Set.of("intent_field_unlowerable_ordering_rejection")),
         new Step("Materializations.refresh", null, REGISTERED_TARGETS));
@@ -204,35 +218,26 @@ class StageOrderGateTest {
     }
 
     /**
-     * The gate firing, shown rather than argued. A rule that does read a registered target is put
-     * in a stage ahead of the refresh that fills it, which is exactly the seam that kept the
-     * register's rules out of stages, and the check above names it.
-     *
-     * <p>The subject is a real rule rather than a fixture: {@code graphitron_node_id_decode_column_rule}
-     * reaches targets the refresh writes, which is why that rung is not a stage yet and why its own
-     * registration records being blocked for this reason. When it converts, this case takes
-     * whichever rule is still on the wrong side of the boundary, and when none is left the register
-     * is empty and the case goes with it.
+     * The gate firing, shown rather than argued. The real stratum with its deepest stage moved to
+     * the front: the write destination's rule reads the payload column and the key membership, both
+     * stage-written, so ahead of both it would read the previous capture's rows, and the check above
+     * names it. A real ordering rather than a fixture, so the case keeps meaning something as stages
+     * are added: it fails the day the write destination stops reading anything a stage writes, which
+     * is a change to the rule this gate would want a reader to notice.
      */
     @Test
-    @DisplayName("a stage placed ahead of the step that fills what it reads is caught")
+    @DisplayName("a stage placed ahead of the step that writes what it reads is caught")
     void aStageAheadOfItsPrerequisiteIsCaught() {
         withStore(dsl -> {
-            var blocked = "graphitron_node_id_decode_column_rule";
-            var hypothetical = new ArrayList<Step>();
-            hypothetical.add(new Step("a hypothetical decode-column stage", blocked,
-                Set.of("graphitron_node_id_decode_column")));
-            resolved(dsl).stream()
-                .filter(step -> !step.writes().contains("graphitron_node_id_decode_column"))
-                .forEach(hypothetical::add);
-            hypothetical.add(new Step("the register, with the converted rung removed", null,
-                Materializations.registrations(dsl).stream()
-                    .map(Materializations.Registration::targetTableName)
-                    .filter(target -> !target.equals("graphitron_node_id_decode_column"))
-                    .collect(Collectors.toSet())));
+            var steps = new ArrayList<>(resolved(dsl));
+            var deepest = steps.stream()
+                .filter(step -> step.writes().contains("graphitron_mutation_write_destination"))
+                .findFirst().orElseThrow();
+            steps.remove(deepest);
+            steps.addFirst(deepest);
 
-            assertThat(tooEarly(dsl, hypothetical))
-                .as("the gate says nothing about a stage reading rows the refresh has not written")
+            assertThat(tooEarly(dsl, steps))
+                .as("the gate says nothing about a stage reading rows a later stage writes")
                 .isNotEmpty();
         });
     }
@@ -340,6 +345,33 @@ class StageOrderGateTest {
                 }
             }
             assertThat(offenders).as("stratum rows naming a relation of the wrong kind").isEmpty();
+        });
+    }
+
+    /**
+     * Every stored relation under the derived family's prefix is written by a step this stratum
+     * names, so a base table no step writes fails here rather than sitting in the schema filled by
+     * nobody or by a writer standing outside the order. The criterion the register's own gate used
+     * to state as a roster of hand-written exceptions, restated now that there is no register for a
+     * derivation to be the exception to: a derived table is a step's, or it is a defect.
+     */
+    @Test
+    @DisplayName("every stored intent_ relation is written by a step the stratum names")
+    void everyDerivedTableHasAWriterInTheStratum() {
+        withStore(dsl -> {
+            var written = resolved(dsl).stream()
+                .flatMap(step -> step.writes().stream())
+                .collect(Collectors.toSet());
+            var orphans = relationKinds(dsl).entrySet().stream()
+                .filter(e -> "BASE TABLE".equals(e.getValue()))
+                .map(Map.Entry::getKey)
+                .filter(relation -> relation.startsWith("intent_"))
+                .filter(relation -> !written.contains(relation))
+                .sorted()
+                .toList();
+            assertThat(orphans)
+                .as("stored intent_ relations no step of the derivation stratum writes")
+                .isEmpty();
         });
     }
 

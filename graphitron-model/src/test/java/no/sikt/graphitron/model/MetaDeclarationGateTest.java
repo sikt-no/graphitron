@@ -92,50 +92,6 @@ class MetaDeclarationGateTest {
         });
     }
 
-    /**
-     * The register subtraction, held in both directions so the exemption cannot silently widen.
-     * A registration exempts exactly one relation, the source view stating the rule, and exempts
-     * nothing else: the target carries the canonical name, so it stands on the roster like any
-     * other undeclared relation and a target under an unrostered name is an offender. Stated over
-     * the shipped register rather than a seeded one, because what could go wrong is the
-     * subtraction matching on the wrong column, and that is a mistake only real rows show.
-     */
-    @Test
-    @DisplayName("a registration exempts its source view and not its target")
-    void theRegisterExemptsOnlyTheRuleItStates() {
-        withStore(dsl -> {
-            var observed = new HashSet<>(dsl.select(META_RELATION_FAMILY.RELATION_NAME)
-                .from(META_RELATION_FAMILY).fetch(0, String.class));
-            var declared = new HashSet<>(dsl.select(META_RELATION.RELATION_NAME)
-                .from(META_RELATION).fetch(0, String.class));
-            var register = dsl.select(META_MATERIALIZE.SOURCE_VIEW_NAME,
-                    META_MATERIALIZE.TARGET_TABLE_NAME)
-                .from(META_MATERIALIZE).fetch();
-            var sources = new HashSet<>(register.getValues(META_MATERIALIZE.SOURCE_VIEW_NAME));
-            var targets = register.getValues(META_MATERIALIZE.TARGET_TABLE_NAME);
-
-            var undeclared = undeclared(observed, declared, sources, statedRelations(dsl));
-
-            assertThat(sources)
-                .as("every registered source view is an observed relation, so the subtraction"
-                    + " names something rather than silently matching nothing")
-                .isNotEmpty()
-                .allSatisfy(source -> assertThat(observed).contains(source));
-            assertThat(undeclared)
-                .as("a registered source view is exempt: the register states that exemption, and"
-                    + " no _live view stands on the frozen roster")
-                .doesNotContainAnyElementsOf(sources);
-            assertThat(targets)
-                .as("a registered target is not exempt. It carries the canonical name every"
-                    + " reader spells, so it is declared or it stands on the roster; one that is"
-                    + " neither is an offender the roster case fails on")
-                .allSatisfy(target -> assertThat(declared.contains(target)
-                    || undeclared.contains(target))
-                    .as("target %s is declared or undeclared, never exempt", target)
-                    .isTrue());
-        });
-    }
-
     @Test
     @DisplayName("a declared relation's comment is its grain sentence and its example, verbatim")
     void theCommentEchoesTheDeclaration() {

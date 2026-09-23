@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_INPUT_FIELD_CARRIER_ROLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_INPUT_FIELD_CARRIER_ROLE;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
@@ -33,7 +33,7 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@code intent_input_field_carrier_role} states: what the thing at the end of an input
+ * What {@code graphitron_input_field_carrier_role} states: what the thing at the end of an input
  * field's column resolution is, which is what decides how its columns may be partitioned and
  * whether they may be used at all.
  *
@@ -141,20 +141,20 @@ class InputFieldCarrierRoleTest {
 
     private static List<String> carriers(DSLContext dsl) {
         derive(dsl);
-        return dsl.select(INTENT_INPUT_FIELD_CARRIER_ROLE.fields())
-            .from(INTENT_INPUT_FIELD_CARRIER_ROLE)
-            .where(INTENT_INPUT_FIELD_CARRIER_ROLE.GRAPH_NAME.eq(GRAPH))
-            .orderBy(INTENT_INPUT_FIELD_CARRIER_ROLE.TYPE_NAME,
-                INTENT_INPUT_FIELD_CARRIER_ROLE.FIELD_NAME)
+        return dsl.select(GRAPHITRON_INPUT_FIELD_CARRIER_ROLE.fields())
+            .from(GRAPHITRON_INPUT_FIELD_CARRIER_ROLE)
+            .where(GRAPHITRON_INPUT_FIELD_CARRIER_ROLE.GRAPH_NAME.eq(GRAPH))
+            .orderBy(GRAPHITRON_INPUT_FIELD_CARRIER_ROLE.TYPE_NAME,
+                GRAPHITRON_INPUT_FIELD_CARRIER_ROLE.FIELD_NAME)
             .fetch()
             .map(InputFieldCarrierRoleTest::render);
     }
 
     private static String render(Record row) {
-        return row.get(INTENT_INPUT_FIELD_CARRIER_ROLE.TYPE_NAME) + "."
-            + row.get(INTENT_INPUT_FIELD_CARRIER_ROLE.FIELD_NAME) + "@"
-            + row.get(INTENT_INPUT_FIELD_CARRIER_ROLE.RESOLVING_TABLE) + " "
-            + row.get(INTENT_INPUT_FIELD_CARRIER_ROLE.CARRIER_ROLE);
+        return row.get(GRAPHITRON_INPUT_FIELD_CARRIER_ROLE.TYPE_NAME) + "."
+            + row.get(GRAPHITRON_INPUT_FIELD_CARRIER_ROLE.FIELD_NAME) + "@"
+            + row.get(GRAPHITRON_INPUT_FIELD_CARRIER_ROLE.RESOLVING_TABLE) + " "
+            + row.get(GRAPHITRON_INPUT_FIELD_CARRIER_ROLE.CARRIER_ROLE);
     }
 
     // ===== The four answers =====

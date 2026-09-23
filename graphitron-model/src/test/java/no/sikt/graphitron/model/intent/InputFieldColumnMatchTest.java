@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_INPUT_FIELD_COLUMN_MATCH;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_INPUT_FIELD_COLUMN_MATCH;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
@@ -30,7 +30,7 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@code intent_input_field_column_match} resolves: the column an input field's own name
+ * What {@code graphitron_input_field_column_match} resolves: the column an input field's own name
  * reaches on the table its site navigates to, which is the column the binding built from that field
  * names.
  *
@@ -282,24 +282,24 @@ class InputFieldColumnMatchTest {
 
     private static Result<Record> rowsIn(DSLContext dsl, String graphName) {
         derive(dsl);
-        return dsl.select(INTENT_INPUT_FIELD_COLUMN_MATCH.fields())
-            .from(INTENT_INPUT_FIELD_COLUMN_MATCH)
-            .where(INTENT_INPUT_FIELD_COLUMN_MATCH.GRAPH_NAME.eq(graphName))
-            .orderBy(INTENT_INPUT_FIELD_COLUMN_MATCH.TYPE_NAME,
-                INTENT_INPUT_FIELD_COLUMN_MATCH.FIELD_NAME,
-                INTENT_INPUT_FIELD_COLUMN_MATCH.RESOLVING_TABLE,
-                INTENT_INPUT_FIELD_COLUMN_MATCH.COLUMN_NAME)
+        return dsl.select(GRAPHITRON_INPUT_FIELD_COLUMN_MATCH.fields())
+            .from(GRAPHITRON_INPUT_FIELD_COLUMN_MATCH)
+            .where(GRAPHITRON_INPUT_FIELD_COLUMN_MATCH.GRAPH_NAME.eq(graphName))
+            .orderBy(GRAPHITRON_INPUT_FIELD_COLUMN_MATCH.TYPE_NAME,
+                GRAPHITRON_INPUT_FIELD_COLUMN_MATCH.FIELD_NAME,
+                GRAPHITRON_INPUT_FIELD_COLUMN_MATCH.RESOLVING_TABLE,
+                GRAPHITRON_INPUT_FIELD_COLUMN_MATCH.COLUMN_NAME)
             .fetch();
     }
 
     /** The site, the column it reached, the tier that answered and the name that matched. */
     private static String render(Record row) {
-        return row.get(INTENT_INPUT_FIELD_COLUMN_MATCH.TYPE_NAME) + "."
-            + row.get(INTENT_INPUT_FIELD_COLUMN_MATCH.FIELD_NAME) + "@"
-            + row.get(INTENT_INPUT_FIELD_COLUMN_MATCH.RESOLVING_TABLE) + " -> "
-            + row.get(INTENT_INPUT_FIELD_COLUMN_MATCH.TABLE_NAME) + "."
-            + row.get(INTENT_INPUT_FIELD_COLUMN_MATCH.COLUMN_NAME) + " by "
-            + row.get(INTENT_INPUT_FIELD_COLUMN_MATCH.MATCHED_BY) + " as "
-            + row.get(INTENT_INPUT_FIELD_COLUMN_MATCH.MATCHED_NAME);
+        return row.get(GRAPHITRON_INPUT_FIELD_COLUMN_MATCH.TYPE_NAME) + "."
+            + row.get(GRAPHITRON_INPUT_FIELD_COLUMN_MATCH.FIELD_NAME) + "@"
+            + row.get(GRAPHITRON_INPUT_FIELD_COLUMN_MATCH.RESOLVING_TABLE) + " -> "
+            + row.get(GRAPHITRON_INPUT_FIELD_COLUMN_MATCH.TABLE_NAME) + "."
+            + row.get(GRAPHITRON_INPUT_FIELD_COLUMN_MATCH.COLUMN_NAME) + " by "
+            + row.get(GRAPHITRON_INPUT_FIELD_COLUMN_MATCH.MATCHED_BY) + " as "
+            + row.get(GRAPHITRON_INPUT_FIELD_COLUMN_MATCH.MATCHED_NAME);
     }
 }

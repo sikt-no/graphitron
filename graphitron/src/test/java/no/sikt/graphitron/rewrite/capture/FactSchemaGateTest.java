@@ -130,19 +130,19 @@ class FactSchemaGateTest {
      *
      * <p>{@code updateCategory} is here for the write-payload family, which no read surface
      * populates. A walker-driven write is the whole population of
-     * {@code intent_mutation_payload_column}: it needs the mutation, the sole input-object argument,
+     * {@code graphitron_mutation_payload_column}: it needs the mutation, the sole input-object argument,
      * and at least one input field the walkers admit, which is why the input names two columns of
      * {@code category} and nothing else. Both fields name-match, one through a {@code @field}
      * binding and one directly, so the target holds a row per field rather than a row that happens
      * to survive. {@code notAColumn} is the third field and it is here for the other target in that
-     * family: {@code intent_mutation_payload_refusal} holds only what the walkers refuse, so a
+     * family: {@code graphitron_mutation_payload_refusal} holds only what the walkers refuse, so a
      * payload every field of which is admitted leaves it empty. A name reaching no column of
      * {@code category} is the cheapest refusal to state and it does not disturb the other two, a
      * refusal cutting its own occurrence and nothing beside it.
      *
      * <p>{@code updateCategoryName} is the same write with the refused field left out, and it is
      * here because the third target in that family needs a payload the walkers admit whole.
-     * {@code intent_mutation_payload_key_membership} measures the admitted columns against the key
+     * {@code graphitron_mutation_payload_key_membership} measures the admitted columns against the key
      * the payload matched, and a payload with any refusal never reaches a key at all, so
      * {@code updateCategory} beside it populates that target with nothing. Two mutations over one
      * type rather than one carrying both readings, because the two targets want opposite payloads

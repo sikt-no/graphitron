@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.INTENT_MUTATION_WRITE_AGREEMENT;
-import static no.sikt.graphitron.model.Tables.INTENT_MUTATION_WRITE_DESTINATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_WRITE_DESTINATION;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
@@ -37,7 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * What {@code intent_mutation_write_agreement} states: which two of an UPDATE's contributions
  * decode a value for one column and must therefore be checked equal before the statement runs.
  *
- * <p>The relation is a reduction over {@code intent_mutation_write_destination} rather than a fact
+ * <p>The relation is a reduction over {@code graphitron_mutation_write_destination} rather than a fact
  * beside it, so the cases here are the cases that relation already distinguishes, read as pairs.
  * One side is always the occurrence the WHERE clause reads. The other is one of the two carriers
  * that can land a second value on a key column: a self-referencing foreign key, which writes the
@@ -395,12 +395,12 @@ class MutationWriteAgreementTest {
      * about pairs rather than a payload that produced nothing to pair.
      */
     private static List<String> dispositionsOfTheContestedColumn(DSLContext dsl) {
-        return dsl.select(INTENT_MUTATION_WRITE_DESTINATION.PATH,
-                          INTENT_MUTATION_WRITE_DESTINATION.DESTINATION)
-            .from(INTENT_MUTATION_WRITE_DESTINATION)
-            .where(INTENT_MUTATION_WRITE_DESTINATION.GRAPH_NAME.eq(GRAPH))
-            .and(INTENT_MUTATION_WRITE_DESTINATION.COLUMN_NAME.eq("a"))
-            .orderBy(INTENT_MUTATION_WRITE_DESTINATION.PATH)
+        return dsl.select(GRAPHITRON_MUTATION_WRITE_DESTINATION.PATH,
+                          GRAPHITRON_MUTATION_WRITE_DESTINATION.DESTINATION)
+            .from(GRAPHITRON_MUTATION_WRITE_DESTINATION)
+            .where(GRAPHITRON_MUTATION_WRITE_DESTINATION.GRAPH_NAME.eq(GRAPH))
+            .and(GRAPHITRON_MUTATION_WRITE_DESTINATION.COLUMN_NAME.eq("a"))
+            .orderBy(GRAPHITRON_MUTATION_WRITE_DESTINATION.PATH)
             .fetch(r -> r.value1() + " -> " + r.value2());
     }
 
@@ -477,7 +477,7 @@ class MutationWriteAgreementTest {
      * obligation. The reference neither filters nor writes {@code pub_a_ref} whatever its spelling,
      * and the pair still both decode a value for it, so the check is the same one; what its
      * nullability decides is only what an explicit null on it means, which is
-     * {@code intent_mutation_write_destination}'s to say and not this relation's.
+     * {@code graphitron_mutation_write_destination}'s to say and not this relation's.
      */
     @Test
     void anOptionalStraddlerPinnedElsewhereOwesTheSameAgreement() {

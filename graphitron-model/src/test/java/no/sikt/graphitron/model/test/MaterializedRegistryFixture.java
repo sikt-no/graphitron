@@ -6,7 +6,7 @@ import java.util.stream.IntStream;
  * The one SDL fixture the register's cost gates capture, shared because both of them need the same
  * property and neither can state it for itself: the registered targets hold rows, and hold them in
  * proportion to schema size. Two do not, measured rather than assumed:
- * {@code intent_mutation_payload_key_membership} and {@code intent_mutation_payload_refusal} are
+ * {@code graphitron_mutation_payload_key_membership} and {@code graphitron_mutation_payload_refusal} are
  * empty at every size, their rules reading a {@code @mutation} payload surface this schema holds
  * fixed. A gate over this fixture that needs a populated target should establish it per target, as
  * {@code RefreshPrerequisiteStatisticsTest} does, rather than read the property here as universal.

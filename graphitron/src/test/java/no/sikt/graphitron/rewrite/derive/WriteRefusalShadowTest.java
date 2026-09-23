@@ -51,7 +51,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * be among the relation's causes for that coordinate, and a cause the relation reports alone is not
  * a failure here. Two arms are deliberately outside the compared set, and neither is a gap: the
  * coverage failure is the matched key's {@code UNCOVERED} verdict rather than a refusal row, and the
- * per-field admissibility arms are {@code intent_mutation_payload_refusal}'s, both of which have
+ * per-field admissibility arms are {@code graphitron_mutation_payload_refusal}'s, both of which have
  * their own relation to answer for them.
  */
 @PipelineTier

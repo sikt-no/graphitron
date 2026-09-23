@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_MUTATION_PAYLOAD_KEY_MEMBERSHIP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_PAYLOAD_KEY_MEMBERSHIP;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
@@ -33,7 +33,7 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@code intent_mutation_payload_key_membership} states: which of the columns an UPDATE's
+ * What {@code graphitron_mutation_payload_key_membership} states: which of the columns an UPDATE's
  * payload contributes fall inside the key it matched, and how each carrier as a whole falls against
  * that boundary.
  *
@@ -124,11 +124,11 @@ class MutationPayloadKeyMembershipTest {
 
     private static List<String> membership(DSLContext dsl) {
         derive(dsl);
-        return dsl.select(INTENT_MUTATION_PAYLOAD_KEY_MEMBERSHIP.fields())
-            .from(INTENT_MUTATION_PAYLOAD_KEY_MEMBERSHIP)
-            .where(INTENT_MUTATION_PAYLOAD_KEY_MEMBERSHIP.GRAPH_NAME.eq(GRAPH))
-            .orderBy(INTENT_MUTATION_PAYLOAD_KEY_MEMBERSHIP.PATH,
-                     INTENT_MUTATION_PAYLOAD_KEY_MEMBERSHIP.POSITION)
+        return dsl.select(GRAPHITRON_MUTATION_PAYLOAD_KEY_MEMBERSHIP.fields())
+            .from(GRAPHITRON_MUTATION_PAYLOAD_KEY_MEMBERSHIP)
+            .where(GRAPHITRON_MUTATION_PAYLOAD_KEY_MEMBERSHIP.GRAPH_NAME.eq(GRAPH))
+            .orderBy(GRAPHITRON_MUTATION_PAYLOAD_KEY_MEMBERSHIP.PATH,
+                     GRAPHITRON_MUTATION_PAYLOAD_KEY_MEMBERSHIP.POSITION)
             .fetch()
             .map(MutationPayloadKeyMembershipTest::render);
     }
@@ -139,12 +139,12 @@ class MutationPayloadKeyMembershipTest {
      * straddler by design, which is what the two consumers fork on.
      */
     private static String render(Record row) {
-        return row.get(INTENT_MUTATION_PAYLOAD_KEY_MEMBERSHIP.PATH) + " "
-            + row.get(INTENT_MUTATION_PAYLOAD_KEY_MEMBERSHIP.POSITION) + ":"
-            + row.get(INTENT_MUTATION_PAYLOAD_KEY_MEMBERSHIP.COLUMN_NAME) + " "
-            + (row.get(INTENT_MUTATION_PAYLOAD_KEY_MEMBERSHIP.IN_KEY) ? "in" : "out") + " "
-            + row.get(INTENT_MUTATION_PAYLOAD_KEY_MEMBERSHIP.CARRIER_KEY_MEMBERSHIP) + " "
-            + row.get(INTENT_MUTATION_PAYLOAD_KEY_MEMBERSHIP.CONSTRAINT_NAME);
+        return row.get(GRAPHITRON_MUTATION_PAYLOAD_KEY_MEMBERSHIP.PATH) + " "
+            + row.get(GRAPHITRON_MUTATION_PAYLOAD_KEY_MEMBERSHIP.POSITION) + ":"
+            + row.get(GRAPHITRON_MUTATION_PAYLOAD_KEY_MEMBERSHIP.COLUMN_NAME) + " "
+            + (row.get(GRAPHITRON_MUTATION_PAYLOAD_KEY_MEMBERSHIP.IN_KEY) ? "in" : "out") + " "
+            + row.get(GRAPHITRON_MUTATION_PAYLOAD_KEY_MEMBERSHIP.CARRIER_KEY_MEMBERSHIP) + " "
+            + row.get(GRAPHITRON_MUTATION_PAYLOAD_KEY_MEMBERSHIP.CONSTRAINT_NAME);
     }
 
     // ===== The three ways a carrier falls =====

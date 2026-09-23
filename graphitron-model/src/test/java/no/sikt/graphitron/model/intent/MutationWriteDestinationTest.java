@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
-import static no.sikt.graphitron.model.Tables.INTENT_MUTATION_WRITE_DESTINATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_WRITE_DESTINATION;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
@@ -34,7 +34,7 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@code intent_mutation_write_destination} states: what each column a write payload
+ * What {@code graphitron_mutation_write_destination} states: what each column a write payload
  * contributes is for, once the matched key has partitioned it.
  *
  * <p>Three destinations and the cases divide by which of them a column reaches. A DELETE reaches
@@ -166,11 +166,11 @@ class MutationWriteDestinationTest {
 
     private static List<String> destinations(DSLContext dsl) {
         derive(dsl);
-        return dsl.select(INTENT_MUTATION_WRITE_DESTINATION.fields())
-            .from(INTENT_MUTATION_WRITE_DESTINATION)
-            .where(INTENT_MUTATION_WRITE_DESTINATION.GRAPH_NAME.eq(GRAPH))
-            .orderBy(INTENT_MUTATION_WRITE_DESTINATION.PATH,
-                     INTENT_MUTATION_WRITE_DESTINATION.POSITION)
+        return dsl.select(GRAPHITRON_MUTATION_WRITE_DESTINATION.fields())
+            .from(GRAPHITRON_MUTATION_WRITE_DESTINATION)
+            .where(GRAPHITRON_MUTATION_WRITE_DESTINATION.GRAPH_NAME.eq(GRAPH))
+            .orderBy(GRAPHITRON_MUTATION_WRITE_DESTINATION.PATH,
+                     GRAPHITRON_MUTATION_WRITE_DESTINATION.POSITION)
             .fetch()
             .map(MutationWriteDestinationTest::render);
     }
@@ -183,14 +183,14 @@ class MutationWriteDestinationTest {
      */
     private static List<String> nullRules(DSLContext dsl) {
         derive(dsl);
-        return dsl.selectDistinct(INTENT_MUTATION_WRITE_DESTINATION.PATH,
-                                  INTENT_MUTATION_WRITE_DESTINATION.ON_EXPLICIT_NULL)
-            .from(INTENT_MUTATION_WRITE_DESTINATION)
-            .where(INTENT_MUTATION_WRITE_DESTINATION.GRAPH_NAME.eq(GRAPH))
-            .orderBy(INTENT_MUTATION_WRITE_DESTINATION.PATH)
+        return dsl.selectDistinct(GRAPHITRON_MUTATION_WRITE_DESTINATION.PATH,
+                                  GRAPHITRON_MUTATION_WRITE_DESTINATION.ON_EXPLICIT_NULL)
+            .from(GRAPHITRON_MUTATION_WRITE_DESTINATION)
+            .where(GRAPHITRON_MUTATION_WRITE_DESTINATION.GRAPH_NAME.eq(GRAPH))
+            .orderBy(GRAPHITRON_MUTATION_WRITE_DESTINATION.PATH)
             .fetch()
-            .map(r -> r.get(INTENT_MUTATION_WRITE_DESTINATION.PATH) + " -> "
-                + r.get(INTENT_MUTATION_WRITE_DESTINATION.ON_EXPLICIT_NULL));
+            .map(r -> r.get(GRAPHITRON_MUTATION_WRITE_DESTINATION.PATH) + " -> "
+                + r.get(GRAPHITRON_MUTATION_WRITE_DESTINATION.ON_EXPLICIT_NULL));
     }
 
     /**
@@ -199,11 +199,11 @@ class MutationWriteDestinationTest {
      * reading one half of a split carrier cannot recover the slot from that half's own ordering.
      */
     private static String render(Record row) {
-        return row.get(INTENT_MUTATION_WRITE_DESTINATION.PATH) + " "
-            + row.get(INTENT_MUTATION_WRITE_DESTINATION.CARRIER_ROLE) + " "
-            + row.get(INTENT_MUTATION_WRITE_DESTINATION.POSITION) + ":"
-            + row.get(INTENT_MUTATION_WRITE_DESTINATION.COLUMN_NAME) + " -> "
-            + row.get(INTENT_MUTATION_WRITE_DESTINATION.DESTINATION);
+        return row.get(GRAPHITRON_MUTATION_WRITE_DESTINATION.PATH) + " "
+            + row.get(GRAPHITRON_MUTATION_WRITE_DESTINATION.CARRIER_ROLE) + " "
+            + row.get(GRAPHITRON_MUTATION_WRITE_DESTINATION.POSITION) + ":"
+            + row.get(GRAPHITRON_MUTATION_WRITE_DESTINATION.COLUMN_NAME) + " -> "
+            + row.get(GRAPHITRON_MUTATION_WRITE_DESTINATION.DESTINATION);
     }
 
     // ===== The two halves of an ordinary UPDATE =====

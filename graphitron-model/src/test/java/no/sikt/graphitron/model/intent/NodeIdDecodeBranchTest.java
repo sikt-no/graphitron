@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_INPUT_FIELD_CARRIER_ROLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_INPUT_FIELD_CARRIER_ROLE;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_DECODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ID_DECODE_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ID_DECODE_HOP_COLUMN;
@@ -128,7 +128,7 @@ class NodeIdDecodeBranchTest {
         withChainedCatalog(dsl -> {
             derive(dsl);
 
-            var t = INTENT_INPUT_FIELD_CARRIER_ROLE;
+            var t = GRAPHITRON_INPUT_FIELD_CARRIER_ROLE;
             assertThat(dsl.select(t.RESOLVING_TABLE, t.CARRIER_ROLE)
                     .from(t)
                     .where(t.GRAPH_NAME.eq(GRAPH))

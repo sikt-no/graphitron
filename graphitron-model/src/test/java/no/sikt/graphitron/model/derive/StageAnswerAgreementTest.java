@@ -60,7 +60,14 @@ class StageAnswerAgreementTest {
         new Stage("graphitron_node_id_instruction", "graphitron_node_id_instruction_rule"),
         new Stage("graphitron_node_id_decode_hop", "graphitron_node_id_decode_hop_rule"),
         new Stage("graphitron_node_id_decode_hop_column", "graphitron_node_id_decode_hop_column_rule"),
-        new Stage("graphitron_node_id_decode_column", "graphitron_node_id_decode_column_rule"));
+        new Stage("graphitron_node_id_decode_column", "graphitron_node_id_decode_column_rule"),
+        new Stage("graphitron_input_field_column_match", "graphitron_input_field_column_match_rule"),
+        new Stage("graphitron_input_field_filter_role", "graphitron_input_field_filter_role_rule"),
+        new Stage("graphitron_input_field_carrier_role", "graphitron_input_field_carrier_role_rule"),
+        new Stage("graphitron_mutation_payload_refusal", "graphitron_mutation_payload_refusal_rule"),
+        new Stage("graphitron_mutation_payload_column", "graphitron_mutation_payload_column_rule"),
+        new Stage("graphitron_mutation_payload_key_membership", "graphitron_mutation_payload_key_membership_rule"),
+        new Stage("graphitron_mutation_write_destination", "graphitron_mutation_write_destination_rule"));
 
     @Test
     @DisplayName("every stage-written table holds exactly its rule's rows, both directions")

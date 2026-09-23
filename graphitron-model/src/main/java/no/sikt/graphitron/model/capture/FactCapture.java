@@ -10,10 +10,17 @@ import no.sikt.graphitron.model.derive.CarrierDataFields;
 import no.sikt.graphitron.model.derive.ClassificationDomainCapture;
 import no.sikt.graphitron.model.derive.FieldColumnScopes;
 import no.sikt.graphitron.model.derive.FieldScopeTables;
+import no.sikt.graphitron.model.derive.InputFieldCarrierRoles;
+import no.sikt.graphitron.model.derive.InputFieldColumnMatches;
+import no.sikt.graphitron.model.derive.InputFieldFilterRoles;
 import no.sikt.graphitron.model.derive.InputFieldReferenceStepTargets;
 import no.sikt.graphitron.model.derive.InputFieldResolvingTables;
 import no.sikt.graphitron.model.derive.InputOccurrencePaths;
 import no.sikt.graphitron.model.derive.Materializations;
+import no.sikt.graphitron.model.derive.MutationPayloadColumns;
+import no.sikt.graphitron.model.derive.MutationPayloadKeyMemberships;
+import no.sikt.graphitron.model.derive.MutationPayloadRefusals;
+import no.sikt.graphitron.model.derive.MutationWriteDestinations;
 import no.sikt.graphitron.model.derive.MutationWritePayloads;
 import no.sikt.graphitron.model.derive.NodeIdDecodeColumns;
 import no.sikt.graphitron.model.derive.NodeIdDecodeHopColumns;
@@ -127,6 +134,13 @@ public final class FactCapture {
             NodeIdDecodeHops.derive(txDsl, graph.name());
             NodeIdDecodeHopColumns.derive(txDsl, graph.name());
             NodeIdDecodeColumns.derive(txDsl, graph.name());
+            InputFieldColumnMatches.derive(txDsl, graph.name());
+            InputFieldFilterRoles.derive(txDsl, graph.name());
+            InputFieldCarrierRoles.derive(txDsl, graph.name());
+            MutationPayloadRefusals.derive(txDsl, graph.name());
+            MutationPayloadColumns.derive(txDsl, graph.name());
+            MutationPayloadKeyMemberships.derive(txDsl, graph.name());
+            MutationWriteDestinations.derive(txDsl, graph.name());
             // The one producer that used to run alone after the refresh, for a dependency that no
             // longer exists: the view it renders reads the field-site scope, which the refresh was
             // what filled and which the stage above it fills now. Its position here is the read set

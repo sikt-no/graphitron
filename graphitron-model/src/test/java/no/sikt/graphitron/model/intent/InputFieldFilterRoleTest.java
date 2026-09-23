@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_INPUT_FIELD_FILTER_ROLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_INPUT_FIELD_FILTER_ROLE;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
@@ -35,7 +35,7 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@code intent_input_field_filter_role} states: which rule resolves what one input field
+ * What {@code graphitron_input_field_filter_role} states: which rule resolves what one input field
  * contributes, at the grain the classifier decides it, which is the field and the table it was
  * classified against rather than the field alone.
  *
@@ -593,23 +593,23 @@ class InputFieldFilterRoleTest {
 
     private static List<String> rolesIn(DSLContext dsl, String graphName) {
         derive(dsl);
-        Result<Record> rows = dsl.select(INTENT_INPUT_FIELD_FILTER_ROLE.fields())
-            .from(INTENT_INPUT_FIELD_FILTER_ROLE)
-            .where(INTENT_INPUT_FIELD_FILTER_ROLE.GRAPH_NAME.eq(graphName))
-            .orderBy(INTENT_INPUT_FIELD_FILTER_ROLE.TYPE_NAME,
-                INTENT_INPUT_FIELD_FILTER_ROLE.FIELD_NAME,
-                INTENT_INPUT_FIELD_FILTER_ROLE.RESOLVING_TABLE)
+        Result<Record> rows = dsl.select(GRAPHITRON_INPUT_FIELD_FILTER_ROLE.fields())
+            .from(GRAPHITRON_INPUT_FIELD_FILTER_ROLE)
+            .where(GRAPHITRON_INPUT_FIELD_FILTER_ROLE.GRAPH_NAME.eq(graphName))
+            .orderBy(GRAPHITRON_INPUT_FIELD_FILTER_ROLE.TYPE_NAME,
+                GRAPHITRON_INPUT_FIELD_FILTER_ROLE.FIELD_NAME,
+                GRAPHITRON_INPUT_FIELD_FILTER_ROLE.RESOLVING_TABLE)
             .fetch();
         return rows.map(InputFieldFilterRoleTest::render);
     }
 
     /** The site, the table it was classified against, its role, and the modifier when it is set. */
     private static String render(Record row) {
-        return row.get(INTENT_INPUT_FIELD_FILTER_ROLE.TYPE_NAME) + "."
-            + row.get(INTENT_INPUT_FIELD_FILTER_ROLE.FIELD_NAME) + "@"
-            + row.get(INTENT_INPUT_FIELD_FILTER_ROLE.RESOLVING_TABLE) + " "
-            + row.get(INTENT_INPUT_FIELD_FILTER_ROLE.ROLE)
-            + (Boolean.TRUE.equals(row.get(INTENT_INPUT_FIELD_FILTER_ROLE.AUTHORED_CONDITION))
+        return row.get(GRAPHITRON_INPUT_FIELD_FILTER_ROLE.TYPE_NAME) + "."
+            + row.get(GRAPHITRON_INPUT_FIELD_FILTER_ROLE.FIELD_NAME) + "@"
+            + row.get(GRAPHITRON_INPUT_FIELD_FILTER_ROLE.RESOLVING_TABLE) + " "
+            + row.get(GRAPHITRON_INPUT_FIELD_FILTER_ROLE.ROLE)
+            + (Boolean.TRUE.equals(row.get(GRAPHITRON_INPUT_FIELD_FILTER_ROLE.AUTHORED_CONDITION))
                ? " +condition" : "");
     }
 }

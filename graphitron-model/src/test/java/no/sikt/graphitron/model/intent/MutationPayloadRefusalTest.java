@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_MUTATION_PAYLOAD_REFUSAL;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_PAYLOAD_REFUSAL;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
@@ -35,7 +35,7 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@code intent_mutation_payload_refusal} states: which occurrence inside a write payload the
+ * What {@code graphitron_mutation_payload_refusal} states: which occurrence inside a write payload the
  * build refuses, and under which of the two gates. The refusal half of
  * {@code graphitron_mutation_write_payload}, and the cases divide the way the relation's own vocabulary
  * does: one for the gate that runs before a walker exists, five for the walkers' own, and then the
@@ -125,10 +125,10 @@ class MutationPayloadRefusalTest {
 
     private static List<String> refusals(DSLContext dsl) {
         derive(dsl);
-        return dsl.select(INTENT_MUTATION_PAYLOAD_REFUSAL.fields())
-            .from(INTENT_MUTATION_PAYLOAD_REFUSAL)
-            .where(INTENT_MUTATION_PAYLOAD_REFUSAL.GRAPH_NAME.eq(GRAPH))
-            .orderBy(INTENT_MUTATION_PAYLOAD_REFUSAL.PATH)
+        return dsl.select(GRAPHITRON_MUTATION_PAYLOAD_REFUSAL.fields())
+            .from(GRAPHITRON_MUTATION_PAYLOAD_REFUSAL)
+            .where(GRAPHITRON_MUTATION_PAYLOAD_REFUSAL.GRAPH_NAME.eq(GRAPH))
+            .orderBy(GRAPHITRON_MUTATION_PAYLOAD_REFUSAL.PATH)
             .fetch()
             .map(MutationPayloadRefusalTest::render);
     }
@@ -138,11 +138,11 @@ class MutationPayloadRefusalTest {
      * half of the row, which is the whole of what a consumer rendering a diagnostic needs.
      */
     private static String render(Record row) {
-        return row.get(INTENT_MUTATION_PAYLOAD_REFUSAL.PATH) + " -> "
-            + row.get(INTENT_MUTATION_PAYLOAD_REFUSAL.WRITE_TABLE) + " "
-            + row.get(INTENT_MUTATION_PAYLOAD_REFUSAL.OPERATION) + " "
-            + row.get(INTENT_MUTATION_PAYLOAD_REFUSAL.CAUSE) + " "
-            + String.valueOf(row.get(INTENT_MUTATION_PAYLOAD_REFUSAL.ROLE));
+        return row.get(GRAPHITRON_MUTATION_PAYLOAD_REFUSAL.PATH) + " -> "
+            + row.get(GRAPHITRON_MUTATION_PAYLOAD_REFUSAL.WRITE_TABLE) + " "
+            + row.get(GRAPHITRON_MUTATION_PAYLOAD_REFUSAL.OPERATION) + " "
+            + row.get(GRAPHITRON_MUTATION_PAYLOAD_REFUSAL.CAUSE) + " "
+            + String.valueOf(row.get(GRAPHITRON_MUTATION_PAYLOAD_REFUSAL.ROLE));
     }
 
     // ===== The gate that runs before a walker exists =====
@@ -453,8 +453,8 @@ class MutationPayloadRefusalTest {
             payloadField(dsl, "nowhere", "String");
 
             derive(dsl);
-            assertThat(dsl.selectFrom(INTENT_MUTATION_PAYLOAD_REFUSAL)
-                .where(INTENT_MUTATION_PAYLOAD_REFUSAL.GRAPH_NAME.eq("other"))
+            assertThat(dsl.selectFrom(GRAPHITRON_MUTATION_PAYLOAD_REFUSAL)
+                .where(GRAPHITRON_MUTATION_PAYLOAD_REFUSAL.GRAPH_NAME.eq("other"))
                 .fetch()).isEmpty();
         });
     }

@@ -9,7 +9,7 @@ import java.util.Map;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.INTENT_ARGUMENT_FILTER_ROLE;
-import static no.sikt.graphitron.model.Tables.INTENT_INPUT_FIELD_FILTER_ROLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_INPUT_FIELD_FILTER_ROLE;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_CONTAINER_MEMBER;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_CANDIDATE_NODE_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_DECODE;
@@ -698,7 +698,7 @@ class PolymorphicNodeIdDecodeTest {
      */
     private static List<String> inputFieldFilterRoles(DSLContext dsl) {
         derive(dsl);
-        var r = INTENT_INPUT_FIELD_FILTER_ROLE;
+        var r = GRAPHITRON_INPUT_FIELD_FILTER_ROLE;
         return dsl.select(r.fields()).from(r)
             .where(r.GRAPH_NAME.eq(GRAPH))
             .orderBy(r.TYPE_NAME, r.FIELD_NAME, r.RESOLVING_TABLE)
