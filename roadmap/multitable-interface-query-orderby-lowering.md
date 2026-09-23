@@ -1,7 +1,7 @@
 ---
 id: R382
 title: "Lower orderBy onto multitable-interface/union queries"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 theme: interface-union

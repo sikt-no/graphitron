@@ -32,8 +32,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
 | `R970` | graphitron-mcp ships Jackson versions with open advisories, and the root pgjdbc pin trails two fixes | Spec | 2026-09-23 | [plan](jackson-and-pgjdbc-pins-past-open-advisories.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
-| `R382` | Lower orderBy onto multitable-interface/union queries | Ready | 2026-09-23 <sub>created 2026-06-25</sub> | [plan](multitable-interface-query-orderby-lowering.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
+| `R382` | Lower orderBy onto multitable-interface/union queries | In Progress | 2026-09-23 <sub>created 2026-06-25</sub> | [plan](multitable-interface-query-orderby-lowering.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
 | `R966` | Write inputs keyed by a decoded node id divine the tenant | In Review | 2026-09-23 <sub>created 2026-09-22</sub> | [plan](write-input-node-id-divines-tenant.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
@@ -505,7 +505,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R869` [**An argument-level @condition that fails to resolve is dropped silently on a multitable field**](multitable-arg-condition-rejection-dropped.md) — Backlog, architecture
 - `R487` [**Batched multi-table polymorphic child fields: support parent-holds-FK correlation**](batched-polymorphic-parent-holds-fk-correlation.md) — Backlog, architecture
 - `R854` [**LSP argMapping completions and diagnostics answer the bindable-target question from the census with no per-directive reservation**](lsp-argmapping-bindable-target-projection.md) — Backlog, architecture
-- `R382` [**Lower orderBy onto multitable-interface/union queries**](multitable-interface-query-orderby-lowering.md) — Ready, bug
+- `R382` [**Lower orderBy onto multitable-interface/union queries**](multitable-interface-query-orderby-lowering.md) — In Progress, bug
 - `R278` [**Polymorphic type classification: sealed union-type variants over ParticipantRef**](polymorphic-type-sealed-variants.md) — Backlog, structural-refactor
 - `R393` [**Declare the joined-table base-to-detail join on @discriminator(reference:)**](joined-table-base-detail-fk-override.md) — Spec, feature
 - `R76` [**Emit per-participant fieldsJoin and orderBy; replace SelectJoinStep mutation in interface fetchers**](participant-fieldsjoin-helpers.md) — Backlog, cleanup
