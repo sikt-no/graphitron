@@ -1074,3 +1074,68 @@ comments that said "lost" and "primary-key order" say "refused" and "fails the b
   *Author response (2026-09-23):* Agreed. The cursor-arity argument is withdrawn in "Other solutions
   we've considered", with the reason it is no difference between the designs; the rejection rests on
   the per-slot `DataType`.
+
+### Round 3 (2026-09-23, Spec -> Ready, reviewer session 01JB5Xxi1e9eeD6znsabL1H9)
+
+Verdict: withhold. One blocking finding on question two; four non-blocking. Question one passes:
+the change for a consumer is that a root `Query` list or connection over a multitable interface or
+union carrying `@defaultOrder` or an `@orderBy` argument stops failing the build and returns rows
+sorted by the declaration across participants, with cursor paging consistent under that order,
+while child, single-valued and routed-away roots keep failing. Rounds 1 and 2 are closed, and the
+plan's claims about the tree check out (see the commit message).
+
+**Finding 1 (question two). The slot's type and the agreement rule are both stated over
+`ColumnRef.columnClass`, which is the Java type after a converter, not the column's SQL type.**
+`ColumnRef` documents `columnClass` as `Field.getType().getName()`, so a forced-type column reads as
+its user type. The sakila catalog carries exactly that shape on purpose: `org_code_domain` is a
+`bigint` domain exposed as `java.lang.String` through `OrgCodeStringConverter`, mirroring a
+consumer's `kode_numerisk_domain`, and `converter_org` / `converter_campus` both carry it. Two
+consequences, both at runtime and neither visible to the planned fixture, whose order columns are
+plain `varchar`:
+
+* The agreement rule admits a union the database refuses. A converted `bigint` column on one
+  participant and a `varchar` column on another both read `java.lang.String`, so "equality of
+  `ColumnRef.columnClass`" passes and the stage-1 `UNION ALL` fails in PostgreSQL (UNION types
+  `bigint` and `character varying` cannot be matched). The rule is presented as the classifier
+  guarantee every build-time-typed slot rests on; for these columns it guarantees nothing.
+* With the same converter on every participant the union holds, but a slot emitted as
+  `DSL.field(DSL.name(<slot alias>), <slot class>)` carries a DataType derived from `String.class`,
+  with no converter. `decodeCursor` converts the token through that DataType and the seek binds the
+  value as a string against the domain-typed column in `pages`, so the first page renders and any
+  `after:` / `before:` page should fail with the "operator does not exist: org_code_domain =
+  character varying" family that the `init.sql` comment above `converter_org` records. The in-tree
+  convention is `emitter-conventions.adoc` § "Column value binding": bind through the column's own
+  `getDataType()`, not through a class.
+
+What would satisfy it: state what a slot is typed by in emitted code (a participant column's own
+`getDataType()` is the in-tree idiom), and restate the agreement rule over what that choice needs
+equal on every participant, which is at least the SQL type and the converter and not only the user
+class, including where the build-time half reads that from, since `ColumnRef` carries names only by
+design. Pin it with a pipeline case (converted against plain on one slot rejects) and an execution
+case that pages past the first page under a converter-backed order column; a union over
+`ConverterOrg` and `ConverterCampus` ordered by `org_code` is a ready fixture. The existing
+`__sort__` is typed the same way, off the first participant's key class. Whether this item changes
+that too is the author's call, but it should be a stated choice rather than inherited silently.
+
+**Non-blocking.**
+
+* **The `Node` route is spelled on the navigated type; the classifier tests the named type.**
+  `classifyQueryField` routes on `baseTypeName(fieldDef).equals("Node")` over the type expression
+  it works with, which for `[Node] @asConnection` or an authored `NodeConnection` is the connection's
+  name. Those roots fall through to the multitable arm and are lowered, while
+  `graphitron_field_navigation.navigated_type_name = 'Node'` keeps rejecting them. It fails closed
+  (the build stops, no wrong data), but "exactly the coordinates the view stops rejecting" is false
+  there. `graphitron_field.named_type`, which carries the rewritten expression, is the transcription.
+* **The `@lookupKey` route has an input-field half.** The classifier's trigger is
+  `LookupFacts.triggersFor`: an annotated argument, or an argument whose input type carries
+  `@lookupKey` transitively. The conjunct names only `graphitron_argument_lookup_key_entry`. Both
+  shapes reject a multitable return on their own today, so nothing goes silent, but the conjunct
+  claims to state the rule, and this is the half it omits.
+* **Tiebreaker direction under a list-valued `@orderBy` argument is unstated.**
+  `OrderBySpec.Argument.list()` admits `[OccupantOrderBy!]`, whose elements carry their own
+  directions, and "the tiebreakers flip with a `uniformAsc` order" is defined for one element.
+  Either choice pages correctly; state one.
+* **Re-seat the route-grain pins rather than delete them.** The root cases that come out of
+  `FieldUnlowerableOrderingTest` include `bothDeclarationsAtOneCoordinateAreTwoRows` and
+  `twoOrderByArgumentsOnOneCoordinateAreTwoRows`, which pin the view's per-route grain. Moving them
+  onto the child coordinate keeps that pin once the root rows are gone.
