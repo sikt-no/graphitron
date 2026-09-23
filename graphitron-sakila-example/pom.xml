@@ -25,7 +25,7 @@
         -->
         <maven.javadoc.skip>true</maven.javadoc.skip>
         <outputPackage>no.sikt.graphitron.generated</outputPackage>
-        <quarkus.platform.version>3.34.5</quarkus.platform.version>
+        <quarkus.platform.version>3.39.4</quarkus.platform.version>
         <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
         <quarkus.platform.group-id>io.quarkus</quarkus.platform.group-id>
     </properties>
