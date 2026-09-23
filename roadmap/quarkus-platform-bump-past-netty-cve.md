@@ -1,7 +1,7 @@
 ---
 id: R964
 title: "The example consumer's Quarkus platform pins a Netty carrying a published SNI routing bypass"
-status: In Progress
+status: In Review
 bucket: cleanup
 priority: 5
 theme: tooling
@@ -187,6 +187,22 @@ the effective POM for what the root pom still outranks, and the dependency tree 
 
 Nothing else changes. In particular this item adds no version floor of its own; see *Other solutions
 we've considered*.
+
+## Pickup record
+
+Re-read at pickup on 2026-09-23: 3.39.4 was still the newest GA release (3.40.0 existed only as
+`.CR1`), so the rule resolved to the version the dry run measured. Both steps landed together in one
+commit. On that tree the *Tests* reads came out as predicted: `netty-handler` 4.1.138.Final, and
+`hibernate-validator` 9.1.3.Final, which is the version the 3.39.4 BOM names. rest-assured
+resolved 6.0.1 with no call-site edits, `org.eclipse.yasson:yasson` 3.0.5 replaced the old
+coordinate, and `graphitron-sakila-example` ran 941 tests with 0 failures.
+
+The clean verification build failed once, upstream of this change, in
+`DevMojoTest.runGeneratorPass_reportsWhatTheClasspathCensusCost` in `graphitron-maven-plugin`: the
+second of two dev rounds logged no census line. That module resolves neither removed coordinate.
+The test fails intermittently on its own, one run in three when run alone, and it is unrelated to
+the platform. The build resumed from that module (`-rf :graphitron-maven-plugin`) went green. The
+flake is not yet tracked.
 
 ## Tests
 
