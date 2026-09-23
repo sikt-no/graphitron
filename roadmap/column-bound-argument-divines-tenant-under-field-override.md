@@ -1003,3 +1003,101 @@ predicate, which is what lets row eleven route).
 
 Author and reviewer were the same session for round 3 and this revision, at the user's direction, so
 `Spec -> Ready` needs a session that has committed neither.
+
+### Round 4 (2026-09-23, Spec -> Ready, reviewer session 01Fcw42ptsU6nBajgPdqiaJv)
+
+Verdict: withhold. One blocking finding on question two, plus two smaller claims about the code that
+are false as written and change what the implementer builds.
+
+Question one passes. When this lands, a consumer whose query field names the tenant column on an
+argument or filter-input field, and whose authored `@condition` replaces that argument's implicit
+predicate (by `override:` at either level, or by an input field's own `@condition`), gets a schema
+that generates and routes on that argument instead of a "no argument or input field maps to tenant
+column" build error. The outcome is reachable: the Mechanism section holds against today's tree.
+
+**Finding 4 (question two: architecture fit). The ledger's per-coordinate dedupe is not the dedupe
+`SlotCollector` does, and the plan's own containment pin rejects it.**
+
+The Implementation says the ledger "dedupes by slot name per coordinate, keeping the first mint,
+which is the dedup `SlotCollector` does across members today". That is not what `SlotCollector`
+does. It dedupes *after* `matchesTenantColumn` and only among `Resolved` slots (`seenNames.add` sits
+inside the `Resolved` arm), and it does not dedupe declines by slot at all. A ledger that keeps the
+first mint per slot name dedupes *before* the tenant match, so on a multi-table polymorphic
+coordinate whose participants bind the same slot name to different column tuples, the row the fold
+reads is whichever participant ran first. That is not an override-only effect: the ledger read
+replaces `collectFromFilters` for every condition member.
+
+Measured rather than read. On this tree, with `film_id` as the tenant column, a bare
+`occ(id: ID! @nodeId): [Occ!]!` over `union Occ = Inventory | FilmActor` (Inventory keyed on
+`inventory_id`, FilmActor on `(actor_id, film_id)`, both tenant-scoped) rejects `Query.occ` with the
+`PruneOnMismatch` decline text in *both* member orders, because today each participant's body param
+is matched on its own. Under the specified ledger, the `Inventory | FilmActor` order keeps
+Inventory's `[inventory_id]` row for slot `id`, drops FilmActor's, and the field falls to the generic
+"nothing maps" message. The verdict holds; the message regresses on a field with no override in it,
+against "Nothing else about the fold moves" and against the goal's own polymorphic paragraph.
+
+The plan does contain the check that catches this: `ColumnBindingLedgerContainmentTest` asks that
+every surviving `BodyParam` naming a column have a ledger row under the same slot name *carrying that
+column*. The `Customer | Staff` bare-`@nodeId` fixture `MultiTableFilterLoweringTest` already builds
+emits a `staff_id` body param for slot `id` on the Staff participant, and a first-mint-wins row for
+`id` carries `customer_id`. The pin goes red on its first run, so an implementer following the plan
+has to redesign the dedupe to get green.
+
+What would satisfy it: say how the ledger keeps a polymorphic coordinate's per-participant tuples, so
+that the fold's match-then-dedupe in `SlotCollector` stays the only dedupe, and so that the
+containment pin and the dedupe agree. Keeping every participant's mint, deduping on the whole row, or
+keying rows by participant as well as coordinate would each do it. Which one is the author's call,
+and it touches the "keyed and grained the way the relation would be" claim, which is why I am not
+settling it here.
+
+**Finding 5 (question two, smaller). The multi-table polymorphic test names a fixture that never
+reaches the tenant axis.** `## Tests` pins the decline "over the `PruneOnMismatch` fixture
+`MultiTableFilterLoweringTest` already carries". That fixture is `Customer | Staff` keyed on their
+own PKs, and `TenantBindingClassificationTest` builds with `film_id` as the tenant column. Neither
+`customer` nor `staff` carries `film_id`, so the field classifies untenanted and there is no
+rejection to assert. The case needs participants that are all tenant-scoped with the tenant column
+in their node keys (`FilmActor | FilmCategory`, say), and once finding 4 is settled it should also
+use a member order where the first participant's key omits the tenant column, since that is the
+order that tells the two dedupes apart.
+
+**Finding 6 (question two, smaller). The exhaustive-leaf-switch paragraph misreads `accessOf`'s first
+switch.** It says the location arms `NestedInputField` and `ContextArg` "reach the leaf switch only
+through a doubly-wrapped extraction nothing mints, so they throw the same invariant". That holds for
+`NestedInputField`, whose arm unwraps to `nested.leaf()`. It does not hold for `ContextArg`: its arm
+sets `read = SlotRead.ContextArg.INSTANCE` and `leaf = extraction`, so a bare `ContextArg` reaches the
+leaf switch as itself and today resolves `Raw` through the `default`. A `ContextArg -> throw` in the
+leaf switch would make the first switch's `ContextArg` arm, and the `SlotRead.ContextArg` renderings
+in `TenantDslEmitter` and `RoutineWriteCommands.slotReadOf`, unreachable except as a crash. Nothing
+mints a `ContextArg` on a column-bound carrier today (its only construction is `MethodRef`, for
+method parameters), so no verdict moves either way, but the implementer has to choose: `ContextArg ->
+Raw`, or remove the first-switch arm and its renderings. Say which.
+
+Verified, so the next round need not redo it. The five mint-site guards and their clauses read as
+quoted (`FieldBuilder.java` 2804-2809, 2844-2846, 2861-2863, 2946-2948, 2992-2994); `bodyParams` is
+appended at 2825, 2832, 2852, 2868, and through `implicitBodyParams` at 2954 and 3011 folded in at
+2772 and 2788; `GeneratedConditionFilter` is constructed only at 2881; `projectFilters` has one caller
+(`projectForFilter`, 2605). A tenant-column scalar argument under its own `@condition(override: true)`
+classifies `ColumnBackedArg` rather than `ConditionOwnedArg`, which only the no-route `@nodeId` case
+mints (2223), so goal-table row four reaches the arm the plan names. Every suppression in scope comes
+from an authored `@condition` that contributes a filter (the field-level one is appended after
+`projectFilters` returns), so a condition member exists wherever a suppressed row matters.
+`accessOf`, `SlotAccess.Declined`, `SlotCollector`, `declineRoutineWriteDecodes`, the four `collect*`
+descents, `TenantBinding.SlotProjection.DecodedKeySlot`, `TenantDslEmitter.projected` /
+`dslExpression` / `slotReads`, `TenantAcquisitionFragments.slotRead`, `NodeIdDecodeLedger` on
+`BuildContext` with a package-private accessor, `OperationMemberRelation.EMPTY`, the rejection text
+(`TenantBindingIndex.java:333`), `sameTableNodeIdFilterDivinesTheDecodedSlot`,
+`ColumnMatchShadowTest`, `tilgangAdminOnly(Table<?>)`, `multitenant.graphqls`, the
+`tenant-scoping.adoc` promise (line 35), the `fact-model.adoc` quote (line 39) and the
+`pipeline-overview.adoc` heading (line 28) all exist as named. `CallSiteExtraction`'s leaves are the
+eleven records the exhaustive switch needs to cover, with `ThrowOnMismatch` and `PruneOnMismatch`
+under the sealed `NodeIdDecodeKeys`. The goal-table tallies (five moving, five unchanged, two still
+rejecting) match the rows.
+
+**Non-blocking.**
+
+- `implicitBodyParam` rewrites a `Direct` leaf on an `ID`-typed input field to `JooqConvert` before
+  wrapping it. The input-field row's extraction should be the wrapped *post-substitution* leaf if it
+  is meant to be "what the body param would have carried". Both leaves resolve `Raw`, so no verdict
+  depends on it.
+- Row ten covers "a `@nodeId` argument or filter-input field", but
+  `sameTableNodeIdFilterDivinesTheDecodedSlot` pins only the argument half.
