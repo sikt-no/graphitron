@@ -79,6 +79,7 @@ The list shape `[FilmOrderBy]` lets clients compose multi-key orderings; a singu
 
 When `@orderBy` and `@defaultOrder` coexist on the same field, the dynamic argument wins when the client supplies it; `@defaultOrder` fills in when the argument is null or absent. This is why the example field has both: `filmsOrderedConnection` falls back to PK order when `order:` is not supplied, and uses the client's order when it is.
 
+[#stable-cursors-and-tie-breakers]
 == Stable cursors and tie-breakers
 
 xref:../reference/directives/asConnection.adoc[`@asConnection`] emits keyset pagination using the active order. The cursor is a base64-encoded NUL-separated tuple of the sort columns' values for the last row of the page; jOOQ's `.seek(Field<?>...)` consumes the decoded values. Two consequences:
@@ -122,11 +123,18 @@ Avoid them when:
 * The index might be dropped, renamed, or rebuilt with a different column list during operations. The build resolves the index name at generator time; a subsequent DDL change that drops the index makes the next build fail with "no matching index". For volatile indexes, prefer `fields:`.
 * `<includeIndexes>true</includeIndexes>` is not enabled on the jOOQ generator. The catalog lookup returns nothing in that case and the directive cannot resolve.
 
+[#sort-across-polymorphism]
 == Sort across polymorphism
 
 A field returning a xref:polymorphic-types.adoc[multi-table polymorphic] interface or union is read as one statement per participant, combined with `UNION ALL`. The emitter orders the combined result on a synthetic `__sort__` column projected per branch from that participant's primary key, typed as JSONB for composite keys so the database's lexicographic ordering reproduces the multi-column order.
 
-That ordering is not configurable. `@defaultOrder` and `@orderBy` are not lowered onto the participant branches, and declaring either on such a field fails the build rather than being ignored. Sort a single-`@table` field instead, or narrow the field's return type to one participant.
+On a root `Query` field returning a list or a connection, `@defaultOrder` and `@orderBy` are lowered onto the participant branches. Each declared column is resolved per participant against that participant's own table and projected into every branch as its own column, so the combined result sorts by what was declared, with rows of different participants interleaved by the sort column. An `@orderBy` argument picks among its enum values at request time, and `direction:` reverses the whole order exactly as on a single-table field. A value that orders by the primary key (`@order(primaryKey: true)`, `@defaultOrder(primaryKey: true)`, or the fallback when nothing else is declared) sorts by `__sort__` directly.
+
+Every participant has to carry each order column, at the same position in the order, with the same SQL type and the same bound Java type. A participant missing the column fails the build at that participant, and so does a type disagreement: `integer` against `bigint`, `varchar` against `text`, or a column exposed through a jOOQ converter against one read without it, even when both bind to the same Java class. A converter-backed column therefore orders a union only against columns bound the same way. An `index:` order has to resolve to the same number of columns on every participant.
+
+Unlike every other field, a multi-table ordering *does* get a tie-breaker appended: `__sort__` and then the participant typename follow the declared columns, and they flip with a runtime `direction:` where the order itself does. That deviates from the rule in <<stable-cursors-and-tie-breakers>>, and it has to. Two participants can hold equal values on every declared column (and equal primary-key values besides), and without a tie-breaker the cursor would have no defined next row across the participant boundary. On a field whose own declaration already ends in a unique key, the appended columns are inert.
+
+A child field returning a multi-table interface or union, and a single-valued root field, lower no ordering: declaring `@defaultOrder` or `@orderBy` on one fails the build rather than being ignored. Sort a single-`@table` field there instead, or narrow the field's return type to one participant.
 
 For single-table polymorphism, ordering is unchanged from the non-polymorphic case: the discriminator column is just another projected column, and the sort spec applies to the shared backing table.
 
@@ -137,7 +145,7 @@ For single-table polymorphism, ordering is unchanged from the non-polymorphic ca
 * Every value of an `@orderBy`-bound enum must declare a sort spec. Missing values fail the build with a per-value diagnostic.
 * `@defaultOrder.direction:` is global across the spec; per-column direction is only available through `@orderBy` (each list element carries its own `SortDirection`).
 * Cursor wire format embeds the active order's columns. Adding, removing, or reordering columns in `@defaultOrder` or in an `@order` enum value invalidates outstanding cursors.
-* The rewrite does not auto-append a PK tie-breaker on non-PK orders. Append the PK explicitly; otherwise keyset pagination is non-deterministic on equal-key rows.
+* The rewrite does not auto-append a PK tie-breaker on non-PK orders. Append the PK explicitly; otherwise keyset pagination is non-deterministic on equal-key rows. The one exception is a root field over a multi-table interface or union; see <<sort-across-polymorphism>>.
 * `index:` requires jOOQ index generation. With it disabled, the lookup yields no columns and the directive fails to resolve.
 * `fields[].name` resolves against the field's return-type `@table`, not the parent's. Case-sensitive against the jOOQ-generated identifiers.
 * `collate:` is unvalidated at build time; misspellings surface as runtime database errors.

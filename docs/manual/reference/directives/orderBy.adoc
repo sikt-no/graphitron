@@ -49,6 +49,7 @@ A client requesting `order: [{ field: TITLE, direction: ASC }]` gets the films s
 * Every value of the bound enum must declare exactly one of `index`, `fields`, or `primaryKey` via xref:order.adoc[`@order`]. Missing or ambiguous specifications fail the build.
 * `@orderBy` and xref:defaultOrder.adoc[`@defaultOrder`] coexist on the same field. When the client supplies a value the dynamic order wins; when omitted, `@defaultOrder` applies.
 * Connection fields (xref:asConnection.adoc[`@asConnection`] or hand-written `*Connection` types) integrate `@orderBy` with keyset pagination automatically; the cursor encodes the active sort columns.
+* On a root field returning a list or connection of a multi-table interface or union, each enum value's columns resolve against every participant's own table, under the same agreement rule as xref:defaultOrder.adoc[`@defaultOrder`]. A child field, or a single-valued root field, over such a type rejects the argument. See xref:../../how-to/sort-results.adoc#sort-across-polymorphism[How-to: Sort across polymorphism].
 
 == See also
 

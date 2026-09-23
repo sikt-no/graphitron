@@ -9790,8 +9790,30 @@ SELECT shape.graph_name, shape.type_name, shape.field_name, shape.verdict,
                             WHERE o.graph_name = nv.graph_name AND o.type_name = nv.type_name
                               AND o.field_name = nv.field_name)) route
     ON route.graph_name = shape.graph_name AND route.type_name = shape.type_name
-   AND route.field_name = shape.field_name;
-COMMENT ON VIEW intent_field_unlowerable_ordering IS 'Where an ordering is available at a coordinate and the coordinate''s own read shape cannot honour it: one row per coordinate and availability route, in a closed verdict vocabulary of two. For example a root field returning a three-implementation multitable interface and carrying both @defaultOrder and an @orderBy argument draws two rows under PARTICIPANT_FAN_OUT, one per route, while the same field with no declaration at all draws none.';
+   AND route.field_name = shape.field_name
+ WHERE NOT (shape.verdict = 'PARTICIPANT_FAN_OUT'
+            AND route.available_via IN ('DEFAULT_ORDER', 'ORDER_BY_ARGUMENT')
+            AND EXISTS (SELECT 1 FROM graphql_root_operation ro
+                         WHERE ro.graph_name = shape.graph_name AND ro.operation = 'QUERY'
+                           AND ro.type_name = shape.type_name)
+            AND EXISTS (SELECT 1 FROM graphitron_field f
+                          LEFT JOIN graphitron_field_navigation nav
+                            ON nav.graph_name = f.graph_name AND nav.type_name = f.type_name
+                           AND nav.field_name = f.field_name
+                         WHERE f.graph_name = shape.graph_name AND f.type_name = shape.type_name
+                           AND f.field_name = shape.field_name
+                           AND (f.is_list OR nav.basis = 'CONNECTION_ELEMENT')
+                           AND f.named_type <> 'Node')
+            AND NOT EXISTS (SELECT 1 FROM graphitron_service_entry se
+                             WHERE se.graph_name = shape.graph_name AND se.type_name = shape.type_name
+                               AND se.field_name = shape.field_name)
+            AND NOT EXISTS (SELECT 1 FROM graphitron_argument_lookup_key_entry lk
+                             WHERE lk.graph_name = shape.graph_name AND lk.type_name = shape.type_name
+                               AND lk.field_name = shape.field_name)
+            AND NOT EXISTS (SELECT 1 FROM graphitron_routine_entry re
+                             WHERE re.graph_name = shape.graph_name AND re.type_name = shape.type_name
+                               AND re.field_name = shape.field_name));
+COMMENT ON VIEW intent_field_unlowerable_ordering IS 'Where an ordering is available at a coordinate and the coordinate''s own read shape cannot honour it: one row per coordinate and availability route, in a closed verdict vocabulary of two. For example a child field returning a three-implementation multitable interface and carrying both @defaultOrder and an @orderBy argument draws two rows under PARTICIPANT_FAN_OUT, one per route, while the same field with no declaration at all draws none. The fan-out arm excludes the coordinates whose declared ordering the classifier lowers onto the participant branches, and exactly those: a field on the QUERY root operation type, whose read is list-shaped (a list, or a connection type, authored or @asConnection-built, which graphitron_field.is_list alone misses because the macro rewrites the type expression to the connection), and which reaches the multitable arm rather than an earlier classification route (@service, a Node named type read off the rewritten type expression, an argument @lookupKey, @routine; a transcription of the classifier''s precedence, so a new route ahead of that arm owes a clause here). Child multitable coordinates, a single-valued root and a routed-away root keep their rows. The exclusion reads only captured graphql_ and graphitron_ relations and adds no crossing into this family.';
 COMMENT ON COLUMN intent_field_unlowerable_ordering.graph_name IS 'the owning graph''s partition, carried from the read-shape relation the row''s verdict came off';
 COMMENT ON COLUMN intent_field_unlowerable_ordering.type_name IS 'the type owning the coordinate whose ordering goes unlowered';
 COMMENT ON COLUMN intent_field_unlowerable_ordering.field_name IS 'the coordinate''s field name; with the type above and the two vocabulary columns below, the grain';

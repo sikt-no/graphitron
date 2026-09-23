@@ -123,9 +123,9 @@ public final class OperationMembers {
         Map.entry(QueryField.QueryTableInterfaceField.class,
             shape(Set.of(Kind.SELECT), TABLE_READ_OPTIONALS)),
         Map.entry(QueryField.QueryInterfaceField.class,
-            shape(Set.of(Kind.SELECT), Set.of(Kind.CONDITION))),
+            shape(Set.of(Kind.SELECT), Set.of(Kind.CONDITION, Kind.ORDER_BY))),
         Map.entry(QueryField.QueryUnionField.class,
-            shape(Set.of(Kind.SELECT), Set.of(Kind.CONDITION))),
+            shape(Set.of(Kind.SELECT), Set.of(Kind.CONDITION, Kind.ORDER_BY))),
         Map.entry(QueryField.QueryNodeField.class,
             shape(Set.of(Kind.NODE_RESOLVE), Set.of())),
         Map.entry(QueryField.QueryNodesField.class,
@@ -244,8 +244,8 @@ public final class OperationMembers {
                     f.lookup());
             case QueryField.QueryTableInterfaceField f ->
                 tableRead(f.returnType().table(), List.of(), f.filters(), f.orderBy(), f.pagination());
-            case QueryField.QueryInterfaceField f -> polymorphicRootRead(f.participantFilters());
-            case QueryField.QueryUnionField f -> polymorphicRootRead(f.participantFilters());
+            case QueryField.QueryInterfaceField f -> polymorphicRootRead(f);
+            case QueryField.QueryUnionField f -> polymorphicRootRead(f);
             case QueryField.QueryNodeField _ -> List.of(new NodeResolve());
             case QueryField.QueryNodesField _ -> List.of(new NodeResolve());
             case QueryField.QueryServiceTableField f -> List.of(structuredServiceCall(f.serviceMethodCall()));
@@ -321,7 +321,7 @@ public final class OperationMembers {
             members.add(new Condition.OnReturnTable(table, filters));
         }
         if (!(orderBy instanceof OrderBySpec.None)) {
-            members.add(new OrderBy(orderBy));
+            members.add(new OrderBy.OnReturnTable(orderBy));
         }
         if (pagination != null) {
             members.add(new Paginate(pagination));
@@ -362,18 +362,20 @@ public final class OperationMembers {
     }
 
     /**
-     * A multi-table polymorphic root: the UNION ALL select plus one condition member per
-     * table-bound participant carrying filters, the per-participant filter surface the one-arm
-     * summary could not hold.
+     * A multi-table polymorphic root: the UNION ALL select, one condition member per table-bound
+     * participant carrying filters (the per-participant filter surface the one-arm summary could
+     * not hold), and the field-level ordering lowered onto the branches when the read has one.
      */
-    private static List<OperationMember> polymorphicRootRead(List<ParticipantFilters> participantFilters) {
+    private static <F extends ParticipantFilterField & PolymorphicOrderingField>
+            List<OperationMember> polymorphicRootRead(F field) {
         var members = new ArrayList<OperationMember>();
         members.add(new Select());
-        for (var pf : participantFilters) {
+        for (var pf : field.participantFilters()) {
             if (!pf.filters().isEmpty()) {
                 members.add(new Condition.OnParticipant(pf.participant(), pf.filters()));
             }
         }
+        field.ordering().ifPresent(ordering -> members.add(new OrderBy.Polymorphic(ordering)));
         return members;
     }
 
@@ -392,7 +394,7 @@ public final class OperationMembers {
             members.add(new Condition.OnReturnTable(f.returnType().table(), f.filters()));
         }
         if (!(f.orderBy() instanceof OrderBySpec.None)) {
-            members.add(new OrderBy(f.orderBy()));
+            members.add(new OrderBy.OnReturnTable(f.orderBy()));
         }
         if (f.pagination() != null) {
             members.add(new Paginate(f.pagination()));

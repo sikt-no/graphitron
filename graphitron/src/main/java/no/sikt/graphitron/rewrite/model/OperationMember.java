@@ -154,14 +154,32 @@ public sealed interface OperationMember {
         }
     }
 
-    /** The authoritative ordering contribution. A {@link OrderBySpec.None} is the member's absence. */
-    record OrderBy(OrderBySpec orderBy) implements OperationMember {
-        public OrderBy {
-            Objects.requireNonNull(orderBy, "orderBy");
-            if (orderBy instanceof OrderBySpec.None) {
-                throw new IllegalArgumentException(
-                    "an orderBy member exists only when ordering is resolvable; OrderBySpec.None "
-                    + "is the member's absence, not an empty payload");
+    /**
+     * The authoritative ordering contribution. Sealed on the {@link Condition} precedent, because a
+     * single-table read and a multi-table polymorphic root state their ordering in genuinely
+     * different shapes: {@link OnReturnTable} carries the {@link OrderBySpec} resolved against the
+     * coordinate's own return table, and {@link Polymorphic} carries the one field-level
+     * {@link PolymorphicOrdering} whose slots hold each participant's column. One member per
+     * coordinate either way; the per-participant resolution rides the payload, not the key.
+     */
+    sealed interface OrderBy extends OperationMember {
+
+        /** The ordering of the coordinate's own return table. A {@link OrderBySpec.None} is the member's absence. */
+        record OnReturnTable(OrderBySpec orderBy) implements OrderBy {
+            public OnReturnTable {
+                Objects.requireNonNull(orderBy, "orderBy");
+                if (orderBy instanceof OrderBySpec.None) {
+                    throw new IllegalArgumentException(
+                        "an orderBy member exists only when ordering is resolvable; OrderBySpec.None "
+                        + "is the member's absence, not an empty payload");
+                }
+            }
+        }
+
+        /** The ordering lowered onto a multi-table polymorphic root's participant branches. */
+        record Polymorphic(PolymorphicOrdering ordering) implements OrderBy {
+            public Polymorphic {
+                Objects.requireNonNull(ordering, "ordering");
             }
         }
     }

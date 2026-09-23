@@ -964,6 +964,46 @@ type Query {
     occupantsByIdsConnection(ids: [ID!] @nodeId): [AddressOccupant!]!
         @asConnection(defaultFirstValue: 5)
 
+    # Lowered-ordering fixtures on the root multitable union. Customer and Staff both carry
+    # last_name and store_id at one SQL type and one bound Java type, so each declaration below
+    # resolves per participant and lowers onto the UNION ALL branches as order slots. store_id ties
+    # across participants in the seed (both stores hold customers and a staff member), which is
+    # what the appended __sort__ / __typename tiebreakers are for.
+    occupantsByLastName: [AddressOccupant!]! @defaultOrder(fields: [{name: "last_name"}])
+
+    # The runtime half: the argument picks among the named orders; its absence falls back to the
+    # @defaultOrder base.
+    occupantsOrdered(orderBy: OccupantOrderBy @orderBy): [AddressOccupant!]!
+        @defaultOrder(fields: [{name: "last_name"}])
+
+    # @orderBy with no @defaultOrder: the base is the participants' primary keys, which the
+    # classifier recognises and orders by the synthetic key rather than projecting slots for.
+    occupantsOrderedByKey(orderBy: OccupantOrderBy @orderBy): [AddressOccupant!]!
+
+    # A list-valued @orderBy argument: one direction per element, tiebreakers ascending.
+    occupantsOrderedByList(orderBy: [OccupantOrderBy!] @orderBy): [AddressOccupant!]!
+
+    # The reported form: @asConnection makes the order slots the Relay cursor too, so the seek key
+    # and the page order are composed together.
+    # The pagination arguments are spelled out so the backward half (last / before) is available.
+    occupantsOrderedConnection(orderBy: OccupantOrderBy @orderBy,
+            first: Int, after: String, last: Int, before: String): [AddressOccupant!]!
+        @asConnection(defaultFirstValue: 100)
+        @defaultOrder(fields: [{name: "last_name"}])
+
+    # A converter-backed order column: org_code is the org_code_domain (bigint) exposed as String
+    # through OrgCodeStringConverter on both participants. The slot field is typed by the column's
+    # own DataType, so a page after the first decodes the cursor through the converter and binds
+    # the seek as bigint.
+    converterPlacesConnection(first: Int, after: String, last: Int, before: String): [ConverterPlace!]!
+        @asConnection(defaultFirstValue: 10)
+        @defaultOrder(fields: [{name: "org_code"}])
+
+    # Composite-key participants: the order slot composes with the JSONB __sort__ tiebreaker.
+    pagedItemsByName(first: Int, after: String, last: Int, before: String): [PagedItem!]!
+        @asConnection(defaultFirstValue: 2)
+        @defaultOrder(fields: [{name: "name"}], direction: DESC)
+
     # R384 phase c fixtures: developer @condition on a multitable union. The condition method's
     # Table<?> first parameter serves every UNION branch (the emitter passes each branch's own
     # stage-1 table local); shared columns resolve by name. Field-level form (no args):
@@ -1639,6 +1679,21 @@ type Address implements Node @table(name: "address") @node {
 # in stage 1's narrow UNION ALL.
 union AddressOccupant = Customer | Staff
 
+# The sort enum the ordered occupant roots dispatch over. Every value resolves per participant
+# against that participant's own table.
+enum OccupantSort {
+    OCCUPANT_ID @order(primaryKey: true)
+    LAST_NAME   @order(fields: [{name: "last_name"}])
+    STORE       @order(fields: [{name: "store_id"}])
+    # Direction-locked: a non-ascending entry makes the runtime direction inert for this value.
+    STORE_THEN_NAME_DESC @order(fields: [{name: "store_id"}, {name: "last_name", direction: DESC}])
+}
+
+input OccupantOrderBy {
+    field: OccupantSort!
+    direction: SortDirection
+}
+
 # R383 fixture: a plain filter input wrapping the shared first_name column. Used by
 # Query.occupantsByFilter to exercise nested-input @field filter lowering on a multitable union.
 # R384 phase a adds storeIds: a nested [ID!] @field over the shared store_id int column, whose
@@ -1940,6 +1995,16 @@ type ConverterCampus @table(name: "converter_campus") {
 # and a plain integer, so a decoded @nodeId is a Row2<String, Integer>. This is the type the
 # row-value shapes of the generated filter rail run against; converter_campus is keyed on a plain
 # serial, so its filters can only reach the scalar shapes.
+# A second participant carrying the converter-backed org_code, keyed on a plain serial so the
+# ordering test pages on the order slot rather than on a converter-backed synthetic key.
+type ConverterSite @table(name: "converter_site") {
+    siteId:   Int!    @field(name: "SITE_ID")
+    siteName: String! @field(name: "SITE_NAME")
+    orgCode:  String! @field(name: "ORG_CODE")
+}
+
+union ConverterPlace = ConverterCampus | ConverterSite
+
 type ConverterCampusTerm implements Node @table(name: "converter_campus_term") @node {
     id:       ID!     @nodeId
     orgCode:  String! @field(name: "ORG_CODE")

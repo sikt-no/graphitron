@@ -86,6 +86,7 @@ import no.sikt.graphitron.rewrite.model.RoutineChain;
 import no.sikt.graphitron.rewrite.model.RoutineRef;
 import no.sikt.graphitron.rewrite.model.NodeIdArgDispatch;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
+import no.sikt.graphitron.rewrite.model.PolymorphicOrdering;
 import no.sikt.graphitron.rewrite.model.PaginationSpec;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.ParentCorrelation;
@@ -119,6 +120,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.SequencedMap;
 import java.util.Set;
@@ -839,7 +841,8 @@ class FieldBuilder {
     /** Outcome of lowering {@code @field} filters across a multi-table polymorphic field's participants.*/
     private sealed interface ParticipantFiltersResult {
         record Ok(List<ParticipantFilters> participantFilters,
-                  List<NodeIdArgDispatch> nodeIdArgDispatches) implements ParticipantFiltersResult {}
+                  List<NodeIdArgDispatch> nodeIdArgDispatches,
+                  Optional<PolymorphicOrdering> ordering) implements ParticipantFiltersResult {}
         record Rejected(Rejection rejection) implements ParticipantFiltersResult {}
     }
 
@@ -1196,6 +1199,7 @@ class FieldBuilder {
         }
         var dispatchedArgNames = targets.dispatchedArgNames();
         var result = new ArrayList<ParticipantFilters>();
+        var orderings = new LinkedHashMap<ParticipantRef.TableBound, OrderBySpec>();
         var participantFailures = new ArrayList<ParticipantFailure>();
         boolean advisoryEmitted = false;
         for (var tb : tableBound) {
@@ -1222,13 +1226,220 @@ class FieldBuilder {
                 continue;
             }
             result.add(new ParticipantFilters(tb, tfc.filters()));
+            orderings.put(tb, tfc.orderBy());
         }
         if (!participantFailures.isEmpty()) {
             return new ParticipantFiltersResult.Rejected(
                 mintParticipantFailures(parentTypeName, fieldDef, participantFailures));
         }
+        var folded = foldParticipantOrderings(orderings, participantFailures);
+        if (!participantFailures.isEmpty()) {
+            return new ParticipantFiltersResult.Rejected(
+                mintParticipantFailures(parentTypeName, fieldDef, participantFailures));
+        }
         return new ParticipantFiltersResult.Ok(List.copyOf(result),
-            dispatchFacts(fieldDef, targets));
+            dispatchFacts(fieldDef, targets), folded);
+    }
+
+    /**
+     * Folds the ordering each participant resolved against its own table into the one field-level
+     * {@link PolymorphicOrdering} the branch emitter reads. Every decision the SDL states once (the
+     * argument, the named orders and their order, each entry's direction and collation) is taken
+     * once; only each entry's column is per participant, and it lands on a
+     * {@link PolymorphicOrdering.Slot}. A slot's identity is its whole per-participant column map,
+     * so two entries share a slot exactly when they resolve to the same column on every participant.
+     *
+     * <p>An order whose entries are, on every participant, exactly that participant's primary key
+     * in key order under one direction is {@link PolymorphicOrdering.SlotOrder.OnSyntheticKey}: it
+     * orders by the synthetic key every branch already projects, which is the same order. That
+     * covers {@code @order(primaryKey: true)}, {@code @defaultOrder(primaryKey: true)} and the
+     * implicit fallback alike, none of which carries provenance. A participant with no primary key
+     * resolves the fallback to {@link OrderBySpec.None}; that is absorbed too, the validator's
+     * primary-key rejection being the one message about that absence.
+     *
+     * <p>Every other order is paired positionally across participants and rejects, per disagreeing
+     * participant into {@code failures}, on unequal arity or on an unequal
+     * ({@code sqlType}, {@code bindingType}) pair at one position: each slot is one {@code UNION ALL}
+     * column typed by one participant's column {@code DataType}, so every participant has to agree
+     * with it on both sides of the binding.
+     *
+     * @return the ordering, or empty when every participant resolved {@link OrderBySpec.None}
+     *         (a single-valued read, which lowers nothing)
+     */
+    private Optional<PolymorphicOrdering> foldParticipantOrderings(
+            SequencedMap<ParticipantRef.TableBound, OrderBySpec> orderings,
+            List<ParticipantFailure> failures) {
+        if (orderings.isEmpty()
+                || orderings.values().stream().allMatch(spec -> spec instanceof OrderBySpec.None)) {
+            return Optional.empty();
+        }
+        var participants = List.copyOf(orderings.keySet());
+        var argument = orderings.values().stream()
+            .filter(spec -> spec instanceof OrderBySpec.Argument)
+            .map(spec -> (OrderBySpec.Argument) spec)
+            .findFirst();
+        var slots = new ArrayList<PolymorphicOrdering.Slot>();
+        if (argument.isEmpty()) {
+            var base = foldOrder(null, orderings, slots, failures);
+            if (base == null) return Optional.empty();
+            return Optional.of(new PolymorphicOrdering(participants, new PolymorphicOrdering.Surface.Fixed(),
+                slots, List.of(), base));
+        }
+        var arg = argument.get();
+        var named = new ArrayList<PolymorphicOrdering.SlotOrder>();
+        for (int n = 0; n < arg.namedOrders().size(); n++) {
+            String orderName = arg.namedOrders().get(n).name();
+            var perParticipant = new LinkedHashMap<ParticipantRef.TableBound, OrderBySpec>();
+            for (var e : orderings.entrySet()) {
+                perParticipant.put(e.getKey(), ((OrderBySpec.Argument) e.getValue()).namedOrders().get(n).order());
+            }
+            var folded = foldOrder(orderName, perParticipant, slots, failures);
+            if (folded != null) named.add(folded);
+        }
+        var perParticipantBase = new LinkedHashMap<ParticipantRef.TableBound, OrderBySpec>();
+        for (var e : orderings.entrySet()) {
+            perParticipantBase.put(e.getKey(), ((OrderBySpec.Argument) e.getValue()).base());
+        }
+        var base = foldOrder(null, perParticipantBase, slots, failures);
+        if (!failures.isEmpty() || base == null) return Optional.empty();
+        return Optional.of(new PolymorphicOrdering(participants,
+            new PolymorphicOrdering.Surface.Argument(arg.name(), arg.typeName(), arg.nonNull(), arg.list(),
+                arg.sortFieldName(), arg.directionFieldName()),
+            slots, named, base));
+    }
+
+    /**
+     * Folds one declared order across the participants, reusing or appending slots in
+     * {@code slots}; returns {@code null} after adding the disagreeing participants to
+     * {@code failures}.
+     */
+    private PolymorphicOrdering.SlotOrder foldOrder(String orderName,
+            SequencedMap<ParticipantRef.TableBound, OrderBySpec> perParticipant,
+            List<PolymorphicOrdering.Slot> slots, List<ParticipantFailure> failures) {
+        String label = orderName == null ? "the default ordering" : "order '" + orderName + "'";
+        OrderBySpec.Fixed first = perParticipant.values().stream()
+            .filter(spec -> spec instanceof OrderBySpec.Fixed)
+            .map(spec -> (OrderBySpec.Fixed) spec)
+            .findFirst().orElse(null);
+        if (first == null) {
+            // Every participant resolved None: no primary key and nothing declared. Absorbed; the
+            // validator's primary-key rejection owns the message.
+            return new PolymorphicOrdering.SlotOrder.OnSyntheticKey(orderName, OrderBySpec.SortDirection.ASC, true);
+        }
+        var syntheticDirection = syntheticKeyDirection(perParticipant);
+        if (syntheticDirection != null) {
+            return new PolymorphicOrdering.SlotOrder.OnSyntheticKey(orderName, syntheticDirection,
+                syntheticDirection == OrderBySpec.SortDirection.ASC);
+        }
+        var firstEntry = perParticipant.firstEntry();
+        int arity = columnsOf(firstEntry.getValue()).size();
+        boolean rejected = false;
+        for (var e : perParticipant.entrySet()) {
+            var cols = columnsOf(e.getValue());
+            if (cols.size() != arity) {
+                failures.add(new ParticipantFailure(e.getKey().typeName(), Rejection.structural(
+                    label + " resolves " + cols.size() + " column" + (cols.size() == 1 ? "" : "s")
+                    + " (" + describeColumns(cols) + ") here but " + arity + " (" + describeColumns(columnsOf(firstEntry.getValue()))
+                    + ") on participant '" + firstEntry.getKey().typeName() + "'; a multitable interface/union"
+                    + " orders every participant branch by the same number of columns")));
+                rejected = true;
+            }
+        }
+        if (rejected) return null;
+        var firstCols = columnsOf(firstEntry.getValue());
+        var entries = new ArrayList<PolymorphicOrdering.SlotEntry>();
+        for (int i = 0; i < arity; i++) {
+            var columnByParticipant = new LinkedHashMap<ParticipantRef.TableBound, ColumnRef>();
+            for (var e : perParticipant.entrySet()) {
+                columnByParticipant.put(e.getKey(), columnsOf(e.getValue()).get(i).column());
+            }
+            var typingParticipant = firstEntry.getKey();
+            var typingColumn = columnByParticipant.get(typingParticipant);
+            var typingFacts = columnFacts(typingParticipant.table(), typingColumn);
+            boolean positionRejected = false;
+            for (var e : columnByParticipant.entrySet()) {
+                if (e.getKey().equals(typingParticipant)) continue;
+                var facts = columnFacts(e.getKey().table(), e.getValue());
+                if (!Objects.equals(facts.sqlType(), typingFacts.sqlType())
+                        || !Objects.equals(facts.bindingType(), typingFacts.bindingType())) {
+                    failures.add(new ParticipantFailure(e.getKey().typeName(), Rejection.structural(
+                        label + " position " + (i + 1) + ": column '" + e.getValue().sqlName() + "' is "
+                        + facts.sqlType() + " bound to " + facts.bindingType() + ", but column '"
+                        + typingColumn.sqlName() + "' on participant '" + typingParticipant.typeName()
+                        + "' is " + typingFacts.sqlType() + " bound to " + typingFacts.bindingType()
+                        + "; a multitable interface/union orders its participant branches through one"
+                        + " column per position, so every participant's column there has to share"
+                        + " both the SQL type and the bound Java type")));
+                    positionRejected = true;
+                }
+            }
+            if (positionRejected) {
+                rejected = true;
+                continue;
+            }
+            int ordinal = -1;
+            for (var slot : slots) {
+                if (slot.columnByParticipant().equals(columnByParticipant)) {
+                    ordinal = slot.ordinal();
+                    break;
+                }
+            }
+            if (ordinal < 0) {
+                ordinal = slots.size();
+                slots.add(new PolymorphicOrdering.Slot(ordinal, typingFacts.bindingType(), columnByParticipant));
+            }
+            var entry = firstCols.get(i);
+            entries.add(new PolymorphicOrdering.SlotEntry(ordinal, entry.direction(), entry.collation()));
+        }
+        if (rejected) return null;
+        return new PolymorphicOrdering.SlotOrder.OnSlots(orderName, entries, first.uniformAsc());
+    }
+
+    private static List<OrderBySpec.ColumnOrderEntry> columnsOf(OrderBySpec spec) {
+        return spec instanceof OrderBySpec.Fixed fixed ? fixed.columns() : List.of();
+    }
+
+    private static String describeColumns(List<OrderBySpec.ColumnOrderEntry> cols) {
+        return cols.stream().map(c -> c.column().sqlName()).collect(Collectors.joining(", "));
+    }
+
+    /**
+     * The one direction of an order that is, on every participant, exactly that participant's
+     * primary key in key order (or {@link OrderBySpec.None}, the key-less fallback); {@code null}
+     * when the order is anything else.
+     */
+    private static OrderBySpec.SortDirection syntheticKeyDirection(
+            SequencedMap<ParticipantRef.TableBound, OrderBySpec> perParticipant) {
+        OrderBySpec.SortDirection direction = null;
+        for (var e : perParticipant.entrySet()) {
+            if (e.getValue() instanceof OrderBySpec.None) continue;
+            if (!(e.getValue() instanceof OrderBySpec.Fixed fixed)) return null;
+            var pk = e.getKey().table().primaryKeyColumns();
+            var cols = fixed.columns();
+            if (pk.isEmpty() || cols.size() != pk.size()) return null;
+            for (int i = 0; i < cols.size(); i++) {
+                if (!cols.get(i).column().sqlName().equalsIgnoreCase(pk.get(i).sqlName())) return null;
+                var d = cols.get(i).direction();
+                if (direction == null) direction = d;
+                else if (direction != d) return null;
+            }
+        }
+        return direction;
+    }
+
+    /**
+     * The captured SQL and binding type of one participant column, read through
+     * {@link no.sikt.graphitron.model.jooq.JooqCatalog#columnFactsOf}, the values the catalog
+     * capture writes to {@code sql_column}. A column the catalog cannot place falls back to the
+     * binding the {@link ColumnRef} already carries and an unknown SQL type.
+     */
+    private JooqCatalog.ColumnFacts columnFacts(TableRef table, ColumnRef column) {
+        return ctx.catalog.findTable(table.tableName()).asEntry()
+            .flatMap(te -> ctx.catalog.columnFactsOf(te.table()).stream()
+                .filter(f -> f.sqlName().equalsIgnoreCase(column.sqlName()))
+                .findFirst())
+            .orElseGet(() -> new JooqCatalog.ColumnFacts(
+                column.sqlName(), column.javaName(), null, column.columnClass(), true, ""));
     }
 
     /** One participant's lowering failure, kept with the participant it belongs to. */
@@ -5754,7 +5965,7 @@ class FieldBuilder {
             return new QueryField.QueryInterfaceField(parentTypeName, name, location,
                 new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)),
                 interfaceType.participants(),
-                loweredOk.participantFilters(), loweredOk.nodeIdArgDispatches());
+                loweredOk.participantFilters(), loweredOk.nodeIdArgDispatches(), loweredOk.ordering());
         }
         if (elementType instanceof UnionType unionType) {
             var lowered = lowerParticipantFilters(parentTypeName, fieldDef, unionType.participants());
@@ -5765,7 +5976,7 @@ class FieldBuilder {
             return new QueryField.QueryUnionField(parentTypeName, name, location,
                 new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)),
                 unionType.participants(),
-                loweredOk.participantFilters(), loweredOk.nodeIdArgDispatches());
+                loweredOk.participantFilters(), loweredOk.nodeIdArgDispatches(), loweredOk.ordering());
         }
 
         return new UnclassifiedField(parentTypeName, name, location, Rejection.structural("return type '" + elementTypeName + "' is not a @table, interface, or union Graphitron type; " +

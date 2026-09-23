@@ -1499,14 +1499,14 @@ class TypeFetcherGeneratorTest {
                                                                        List<ParticipantRef> participants) {
         var wrapper = isList ? (FieldWrapper) nonNullList() : single();
         var returnType = new ReturnTypeRef.PolymorphicReturnType("Searchable", wrapper);
-        return new QueryField.QueryInterfaceField("Query", name, null, returnType, participants, List.of(), List.of());
+        return new QueryField.QueryInterfaceField("Query", name, null, returnType, participants, List.of(), List.of(), java.util.Optional.empty());
     }
 
     private static QueryField.QueryUnionField queryUnionField(String name, boolean isList,
                                                                List<ParticipantRef> participants) {
         var wrapper = isList ? (FieldWrapper) nonNullList() : single();
         var returnType = new ReturnTypeRef.PolymorphicReturnType("Document", wrapper);
-        return new QueryField.QueryUnionField("Query", name, null, returnType, participants, List.of(), List.of());
+        return new QueryField.QueryUnionField("Query", name, null, returnType, participants, List.of(), List.of(), java.util.Optional.empty());
     }
 
     private static List<ParticipantRef> filmAndActorParticipants() {
@@ -1700,7 +1700,7 @@ class TypeFetcherGeneratorTest {
                                                                                  int defaultPageSize) {
         var wrapper = new FieldWrapper.Connection(false, defaultPageSize);
         var returnType = new ReturnTypeRef.PolymorphicReturnType("Searchable", wrapper);
-        return new QueryField.QueryInterfaceField("Query", name, null, returnType, participants, List.of(), List.of());
+        return new QueryField.QueryInterfaceField("Query", name, null, returnType, participants, List.of(), List.of(), java.util.Optional.empty());
     }
 
     private static QueryField.QueryUnionField queryUnionConnectionField(String name,
@@ -1708,7 +1708,7 @@ class TypeFetcherGeneratorTest {
                                                                         int defaultPageSize) {
         var wrapper = new FieldWrapper.Connection(false, defaultPageSize);
         var returnType = new ReturnTypeRef.PolymorphicReturnType("Document", wrapper);
-        return new QueryField.QueryUnionField("Query", name, null, returnType, participants, List.of(), List.of());
+        return new QueryField.QueryUnionField("Query", name, null, returnType, participants, List.of(), List.of(), java.util.Optional.empty());
     }
 
     @Test

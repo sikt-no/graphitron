@@ -19,6 +19,7 @@ import no.sikt.graphitron.rewrite.model.OperationMembers;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.OutputField;
 import no.sikt.graphitron.rewrite.model.ParticipantFilterField;
+import no.sikt.graphitron.rewrite.model.PolymorphicOrderingField;
 import no.sikt.graphitron.rewrite.model.RootField;
 import no.sikt.graphitron.rewrite.model.ServiceCallCarrier;
 import no.sikt.graphitron.rewrite.model.ServiceField;
@@ -49,8 +50,9 @@ import java.util.Set;
  *       slots ({@code @service}, {@code @mutation}, the routine chain, the pagination facts
  *       flowing through the carried window), the target / source shape facts, the type-registry
  *       verdicts, and capability reads ({@link SqlGeneratingField}, {@link LookupResolution},
- *       {@link ParticipantFilterField}). It contains no switch over leaf classes; a membership
- *       decision that needs a new fact adds the fact, never a leaf arm.</li>
+ *       {@link ParticipantFilterField}, {@link PolymorphicOrderingField}). It contains no switch
+ *       over leaf classes; a membership decision that needs a new fact adds the fact, never a
+ *       leaf arm.</li>
  *   <li>{@link #payloadsFor} extracts <b>payloads</b> from the leaf-carried resolutions, the
  *       identity-forking half the additive window sanctions (the resolvers may read
  *       leaf-derived resolutions until each family's dissolution slice moves the resolution
@@ -230,7 +232,8 @@ public record OperationMemberRelation(Map<FieldCoordinates, List<OperationMember
         if (hasConditionSurface) {
             kinds.add(OperationMember.Kind.CONDITION);
         }
-        if (leaf instanceof SqlGeneratingField sgf && !(sgf.orderBy() instanceof OrderBySpec.None)) {
+        if (leaf instanceof SqlGeneratingField sgf && !(sgf.orderBy() instanceof OrderBySpec.None)
+                || leaf instanceof PolymorphicOrderingField pof && pof.ordering().isPresent()) {
             kinds.add(OperationMember.Kind.ORDER_BY);
         }
         if (leaf instanceof SqlGeneratingField sgf && sgf.pagination() != null) {
@@ -319,7 +322,11 @@ public record OperationMemberRelation(Map<FieldCoordinates, List<OperationMember
             }
         }
         if (kinds.contains(OperationMember.Kind.ORDER_BY)) {
-            members.add(new OperationMember.OrderBy(((SqlGeneratingField) leaf).orderBy()));
+            if (leaf instanceof PolymorphicOrderingField pof) {
+                members.add(new OperationMember.OrderBy.Polymorphic(pof.ordering().orElseThrow()));
+            } else {
+                members.add(new OperationMember.OrderBy.OnReturnTable(((SqlGeneratingField) leaf).orderBy()));
+            }
         }
         if (kinds.contains(OperationMember.Kind.PAGINATE)) {
             members.add(new OperationMember.Paginate(((SqlGeneratingField) leaf).pagination()));

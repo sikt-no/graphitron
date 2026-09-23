@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.model;
 import graphql.language.SourceLocation;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 
@@ -163,12 +164,14 @@ public sealed interface QueryField extends RootField
         ReturnTypeRef.PolymorphicReturnType returnType,
         List<ParticipantRef> participants,
         List<ParticipantFilters> participantFilters,
-        List<NodeIdArgDispatch> nodeIdArgDispatches
-    ) implements QueryField, ParticipantFilterField {
+        List<NodeIdArgDispatch> nodeIdArgDispatches,
+        Optional<PolymorphicOrdering> ordering
+    ) implements QueryField, ParticipantFilterField, PolymorphicOrderingField {
         public QueryInterfaceField {
             participants = List.copyOf(participants);
             participantFilters = List.copyOf(participantFilters);
             nodeIdArgDispatches = List.copyOf(nodeIdArgDispatches);
+            Objects.requireNonNull(ordering, "ordering");
         }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.NoClaim();
@@ -187,12 +190,14 @@ public sealed interface QueryField extends RootField
         ReturnTypeRef.PolymorphicReturnType returnType,
         List<ParticipantRef> participants,
         List<ParticipantFilters> participantFilters,
-        List<NodeIdArgDispatch> nodeIdArgDispatches
-    ) implements QueryField, ParticipantFilterField {
+        List<NodeIdArgDispatch> nodeIdArgDispatches,
+        Optional<PolymorphicOrdering> ordering
+    ) implements QueryField, ParticipantFilterField, PolymorphicOrderingField {
         public QueryUnionField {
             participants = List.copyOf(participants);
             participantFilters = List.copyOf(participantFilters);
             nodeIdArgDispatches = List.copyOf(nodeIdArgDispatches);
+            Objects.requireNonNull(ordering, "ordering");
         }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.NoClaim();

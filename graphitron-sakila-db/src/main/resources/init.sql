@@ -1128,6 +1128,30 @@ INSERT INTO converter_campus (campus_id, campus_name, org_code) VALUES
     (2, 'Trondheim', 1120),
     (3, 'Gjøvik',    1120);
 
+-- A second table carrying the converter-backed org_code, keyed on a plain serial: a union over it
+-- and converter_campus ordered by org_code pages on an order slot whose value binds through the
+-- converter, not on a converter-backed primary key. The seed interleaves with converter_campus by
+-- org_code. campus_count is bigint where plain_org_site's is int, a same-named pair a union
+-- ordering rejects on type.
+CREATE TABLE converter_site (
+    site_id      serial      PRIMARY KEY,
+    site_name    varchar(50) NOT NULL,
+    org_code     org_code_domain NOT NULL REFERENCES converter_org(org_code),
+    campus_count bigint      NOT NULL DEFAULT 0
+);
+INSERT INTO converter_site (site_id, site_name, org_code, campus_count) VALUES
+    (1, 'Narvik',  186, 1),
+    (2, 'Ålesund', 1120, 2);
+
+-- The same column names as converter_site with other types: org_code a plain varchar (the one
+-- column a class-only comparison would call equal to the converted org_code, both binding String)
+-- and campus_count an int. Only the classifier's union-ordering agreement rule reads it.
+CREATE TABLE plain_org_site (
+    site_id      serial      PRIMARY KEY,
+    org_code     varchar(20) NOT NULL,
+    campus_count int         NOT NULL DEFAULT 0
+);
+
 -- Composite primary key whose first column is converter-backed: org_code is the org_code_domain
 -- the type-selected forcedType maps to java.lang.String via OrgCodeStringConverter, so a decoded
 -- (org_code, term_no) key is a Row2<String, Integer> over a (bigint domain, integer) pair. The
@@ -1581,6 +1605,10 @@ CREATE TABLE multischema_b.event (
     code       varchar(50) NOT NULL
 );
 
+-- One index name in both schemas (index names are schema-scoped), over one column in A and two
+-- in B: a union over the two event tables ordered by that index resolves unequal arity per
+-- participant, which the union-ordering agreement rule rejects.
+
 -- R440: a 'note' table in BOTH schemas, each with an FK explicitly named 'note_event_fk' into its
 -- OWN schema's 'event'. This yields the two collisions the earlier fixture lacked: (1) the FK
 -- target is 'event', a bare table name that collides across schemas and is reached via FK
@@ -1603,6 +1631,15 @@ CREATE TABLE multischema_b.note (
     body       varchar(50) NOT NULL,
     CONSTRAINT note_event_fk FOREIGN KEY (event_id) REFERENCES multischema_b.event(event_id)
 );
+
+-- Same-named indexes across the two schemas (index names are schema-scoped), for the union-ordering
+-- agreement rule. event_order_idx covers one column in A and two in B, an unequal arity the rule
+-- rejects. note_order_idx covers event_id in A and note_id in B, so an order over it agrees with a
+-- fields: order over event_id on one participant only, which makes the two distinct order slots.
+CREATE INDEX event_order_idx ON multischema_a.event (name);
+CREATE INDEX event_order_idx ON multischema_b.event (code, event_id);
+CREATE INDEX note_order_idx ON multischema_a.note (event_id);
+CREATE INDEX note_order_idx ON multischema_b.note (note_id);
 
 -- R512: within-schema duplicate constraint name. 'gizmo' plus two holder tables (dup_one, dup_two)
 -- in the SAME schema (multischema_a), each carrying an FK named 'dup_gizmo_fk' into 'gizmo'. Postgres
