@@ -164,6 +164,14 @@ a ratio: the one module this item touches went from the largest in the build to 
 `graphitron` module, 7:31 against 11:15 on the same box in the same run, where the first pass had it
 at 11:42 against 9:17.
 
+### What the new reset orphaned
+
+`reset` was the only caller of `declarePartitionSelectivity`, a test-side restatement of the sweep
+`GraphitronModelStore` runs at creation. Once `reset` restores the partition column itself, nothing
+calls the restatement, so it is removed, and the private `resetEveryColumn` it sat beside folds into
+its one remaining caller, `resetIncludingTheDeclaration`. No behaviour changes: `reset`'s javadoc now
+names the creation-time declaration over `GraphPartition.keyedBaseTables` as the end state it matches.
+
 ## Out of scope, filed elsewhere or left for the fifth pass write-up
 
 * R733 carries the build measurement passes and should receive this pass. Three of its fourth-pass

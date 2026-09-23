@@ -46,10 +46,10 @@ public final class StoreStatistics {
      * <p>One statement finds the drifted columns and one {@code ALTER} per hit puts each back, so a
      * case whose writes never crossed H2's own analysis threshold, which is nearly every case, pays
      * a single catalog read and issues nothing. The end state is exactly what
-     * {@link #resetIncludingTheDeclaration} followed by {@link #declarePartitionSelectivity} leave,
-     * at a fraction of the statements: walking every column instead cost about three quarters of a
-     * second per clear on a schema past two thousand columns, and was most of the store-heavy
-     * modules' test time.
+     * {@link #resetIncludingTheDeclaration} followed by the creation-time declaration over
+     * {@link GraphPartition#keyedBaseTables} leave, at a fraction of the statements: walking every
+     * column instead cost about three quarters of a second per clear on a schema past two thousand
+     * columns, and was most of the store-heavy modules' test time.
      *
      * <p>The restatement is what makes this a cold <em>store</em> rather than a state no store can
      * be in. A bare reset models a store created before the declaration existed: every plan measured
@@ -81,11 +81,6 @@ public final class StoreStatistics {
      * for it, and {@code PartitionSelectivityWorthTest} is the one that does.
      */
     public static void resetIncludingTheDeclaration(DSLContext dsl) {
-        resetEveryColumn(dsl);
-    }
-
-    /** Every base table's every column back to {@link #UNANALYSED}, the partition column included. */
-    private static void resetEveryColumn(DSLContext dsl) {
         dsl.fetch("""
             SELECT c.TABLE_NAME, c.COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS c
             JOIN INFORMATION_SCHEMA.TABLES t
@@ -94,13 +89,6 @@ public final class StoreStatistics {
             ORDER BY c.TABLE_NAME, c.ORDINAL_POSITION
             """).forEach(row -> dsl.execute("ALTER TABLE \"" + row.get(0)
                 + "\" ALTER COLUMN \"" + row.get(1) + "\" SELECTIVITY 0"));
-    }
-
-    /** The boot-time sweep's statement, restated: what {@code GraphitronModelStore.create} issues. */
-    public static void declarePartitionSelectivity(DSLContext dsl) {
-        GraphPartition.keyedBaseTables(dsl).forEach(relation ->
-            dsl.execute("ALTER TABLE \"" + relation + "\" ALTER COLUMN \"" + GraphPartition.COLUMN
-                + "\" SELECTIVITY " + GraphPartition.DECLARED_SELECTIVITY));
     }
 
     /**
