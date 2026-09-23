@@ -30,9 +30,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
-| `R970` | graphitron-mcp ships Jackson versions with open advisories, and the root pgjdbc pin trails two fixes | Spec | 2026-09-23 | [plan](jackson-and-pgjdbc-pins-past-open-advisories.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
+| `R970` | graphitron-mcp ships Jackson versions with open advisories, and the root pgjdbc pin trails two fixes | Ready | 2026-09-23 | [plan](jackson-and-pgjdbc-pins-past-open-advisories.md) |
 | `R382` | Lower orderBy onto multitable-interface/union queries | In Progress | 2026-09-23 <sub>created 2026-06-25</sub> | [plan](multitable-interface-query-orderby-lowering.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
@@ -728,7 +728,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R918` [**The fact store cache root is bounded in bytes, and quiet workspaces are reclaimed**](cache-root-byte-budget.md) — Backlog, dx
 - `R937` [**The fact store compacts on every close, at full price, whether or not there is anything to reclaim**](compaction-on-close-is-unconditional.md) — Backlog, dx
 - `R767` [**graphitron-maven-plugin writes its descriptor twice and runs its three ITs one at a time**](maven-plugin-descriptor-runs-twice.md) — Backlog, dx
-- `R970` [**graphitron-mcp ships Jackson versions with open advisories, and the root pgjdbc pin trails two fixes**](jackson-and-pgjdbc-pins-past-open-advisories.md) — Spec, cleanup
+- `R970` [**graphitron-mcp ships Jackson versions with open advisories, and the root pgjdbc pin trails two fixes**](jackson-and-pgjdbc-pins-past-open-advisories.md) — Ready, cleanup
 - `R868` [**A checkout that is never built again keeps its whole store home**](sweep-dead-workspace-store-homes.md) — Backlog, cleanup
 - `R538` [**BgeEmbedderOnnxTest fails nondeterministically under full-reactor parallel load**](onnx-embedder-nondeterminism-under-parallel-load.md) — Backlog, testing
 - `R741` [**Date or refresh the parallelism figure in graphitron's junit-platform.properties**](parallelism-figure-in-junit-properties.md) — Backlog, dx
