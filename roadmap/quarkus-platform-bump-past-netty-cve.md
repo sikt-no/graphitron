@@ -1,13 +1,13 @@
 ---
 id: R964
 title: "The example consumer's Quarkus platform pins a Netty carrying a published SNI routing bypass"
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 5
 theme: tooling
 depends-on: []
 created: 2026-09-22
-last-updated: 2026-09-22
+last-updated: 2026-09-23
 ---
 
 # The example consumer's Quarkus platform pins a Netty carrying a published SNI routing bypass

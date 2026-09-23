@@ -45,9 +45,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R797` | Pull diagnostics, so a client can ask, cancel, and be told to ask again | Spec | 2026-08-21 | [plan](pull-diagnostics-so-a-client-can-ask-and-cancel.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
-| `R964` | The example consumer's Quarkus platform pins a Netty carrying a published SNI routing bypass | Spec | 2026-09-22 | [plan](quarkus-platform-bump-past-netty-cve.md) |
 | `R810` | Transitional surfaces say so where a reader arrives, and say why | Spec | 2026-08-22 | [plan](transitional-surfaces-say-so.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
+| `R964` | The example consumer's Quarkus platform pins a Netty carrying a published SNI routing bypass | Ready | 2026-09-23 <sub>created 2026-09-22</sub> | [plan](quarkus-platform-bump-past-netty-cve.md) |
 | `R724` | The stated key-column match spends its ambiguity silently; make it state its arity | Ready | 2026-09-03 <sub>created 2026-08-19</sub> | [plan](stated-key-column-match-states-its-arity.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
@@ -746,7 +746,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R598` [**MCP warm-degradation messages carry their tool prefix**](mcp-degradation-message-tool-prefix.md) — Backlog, cleanup
 - `R934` [**Roadmap bodies cite store relations that nothing checks**](roadmap-bodies-cite-unchecked-store-names.md) — Backlog, testing
 - `R910` [**The build fails on an adoc list item that renders as paragraph text**](check-adoc-lists.md) — Backlog, dx
-- `R964` [**The example consumer's Quarkus platform pins a Netty carrying a published SNI routing bypass**](quarkus-platform-bump-past-netty-cve.md) — Spec, cleanup
+- `R964` [**The example consumer's Quarkus platform pins a Netty carrying a published SNI routing bypass**](quarkus-platform-bump-past-netty-cve.md) — Ready, cleanup
 - `R751` [**The meta_ family states its rows as VALUES views, which take no constraints**](meta-family-relations-as-constrained-tables.md) — Backlog, dx
 - `R573` [**graphitron-tree-sitter-natives keeps the maven-archiver 3.6.4 hard-fail: it is deliberately not a child of the parent pom, so the pluginManagement override does not reach it**](natives-module-archiver-override.md) — Backlog, cleanup
 - `R553` [**srp resolves one disqualified session where the guard means every session with a trail on the draft**](srp-disqualified-session-set.md) — Backlog, improvement
