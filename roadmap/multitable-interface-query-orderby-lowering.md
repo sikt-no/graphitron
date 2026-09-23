@@ -1,7 +1,7 @@
 ---
 id: R382
 title: "Lower orderBy onto multitable-interface/union queries"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 3
 theme: interface-union
@@ -80,6 +80,58 @@ single-valued multitable root, where the ordering resolver returns nothing to lo
 that the classifier routes somewhere other than the generated `UNION ALL`, such as a root `@service`
 returning a multitable interface list (`QueryField.QueryServicePolymorphicField`, which carries no
 ordering). See "The rejection this item narrows".
+
+## Implementation notes (In Review)
+
+Both slices shipped in one change, so the "after slice 1 only" interim (a field carrying both
+`@defaultOrder` and an `@orderBy` argument keeping its `ORDER_BY_ARGUMENT` row) never existed on
+trunk and has no case. What landed, against the plan below:
+
+* **Model.** `PolymorphicOrdering` (with `Surface`, `Slot`, `SlotOrder.OnSlots` /
+  `SlotOrder.OnSyntheticKey`, `SlotEntry`) rides both root records as `Optional<PolymorphicOrdering>
+  ordering`, read through the new `PolymorphicOrderingField` capability; empty on a single-valued
+  root. `FieldBuilder.foldParticipantOrderings` folds the per-participant `OrderBySpec`s that
+  `lowerParticipantFilters` already resolved; the agreement failures (unequal arity, unequal
+  `sqlType` / `bindingType` pair read through `JooqCatalog.columnFactsOf`) join the existing
+  `mintParticipantFailures` path.
+* **Census.** `OperationMember.OrderBy` is sealed into `OnReturnTable(OrderBySpec)` and
+  `Polymorphic(PolymorphicOrdering)`; `OperationMemberRelation` and
+  `OperationMembers.polymorphicRootRead` read the capability, and both `DECLARED_SHAPES` entries
+  admit `ORDER_BY`.
+* **Emission.** `MultiTablePolymorphicEmitter` projects `__ord<n>__` slots in both root stage-1
+  paths and on the connection arm's stage-2 records, and emits a per-field `<field>OrderBy(env)`
+  helper returning the `OrderByResult` (slots typed by the first participant's column
+  `getDataType()`, then `__sort__`, `__typename`). The connection's `orderBy` and `extraFields` are
+  both that result. The inline single-cardinality child passes no slots and its old order. One
+  addition the plan did not state: the single-valued root (which shares `buildMainFetcher` with the
+  list root) also gains `__typename` after `__sort__`, the root arms composing their order one way.
+* **Rejection.** The `PARTICIPANT_FAN_OUT` arm of `intent_field_unlowerable_ordering` carries the
+  exclusion as sketched, for both routes.
+* **Tests.** `MultiTableOrderingLoweringTest` (pipeline, including the census case);
+  `FieldUnlowerableOrderingTest` (seeded store: list, authored connection, `@asConnection` and
+  `[Node] @asConnection` roots lose their rows; single-valued, `@service`, `[Node]`, `@lookupKey` and
+  `@routine` roots and the child keep theirs; route-grain pins re-seated on the child);
+  `UnlowerableOrderingsTest` and `UnlowerableOrderingRejectionPipelineTest` re-seated on child
+  coordinates, the latter with one building case per list-shaped form;
+  `MultiTableOrderingExecutionTest` (execution). The `@service` and `Node` kept-row cases live at the
+  seeded-store tier only.
+* **Fixtures.** The tie case uses the seed's existing cross-participant ties on `store_id` (and on
+  the synthetic key value 1) rather than a new seeded row, which would have moved every customer or
+  staff count elsewhere. `init.sql` gains `converter_site` (the converter-backed execution case) and
+  `plain_org_site` (the type-rejection cases), plus same-named `event_order_idx` / `note_order_idx`
+  indexes across `multischema_a` / `multischema_b`, since index names are schema-scoped and the
+  arity and "agrees on one participant only" cases need one index name resolving differently per
+  participant. The connection fixtures spell out `first` / `after` / `last` / `before` so the
+  backward half pages.
+* **Docs.** `sort-results.adoc` "Sort across polymorphism" and its tie-breaker bullet,
+  `polymorphic-types.adoc` Constraints, and one bullet each on the `@defaultOrder` / `@orderBy`
+  reference pages.
+
+## Retired vocabulary
+
+* The single-arm record `OperationMember.OrderBy(OrderBySpec)`, spelled `new OrderBy(...)` /
+  `new OperationMember.OrderBy(...)`. `OrderBy` survives as the sealed interface; its arms are
+  `OrderBy.OnReturnTable` and `OrderBy.Polymorphic`.
 
 ## Problem
 
