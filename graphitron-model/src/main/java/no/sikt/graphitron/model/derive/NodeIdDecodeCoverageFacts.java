@@ -13,7 +13,7 @@ import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH;
 import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH_STEP;
-import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_INSTRUCTION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ID_INSTRUCTION;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_PROJECTION;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
 import static org.jooq.impl.DSL.exists;
@@ -48,7 +48,7 @@ public final class NodeIdDecodeCoverageFacts {
 
     /** Every relation this component's statements name. */
     public static final Set<Table<?>> READS = Set.of(
-        INTENT_NODE_ID_INSTRUCTION, INTENT_TYPE_DOMAIN, INTENT_INPUT_OCCURRENCE_PATH,
+        GRAPHITRON_NODE_ID_INSTRUCTION, INTENT_TYPE_DOMAIN, INTENT_INPUT_OCCURRENCE_PATH,
         INTENT_INPUT_OCCURRENCE_PATH_STEP, INTENT_RESOLVED_NODE_KEY_PROJECTION);
 
     /**
@@ -99,7 +99,7 @@ public final class NodeIdDecodeCoverageFacts {
      * its use site are one coordinate and no occurrence path is involved.
      */
     private static List<Instruction> argumentInstructions(DSLContext dsl, String graphName) {
-        var i = INTENT_NODE_ID_INSTRUCTION;
+        var i = GRAPHITRON_NODE_ID_INSTRUCTION;
         return dsl.select(i.TYPE_NAME, i.FIELD_NAME, i.ARGUMENT_NAME, i.RESOLVED_TYPE_NAME,
                 i.SOURCE_NAME, i.SOURCE_LINE, i.SOURCE_COLUMN)
             .from(i)
@@ -118,7 +118,7 @@ public final class NodeIdDecodeCoverageFacts {
      * deep its descent.
      */
     private static List<Instruction> inputFieldInstructions(DSLContext dsl, String graphName) {
-        var i = INTENT_NODE_ID_INSTRUCTION;
+        var i = GRAPHITRON_NODE_ID_INSTRUCTION;
         var p = INTENT_INPUT_OCCURRENCE_PATH;
         return dsl.select(p.ROOT_TYPE_NAME, p.ROOT_FIELD_NAME, p.ROOT_ARGUMENT_NAME,
                 descentOf(p.GRAPH_NAME, p.PATH), i.RESOLVED_TYPE_NAME,

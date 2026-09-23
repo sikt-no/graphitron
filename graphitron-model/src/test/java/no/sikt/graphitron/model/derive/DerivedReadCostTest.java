@@ -315,8 +315,13 @@ class DerivedReadCostTest {
      * in this domain; the input-field walk contributes none of the two, having been a plain view
      * before and after, and what it changes is that its rows are on disk, which moves the cells
      * below rather than this count.
+     *
+     * <p>Twenty-two to ten with the @nodeId decode chain, and twenty-three to twenty-two a
+     * commit before it with the argument-site pair and the write payload. The instruction and
+     * the decode rows were the rungs most of the remaining readers reached the register
+     * through, and a rung its owner writes in a stage buys no comparison for any of them.
      */
-    private static final int READERS_WITH_CELLS = 22;
+    private static final int READERS_WITH_CELLS = 10;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
@@ -328,7 +333,7 @@ class DerivedReadCostTest {
      * there rather than descending, so registering a relation cuts every reader's reach at it: each
      * reader that reached a registration only through the newly registered relation loses that cell,
      * while the new registration and its {@code _live} view add cells of their own. Registering
-     * {@code intent_node_id_instruction} was the first change to make the figure fall, by five on
+     * {@code graphitron_node_id_instruction} was the first change to make the figure fall, by five on
      * net, and a delta rather than a pair of absolutes because every new view moves the baseline.
      * So a drop here is not the matrix quietly seeing less; it is cost moving off a reader and onto
      * a refresh, and the refresh is a view in this domain and priced like any other.
@@ -341,7 +346,7 @@ class DerivedReadCostTest {
      * stops at the target it reads. A registration whose rule is read only through the relation being
      * registered is the case that moves this figure least.
      *
-     * <p>Registering {@code intent_node_id_decode_column} took it from 178 to 174, a fall of four on
+     * <p>Registering {@code graphitron_node_id_decode_column} took it from 178 to 174, a fall of four on
      * net, and it is the drop-is-not-blindness case again: that relation sits under three readers and
      * over the whole node-id decode family, so every reader that reached the hop-column, instruction
      * and reference-step registrations through it now stops at its target, while the registration and
@@ -411,7 +416,7 @@ class DerivedReadCostTest {
      * new view adds are a function of where it sits relative to the registrations, not of how much
      * work it does.
      *
-     * <p>Down to 144 when {@code intent_node_id_decode_hop} was registered, and a fall rather than a
+     * <p>Down to 144 when {@code graphitron_node_id_decode_hop} was registered, and a fall rather than a
      * rise for the same reason the paragraph above gives: a registration shortens every walk that
      * met the relation as a view. The hop's own rule keeps its cells under the {@code _live} name, so
      * the loss is not there; it is in the readers above it, which used to descend through the hop
@@ -470,8 +475,13 @@ class DerivedReadCostTest {
      * owner writes them in capture stages now and which therefore buy no cells: nine
      * comparisons between reading a refilled target and re-evaluating the rule behind it go
      * with them, and one view stops reaching the register at all.
+     *
+     * <p>39 to 18 with the @nodeId decode chain, the largest fall since the reference
+     * stratum's: the instruction was the rung twelve readers reached the register through, and
+     * the decode rows under it were most of what the input-field roles and the payload chain
+     * were charged for. What is left is the input-field roles and the mutation payload chain.
      */
-    private static final int CELLS = 39;
+    private static final int CELLS = 18;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -710,7 +720,7 @@ class DerivedReadCostTest {
      * the registration.
      *
      * <p>The pair that question was asked of and did not fully answer is
-     * {@code intent_node_id_instruction|intent_condition_param_decode}, and the figures are worth
+     * {@code graphitron_node_id_instruction|intent_condition_param_decode}, and the figures are worth
      * keeping because they show what an index on a materialized target can and cannot buy. That
      * reader is the first to probe the instruction table rather than drive from it, seeking one row
      * per captured {@code @condition} by site and coordinate, and unindexed it cost 9787 scans
@@ -735,16 +745,16 @@ class DerivedReadCostTest {
      * longer exceeds the other, which is what this set is a list of.
      *
      * <p>A trio left a second way, which is worth knowing because nothing was measured to send it.
-     * Three readers of {@code intent_node_id_instruction} stood here charged to
+     * Three readers of {@code graphitron_node_id_instruction} stood here charged to
      * {@code graphitron_argument_scope_table}: the encode, the decode slot, and the decode defect above
      * it. All three were small and flat, the instrument's own floor rather than work, H2 charging a
      * table visit at least one scan per naming where a view whose evaluation short-circuits is
-     * charged none. Registering {@code intent_node_id_instruction} removed them by removing their
+     * charged none. Registering {@code graphitron_node_id_instruction} removed them by removing their
      * cells: none of the three names the scope table itself, all three reached that registration
      * through the instruction rule, and the walk now stops at the instruction's own target instead of
      * descending into what the rule reads. The cost did not evaporate, it moved: the rule still reads
      * the scope table, once per capture, in the refresh of
-     * {@code intent_node_id_instruction_live}, which is a view in this domain and holds its own cell
+     * {@code graphitron_node_id_instruction_rule}, which is a view in this domain and holds its own cell
      * against that registration monotonically. Read that as the shape to check the next time a
      * registration deletes rows here: a pair that leaves because its reader got cheaper and a pair
      * that leaves because its reader stopped reaching are different facts, and only the first is
@@ -786,8 +796,11 @@ class DerivedReadCostTest {
      * is buying less than it was, which is the case for converting it and not against it.
      */
     private static final Set<String> KNOWN_NON_MONOTONIC = Set.of(
-        "intent_input_field_carrier_role|intent_mutation_payload_column_live",
-        "intent_input_field_carrier_role|intent_mutation_payload_refusal_live",
+        // Its sibling against the payload column rule left when the decode chain became capture
+        // stages: that rule's plan through the carrier role no longer visits more rows registered
+        // than unregistered once the decode column it also reads is a table its owner writes, so
+        // the pair stopped being one and its row went, as this set's equality demands.
+        "intent_input_field_carrier_role|intent_mutation_payload_refusal_live");
         // graphitron_argmapping_entry|intent_argmapping_bound_parameter_type stood here on the pruning an
         // inlined body offered and a table cannot. It left with the registration itself: the rule
         // had become a projection of one captured table, so materializing it copied rows into rows,
@@ -854,7 +867,7 @@ class DerivedReadCostTest {
         // direction this set exists to notice.
         // A third reader of this floor stood here, intent_node_id_decode_landing_defect, and it has
         // gone the stopped-reaching way rather than the got-cheaper way: it reached this rung only
-        // through intent_node_id_decode_hop, and that relation is a table now, so the walk stops
+        // through graphitron_node_id_decode_hop, and that relation is a table now, so the walk stops
         // there and the cell does not exist to be non-monotonic in. Its figures were six scans
         // dearer registered, 4472 against 4466, and three times faster, 224 milliseconds against
         // 709, which was the clearest reading in this set of why the counter is not the clock. The
@@ -887,8 +900,8 @@ class DerivedReadCostTest {
         // plan moved, which is what it is for. The write-payload half of that pair left with the
         // write payload's own conversion, the rung being a table its owner writes rather than a
         // registration, so there is no registered-against-unregistered comparison left to make of
-        // it; the decode-column half stays until its own rung goes.
-        "intent_node_id_decode_column|intent_mutation_payload_column_live");
+        // it. The decode-column half went with the decode chain's conversion for the same reason.
+
         // A cell the reference walk's storing created left with the field-site column scope's own
         // conversion, which is the second time this set has lost a row to a rung ceasing to be a
         // registration rather than to a measurement. The discovery rule reached that target at 172
@@ -906,7 +919,7 @@ class DerivedReadCostTest {
         // example schema the carrier role was 14 ms against 14, the payload column 157 against 154
         // and the payload refusal 8 against 9. An index on the binding closed it for the two scope
         // relations above these readers and not for these. Registering
-        // intent_node_id_decode_column is what closed it here, and it did so by removing the rows
+        // graphitron_node_id_decode_column is what closed it here, and it did so by removing the rows
         // rather than by moving the plan: all three readers reach the binding through that relation,
         // which they now read as a table, so the derivation that was scanning the binding per
         // driving row is evaluated once per refresh instead. The registration removed these three
@@ -1081,14 +1094,14 @@ class DerivedReadCostTest {
         var ctx = TestRunContext.of();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         var registration = registrations.stream()
-            .filter(r -> r.targetTableName().equals("intent_node_id_instruction"))
+            .filter(r -> r.targetTableName().equals("intent_input_field_column_match"))
             .findFirst().orElseThrow();
 
         try (var store = CapturedStore.ownStoreOfCatalog(
                 tmp.resolve("runaway"), scaledSdl(1), jooq)) {
             UnregisteredRelation.install(store.dsl(), registration);
-            RunawayRelation.install(store.dsl(), "graphitron_argument_scope_table");
-            var timed = scans(store, "intent_node_id_instruction",
+            RunawayRelation.install(store.dsl(), "graphitron_input_field_resolving_table");
+            var timed = scans(store, "intent_input_field_column_match",
                 new ReadBudget.Bounded(RUNAWAY_BUDGET_MILLIS));
             assertThat(timed.exhausted())
                 .as("a cell whose unregistered side cannot terminate is recorded, not compared")

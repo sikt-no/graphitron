@@ -390,7 +390,7 @@ class SupertypeSignatureGateTest {
         "intent_field_exemption_rule|graphitron_external_field_entry,graphitron_service_entry",
         "intent_field_producer_reference|graphitron_external_field_entry,graphitron_service_entry",
         "intent_input_occurrence_override|graphitron_argument_condition_entry,graphitron_field_condition_entry",
-        "intent_node_id_instruction_live|graphitron_argument_node_id_entry,graphitron_field_node_id_entry",
+        "graphitron_node_id_instruction_rule|graphitron_argument_node_id_entry,graphitron_field_node_id_entry",
         "intent_reference_for_application|graphitron_argument_reference_for_entry,graphitron_reference_for_entry",
         // The scope rule reaching a table by either keying of one resolution, which became visible
         // here the day the type binding stopped being a registered target and became a capture

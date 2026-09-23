@@ -219,19 +219,19 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
  *       against, one case per rung plus the cases where the rungs compete, the precedence being the
  *       claim rather than the table that came out;
  *       {@code no.sikt.graphitron.model.intent.NodeIdInstructionTest} binds
- *       {@code intent_node_id_instruction}, which slots carry the {@code @nodeId} instruction and
+ *       {@code graphitron_node_id_instruction}, which slots carry the {@code @nodeId} instruction and
  *       which node type each names, with one case per basis because the basis is the claim: a
  *       coordinate answered by the wrong rule resolves the wrong node type wherever several rules
  *       could answer, so the assertion is which rule answered and not merely that something did;
  *       {@code no.sikt.graphitron.model.intent.NodeIdDecodeReachTest} binds the pair a decode
  *       navigates on ({@code intent_node_id_decode_endpoint} and
- *       {@code intent_node_id_decode_hop}, the hop child pinned through the endpoint relation's
+ *       {@code graphitron_node_id_decode_hop}, the hop child pinned through the endpoint relation's
  *       navigation column rather than twice), one case per navigation and one per shape that
  *       contributes no hop, the two silences meaning different things being the claim;
  *       {@code no.sikt.graphitron.model.intent.NodeIdDecodeColumnTest} binds where the decoded
- *       values land ({@code intent_node_id_decode_column}, and with it the foreign-key pairing
+ *       values land ({@code graphitron_node_id_decode_column}, and with it the foreign-key pairing
  *       ({@code intent_foreign_key_column_pair}) and its walk-oriented reading
- *       ({@code intent_node_id_decode_hop_column}) that the lift walks over), one case per shape
+ *       ({@code graphitron_node_id_decode_hop_column}) that the lift walks over), one case per shape
  *       the lift either carries or drops, the absent local column being the claim rather than the
  *       present one;
  *       {@code no.sikt.graphitron.model.intent.NodeIdEncodeTest} binds

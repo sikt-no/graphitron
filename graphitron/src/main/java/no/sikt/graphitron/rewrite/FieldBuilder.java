@@ -921,7 +921,7 @@ class FieldBuilder {
      * participant be table-bound would reject unions that generate correctly today.
      *
      * <p>This is the sole owner of the use-site-times-participant grain. The fact store's
-     * {@code intent_node_id_instruction} does reach this coordinate: a bare leaf whose consuming
+     * {@code graphitron_node_id_instruction} does reach this coordinate: a bare leaf whose consuming
      * field returns a multi-table container is one row per participant table there, because the
      * departure those inference bases read is one table per branch. What those rows do not carry is
      * which branch each came from, that relation being keyed on the use site and the one table the

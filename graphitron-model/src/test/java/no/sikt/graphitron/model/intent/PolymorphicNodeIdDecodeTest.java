@@ -17,7 +17,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_DECODE_DEFECT;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_DECODE_ENDPOINT;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_DECODE_SLOT;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_ENCODE;
-import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_INSTRUCTION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ID_INSTRUCTION;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_POLYMORPHIC_DECODE_DEFECT;
 import static no.sikt.graphitron.model.Tables.INTENT_RECORD_SLOT_ASSIGNABLE;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
@@ -621,7 +621,7 @@ class PolymorphicNodeIdDecodeTest {
 
     private static List<String> instructions(DSLContext dsl) {
         derive(dsl);
-        var i = INTENT_NODE_ID_INSTRUCTION;
+        var i = GRAPHITRON_NODE_ID_INSTRUCTION;
         return dsl.select(i.fields()).from(i).where(i.GRAPH_NAME.eq(GRAPH))
             .orderBy(i.SITE, i.USE_SITE, i.BASIS, i.RESOLVED_TYPE_NAME)
             .fetch()

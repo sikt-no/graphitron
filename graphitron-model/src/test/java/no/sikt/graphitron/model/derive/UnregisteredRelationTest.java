@@ -29,15 +29,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * answer and not ours. It re-resolves for any session that did not already compile the view, which is
  * what makes a reader minted after the swap the contract {@link UnregisteredRelation} states.
  *
- * <p>The relation under test is {@code intent_node_id_decode_column}, so the dependent-view half of
- * the claim is exercised over a real reader rather than a fixture written to have one. It is a
- * registration, which is what this helper's contract is about; the subject moves each time a
- * conversion takes the previous one out of the register, and it has moved twice on that account.
- *
- * <p>Neither relation here carries a written position, and that is a constraint on the subject
- * rather than a coincidence. The two stores below are captured into directories of their own, so a
- * relation carrying {@code source_name} renders rows that differ by the fixture's own path and the
- * comparison fails on the one difference this case is not about.
+ * <p>The relation under test is {@code intent_input_field_column_match}, read through the rule view
+ * of the filter role that names it, so the dependent-view half of the claim is exercised over a real
+ * reader rather than a fixture written to have one. It is a registration, which is what this
+ * helper's contract is about; the subject moves each time a conversion takes the previous one out of
+ * the register.
  *
  * <p>{@code RunawayRelation}, the helper this one follows, has no case of its own in the model tree at
  * all: it is a test-jar helper exercised only through the fixtures that install it. This case lives
@@ -48,10 +44,10 @@ class UnregisteredRelationTest {
     @TempDir
     Path tmp;
 
-    private static final String TARGET = "intent_node_id_decode_column";
+    private static final String TARGET = "intent_input_field_column_match";
 
     /** A view naming the target, so the swap is exercised through a reader and not only directly. */
-    private static final String DEPENDENT = "intent_node_id_decode";
+    private static final String DEPENDENT = "intent_input_field_filter_role_live";
 
     @Test
     void reversingARegistrationKeepsBothTheRelationsAnswerAndItsReadersAnswer() {
@@ -62,8 +58,8 @@ class UnregisteredRelationTest {
         List<String> registeredTarget;
         List<String> registeredDependent;
         try (var store = CapturedStore.ownStoreOfCatalog(tmp.resolve("registered"), sdl, jooq)) {
-            registeredTarget = rows(store, TARGET);
-            registeredDependent = rows(store, DEPENDENT);
+            registeredTarget = rows(store, TARGET, tmp.resolve("registered"));
+            registeredDependent = rows(store, DEPENDENT, tmp.resolve("registered"));
         }
         // Without these the comparisons below would hold over two empty lists, which is the way a
         // fixture too thin to populate the relation it prices passes while asserting nothing.
@@ -80,11 +76,11 @@ class UnregisteredRelationTest {
                 .as("the canonical name is a view once the swap is installed, so a read of it"
                     + " evaluates the rule instead of scanning the table")
                 .isEqualTo("VIEW");
-            assertThat(rows(store, TARGET))
+            assertThat(rows(store, TARGET, tmp.resolve("unregistered")))
                 .as("the unregistered shape answers exactly what the registered one did; this"
                     + " helper is meant to change cost and nothing else")
                 .containsExactlyElementsOf(registeredTarget);
-            assertThat(rows(store, DEPENDENT))
+            assertThat(rows(store, DEPENDENT, tmp.resolve("unregistered")))
                 .as("and so does a view that names the swapped relation, which is what makes a"
                     + " measurement taken through a reader meaningful")
                 .containsExactlyElementsOf(registeredDependent);
@@ -95,12 +91,18 @@ class UnregisteredRelationTest {
      * The rows a relation answers, rendered and sorted, read through a minted reader for the reason
      * {@link UnregisteredRelation} gives: the writer surface that installed the swap is the one
      * session that would not see it.
+     *
+     * <p>The store's own directory is written out of each row: the two stores are captured into
+     * directories of their own, so a relation carrying the fixture's written position would render
+     * rows that differ by that path alone, which is the one difference this case is not about.
      */
-    private static List<String> rows(CapturedStore store, String relation) {
+    private static List<String> rows(CapturedStore store, String relation, Path directory) {
+        String written = directory.toString();
         try (var reader = store.reader(new ReadBudget.Unbounded())) {
             StoreAnswer<List<String>> answer = reader.read(dsl -> dsl
                 .fetch("SELECT * FROM " + relation)
-                .stream().map(record -> record.valuesRow().toString()).sorted().toList());
+                .stream().map(record -> record.valuesRow().toString().replace(written, "<fixture>"))
+                .sorted().toList());
             assertThat(answer).isInstanceOf(StoreAnswer.Answered.class);
             return ((StoreAnswer.Answered<List<String>>) answer).value();
         }
@@ -126,8 +128,9 @@ class UnregisteredRelationTest {
               id: ID! @nodeId
               name: String
             }
+            input FilmFilter { title: String }
             type Query {
-              films: [Film!]!
+              films(filter: FilmFilter): [Film!]!
               film(id: ID! @nodeId(typeName: "Film")): Film
             }
             """;

@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_DECODE_ENDPOINT;
-import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_DECODE_HOP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ID_DECODE_HOP;
 import static no.sikt.graphitron.model.test.SeededStore.OccurrenceStep;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * How a decode reaches the table its node type's keys live on: {@code intent_node_id_decode_endpoint}
- * for the two tables and the rule that connects them, {@code intent_node_id_decode_hop} for the hops
+ * for the two tables and the rule that connects them, {@code graphitron_node_id_decode_hop} for the hops
  * the rule resolves.
  *
  * <p>The two relations are pinned together rather than one at a time, because the hop child's arms are
@@ -413,13 +413,13 @@ class NodeIdDecodeReachTest {
     }
 
     private static Result<Record> hopRowsIn(DSLContext dsl, String graphName) {
-        return dsl.select(INTENT_NODE_ID_DECODE_HOP.fields())
-            .from(INTENT_NODE_ID_DECODE_HOP)
-            .where(INTENT_NODE_ID_DECODE_HOP.GRAPH_NAME.eq(graphName))
-            .orderBy(INTENT_NODE_ID_DECODE_HOP.SITE,
-                INTENT_NODE_ID_DECODE_HOP.TYPE_NAME,
-                INTENT_NODE_ID_DECODE_HOP.FIELD_NAME,
-                INTENT_NODE_ID_DECODE_HOP.POSITION)
+        return dsl.select(GRAPHITRON_NODE_ID_DECODE_HOP.fields())
+            .from(GRAPHITRON_NODE_ID_DECODE_HOP)
+            .where(GRAPHITRON_NODE_ID_DECODE_HOP.GRAPH_NAME.eq(graphName))
+            .orderBy(GRAPHITRON_NODE_ID_DECODE_HOP.SITE,
+                GRAPHITRON_NODE_ID_DECODE_HOP.TYPE_NAME,
+                GRAPHITRON_NODE_ID_DECODE_HOP.FIELD_NAME,
+                GRAPHITRON_NODE_ID_DECODE_HOP.POSITION)
             .fetch();
     }
 
@@ -436,12 +436,12 @@ class NodeIdDecodeReachTest {
     /** Use site, position, which arm resolved the hop, the pair, the key, and its direction. */
     private static String renderHop(Record row) {
         return useSiteOf(row) + " "
-            + row.get(INTENT_NODE_ID_DECODE_HOP.POSITION) + " "
-            + row.get(INTENT_NODE_ID_DECODE_HOP.VIA) + " "
-            + row.get(INTENT_NODE_ID_DECODE_HOP.FROM_TABLE) + " -> "
-            + row.get(INTENT_NODE_ID_DECODE_HOP.TO_TABLE) + " "
-            + row.get(INTENT_NODE_ID_DECODE_HOP.CONSTRAINT_NAME) + " "
-            + row.get(INTENT_NODE_ID_DECODE_HOP.FK_ON_FROM);
+            + row.get(GRAPHITRON_NODE_ID_DECODE_HOP.POSITION) + " "
+            + row.get(GRAPHITRON_NODE_ID_DECODE_HOP.VIA) + " "
+            + row.get(GRAPHITRON_NODE_ID_DECODE_HOP.FROM_TABLE) + " -> "
+            + row.get(GRAPHITRON_NODE_ID_DECODE_HOP.TO_TABLE) + " "
+            + row.get(GRAPHITRON_NODE_ID_DECODE_HOP.CONSTRAINT_NAME) + " "
+            + row.get(GRAPHITRON_NODE_ID_DECODE_HOP.FK_ON_FROM);
     }
 
     /**
@@ -449,10 +449,10 @@ class NodeIdDecodeReachTest {
      * read a hop and an endpoint against the same string without joining them.
      */
     private static String useSiteOf(Record row) {
-        String path = row.get(INTENT_NODE_ID_DECODE_HOP.PATH);
+        String path = row.get(GRAPHITRON_NODE_ID_DECODE_HOP.PATH);
         return path != null ? path
-            : row.get(INTENT_NODE_ID_DECODE_HOP.TYPE_NAME) + "."
-              + row.get(INTENT_NODE_ID_DECODE_HOP.FIELD_NAME) + "("
-              + row.get(INTENT_NODE_ID_DECODE_HOP.ARGUMENT_NAME) + ")";
+            : row.get(GRAPHITRON_NODE_ID_DECODE_HOP.TYPE_NAME) + "."
+              + row.get(GRAPHITRON_NODE_ID_DECODE_HOP.FIELD_NAME) + "("
+              + row.get(GRAPHITRON_NODE_ID_DECODE_HOP.ARGUMENT_NAME) + ")";
     }
 }

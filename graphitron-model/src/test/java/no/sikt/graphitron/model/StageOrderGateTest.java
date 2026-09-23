@@ -142,6 +142,14 @@ class StageOrderGateTest {
             Set.of("graphitron_argument_column_match")),
         new Step("MutationWritePayloads", "graphitron_mutation_write_payload_rule",
             Set.of("graphitron_mutation_write_payload")),
+        new Step("NodeIdInstructions", "graphitron_node_id_instruction_rule",
+            Set.of("graphitron_node_id_instruction")),
+        new Step("NodeIdDecodeHops", "graphitron_node_id_decode_hop_rule",
+            Set.of("graphitron_node_id_decode_hop")),
+        new Step("NodeIdDecodeHopColumns", "graphitron_node_id_decode_hop_column_rule",
+            Set.of("graphitron_node_id_decode_hop_column")),
+        new Step("NodeIdDecodeColumns", "graphitron_node_id_decode_column_rule",
+            Set.of("graphitron_node_id_decode_column")),
         new Step("UnlowerableOrderingRejectionRows", null,
             Set.of("intent_field_unlowerable_ordering_rejection")),
         new Step("Materializations.refresh", null, REGISTERED_TARGETS));
@@ -200,7 +208,7 @@ class StageOrderGateTest {
      * in a stage ahead of the refresh that fills it, which is exactly the seam that kept the
      * register's rules out of stages, and the check above names it.
      *
-     * <p>The subject is a real rule rather than a fixture: {@code intent_node_id_decode_column_live}
+     * <p>The subject is a real rule rather than a fixture: {@code graphitron_node_id_decode_column_rule}
      * reaches targets the refresh writes, which is why that rung is not a stage yet and why its own
      * registration records being blocked for this reason. When it converts, this case takes
      * whichever rule is still on the wrong side of the boundary, and when none is left the register
@@ -210,17 +218,17 @@ class StageOrderGateTest {
     @DisplayName("a stage placed ahead of the step that fills what it reads is caught")
     void aStageAheadOfItsPrerequisiteIsCaught() {
         withStore(dsl -> {
-            var blocked = "intent_node_id_decode_column_live";
+            var blocked = "graphitron_node_id_decode_column_rule";
             var hypothetical = new ArrayList<Step>();
             hypothetical.add(new Step("a hypothetical decode-column stage", blocked,
-                Set.of("intent_node_id_decode_column")));
+                Set.of("graphitron_node_id_decode_column")));
             resolved(dsl).stream()
-                .filter(step -> !step.writes().contains("intent_node_id_decode_column"))
+                .filter(step -> !step.writes().contains("graphitron_node_id_decode_column"))
                 .forEach(hypothetical::add);
             hypothetical.add(new Step("the register, with the converted rung removed", null,
                 Materializations.registrations(dsl).stream()
                     .map(Materializations.Registration::targetTableName)
-                    .filter(target -> !target.equals("intent_node_id_decode_column"))
+                    .filter(target -> !target.equals("graphitron_node_id_decode_column"))
                     .collect(Collectors.toSet())));
 
             assertThat(tooEarly(dsl, hypothetical))

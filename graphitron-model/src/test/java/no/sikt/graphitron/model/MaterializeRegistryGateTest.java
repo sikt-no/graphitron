@@ -129,15 +129,20 @@ class MaterializeRegistryGateTest {
      * became capture stages. None of the three reads a registration once the column-scope
      * departures are tables, so nothing ordered them but the refresh, and each is one statement
      * over its rule view now.
+     *
+     * <p>Seven since the @nodeId decode chain became capture stages, the instruction, the hop,
+     * the hop column and the decode column. The decode column is the one rule here with a
+     * recursive term, and it converts like the others: the recursion stays in its rule view, where
+     * a UNION reaches its fixpoint on its own, and the stage is one statement over that view.
      */
-    private static final int REGISTRATIONS = 11;
+    private static final int REGISTRATIONS = 7;
 
     /**
      * Stages the refresh takes, the register's depth.
      *
-     * <p>Twelve until {@code intent_node_id_decode_column} and {@code intent_input_field_carrier_role}
+     * <p>Twelve until {@code graphitron_node_id_decode_column} and {@code intent_input_field_carrier_role}
      * were registered, a stage each, and both for the same reason rather than because the register
-     * grew: each already sat on the chain from {@code intent_node_id_decode_hop_column} to the two
+     * grew: each already sat on the chain from {@code graphitron_node_id_decode_hop_column} to the two
      * mutation payload views as an unregistered intermediate the reachability walk saw straight
      * through, and registering one turns a link the walk was passing over into a stage the refresh
      * has to wait for. The chain is now the hop column, the decode column, the carrier role and the
@@ -146,8 +151,8 @@ class MaterializeRegistryGateTest {
      * this pair makes concretely: the payload column refresh statement fell about thirtyfold on the
      * schema those two registrations were measured against.
      *
-     * <p>Fifteen since {@code intent_node_id_decode_hop} was registered, and by that same
-     * mechanism a third time: it already sat directly under {@code intent_node_id_decode_hop_column}
+     * <p>Fifteen since {@code graphitron_node_id_decode_hop} was registered, and by that same
+     * mechanism a third time: it already sat directly under {@code graphitron_node_id_decode_hop_column}
      * as an unregistered intermediate the reachability walk saw straight through, so registering it
      * turns that link into a stage the refresh has to wait for and pushes the chain below it down
      * one. The chain from there is unchanged. Depth bought the same kind of fall in cost as the pair
@@ -166,8 +171,8 @@ class MaterializeRegistryGateTest {
      *
      * <p>Sixteen since the argument-site reference walk was registered, and by that
      * mechanism a fourth time: it sat between the registered {@code graphitron_argument_scope_table}
-     * it reads and the registered {@code intent_node_id_instruction} and
-     * {@code intent_node_id_decode_hop} that read it, so it is exactly the unregistered
+     * it reads and the registered {@code graphitron_node_id_instruction} and
+     * {@code graphitron_node_id_decode_hop} that read it, so it is exactly the unregistered
      * intermediate the reachability walk was seeing straight through. Depth bought the same kind
      * of fall as the pairs above: on a consumer store the pass fell 22.7 s to 16.9 s for a refresh
      * of its own of 25 milliseconds, and the register row carries the figures. The registration
@@ -217,9 +222,15 @@ class MaterializeRegistryGateTest {
      * the bottom of the register, and the longest chain runs from the @nodeId instruction to the
      * write destination without passing through any of them.
      *
+     * <p>Seven with the decode chain converted, and this time the conversion is on the longest
+     * chain rather than beside it: the chain used to start at the @nodeId instruction and run
+     * through the decode hop, its column and the decode column before reaching the input-field
+     * roles, so taking those four rungs out shortens it by two, the input-field column match
+     * and filter role having been the parallel route to the same place.
+     *
      * @see #REGISTRATIONS
      */
-    private static final int REFRESH_STAGES = 9;
+    private static final int REFRESH_STAGES = 7;
 
     /**
      * The registered targets carrying no index, each with the argument that says why. A roster
@@ -233,7 +244,7 @@ class MaterializeRegistryGateTest {
      * <p>The arguments come in two kinds, and the difference is worth keeping visible. Most were
      * measured as several index shapes, over every view whose derivation reaches the target, with
      * statistics current on both sides so the figure is the index's own: a lever existed and was
-     * declined on what it cost. {@code intent_node_id_instruction}'s row has no measurement because
+     * declined on what it cost. {@code graphitron_node_id_instruction}'s row has no measurement because
      * it has no candidate to measure, every reader reaching the target by scanning it whole rather
      * than by probing a coordinate. A row of that kind is falsified by a new reader rather than by
      * a new figure, so it is the reader roster that wants re-reading when one is added, not the
@@ -253,7 +264,7 @@ class MaterializeRegistryGateTest {
      * are what a row is really pinned to.
      *
      * <p>A second row went the same way, and it is the kind that paragraph predicted rather than the
-     * kind it described. {@code intent_node_id_instruction} sat here with no measurement at all: its
+     * kind it described. {@code graphitron_node_id_instruction} sat here with no measurement at all: its
      * readers each named the target in their own driving {@code FROM} and joined outward from it, so
      * nothing probed in and no coordinate existed for an index to serve. {@code
      * intent_condition_param_decode} is a reader that does probe in, seeking one row per captured
@@ -297,22 +308,6 @@ class MaterializeRegistryGateTest {
      *   register met on {@code graphitron_field_scope_table}, where an unindexed target was worse than
      *   the view it replaced: this target unindexed takes its expensive reader from 85 milliseconds
      *   to 25.</li>
-     *   <li>{@code intent_node_id_decode_column}: an index stood here and was deleted when the
-     *   branch entered this target's key, both of the jobs it was bought for having dissolved in the
-     *   same change. It was {@code (graph_name, site, use_site)}, serving the payload column
-     *   relation's probe and the carrier role's grouping as an ordered input. The probe now carries
-     *   the three branch columns as well and the carrier now groups on five, so that key is a prefix
-     *   of both rather than a cover of either. Re-measured on the read-cost gate's fixture with
-     *   statistics current, in rows visited, with the index against without: the carrier role 472
-     *   against 424 at twelve units and 1804 against 1612 at forty-eight, the payload column
-     *   relation 1284 against 1283 and 4848 against 4847 at those two sizes, the payload refusal and
-     *   the key membership identical at both. No reader improves at either size and the one that
-     *   loses loses proportionally more as the schema grows, which is the shape of a seek that costs
-     *   more than the scan it replaces and keeps costing more as the target grows. The repair that
-     *   suggests itself, the same key with the three branch columns appended so it covers both
-     *   readers again, was measured beside the other two and ties the narrow shape on every reader
-     *   at both sizes, so it is not a fix being deferred. This row is the sibling of the carrier
-     *   role's above and reaches the same verdict by the counter rather than against it.</li>
      *   <li>{@code intent_mutation_payload_key_membership}: five namings and none of them probes in.
      *   Two arms of {@code intent_mutation_write_refusal} drive from this target and
      *   {@code intent_mutation_write_destination} names it three times, twice as a set it collects
@@ -320,23 +315,11 @@ class MaterializeRegistryGateTest {
      *   being re-derived per driving row, not to make any one naming seek, so there is no coordinate
      *   an index would serve. A reader keyed by one mutation coordinate would change that, and none
      *   of the readers this family has today is one.</li>
-     *   <li>{@code intent_node_id_decode_hop}: the one target here whose row is about a key rather
-     *   than about a measurement. Its grain has no meaningfully nullable column in it, so unlike the
-     *   rows above it does declare a primary key, and this scan counts only indexes the DDL declares
-     *   so the key's own index does not answer for it. That index is what a declared one would
-     *   duplicate: the landing verdict joins this target on the five branch columns and then on
-     *   {@code position = last_position}, and the key {@code (graph_name, use_site,
-     *   origin_source_name, origin_schema, origin_table, position)} is a prefix of that. So an index
-     *   here would be a second index over the same leading columns, bought for no reader. The
-     *   precedent for not buying it on a guess is the decode column's row above, where an index
-     *   bought for two readers lost on measurement once the key widened.</li>
      * </ul>
      */
     private static final Set<String> NO_INDEX = Set.of(
-        "intent_node_id_decode_hop",
         "intent_input_field_carrier_role",
         "intent_mutation_payload_column",
-        "intent_node_id_decode_column",
         "intent_mutation_payload_key_membership");
 
     @Test

@@ -6,6 +6,10 @@ import no.sikt.graphitron.model.derive.ArgumentColumnScopes;
 import no.sikt.graphitron.model.derive.ArgumentReferenceStepTargets;
 import no.sikt.graphitron.model.derive.ArgumentScopeTables;
 import no.sikt.graphitron.model.derive.MutationWritePayloads;
+import no.sikt.graphitron.model.derive.NodeIdDecodeColumns;
+import no.sikt.graphitron.model.derive.NodeIdDecodeHopColumns;
+import no.sikt.graphitron.model.derive.NodeIdDecodeHops;
+import no.sikt.graphitron.model.derive.NodeIdInstructions;
 import no.sikt.graphitron.model.capture.macro.MacroAnchor;
 import no.sikt.graphitron.model.derive.NameMatchedKeys;
 import no.sikt.graphitron.model.derive.Nodes;
@@ -276,6 +280,10 @@ public final class SeededStore {
             ArgumentColumnScopes.derive(dsl, graph);
             ArgumentColumnMatches.derive(dsl, graph);
             MutationWritePayloads.derive(dsl, graph);
+            NodeIdInstructions.derive(dsl, graph);
+            NodeIdDecodeHops.derive(dsl, graph);
+            NodeIdDecodeHopColumns.derive(dsl, graph);
+            NodeIdDecodeColumns.derive(dsl, graph);
         }
         Materializations.refreshAll(dsl);
     }

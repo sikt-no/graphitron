@@ -15,6 +15,10 @@ import no.sikt.graphitron.model.derive.InputFieldResolvingTables;
 import no.sikt.graphitron.model.derive.InputOccurrencePaths;
 import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.model.derive.MutationWritePayloads;
+import no.sikt.graphitron.model.derive.NodeIdDecodeColumns;
+import no.sikt.graphitron.model.derive.NodeIdDecodeHopColumns;
+import no.sikt.graphitron.model.derive.NodeIdDecodeHops;
+import no.sikt.graphitron.model.derive.NodeIdInstructions;
 import no.sikt.graphitron.model.derive.RefreshProgress;
 import no.sikt.graphitron.model.derive.TypeBackingRows;
 import no.sikt.graphitron.model.derive.UnlowerableOrderingRejectionRows;
@@ -119,6 +123,10 @@ public final class FactCapture {
             ArgumentColumnScopes.derive(txDsl, graph.name());
             ArgumentColumnMatches.derive(txDsl, graph.name());
             MutationWritePayloads.derive(txDsl, graph.name());
+            NodeIdInstructions.derive(txDsl, graph.name());
+            NodeIdDecodeHops.derive(txDsl, graph.name());
+            NodeIdDecodeHopColumns.derive(txDsl, graph.name());
+            NodeIdDecodeColumns.derive(txDsl, graph.name());
             // The one producer that used to run alone after the refresh, for a dependency that no
             // longer exists: the view it renders reads the field-site scope, which the refresh was
             // what filled and which the stage above it fills now. Its position here is the read set

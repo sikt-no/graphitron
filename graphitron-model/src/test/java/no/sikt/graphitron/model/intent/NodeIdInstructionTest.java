@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_DECODE_DEFECT;
-import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_INSTRUCTION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ID_INSTRUCTION;
 import static no.sikt.graphitron.model.test.SeededStore.OccurrenceStep;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
@@ -36,7 +36,7 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@code intent_node_id_instruction} enumerates: every slot carrying the {@code @nodeId}
+ * What {@code graphitron_node_id_instruction} enumerates: every slot carrying the {@code @nodeId}
  * instruction and which node type it names.
  *
  * <p>The cases are organised by basis, because the basis is the claim. Getting the population right
@@ -437,10 +437,10 @@ class NodeIdInstructionTest {
 
             var rows = rows(dsl);
             assertThat(rows).hasSize(2);
-            assertThat(rows.map(r -> r.get(INTENT_NODE_ID_INSTRUCTION.RESOLVED_TYPE_NAME)))
+            assertThat(rows.map(r -> r.get(GRAPHITRON_NODE_ID_INSTRUCTION.RESOLVED_TYPE_NAME)))
                 .containsExactly("Actor", "Film");
-            for (var column : INTENT_NODE_ID_INSTRUCTION.fields()) {
-                if (column.getName().equals(INTENT_NODE_ID_INSTRUCTION.RESOLVED_TYPE_NAME.getName())) {
+            for (var column : GRAPHITRON_NODE_ID_INSTRUCTION.fields()) {
+                if (column.getName().equals(GRAPHITRON_NODE_ID_INSTRUCTION.RESOLVED_TYPE_NAME.getName())) {
                     continue;
                 }
                 assertThat(rows.get(1).get(column))
@@ -589,21 +589,21 @@ class NodeIdInstructionTest {
 
     private static Result<Record> rowsIn(DSLContext dsl, String graphName) {
         derive(dsl);
-        return dsl.select(INTENT_NODE_ID_INSTRUCTION.fields())
-            .from(INTENT_NODE_ID_INSTRUCTION)
-            .where(INTENT_NODE_ID_INSTRUCTION.GRAPH_NAME.eq(graphName))
-            .orderBy(INTENT_NODE_ID_INSTRUCTION.SITE,
-                INTENT_NODE_ID_INSTRUCTION.USE_SITE,
-                INTENT_NODE_ID_INSTRUCTION.BASIS,
-                INTENT_NODE_ID_INSTRUCTION.RESOLVED_TYPE_NAME)
+        return dsl.select(GRAPHITRON_NODE_ID_INSTRUCTION.fields())
+            .from(GRAPHITRON_NODE_ID_INSTRUCTION)
+            .where(GRAPHITRON_NODE_ID_INSTRUCTION.GRAPH_NAME.eq(graphName))
+            .orderBy(GRAPHITRON_NODE_ID_INSTRUCTION.SITE,
+                GRAPHITRON_NODE_ID_INSTRUCTION.USE_SITE,
+                GRAPHITRON_NODE_ID_INSTRUCTION.BASIS,
+                GRAPHITRON_NODE_ID_INSTRUCTION.RESOLVED_TYPE_NAME)
             .fetch();
     }
 
     /** Site, use site, which rule answered, and what it resolved: the claim of every case here. */
     private static String render(Record row) {
-        return row.get(INTENT_NODE_ID_INSTRUCTION.SITE) + " "
-            + row.get(INTENT_NODE_ID_INSTRUCTION.USE_SITE) + " "
-            + row.get(INTENT_NODE_ID_INSTRUCTION.BASIS) + " "
-            + row.get(INTENT_NODE_ID_INSTRUCTION.RESOLVED_TYPE_NAME);
+        return row.get(GRAPHITRON_NODE_ID_INSTRUCTION.SITE) + " "
+            + row.get(GRAPHITRON_NODE_ID_INSTRUCTION.USE_SITE) + " "
+            + row.get(GRAPHITRON_NODE_ID_INSTRUCTION.BASIS) + " "
+            + row.get(GRAPHITRON_NODE_ID_INSTRUCTION.RESOLVED_TYPE_NAME);
     }
 }

@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_DECODE_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ID_DECODE_COLUMN;
 import static no.sikt.graphitron.model.test.SeededStore.OccurrenceStep;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
@@ -35,7 +35,7 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Where the values a {@code @nodeId} decode yields land: {@code intent_node_id_decode_column}, one row
+ * Where the values a {@code @nodeId} decode yields land: {@code graphitron_node_id_decode_column}, one row
  * per position of the node type's key, carrying the key column and the column on the slot's own table
  * the value lifts back to.
  *
@@ -389,26 +389,26 @@ class NodeIdDecodeColumnTest {
     }
 
     private static Result<Record> rowsIn(DSLContext dsl, String graphName) {
-        return dsl.select(INTENT_NODE_ID_DECODE_COLUMN.fields())
-            .from(INTENT_NODE_ID_DECODE_COLUMN)
-            .where(INTENT_NODE_ID_DECODE_COLUMN.GRAPH_NAME.eq(graphName))
-            .orderBy(INTENT_NODE_ID_DECODE_COLUMN.SITE,
-                INTENT_NODE_ID_DECODE_COLUMN.TYPE_NAME,
-                INTENT_NODE_ID_DECODE_COLUMN.FIELD_NAME,
-                INTENT_NODE_ID_DECODE_COLUMN.POSITION)
+        return dsl.select(GRAPHITRON_NODE_ID_DECODE_COLUMN.fields())
+            .from(GRAPHITRON_NODE_ID_DECODE_COLUMN)
+            .where(GRAPHITRON_NODE_ID_DECODE_COLUMN.GRAPH_NAME.eq(graphName))
+            .orderBy(GRAPHITRON_NODE_ID_DECODE_COLUMN.SITE,
+                GRAPHITRON_NODE_ID_DECODE_COLUMN.TYPE_NAME,
+                GRAPHITRON_NODE_ID_DECODE_COLUMN.FIELD_NAME,
+                GRAPHITRON_NODE_ID_DECODE_COLUMN.POSITION)
             .fetch();
     }
 
     /** The coordinate, the key position, the key column, and what it lifts to. */
     private static String render(Record row) {
-        String path = row.get(INTENT_NODE_ID_DECODE_COLUMN.PATH);
+        String path = row.get(GRAPHITRON_NODE_ID_DECODE_COLUMN.PATH);
         String coordinate = path != null ? path
-            : row.get(INTENT_NODE_ID_DECODE_COLUMN.TYPE_NAME) + "."
-              + row.get(INTENT_NODE_ID_DECODE_COLUMN.FIELD_NAME) + "("
-              + row.get(INTENT_NODE_ID_DECODE_COLUMN.ARGUMENT_NAME) + ")";
-        String local = row.get(INTENT_NODE_ID_DECODE_COLUMN.LOCAL_COLUMN_NAME);
-        return coordinate + " " + row.get(INTENT_NODE_ID_DECODE_COLUMN.POSITION) + " "
-            + row.get(INTENT_NODE_ID_DECODE_COLUMN.KEY_COLUMN_NAME) + " -> "
+            : row.get(GRAPHITRON_NODE_ID_DECODE_COLUMN.TYPE_NAME) + "."
+              + row.get(GRAPHITRON_NODE_ID_DECODE_COLUMN.FIELD_NAME) + "("
+              + row.get(GRAPHITRON_NODE_ID_DECODE_COLUMN.ARGUMENT_NAME) + ")";
+        String local = row.get(GRAPHITRON_NODE_ID_DECODE_COLUMN.LOCAL_COLUMN_NAME);
+        return coordinate + " " + row.get(GRAPHITRON_NODE_ID_DECODE_COLUMN.POSITION) + " "
+            + row.get(GRAPHITRON_NODE_ID_DECODE_COLUMN.KEY_COLUMN_NAME) + " -> "
             + (local != null ? local : "(none)");
     }
 }

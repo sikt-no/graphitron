@@ -56,7 +56,11 @@ class StageAnswerAgreementTest {
             "graphitron_input_field_resolving_table_rule"),
         new Stage("graphitron_argument_column_scope", "graphitron_argument_column_scope_rule"),
         new Stage("graphitron_argument_column_match", "graphitron_argument_column_match_rule"),
-        new Stage("graphitron_mutation_write_payload", "graphitron_mutation_write_payload_rule"));
+        new Stage("graphitron_mutation_write_payload", "graphitron_mutation_write_payload_rule"),
+        new Stage("graphitron_node_id_instruction", "graphitron_node_id_instruction_rule"),
+        new Stage("graphitron_node_id_decode_hop", "graphitron_node_id_decode_hop_rule"),
+        new Stage("graphitron_node_id_decode_hop_column", "graphitron_node_id_decode_hop_column_rule"),
+        new Stage("graphitron_node_id_decode_column", "graphitron_node_id_decode_column_rule"));
 
     @Test
     @DisplayName("every stage-written table holds exactly its rule's rows, both directions")

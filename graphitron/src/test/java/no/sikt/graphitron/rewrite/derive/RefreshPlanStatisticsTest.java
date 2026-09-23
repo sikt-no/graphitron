@@ -121,7 +121,7 @@ class RefreshPlanStatisticsTest {
      * without them, {@code source_view}, pinned by equality so the set cannot grow or shrink
      * unremarked.
      *
-     * <p>One mechanism, seen plainly on {@code intent_node_id_decode_hop_live}. With statistics its
+     * <p>One mechanism, seen plainly on {@code graphitron_node_id_decode_hop_rule}. With statistics its
      * read of {@code graphitron_field_reference_step_hop}, the union view over two registered targets,
      * seeks {@code graphitron_field_reference_step_hop_keyed}'s primary key on the eight columns the
      * element coordinate and the departing triple make up; without them it seeks that table's
@@ -144,7 +144,7 @@ class RefreshPlanStatisticsTest {
      * directions when it changed.</b> A created store declares the partition dimension's
      * selectivity on every graph-keyed base table, before any capture and outside any
      * {@code ANALYZE}, so the cold leg below is what a run actually meets rather than a store that
-     * was told nothing. {@code intent_node_id_instruction_live} left the set on that change: the
+     * was told nothing. {@code graphitron_node_id_instruction_rule} left the set on that change: the
      * declaration is the whole of what its cold plan was missing. Three joined it, the field-site
      * column-scope rule that has since become a capture stage,
      * {@code intent_input_field_carrier_role_live} and
@@ -163,7 +163,7 @@ class RefreshPlanStatisticsTest {
      * and each key that landed under this reader took another part of the gap until the file
      * stopped being able to hold a control at all.
      *
-     * <p>{@code intent_node_id_decode_hop_column_live} carried that mechanism until the hop itself
+     * <p>{@code graphitron_node_id_decode_hop_column_rule} carried that mechanism until the hop itself
      * was registered, and the swap is one statement inheriting it from another rather than anything
      * changing about the mechanism. That rule reached the reference-step-hop target by expanding the
      * hop's rule; the hop is stored now, so its read stops at the arm tables and plans the same
@@ -186,7 +186,7 @@ class RefreshPlanStatisticsTest {
      *
      * <p>An eighth row joined the set when {@code intent_input_field_carrier_role} was registered,
      * and it is the mechanism above arriving on a new statement rather than a new mechanism: that
-     * rule reads {@code intent_input_field_filter_role} and {@code intent_node_id_decode_column},
+     * rule reads {@code intent_input_field_filter_role} and {@code graphitron_node_id_decode_column},
      * both registered targets, so the plan it gets turns on statistics the refresh itself has to
      * have written. A registration whose source view reads another registration's target is the
      * shape that joins this set, which is worth stating because both registrations landed in the
@@ -329,7 +329,7 @@ class RefreshPlanStatisticsTest {
      * moves is reading a <em>registered target</em>, which no statement before the refresh can have
      * analysed because no statement before the refresh has written it. Stated as a superset rather
      * than as an equality because the fact tables' statistics move further registrations onto plans
-     * of their own ({@code intent_node_id_instruction_live}, which the declaration took out of the
+     * of their own ({@code graphitron_node_id_instruction_rule}, which the declaration took out of the
      * pinned set), which is a second finding and not this claim: what this asserts is that the cheap
      * half closes nothing, not that it changes nothing.
      *

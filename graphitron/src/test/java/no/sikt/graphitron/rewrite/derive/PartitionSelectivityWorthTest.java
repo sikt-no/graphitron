@@ -60,7 +60,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * </ul>
  *
  * <p><b>The two readers, and why neither of them moves any more.</b>
- * {@code intent_node_id_decode_hop_live} and {@code intent_node_id_instruction_live} both reach
+ * {@code graphitron_node_id_decode_hop_rule} and {@code graphitron_node_id_instruction_rule} both reach
  * {@code graphitron_field_reference_step_hop} through the same chain, and on a consumer-size store
  * both paid the cliff; the instruction view is the one an instrumented round measured at 592 s. On
  * this repository's twelve-unit fixture neither moves. Measured: the decode hop visits 524 rows
@@ -108,10 +108,10 @@ class PartitionSelectivityWorthTest {
      * declaration decided. It also joins both {@code @reference} walk targets, on the columns their
      * keys lead with, which is how the last fall below reached it.
      */
-    private static final String DECODE_HOP = "intent_node_id_decode_hop_live";
+    private static final String DECODE_HOP = "graphitron_node_id_decode_hop_rule";
 
     /** The reader the consumer-scale measurement was taken on, unmoved at this fixture size. */
-    private static final String INSTRUCTION = "intent_node_id_instruction_live";
+    private static final String INSTRUCTION = "graphitron_node_id_instruction_rule";
 
     /**
      * How far the declared regime may sit above the analysed one, as measured and not as guessed:

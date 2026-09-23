@@ -10,8 +10,8 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.INTENT_INPUT_FIELD_CARRIER_ROLE;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_DECODE;
-import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_DECODE_COLUMN;
-import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_DECODE_HOP_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ID_DECODE_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ID_DECODE_HOP_COLUMN;
 import static no.sikt.graphitron.model.test.SeededStore.OccurrenceStep;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
@@ -150,8 +150,8 @@ class NodeIdDecodeBranchTest {
         withPolymorphicCatalog(dsl -> {
             derive(dsl);
 
-            assertThat(duplicateRows(dsl, INTENT_NODE_ID_DECODE_HOP_COLUMN)).isZero();
-            assertThat(duplicateRows(dsl, INTENT_NODE_ID_DECODE_COLUMN)).isZero();
+            assertThat(duplicateRows(dsl, GRAPHITRON_NODE_ID_DECODE_HOP_COLUMN)).isZero();
+            assertThat(duplicateRows(dsl, GRAPHITRON_NODE_ID_DECODE_COLUMN)).isZero();
         });
     }
 
@@ -291,7 +291,7 @@ class NodeIdDecodeBranchTest {
     private static final String[] CHAINED_MEMBERS = {"EmneRolle", "KlasseRolle"};
 
     private static List<String> hopColumns(DSLContext dsl) {
-        var t = INTENT_NODE_ID_DECODE_HOP_COLUMN;
+        var t = GRAPHITRON_NODE_ID_DECODE_HOP_COLUMN;
         return dsl.select(t.ORIGIN_TABLE, t.PAIR_POSITION, t.FROM_COLUMN_NAME, t.TO_COLUMN_NAME)
             .from(t)
             .where(t.GRAPH_NAME.eq(GRAPH))
@@ -300,7 +300,7 @@ class NodeIdDecodeBranchTest {
     }
 
     private static List<String> decodeColumns(DSLContext dsl) {
-        var t = INTENT_NODE_ID_DECODE_COLUMN;
+        var t = GRAPHITRON_NODE_ID_DECODE_COLUMN;
         return dsl.select(t.ORIGIN_TABLE, t.POSITION, t.KEY_COLUMN_NAME, t.LOCAL_COLUMN_NAME)
             .from(t)
             .where(t.GRAPH_NAME.eq(GRAPH))
