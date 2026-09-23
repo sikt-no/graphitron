@@ -21,8 +21,10 @@ per participant combined with `UNION ALL`, which is why the ordering is not simp
 case again.
 
 Both halves of the sort surface reach the branches: a field-level `@defaultOrder`, and a runtime
-`@orderBy` argument over an `@order` enum. Today neither does, and neither is rejected as ignored,
-so this SDL builds and returns primary-key order whatever the client asks:
+`@orderBy` argument over an `@order` enum. Today neither does. Until R677 this SDL built and returned
+primary-key order whatever the client asked; since R677 it fails the build instead, with a deferred
+rejection naming the container and its participants, because an ordering the read cannot honour is
+refused rather than dropped:
 
 ```graphql
 type Customer @table(name: "customer") {
@@ -46,11 +48,11 @@ extend type Query {
   customers: [Customer!]! @defaultOrder(fields: [{name: "last_name"}])
 
   # Same declaration, multi-table return type. That is the only thing that varies, and it is why
-  # these rows come back in primary-key order. Both participant tables carry last_name, so the
-  # ordering is expressible; it is unimplemented, not impossible.
+  # this field fails the build today. Both participant tables carry last_name, so the ordering is
+  # expressible; it is unimplemented, not impossible.
   occupants: [AddressOccupant!]! @defaultOrder(fields: [{name: "last_name"}])
 
-  # The runtime half, equally lost today: OccupantSort resolves per participant against each
+  # The runtime half, equally refused today: OccupantSort resolves per participant against each
   # participant's own table.
   occupantsOrdered(orderBy: OccupantOrderBy @orderBy): [AddressOccupant!]!
     @defaultOrder(fields: [{name: "last_name"}])
@@ -64,18 +66,20 @@ extend type Query {
 ```
 
 The only thing that varies between `customers` and `occupants` is the return type. When this item
-lands, `occupants` returns `last_name` order rather than primary-key order, `direction: DESC` on
+lands, the schema builds again and `occupants` returns `last_name` order, `direction: DESC` on
 `occupantsOrdered` returns the reverse of `direction: ASC`, and paging through `occupantsConnection`
 visits every row exactly once under the author's ordering (for order columns that hold no `NULL`,
 as on every other paginated path), with `Customer` and `Staff` rows interleaved by `last_name`
 rather than segregated by participant.
 
 Scope is list-shaped reads on the two root variants, `QueryField.QueryInterfaceField` and
-`QueryField.QueryUnionField`. Two neighbouring shapes stay rejected at build time rather than
+`QueryField.QueryUnionField`. Three neighbouring shapes stay rejected at build time rather than
 becoming quietly accepted, and keeping them rejected is a real obligation of this item rather than a
-side note: the child multi-table fields (`ChildField.InterfaceField` / `ChildField.UnionField`), and
-a single-valued multitable root, where the ordering resolver returns nothing to lower. See "The
-rejection this item narrows".
+side note: the child multi-table fields (`ChildField.InterfaceField` / `ChildField.UnionField`); a
+single-valued multitable root, where the ordering resolver returns nothing to lower; and a root read
+that the classifier routes somewhere other than the generated `UNION ALL`, such as a root `@service`
+returning a multitable interface list (`QueryField.QueryServicePolymorphicField`, which carries no
+ordering). See "The rejection this item narrows".
 
 ## Problem
 
@@ -89,7 +93,7 @@ The declaration is not silently accepted any more. R677 shipped a fact-derived r
 shape that fails the build on a declared ordering at any participant-fan-out coordinate, so today the
 reported schema stops the build instead of returning wrong pages. This item delivers the lowering
 that rejection defers to, and narrows it at exactly the coordinates the lowering reaches: the
-list-shaped roots.
+list-shaped roots the classifier reads through the generated `UNION ALL`.
 
 Split off from R363, which deliberately scoped its day-one work to `@field` filter lowering (the
 reported data-correctness bug) and left ordering to this item. The two are siblings: both lower a
@@ -176,17 +180,19 @@ codec. Handing the codec a longer column list is therefore a change at the emitt
 constraint the codec does impose is that each cursor column arrive as a `Field<?>` carrying a
 `DataType`, which is what makes a build-time-typed slot (below) preferable to an untyped one.
 
-**The stage-1 seam is clean; the stage-2 seam is not.**
-`branchProjection(participant, tableAlias)` is called from exactly two places, `buildStage1Block`
-(list root) and `buildStage1ConnectionBlock` (connection root), and the batched child paths carry
-their own separate stage-1 projection builders. But the connection arm has a *third* projection
+**Neither seam is root-only.** `branchProjection(participant, tableAlias)` is called from exactly
+two places, `buildStage1Block` and `buildStage1ConnectionBlock`, and the batched child paths carry
+their own separate stage-1 projection builders. But `buildStage1Block` is not the list root's alone:
+it has two callers, the root list fetcher and the inline single-cardinality child fetcher behind
+`ChildField.InterfaceField` / `ChildField.UnionField`, which passes the participants' join paths and
+delivers `records.get(0)` of the stage-1 order. And the connection arm has a *third* projection
 site: `buildPerTypenameSelect(..., includeSortKey = true)` re-projects `__sort__` off the
 participant's own table, because the per-edge cursor is encoded from the **stage-2** record, and
 that method is shared with the batched child connection arm (the `includeSortKey = true` call sites
-are `emitRootConnectionMethods` and `emitBatchedConnectionMethods`). So "three sites must agree,
-one of which this item must not change the behaviour of" is the real shape of the seam, and it is
-the reason the slot list is threaded as a value that is empty on the child paths rather than as a
-second boolean beside `includeSortKey`.
+are `emitRootConnectionMethods` and `emitBatchedConnectionMethods`). So the real shape of the seam
+is three sites that must agree, two of them shared with a child path whose behaviour this item must
+not change. That is the reason the ordering reaches both shared methods as a value the child call
+sites pass empty, rather than as a second boolean beside `includeSortKey`.
 
 **A primary-key order is already delivered.** `@order(primaryKey: true)` resolves to the
 participant's PK columns, which is exactly what `__sort__` already projects. So do
@@ -360,10 +366,19 @@ which the field-level-fact argument favours. Membership reads the capability acc
 `instanceof SqlGeneratingField`. `ConditionMembershipTest` is the precedent for pinning the
 membership half.
 
+The census has a second spelling that moves with it. `OperationMembers` is the leaf-local crosswalk
+(`membersOf`, whose `QueryInterfaceField` / `QueryUnionField` arms call `polymorphicRootRead`), and
+`OperationMemberMintPinTest` compares the minted census against it. Its `DECLARED_SHAPES` admits only
+`CONDITION` as an optional kind on these two leaves, and `membersOf` validates every produced set
+against that image. So `ORDER_BY` joins the optional set of both entries, `polymorphicRootRead`
+reads the same capability accessor the census does, and the two spellings change in one commit;
+minting from `OperationMemberRelation` alone fails the image fence or the pin.
+
 `Kind.PAGINATE` is deliberately left alone; see the next section for why pagination is not this
 item's fact to widen.
 
-If the implementer does seal `OperationMember.OrderBy`, the single-arm record is retired vocabulary
+If the implementer does seal `OperationMember.OrderBy`, `membersOf`'s single-table arms change with
+it, and the single-arm record is retired vocabulary
 and the item owes a `## Retired vocabulary` section for the Done gate's sweep. Nothing else in this
 plan retires a name: the ordering does not ride `ParticipantFilters`, so that carrier and its
 capability interface keep both their shape and their accurate names.
@@ -422,6 +437,9 @@ alias, and choose among the slots at runtime.**
   decision made once, in the model, and carried as the slot list's ordinals. No emission site
   re-derives it.
 * `branchProjection` gains the slots. Stage 1 stays a static code block in both root paths.
+  `buildStage1Block` receives the slots and the outer order as values, and the inline
+  single-cardinality child call passes no slots and today's `__sort__`-only order, so that child's
+  generated body is unchanged.
 * `buildPerTypenameSelect` gains the slots too, because the per-edge cursor is encoded from the
   stage-2 record; without them `record.get(slotField)` is null and every cursor is a sentinel token.
   It is shared with the batched child connection arm, so the slots arrive as a list that is empty on
@@ -444,10 +462,18 @@ alias, and choose among the slots at runtime.**
   tie-boundary double-count the existing comment on `tieField` describes. The two arms differ
   today, so "stay appended" is true of the connection arm only. `buildRootConnectionFetcher`
   orders by `__sort__, __typename`, but `buildStage1Block` orders the list arm by `__sort__` alone.
-  The list arm therefore *gains* `__typename`, projected already by `branchProjection`, and it gains
-  it on the undeclared path too, so both arms compose their order in one way. On an undeclared list
-  read the only visible change is at a cross-participant primary-key tie, where an order the
-  database chose becomes a defined one.
+  The root list arm therefore *gains* `__typename`, projected already by `branchProjection`, and it
+  gains it on the undeclared path too, so both root arms compose their order in one way. On an
+  undeclared list read the only visible change is at a cross-participant primary-key tie, where an
+  order the database chose becomes a defined one. The inline single-cardinality child that shares
+  `buildStage1Block` does not gain it: it is a child coordinate, and this item leaves child
+  behaviour alone rather than improving it in passing.
+* **The tiebreakers take part in the runtime direction flip.** Where the runtime `direction:` flips
+  a `uniformAsc` order, `__sort__` and `__typename` flip with it, so `direction: DESC` is the exact
+  reverse of `direction: ASC`, ties included. Everywhere else, a `Fixed` order and a named order that
+  is not `uniformAsc`, they stay ascending. Either choice pages correctly, the seek following the
+  sort list whatever its directions; this one is picked because the goal promises the reverse and
+  the tie fixture below shares its seed with the reversal case.
 * **Nullable order columns take whatever jOOQ's `.seek()` gives them, as on every other path.**
   The seek is `.seek(page.seekFields())` with no `NULLS` handling anywhere in emission, and
   `encodeCursor` writes a `NULL` as a sentinel token, so paging over an order column holding `NULL`
@@ -535,6 +561,20 @@ leave it silently accepted. Narrow on the conjunction the item actually lowers:
   `KEY_CAPTURE_SCATTER` arm on `MUTATION`.
 * **And its read is list-shaped in the sense `OrderByResolver` uses**: a list, a connection type, or
   an `@asConnection` application.
+* **And the classifier routes it to the multitable arm**, not to an earlier one. The
+  `PARTICIPANT_TABLE` basis is structural: `intent_field_participant_scope_table` mints a row for any
+  field whose navigated type is a multitable container, whatever reads it. `classifyQueryField`
+  reaches `QueryInterfaceField` / `QueryUnionField` only after four earlier routes have declined the
+  field, in this order: `@service` (a multitable interface return becomes
+  `QueryServicePolymorphicField`, which carries no ordering and delivers the service's order), a
+  named type of `Node` (`QueryNodesField` / `QueryNodeField`), `@lookupKey` on an argument, and
+  `@routine`. The first two classify cleanly and would lose their rejection under the two conjuncts
+  above; the last two reject a multitable return on their own today, but the conjunct names them
+  anyway, because the rule it states is "reaches the multitable arm" and not "happens to fail
+  elsewhere". Each is already a captured coordinate-keyed fact: `graphitron_service_entry`,
+  `graphitron_field_navigation.navigated_type_name = 'Node'`, `graphitron_argument_lookup_key_entry`
+  and `graphitron_routine_entry`, the same directive-entry stratum the view's
+  `graphitron_default_order_entry` and `graphitron_order_by_entry` route arms already read.
 
 That second conjunct has a trap. It is **not** `graphitron_field.is_list` alone: that column says
 whether the type expression is a list, and the `@asConnection` expansion rewrites the field's type
@@ -563,9 +603,10 @@ written, and an `intent_` relation is what a pipeline grows when nobody wrote it
 rule is what sent R677 phase 3 back to `Spec` on 2026-09-22, over two new `intent_` relations.
 This item stays on the right side of it as follows:
 
-* **No relation lands in `intent_`, and no new fact is minted anywhere.** The predicate reads three
-  captured relations: `graphql_root_operation` in `graphql_`, and `graphitron_field` and
-  `graphitron_field_navigation` in `graphitron_`. Every fact it needs is already written in the
+* **No relation lands in `intent_`, and no new fact is minted anywhere.** The predicate reads only
+  captured relations: `graphql_root_operation` in `graphql_`, and in `graphitron_` the field and
+  navigation relations plus the three directive entries the route conjunct names. Every fact it
+  needs is already written in the
   family whose corpus it comes from, which is the state the ownership rule asks for. That is why
   the plan spells the predicate over existing relations rather than capturing a "list-shaped read"
   column. Such a column would be a third spelling of a fact the two relations already state.
@@ -589,14 +630,21 @@ WHERE NOT (shape.verdict = 'PARTICIPANT_FAN_OUT'
            AND EXISTS (query-root: graphql_root_operation ro
                         WHERE ro.operation = 'QUERY' AND ro.type_name = shape.type_name)
            AND EXISTS (list-shaped: graphitron_field f.is_list
-                        OR graphitron_field_navigation nav.basis = 'CONNECTION_ELEMENT'))
+                        OR graphitron_field_navigation nav.basis = 'CONNECTION_ELEMENT')
+           AND NOT EXISTS (earlier route, at the coordinate: graphitron_service_entry,
+                            graphitron_argument_lookup_key_entry, graphitron_routine_entry,
+                            or graphitron_field_navigation nav.navigated_type_name = 'Node'))
 ```
 
 The exclusion has a Java twin, and the two have to agree. The classifier lowers an ordering at
-exactly the coordinates the view stops rejecting. If the view excludes a coordinate the classifier
-does not lower, the declaration is accepted and discarded, which is the defect this item exists to
-remove. The per-form pipeline cases above, the single-valued root case and the child case are what
-hold the two together.
+exactly the coordinates the view stops rejecting, and the route conjunct is what makes that true: the
+first two conjuncts alone describe every list-shaped root whose type is a multitable container, and
+the classifier lowers only the ones that reach its multitable arm. If the view excludes a coordinate
+the classifier does not lower, the declaration is accepted and discarded, which is the defect this
+item exists to remove. The route conjunct is a transcription of `classifyQueryField`'s precedence,
+so a new route ahead of the multitable arm owes it a clause; the kept-row cases below (one per
+earlier route that classifies cleanly, beside the single-valued root and the child) are what fail if
+it is not written.
 
 Which availability route to narrow is the third axis, and the view's own grain already carries it.
 It is "one row per coordinate and availability route", and `UnlowerableOrderings.fanOutMessage`
@@ -616,6 +664,9 @@ becomes load-bearing rather than incidental once the arm has a predicate:
   rests on (what is available at an undeclared multitable read is what is delivered) is still the
   property. An earlier draft of this plan said to invert it; that was wrong.
 * A new case owes the single-valued declared root: it resolves no ordering, so it keeps its row.
+* New cases owe the list-shaped roots routed away from the multitable arm: a root `@service`
+  returning a multitable interface list with `@defaultOrder`, and a `Node`-typed list root with one.
+  Both classify cleanly and neither lowers an ordering, so both keep their rows.
 
 ## Documentation
 
@@ -660,13 +711,15 @@ can see that, so the execution tier is where this item is either delivered or no
   keeps its rejection.
 * **Pipeline tier, the narrowed rejection**, in `FieldUnlowerableOrderingTest` and
   `UnlowerableOrderingRejectionPipelineTest`: one declared-root case per list-shaped form (a list, an
-  authored connection type, `@asConnection`) that loses its row, the single-valued declared root and
-  the child multitable field that keep theirs, and after slice 1 only, a field carrying both
+  authored connection type, `@asConnection`) that loses its row; the single-valued declared root,
+  the child multitable field, a root `@service` multitable interface list and a `Node`-typed list
+  root, which keep theirs; and after slice 1 only, a field carrying both
   `@defaultOrder` and an `@orderBy` argument whose `ORDER_BY_ARGUMENT` row survives. These are
   what hold the view's exclusion and the classifier's lowering to the same population.
 * **Membership**, on `ConditionMembershipTest`'s precedent: the operation-member census reports an
   `ORDER_BY` member at a lowered polymorphic root. Without this the census silently under-reports and
-  nothing notices.
+  nothing notices, since `OperationMemberMintPinTest` only compares the census against
+  `OperationMembers.membersOf` and would agree with both spellings left unchanged.
 * **Execution tier, new `MultiTableOrderingExecutionTest`** in `graphitron-sakila-example`, beside
   `MultiTableFilterExecutionTest`, over the existing `AddressOccupant = Customer | Staff` fixture
   whose participants both carry `first_name` and `last_name`:
@@ -686,7 +739,12 @@ can see that, so the execution tier is where this item is either delivered or no
     slicing note above exists to prevent.
   - A cross-participant tie on every authored column still pages deterministically, which is what
     the appended synthetic key buys. The current seed has no such tie (no customer shares a staff
-    member's `last_name`), so this case owes a seeded row.
+    member's `last_name`), so this case owes a seeded row. With that row in the seed, the
+    `ASC`/`DESC` case above still returns exact reverses, because the tiebreakers flip with the
+    runtime direction (see "Emission"); the two cases share the seed on purpose.
+  - The inline single-cardinality child field over the same union returns the row it returns today.
+    It shares `buildStage1Block` with the root list arm, and this is the case that fails if the
+    root's slots or tiebreaker leak onto it.
 * **Composite-PK regression.** `Query.pagedItems` in the example schema is the composite-PK
   multitable root connection (`PagedA` on `paged_a` and `PagedB` on `paged_b`, both keyed on
   `(k1, k2)`), and it runs through `buildRootConnectionFetcher`'s JSONB `__sort__` path. That makes
@@ -716,7 +774,9 @@ Two further things pass between the items, because both concern R677's re-spec o
   `graphitron_field.is_list`. On an `@asConnection` root that column reads `FALSE` (see "The
   rejection this item narrows"), so a population keyed on it alone would drop every macro-built
   connection. The predicate this item spells, `is_list` or a `CONNECTION_ELEMENT` navigation rung, is
-  the one to hand over, so the two items keep one spelling.
+  the one to hand over, so the two items keep one spelling. The route conjunct goes with it: a
+  population keyed on "list-shaped multitable root" alone also takes in the `@service` and `Node`
+  roots, which read no ordering at all.
 * **The exclusion on `intent_field_unlowerable_ordering`.** If R677's re-spec refiles or dissolves
   that view before this item lands, the exclusion goes wherever the `PARTICIPANT_FAN_OUT` arm goes.
   If this item lands first, R677's re-spec inherits an arm with the exclusion already in it.
@@ -730,14 +790,14 @@ this (`fields.add(...)`), so the pattern is in the tree, and it is narrower on t
 
 It is not the precedent it looks like. That site assembles a *selection projection* off one table; a
 `UNION ALL` branch list is a type contract between branches, and making it a function of the request
-means the union's shape varies per request. Two concrete consequences. First, `decodeCursor`'s
-strict-arity blame contract becomes false: it documents that "any other token count is a forged,
-corrupted, or stale-across-schema-change cursor this generator never emitted", and under runtime
-assembly a legitimate client re-sending a cursor alongside a different `order` argument trips it, so
-a client mistake and a forged cursor stop being distinguishable. Second, the per-slot `Field<T>` types
-the codec converts through (`col.getDataType().convert(token)`) stop being build-time facts, and a
-runtime-assembled projection would have to carry the chosen column's `DataType` out to the outer level
-some other way.
+means the union's shape varies per request. The concrete consequence is that the per-slot `Field<T>`
+types the codec converts through (`col.getDataType().convert(token)`) stop being build-time facts,
+and a runtime-assembled projection would have to carry the chosen column's `DataType` out to the
+outer level some other way. An earlier draft also argued that runtime assembly breaks `decodeCursor`'s
+strict-arity contract for a client re-sending a cursor under a different `order` argument. That is
+not a difference between the two designs: the seek list is chosen per request under fixed slots too
+("`orderBy` and `extraFields` move together"), and the single-table path's `OrderByResult` columns
+already vary with the chosen order, so such a cursor trips the arity or conversion check either way.
 
 The cost of the fixed form, stated honestly because a reviewer should see it weighed: every candidate
 order column is projected in every branch on every request, so the stage-1 row widens with the size
@@ -936,6 +996,16 @@ navigate to a multitable container, and a kept-row case for a root `@service` mu
 the single-valued and child cases in "Tests". Hand the extra conjunct to R677 along with the
 list-shaped predicate.
 
+*Author response (2026-09-23):* Taken. "The rejection this item narrows" gains a third conjunct,
+"the classifier routes it to the multitable arm", transcribing `classifyQueryField`'s precedence:
+no `@service`, no `Node` named type, no argument `@lookupKey`, no `@routine` at the coordinate, each
+read off an existing coordinate-keyed entry relation. `Query.nodes` does belong: the `Node` route is
+keyed on the named type and classifies cleanly as `QueryNodesField`. The "exactly the coordinates"
+sentence now says why the route conjunct is what makes it true, the SQL sketch carries the clause,
+the scope paragraph in the Goal lists the routed-away root as a third kept neighbour, kept-row cases
+for the `@service` and `Node` roots are in "Tests", and the conjunct is handed to R677 beside the
+list-shaped predicate.
+
 **Finding 2 (question two). The stage-1 seam is not clean: `buildStage1Block` is shared with a child
 path.** "What the tree already has" says `branchProjection`'s two callers are `buildStage1Block`
 (list root) and `buildStage1ConnectionBlock` (connection root), and that the child paths carry their
@@ -952,6 +1022,12 @@ primary-key tie. That is probably harmless, since it makes an arbitrary pick det
 a behaviour change on a child coordinate that the item says it leaves alone. Either scope the
 tiebreaker to the root call or say that the child gains it and why that is acceptable.
 
+*Author response (2026-09-23):* Scoped to the root. The seam paragraph is rewritten as "Neither seam
+is root-only", naming both callers of `buildStage1Block`. The Emission section threads the slots and
+the outer order into `buildStage1Block` as values, with the child call passing no slots and today's
+`__sort__`-only order, so the child's generated body is unchanged; the tiebreaker bullet says the
+child does not gain `__typename` and why. An execution case pins the child's delivered row.
+
 **Finding 3 (question one, small). The Goal describes the behaviour before R677.** "Today neither
 does, and neither is rejected as ignored, so this SDL builds and returns primary-key order whatever
 the client asks", and the SDL comment "it is why these rows come back in primary-key order", both
@@ -960,6 +1036,10 @@ rejection on every `PARTICIPANT_FAN_OUT` row, and `UnlowerableOrderingRejectionP
 pins that the reported schema fails the build. A consumer's change is therefore from a stopped
 build to a sorted result, not from primary-key order to a sorted result. Restate the before-state in
 the Goal. The after-state is well stated as it stands.
+
+*Author response (2026-09-23):* The Goal now says the SDL built and returned primary-key order until
+R677 and fails the build since, and that the schema builds again when this lands. The two SDL
+comments that said "lost" and "primary-key order" say "refused" and "fails the build".
 
 **Non-blocking.**
 
@@ -970,15 +1050,27 @@ the Goal. The after-state is well stated as it stands.
   `OperationMemberRelation` alone fails that fence or that pin. `polymorphicRootRead` and both
   shape entries move with it, and a sealed `OperationMember.OrderBy` would touch this switch too.
   The build catches it, so this is only a note on the census section's site list.
+
+  *Author response (2026-09-23):* Named in the census section: `OperationMembers.membersOf` /
+  `polymorphicRootRead` and both `DECLARED_SHAPES` entries change in the same commit as the census,
+  and the membership test's reason now says why the mint pin cannot stand in for it.
 * **Which direction the appended tiebreakers take is unstated.** The Goal says `direction: DESC`
   returns the reverse of `direction: ASC`. That holds only while the authored columns hold no tie,
   unless `__sort__` and `__typename` flip with the effective direction. The seeded tie row the
   Tests section adds shares its fixture with the reversal case, so the answer decides whether those
   two cases can both pass. Either direction pages correctly, so this is a decision to state, not a
   defect.
+
+  *Author response (2026-09-23):* Decided: the tiebreakers join the runtime flip of a `uniformAsc`
+  order and stay ascending everywhere else. New Emission bullet; the tie case in "Tests" now says it
+  shares the seed with the reversal case on purpose.
 * **One argument against runtime assembly applies to the chosen design too.** Under fixed slots the
   seek list is still chosen per request ("`orderBy` and `extraFields` move together"), and on the
   single-table path the `OrderByResult` columns already vary with the chosen order. So a cursor
   re-sent with a different `order` argument trips `decodeCursor`'s arity or conversion check under
   either design. The rejection of runtime assembly stands on the second consequence (the per-slot
   `DataType` as a build-time fact), which is enough.
+
+  *Author response (2026-09-23):* Agreed. The cursor-arity argument is withdrawn in "Other solutions
+  we've considered", with the reason it is no difference between the designs; the rejection rests on
+  the per-slot `DataType`.
