@@ -5,7 +5,7 @@ status: In Progress
 bucket: architecture
 priority: 2
 theme: model-cleanup
-depends-on: [column-scope-and-input-field-walks-are-stored-rows]
+depends-on: []
 created: 2026-09-16
 last-updated: 2026-09-22
 ---
