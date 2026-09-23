@@ -1,13 +1,13 @@
 ---
 id: R966
 title: "Write inputs keyed by a decoded node id divine the tenant"
-status: In Review
+status: Ready
 bucket: bug
 priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-09-22
-last-updated: 2026-09-22
+last-updated: 2026-09-23
 ---
 
 # Write inputs keyed by a decoded node id divine the tenant
@@ -188,3 +188,81 @@ under the same paragraph's proposal, since adding plain-data projection componen
 that is a different mechanism. The site is named, the package constraint is stated, the fallback
 is stated, and the Tests section pins the routine-write path separately, so nothing about what
 gets built changes.
+
+### Round 2: In Review -> Ready, rework. 2026-09-23, session_01XP2xPNumaRmB4WAEbriGYa
+
+The design shipped is the one approved, and it works: `BoundSlot` carries `SlotProjection` beside
+`SlotRead`, one resolver (`accessOf`) reads both axes at every site that mints a slot,
+`Dml.whereKeyColumns()` / `outerArgName()` give UPDATE and DELETE one shared body, the slot-N
+projection goes through `CompositeDecodeHelperRegistry`, and the generated
+`multitenant` fetchers call `decode<Type>TenantSlot<N>OrThrow(tenantSlot(...))` inside
+`divinedTenant`. The execution tests show the goal behaviour against PostgreSQL: a bulk DELETE
+routes to one tenant, a mixed batch is refused with no connection opened, a malformed id raises
+the carrier's own message, and the UPDATE, FK-reference INSERT and node-id filtered read route.
+The manual paragraph is split the way the spec asked. The verification build passed:
+`mvn install -Plocal-db` was green apart from `DevMojoTest.runGeneratorPass_reportsWhatTheClasspathCensusCost`,
+which is outside this item's diff and passed on the resumed `-rf :graphitron-maven-plugin` run.
+The resumed run also covered `graphitron-sakila-example`, where all 13 tests in
+`TenantDivinedRoutingExecutionTest` passed. The rework is about evidence and the record, not the
+code.
+
+**Blocking, precondition (no code-string assertions on generated method bodies).** Four new tests
+match text inside generated `MethodSpec` bodies, which development-principles.adoc bans at every
+tier:
+`TenantRoutedFetcherPipelineTest.deleteKeyedByNodeIdRoutesThroughTheClassOwnDecodeHelper`,
+`.theTenantSlotHelperLandsOnTheFetcherClassThatCallsIt`,
+`.nodeIdFilteredReadRoutesThroughTheDecodedSlot` (each `render(...)` is `MethodSpec::toString`
+checked with `.contains`), and
+`CompositeDecodeHelperRegistryTest.emit_tenantSlotHelper_flattensABatchAndProjectsTheNamedSlot`
+(`helper.code().toString()` checked for `return key.value2()` and similar). The Tests section's
+"matching how `insertMutationDivinesFromItsInputFieldAndRoutes` pins the existing arm" pointed at
+an older test that already uses this pattern; that makes it an inherited pattern, not an
+exemption. To satisfy: assert structure only (the helper method exists on the calling class by
+name, with return type `Object` and one `Object` parameter; the registry `Key` dedup shown
+through names and `emit()` counts, which the other two new registry tests already do). Leave
+the body behaviour to the compilation and execution tiers, which already cover it.
+
+**Blocking, question 2 (evidence the spec named is missing).** The Tests section names these
+classification cases, and none exists:
+- A `FilterBinding.Remote` reference carrier reaching the tenant column rejects with its own
+  message ("through a join").
+- A `PruneOnMismatch` leaf reaching a tenant slot rejects with its own message ("no single
+  decode to route the statement on").
+- The arity-1 `@nodeId` **INSERT** carrier (`ColumnBackedField` with `NodeIdDecodeKeys`, the
+  `CreateKeyedNodeInput` shape) yields a `DecodedKeySlot`. This was the "transform-blind" site the
+  Mechanism section named. The arity-1 test that shipped is an UPDATE, which goes through
+  `collectFromWhereKeys`, so no test drives `collectFromCarrier` with a node-id extraction.
+- The routine-write path. The spec's Tests section asked for a pipeline test of a routine-write
+  entry point with a projected slot. The delivery took the spec's fallback instead (reject a
+  routine write whose tenant slot needs a decode), which the spec allows, but then the evidence
+  is a test that shows the rejection and its message (`declineRoutineWriteDecodes`), and none
+  exists. Without it, nothing shows that the `IllegalStateException` in
+  `RoutineWriteCommands.slotReadOf` cannot be reached.
+Each decline message is new code whose only reason to exist is its text, so an untested decline
+is not delivered.
+
+**Blocking, precondition (spec body reflects what shipped).** The spec body has not changed since
+Ready except for the new `## Retired vocabulary` section. It should record:
+- that the routine-write fallback was taken: the Emission section still describes carrying the
+  decode as plain data as the plan, with the fallback as the alternative;
+- the `MutationField.DmlTableField` reach arm in `tablesOf`. This is scope nobody approved, and it
+  is behaviour-bearing: before it, a tenant-scoped DML write that returns an encoded id was
+  classified untenanted and ran on the default source. After it, such a write either binds or is
+  rejected. That is correct and needed for the goal, but a consumer schema that built before can
+  now be rejected, so it belongs in the body (and probably the manual);
+- the compilation fixture substitution: the spec named a composite `FilmActor` UPDATE setting
+  `last_update`, and the fixture has an arity-1 `Film` UPDATE setting `title` instead. The
+  substitute is reasonable, since it also covers arity 1, but it leaves a composite-key UPDATE
+  without any compile-tier coverage, so either add the composite UPDATE or say why not;
+- a one-line "shipped at `4bb378e`" note on the Implementation section, with the rework named as
+  the work that remains.
+
+**Non-blocking, cheap to fold into the same rework.** The Goal says a mixed batch is refused
+"with an error naming the disagreement". `bulkDeleteByNodeId_idsMixingTenants_refusedBeforeAnySql`
+asserts only that there are errors and that no connection opened. `agreeOnTenant`'s message is
+"Tenant bindings disagree within one operation", so add a `contains("disagree")` to make the
+test check the stated goal.
+
+Retirement sweep: none of the five retired private names appears in javadoc, comments, `.adoc`,
+fixtures, or test names. The only hits are in R965's spec body, and R965's own round-3 finding
+already blocks on them, so they are that item's to fix, not this one's.
