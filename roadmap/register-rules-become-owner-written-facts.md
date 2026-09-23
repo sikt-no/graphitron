@@ -7,7 +7,7 @@ priority: 2
 theme: model-cleanup
 depends-on: []
 created: 2026-09-16
-last-updated: 2026-09-22
+last-updated: 2026-09-23
 ---
 
 # The register empties bottom-up: every remaining registered rule becomes a fact the graphitron gatherer writes in stage order, and meta_materialize has no rows left
@@ -153,6 +153,38 @@ and stands on the partition selectivity `GraphitronModelStore.create` declares, 
 relation the `@reference` stratum converted already stands; the roster change is the last commit's
 and this is the shape until then. And `DerivedReadCostTest` moved the got-cheaper way, 42 readers to
 38 and 84 cells to 80, each figure recorded where it sits.
+
+**Shipped: the other fourteen, and the mechanism.** Every rung in the table is a `graphitron_` table
+a stage fills from the `graphitron_<x>_rule` view beside it, in ladder order, landed in three
+commits by verdict family and each recording its keys and its convert-or-demote terms. None was
+demoted: the three single-reader candidates each converted on the statement-size term, the reader's
+statement read against the table being a fraction of the same statement read against the rule, and
+the commits carry the figures. The register then held no rows, and the last commit drops it:
+`meta_materialize`, `meta_materialize_dependency`, `Materializations`, `MaterializeDependencies`,
+`RefreshProgress` and `DevMojo`'s session-start refresh are gone. What the pass keeps is stated as
+data in `DerivationStratum`: every step after the gatherers flush, stages and hand-written producers
+in one list, each with the tables it writes, run on the two cadences the refresh used to own (one
+transaction on a warm store; step by step, each committed and its tables analysed, on a store no
+stratum table holds a row in). `StageProgress` replaces the refresh observer with the same
+name-before-statements contract, and `StageOrderGateTest` reads the order off `DerivationStratum`
+rather than a copy of it, `ViewReferences` supplying the read sets `MaterializeDependencies` used to.
+
+Three things the last commit settled that the scope above left open. The ten `derivation`-owned
+relations: six read nothing outside the graphitron gatherer's declared dependencies and are
+re-owned to it (`intent_condition_slot`, `intent_reference_for_application`, both unlowerable-ordering
+relations, `intent_field_reference_step_fanout`, `intent_node_id_decode_landing_defect`); four read
+`code_` or `store_` relations that gatherer may not reach (`lint_violation`,
+`intent_scalar_java_type`, `intent_condition_context_parameter`,
+`intent_external_field_contract_defect`) and stay with `derivation`, whose gatherer row is now bound to
+`DerivationStratum`, so the `derivation` row stays and which family each of the four belongs in is the
+misfiling census's question, not this item's. The five hand-written stratum tables the register's
+exemption used to cover are declared with grains of their own: `intent_type_domain` under `sdl`, and
+`intent_type_backing_class`, `intent_authored_claim_rejection` and the occurrence-path pair under
+`graphitron`. And a key the three family commits had right on every fixture was too narrow on the
+sakila example: at a slot naming a polymorphic container, two member node types can depart from one
+table, so `graphitron_node_id_decode_column` is one row per member node type as well, and
+`node_type_name` joins its key, `NOT NULL`. The relation tests passed and the sakila build refused the
+first colliding row, which is the backstop "Tests" relies on working as stated.
 
 **Three verdict families, landing in ladder order.** The column-scope pair and the mutation write
 payload; then the `@nodeId` decode chain, instruction through hop, hop column and decode column; then

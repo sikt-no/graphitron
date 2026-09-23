@@ -10,8 +10,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import no.sikt.graphitron.model.derive.MaterializeDependencies;
-import no.sikt.graphitron.model.derive.Materializations;
+import no.sikt.graphitron.model.derive.DerivationStratum;
 import org.jooq.DSLContext;
 import org.jooq.Record;
 
@@ -35,7 +34,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.META_FAMILY;
 import static no.sikt.graphitron.model.Tables.META_GATHERER;
-import static no.sikt.graphitron.model.Tables.META_MATERIALIZE;
 import static no.sikt.graphitron.model.Tables.META_PREFIXLESS_RELATION;
 import static no.sikt.graphitron.model.Tables.META_RELATION_FAMILY;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_KEY_COLUMN;
@@ -109,15 +107,15 @@ class FactSchemaGateTest {
         """;
 
     /**
-     * The slice the materialization gate needs, which is a different slice: a table spelling for
+     * The slice the stage gate needs, which is a different slice: a table spelling for
      * {@code graphitron_spelled_table} to resolve against the catalog, a {@code @routine} application
      * carrying an {@code argMapping} so {@code graphitron_argmapping_entry} has an arm that fires, and a
      * {@code @nodeId} argument whose decode actually walks a foreign key so the two decode targets
      * are non-empty. Separate from {@code FIXTURE} because the structural gates above want breadth
-     * of declaration sites, and this one wants every registered target to be non-empty.
+     * of declaration sites, and this one wants every stage-written table to be non-empty.
      *
      * <p>Populating all of them is a property of this fixture and the fixture catalog together, and
-     * it has to be maintained as registrations are added: a target the fixture leaves empty makes
+     * it has to be maintained as stages are added: a table the fixture leaves empty makes
      * the gate assert nothing about it, which is why the gate names the relation rather than merely
      * comparing what it found.
      *
@@ -153,7 +151,7 @@ class FactSchemaGateTest {
      * routine {@code filmsForActor} returns, so a mutation returning it would have no scope row at
      * all and both targets would stay empty for a reason that has nothing to do with the write.
      */
-    private static final String MATERIALIZED_FIXTURE = """
+    private static final String STAGE_FIXTURE = """
         type Query {
           films(sequelTo: ID @nodeId(typeName: "Film")): [Film!]!
           filmCategories(
@@ -706,8 +704,8 @@ class FactSchemaGateTest {
      * dimension, being store-global by design.
      * {@code meta_} answers per relation for the same reason: its rows describe the schema itself
      * and no run's partition, so a keyed one leads with its own subject. The family had no keyed
-     * relation at all until the materialization registry, so this arm is a hole the first one
-     * opened rather than a rule it breaks.
+     * relation at all until a register since dropped, so this arm is a hole that register opened
+     * rather than a rule it breaks.
      */
     @Test
     @DisplayName("every base relation leads its key with its partition dimension")
@@ -746,7 +744,6 @@ class FactSchemaGateTest {
                     };
                 } else if (table.startsWith("meta_")) {
                     expected = switch (table) {
-                        case "meta_materialize", "meta_materialize_dependency" -> "source_view_name";
                         case "meta_corpus" -> "corpus_name";
                         case "meta_gatherer", "meta_gatherer_corpus", "meta_gatherer_dependency"
                             -> "gatherer_name";
@@ -905,76 +902,55 @@ class FactSchemaGateTest {
     }
 
     /**
-     * The equality the materialization registry rests on: on a settled store a registered target
-     * holds exactly the rows its source view computes, for the graph that captured it and no other.
+     * The equality a stage rests on, across graphs: on a settled store a stage-written table holds
+     * exactly the rows its rule view computes, for the graph that captured it and no other.
      *
-     * <p>Every other claim a registration makes is an argument that no answer changes anywhere, and
-     * that argument is only as good as this one. It holds by construction, the target being filled
-     * by {@code INSERT INTO target SELECT * FROM source} and nothing else writing it, but a
-     * construction argument is exactly the kind that outlives the edit which breaks it: a refresh
-     * scoped to the wrong partition, a delete clearing more or less than the insert refills, a
-     * target whose column list drifted from its view's. So it is checked against a real capture.
+     * <p>It holds by construction, the table being filled by one {@code INSERT} over the rule and
+     * nothing else writing it, but a construction argument is exactly the kind that outlives the
+     * edit which breaks it: a stage scoped to the wrong partition, a delete clearing more or less than
+     * the insert refills, a table whose column list drifted from its rule's. The oracle in the
+     * store's own module checks one graph; this one checks the scoping, which one graph cannot.
      *
-     * <p>Two graphs, both populated, because the refresh is scoped per graph: one graph cannot tell
+     * <p>Two graphs, both populated, because a stage is scoped per graph: one graph cannot tell
      * "refilled this graph" from "refilled everything", and an unpopulated sibling cannot tell
-     * "left the sibling alone" from "there was nothing to disturb". The fixture and the catalog are
-     * both load-bearing for the same reason, and the non-emptiness assertions below are what say so
-     * out loud. An earlier version of this case asserted over two empty partitions and survived an
-     * unscoped {@code DELETE} in the materializer; the assertions are per registration rather than
-     * in aggregate so that a third registration whose view this fixture leaves empty fails here
-     * instead of quietly adding nothing.
-     *
-     * <p>The structural half of the registry's gates needs no capture at all and lives in the
-     * store's own module, beside the DDL it closes over.
+     * "left the sibling alone" from "there was nothing to disturb". The non-emptiness assertion
+     * below is over the stages as a whole rather than each, the per-rule population being the
+     * oracle's to hold; what this case needs is a sibling with rows in it to disturb.
      */
     @Test
-    @DisplayName("a registered target holds its rule's rows, under its own graph only")
-    void everyMaterializedTargetEqualsItsRule(@TempDir Path tmp) throws IOException {
+    @DisplayName("a stage-written table holds its rule's rows, under its own graph only")
+    void everyStageTableEqualsItsRule(@TempDir Path tmp) throws IOException {
         Path siblingDir = Files.createDirectories(tmp.resolve("sibling"));
         Path ownDir = Files.createDirectories(tmp.resolve("own"));
         try (var store = GraphitronModelStore.open()) {
             var dsl = store.dsl();
-            // A fixture registration whose view reads another registration's target, the shape the
-            // derived refresh order exists for. Its name sorts ahead of its prerequisite's, so an
-            // unordered refresh would fill it from the not-yet-refreshed graphitron_spelled_table and
-            // fail the equality below on the first capture; the re-population is what a fixture
-            // registered after boot owes, the DDL's own registrations having been walked already.
-            dsl.execute("CREATE TABLE intent_fixture_binding AS SELECT * FROM graphitron_spelled_table"
-                + " WITH NO DATA");
-            dsl.execute("CREATE VIEW intent_fixture_binding_live AS"
-                + " SELECT * FROM graphitron_spelled_table");
-            dsl.insertInto(META_MATERIALIZE, META_MATERIALIZE.SOURCE_VIEW_NAME,
-                    META_MATERIALIZE.TARGET_TABLE_NAME, META_MATERIALIZE.REASON)
-                .values("intent_fixture_binding_live", "intent_fixture_binding",
-                    "fixture: a registration reading a registered target, so this gate exercises"
-                        + " the derived refresh order on real store machinery")
-                .execute();
-            MaterializeDependencies.populate(dsl);
+            captureStageFixture(dsl, "sibling", siblingDir);
 
-            captureMaterializationFixture(dsl, "sibling", siblingDir);
-
-            var registrations = Materializations.registrations(dsl);
-            assertThat(registrations).as("registrations to check").isNotEmpty();
-            var siblingBefore = registrations.stream()
-                .map(r -> materializedRows(dsl, r.targetTableName(), "sibling"))
+            var stages = DerivationStratum.steps(null).stream()
+                .filter(step -> step.writes().size() == 1)
+                .map(step -> step.writes().iterator().next())
+                .filter(target -> dsl.fetchExists(dsl.selectOne()
+                    .from(table(name("INFORMATION_SCHEMA", "VIEWS")))
+                    .where(field(name("TABLE_NAME"), String.class)
+                        .eq((target + "_rule").toUpperCase(Locale.ROOT)))))
                 .toList();
+            assertThat(stages).as("stages inserting from a rule view").isNotEmpty();
+            var siblingBefore = stages.stream()
+                .map(target -> materializedRows(dsl, target, "sibling"))
+                .toList();
+            assertThat(siblingBefore.stream().filter(rows -> !rows.isEmpty()).count())
+                .as("stages the fixture populates in the sibling graph; with none, the scoping"
+                    + " claim below has nothing to disturb")
+                .isPositive();
 
-            captureMaterializationFixture(dsl, "own", ownDir);
+            captureStageFixture(dsl, "own", ownDir);
 
-
-            for (int i = 0; i < registrations.size(); i++) {
-                var registration = registrations.get(i);
-                String target = registration.targetTableName();
-                String source = registration.sourceViewName();
-
-                assertThat(siblingBefore.get(i))
-                    .as("the fixture must populate %s, or this case asserts nothing about it", target)
-                    .isNotEmpty();
+            for (int i = 0; i < stages.size(); i++) {
+                String target = stages.get(i);
                 assertThat(materializedRows(dsl, target, "own"))
-                    .as("%s should hold exactly what %s computes for the capturing graph",
-                        target, source)
-                    .isNotEmpty()
-                    .isEqualTo(materializedRows(dsl, source, "own"));
+                    .as("%s should hold exactly what %s_rule computes for the capturing graph",
+                        target, target)
+                    .isEqualTo(materializedRows(dsl, target + "_rule", "own"));
                 assertThat(materializedRows(dsl, target, "sibling"))
                     .as("capturing 'own' must leave the sibling's partition of %s alone", target)
                     .isEqualTo(siblingBefore.get(i));
@@ -983,8 +959,8 @@ class FactSchemaGateTest {
     }
 
     /**
-     * A capture that populates every registered target, which is a property of the fixture SDL and
-     * the fixture catalog together and has to be maintained as registrations are added. The catalog
+     * A capture that populates the stage-written tables, which is a property of the fixture SDL and
+     * the fixture catalog together. The catalog
      * is what {@code graphitron_spelled_table} resolves its table spellings against; the
      * {@code @routine} application is what gives {@code graphitron_argmapping_entry} an arm that fires;
      * the {@code @node} type with an {@code @nodeId} argument naming it is what puts a row in
@@ -1001,9 +977,9 @@ class FactSchemaGateTest {
      * of them the case above passes over an empty
      * relation, which is exactly what its own non-empty assertion refuses to let happen quietly.
      */
-    private static void captureMaterializationFixture(DSLContext dsl, String graphName,
+    private static void captureStageFixture(DSLContext dsl, String graphName,
                                                       Path directory) {
-        var registry = CapturedStore.registryOf(directory, MATERIALIZED_FIXTURE);
+        var registry = CapturedStore.registryOf(directory, STAGE_FIXTURE);
         CapturedStore.capture(dsl, new GraphIdentity(graphName, directory),
             CapturedStore.corpusOf(directory), fixtureCatalog());
     }

@@ -466,8 +466,6 @@ class RelationRegistrationGateTest {
         registrations.put("meta_prefixless_relation", Arm.DERIVED);
         registrations.put("meta_relation_family", Arm.DERIVED);
         registrations.put("meta_relation_reference", Arm.DERIVED);
-        registrations.put("meta_materialize", Arm.DERIVED);
-        registrations.put("meta_materialize_dependency", Arm.DERIVED);
         // The declaration rosters sit in the same stratum as tables whose rows an INSERT in the
         // DDL supplies, so capture never writes them either. Their anchors are the DDL's own
         // keys, foreign keys and CHECK constraints, the declaration gates in

@@ -1,6 +1,6 @@
 package no.sikt.graphitron.model;
 
-import no.sikt.graphitron.model.derive.MaterializeDependencies;
+import no.sikt.graphitron.model.derive.ViewReferences;
 import no.sikt.graphitron.model.derive.StoreDetections;
 import org.jooq.DSLContext;
 import org.jooq.Table;
@@ -28,25 +28,23 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p><b>What a delta means, and what to do about it.</b> A build failing here is a relation
  * arriving in, or leaving, some component's read-cadence reach. Before editing the number, price
- * the relation on a populated store per the {@code store-performance} skill, and either register or
- * restate it so it leaves the set again, or record beside its row why its cost at read cadence is
- * acceptable. The pin is the ratchet {@code DerivedReadCostTest} uses for its own sets: a figure
- * edited deliberately, in the commit that argues for it, and never a ceiling to be raised because
- * the build is red.
+ * the relation on a populated store per the {@code store-performance} skill, and either store it
+ * as its owner's stage or restate it so it leaves the set again, or record beside its row why its
+ * cost at read cadence is acceptable. The pin is a ratchet: a figure edited deliberately, in the
+ * commit that argues for it, and never a ceiling to be raised because the build is red.
  *
- * <p><b>Why the sets are stated over tables rather than over the register.</b> The walk stops at
- * every table: a registered target, a base relation, and a relation some future owner decides to
- * store under its own name alike. Stated that way the pin keeps its meaning when the register
- * dissolves, because what a reader evaluates is a property of the schema it meets and not of the
- * mechanism that filled it.
+ * <p><b>Why the sets are stated over tables.</b> The walk stops at every table: a stage-written
+ * one, a base relation, and a relation some future owner decides to store under its own name alike,
+ * because what a reader evaluates is a property of the schema it meets and not of the mechanism
+ * that filled it.
  *
- * <p><b>The shape this gate is aimed at.</b> A relation can be paid once per capture through a
- * registration's refresh and still be expanded per read by a reader that names it directly, and
- * that pairing reads as safe from both ends: the registration's own reason says the rule is priced,
- * and the reader's statement names one relation. It is not safe, and a dev round on a consumer
- * schema is where the difference shows. Rows below carry a note naming the registration that pays
- * the same relation at refresh cadence, so the pairing is legible on the page rather than
- * reconstructible from two files.
+ * <p><b>The shape this gate is aimed at.</b> A rule can be paid once per capture by the stage
+ * that stores it and still be expanded per read by a reader that names its rule view directly, or
+ * names a view the stage's rule also reads, and that pairing reads as safe from both ends: the rule
+ * is priced where it is stored, and the reader's statement names one relation. It is not safe, and
+ * a dev round on a consumer schema is where the difference shows. Rows below carry a note naming
+ * the stage that pays the same relation at capture cadence, so the pairing is legible on the page
+ * rather than reconstructible from two files.
  *
  * <p><b>The disclosed gap</b>, on the precedent {@link CollectionValuedColumnGateTest} sets for a
  * gate that states its own. The roots come from each component's authored {@code READS} set, so a
@@ -61,7 +59,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * asserts a set of names over a booted schema with no captured rows in it, and takes no timing.
  * Structural in that sense, and on the funnel rather than a store of its own because the funnel's
  * cleared store <em>is</em> a booted schema with no captured rows: what the walk reads is
- * {@code INFORMATION_SCHEMA} and the register, neither of which a capture writes.
+ * {@code INFORMATION_SCHEMA} and the stored view definitions, neither of which a capture writes.
  */
 class DetectionReadReachGateTest {
 
@@ -118,8 +116,8 @@ class DetectionReadReachGateTest {
             // from this component's reach: a captured relation counts once and truncates the tree
             // for every rule above it, where the derivation re-evaluated the chain per naming.
             "graphitron_node_type",
-            // Also read by the carrier data-channel stage's rule and refreshed through
-            // graphitron_field_scope_table_rule; expanded here once per container by memberNames.
+            // Also read by the carrier data-channel stage's rule and by
+            // graphitron_field_scope_table_rule's stage; expanded here once per container by memberNames.
             "intent_poly_member",
             "intent_record_slot_assignable",
             "intent_resolved_node_key_shape"));
@@ -144,7 +142,7 @@ class DetectionReadReachGateTest {
 
         REACH.put("ReferenceForParticipantDefects", Set.of(
             "intent_field_navigated_type",
-            // Also refreshed through graphitron_field_scope_table_rule, and expanded here once per
+            // Also read by graphitron_field_scope_table_rule's stage, and expanded here once per
             // consumer of an application row by participantsOf.
             "intent_field_participant_scope_table",
             "intent_poly_member",
@@ -164,9 +162,9 @@ class DetectionReadReachGateTest {
             // relations above it, and the walk used to stop there, the name being a registered
             // target; it is a view now, so the body is expanded, and what it expands to is a
             // UNION ALL of two table reads with no rule under either. Priced rather than
-            // assumed: the two arms are registered targets and the walk stops at each, so this
+            // assumed: the two arms are stage-written tables and the walk stops at each, so this
             // row costs a concatenation of two seeks and not a derivation. What would take it
-            // out again is a registration of the union view itself, which nothing has argued for
+            // out again is storing the union view itself as a table, which nothing has argued for
             // and which this figure is the instrument for arguing on.
             "graphitron_field_reference_step_hop",
             "intent_field_unlowerable_ordering",
@@ -174,14 +172,14 @@ class DetectionReadReachGateTest {
             "intent_poly_member"));
 
         // The decode-coverage rule's store operand. Its census side costs nothing here: every
-        // relation it reads there is a materialized table (the instruction census, the
+        // relation it reads there is a stored table (the instruction census, the
         // classification domain, and the occurrence-path pair), so those expand no rule at read
         // cadence. What this row is, entirely, is the projection relation's own body, which the
         // rail-two install operand reads at the view's own (site, use_site, position) grain
         // because a coarser read would key the install at the definition and anti-join away every
         // use site nothing was installed at. Two components beside it already expand the same
         // body, so the marginal cost of this one is a third evaluation of a rule the pass was
-        // paying for twice; a registration of that relation takes all three out of this set at
+        // paying for twice; storing that relation as a stage takes all three out of this set at
         // once.
         REACH.put("NodeIdDecodeCoverageFacts", Set.of(
             "graphitron_argmapping_match",
@@ -220,7 +218,7 @@ class DetectionReadReachGateTest {
             assertThat(observed)
                 .as("what the detection pass evaluates on every read, per component. A relation "
                     + "arriving here is a rule a dev round re-expands at boot and after every "
-                    + "save, so price it on a populated store and register or restate it before "
+                    + "save, so price it on a populated store and store or restate it before "
                     + "editing this pin; a relation leaving is a lever that landed.")
                 .isEqualTo(REACH);
         });
@@ -249,18 +247,18 @@ class DetectionReadReachGateTest {
         withSeededStore(dsl -> {
             // A base table as a root yields nothing rather than failing, which is what lets a
             // component hand the walk every relation its statements name without curating them.
-            assertThat(MaterializeDependencies.viewsEvaluatedBy(dsl, List.of("intent_type_domain")))
+            assertThat(ViewReferences.viewsEvaluatedBy(dsl, List.of("intent_type_domain")))
                 .isEmpty();
-            // A registered target is a table too, so a reader meeting one evaluates no body.
-            assertThat(MaterializeDependencies.viewsEvaluatedBy(dsl,
+            // A stage-written table is a table too, so a reader meeting one evaluates no body.
+            assertThat(ViewReferences.viewsEvaluatedBy(dsl,
                 List.of("graphitron_field_scope_table"))).isEmpty();
             // The source view behind that same target is a view, so a reader naming it evaluates
             // the rule the target holds the rows of. That difference is the whole subject.
-            assertThat(MaterializeDependencies.viewsEvaluatedBy(dsl,
+            assertThat(ViewReferences.viewsEvaluatedBy(dsl,
                 List.of("graphitron_field_scope_table_rule")))
                 .contains("graphitron_field_scope_table_rule");
             // A name the catalog does not hold is ignored on the same footing as a table.
-            assertThat(MaterializeDependencies.viewsEvaluatedBy(dsl,
+            assertThat(ViewReferences.viewsEvaluatedBy(dsl,
                 List.of("intent_no_such_relation"))).isEmpty();
         });
     }
@@ -269,7 +267,7 @@ class DetectionReadReachGateTest {
     private static Map<String, Set<String>> observedReach(DSLContext dsl) {
         var observed = new LinkedHashMap<String, Set<String>>();
         StoreDetections.reads().forEach((component, reads) ->
-            observed.put(component, MaterializeDependencies.viewsEvaluatedBy(dsl, names(reads))));
+            observed.put(component, ViewReferences.viewsEvaluatedBy(dsl, names(reads))));
         return observed;
     }
 

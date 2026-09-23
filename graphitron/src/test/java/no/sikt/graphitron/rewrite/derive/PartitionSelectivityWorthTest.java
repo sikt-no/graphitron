@@ -1,12 +1,11 @@
 package no.sikt.graphitron.rewrite.derive;
 
-import no.sikt.graphitron.model.test.MaterializedRegistryFixture;
+import no.sikt.graphitron.model.test.ScaledSchemaFixture;
 
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreAnswer;
 import no.sikt.graphitron.model.catalog.GraphPartition;
-import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.StoreStatistics;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
@@ -31,15 +30,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  * analysed nowhere, and told only what {@link GraphPartition#DECLARED_SELECTIVITY} states, reads the
  * derivations over the reference walk for what a fully analysed store pays.
  *
- * <p><b>Why this claim needs a test of its own.</b> {@link RefreshPlanStatisticsTest} holds which
- * refresh statements plan differently, by plan text, and that is the acceptance evidence for the
- * declaration as a plan lever. It cannot say what a plan difference <em>costs</em>, and on this
+ * <p><b>Why this claim needs a test of its own.</b> Plan text says which statements plan
+ * differently, and that was the acceptance evidence for the declaration as a plan lever. It cannot
+ * say what a plan difference <em>costs</em>, and on this
  * schema the two questions come apart in both directions: a plan that differs can visit the same
  * rows, which is the shape the decode hop is in here once the declaration lands. The cliff the
  * declaration removes is a count of rows visited, so a count is what says whether it was removed.
  *
  * <p><b>Instrument: {@code EXPLAIN ANALYZE}'s summed {@code scanCount}</b>, which
- * {@link DerivedReadCostTest} carries and this borrows. A count of rows visited reads the same on a
+ * the store's scan-count ceilings carry and this borrows. A count of rows visited reads the same on a
  * fast machine and a loaded one, which is what lets a tier that must not fail for being slow hold a
  * cost claim. No duration is asserted anywhere here. It is also the only instrument that sees this
  * defect at all: plain {@code EXPLAIN} does not print a recursive CTE's plan, which is what hid the
@@ -88,18 +87,21 @@ import static org.assertj.core.api.Assertions.assertThat;
  * declaration matter here again fails this test and gets stated rather than passing quietly.
  *
  * <p><b>Which leaves the acceptance evidence for the declaration elsewhere, and that is worth
- * saying plainly.</b> {@code RefreshPlanStatisticsTest} holds which statements plan differently by
- * plan text, and no key touched that; the consumer-scale round behind this work stands as a
+ * saying plainly.</b> Which statements plan differently is a plan-text question, and no key
+ * touched that; the consumer-scale round behind this work stands as a
  * measurement on the single-table shape; and the declaration remains the only statement of that
  * column available to a pass planning inside a transaction, where no {@code ANALYZE} can run at
- * all. What has no fixture evidence any more is the cost claim, for the reason
- * {@code RefreshPlanStatisticsTest} states last: a per-driving-row cost is linear in driving rows,
+ * all. What has no fixture evidence any more is the cost claim, for the reason the fact-model
+ * architecture page gives with its scaling figures: a per-driving-row cost is linear in driving rows,
  * and a fixture whose partitions are small is precisely where a partition scan is cheap.
  */
 @PipelineTier
 class PartitionSelectivityWorthTest {
 
-    /** Repetitions of the fixture's node cluster, twelve for {@link DerivedReadCostTest}'s reason. */
+    /**
+     * Repetitions of the fixture's node cluster: twelve, the size at which borderline plans flip
+     * against the statistics the population implies, where smaller sizes see less.
+     */
     private static final int UNITS = 12;
 
     /**
@@ -148,7 +150,7 @@ class PartitionSelectivityWorthTest {
         var ctx = TestConfiguration.testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = CapturedStore.ofCatalog(tmp.resolve("worth"),
-                MaterializedRegistryFixture.scaledSdl(UNITS), jooq)) {
+                ScaledSchemaFixture.scaledSdl(UNITS), jooq)) {
             DSLContext dsl = store.dsl();
             // H2 serves a repeated identical query from its result cache, which would report the
             // second regime as free rather than as equal. Database-wide, so one statement covers
@@ -161,10 +163,7 @@ class PartitionSelectivityWorthTest {
             StoreStatistics.reset(dsl);
             declared = scans(store);
 
-            var baseTables = new TreeSet<String>();
-            Materializations.registrations(dsl)
-                .forEach(r -> baseTables.add(r.targetTableName().toUpperCase()));
-            baseTables.addAll(GraphPartition.keyedBaseTables(dsl));
+            var baseTables = new TreeSet<String>(GraphPartition.keyedBaseTables(dsl));
             baseTables.forEach(table -> dsl.execute("ANALYZE TABLE \"" + table + "\""));
             analysed = scans(store);
         }
@@ -236,8 +235,8 @@ class PartitionSelectivityWorthTest {
     /**
      * What one relation's whole evaluation visits, read through a reader minted per call rather than
      * through the store's writer surface, which is the one session that has already resolved these
-     * views and would answer from that resolution; {@code UnregisteredRelation}'s javadoc states the
-     * rule this follows.
+     * views and would answer from that resolution: H2 resolves a view's references per session and
+     * keeps that resolution, so a fresh session is what sees the schema as it now stands.
      */
     private static long scans(CapturedStore store, String relation) {
         try (var reader = store.reader(new ReadBudget.Unbounded())) {

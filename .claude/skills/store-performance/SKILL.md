@@ -51,24 +51,24 @@ So, in order of what counts as evidence:
   view expansion and an untruncated stack is as deep as the derivation that produced it. It also
   samples its own collector thread without excluding it, which was half of all samples and the top
   entry on the run that put this here, so ask for more entries than you mean to read.
-- **A materialization refresh that never returns has already named itself, on the console you are
+- **A derivation stage that never returns has already named itself, on the console you are
   looking at.** The cheapest evidence in the whole procedure, cheaper than the entry below it,
-  because it needs no interrupt and no re-run: the refresh prints one line before its first statement and one
-  when the pass returns, so a build showing `graphitron: refreshing N materializations for graph
-  '...'` and never `materialization refresh done in ...` is stuck inside the refresh, and one that
-  never printed the first line is stuck somewhere else. Getting from there to the relation is one
-  re-run with `-X`, which turns on a line per registration printed *before* its statements: the last
-  `n/N` line with no `done in` line under it is the relation. So this class of hang is a name in the
+  because it needs no interrupt and no re-run: the derivation stratum prints one line before its
+  first statement and one when the pass returns, so a build showing `graphitron: deriving N stages
+  for graph '...'` and never `derivation stratum done in ...` is stuck inside the stratum, and one
+  that never printed the first line is stuck somewhere else. Getting from there to the stage is one
+  re-run with `-X`, which turns on a line per stage printed *before* its statements: the last
+  `n/N` line with no `done in` line under it is the stage. So this class of hang is a name in the
   first seconds and needs no thread dump at all. The recipe is in
   `docs/architecture/how-to/dev-loop-internals.adoc`.
-- **A statement that never returns names itself, for free.** For a statement outside the refresh,
+- **A statement that never returns names itself, for free.** For a statement outside the stratum,
   and still cheap: interrupt the build and the failure carries
   the SQL it was executing, or read the last `Executing query` line in jOOQ's DEBUG log. A hang is
   one statement, not a slow succession of them, and knowing which statement collapses the search
   before it starts. Any "database is open in exclusive mode" message trailing such a failure is the
   interrupt's own shutdown path, not the fault.
 - **Reactor wall-clock is not evidence.** Five runs of one module across code differing by at most
-  one registration spanned 1:10 to 2:48 on one machine, which is more spread than any change you are
+  one stored relation spanned 1:10 to 2:48 on one machine, which is more spread than any change you are
   likely to be measuring. Do not quote a reactor pair, and be suspicious of any figure in an older
   note that was computed from one.
 - **A thread dump of a killed build is a guess about a plan.** It says which frames are on a stack,
@@ -111,7 +111,7 @@ multiplies through it. Two specific ways this bites:
   that has one. If your reproduction does not reproduce, suspect this first.
 - **A seeded store of a dozen rows will tell you nothing about cost**, because every shape on the
   fact-model page is cheap at that size. And a derived read against a seeded store returns nothing
-  until `SeededStore.derive` has run, materialized targets holding rows only once something fills
+  until `SeededStore.derive` has run, stage-written tables holding rows only once the stratum fills
   them.
 
 When you must build a store rather than borrow one, the harness ladder is documented per subject and
@@ -301,7 +301,7 @@ Two constraints on this step, both of which have cost time:
   The divergence has a mechanism, and knowing when to expect it beats knowing that it can happen: a
   scan count weights every visited row equally, and a row of a view over `INFORMATION_SCHEMA` does
   not cost what a row of a table costs, so the count stops tracking cost exactly when a change moves
-  rows between a view and a table. That is what every registration in the register does, which makes
+  rows between a view and a table. That is what storing a rule as a stage does, which makes
   this the case where the caveat bites rather than a hypothetical one. It has been seen in both
   directions in one sitting: a stored snapshot visited twenty times the rows of the view it replaced
   and ran faster, and adding an index to it then removed 96% of those visits and moved the clock not
@@ -350,7 +350,7 @@ Bisect the body instead, and do it before trying any rewrite:
 
 This turns "somewhere in a two-hundred-line view" into one arm in a single run, and it composes with
 the snapshot control: substituting a table for one inlined name inside the guilty arm prices exactly
-what a registration of that name would buy.
+what storing that name as a stage would buy.
 
 ## 4. Know the evaluation model
 
@@ -366,20 +366,21 @@ already and each has a shape you can recognise in a plan:
   predicate, and the closing rule that what makes a relation expensive is being a view something
   reads many times rather than how a reader spells the read. The same page's materialized-view
   ruling says why `CREATE MATERIALIZED VIEW` is not available to you.
-- `meta_materialize`'s `reason` column, one row per registration, carries the per-relation
-  arithmetic for the relations that already earned one: which shape made each expensive, what one
-  evaluation cost, and which rewrites were tried and measured first. Read the row beside the general
-  form, not instead of it.
+- `meta_relation`'s `rationale` column, one row per declared relation, carries the case for each
+  stage-written table as it was made when the rule was stored, and the stage class's javadoc says
+  what it runs after and why. Where neither states a cost, the measurement was recorded in the rows
+  of the register the stages replaced, and the DDL's history holds them. Read the row beside the
+  general form, not instead of it.
 - A relation's own `COMMENT ON` carries its cost warning where it has one, because the cost is
   invisible at the call site. If the relation you are holding has one, it is the most specific thing
   written about your problem anywhere.
 
 **A recorded measurement is evidence about the schema it was measured on, and general forms
-generalise where measurements do not.** This is not a caveat, it is a live hazard: a reason row
+generalise where measurements do not.** This is not a caveat, it is a live hazard: a recorded reason
 naming the expensive term of one derivation has been carried forward onto a consumer schema where the
 branch it blamed was empty and the term was elsewhere entirely, costing two hypotheses before the
 timings contradicted it. Read a recorded number as "this is what the shape did there", re-measure the
-shape here, and if your measurement disagrees with a stored reason, the stored reason needs
+shape here, and if your measurement disagrees with a recorded rationale, the rationale needs
 correcting rather than explaining away. Say so where it lives, because a wrong recorded measurement
 is worse than none.
 
@@ -402,17 +403,18 @@ The controls that keep paying:
   list entry rather than a probe method per child, which is the difference between running it and
   deciding it was not worth it. A relation whose every child answers in milliseconds and which
   itself takes minutes has no expensive child: its cost is the expansion, and no amount of
-  registering something underneath it will help. When it lands this way, go to the bisection in
+  storing something underneath it will help. When it lands this way, go to the bisection in
   step 3 rather than to a lever.
 - **Snapshot the suspect into a table and re-run.** If the cost does not move, the suspect is not
-  the term. This is also the cheapest preview of what a registration would buy, and the preview is
-  quantitative: the snapshot's own build time is the refresh you would be adding, and the re-run is
+  the term. This is also the cheapest preview of what a stage would buy, and the preview is
+  quantitative: the snapshot's own build time is the write you would be adding, and the re-run is
   the read you would be buying. **Check the driving rows are not zero.** A control whose join
   produces no rows has multiplied nothing and measures one evaluation, which looks like a result and
   is not one.
-- **Compare the materialized target against its source view in both directions.** After a
-  registration, `source EXCEPT target` and `target EXCEPT source` must both be empty. A registration
-  is supposed to change cost and nothing else, and this is the two-line proof of it.
+- **Compare the stage table against its rule in both directions.** After a stage runs,
+  `rule EXCEPT table` and `table EXCEPT rule` must both be empty. Storing a rule is supposed to
+  change cost and nothing else, and this is the two-line proof of it; `StageAnswerAgreementTest`
+  runs it for every stage over populated fixtures.
 - **Join on the bare column.** Replaces an expression-shaped key with a column one, which
   distinguishes an expression key from a row count.
 - **Materialize in a `WITH` and re-run.** Expected to change nothing, and it is worth running
@@ -423,16 +425,16 @@ The controls that keep paying:
 
 Report a control that refuted you, and report it where the next reader will meet the hypothesis
 rather than only in conversation. A note that records only the surviving hypothesis leaves the next
-reader to re-run the same dead ends; the `reason` column of a registration is the right home for the
-rewrites that were tried and lost.
+reader to re-run the same dead ends; a stage class's javadoc, or the relation's rationale, is the right
+home for the rewrites that were tried and lost.
 
 ## 6. The lever hierarchy
 
 Once you know what is expensive and why, the levers are ordered, and the order is on the page beside
-the rules: **a captured fact, then a `meta_materialize` registration, then a rewrite.** A captured
-fact has no refresh to pay for at all. A registration says the rule is right as a view and only too
-slow to evaluate per naming, and it has a trade to win, a refresh against the re-evaluations it
-avoids. A rewrite is last because it usually changes nothing the planner cares about.
+the rules: **a captured fact, then a stage storing the rule, then a rewrite.** A captured
+fact has no derivation to pay for at all. A stage says the rule is right as a view and only too
+slow to evaluate per naming, and it has a trade to win, a write per capture against the
+re-evaluations it avoids. A rewrite is last because it usually changes nothing the planner cares about.
 
 Read the page for the argument. What this step adds is the order in which to reach, and two
 warnings. The first: the rung that feels most like engineering is the one that pays least often. The
@@ -444,49 +446,56 @@ respelling a hand-rolled null-safe comparison as `IS NOT DISTINCT FROM` measured
 Two of those looked like obvious wins on the page. A rewrite you have not timed is a guess with
 better handwriting.
 
-## 7. Choose what to materialize, and push it down
+## 7. Choose what to store, and push it down
 
-A registration is a shared investment, not a local patch. The page states the rule and carries the
+Storing a rule is a shared investment, not a local patch. The page states the rule and carries the
 measured case; the test to apply is:
 
 1. **Count the candidate's readers.** How many relations name it, and how many of them anything
    actually exercises today. A candidate with one reader that nothing exercises yet has every
-   refresh buying nothing, and that registration belongs in the increment that adds the reader.
+   write buying nothing, and that stage belongs in the increment that adds the reader.
    Count Java readers as well as SQL ones, and check whether a reader is on the path that is actually
    slow: a relation with no reader at all can be pathological in isolation and contribute nothing to
    the failure you are chasing, which makes it the most tempting wrong answer available.
-2. **Price its refresh.** The source view is evaluated once per refresh, whole or per graph, so the
-   refresh is a cost you are adding and not only one you are avoiding. State the number in the
-   `reason`, and state it as the trade it is when it is the most expensive refresh in the registry.
-3. **Prefer the deepest relation whose materialization removes re-evaluation for more readers than
-   the one you started from.** Materialize the relation the cost multiplies *through*, not the one
+2. **Price its stage.** The rule is evaluated once per capture of a graph, so the stage is a cost
+   you are adding and not only one you are avoiding. State the number in the rationale, and state it
+   as the trade it is when it is the most expensive stage in the stratum; the per-stage debug lines
+   time every stage for you.
+3. **Prefer the deepest relation whose storage removes re-evaluation for more readers than
+   the one you started from.** Store the relation the cost multiplies *through*, not the one
    that looked slow from where you stood. Stopping short of that depth is measurably not a fix,
    which the page's counter-case shows.
-4. **Weigh the cheapest registration against the one you can land.** The deepest candidate is
-   sometimes a CTE local to one view rather than a named relation, and registering it means promoting
-   it to a first-class relation with a name and comments first. When the shallower registration
-   removes the failure and the deeper one only makes the refresh cheaper, landing the first and
-   recording the second in the `reason` as measured follow-up is a defensible split. Say which one
+4. **Weigh the cheapest stage against the one you can land.** The deepest candidate is
+   sometimes a CTE local to one view rather than a named relation, and storing it means promoting
+   it to a first-class relation with a name and comments first. When the shallower stage
+   removes the failure and the deeper one only makes the stratum cheaper, landing the first and
+   recording the second in its rationale as measured follow-up is a defensible split. Say which one
    you did and why, with both numbers.
 
-Register it by adding a row to `meta_materialize` in the schema DDL, whose `reason` column is
-required and is where the case you just made belongs, in this relation's own terms and with its own
-arithmetic. Refresh ordering is derived from the stored view definitions and is not something you
-state.
+Store it as a stage of the graphitron gatherer's derivation stratum. The rule stays a stored view
+named after the table with a `_rule` suffix; the `graphitron_` table it fills carries a primary key
+equal to its grain's key; both are declared in `meta_relation` against the graphitron gatherer, with
+the grain sentence and, as the table's rationale, the case you just made, in this relation's own
+terms and with its own arithmetic. The stage class goes in `no.sikt.graphitron.model.derive` and is
+one `DELETE` of the graph's partition and one `INSERT ... SELECT` over the rule; any existing stage is
+the template. Add it to `DerivationStratum.steps` after every step that writes what its rule reads.
+That order is yours to state and `StageOrderGateTest` checks it against the rule's parsed reads, and
+the rule may read only the families the graphitron gatherer's declared dependencies allow.
 
-Registering an existing named view is the cheap shape and the one the convention is built for: the
-view keeps its text under a `_live` name, a table takes the canonical name every reader already
-spells, and no reader changes. Doing that touches more than the DDL, and the gates will tell you so
-one build at a time, so expect all of it in one pass: the `_live` view and its columns need comments
-in the established form, the canonical table inherits the original relation's comment plus the
-standard materialization note, and a new `_live` view has to be added to the agreement-source list in
-`FactCaptureAgreementTest` alongside the existing registrations. That last one fails a full build and
-not a scoped one, so run the verification build before believing you are done.
+Converting an existing named view is the cheap shape: the view keeps its text under the `_rule`
+name, the table takes the canonical name every reader already spells, and no reader changes. Doing
+that touches more than the DDL, and the gates will tell you so one build at a time, so expect all of
+it in one pass: the rule view and its columns need comments in the established form, the table and
+its rule need their agreement-source rows beside the existing stages', `StageAnswerAgreementTest`
+compares the table against its rule over populated fixtures, and a key too narrow for the grain
+fails as a primary-key violation in whichever relation test or sakila build first reaches a
+colliding row. That last one fails a full build and not a scoped one, so run the verification build
+before believing you are done.
 
 ## Citation policy
 
 This document cites doctrine pages, class names and relation names that a reader can find, and it
-restates no measured per-relation number: the page and the `reason` rows are gated surfaces and this
+restates no measured per-relation number: the page and the `meta_relation` rows are gated surfaces and this
 one is scanned by nothing, so a copy here is a copy that rots in silence. Two kinds of figure are
 deliberate exceptions, and they share a justification: their whole content is that a number of that
 kind means nothing, so there is no surface where they would ever be checked and nothing to drift

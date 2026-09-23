@@ -3,7 +3,6 @@ package no.sikt.graphitron.model.catalog;
 import org.jooq.DSLContext;
 
 import java.util.List;
-import java.util.Set;
 
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.name;
@@ -15,8 +14,8 @@ import static org.jooq.impl.DSL.table;
  *
  * <p>One home because the predicate "does this relation carry {@code graph_name}" has more than one
  * consumer and is a branch over a model field rather than over anything a caller knows: the
- * materializer picks a refresh shape by it, the bootstrap declares a selectivity on it, and the
- * statistics reader in the generator's tests has to exclude the column it declares. Two spellings of
+ * bootstrap declares a selectivity on it, and the statistics reader in the generator's tests has to
+ * exclude the column it declares. Two spellings of
  * one predicate is how a relation ends up graph-keyed for one consumer and not for another.
  *
  * <p>Asked of the database rather than read off the generated model, which cannot work here: the
@@ -27,10 +26,8 @@ import static org.jooq.impl.DSL.table;
  * spelling, so every name here is the folded one and a caller comparing against a registry row
  * folds it first.
  *
- * <p>One query per caller per pass, not one per relation. The materializer's shape decision had been
- * per registration per refresh, which is the same answer fetched again for each of the register's
- * entries: over one run of {@code graphitron}'s suite that was 3543 executions and 76.2 s, more than
- * every other statement that module issued put together.
+ * <p>One query per caller per pass, not one per relation: the same answer fetched once per relation
+ * has cost a suite run more than every other statement its module issued put together.
  */
 public final class GraphPartition {
 
@@ -67,20 +64,8 @@ public final class GraphPartition {
     private GraphPartition() {}
 
     /**
-     * Every relation in this store carrying the partition column, views included: the predicate as
-     * the materializer asks it, which decides whether a target is emptied for one graph or whole.
-     */
-    public static Set<String> keyedRelations(DSLContext dsl) {
-        return dsl.select(field(name("TABLE_NAME"), String.class))
-            .from(table(name("INFORMATION_SCHEMA", "COLUMNS")))
-            .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
-            .and(field(name("COLUMN_NAME"), String.class).eq(COLUMN))
-            .fetchSet(0, String.class);
-    }
-
-    /**
-     * The same predicate narrowed to base tables, in name order: the population the declaration
-     * above is stated on, a view having no selectivity of its own to state.
+     * Every base table in this store carrying the partition column, in name order: the population
+     * the declaration above is stated on, a view having no selectivity of its own to state.
      */
     public static List<String> keyedBaseTables(DSLContext dsl) {
         return dsl.select(field(name("C", "TABLE_NAME"), String.class))

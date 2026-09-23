@@ -24,12 +24,9 @@ import static no.sikt.graphitron.model.Tables.INTENT_FIELD_UNLOWERABLE_ORDERING_
  * lives here is the loop; the rule is {@link UnlowerableOrderings#rejectionOf}, shared with the
  * build-error consumer so one violation cannot be worded two ways.
  *
- * <p>It ran alone after the materialization refresh until the field-site scope became a stage, and
- * the reason was a dependency rather than a choice: the view it renders reads
- * {@code graphitron_field_scope_table}, which the refresh was what filled, so a call beside its
- * siblings would have rendered the previous capture's rows. {@link FieldScopeTables} fills it now,
- * and this writer runs in the stratum after that stage, which is the read set it always had met one
- * step earlier.
+ * <p>It runs in {@link DerivationStratum} after {@link FieldScopeTables}, and the reason is a
+ * dependency rather than a choice: the view it renders reads {@code graphitron_field_scope_table},
+ * which that stage fills, so running any earlier would render the previous capture's rows.
  *
  * <p>Total over the view's <em>minting</em> rows rather than over its rows, and the gap is the
  * population's own: the held verdict mints no rejection, so its coordinates are counted by the view

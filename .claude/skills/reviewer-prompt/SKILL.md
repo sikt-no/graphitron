@@ -79,8 +79,10 @@ Architectural improvement opportunities, especially:
   adding a fact relation, never a new leaf type.
 - **A derivation stored where a view belongs.** A resolved or derived value
   persisted as a base relation or column when it is a function of other facts;
-  the resolved value is always a view, and a materialization must own its
-  cannot-be-a-view argument in the DDL comment.
+  the rule is always stated as a view, and a stored copy must own its case:
+  a stage keeps the rule as its `_rule` view and says in its rationale why
+  the rule is stored, and a hand-written producer argues in its DDL comment
+  why no view could state it.
 - **Provenance flattened.** Authored and inferred populations from independent
   walks merged into one relation with a provenance tag column, instead of
   separate relations coalesced by a view.

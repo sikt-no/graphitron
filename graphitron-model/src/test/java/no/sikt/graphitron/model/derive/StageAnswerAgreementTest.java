@@ -216,7 +216,7 @@ class StageAnswerAgreementTest {
 
     /**
      * The captured schemas the agreement runs over. {@link #sdl()} reaches every arm the per-rule
-     * cases name; the register's own scaled fixture reaches the {@code @nodeId} decode chain and the
+     * cases name; the scaled fixture reaches the {@code @nodeId} decode chain and the
      * input-field roles with rows to compare; {@link #mutationSdl()} reaches the write payload's
      * refusal, key membership and destination, which neither of the other two populates.
      */
@@ -231,7 +231,7 @@ class StageAnswerAgreementTest {
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         String schema = switch (fixture) {
             case ARMS -> sdl();
-            case NODE_ID -> no.sikt.graphitron.model.test.MaterializedRegistryFixture.scaledSdl(2);
+            case NODE_ID -> no.sikt.graphitron.model.test.ScaledSchemaFixture.scaledSdl(2);
             case MUTATION -> mutationSdl();
         };
         try (var store = CapturedStore.ownStoreOfCatalog(

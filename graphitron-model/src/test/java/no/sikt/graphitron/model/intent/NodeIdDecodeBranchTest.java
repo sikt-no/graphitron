@@ -143,7 +143,7 @@ class NodeIdDecodeBranchTest {
     /**
      * Neither relation holds a row twice. The guard that would have failed on the day the branch was
      * dropped, stated as a property of the two relations the sweep found holding duplicates rather
-     * than as a roster over every materialization target: the other eighteen have a key available.
+     * than as a roster over every stage-written table: the others have a key available.
      */
     @Test
     void neitherRelationHoldsADuplicateRow() {

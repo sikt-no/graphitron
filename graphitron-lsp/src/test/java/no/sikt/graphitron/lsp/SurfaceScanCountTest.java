@@ -96,8 +96,8 @@ import static org.jooq.impl.DSL.select;
  *
  * <p>Worth knowing before reading a re-measurement as a regression or as a win. The five ceilings
  * measured against {@link #SDL} are held over three types and thirteen catalog tables, so every
- * materialized target in the store holds a handful of rows, and a change to how those targets are
- * stored moves these figures by nothing at all. Indexing the targets, which took the deepest
+ * stage-written table in the store holds a handful of rows, and a change to how those tables are
+ * stored moves these figures by nothing at all. Indexing the tables, which took the deepest
  * derivation over them from five figures of scans to three on a schema of real size, left all five
  * of these numbers identical to the scan. The two properties that build their own sixty- and
  * two-hundred-and-forty-type schemas are where such a change shows: the same work moved
@@ -121,9 +121,9 @@ class SurfaceScanCountTest {
 
     /**
      * The inlay ceiling, placed between two measured shapes rather than above one. The read costs
-     * 482 scans on this fixture as the store stands, and 1744 with the two {@code meta_materialize}
-     * registrations it depends on removed; that unregistered shape is not a hypothetical, it is what
-     * the surface cost on a real schema until those rows landed for another surface's sake, and at
+     * 482 scans on this fixture as the store stands, and 1744 with the two stored tables it depends
+     * on read as their rules instead; that shape is not a hypothetical, it is what the surface cost
+     * on a real schema until those tables were stored for another surface's sake, and at
      * sakila's size it answered nothing at all. 800 leaves a factor of 1.66 below and 2.18 above.
      *
      * <p>So this is a number whose whole value is that it discriminates, and it cannot be raised on
@@ -148,7 +148,7 @@ class SurfaceScanCountTest {
      *
      * <p>80 is placed between the pair by the rule that placed it originally, roughly the geometric
      * mean of the shipping figure and the nearer guarded one, which is 79 on today's measurement. It
-     * stayed at 80 through the work that indexed the materialized targets, and the arithmetic is why
+     * stayed at 80 through the work that indexed the stored tables, and the arithmetic is why
      * rather than inattention: that work took the shipping pair from 42 and 41 to 40 and 39, a five
      * percent gain at this surface, and moved the guarded pair up rather than down, so the window
      * this number sits in got wider at both ends and the same rule reproduces the same number.

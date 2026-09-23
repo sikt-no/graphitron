@@ -250,8 +250,8 @@ class DiagnosticsStatementCountTest {
      * ceiling assertable at all in this tier, being the deterministic residue the shape leaves in a
      * query plan.
      *
-     * <p>This ceiling was seen to fail before it was trusted: with both {@code meta_materialize}
-     * registrations removed from the model's DDL and nothing else changed, this case fails on 23983.
+     * <p>This ceiling was seen to fail before it was trusted: with the two stored tables it reads
+     * replaced by their rules in the model's DDL and nothing else changed, this case fails on 23983.
      * That is the discipline {@code SurfaceScanCountTest} states for the same currency, and it is
      * what this ceiling did not have when it first landed. It was then 20000 over the four-type
      * graph above, explained by a hundreds-of-thousands figure that belonged to a sakila-scale

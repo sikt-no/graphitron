@@ -19,8 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Closes the two authored rosters the family pages open with against the observed schema, the
- * shape {@code meta_relation_family} already uses for the family roster itself and
- * {@link MaterializeRegistryGateTest} uses for the materialization registry.
+ * shape {@code meta_relation_family} already uses for the family roster itself.
  *
  * <p>Resolve gates only, deliberately. That a headline names a relation the schema declares, and
  * that a bridge names two families the roster carries, are claims a declaration can be held to on

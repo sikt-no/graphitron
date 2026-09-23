@@ -25,7 +25,6 @@ import java.util.stream.Collectors;
 import static no.sikt.graphitron.model.Tables.META_GATHERER_CORPUS;
 import static no.sikt.graphitron.model.Tables.META_GATHERER_DEPENDENCY;
 import static no.sikt.graphitron.model.Tables.META_GRAIN;
-import static no.sikt.graphitron.model.Tables.META_MATERIALIZE;
 import static no.sikt.graphitron.model.Tables.META_RELATION;
 import static no.sikt.graphitron.model.Tables.META_RELATION_FAMILY;
 import static no.sikt.graphitron.model.Tables.META_STATED_RELATION;
@@ -46,16 +45,10 @@ import static org.jooq.impl.DSL.table;
  * a new relation is on no frozen roster, so it cannot arrive undeclared. The prose gates bind per
  * declared row, so they tighten as the roster drains rather than waiting for it to empty.
  *
- * <p>A registration's source view is exempt, and derived from {@code meta_materialize} rather than
- * hand-listed. The fact model reads a materialized target <em>as</em> its rule, so the relation of a
- * registered pair is the target: it carries the canonical name every reader spells and the rule's own
- * comment, while the {@code _live} view is the machinery that fills it. Declaring the machinery would
- * put a second grain sentence and example on rows that are the target's rows by construction, and
- * would evict the {@code _live} warning from the one surface a misuser meets, its {@code COMMENT ON}.
- * Deriving the exemption from the register rather than authoring it is what keeps the ratchet: nobody
- * can pad it, and there is no way to dodge a declaration through it, because a registration needs a
- * target and a target under a name the roster does not already carry is an observed relation on no
- * frozen roster.
+ * <p>A stage's rule view owes a declaration like any other relation. It carries the rule a stage
+ * inserts from rather than rows of its own, and its comment says so to the one reader who meets it,
+ * which is what its grain sentence and example are for; a view nobody declares is on no frozen
+ * roster, so a rule cannot arrive undeclared by being named for the table it fills.
  */
 class MetaDeclarationGateTest {
 
@@ -69,8 +62,6 @@ class MetaDeclarationGateTest {
                 .from(META_RELATION_FAMILY).fetch(0, String.class));
             var declared = new HashSet<>(dsl.select(META_RELATION.RELATION_NAME)
                 .from(META_RELATION).fetch(0, String.class));
-            var registered = new HashSet<>(dsl.select(META_MATERIALIZE.SOURCE_VIEW_NAME)
-                .from(META_MATERIALIZE).fetch(0, String.class));
             var stated = statedRelations(dsl);
 
             assertThat(declared)
@@ -80,13 +71,12 @@ class MetaDeclarationGateTest {
                 .as("stated relations the schema does not declare")
                 .isSubsetOf(observed);
 
-            var undeclared = undeclared(observed, declared, registered, stated);
+            var undeclared = undeclared(observed, declared, stated);
             assertThat(undeclared)
-                .as("the observed relations with no meta_relation row and no meta_materialize row"
-                    + " naming them as a rule's source view and no meta_stated_relation row,"
-                    + " against the frozen roster; a missing"
+                .as("the observed relations with no meta_relation row and no meta_stated_relation"
+                    + " row, against the frozen roster; a missing"
                     + " entry is a new relation that must be declared rather than added to the"
-                    + " roster, an extra entry is a declared, registered or retired relation whose"
+                    + " roster, an extra entry is a declared or retired relation whose"
                     + " line must be removed")
                 .containsExactlyInAnyOrderElementsOf(frozenRoster());
         });
@@ -368,16 +358,13 @@ class MetaDeclarationGateTest {
     }
 
     /**
-     * The observed relations no {@code meta_relation} row declares and no registration states as
-     * its rule. One expression, so the roster case and the subtraction case cannot come to
-     * disagree about what the exemption is.
+     * The observed relations no {@code meta_relation} or {@code meta_stated_relation} row declares.
+     * One expression, so every case reading it means the same thing by undeclared.
      */
     private static Set<String> undeclared(Set<String> observed, Set<String> declared,
-                                          Set<String> registeredSourceViews,
                                           Set<String> stated) {
         return observed.stream()
             .filter(relation -> !declared.contains(relation))
-            .filter(relation -> !registeredSourceViews.contains(relation))
             .filter(relation -> !stated.contains(relation))
             .collect(Collectors.toSet());
     }

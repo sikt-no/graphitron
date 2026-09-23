@@ -84,7 +84,6 @@ intent_argmapping_projection_defect
 intent_argument_filter_role
 intent_argument_reference_step_hop
 intent_authored_claim_conflict
-intent_authored_claim_rejection
 intent_authored_field_claim
 intent_authored_type_claim
 intent_bound_table
@@ -119,8 +118,6 @@ intent_foreign_key_column_pair
 intent_input_field_column_scope
 intent_input_occurrence_descent_order
 intent_input_occurrence_override
-intent_input_occurrence_path
-intent_input_occurrence_path_step
 intent_java_enum_class
 intent_jvm_ancestor
 intent_mutation_matched_key
@@ -147,11 +144,9 @@ intent_resolved_type_demand
 intent_routine_return_binding
 intent_table_key_candidate
 intent_type_backing
-intent_type_backing_class
 intent_type_backing_conflict
 intent_type_backing_seed
 intent_type_demand
-intent_type_domain
 intent_type_exemption
 lint_finding
 lint_finding_fix
@@ -164,8 +159,6 @@ meta_gatherer
 meta_gatherer_corpus
 meta_gatherer_dependency
 meta_grain
-meta_materialize
-meta_materialize_dependency
 meta_prefixless_relation
 meta_relation
 meta_relation_family

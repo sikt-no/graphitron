@@ -29,7 +29,6 @@ import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
 import no.sikt.graphitron.model.derive.InputFieldReferenceStepTargets;
 import no.sikt.graphitron.model.derive.InputFieldResolvingTables;
 import no.sikt.graphitron.model.derive.FieldReferenceStepTargets;
-import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.model.derive.ResolvedTypeBindings;
 import no.sikt.graphitron.model.derive.SpelledTables;
 import no.sikt.graphitron.model.grammar.ConstantReferenceGrammar;
@@ -225,11 +224,10 @@ public final class SeededStore {
      * <p>The store's architecture has three strata: capture transcribes facts, derivation computes
      * further facts from them, and queries read. This class models the first and the third, and
      * under derive-on-read the middle one is implicit and free, so its absence never cost anything.
-     * Materialize one derivation and the missing stratum becomes visible at once: a target holds
-     * rows only once something fills it. This is that stratum, and it is deliberately an entry
-     * point production also calls, so the two boundaries cannot drift apart and neither holds a
-     * list of relations a later registration could invalidate. A test never names a materialized
-     * relation, and registering a fourth or a fifth costs this fixture nothing.
+     * Store one derivation and the missing stratum becomes visible at once: a table holds rows
+     * only once something fills it. This is that stratum, running the stages production runs by the
+     * calls production makes, so the two cannot drift apart in what a stage computes; a test never
+     * names a stage, and a rule becoming one costs this fixture one line.
      *
      * <p>Every graph the store holds rather than one the caller names, which is the shape a seeded
      * store wants: a case seeds its graphs and then reads, several of them read across graphs to
@@ -275,8 +273,8 @@ public final class SeededStore {
             ResolvedTypeBindings.derive(dsl, graph);
             FieldReferenceStepTargets.derive(dsl, graph);
             // The derivation stratum's stages, after the gatherer's own above because that is
-            // where each one's rule reads from, and before the refresh because registrations
-            // still read what they write.
+            // where each one's rule reads from, in the order DerivationStratum runs them. The
+            // hand-written producers are not among them: a seeded case writes their tables itself.
             FieldColumnScopes.derive(dsl, graph);
             CarrierDataFields.derive(dsl, graph);
             FieldScopeTables.derive(dsl, graph);
@@ -299,7 +297,6 @@ public final class SeededStore {
             MutationPayloadKeyMemberships.derive(dsl, graph);
             MutationWriteDestinations.derive(dsl, graph);
         }
-        Materializations.refreshAll(dsl);
     }
 
     /**

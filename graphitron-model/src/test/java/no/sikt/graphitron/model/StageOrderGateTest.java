@@ -2,7 +2,7 @@ package no.sikt.graphitron.model;
 
 import no.sikt.graphitron.model.derive.ArgumentReferenceStepTargets;
 import no.sikt.graphitron.model.derive.InputFieldReferenceStepTargets;
-import no.sikt.graphitron.model.derive.Materializations;
+import no.sikt.graphitron.model.derive.DerivationStratum;
 import no.sikt.graphitron.model.derive.ViewReferences;
 import org.jooq.DSLContext;
 import org.jooq.Query;
@@ -33,9 +33,8 @@ import static org.jooq.impl.DSL.table;
  * The derivation stratum's order, against what each step of it reads and writes.
  *
  * <p><b>The invariant.</b> No step of the pass may read a table a <em>later</em> step writes,
- * because it would read the previous capture's rows. That is what kept every derived rule out of a
- * stage while the register was the only thing ordering them, and it is what a stage order has to
- * satisfy by construction once statement order in one method is the ordering.
+ * because it would read the previous capture's rows. It is what a stage order has to satisfy by
+ * construction, statement order in one list being the whole of the ordering.
  *
  * <p><b>Why statement order is enough here, where the fact model rules out hand-kept orderings.</b>
  * The objection to a hand-kept ordering is that it has no derivable source. This one has one, and
@@ -45,15 +44,14 @@ import static org.jooq.impl.DSL.table;
  * its read set off the same objects the capture executes. That is the stronger of the two: there is
  * no transcription between what is checked and what runs. What is left undeclared is the
  * hand-written producers whose rule is a Java loop rather than a statement, whose write sets are
- * declared below on the same equality-pinned footing {@code MaterializeRegistryGateTest}'s rosters
- * stand on, and the refresh, whose write set is the register's own rows.
+ * declared in {@link DerivationStratum} beside the steps that run them.
  *
- * <p><b>What this does not claim.</b> It does not read {@link
- * no.sikt.graphitron.model.capture.FactCapture} and cannot: {@link #STRATUM} is the statement order
- * transcribed, not derived from the source, so a step added there and not here is invisible to this
- * gate. {@link #everyDeclaredWriteIsAnObservedTable} is the guard that keeps the transcription from
- * rotting silently against a rename, and the cross-checks against the register below are what keep
- * it honest against the one step whose contents are data.
+ * <p><b>What the roster below is, and what holds it.</b> {@link #STRATUM} carries what the stratum
+ * does not: which view states each stage's rule, or which statements a jOOQ stage runs. Its names
+ * and write sets are the stratum's own, and {@link #theRosterIsTheStratumItChecks} holds them equal
+ * in order, so a step added to {@link DerivationStratum} and not here fails the build rather than
+ * running unchecked, and {@link #everyDeclaredWriteIsAnObservedTable} keeps both from rotting
+ * against a rename.
  */
 class StageOrderGateTest {
 
@@ -62,7 +60,7 @@ class StageOrderGateTest {
      * one, and the base tables it writes.
      *
      * @param ruleView the stored view a stage inserts from, or null for a step whose rule is jOOQ
-     *                 code or, in the refresh's case, a roster of rules
+     *                 code
      */
     private record Step(String name, String ruleView,
                         BiFunction<DSLContext, String, List<Query>> statements,
@@ -83,15 +81,7 @@ class StageOrderGateTest {
     private static final String GRAPH = "the stage order gate's graph";
 
     /**
-     * A sentinel for the one step whose write set is data rather than a declaration. Replaced per
-     * store by the register's own target names, so a registration landing or leaving moves this
-     * step's write set without anybody editing this file, which is the whole point: the steps this
-     * gate is about are the ones taking rows <em>out</em> of that set.
-     */
-    private static final Set<String> REGISTERED_TARGETS = Set.of("<the register's targets>");
-
-    /**
-     * The stratum in the order {@code FactCapture.derive} runs it, stages first.
+     * The stratum in the order {@code DerivationStratum.steps} lists it.
      *
      * <p>The stages go ahead of the producers where their rules allow it and after them where they
      * do not, which is a property of each rule's read set rather than a convention: a rule reaching
@@ -100,13 +90,10 @@ class StageOrderGateTest {
      * captured facts alone may run first, where later steps can read its rows. The gate below is
      * what says which of those each stage actually is.
      *
-     * <p>{@code UnlowerableOrderingRejectionRows} is inside the stratum rather than after the
-     * refresh, and the rung that converted the field-site scope is what put it there: it renders a
-     * view reading that relation, which the refresh used to be what filled, so its own transaction
-     * after the refresh was the earliest point at which it could see the capture's rows. With the
-     * scope a stage the reason is gone, and a step sitting after the refresh for a dependency that
-     * no longer exists is a stale rationale nothing can catch, this producer being jOOQ with no
-     * parsed read set.
+     * <p>{@code UnlowerableOrderingRejectionRows} sits last because it renders a view reading the
+     * field-site scope table, so it runs once that table's stage has written it; this producer
+     * being jOOQ with no parsed read set, that placement is a rationale the gate cannot check, and
+     * it is stated here so a later move has to answer it.
      */
     private static final List<Step> STRATUM = List.of(
         new Step("FieldColumnScopes", "graphitron_field_column_scope_rule",
@@ -165,8 +152,24 @@ class StageOrderGateTest {
         new Step("MutationWriteDestinations", "graphitron_mutation_write_destination_rule",
             Set.of("graphitron_mutation_write_destination")),
         new Step("UnlowerableOrderingRejectionRows", null,
-            Set.of("intent_field_unlowerable_ordering_rejection")),
-        new Step("Materializations.refresh", null, REGISTERED_TARGETS));
+            Set.of("intent_field_unlowerable_ordering_rejection")));
+
+    /**
+     * The roster is the stratum, name for name and write set for write set, in order. Without this
+     * the roster would be a transcription the gate trusted, and a step added to the stratum and not
+     * here would run with nothing checking where it sits.
+     */
+    @Test
+    @DisplayName("the roster this gate checks is the stratum the capture runs, in order")
+    void theRosterIsTheStratumItChecks() {
+        assertThat(STRATUM.stream().map(step -> step.name() + " " + new java.util.TreeSet<>(step.writes()))
+                .toList())
+            .as("the gate's roster against DerivationStratum.steps; a step missing here is a step"
+                + " no order check reaches")
+            .containsExactlyElementsOf(DerivationStratum.steps(null).stream()
+                .map(step -> step.name() + " " + new java.util.TreeSet<>(step.writes()))
+                .toList());
+    }
 
     @Test
     @DisplayName("no stage reads a table a later step of the pass writes")
@@ -289,8 +292,7 @@ class StageOrderGateTest {
 
     /**
      * A stage's insert is {@code INSERT INTO target SELECT * FROM rule}, so the two shapes have to
-     * agree name for name in order. The same claim the register makes about a registration, made
-     * about the statements that replace one: a mismatch would fill the target with the right rows
+     * agree name for name in order: a mismatch would fill the target with the right rows
      * under the wrong columns, which is the one failure nobody reads.
      */
     @Test
@@ -351,9 +353,8 @@ class StageOrderGateTest {
     /**
      * Every stored relation under the derived family's prefix is written by a step this stratum
      * names, so a base table no step writes fails here rather than sitting in the schema filled by
-     * nobody or by a writer standing outside the order. The criterion the register's own gate used
-     * to state as a roster of hand-written exceptions, restated now that there is no register for a
-     * derivation to be the exception to: a derived table is a step's, or it is a defect.
+     * nobody or by a writer standing outside the order: a derived table is a step's, or it is a
+     * defect.
      */
     @Test
     @DisplayName("every stored intent_ relation is written by a step the stratum names")
@@ -378,8 +379,7 @@ class StageOrderGateTest {
     /**
      * No two steps write the same relation. A relation two steps fill is one whose second filler
      * overwrites or doubles the first's rows depending on its key, and neither is a thing a reader
-     * of the order could see; it is also what a conversion would look like if the registration were
-     * deleted from the register without the stage being added, or added without it.
+     * of the order could see.
      */
     @Test
     @DisplayName("no relation is written by two steps of the stratum")
@@ -400,48 +400,23 @@ class StageOrderGateTest {
 
     // ===== Reading the observed schema =====
 
-    /** The stratum with the refresh's sentinel replaced by the register's own target names. */
+    /** The roster the cases read. */
     private static List<Step> resolved(DSLContext dsl) {
-        Set<String> targets = Materializations.registrations(dsl).stream()
-            .map(Materializations.Registration::targetTableName)
-            .collect(Collectors.toSet());
-        return STRATUM.stream()
-            .map(step -> step.writes() == REGISTERED_TARGETS
-                ? new Step(step.name(), step.ruleView(), targets)
-                : step)
-            .toList();
+        return STRATUM;
     }
 
     /**
      * Every stored relation the named view reaches, expanding through views and stopping at base
-     * tables. The ordering question is about tables: a view in between is evaluated where it is
-     * named and holds no rows of its own, so what decides whether a stage is too early is the
-     * tables underneath every view it names.
+     * tables, which is {@link ViewReferences#tablesReachedBy(DSLContext, String)}: the ordering
+     * question is about tables, a view in between holding no rows of its own.
      */
     private static Set<String> storedRelationsReachedBy(DSLContext dsl, String viewName) {
-        var reached = storedRelationsReachedBy(dsl, List.of(viewName));
-        reached.remove(viewName);
-        return reached;
+        return ViewReferences.tablesReachedBy(dsl, viewName);
     }
 
     /** The same walk from the relations a statement named directly. */
     private static Set<String> storedRelationsReachedBy(DSLContext dsl, Collection<String> seeds) {
-        var kinds = relationKinds(dsl);
-        var tables = new LinkedHashSet<String>();
-        var seen = new HashSet<String>();
-        var pending = new ArrayDeque<String>(seeds);
-        while (!pending.isEmpty()) {
-            String relation = pending.poll();
-            if (!seen.add(relation)) {
-                continue;
-            }
-            if (!"VIEW".equals(kinds.get(relation))) {
-                tables.add(relation);
-                continue;
-            }
-            ViewReferences.relationsReadBy(dsl, relation).forEach(pending::add);
-        }
-        return tables;
+        return ViewReferences.tablesReachedBy(dsl, seeds);
     }
 
     private static Map<String, String> relationKinds(DSLContext dsl) {

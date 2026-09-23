@@ -241,27 +241,28 @@ To get at the per-site cost, subtract `diagnostics.validatorReport` from its
 enclosing `diagnostics.compute` and divide by the `directives=` count on the same
 line.
 
-== A build or a dev start that goes quiet in the materialization refresh
+== A build or a dev start that goes quiet in the derivation stratum
 
-The refresh that refills the materialized fact-store targets prints its own pass
-boundary, so a run stuck inside it says so without any instrument being turned on.
-Two lines per pass, on a capture and on a `graphitron:dev` start alike:
+The derivation stratum, the stages the capture runs after its gatherers have
+flushed, prints its own pass boundary, so a run stuck inside it says so without
+any instrument being turned on. Two lines per pass, on a capture and on a
+`graphitron:dev` start alike:
 
 [source,text]
 ----
-[INFO] graphitron: refreshing N materializations for graph 'orders'
-[INFO] graphitron: materialization refresh done in 3.4 s
+[INFO] graphitron: deriving N stages for graph 'orders'
+[INFO] graphitron: derivation stratum done in 3.4 s
 ----
 
-A console showing the first line and not the second is inside the refresh, or in
-one of the capture stages that run just ahead of it. That alone is worth having,
-because both run inside the capture transaction and the phases either side print
-nothing that would distinguish them. A stage prints no line of its own yet, so
-rule out the refresh first with the grep below: a run stuck in a stage reaches
-this tier with no per-registration line at all.
+A console showing the first line and not the second is inside the stratum. That
+alone is worth having, because the phases either side of it print nothing that
+would distinguish them. On a store none of whose stage tables holds a row yet, the
+first line ends `, committing and analysing each`: that capture commits each stage
+on its own and analyses what it wrote before the next one plans, which is the
+cadence xref:../explanation/fact-model.adoc[the fact model] explains.
 
-To name the registration, re-run with `-X` and grep for the per-registration
-lines, which the same pass prints at debug:
+To name the stage, re-run with `-X` and grep for the per-stage lines, which the
+same pass prints at debug:
 
 [source,bash]
 ----
@@ -270,21 +271,20 @@ mvn generate-sources -X | grep 'graphitron: *[0-9]*/'
 
 [source,text]
 ----
-[DEBUG] graphitron:  4/19 graphitron_node_id_decode_hop_rule -> graphitron_node_id_decode_hop, graph 'orders'
-[DEBUG] graphitron:  4/19 done in 3.1 s, deleted 812 rows in 4 ms, inserted 812 rows in 3.1 s
+[DEBUG] graphitron: 17/27 stage NodeIdDecodeHops
+[DEBUG] graphitron: 17/27 done in 3.1 s, 812 rows
 ----
 
-The name is printed before the statements are issued and the durations after they
-return, so the last `n/N` line with no `done in` line under it is the relation the
-run is stuck in. `N` is how many registrations the register holds, and it falls as
-rules move into capture stages, so read the denominator off the run rather than
-off this page. That is the whole recipe: no thread dump, no profiler, and no
-reconstruction of the refresh order. Two lines per registration per graph is why
-this tier is not on by default and not a reason to raise it.
+The name is printed before the stage's statements are issued and the duration
+after they return, so the last `n/N` line with no `done in` line under it is the
+stage the run is stuck in. `N` is how many steps the stratum runs, and it moves as
+stages are added and retired, so read the denominator off the run rather than off
+this page. That is the whole recipe: no thread dump, no profiler, and no
+reconstruction of the stage order. Two lines per stage per graph is why this tier
+is not on by default and not a reason to raise it.
 
-From there the question is why that relation is expensive, which is a database
+From there the question is why that stage is expensive, which is a database
 question and has its own procedure: see the `store-performance` skill, and
-xref:../explanation/fact-model.adoc[the fact model] for what a registration is and
-what it costs.
+xref:../explanation/fact-model.adoc[the fact model] for what storing a rule costs.
 
 xref:index.adoc[← How-to index]

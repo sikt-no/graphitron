@@ -137,8 +137,8 @@ public final class CapturedStore implements AutoCloseable {
      * {@link #of(Path, String)} on a store of this fixture's own rather than the thread's.
      *
      * <p>For a case that changes the schema. A clear puts rows back and cannot put a relation back,
-     * so a case that drops a table, or demotes a materialized target to a view the way the
-     * read-cost instrument does, would leave every later case on that thread looking at a different
+     * so a case that drops a table, or demotes a stage-written table to its rule the way a cost
+     * comparison does, would leave every later case on that thread looking at a different
      * store. That is the rule the funnel already applies to the gate classes that issue DDL, and
      * this is how a fixture obeys it.
      *

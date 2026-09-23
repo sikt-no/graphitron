@@ -51,12 +51,8 @@ import static no.sikt.graphitron.model.Tables.META_STATED_RELATION;
  * from {@link FactStores} and close it, {@link RunawayRelation} in particular. It is a trap rather
  * than a hole: the clear names a relation the DDL has turned into something else, and H2 refuses.
  *
- * <p>Re-deriving the materialization dependency edges is not part of a clear.
- * {@code MaterializeDependencies.populate} derives them from the registry and from the stored view
- * definitions in {@code INFORMATION_SCHEMA}, reading no fact relation, so no row a case writes and
- * no row a clear removes can invalidate them. {@link SeededStore#derive} is the other derivation
- * and it does depend on fact rows, which is why a case still calls it per case; that has not
- * changed and is not a clear's concern.
+ * <p>{@link SeededStore#derive} is the one derivation a case owes, and it depends on fact rows, which
+ * is why a case still calls it per case; that is not a clear's concern.
  */
 final class ThreadConfinedStore {
 
@@ -178,8 +174,8 @@ final class ThreadConfinedStore {
      * and nothing else.
      *
      * <p>What a borrow cannot survive is a case that changes the schema. A clear puts rows back and
-     * cannot put a relation back, so a case that drops a table, or demotes a materialized target to
-     * a view as the read-cost instrument does, leaves the thread's store a different shape for
+     * cannot put a relation back, so a case that drops a table, or demotes a stage-written table to
+     * its rule as a cost comparison does, leaves the thread's store a different shape for
      * every case after it. Such a case owns its store; {@code CapturedStore.ownStore} is that arm,
      * and the rule is the one the funnel already had for the gate classes that issue DDL.
      */

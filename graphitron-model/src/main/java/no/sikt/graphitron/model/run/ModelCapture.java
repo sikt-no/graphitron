@@ -2,7 +2,7 @@ package no.sikt.graphitron.model.run;
 
 import no.sikt.graphitron.model.capture.graphitron.GraphitronFactCapture;
 import no.sikt.graphitron.model.derive.NameMatchedKeys;
-import no.sikt.graphitron.model.derive.RefreshProgress;
+import no.sikt.graphitron.model.derive.StageProgress;
 import no.sikt.graphitron.model.capture.FactCapture;
 import no.sikt.graphitron.model.sink.FactSink;
 import no.sikt.graphitron.model.capture.sdl.SdlFactCapture;
@@ -68,19 +68,19 @@ public final class ModelCapture {
 
     /**
      * {@link #capture(DSLContext, GraphIdentity, SubjectConfig, List, JooqCatalog, LocalDateTime)}
-     * reporting the materialization refresh to {@code refresh} rather than to the log.
+     * reporting the derivation stratum to {@code progress} rather than to the log.
      *
      * <p>Same store either way, so this changes nothing a reader can ask the rows. It exists
-     * because the refresh picks its cadence from the register's own state, and which cadence it
+     * because the stratum picks its cadence from the store's own state, and which cadence it
      * picked is only observable from inside the pass: both leave the same rows behind. A caller
      * with somewhere better to put those events than a log supplies one.
      *
-     * @param refresh what the refresh reports to, or null for the log
+     * @param progress what the stratum reports to, or null for the log
      */
     @SuppressWarnings("deprecation")  // drives the decode until it reads the entry stratum
     public static void capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
                                List<ClasspathEntry> classpath, JooqCatalog jooq,
-                               LocalDateTime readAt, RefreshProgress refresh) {
+                               LocalDateTime readAt, StageProgress progress) {
         writeGraph(dsl, graph, readAt);
         // The corpus is read once, by the gatherer that owns the store's record of what was read,
         // and every gatherer below it is handed the documents rather than the configuration.
@@ -131,20 +131,21 @@ public final class ModelCapture {
         // call every column carries the unanalysed placeholder, and with H2's default a table
         // would be analysed only once it passed two thousand changes, which makes a plan a
         // function of how large the captured graph happens to be rather than of anything anyone
-        // chose. One statement over the base tables this pass has just filled, and the registered
-        // targets it covers are empty here, which is why Materializations.analyse still runs at
-        // the tail of the derivations to state theirs.
+        // chose. One statement over every table this pass has just filled, the derivation stratum's
+        // included: on a warm store those hold the previous capture's rows, which is what the steps
+        // below plan against, and on a cold one they are empty, which is what makes the stratum
+        // commit and analyse each step instead.
         //
         // ANALYZE commits, which moves the pass's first commit ahead of the derivations. The one
-        // commit that would corrupt a store is one between a refresh's delete and its inserts,
-        // and this is before the refresh rather than inside it.
+        // commit that would corrupt a store is one between a step's delete and its inserts, and
+        // this is before the stratum rather than inside it.
         dsl.execute("ANALYZE");
         // The derivations the incumbent pass still owns, at the tail because every one of them
         // reads what this pass has just written. It captures nothing of its own any more.
-        if (refresh == null) {
+        if (progress == null) {
             FactCapture.derive(dsl, graph, assembly);
         } else {
-            FactCapture.derive(dsl, graph, assembly, refresh);
+            FactCapture.derive(dsl, graph, assembly, progress);
         }
         // And again at the end, so what a capture leaves is a store whose statistics describe the
         // rows it holds rather than the rows it held partway through. The call above states what

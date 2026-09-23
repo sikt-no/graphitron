@@ -124,7 +124,7 @@ it drops the tests as well.
 ## A long span is not an exclusive cost
 
 The overlap error has a third form, and it survives knowing about the other two. Under a
-profiled unforked run `DerivedReadCostTest` held a span of 259 s inside a 280 s test phase and
+profiled unforked run the read-cost gate of the time (`DerivedReadCostTest`, since retired) held a span of 259 s inside a 280 s test phase and
 closed the phase, which reads exactly like a critical path. It is not. Deleting it from the run
 saved **13 seconds of 135**.
 

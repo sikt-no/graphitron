@@ -45,7 +45,7 @@ class InlineMultiplicityCheckTest {
             """);
         var materialized = InlineMultiplicityCheck.parse("""
             CREATE TABLE base (x VARCHAR);
-            CREATE VIEW rule_live (x) AS SELECT x FROM base;
+            CREATE VIEW rule_rule (x) AS SELECT x FROM base;
             CREATE TABLE rule (x VARCHAR);
             CREATE VIEW reader (x) AS SELECT a.x FROM rule a JOIN rule b ON a.x = b.x;
             """);

@@ -15,9 +15,12 @@ import org.jooq.impl.DSL;
 import org.jooq.impl.DefaultConfiguration;
 import org.jooq.impl.QOM;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -44,27 +47,27 @@ import static org.jooq.impl.DSL.table;
  * which is why {@link #readBy} keeps the position and the multiplicity that a set of relation names
  * discards.
  *
- * <p>{@link MaterializeDependencies} is the other reader of this walk and wants only the relation
- * names, its question being which registration refreshes before which. Both go through here so the
- * normalization rules are stated once: a real relation reference is the one H2 spells
- * schema-qualified ({@code "PUBLIC"."NAME"}), while aliases and common table expression names stay
- * unqualified, and filtering on that shape is what keeps an alias sharing a relation's name from
+ * <p>{@link #relationsReadBy} and the two reach walks built on it want only the relation names:
+ * {@link #tablesReachedBy} is what the derivation stratum's order is gated against, and
+ * {@link #viewsEvaluatedBy} is the reach a cost claim about a reader ranges over. All of them go
+ * through here so the normalization rules are stated once: a real relation reference is the one H2
+ * spells schema-qualified ({@code "PUBLIC"."NAME"}), while aliases and common table expression names
+ * stay unqualified, and filtering on that shape is what keeps an alias sharing a relation's name from
  * counting as a read of it.
  *
- * <p><strong>Weighting these positions into a single cost has been tried against the register and
- * refused.</strong> The obvious next step from here is to multiply each position by the rows of its
- * driving side and rank the registrations in {@code meta_materialize} by what materializing each one
- * saves. That was built, run against a real capture, and scored against the savings the registry's
- * own reasons record, classified into coarse bands orders of magnitude apart. It did not reproduce
- * them, and it was worse than a plain count of namings exactly where it mattered most: counting every
- * position as one puts the three registrations whose reasons record a read that never terminates in
- * the top three, and weighting by cardinality pushes one of them down below registrations that save
- * seconds. The cause is in {@link Position#RECURSIVE} below. A recursive term runs once per
- * iteration, this walk cannot see iterations, and weighting by the largest relation the term names
- * gives a self-walk its own row count, so the one position the register describes as unbounded is
- * the one the weighting cannot size, and a finite number demotes it beneath the positions it can.
- * The walk is kept because reading <em>where</em> a reference sits is established and useful on its
- * own; what failed is the step from a position to a number.
+ * <p><strong>Weighting these positions into a single cost has been tried and refused.</strong> The
+ * obvious next step from here is to multiply each position by the rows of its driving side and rank
+ * the rules that were stored as tables by what storing each one saved. That was built, run against a
+ * real capture, and scored against the savings recorded for those rules, classified into coarse bands
+ * orders of magnitude apart. It did not reproduce them, and it was worse than a plain count of
+ * namings exactly where it mattered most: counting every position as one put the three rules whose
+ * records described a read that never terminates in the top three, and weighting by cardinality
+ * pushed one of them down below rules that saved seconds. The cause is in {@link Position#RECURSIVE}
+ * below. A recursive term runs once per iteration, this walk cannot see iterations, and weighting by
+ * the largest relation the term names gives a self-walk its own row count, so the one position those
+ * records described as unbounded is the one the weighting cannot size, and a finite number demotes
+ * it beneath the positions it can. The walk is kept because reading <em>where</em> a reference sits
+ * is established and useful on its own; what failed is the step from a position to a number.
  *
  * <p><strong>What the three positions are worth is not equal, and a caller weighting them should
  * know which is which.</strong> {@link Position#RECURSIVE} and {@link Position#CORRELATED} are read
@@ -76,7 +79,7 @@ import static org.jooq.impl.DSL.table;
  * {@code WHERE}, leaving {@code ON 1=1} behind and the planner free to drive from either side. So
  * an inner-side reading is the shape as written and the shape as executed only where the join order
  * is fixed, which is the outer joins. Treat it as a suspect worth pricing rather than as a
- * measurement, the same standing the register's own reasons give a scan count.
+ * measurement, the same standing a scan count has.
  */
 public final class ViewReferences {
 
@@ -254,7 +257,7 @@ public final class ViewReferences {
 
     /**
      * The distinct relations the named view reads, which is {@link #readBy} with multiplicity and
-     * position discarded: the question a refresh order asks, where reading a relation twice and
+     * position discarded: the question a stage order asks, where reading a relation twice and
      * reading it once impose the same ordering.
      */
     public static Set<String> relationsReadBy(DSLContext dsl, String viewName) {
@@ -267,6 +270,61 @@ public final class ViewReferences {
      */
     public static Set<String> relationsReadBy(DSLContext dsl, Query query) {
         return relationsOf(readBy(dsl, query));
+    }
+
+    /**
+     * Every view body a read of {@code relations} expands, the walk recursing into views and
+     * stopping at every table: the reach a cost claim about a reader ranges over, a table costing
+     * its readers nothing to reach whoever filled it. A relation that is itself a view is its own
+     * first member.
+     */
+    public static Set<String> viewsEvaluatedBy(DSLContext dsl, Collection<String> relations) {
+        return walk(dsl, relations).views();
+    }
+
+    /**
+     * Every table a read of {@code viewName} reaches through the views it names, which is the
+     * question a stage order asks: a view in between is evaluated where it is named and holds no
+     * rows of its own, so what decides whether a stage runs too early is the tables underneath
+     * every view its rule names.
+     */
+    public static Set<String> tablesReachedBy(DSLContext dsl, String viewName) {
+        return walk(dsl, List.of(viewName)).tables();
+    }
+
+    /**
+     * {@link #tablesReachedBy(DSLContext, String)} from the relations a statement named directly,
+     * for a rule stated as jOOQ rather than as a stored view: a named table is its own member and a
+     * named view is walked.
+     */
+    public static Set<String> tablesReachedBy(DSLContext dsl, Collection<String> relations) {
+        return walk(dsl, relations).tables();
+    }
+
+    private record Reach(Set<String> views, Set<String> tables) {}
+
+    private static Reach walk(DSLContext dsl, Collection<String> relations) {
+        Map<String, String> kinds = new HashMap<>();
+        dsl.select(field(name("TABLE_NAME"), String.class), field(name("TABLE_TYPE"), String.class))
+            .from(table(name("INFORMATION_SCHEMA", "TABLES")))
+            .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
+            .fetch()
+            .forEach(row -> kinds.put(row.value1().toLowerCase(Locale.ROOT), row.value2()));
+        Set<String> views = new TreeSet<>();
+        Set<String> tables = new TreeSet<>();
+        var frontier = new ArrayDeque<String>();
+        relations.forEach(relation -> frontier.add(relation.toLowerCase(Locale.ROOT)));
+        while (!frontier.isEmpty()) {
+            String relation = frontier.poll();
+            if (!"VIEW".equals(kinds.get(relation))) {
+                tables.add(relation);
+                continue;
+            }
+            if (views.add(relation)) {
+                frontier.addAll(relationsReadBy(dsl, relation));
+            }
+        }
+        return new Reach(views, tables);
     }
 
     private static Set<String> relationsOf(List<Reference> references) {
@@ -381,8 +439,8 @@ public final class ViewReferences {
      * <p>Without this a driving side spelled as a fold over a common table expression reports no
      * drivers, which reads as an unknown cardinality and weights at one. That is the wrong answer
      * in the worst place: a fold that assembles a set and then probes a relation for each member of
-     * it is exactly the shape a registration is bought for, and the register's largest recorded
-     * wins are all spelled that way.
+     * it is exactly the shape that makes a rule worth storing as a table, and the largest wins
+     * recorded for storing one were all spelled that way.
      *
      * @param direct relations named directly on the driving side
      * @param aliases the aliases and expression names on it, which may resolve to relations

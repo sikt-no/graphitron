@@ -692,8 +692,8 @@ class PolymorphicNodeIdDecodeTest {
     }
 
     /**
-     * The input-field rung's roles, read off the materialized relation every consumer spells. The
-     * {@code _live} view is the rule; what a classifier sees is this table, so an arm that flipped
+     * The input-field rung's roles, read off the stage-written table every consumer spells. The
+     * {@code _rule} view is the rule; what a classifier sees is this table, so an arm that flipped
      * to {@code NODE_ID} would be visible here.
      */
     private static List<String> inputFieldFilterRoles(DSLContext dsl) {

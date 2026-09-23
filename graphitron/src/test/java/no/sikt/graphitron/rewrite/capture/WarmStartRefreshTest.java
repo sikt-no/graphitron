@@ -4,7 +4,7 @@ import no.sikt.graphitron.model.run.GraphitronStore;
 import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.Public;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
-import no.sikt.graphitron.model.derive.Materializations;
+import no.sikt.graphitron.model.derive.DerivationStratum;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.grammar.NodeDeclaration;
@@ -93,7 +93,7 @@ class WarmStartRefreshTest {
         """;
 
     /**
-     * A schema that fills registered targets, which {@link #SDL} does not: the intent relations are
+     * A schema that fills the stratum tables, which {@link #SDL} does not: the derived relations are
      * classifications of bound coordinates, so a schema with no table binding leaves every one of
      * them empty and a case about a stale target would have nothing to make stale.
      *
@@ -212,32 +212,30 @@ class WarmStartRefreshTest {
     }
 
     /**
-     * The recovery the analysing refresh cadence leans on, and the one shape of stopped run this
-     * family did not already cover. A capture into a store no registered target holds a row in
-     * commits its facts and then refreshes the registered targets outside that transaction, one
-     * committed transaction per registration, because on such a store every target is empty and a
-     * refresh inside the transaction cannot be given statistics on the targets its own statements
-     * read; {@code Materializations.refreshAnalysing} carries that argument and
-     * {@code Materializations.analysingCadenceApplies} is where the condition is asked. The cost is
-     * that this is the one capture that can stop having left the facts complete and a target stale,
-     * and what makes that acceptable is the round below.
+     * The recovery the stratum's analysing cadence leans on, and the one shape of stopped run this
+     * family did not already cover. A capture into a store none of whose stratum tables holds a row
+     * commits its facts and then runs the derivation stratum one committed step at a time, because
+     * on such a store every stratum table is empty and a step inside one transaction cannot be given
+     * statistics on the tables an earlier step wrote; {@code DerivationStratum} carries that
+     * argument and {@code DerivationStratum.analysingCadenceApplies} is where the condition is asked.
+     * The cost is that this is the one capture that can stop having left the facts complete and a
+     * stratum table stale, and what makes that acceptable is the round below.
      *
      * <p>The stopped state is constructed rather than reached, the stop being a kill inside a
-     * transaction sequence with no seam to inject one at. Both halves are set: a registered target
+     * transaction sequence with no seam to inject one at. Both halves are set: a stratum table
      * emptied, and every source's stamp nulled, which is what a pass that never reached its
      * {@code commitStamps} leaves.
      *
      * <p>What this does <em>not</em> hold, so nobody reads it as more than it is: it does not fail if
-     * the stamps move back ahead of the refresh, because every capture refreshes every registered
-     * target for its graph unconditionally, so a stale target comes back either way. The stamp
-     * placement is a consistency requirement on what a stamp claims, which the stamp
-     * states, rather than a defence against a reachable stale store. What this would catch is a
-     * capture that stopped refreshing a target it had emptied, the shape any future narrowing of the
-     * refresh would take.
+     * the stamps move back ahead of the stratum, because every capture runs every step for its graph
+     * unconditionally, so a stale table comes back either way. The stamp placement is a consistency
+     * requirement on what a stamp claims, which the stamp states, rather than a defence against a
+     * reachable stale store. What this would catch is a capture that stopped rewriting a table it
+     * had emptied, the shape any future narrowing of the stratum would take.
      */
     @Test
-    @DisplayName("a store stopped part-way through its first refresh is repaired by the next capture")
-    void aStoppedFirstRefreshIsRepairedByTheNextCapture(@TempDir Path tmp) {
+    @DisplayName("a store stopped part-way through its first stratum is repaired by the next capture")
+    void aStoppedFirstStratumIsRepairedByTheNextCapture(@TempDir Path tmp) {
         var jooq = new JooqCatalog(DEFAULT_JOOQ_PACKAGE, testContext().codegenLoader());
         Path directory = tmp.resolve("graphitron-model");
 
@@ -246,7 +244,7 @@ class WarmStartRefreshTest {
             DSLContext dsl = store.dsl();
             String emptied = lastPopulatedTarget(dsl);
             assertThat(emptied)
-                .as("a registered target holding rows, without which the stopped state constructed"
+                .as("a stratum table holding rows, without which the stopped state constructed"
                     + " here is the state a finished run leaves and this case is vacuous")
                 .isNotNull();
             dsl.deleteFrom(table(name(emptied))).execute();
@@ -266,7 +264,7 @@ class WarmStartRefreshTest {
         assertThat(repaired)
             .as("relations whose row count after a capture over the stopped store differs from a"
                 + " cold load's. None: the next capture reloads what carries no stamp and refills"
-                + " every registered target, so the emptied one comes back")
+                + " every stratum table, so the emptied one comes back")
             .isEqualTo(cold);
     }
 
@@ -697,18 +695,20 @@ class WarmStartRefreshTest {
     }
 
     /**
-     * The latest registered target in refresh order that holds a row, which is the one a stopped
-     * pass would have left emptied: the pass empties and refills in that order, so the last
-     * populated target is the one furthest from having been reached.
+     * The latest stratum table in step order that holds a row, which is the one a stopped pass
+     * would have left emptied: the stratum empties and refills in that order, so the last populated
+     * table is the one furthest from having been reached.
      *
-     * @return the folded relation name, or null when no registered target holds a row
+     * @return the folded relation name, or null when no stratum table holds a row
      */
     private static String lastPopulatedTarget(DSLContext dsl) {
-        var order = Materializations.refreshOrder(dsl).registrations();
-        for (int position = order.size() - 1; position >= 0; position--) {
-            String target = order.get(position).targetTableName().toUpperCase();
-            if (dsl.fetchCount(table(name(target))) > 0) {
-                return target;
+        var steps = DerivationStratum.steps(null);
+        for (int position = steps.size() - 1; position >= 0; position--) {
+            for (String written : steps.get(position).writes()) {
+                String target = written.toUpperCase();
+                if (dsl.fetchCount(table(name(target))) > 0) {
+                    return target;
+                }
             }
         }
         return null;

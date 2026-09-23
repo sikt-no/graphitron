@@ -157,14 +157,11 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
  *       materialized derivation ({@code intent_type_domain}) has a writer that re-derives it
  *       inside every capture, materialized only because H2 has no safe recursive view form for a
  *       cyclic type graph; its cadence and clearing follow the derivation, not an oracle, and the
- *       warm/cold census anchors its lifecycle like any capture-written rows. A registered
- *       materialization is two relations under one rule and both are derived: the {@code _live}
- *       view stating it, and the canonically named target the materializer refills from that view
- *       on the same cadence. The {@code meta_} rows are derived in the widest sense of the arm,
- *       being rows the DDL alone determines rather than anything a run reads, which is why
- *       {@code meta_materialize} sits here beside the rosters and why
- *       {@code meta_materialize_dependency}, whose rows the bootstrap derives from the stored
- *       view definitions, sits beside it. A pure re-projection
+ *       warm/cold census anchors its lifecycle like any capture-written rows. A stage is two
+ *       relations under one rule and both are derived: the {@code _rule} view stating it, and the
+ *       table its stage writes from that view inside the derivation stratum. The {@code meta_}
+ *       rows are derived in the widest sense of the arm, being rows the DDL alone determines
+ *       rather than anything a run reads, which is why the rosters sit here. A pure re-projection
  *       ({@code graphql_directive_site}) registers the base relations it projects and its
  *       agreement is vacuous by construction; a semantic derivation (the {@code intent_} claim
  *       views and the demand stratum) registers with its own anchor instead, which lives with

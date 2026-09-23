@@ -10,8 +10,6 @@ import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.diagnostics.SchemaParseException;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.classpath.ClasspathCensus;
-import no.sikt.graphitron.model.derive.Materializations;
-import no.sikt.graphitron.model.derive.RefreshProgress;
 import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreConsole;
 import no.sikt.graphitron.model.boot.StoreReader;
@@ -496,19 +494,10 @@ public class DevMojo extends AbstractRewriteMojo {
         }
         var initialCtx = initialCtxHolder.get();
         var initial = initialHolder.get();
-        // The store may hold graphs no pass of this session captures (it is shared by every module
-        // of the workspace), and a warm partition whose capture was skipped because nothing changed
-        // refreshes nothing of its own, so the materialized targets are refreshed here rather than
-        // assumed current: the editor-facing readers below are read-only and would otherwise serve
-        // the language server and MCP stale rows. After the initial pass, so this graph's own
-        // targets are already current by the time it runs. Idempotent, and a no-op with no
-        // registrations.
-        // The pass boundary at info, so a start that stalls here is attributed rather than looking
-        // like a slow boot, and the per-registration tier at debug for a re-run with -X.
-        Materializations.refreshAll(sessionStore.dsl(),
-            RefreshProgress.lines(getLog()::info, getLog()::debug));
-        // After the refresh, so the linked relations include the refreshed materializations, and
-        // before the watchers, so the console is up before the first round lands.
+        // Before the watchers, so the console is up before the first round lands. Nothing is
+        // refreshed first: every derived table is written by its owner's stage during a capture, so
+        // a partition whose capture this session skipped because nothing changed holds the rows its
+        // last capture wrote, which are current for exactly the reason the capture was skipped.
         this.storeConsoleHandle = startStoreConsole();
         this.compileFacts = new CompileFacts(sessionStore.dsl(),
             new GraphIdentity(initialCtx.graphName(), initialCtx.basedir()));

@@ -44,9 +44,9 @@ class GrainSentenceTest {
         assertThat(GrainSentence.of("A dotted coordinate like Type.field stays put. Rest."))
             .isEqualTo("A dotted coordinate like Type.field stays put.");
         assertThat(GrainSentence.of(
-            "Derived by no.sikt.graphitron.model.derive.MaterializeDependencies at boot. Rest."))
-            .isEqualTo("Derived by no.sikt.graphitron.model.derive.MaterializeDependencies"
-                + " at boot.");
+            "Derived by no.sikt.graphitron.model.derive.DerivationStratum at capture. Rest."))
+            .isEqualTo("Derived by no.sikt.graphitron.model.derive.DerivationStratum"
+                + " at capture.");
         assertThat(GrainSentence.of("A .java file whose declarations this store holds. Rest."))
             .isEqualTo("A .java file whose declarations this store holds.");
         assertThat(GrainSentence.of("Read through jOOQ 3.20.11 as one unit. Rest."))
