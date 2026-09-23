@@ -1,7 +1,7 @@
 ---
 id: R955
 title: "The register empties bottom-up: every remaining registered rule becomes a fact the graphitron gatherer writes in stage order, and meta_materialize has no rows left"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 2
 theme: model-cleanup
@@ -746,3 +746,79 @@ so the next reviewer reads the diff rather than reconstructing it:
 
 Nothing in the ladder, the placement, the stage shape or the test plan changed, so the verification
 those parts had in round 1 carries.
+
+### Done gate round 1 (2026-09-23, In Review -> Ready, reviewer session 014h97RzPWPgkvbGFnB4B3Fx)
+
+Verdict: rework, on question two and on the spec-body precondition. Question one clears, and the code
+needs no change for this verdict. The rework is evidence and prose only.
+
+**What was checked and holds, so the next round does not spend the passes again.** Implementation
+commits `857f103`, `938869d`, `702d4b0`, `59e72d2` and `4110fea` all carry session
+`01G4FWXJKpYYmmggLUQpsGB3`, so this reviewer is eligible. `mvn install -Plocal-db` passes on the
+synced tree (17:57, `BUILD SUCCESS`). `meta_materialize`, `meta_materialize_dependency`,
+`Materializations`, `MaterializeDependencies`, `RefreshProgress` and `DevMojo`'s session-start refresh
+are gone, and no main or test source names any of them. All fifteen relations are `graphitron_<x>`
+tables beside a `graphitron_<x>_rule` view, each with a primary key and a `meta_relation` row owned by
+`graphitron`, the rule views included. Every one of the fifteen rule views, compared comment-stripped
+against its `_live` text at `fc327fb` (rung 0 against `b4c5d00`) with only the renames normalised, is
+unchanged, so no rule was restated. The relation tests under `model/intent` moved by rename alone,
+with no expectation edited. `DerivationStratum.steps` is the ladder order, with
+`UnlowerableOrderingRejectionRows` moved into it at the tail. `StageOrderGateTest` holds the roster
+equal to the stratum, fails on a stage reading a later step's writes, and shows itself firing.
+`StageAnswerAgreementTest` covers all fifteen plus R958's five in both directions, with a
+non-vacuity case. `StagePrerequisiteStatisticsTest` and `StageProgressTest` replace their refresh-era
+counterparts. The six re-ownings and four retained `derivation` relations match the shipped
+paragraph. The docs are rewritten around stages: `fact-model.adoc`'s ownership and lever sections,
+`dev-loop-internals.adoc`'s stuck-stage recipe, and the `store-performance` skill. The
+convert-or-demote terms for all three candidates are in the commits (6 against 13, 9 against 19,
+13 against 65). No delivered test asserts on generated method bodies.
+
+**Finding 1, blocking (question two). The acceptance evidence this item names for its goal was not
+taken, and neither the body nor the tree says so.** "Tests" lists, as the one piece of evidence "a
+green build does not supply", the `sis` consumer's `graphitron:capture` pass timed before and after on
+a copy of its store, warm and cold, written into the changelog entry beside the per-stage lines. No
+such figures exist in the body, the commits or `roadmap/changelog.md`, and the shipped paragraphs do
+not name the measurement as outstanding. The goal is mostly structural, and the tree demonstrates the
+structural half. But the goal also states what "a consumer's `graphitron:dev` round and `generate`"
+pay. On this arc the consumer is exactly where the structural reading and the cost have parted
+before: R953 was withheld at this gate on the same ground, and the fact-model page carries a
+consumer-scale cold cost, 6293 s against 90.8 s, that no fixture reproduced. What satisfies it,
+either way:
+- Take the reading: `graphitron:capture` on a `sis` store copy, warm and cold, before (at `fc327fb`)
+  and after, with the per-stage lines, figures in the body and the changelog entry.
+- Or, if no store copy is reachable from the implementing session, say so in "Tests" and narrow the
+  goal's consumer clause to what the tree shows, as R953's rework did. The gate can then judge the
+  narrowed goal on the evidence that exists.
+
+**Finding 2, blocking (approval precondition). The body does not reflect what shipped.** The two
+"Shipped" paragraphs sit on top of an Implementation section that still reads as the plan, and parts
+of that plan no longer describe the tree:
+- "`MaterializeDependencies` ... is not deleted ... repointed rather than retired". It is deleted.
+- "This is the one piece of `Materializations` that survives, renamed". Nothing survives.
+- "The roster the analyse walks is ... `meta_relation` where `owner_name = 'graphitron'`". No such
+  roster exists. The warm cadence relies on the whole-store `ANALYZE` `ModelCapture` already ran
+  after the stratum, and the cold cadence analyses each step's declared writes.
+- "`HAND_WRITTEN` becomes the stage order gate's write-set roster". The write sets live on
+  `DerivationStratum.Step`.
+- The `StoreRefresh` bullets.
+
+The analyse substitution is the one design change with no record at all. It is a sound
+simplification, since the tail `ANALYZE` covers every stratum table, but it is still a substitution
+and belongs in the body. What satisfies it: collapse the phases to one-line "shipped at `<sha>`"
+notes (the five SHAs above), state the substitutions in one paragraph (analyse loop dropped for the
+existing tail `ANALYZE`; write sets on `DerivationStratum` rather than a repurposed `HAND_WRITTEN`;
+`MaterializeDependencies` deleted, with `ViewReferences` supplying read sets), and name what remains:
+Finding 1's reading.
+
+**Retirement sweep, non-blocking; fold into the same pass.** Main sources and docs are clean, apart
+from historical past-tense accounts in DDL comments and `fact-model.adoc`, which are fine. Three
+present-tense survivals of "the refresh" in the retired sense are in test javadoc:
+`PartitionSelectivityTest` (class javadoc and the reopened-store case), `StoreStatistics`'s class
+javadoc ("a refresh planning inside a transaction"), and `FactCaptureAgreementTest`'s `Arm#DERIVED`
+item ("the materialized capture-cadence derivations"). `REGISTRATIONS` cannot graduate into
+`RetiredVocabularyGuardTest`: it is a live constant with an unrelated meaning in
+`RelationRegistrationGateTest`. About twenty other roadmap bodies still name the register, and a
+few now have no subject, among them `materialize-dependency-derived-before-stamp`,
+`target-index-exemptions-in-the-model` and `refresh-what-the-edit-touched`. They are other items'
+to re-cut, but the changelog entry should name them so their next pickup starts from the right
+premise.
