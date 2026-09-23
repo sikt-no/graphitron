@@ -141,7 +141,7 @@ terminating case. An arc that has authored a relation and not converted a produc
 progress that the next increment will realise, it is accruing a debt that the census measures at
 zero.
 
-**Nothing here reaches into the store programme's work.** R958 (Ready) converts six departures and
+**Nothing here reaches into the store programme's work.** R958 (In Progress) converts six departures and
 walks into gatherer-written rows, five of which the conditions arc authored; R955 (In Progress)
 empties the register bottom-up behind it; R876 owns the ownership rule both apply. Those items decide
 what becomes of the 48 relations, including whether any of them retires unused. This item's interest
@@ -180,8 +180,8 @@ So the recipe is proven and the remaining question is coverage, not feasibility.
 output does not yet demonstrate is a *whole* family produced from the store, which is what the
 per-relation increments below deliver.
 
-The validator is the same story one stage earlier. `GraphitronSchemaValidator` is 2,024 lines and
-74 `validate*` methods reading nothing but the leaf model: it re-wraps the `Rejection` each
+The validator is the same story one stage earlier. `GraphitronSchemaValidator` is 2,175 lines and
+77 `validate*` methods reading nothing but the leaf model: it re-wraps the `Rejection` each
 `Unclassified*` leaf carries, runs fourteen structural checks over the classified types and fields,
 and drains `schema.diagnostics()`. It even reads *upward*: it calls two planners' collision checks
 (`ProjectionCommands.addressCollisions`, `LauncherCommands.methodCollisions`) and imports two
@@ -206,7 +206,7 @@ structurally, restricting the package to commands plus a named dial of pure-data
 renderer there cannot reach a leaf even by accident.
 
 `no.sikt.graphitron.rewrite.generators` is the same job under none of the rules. It is outside that
-guard, and it is where the un-migrated emitters live: `TypeFetcherGenerator` (5,806 lines)
+guard, and it is where the un-migrated emitters live: `TypeFetcherGenerator` (6,441 lines)
 and `FetcherEmitter` between them carry nearly all of the leaf dispatch, and `TypeFetcherGenerator`
 still enumerates its coverage as a set of leaf classes (`IMPLEMENTED_LEAVES`, 37 entries) rather than as
 rows of a command relation. Nothing prevents an emitter there from reading whatever it likes off a
@@ -743,8 +743,8 @@ and they sit at opposite ends of the work:
   shape transform with no schema), but its read side predates this item's rules and breaks three
   of them. `StoreNodeTables.read` issues per-row follow-up statements (the N+1 the
   one-statement-per-grain section forbids), the readers take a bare `(DSLContext, graphName)`
-  pair rather than `StoreHandle` (nothing under `graphitron/src/main` uses `StoreHandle` today;
-  only the LSP does), and it composes nothing with `MULTISET`. The composition itself is not
+  pair rather than `StoreHandle` (the key-projection readers never adopted `StoreHandle`, though
+  `EmitPlan` and `RoutineWriteCommands` now take one), and it composes nothing with `MULTISET`. The composition itself is not
   unproven in this tree and is not to be priced as if it were: eight files already read
   the store that way, four in the language server (`DeclarationFacts` alone at ten uses,
   `ClaimFacts`, `InlayFacts`, `DiagnosticFacts`) and four in the MCP (`SchemaQueries`,
@@ -758,15 +758,15 @@ and they sit at opposite ends of the work:
   projection's own grain, which also collapses the N+1 into the driving statement's join.
   Bringing this producer's read side up to the rules is a named increment of the planner half. Its
   missing view is a filing under "How this item asks for a fact", not an authoring step.
-* **Inside the fetcher family, not beside it: routine writes** (`RoutineWriteCommands`, 134 lines,
-  11 sites). Not converted: `produce(GraphitronSchema, String)` still takes the schema, with a
-  `produceWithoutSchema` overload beside it, the same transitional pair `LauncherCommands` carries.
+* **Inside the fetcher family, not beside it: routine writes** (`RoutineWriteCommands`, 239 lines,
+  11 sites). Not converted: `produce(StoreHandle, GraphitronSchema, String)` still takes the schema;
+  its `produceWithoutSchema` overload, the transitional pair `LauncherCommands` still carries, retired with slice one.
   An earlier draft sequenced this producer outside the order, on the ground that it moves with the
   routine-write family's emitter stage, which another item had scoped. That pointer is now dangling:
   the other item (R668) is Done, its stage landed the *emitter* half, and nothing in this item's own
   ordering schedules the producer. The tree settles it, and settles it in this producer's favour:
-  `TypeFetcherGenerator` owns one of the two production-path inversion sites through
-  `RoutineWriteCommands.produceWithoutSchema`, the renderer is already in `render`, and most of
+  `TypeFetcherGenerator` owned one of the two production-path inversion sites through
+  `RoutineWriteCommands.produceWithoutSchema` until slice one retired it, the renderer is already in `render`, and most of
   its facts are captured, the three that were not having landed with slice one. Slice one converted
   its emitter half and left the producer taking both a `StoreHandle` and a schema, so what remains
   here is the schema parameter's removal, sequenced with the fetcher family's cutover.
@@ -777,10 +777,10 @@ is 140 today, so the per-producer column is owed a re-take by the increment that
 This is an inventory of the work, **not** a conversion order. What constrains the order is the
 availability check, and its answer inverts this list:
 
-1. **Conditions** (`ConditionCommands`, 399 lines, 3 dispatch sites). The smallest surface, and the
+1. **Conditions** (`ConditionCommands`, 428 lines, 3 dispatch sites). The smallest surface, and the
    one every other relation references by glue row.
-2. **Projections** (`ProjectionCommands`, 731 lines, 38 sites).
-3. **Launchers** (`LauncherCommands`, 1,181 lines, 17 sites). The largest producer, and the one whose
+2. **Projections** (`ProjectionCommands`, 735 lines, 38 sites).
+3. **Launchers** (`LauncherCommands`, 1,363 lines, 17 sites). The largest producer, and the one whose
    rows the fetcher generator reads to decide between the launcher emission and the legacy builder.
 4. **Fetcher edges** (`FetcherEdgeCommands`, 277 lines, 48 sites). The densest dispatch in the
    package by a wide margin, which makes it the step where the one-statement-per-grain rule is most
@@ -863,8 +863,8 @@ thicket and is not one. Eleven are convenience overloads whose own javadoc says 
 the flagged-row set production uses") and six in `TypeFetcherGenerator`'s test-facing `generate` and
 `generateTypeSpec` entries. They retire by pointing their tests at the plan, which is mechanical and
 orders nothing. The `produce*` production inversion is one line-pair in `TypeFetcherGenerator`'s
-fetchers fold: `LauncherCommands.produceWithoutSchema` and `RoutineWriteCommands.produceWithoutSchema`,
-the nesting-reached fallback.
+fetchers fold: `LauncherCommands.produceWithoutSchema` at its two sites (the routine-write twin
+retired with slice one), the nesting-reached fallback.
 
 **And that pair dissolves rather than blocking.** `produceWithoutSchema` exists for exactly one
 reason, stated in its own javadoc: the fetcher generator reaches a nesting-reached type holding
@@ -1150,7 +1150,7 @@ relations this arc authored, 37 are `intent_` views still standing under that he
 have no main-source reader at all, because the producers they were authored for were never converted.
 
 So the arc stops here, and the relations it left are not this item's to re-place. That work is owned:
-R958 (Ready) takes six departures and walks into gatherer-written rows, five of which this arc
+R958 (In Progress) takes six departures and walks into gatherer-written rows, five of which this arc
 authored, and R955 (In Progress) empties the register bottom-up behind it. This item files against
 that programme rather than reaching into it.
 
@@ -1276,7 +1276,7 @@ capture today, so no pipeline change is needed for any of it.
 
 **This half needs a counter of its own, on the item's own argument.** The four ratchet pins measure
 `plan/` and `generators/` and, as stated above, do not see the validator at all, which leaves the
-half with the least mechanical protection running on 2,024 lines and its `validate*` methods with
+half with the least mechanical protection running on 2,175 lines and its `validate*` methods with
 nothing to make a stall visible. "A ratchet with no owner is a flat line" applies here more than
 anywhere: a validator check is easy to leave for later precisely because no count moves when it is.
 Add a validator-side pin in the same `CommandSeamRatchetTest` mould with the first migrated check
@@ -1418,7 +1418,7 @@ filing says which producer, which coordinate grain the verdict sits at, and what
 assert. It does not propose a view body, a prefix or a registration, because those are the owning
 gatherer's decisions and this item is not that gatherer.
 
-**It goes to the store programme, which has a live arm for each kind.** R958 (Ready) is taking six
+**It goes to the store programme, which has a live arm for each kind.** R958 (In Progress) is taking six
 column-scope departures and two `@reference` walks into gatherer-written rows. R955 (In Progress)
 empties the register bottom-up behind it, fourteen rungs. R876 owns the ownership rule both of them
 apply and the computation that says every registered target belongs to the `graphitron` gatherer. A
@@ -1564,7 +1564,7 @@ the line has been drawn, never where the line falls.
   60 were authored by this item's commits. This item is therefore the majority author of the growth
   in the quantity R876 identifies as the cost driver, which is the strongest single argument for the
   non-authoring rule above and is stated here rather than left for that item's Done gate to find.
-* **R958 (`column-scope-and-input-field-walks-are-stored-rows`, Ready) and R955
+* **R958 (`column-scope-and-input-field-walks-are-stored-rows`, In Progress) and R955
   (`register-rules-become-owner-written-facts`, In Progress) are where this item's filings go.** R958
   takes six departures and two `@reference` walks into gatherer-written rows, five of the six being
   relations the conditions arc authored; R955 empties the register bottom-up behind it. Neither waits
@@ -1965,3 +1965,62 @@ projection over a captured table), and of the 60 views added between R733's two 
 This respec is a plan change of a kind the Spec gate decides and no independent session has read. It
 did not route through a fresh gate because `In Progress` has no transition to `Spec`, so the next
 reviewer to touch this item should read the plan rather than only the delta.
+
+## Reviewer findings
+
+### Spec → Ready, 2026-09-23, session_01VXfDQZjyhP4TkASpw4dNzo: revisions requested
+
+Read against trunk `2ba9c9d`, the whole plan and not only the respec delta. The goal passes:
+consumers see nothing change, and the payoff, one way to reach a fact instead of two, is stated
+plainly enough to judge. The pins (18/69/62/140), the nineteen-reference census across six files,
+the 37 `IMPLEMENTED_LEAVES` entries and the `intent_` header quote are what the body says. Two
+findings block the gate. Each one sits under a rule the respec itself introduced.
+
+**1. The readiness claim the re-cut order rests on does not hold for fetcher edges (question 1,
+viability).** "Fetcher edges first" depends on the availability check's row saying the producer
+needs nothing authored. The check listed the facts that fill a row's targets (table-bound
+participants, a routine write's return type, condition glue). It did not list the facts that decide
+which coordinates *get* a row. Those are the 48 sites, and the `null` arms are membership
+decisions the converted producer has to reproduce. They are not emitter work.
+`FetcherEdgeCommands` gives `ChildField.TableInterfaceField` a row and
+`ChildField.BatchedTableInterfaceField` none, and `FieldBuilder` separates those two on list
+cardinality. That is the list-valued fan-in trigger this body says has no store arm.
+`QueryInterfaceField` gets a row and `QueryTableInterfaceField` none, so the producer needs a
+single-table versus multi-table verdict. `MutationRoutineWriteField` and
+`MutationRoutineWriteRecordField` differ on the seat verdict, and `QueryNodeField` /
+`QueryNodesField` membership needs a node-field fact. By this body's own nature test, a verdict
+gets a named view even with one reader, so these cannot be inlined into the producer's `SELECT`.
+Under the non-authoring rule they are filings. That is the conditions arc's under-pricing again:
+the check saw the facts the producer reads and missed the facts those rest on. A second problem
+sits beside it. `FetcherEdgeRelation`'s only reader is `PlanCompileGraph`, where its rows become
+declared-superset recompile edges. They are not emitted source. So "Output identity, per planner
+increment", the gate Coverage names for every conversion, cannot see this producer at all, and
+"launchers, fetcher edges, type units and routine writes all feed the one large fetcher family" is
+wrong about fetcher edges. *Satisfied by:* re-running the fetcher-edges check over membership as
+well as targets. It should say, for each membership verdict, which relation states it or that it
+is a filing, and re-rank if it is a filing. It should also name the gate that pins this
+producer's behaviour (`PlanCompileGraphTest`, `IncrementalCompileHarnessTest`'s three-leg oracle,
+or a stated alternative), since byte-identical output does not.
+
+**2. The validator half contradicts the non-authoring rule (question 2, fit).** "What this item
+does not author" calls the rule absolute. "The one line this item still draws for itself" says a
+detection is "filed like any other fact". Coverage says no relations are authored here. But
+strategy point 4, success criterion 3 and the whole "Validator half" section still describe this
+item's increments authoring detection views: "a check expressible as a relation becomes a view",
+in the `intent_authored_claim_conflict` mould (a family the header now closes), with the migrating
+commit joining `diagnostic` and adding the fixture. R876's rule, which this item says it obeys,
+says a rule the last gatherer can compute in a stage is not a view. And neither R958 nor R955 has
+an arm that takes detections. An implementer picking up the first validator check cannot tell
+whether they write a relation or file one. If they file one, criterion 3 depends on roughly
+seventy-seven checks for which no owner is named. *Satisfied by:* the author deciding one of two
+ways. Either the validator half is a stated carve-out from the non-authoring rule, naming the
+family and owner detections land in. Or it files like the planner half, and then strategy point
+4, criterion 3 and the validator section have to say where those filings go and what this item
+does while they wait.
+
+**Non-blocking.** `LauncherCommands.selectionRestriction` is a second mid-emission planner call
+beside `discriminatedBranches` in `TypeFetcherGenerator`. The inversion census does not count it,
+and it is owed the same named retirement. Corrected in passing as stale: the validator's line and
+method counts, `TypeFetcherGenerator`'s and four producers' line counts, R958's status, and the
+`RoutineWriteCommands` signature and inversion-pair prose. `produceWithoutSchema` on that class
+retired with slice one, and `StoreHandle` is now used under `graphitron/src/main`.
