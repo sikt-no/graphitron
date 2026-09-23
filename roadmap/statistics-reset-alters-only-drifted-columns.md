@@ -1,7 +1,7 @@
 ---
 id: R967
 title: "The per-case statistics reset ALTERs every column of every base table, and is most of the store-heavy test build; reset only the columns that drifted"
-status: In Progress
+status: In Review
 bucket: dx
 priority: 1
 theme: tooling
@@ -163,6 +163,25 @@ sandbox's per-core capacity rather than the warm-up alone, and the honest reacto
 a ratio: the one module this item touches went from the largest in the build to under the
 `graphitron` module, 7:31 against 11:15 on the same box in the same run, where the first pass had it
 at 11:42 against 9:17.
+
+### Measured again, at the In Review handoff
+
+`mvn test -pl :graphitron-model -Plocal-db` on trunk at the orphan removal, a fresh 4 vCPU sandbox,
+arms interleaved, the old arm being `StoreStatistics.java` as it stood before this item swapped in
+for the run. 1319 tests, one skipped, green in every run:
+
+| Arm | Runs |
+|---|---|
+| reset of drifted columns only, this item | **181 s, 178 s** |
+| reset as landed by `fa1656f`, every column | 661 s, 656 s |
+
+A factor of 3.7 on the module's test phase. The drifted-column arm lands where the first pass put
+the floor with no reset at all (183 s), and the residual named above, about 90 s of catalog scans
+under four-way concurrency, does not reproduce here although the old arm ran 7% slower than it did
+then. The floor was not re-measured on this box, so this pass does not say the residual is gone,
+only that it no longer shows against the every-column arm. The reactor-level verification build
+for the same tree was green at 19:38 under `mvnd`'s parallel module scheduling, with
+`graphitron-model` at 5:14; that figure is not comparable to the sequential passes above.
 
 ### What the new reset orphaned
 
