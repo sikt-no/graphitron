@@ -124,8 +124,13 @@ class MaterializeRegistryGateTest {
      * registration, so nobody was refreshing it and the decode-hop rule re-walked it once per
      * driving row. That rung converts a relation the register never scheduled, which is why the
      * ladder's last two steps move this number by one between them.
+     *
+     * <p>Eleven since the argument-site column scope and match and the mutation write payload
+     * became capture stages. None of the three reads a registration once the column-scope
+     * departures are tables, so nothing ordered them but the refresh, and each is one statement
+     * over its rule view now.
      */
-    private static final int REGISTRATIONS = 14;
+    private static final int REGISTRATIONS = 11;
 
     /**
      * Stages the refresh takes, the register's depth.
@@ -208,6 +213,10 @@ class MaterializeRegistryGateTest {
      * middle of the remaining chain rather than off its front, which is the one shape that shortens
      * this figure without shortening the register.
      *
+     * <p>Still nine with the argument-site pair and the write payload converted: all three sat at
+     * the bottom of the register, and the longest chain runs from the @nodeId instruction to the
+     * write destination without passing through any of them.
+     *
      * @see #REGISTRATIONS
      */
     private static final int REFRESH_STAGES = 9;
@@ -258,23 +267,6 @@ class MaterializeRegistryGateTest {
      * <p>The rows that remain:
      *
      * <ul>
-     *   <li>{@code intent_argument_column_scope}: on the argument coordinate its one reader is
-     *   keyed by, and on the resolved-table triple that reader could in principle seek, no reader
-     *   moves at all, to the scan: {@code intent_argument_column_match} reads 5187 scans with
-     *   either shape declared and with none, and the target's own read stays 265. Its one reader
-     *   drives from it, first in its own FROM clause, so there is no per-row seek for an index to
-     *   serve. Nothing to weigh, and the field-site sibling above declines for its own reasons at
-     *   the same position in the same pair.</li>
-     *   <li>{@code intent_argument_column_match}: the first target here whose reader genuinely
-     *   probes in. {@code intent_argument_filter_role} seeks it by argument coordinate once per
-     *   node-id instruction, so unlike the two scope targets above there was a seek for an index
-     *   to serve, and the coordinate it seeks was declared and timed rather than reasoned about:
-     *   on the sakila example schema the reader stays at six milliseconds with
-     *   {@code (graph_name, type_name, field_name, argument_name)} declared and with none, and its
-     *   plan visits the same 4713 rows either way. At this population the probing side is smaller
-     *   than the table, so H2 reads the table whole in both. Worth revisiting where a reader
-     *   probes it from a population larger than the table itself, which is the shape that would
-     *   change the answer.</li>
      *   <li>{@code intent_mutation_payload_column}: its one reader reads it whole. The matched-key
      *   relation collects the columns a payload contributes as a {@code DISTINCT} over every row of
      *   this target and then joins the candidate keys onto that, so there is no probe for an index
@@ -283,13 +275,6 @@ class MaterializeRegistryGateTest {
      *   expected to be that reader and is not: it reads this target whole in its DELETE arm and
      *   reaches it otherwise through the key-membership target below, so nothing probes it by
      *   coordinate yet and there is still no seek for an index to serve.</li>
-     *   <li>{@code intent_mutation_write_payload}: all three of its readers drive from it. The
-     *   refusal rule and the payload-column rule each name it in their own {@code FROM} and join
-     *   outward, and the matched key does the same now that its ranking is one pass rather than a
-     *   join back to itself. Nothing probes it by coordinate, so there is no seek an index could
-     *   serve. An index was declared here first, on the assumption that the matched key sought it,
-     *   and removed when the rewrite that made that relation one pass removed the seek along with
-     *   the join.</li>
      *   <li>{@code intent_input_field_carrier_role}: the row where the counter and the clock
      *   disagree and the clock decides. Both readers are the mutation payload views and both join
      *   this target on the whole six-column grain from inside an inlined common table expression, so
@@ -307,7 +292,7 @@ class MaterializeRegistryGateTest {
      *   rows visited for twice the time is this file's own most-repeated lesson arriving again, and
      *   the mechanism is the target's size: it holds ninety-five rows here, so the seek an index
      *   installs costs more than the scan it replaces. What would change the answer is a driving
-     *   side larger than the target, which is the same shape {@code intent_argument_column_match}'s
+     *   side larger than the target, which is the same shape {@code graphitron_argument_column_match}'s
      *   row above names, and on a consumer schema both sides grow. Nothing here is the hazard the
      *   register met on {@code graphitron_field_scope_table}, where an unindexed target was worse than
      *   the view it replaced: this target unindexed takes its expensive reader from 85 milliseconds
@@ -349,12 +334,9 @@ class MaterializeRegistryGateTest {
      */
     private static final Set<String> NO_INDEX = Set.of(
         "intent_node_id_decode_hop",
-        "intent_argument_column_scope",
-        "intent_argument_column_match",
         "intent_input_field_carrier_role",
         "intent_mutation_payload_column",
         "intent_node_id_decode_column",
-        "intent_mutation_write_payload",
         "intent_mutation_payload_key_membership");
 
     @Test

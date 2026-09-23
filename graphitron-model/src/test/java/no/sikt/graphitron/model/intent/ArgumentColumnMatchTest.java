@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
-import static no.sikt.graphitron.model.Tables.INTENT_ARGUMENT_COLUMN_MATCH;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_COLUMN_MATCH;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentBinding;
@@ -29,7 +29,7 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@code intent_argument_column_match} returns: which column an argument's own name resolves to
+ * What {@code graphitron_argument_column_match} returns: which column an argument's own name resolves to
  * on the table its site navigates to, which is the column a filter predicate built from it compares
  * against.
  *
@@ -68,28 +68,28 @@ class ArgumentColumnMatchTest {
             var rows = rows(dsl);
             assertThat(rows).hasSize(1);
             var row = rows.getFirst();
-            assertThat(row.get(INTENT_ARGUMENT_COLUMN_MATCH.TYPE_NAME)).isEqualTo("Query");
-            assertThat(row.get(INTENT_ARGUMENT_COLUMN_MATCH.FIELD_NAME)).isEqualTo("films");
-            assertThat(row.get(INTENT_ARGUMENT_COLUMN_MATCH.ARGUMENT_NAME)).isEqualTo("title");
-            assertThat(row.get(INTENT_ARGUMENT_COLUMN_MATCH.MATCHED_NAME)).isEqualTo("title");
-            assertThat(row.get(INTENT_ARGUMENT_COLUMN_MATCH.MATCHED_BY)).isEqualTo("JOOQ_NAME");
-            assertThat(row.get(INTENT_ARGUMENT_COLUMN_MATCH.TABLE_SOURCE_NAME)).isEqualTo(PKG);
-            assertThat(row.get(INTENT_ARGUMENT_COLUMN_MATCH.TABLE_SCHEMA)).isEqualTo(PUBLIC);
-            assertThat(row.get(INTENT_ARGUMENT_COLUMN_MATCH.TABLE_NAME)).isEqualTo("film");
-            assertThat(row.get(INTENT_ARGUMENT_COLUMN_MATCH.COLUMN_NAME)).isEqualTo("title");
+            assertThat(row.get(GRAPHITRON_ARGUMENT_COLUMN_MATCH.TYPE_NAME)).isEqualTo("Query");
+            assertThat(row.get(GRAPHITRON_ARGUMENT_COLUMN_MATCH.FIELD_NAME)).isEqualTo("films");
+            assertThat(row.get(GRAPHITRON_ARGUMENT_COLUMN_MATCH.ARGUMENT_NAME)).isEqualTo("title");
+            assertThat(row.get(GRAPHITRON_ARGUMENT_COLUMN_MATCH.MATCHED_NAME)).isEqualTo("title");
+            assertThat(row.get(GRAPHITRON_ARGUMENT_COLUMN_MATCH.MATCHED_BY)).isEqualTo("JOOQ_NAME");
+            assertThat(row.get(GRAPHITRON_ARGUMENT_COLUMN_MATCH.TABLE_SOURCE_NAME)).isEqualTo(PKG);
+            assertThat(row.get(GRAPHITRON_ARGUMENT_COLUMN_MATCH.TABLE_SCHEMA)).isEqualTo(PUBLIC);
+            assertThat(row.get(GRAPHITRON_ARGUMENT_COLUMN_MATCH.TABLE_NAME)).isEqualTo("film");
+            assertThat(row.get(GRAPHITRON_ARGUMENT_COLUMN_MATCH.COLUMN_NAME)).isEqualTo("title");
 
             var argument = dsl.selectFrom(GRAPHQL_ARGUMENT)
                 .where(GRAPHQL_ARGUMENT.GRAPH_NAME.eq(GRAPH))
                 .and(GRAPHQL_ARGUMENT.TYPE_NAME.eq("Query"))
                 .and(GRAPHQL_ARGUMENT.FIELD_NAME.eq("films"))
                 .and(GRAPHQL_ARGUMENT.ARGUMENT_NAME.eq("title")).fetchSingle();
-            assertThat(row.get(INTENT_ARGUMENT_COLUMN_MATCH.SOURCE_NAME))
+            assertThat(row.get(GRAPHITRON_ARGUMENT_COLUMN_MATCH.SOURCE_NAME))
                 .isEqualTo(argument.getSourceName());
-            assertThat(row.get(INTENT_ARGUMENT_COLUMN_MATCH.SOURCE_LINE))
+            assertThat(row.get(GRAPHITRON_ARGUMENT_COLUMN_MATCH.SOURCE_LINE))
                 .as("the argument's own declaration position, which is where a diagnostic about an"
                     + " unresolvable filter name points")
                 .isEqualTo(argument.getSourceLine());
-            assertThat(row.get(INTENT_ARGUMENT_COLUMN_MATCH.SOURCE_COLUMN))
+            assertThat(row.get(GRAPHITRON_ARGUMENT_COLUMN_MATCH.SOURCE_COLUMN))
                 .isEqualTo(argument.getSourceColumn());
         });
     }
@@ -326,24 +326,24 @@ class ArgumentColumnMatchTest {
 
     private static Result<Record> rowsIn(DSLContext dsl, String graphName) {
         derive(dsl);
-        return dsl.select(INTENT_ARGUMENT_COLUMN_MATCH.fields())
-            .from(INTENT_ARGUMENT_COLUMN_MATCH)
-            .where(INTENT_ARGUMENT_COLUMN_MATCH.GRAPH_NAME.eq(graphName))
-            .orderBy(INTENT_ARGUMENT_COLUMN_MATCH.TYPE_NAME,
-                INTENT_ARGUMENT_COLUMN_MATCH.FIELD_NAME,
-                INTENT_ARGUMENT_COLUMN_MATCH.ARGUMENT_NAME,
-                INTENT_ARGUMENT_COLUMN_MATCH.TABLE_NAME)
+        return dsl.select(GRAPHITRON_ARGUMENT_COLUMN_MATCH.fields())
+            .from(GRAPHITRON_ARGUMENT_COLUMN_MATCH)
+            .where(GRAPHITRON_ARGUMENT_COLUMN_MATCH.GRAPH_NAME.eq(graphName))
+            .orderBy(GRAPHITRON_ARGUMENT_COLUMN_MATCH.TYPE_NAME,
+                GRAPHITRON_ARGUMENT_COLUMN_MATCH.FIELD_NAME,
+                GRAPHITRON_ARGUMENT_COLUMN_MATCH.ARGUMENT_NAME,
+                GRAPHITRON_ARGUMENT_COLUMN_MATCH.TABLE_NAME)
             .fetch();
     }
 
     /** The site, the name that resolved, the column it landed on, and which tier answered. */
     private static String render(Record row) {
-        return row.get(INTENT_ARGUMENT_COLUMN_MATCH.TYPE_NAME) + "."
-            + row.get(INTENT_ARGUMENT_COLUMN_MATCH.FIELD_NAME) + "("
-            + row.get(INTENT_ARGUMENT_COLUMN_MATCH.ARGUMENT_NAME) + ") "
-            + row.get(INTENT_ARGUMENT_COLUMN_MATCH.MATCHED_NAME) + "="
-            + row.get(INTENT_ARGUMENT_COLUMN_MATCH.TABLE_NAME) + "."
-            + row.get(INTENT_ARGUMENT_COLUMN_MATCH.COLUMN_NAME) + " "
-            + row.get(INTENT_ARGUMENT_COLUMN_MATCH.MATCHED_BY);
+        return row.get(GRAPHITRON_ARGUMENT_COLUMN_MATCH.TYPE_NAME) + "."
+            + row.get(GRAPHITRON_ARGUMENT_COLUMN_MATCH.FIELD_NAME) + "("
+            + row.get(GRAPHITRON_ARGUMENT_COLUMN_MATCH.ARGUMENT_NAME) + ") "
+            + row.get(GRAPHITRON_ARGUMENT_COLUMN_MATCH.MATCHED_NAME) + "="
+            + row.get(GRAPHITRON_ARGUMENT_COLUMN_MATCH.TABLE_NAME) + "."
+            + row.get(GRAPHITRON_ARGUMENT_COLUMN_MATCH.COLUMN_NAME) + " "
+            + row.get(GRAPHITRON_ARGUMENT_COLUMN_MATCH.MATCHED_BY);
     }
 }

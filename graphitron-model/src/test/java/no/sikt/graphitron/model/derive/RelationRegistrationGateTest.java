@@ -352,8 +352,8 @@ class RelationRegistrationGateTest {
         registrations.put("intent_input_field_carrier_role", Arm.DERIVED);
         registrations.put("intent_condition_membership", Arm.DERIVED);
         registrations.put("graphitron_field_scope_table_rule", Arm.DERIVED);
-        registrations.put("intent_mutation_write_payload", Arm.DERIVED);
-        registrations.put("intent_mutation_write_payload_live", Arm.DERIVED);
+        registrations.put("graphitron_mutation_write_payload", Arm.DERIVED);
+        registrations.put("graphitron_mutation_write_payload_rule", Arm.DERIVED);
         registrations.put("intent_mutation_payload_refusal", Arm.DERIVED);
         registrations.put("intent_mutation_payload_refusal_live", Arm.DERIVED);
         registrations.put("intent_mutation_payload_column", Arm.DERIVED);
@@ -404,10 +404,10 @@ class RelationRegistrationGateTest {
         registrations.put("intent_mutation_routine_seat", Arm.DERIVED);
         registrations.put("intent_column_match_claim", Arm.DERIVED);
         registrations.put("graphitron_field_column_scope", Arm.DERIVED);
-        registrations.put("intent_argument_column_scope", Arm.DERIVED);
-        registrations.put("intent_argument_column_scope_live", Arm.DERIVED);
-        registrations.put("intent_argument_column_match", Arm.DERIVED);
-        registrations.put("intent_argument_column_match_live", Arm.DERIVED);
+        registrations.put("graphitron_argument_column_scope", Arm.DERIVED);
+        registrations.put("graphitron_argument_column_scope_rule", Arm.DERIVED);
+        registrations.put("graphitron_argument_column_match", Arm.DERIVED);
+        registrations.put("graphitron_argument_column_match_rule", Arm.DERIVED);
         registrations.put("intent_input_field_filter_role_live", Arm.DERIVED);
         registrations.put("intent_argument_filter_role", Arm.DERIVED);
         registrations.put("graphitron_facet_binding", Arm.DERIVED);

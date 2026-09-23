@@ -53,23 +53,52 @@ class StageAnswerAgreementTest {
         new Stage("graphitron_field_scope_table", "graphitron_field_scope_table_rule"),
         new Stage("graphitron_argument_scope_table", "graphitron_argument_scope_table_rule"),
         new Stage("graphitron_input_field_resolving_table",
-            "graphitron_input_field_resolving_table_rule"));
+            "graphitron_input_field_resolving_table_rule"),
+        new Stage("graphitron_argument_column_scope", "graphitron_argument_column_scope_rule"),
+        new Stage("graphitron_argument_column_match", "graphitron_argument_column_match_rule"),
+        new Stage("graphitron_mutation_write_payload", "graphitron_mutation_write_payload_rule"));
 
     @Test
     @DisplayName("every stage-written table holds exactly its rule's rows, both directions")
     void everyStageAgreesWithTheRuleItInsertsFrom() {
-        withCapturedStore(dsl -> {
-            for (Stage stage : STAGES) {
-                assertThat(difference(dsl, stage.target(), stage.ruleView()))
-                    .as(stage.target() + " holds rows " + stage.ruleView() + " does not compute; a"
-                        + " previous capture's rows the stage did not clear, or rows written twice")
-                    .isEmpty();
-                assertThat(difference(dsl, stage.ruleView(), stage.target()))
-                    .as(stage.ruleView() + " computes rows " + stage.target() + " does not hold;"
-                        + " the stage did not write what the rule states")
-                    .isEmpty();
-            }
-        });
+        for (var fixture : Fixture.values()) {
+            withCapturedStore(fixture, dsl -> {
+                for (Stage stage : STAGES) {
+                    assertThat(difference(dsl, stage.target(), stage.ruleView()))
+                        .as(stage.target() + " holds rows " + stage.ruleView() + " does not compute"
+                            + " on the " + fixture + " fixture; a previous capture's rows the stage"
+                            + " did not clear, or rows written twice")
+                        .isEmpty();
+                    assertThat(difference(dsl, stage.ruleView(), stage.target()))
+                        .as(stage.ruleView() + " computes rows " + stage.target() + " does not hold"
+                            + " on the " + fixture + " fixture; the stage did not write what the"
+                            + " rule states")
+                        .isEmpty();
+                }
+            });
+        }
+    }
+
+    /**
+     * Every stage's table holds rows on at least one fixture, so no agreement above is between two
+     * empty relations. The per-rule cases below say which arms a fixture reaches; this one says only
+     * that no stage is compared over nothing, which is the floor every conversion owes and the one a
+     * new stage cannot land without meeting.
+     */
+    @Test
+    @DisplayName("every stage-written table holds rows on at least one fixture")
+    void noStageIsComparedOverAnEmptyRelation() {
+        var populated = new java.util.HashSet<String>();
+        for (var fixture : Fixture.values()) {
+            withCapturedStore(fixture, dsl -> STAGES.forEach(stage -> {
+                if (dsl.fetchCount(table(name(stage.target().toUpperCase()))) > 0) {
+                    populated.add(stage.target());
+                }
+            }));
+        }
+        assertThat(STAGES.stream().map(Stage::target).filter(t -> !populated.contains(t)).toList())
+            .as("stage-written tables no fixture populates; extend a fixture until one does")
+            .isEmpty();
     }
 
     /**
@@ -174,12 +203,72 @@ class StageAnswerAgreementTest {
             .toList();
     }
 
+    /**
+     * The captured schemas the agreement runs over. {@link #sdl()} reaches every arm the per-rule
+     * cases name; the register's own scaled fixture reaches the {@code @nodeId} decode chain and the
+     * input-field roles with rows to compare; {@link #mutationSdl()} reaches the write payload's
+     * refusal, key membership and destination, which neither of the other two populates.
+     */
+    private enum Fixture { ARMS, NODE_ID, MUTATION }
+
     private void withCapturedStore(java.util.function.Consumer<DSLContext> body) {
+        withCapturedStore(Fixture.ARMS, body);
+    }
+
+    private void withCapturedStore(Fixture fixture, java.util.function.Consumer<DSLContext> body) {
         var ctx = TestRunContext.of();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        try (var store = CapturedStore.ownStoreOfCatalog(tmp.resolve("stages"), sdl(), jooq)) {
+        String schema = switch (fixture) {
+            case ARMS -> sdl();
+            case NODE_ID -> no.sikt.graphitron.model.test.MaterializedRegistryFixture.scaledSdl(2);
+            case MUTATION -> mutationSdl();
+        };
+        try (var store = CapturedStore.ownStoreOfCatalog(
+                tmp.resolve("stages-" + fixture.name().toLowerCase()), schema, jooq)) {
             body.accept(store.dsl());
         }
+    }
+
+    /**
+     * Three UPDATEs and a DELETE over film: one whose payload the walkers admit whole and match
+     * through the primary key, one carrying a field that names no column, one carrying a
+     * {@code @nodeId} field decoding through a key film declares on language, and a DELETE by key.
+     * Between them they put rows in every relation of the write chain, the refusal and the key
+     * membership among them.
+     */
+    private static String mutationSdl() {
+        return """
+            interface Node { id: ID! }
+            type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+              id: ID! @nodeId
+              title: String
+              language: Language @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Language implements Node @table(name: "language") @node(keyColumns: ["language_id"]) {
+              id: ID! @nodeId
+              name: String
+            }
+            input FilmUpdateInput {
+              filmId: Int! @field(name: "film_id")
+              title: String
+            }
+            input FilmLanguageInput {
+              filmId: Int! @field(name: "film_id")
+              language: ID @nodeId(typeName: "Language")
+            }
+            input FilmBadInput {
+              filmId: Int! @field(name: "film_id")
+              nonsense: String
+            }
+            input FilmKeyInput { filmId: Int! @field(name: "film_id") }
+            type Query { films: [Film!]! }
+            type Mutation {
+              updateFilm(in: FilmUpdateInput!): Film @mutation(typeName: UPDATE)
+              updateFilmBad(in: FilmBadInput!): Film @mutation(typeName: UPDATE)
+              updateFilmLanguage(in: FilmLanguageInput!): Film @mutation(typeName: UPDATE)
+              deleteFilm(in: FilmKeyInput!): ID @mutation(typeName: DELETE, table: "film")
+            }
+            """;
     }
 
     /**

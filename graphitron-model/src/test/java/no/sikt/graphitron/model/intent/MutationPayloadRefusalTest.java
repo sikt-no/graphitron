@@ -37,7 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * What {@code intent_mutation_payload_refusal} states: which occurrence inside a write payload the
  * build refuses, and under which of the two gates. The refusal half of
- * {@code intent_mutation_write_payload}, and the cases divide the way the relation's own vocabulary
+ * {@code graphitron_mutation_write_payload}, and the cases divide the way the relation's own vocabulary
  * does: one for the gate that runs before a walker exists, five for the walkers' own, and then the
  * three properties that are not a cause at all.
  *
@@ -409,7 +409,7 @@ class MutationPayloadRefusalTest {
 
     /**
      * The payload argument itself is not an occurrence this relation reports on. Its own three
-     * refusals are folded into {@code intent_mutation_write_payload}'s absence, so a payload whose
+     * refusals are folded into {@code graphitron_mutation_write_payload}'s absence, so a payload whose
      * argument shape is refused has no write surface and therefore no refused occurrence either.
      */
     @Test

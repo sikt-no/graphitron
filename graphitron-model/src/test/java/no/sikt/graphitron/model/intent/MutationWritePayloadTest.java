@@ -9,7 +9,7 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
-import static no.sikt.graphitron.model.Tables.INTENT_MUTATION_WRITE_PAYLOAD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_WRITE_PAYLOAD;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentCondition;
@@ -26,7 +26,7 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@code intent_mutation_write_payload} states: which coordinate writes, with which verb, over
+ * What {@code graphitron_mutation_write_payload} states: which coordinate writes, with which verb, over
  * which table, through which argument. The first relation in the input-field family keyed by the
  * mutation rather than by a field, and the cases divide the same way the relation's own population
  * rule does.
@@ -314,11 +314,11 @@ class MutationWritePayloadTest {
 
     private static List<String> rowsIn(DSLContext dsl, String graphName) {
         derive(dsl);
-        return dsl.select(INTENT_MUTATION_WRITE_PAYLOAD.fields())
-            .from(INTENT_MUTATION_WRITE_PAYLOAD)
-            .where(INTENT_MUTATION_WRITE_PAYLOAD.GRAPH_NAME.eq(graphName))
-            .orderBy(INTENT_MUTATION_WRITE_PAYLOAD.TYPE_NAME,
-                INTENT_MUTATION_WRITE_PAYLOAD.FIELD_NAME)
+        return dsl.select(GRAPHITRON_MUTATION_WRITE_PAYLOAD.fields())
+            .from(GRAPHITRON_MUTATION_WRITE_PAYLOAD)
+            .where(GRAPHITRON_MUTATION_WRITE_PAYLOAD.GRAPH_NAME.eq(graphName))
+            .orderBy(GRAPHITRON_MUTATION_WRITE_PAYLOAD.TYPE_NAME,
+                GRAPHITRON_MUTATION_WRITE_PAYLOAD.FIELD_NAME)
             .fetch()
             .map(MutationWritePayloadTest::render);
     }
@@ -328,13 +328,13 @@ class MutationWritePayloadTest {
      * two cardinalities: the whole row, because every column of it is a claim some case here makes.
      */
     private static String render(Record row) {
-        return row.get(INTENT_MUTATION_WRITE_PAYLOAD.TYPE_NAME) + "."
-            + row.get(INTENT_MUTATION_WRITE_PAYLOAD.FIELD_NAME) + " "
-            + row.get(INTENT_MUTATION_WRITE_PAYLOAD.OPERATION) + " "
-            + row.get(INTENT_MUTATION_WRITE_PAYLOAD.WRITE_TABLE) + " "
-            + row.get(INTENT_MUTATION_WRITE_PAYLOAD.ARGUMENT_NAME) + ":"
-            + row.get(INTENT_MUTATION_WRITE_PAYLOAD.ARGUMENT_TYPE_NAME) + " "
-            + (row.get(INTENT_MUTATION_WRITE_PAYLOAD.ARGUMENT_LIST) ? "bulk" : "single") + " "
-            + (row.get(INTENT_MUTATION_WRITE_PAYLOAD.MULTI_ROW) ? "rows" : "row");
+        return row.get(GRAPHITRON_MUTATION_WRITE_PAYLOAD.TYPE_NAME) + "."
+            + row.get(GRAPHITRON_MUTATION_WRITE_PAYLOAD.FIELD_NAME) + " "
+            + row.get(GRAPHITRON_MUTATION_WRITE_PAYLOAD.OPERATION) + " "
+            + row.get(GRAPHITRON_MUTATION_WRITE_PAYLOAD.WRITE_TABLE) + " "
+            + row.get(GRAPHITRON_MUTATION_WRITE_PAYLOAD.ARGUMENT_NAME) + ":"
+            + row.get(GRAPHITRON_MUTATION_WRITE_PAYLOAD.ARGUMENT_TYPE_NAME) + " "
+            + (row.get(GRAPHITRON_MUTATION_WRITE_PAYLOAD.ARGUMENT_LIST) ? "bulk" : "single") + " "
+            + (row.get(GRAPHITRON_MUTATION_WRITE_PAYLOAD.MULTI_ROW) ? "rows" : "row");
     }
 }

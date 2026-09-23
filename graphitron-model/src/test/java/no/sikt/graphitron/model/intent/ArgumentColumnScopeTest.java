@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_ARGUMENT_COLUMN_SCOPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_COLUMN_SCOPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
@@ -28,7 +28,7 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@code intent_argument_column_scope} resolves: the table a column name written at an
+ * What {@code graphitron_argument_column_scope} resolves: the table a column name written at an
  * argument's site resolves against, which is the table a filter predicate built from that argument
  * compares on.
  *
@@ -368,23 +368,23 @@ class ArgumentColumnScopeTest {
 
     private static Result<Record> rowsIn(DSLContext dsl, String graphName) {
         derive(dsl);
-        return dsl.select(INTENT_ARGUMENT_COLUMN_SCOPE.fields())
-            .from(INTENT_ARGUMENT_COLUMN_SCOPE)
-            .where(INTENT_ARGUMENT_COLUMN_SCOPE.GRAPH_NAME.eq(graphName))
-            .orderBy(INTENT_ARGUMENT_COLUMN_SCOPE.TYPE_NAME,
-                INTENT_ARGUMENT_COLUMN_SCOPE.FIELD_NAME,
-                INTENT_ARGUMENT_COLUMN_SCOPE.ARGUMENT_NAME,
-                INTENT_ARGUMENT_COLUMN_SCOPE.TABLE_SCHEMA,
-                INTENT_ARGUMENT_COLUMN_SCOPE.TABLE_NAME)
+        return dsl.select(GRAPHITRON_ARGUMENT_COLUMN_SCOPE.fields())
+            .from(GRAPHITRON_ARGUMENT_COLUMN_SCOPE)
+            .where(GRAPHITRON_ARGUMENT_COLUMN_SCOPE.GRAPH_NAME.eq(graphName))
+            .orderBy(GRAPHITRON_ARGUMENT_COLUMN_SCOPE.TYPE_NAME,
+                GRAPHITRON_ARGUMENT_COLUMN_SCOPE.FIELD_NAME,
+                GRAPHITRON_ARGUMENT_COLUMN_SCOPE.ARGUMENT_NAME,
+                GRAPHITRON_ARGUMENT_COLUMN_SCOPE.TABLE_SCHEMA,
+                GRAPHITRON_ARGUMENT_COLUMN_SCOPE.TABLE_NAME)
             .fetch();
     }
 
     /** The site, which rule answered, and the table it resolved on: the claim of every case here. */
     private static String render(Record row) {
-        return row.get(INTENT_ARGUMENT_COLUMN_SCOPE.TYPE_NAME) + "."
-            + row.get(INTENT_ARGUMENT_COLUMN_SCOPE.FIELD_NAME) + "("
-            + row.get(INTENT_ARGUMENT_COLUMN_SCOPE.ARGUMENT_NAME) + ") "
-            + row.get(INTENT_ARGUMENT_COLUMN_SCOPE.BASIS) + " "
-            + row.get(INTENT_ARGUMENT_COLUMN_SCOPE.TABLE_NAME);
+        return row.get(GRAPHITRON_ARGUMENT_COLUMN_SCOPE.TYPE_NAME) + "."
+            + row.get(GRAPHITRON_ARGUMENT_COLUMN_SCOPE.FIELD_NAME) + "("
+            + row.get(GRAPHITRON_ARGUMENT_COLUMN_SCOPE.ARGUMENT_NAME) + ") "
+            + row.get(GRAPHITRON_ARGUMENT_COLUMN_SCOPE.BASIS) + " "
+            + row.get(GRAPHITRON_ARGUMENT_COLUMN_SCOPE.TABLE_NAME);
     }
 }

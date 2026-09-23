@@ -1,8 +1,11 @@
 package no.sikt.graphitron.model.test;
 
 import no.sikt.graphitron.model.derive.ArgMappingCandidates;
+import no.sikt.graphitron.model.derive.ArgumentColumnMatches;
+import no.sikt.graphitron.model.derive.ArgumentColumnScopes;
 import no.sikt.graphitron.model.derive.ArgumentReferenceStepTargets;
 import no.sikt.graphitron.model.derive.ArgumentScopeTables;
+import no.sikt.graphitron.model.derive.MutationWritePayloads;
 import no.sikt.graphitron.model.capture.macro.MacroAnchor;
 import no.sikt.graphitron.model.derive.NameMatchedKeys;
 import no.sikt.graphitron.model.derive.Nodes;
@@ -270,6 +273,9 @@ public final class SeededStore {
             InputFieldResolvingTables.derive(dsl, graph);
             ArgumentReferenceStepTargets.derive(dsl, graph);
             InputFieldReferenceStepTargets.derive(dsl, graph);
+            ArgumentColumnScopes.derive(dsl, graph);
+            ArgumentColumnMatches.derive(dsl, graph);
+            MutationWritePayloads.derive(dsl, graph);
         }
         Materializations.refreshAll(dsl);
     }

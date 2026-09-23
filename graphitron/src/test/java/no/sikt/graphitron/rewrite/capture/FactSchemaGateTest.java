@@ -990,7 +990,7 @@ class FactSchemaGateTest {
      * the {@code @node} type with an {@code @nodeId} argument naming it is what puts a row in
      * {@code intent_node_id_instruction}; the {@code updatedSince} argument, whose
      * {@code @field(name:)} spells a column of the table its field's return type binds, is what puts
-     * one in {@code intent_argument_column_match}, and it sits on {@code filmCategories} rather than
+     * one in {@code graphitron_argument_column_match}, and it sits on {@code filmCategories} rather than
      * on {@code films} because {@code Film} is bound twice here, by its own {@code @table} and by
      * being what a {@code @routine} field returns, so the argument scope declines at every argument
      * of a {@code Film}-returning field; and the {@code @reference} whose element names a table a

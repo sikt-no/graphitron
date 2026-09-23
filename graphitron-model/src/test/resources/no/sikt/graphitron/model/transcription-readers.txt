@@ -18,7 +18,7 @@
 # exclusion. That the union is taken is still pinned where the rows are, in the capture agreement's
 # emitted-element-family arm, rather than in any definition text.
 
-intent_argument_column_match_live graphql_type
+graphitron_argument_column_match_rule graphql_type
 intent_argument_filter_role graphql_type
 intent_authored_claim_conflict graphql_field
 intent_authored_field_claim graphql_field
@@ -49,7 +49,7 @@ intent_mutation_payload_column_live graphql_field
 intent_mutation_payload_key_membership_live graphql_field
 intent_mutation_payload_refusal_live graphql_field
 intent_mutation_routine_seat graphql_field
-intent_mutation_write_payload_live graphql_type
+graphitron_mutation_write_payload_rule graphql_type
 intent_node_id_instruction_live graphql_field
 intent_node_id_instruction_live graphql_type
 intent_producer_cardinality_conflict graphql_field

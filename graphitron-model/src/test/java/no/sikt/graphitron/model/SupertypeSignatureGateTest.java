@@ -180,8 +180,15 @@ class SupertypeSignatureGateTest {
         // supertype is owed here either: a relation over both would carry an argument name that is
         // null on half its rows, and neither reader could key into it. They became visible together
         // the way the pair above did, when a conversion took both out of the register and made them
-        // tables this gate's scan reaches.
-        Set.of("graphitron_argument_scope_table", "graphitron_field_scope_table"),
+        // tables this gate's scan reaches. The argument-site column scope joined them the same way,
+        // and it is a third question rather than a third keying of one: which table the column
+        // names written at an argument resolve against, where the scope table says which table
+        // the argument's content binds against. The two agree on an ordinary argument and part
+        // company at one carrying a @reference path, whose names resolve at the walk's terminal
+        // while its content still binds at the departure, so a relation over both would carry
+        // two answers to one coordinate and have to say which question each row was.
+        Set.of("graphitron_argument_column_scope", "graphitron_argument_scope_table",
+            "graphitron_field_scope_table"),
         // Where a @reference path element lands, under the three keys the three sites ask it by:
         // a field's own coordinate, an argument's, and an input field's with the resolving table
         // it was handed. One set per arm of the split, because the split is on key shape and the

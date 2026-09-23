@@ -316,7 +316,7 @@ class DerivedReadCostTest {
      * before and after, and what it changes is that its rows are on disk, which moves the cells
      * below rather than this count.
      */
-    private static final int READERS_WITH_CELLS = 23;
+    private static final int READERS_WITH_CELLS = 22;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
@@ -465,8 +465,13 @@ class DerivedReadCostTest {
      * the same mechanism a fifth time. The input-field walk removes none, having never been a
      * registration to charge a cell to, which is the whole of what made it the worst rung of the
      * six: a rule nobody refreshed and every reader of the decode hop re-walked.
+     *
+     * <p>48 to 39 with the argument-site column pair and the write payload, three rungs whose
+     * owner writes them in capture stages now and which therefore buy no cells: nine
+     * comparisons between reading a refilled target and re-evaluating the rule behind it go
+     * with them, and one view stops reaching the register at all.
      */
-    private static final int CELLS = 48;
+    private static final int CELLS = 39;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -879,8 +884,10 @@ class DerivedReadCostTest {
         // hundreds of scans rather than the tens of thousands the rows above carry. Accepted
         // rather than answered: the registration that produced them takes a consumer's dearest
         // refresh from 24.4 s to 0.13 s, and these two cells are the instrument noticing that a
-        // plan moved, which is what it is for.
-        "intent_mutation_write_payload|intent_mutation_payload_column_live",
+        // plan moved, which is what it is for. The write-payload half of that pair left with the
+        // write payload's own conversion, the rung being a table its owner writes rather than a
+        // registration, so there is no registered-against-unregistered comparison left to make of
+        // it; the decode-column half stays until its own rung goes.
         "intent_node_id_decode_column|intent_mutation_payload_column_live");
         // A cell the reference walk's storing created left with the field-site column scope's own
         // conversion, which is the second time this set has lost a row to a rung ceasing to be a
@@ -1074,14 +1081,14 @@ class DerivedReadCostTest {
         var ctx = TestRunContext.of();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         var registration = registrations.stream()
-            .filter(r -> r.targetTableName().equals("intent_argument_column_scope"))
+            .filter(r -> r.targetTableName().equals("intent_node_id_instruction"))
             .findFirst().orElseThrow();
 
         try (var store = CapturedStore.ownStoreOfCatalog(
                 tmp.resolve("runaway"), scaledSdl(1), jooq)) {
             UnregisteredRelation.install(store.dsl(), registration);
             RunawayRelation.install(store.dsl(), "graphitron_argument_scope_table");
-            var timed = scans(store, "intent_argument_column_scope",
+            var timed = scans(store, "intent_node_id_instruction",
                 new ReadBudget.Bounded(RUNAWAY_BUDGET_MILLIS));
             assertThat(timed.exhausted())
                 .as("a cell whose unregistered side cannot terminate is recorded, not compared")

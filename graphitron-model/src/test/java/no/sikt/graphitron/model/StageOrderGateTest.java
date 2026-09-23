@@ -136,6 +136,12 @@ class StageOrderGateTest {
             InputFieldReferenceStepTargets::statements,
             Set.of("graphitron_input_field_reference_step_target_keyed",
                 "graphitron_input_field_reference_step_target_keyless")),
+        new Step("ArgumentColumnScopes", "graphitron_argument_column_scope_rule",
+            Set.of("graphitron_argument_column_scope")),
+        new Step("ArgumentColumnMatches", "graphitron_argument_column_match_rule",
+            Set.of("graphitron_argument_column_match")),
+        new Step("MutationWritePayloads", "graphitron_mutation_write_payload_rule",
+            Set.of("graphitron_mutation_write_payload")),
         new Step("UnlowerableOrderingRejectionRows", null,
             Set.of("intent_field_unlowerable_ordering_rejection")),
         new Step("Materializations.refresh", null, REGISTERED_TARGETS));

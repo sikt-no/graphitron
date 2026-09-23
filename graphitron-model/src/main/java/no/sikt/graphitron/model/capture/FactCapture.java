@@ -1,6 +1,8 @@
 package no.sikt.graphitron.model.capture;
 
 import no.sikt.graphitron.model.derive.ArgMappingCandidates;
+import no.sikt.graphitron.model.derive.ArgumentColumnMatches;
+import no.sikt.graphitron.model.derive.ArgumentColumnScopes;
 import no.sikt.graphitron.model.derive.ArgumentReferenceStepTargets;
 import no.sikt.graphitron.model.derive.ArgumentScopeTables;
 import no.sikt.graphitron.model.derive.AuthoredClaimRejectionRows;
@@ -12,6 +14,7 @@ import no.sikt.graphitron.model.derive.InputFieldReferenceStepTargets;
 import no.sikt.graphitron.model.derive.InputFieldResolvingTables;
 import no.sikt.graphitron.model.derive.InputOccurrencePaths;
 import no.sikt.graphitron.model.derive.Materializations;
+import no.sikt.graphitron.model.derive.MutationWritePayloads;
 import no.sikt.graphitron.model.derive.RefreshProgress;
 import no.sikt.graphitron.model.derive.TypeBackingRows;
 import no.sikt.graphitron.model.derive.UnlowerableOrderingRejectionRows;
@@ -113,6 +116,9 @@ public final class FactCapture {
             InputFieldResolvingTables.derive(txDsl, graph.name());
             ArgumentReferenceStepTargets.derive(txDsl, graph.name());
             InputFieldReferenceStepTargets.derive(txDsl, graph.name());
+            ArgumentColumnScopes.derive(txDsl, graph.name());
+            ArgumentColumnMatches.derive(txDsl, graph.name());
+            MutationWritePayloads.derive(txDsl, graph.name());
             // The one producer that used to run alone after the refresh, for a dependency that no
             // longer exists: the view it renders reads the field-site scope, which the refresh was
             // what filled and which the stage above it fills now. Its position here is the read set
