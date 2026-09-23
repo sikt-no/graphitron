@@ -1,7 +1,7 @@
 ---
 id: R970
 title: "graphitron-mcp ships Jackson versions with open advisories, and the root pgjdbc pin trails two fixes"
-status: Backlog
+status: Spec
 bucket: cleanup
 priority: 3
 theme: tooling
@@ -59,13 +59,116 @@ Both modules set `maven.deploy.skip`, and neither advisory's preconditions hold 
 `channelBinding=require`, and 98qh needs a malicious server during SCRAM authentication. The fix is
 the one-line bump, plus the version CLAUDE.md states under Technology constraints.
 
-## Likely shape
 
-Import `com.fasterxml.jackson:jackson-bom` and `tools.jackson:jackson-bom` in the root
-`dependencyManagement`, at the newest GA patch of the newest GA minor at pickup (2.22.3 and 3.2.3
-at filing), and raise `version.postgresql` the same way (42.7.13 at filing). The open question for
-Spec is whether the MCP Java SDK tolerates a Jackson 3 minor jump from 3.0 to 3.2. SDK 2.0.1 exists
-and may carry a newer Jackson 3 of its own, which would make the SDK bump the lighter fix for that
-line. A root Jackson 2.x BOM would also reach `graphitron-sakila-example`. That module imports the
-Quarkus BOM in its own `dependencyManagement`, which should take precedence over the parent's and
-keep the version Quarkus tests its extensions against; Spec confirms this on the resolved tree.
+Two resolved-tree facts sit beside the advisories. `jackson-annotations` resolves to 2.20 under
+`graphitron-mcp` (the MCP SDK's `mcp-core` declares it nearer than `langchain4j-core` does), below
+the 2.21 that databind 2.21.3 is built against, so the 2.x line is mismatched today as well as
+behind. And in `graphitron-sakila-example` the root pin does more than trail: the module's
+explicit test-scope `org.postgresql:postgresql` at `${version.postgresql}` is the nearest
+declaration, so it overrides the 42.7.13 that `quarkus-jdbc-postgresql` 3.39.4 brings and resolves
+42.7.10. Raising the root pin to 42.7.13 makes the two agree.
+
+## Implementation
+
+Every change is in two files, the root `pom.xml` and `CLAUDE.md`. No module pom changes, and no
+source changes: nothing in the reactor imports a Jackson type (`graphitron-mcp`,
+`graphitron-maven-plugin` and `graphitron-lsp` have no `com.fasterxml.jackson` or
+`tools.jackson` import, and no pom names either group), so Jackson is purely a transitive
+concern of the MCP SDK and langchain4j.
+
+- **Root `pom.xml`, `<properties>`.** Add `version.com.fasterxml.jackson` and
+  `version.tools.jackson`, following the `version.<groupId>` naming the other pins use. Two
+  properties rather than one because the lines release independently. Set each to the newest GA
+  patch of the newest GA minor at pickup: 2.22.3 and 3.2.3 as of this Spec. Raise
+  `version.postgresql` the same way: 42.7.13 as of this Spec.
+- **Root `pom.xml`, `<dependencyManagement>`.** Import `com.fasterxml.jackson:jackson-bom` and
+  `tools.jackson:jackson-bom` (type `pom`, scope `import`) beside the existing `mcp-bom`,
+  `jetty-bom` and `jetty-ee10-bom` imports, with a comment in the style of theirs saying what
+  pulls each line (langchain4j for 2.x, the MCP SDK's `mcp-json-jackson3` for 3.x) and that the
+  imports exist to lift transitive versions, since no module declares Jackson. Put the 2.x import
+  first. Both BOMs manage `com.fasterxml.jackson.core:jackson-annotations` (Jackson 3 keeps using
+  the 2.x annotations artifact), both at `2.22` for the versions above, and among imports the
+  first declaration wins; ordering the 2.x BOM first makes the line that owns that artifact the
+  one that decides it if the two ever disagree.
+- **`CLAUDE.md`, Technology constraints.** Update the stated PostgreSQL driver version to the
+  new pin.
+
+Three properties of this shape were checked on the tree at Spec time, by applying the two imports
+and the pgjdbc bump locally:
+
+- Under `graphitron-mcp` and `graphitron-maven-plugin` the 3.x line resolves to 3.2.3 across
+  `jackson-core`, `jackson-databind` and `jackson-dataformat-yaml` (the last pulled by
+  `json-schema-validator`), the 2.x line to 2.22.3 for core and databind, and
+  `jackson-annotations` to 2.22. The mismatch above goes away with the advisories.
+- `graphitron-sakila-example` keeps Quarkus's Jackson 2.22.2. The module imports the Quarkus
+  platform BOM in its own `<dependencyManagement>`, which takes precedence over the parent's
+  imported BOM, so the example stays on the version Quarkus tests its extensions against. Only
+  its pgjdbc changes, to 42.7.13.
+- MCP SDK 2.0.0 tolerates Jackson 3.2.3 at runtime. With both imports applied,
+  `mvn test -pl graphitron-mcp -Plocal-db` ran 134 tests with no failures, including the 57 in
+  `GraphitronMcpServerTest` that drive the live Streamable HTTP transport end to end with the
+  SDK's own client, so JSON-RPC serialisation on both sides went through Jackson 3.2.3. The SDK
+  bump the Backlog body floated is therefore not needed for the goal (see Other solutions).
+
+What reaches a consumer is the plugin's resolved classpath, not the reactor's. A consumer's Maven
+resolves `graphitron-maven-plugin` with the plugin artifact as the root of the graph, and the
+root's effective `dependencyManagement` (inherited from the published
+`graphitron-rewrite-parent`, BOM imports included) governs versions throughout that graph, so
+the imports reach the transitive Jackson edges under `graphitron-mcp`. This is the one property
+that the Spec-time run above did not observe directly, because the check needs the plugin
+installed with the new parent. The acceptance check under Tests observes it. If it does not hold,
+the fallback is to declare `com.fasterxml.jackson.core:jackson-databind` and
+`tools.jackson.core:jackson-databind` directly in `graphitron-mcp`'s pom, versionless under the
+BOMs: as direct dependencies of a direct dependency of the plugin they are nearer than any
+transitive declaration, so nearest-wins selects them whatever the consumer's resolver does with
+management. The module comment on the reactor-edge allowlist is unaffected, since neither is a
+reactor module.
+
+## Tests
+
+The acceptance evidence is resolved-tree output, recorded in the implementation commit message,
+plus the existing suites passing in the verification build.
+
+- **Consumer path.** After the full install, `mvn dependency:resolve-plugins -pl
+  graphitron-sakila-example -Plocal-db` lists the `graphitron-maven-plugin` plugin's resolved
+  dependencies. In that block, every `com.fasterxml.jackson.core` artifact is at the new 2.x
+  version (annotations at `2.22`), and every `tools.jackson.*` artifact is at the new 3.x version.
+  Today the same command shows `jackson-core` and `jackson-databind` 2.21.3 and
+  `jackson-annotations` 2.20 there. This check is the one that demonstrates the goal, because it
+  is the classpath a consumer's `graphitron:dev` JVM loads. Other plugins in the same output
+  (the Quarkus plugin) carry their own Jackson and are not this item's concern.
+- **Reactor.** `mvn dependency:tree -Plocal-db -Dincludes='com.fasterxml.jackson*,tools.jackson*,org.postgresql*'`
+  shows the versions listed under Implementation for `graphitron-mcp` and
+  `graphitron-maven-plugin`, Jackson 2.22.2 (Quarkus-managed, unchanged) for
+  `graphitron-sakila-example`, and pgjdbc at the new pin for the example's driver.
+- **Runtime compatibility.** The `graphitron-mcp` suite, in particular `GraphitronMcpServerTest`
+  (the SDK transport over Jackson 3) and `CatalogSearchOnnxTest` (the langchain4j embedder), and
+  the `graphitron-sakila-db` codegen plus the `graphitron-sakila-example` execution tier (the
+  driver bump) all pass in the verification build. No new test is added: the property at stake is
+  a resolved version, which the checks above observe directly, and a test asserting pom versions
+  would pin numbers the next bump has to edit without guarding anything the scan does not.
+
+The open-advisory count itself comes from an external scanner the reactor does not run, so the
+implementer rechecks the chosen versions against the GHSA ids listed above (each id's advisory
+page states its patched ranges) rather than against a build step.
+
+## Other solutions we've considered
+
+- **Bump the MCP SDK to 2.0.1 instead of importing the 3.x BOM.** 2.0.1's `mcp-json-jackson3`
+  declares `jackson-databind` 3.1.4 (and `json-schema-validator` 3.0.6, which also declares
+  3.1.4). That fixes every 3.x advisory above except GHSA-5gvw-p9qm-jgwh, fixed in 3.1.5, so it
+  does not reach the goal on its own, and the BOM import is needed either way. The SDK bump is a
+  reasonable separate patch upgrade but is not part of this item; with the BOM in place the SDK's
+  own Jackson declaration no longer decides the resolved version.
+- **Pin individual Jackson artifacts in `<dependencyManagement>`.** Covers only the artifacts
+  named, and the 3.x line alone pulls three (`jackson-core`, `jackson-databind`,
+  `jackson-dataformat-yaml`), so the next transitive addition would slip past. The BOM manages
+  the whole line coherently, and the reactor already manages the MCP SDK and Jetty that way.
+- **Drop `graphitron-sakila-example`'s explicit test-scope pgjdbc and let Quarkus manage the
+  driver.** Would remove the downgrade described above for good, but the root property also feeds
+  the jOOQ codegen plugin in `graphitron-sakila-db`, so the property stays, and changing how the
+  example gets its driver is a separate decision from clearing two advisories.
+- **Add a vulnerability scanner to CI** (for instance OWASP dependency-check) so a new advisory
+  fails the build instead of arriving by an external scan. That is a standing policy with its
+  own false-positive and suppression costs, and belongs in its own item; this one clears what is
+  open today.
