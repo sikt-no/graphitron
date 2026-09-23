@@ -906,3 +906,79 @@ and the `VARCHAR`/`TEXT` pass.
   *Author response (2026-09-23):* The goal's paging sentence is now scoped to order columns that
   hold no `NULL`, and a new Emission bullet says what nullable columns inherit and that this item
   neither changes nor promises it.
+
+### Round 2 (2026-09-23, Spec -> Ready, reviewer session 01EVHBH2qyMRGpXKWqZoBiqR)
+
+Verdict: withhold. Two blocking findings on question two and one small one on question one; three
+non-blocking. Round 1's four findings are closed: the two-level carrier, the structural
+`OnSyntheticKey` recognition, the reading of the narrowing against the `intent_` retirement, and the
+`columnClass` rule all hold up against the tree. The rest of the plan's claims about code check out
+(see the commit message for the list), and the design itself (fixed slots chosen at runtime, seek
+and order composed together, slice 1 carrying the cursor) is one I would hand to an implementer.
+
+**Finding 1 (question two). The narrowing predicate is wider than the population the classifier
+lowers, so it would silently accept a declaration at a root the item does not lower.** The
+`PARTICIPANT_TABLE` basis is structural: `intent_field_participant_scope_table` mints a row for any
+field whose navigated type is a multitable container, whatever reads it, excluding only a resolved
+`@mutation(table:)`. A root `@service` field returning a multitable interface list satisfies both
+conjuncts the spec names (it sits on `QUERY` and `is_list` is true), classifies as
+`QueryField.QueryServicePolymorphicField`, and that record has no ordering component and
+`emitServiceMethods` delivers the service's order. Today its `@defaultOrder` fails the build through
+the fan-out arm. After this item's exclusion it would build and be ignored, which is the defect the
+item exists to remove, at a neighbour the "keeping them rejected is a real obligation" paragraph does
+not list. `Query.nodes` over a `Node` interface with no `@table` looks like the same shape through the
+same relation; check it rather than take my reading. So the sentence "The classifier lowers an
+ordering at exactly the coordinates the view stops rejecting" is false as the predicate is spelled.
+What would satisfy it: a third conjunct stating that the read is the generated stage-1 union,
+spelled over captured relations as the other two are (`graphitron_service_entry` at the coordinate
+looks sufficient for `@service`), the same reasoning applied to every other root leaf that can
+navigate to a multitable container, and a kept-row case for a root `@service` multitable list beside
+the single-valued and child cases in "Tests". Hand the extra conjunct to R677 along with the
+list-shaped predicate.
+
+**Finding 2 (question two). The stage-1 seam is not clean: `buildStage1Block` is shared with a child
+path.** "What the tree already has" says `branchProjection`'s two callers are `buildStage1Block`
+(list root) and `buildStage1ConnectionBlock` (connection root), and that the child paths carry their
+own stage-1 builders. The two callers are right, but `buildStage1Block` itself has two callers: the
+root list fetcher, and the inline single-cardinality child fetcher for `ChildField.InterfaceField` /
+`ChildField.UnionField` (the `buildStage1Block(participants, participantJoinPaths, Map.of(), ...)`
+call in `MultiTablePolymorphicEmitter`, whose delivered record is `records.get(0)` of the stage-1
+order). Two consequences for the plan. The slots have to reach `buildStage1Block` as a value that is
+empty on the child call, which is the treatment the spec already gives `buildPerTypenameSelect`,
+so the seam paragraph's "one of which this item must not change the behaviour of" covers two shared
+sites, not one. And the Emission bullet's "the list arm gains `__typename` ... on the undeclared path
+too" also changes the order the single-cardinality child picks its row from, at a cross-participant
+primary-key tie. That is probably harmless, since it makes an arbitrary pick deterministic, but it is
+a behaviour change on a child coordinate that the item says it leaves alone. Either scope the
+tiebreaker to the root call or say that the child gains it and why that is acceptable.
+
+**Finding 3 (question one, small). The Goal describes the behaviour before R677.** "Today neither
+does, and neither is rejected as ignored, so this SDL builds and returns primary-key order whatever
+the client asks", and the SDL comment "it is why these rows come back in primary-key order", both
+contradict the Problem section and the tree: `UnlowerableOrderings.rejectionOf` mints a deferred
+rejection on every `PARTICIPANT_FAN_OUT` row, and `UnlowerableOrderingRejectionPipelineTest`
+pins that the reported schema fails the build. A consumer's change is therefore from a stopped
+build to a sorted result, not from primary-key order to a sorted result. Restate the before-state in
+the Goal. The after-state is well stated as it stands.
+
+**Non-blocking.**
+
+* **The census has a third spelling the plan does not name.** `OperationMembers` is the leaf-local
+  projection that `OperationMemberMintPinTest` compares the minted census against, and its
+  `DECLARED_SHAPES` admits only `CONDITION` as an optional kind on `QueryInterfaceField` and
+  `QueryUnionField`, validated as an image fence inside `membersOf`. Minting `ORDER_BY` from
+  `OperationMemberRelation` alone fails that fence or that pin. `polymorphicRootRead` and both
+  shape entries move with it, and a sealed `OperationMember.OrderBy` would touch this switch too.
+  The build catches it, so this is only a note on the census section's site list.
+* **Which direction the appended tiebreakers take is unstated.** The Goal says `direction: DESC`
+  returns the reverse of `direction: ASC`. That holds only while the authored columns hold no tie,
+  unless `__sort__` and `__typename` flip with the effective direction. The seeded tie row the
+  Tests section adds shares its fixture with the reversal case, so the answer decides whether those
+  two cases can both pass. Either direction pages correctly, so this is a decision to state, not a
+  defect.
+* **One argument against runtime assembly applies to the chosen design too.** Under fixed slots the
+  seek list is still chosen per request ("`orderBy` and `extraFields` move together"), and on the
+  single-table path the `OrderByResult` columns already vary with the chosen order. So a cursor
+  re-sent with a different `order` argument trips `decodeCursor`'s arity or conversion check under
+  either design. The rejection of runtime assembly stands on the second consequence (the per-slot
+  `DataType` as a build-time fact), which is enough.
