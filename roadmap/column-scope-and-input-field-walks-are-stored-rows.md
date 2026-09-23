@@ -1,13 +1,13 @@
 ---
 id: R958
 title: "The column-scope departures and the input-field and argument walks are gatherer-written rows, not registered views"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 2
 theme: model-cleanup
 depends-on: []
 created: 2026-09-18
-last-updated: 2026-09-22
+last-updated: 2026-09-23
 ---
 
 # The column-scope departures and the input-field and argument walks are gatherer-written rows, not registered views
@@ -57,6 +57,52 @@ arithmetic. One of those two is registered and one is the plain view this item s
 left to collect is the second half of a lever whose first half is already in the tree. Every figure
 in that row and in this body was taken before R953's statistics levers shipped and before R954 landed
 its stages, so this item re-takes its own reading rather than quoting one; "Tests" says with what.
+
+## What landed
+
+All six rungs, in ladder order, over four commits: the carrier data channel; the three column-scope
+departures together; both `@reference` walks with the read-set seam; and a follow-up that fixed a
+walk defect and supplied the tests the walk rungs owed. The register holds fourteen rows and its
+refresh depth is nine. What follows is what a reviewer comparing the tree to the plan below should
+know without reconstructing it.
+
+**A defect the new keys exposed, fixed in the shared builder.** When an element reaches its arrival
+by two routes and the path continues, the recursion hands the next element that arrival once per
+route, because the engine evaluates the walk's recursive `UNION` without removing a row one
+iteration produced twice. As a view or an unkeyed table that inflated `candidates` silently; as a
+keyed stage it fails the capture on any schema with that shape. The field walk had carried it since
+it became a stage, and `ReferenceStepWalk` gave it to both new walks. The builder now takes the
+chain as a set before ranking it, and `ReferenceStepTargetTest.anArrivalReachedByTwoRoutesIsWalkedOnwardOnce`
+pins it. It was found by the input-field walk's own test, not by any gate.
+
+**Where the tests differ from the plan's list.** The argument walk's cross-arm case seeds through a
+union's participants, since the argument scope admits only a one-candidate binding and so never sees
+the ambiguous binding the field walk's case rests on. The input-field walk has no cross-arm case:
+its arity partition holds the resolving table, position zero therefore departs from one table, and
+no arm reaches a table and a function result together from one departure, so an element on both
+arms cannot arise there. `InputFieldReferenceStepTargetTest` says so and carries the two-departure
+case instead. `WarmStartRefreshTest` populates both new keyed arms; neither keyless arm is populated
+there, which is where the field walk's keyless arm already stood.
+
+**The seam covers the stratum, not the assembly pass.** `StageOrderGateTest` derives the two new
+stages' read sets from their statements, and `FieldReferenceStepTargets` exposes its statements the
+same way. The field-site hop and walk stages run in `GraphitronAssemblyCapture` rather than in
+`FactCapture.derive`, which this gate does not model, so their statements are exposed and nothing
+checks their order yet. Extending the gate to that pass is the remaining half of what the plan
+called paying for the hop stages on the way past.
+
+**The measurements, taken on a capture of the example schema** (915 fields, 305 arguments, eleven
+argument-site path elements), three sweeps with result reuse off, trunk before rung 4b against this
+tree. The decode-hop rule falls from 2599 rows visited to 1285, 51 to 107 milliseconds to 5 to 20,
+and the input-field walk its readers join falls from 816 rows visited as a view to 15 as tables.
+The argument hop stays a view on the reading the plan made its precondition, stated in its own
+comment: the walk expands it about once, and storing it would buy about fifteen milliseconds a
+capture. No consumer store was reachable, so these are a ranking and not a price, as the Tests
+section anticipated.
+
+**Filed rather than absorbed.** R968, because `PartitionSelectivityWorthTest`'s cost control collapsed
+to twelve rows once the walks' keys landed under its reader, and whether the partition declaration
+still earns its place is an open question rather than a figure to lower.
 
 ## Implementation
 
