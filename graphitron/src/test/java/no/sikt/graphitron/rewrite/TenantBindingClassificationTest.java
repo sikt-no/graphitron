@@ -523,6 +523,32 @@ class TenantBindingClassificationTest {
     }
 
     @Test
+    void idReturningWriteToATenantScopedTableWithNoBindingRejects() {
+        // A DML write returning an encoded id has no Record return target, so its reach comes
+        // from the write target alone. Without that, this DELETE touches no table as far as the
+        // fold can tell, classifies Untenanted, and runs on the default source.
+        var schema = build("""
+            type Inventory implements Node @table(name: "inventory")
+                    @node(keyColumns: ["inventory_id"]) {
+                id: ID! @nodeId
+            }
+            type Language @table(name: "language") { name: String }
+            type Query { languages: [Language!]! }
+            type Mutation {
+                deleteInventory(in: DeleteInventoryInput!): ID
+                    @mutation(typeName: DELETE, table: "inventory")
+            }
+            input DeleteInventoryInput { inventoryId: Int! @field(name: "inventory_id") }
+            """);
+
+        assertThat(schema.tenantBindingOf("Mutation", "deleteInventory")).isNull();
+        assertThat(schema.tenantBindings().rejections())
+            .anyMatch(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding r
+                && r.coordinate().equals("Mutation.deleteInventory")
+                && r.detail().contains("no argument or input field maps to tenant column"));
+    }
+
+    @Test
     void insertWithArityOneNodeIdCarrierDivinesTheDecodedSlot() {
         // The transform-blind site: an INSERT input field whose @nodeId decodes to a key that is
         // the tenant column alone. Before the projection axis the input-field walk read the
