@@ -45,6 +45,10 @@ Above the base relations the DDL defines the `intent_` stratum as views: the aut
 
 `EmitPlan.produce` joins the model's facts into the command relations the run will render: the launcher relation (one row per covered coordinate), the condition relation (one row per filtered coordinate and resolved table), the projection relation (one row per projection unit), the fetcher-edge relation, the type-unit relation, and the global commands. Commands are complete rows; the completeness law, the package triangle that enforces the producer/consumer split, and the naming regime are xref:fact-model.adoc[The fact model].
 
+This layer is a functional core with an imperative shell, and two rules follow from that. A planner holds its own queries, decides what the run emits, and returns a command relation; the relation is immutable data, so it asks the store nothing and carries no handle to ask with. And what a planner needs is its own business, so two planners wanting the same rows each write their own query rather than sharing one. A derivation both would want is a fact missing from the model rather than a helper missing from this package, and the fix is to push it down.
+
+`RoutineWriteCommands` does not have this shape. It takes the handle and reads through `RoutineWriteFacts`, a query surface built for reuse. That is the older arrangement rather than the one to copy, and it dissolves as the arcs owning those commands reach them.
+
 == Render: the shell folds
 
 `GraphQLRewriteGenerator.runPipeline` folds over each committed relation and hands every row to its renderer (`RootLauncherRenderer`, `ConditionGlueRenderer`, `ProjectionUnitRenderer`, and the schema, record and global emitters). The fold enforces closure in both directions: a renderer emitting a unit the plan never committed fails the run, and a committed unit no renderer emitted fails it too. The closure invariant over the emitted method call graph, and the oracles that pin it, are xref:fact-model.adoc[The fact model].

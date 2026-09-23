@@ -148,6 +148,38 @@ premise on `graphitron_field_synthesis.authored_type_sdl` and on `intent_field_s
 it. The column is gone and that view reads neither relation now. A dated note says so in its body;
 whether the defect it reports still exists is its own author's to re-measure.
 
+## Owed, not done here
+
+Found while writing the discipline down, verified, and not fixed. Recorded so they are findable
+rather than left in a transcript.
+
+* **Nothing enforces mark and sweep.** No gate checks that a stored relation's rows are swept. One
+  gatherer's clear set is re-derived from its own source text and compared; the other lists are
+  unchecked. This is one of the three things a stored relation owes and it has no enforcer.
+* **The ownership gate binds on declared views only.** `MetaDeclarationGateTest`'s population is
+  `WHERE RELATION_TYPE = 'VIEW'`, and within it a read of a relation still on the undeclared roster
+  is skipped. A relation filled by hand-written jOOQ is outside it entirely, because what such a
+  producer reads is in no stored definition for a parse to find. The javadoc handed those producers
+  to `CaptureCorpusIsolationTest`, whose scope is `graphql_` by prefix plus the graphitron entry
+  half, so the catalog, classpath and code families are in neither population. Three sessions
+  disproved that sentence independently; the javadoc now states the gap, and closing it is open.
+* **Nothing checks that a declared grain is the right grain.** The key gate compares
+  `meta_grain.key_shape` against the actual primary key, which is two authored strings agreeing with
+  each other, and it excludes views. A relation whose key and whose declaration state the same wrong
+  grain passes.
+* **`graphitron_field_navigation` is a stored derivation with no rule view.** Its grain is
+  `graphitron_field`'s, unchanged, and it is stored so a reader meets an indexed column. That is a
+  real reason, but the rule is stated once in jOOQ with nothing to diff it against, where
+  `FieldColumnScopes` ten lines away keeps its rule in a view so an `EXCEPT` against the target stays
+  runnable. Worth an item.
+* **`graphql_element` and `graphql_element_field` are declared to the retired `sdl` gatherer.** That
+  roster row points at `SdlFactCapture`, which creates no record and writes no relation, so the
+  declaration names a writer that does not write. Repointing it is a one-line change that wants
+  checking rather than guessing.
+* **`SchemaIdentifierDriftCheck` reports a stale path.** It reads the DDL from `target/classes` and
+  prints the `src/main/resources` path in its message, so on an incremental build it names findings
+  the source no longer holds.
+
 ## What a reviewer should press on
 
 * **Slice 1's classification is measured at eight relations and asserted at the other 48.** A
