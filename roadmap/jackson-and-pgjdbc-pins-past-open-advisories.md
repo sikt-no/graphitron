@@ -1,7 +1,7 @@
 ---
 id: R970
 title: "graphitron-mcp ships Jackson versions with open advisories, and the root pgjdbc pin trails two fixes"
-status: Ready
+status: In Progress
 bucket: cleanup
 priority: 3
 theme: tooling
