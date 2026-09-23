@@ -66,8 +66,9 @@ extend type Query {
 The only thing that varies between `customers` and `occupants` is the return type. When this item
 lands, `occupants` returns `last_name` order rather than primary-key order, `direction: DESC` on
 `occupantsOrdered` returns the reverse of `direction: ASC`, and paging through `occupantsConnection`
-visits every row exactly once under the author's ordering, with `Customer` and `Staff` rows
-interleaved by `last_name` rather than segregated by participant.
+visits every row exactly once under the author's ordering (for order columns that hold no `NULL`,
+as on every other paginated path), with `Customer` and `Staff` rows interleaved by `last_name`
+rather than segregated by participant.
 
 Scope is list-shaped reads on the two root variants, `QueryField.QueryInterfaceField` and
 `QueryField.QueryUnionField`. Two neighbouring shapes stay rejected at build time rather than
@@ -156,8 +157,13 @@ plumbing an existing value through, not writing a new resolver, and the "column 
 participant" rule is enforced by the same call that already enforces it for filters: a participant
 whose table lacks the column comes back `TableFieldComponents.Rejected` and joins the existing
 `mintParticipantFailures` path. The `index:` column source resolves per participant against that
-participant's catalog for free by the same route; whether a missing index there returns a `Rejected`
-or throws is the one thing to verify before relying on it.
+participant's catalog for free by the same route, and a missing index returns `Rejected` rather
+than throwing (`OrderByResolver.resolveIndexColumns` returns null, which both the `@defaultOrder`
+and `@order` paths turn into a `Rejected`). One wrinkle bears on the arity rule below:
+`JooqCatalog.findIndexColumns` drops an index column it cannot resolve rather than returning empty,
+as its javadoc says it does. So an index with an unresolvable column arrives short, and the arity
+rejection can fire on that rather than on a genuine difference between two indexes. The message
+should name the columns on each side so the author can tell which.
 
 **The cursor codec is already generic, and is not PK-typed.**
 `ConnectionHelperClassGenerator` emits `encodeCursor(Record, List<Field<?>>)`, which serialises each
@@ -182,9 +188,12 @@ one of which this item must not change the behaviour of" is the real shape of th
 the reason the slot list is threaded as a value that is empty on the child paths rather than as a
 second boolean beside `includeSortKey`.
 
-**A `primaryKey: true` named order is already delivered.** `@order(primaryKey: true)` resolves to the
-participant's PK columns, which is exactly what `__sort__` already projects. That enum value needs no
-new slot; it selects the existing one. Worth pinning as a test rather than discovering in flight.
+**A primary-key order is already delivered.** `@order(primaryKey: true)` resolves to the
+participant's PK columns, which is exactly what `__sort__` already projects. So do
+`@defaultOrder(primaryKey: true)` and the implicit fallback that becomes `Argument.base` on a field
+with `@orderBy` and no `@defaultOrder`. None of them needs a new slot; each selects the existing one.
+How the fold tells them apart from an authored `fields:` order, since none carries provenance, is in
+the model section below. Worth pinning as a test rather than discovering in flight.
 
 ## Implementation
 
@@ -205,27 +214,84 @@ copies together, and the invariant the whole emission design rests on (same slot
 compatible types, on every branch) degrades into an agreement between N independently resolved
 copies that no type enforces.
 
-So state the field-level half once and hang the per-participant resolution off each slot. In the
-register of:
+So state the field-level half once and hang the per-participant resolution off the columns it
+projects. That takes two levels, not one, because two different things are being named. A *slot* is
+a projected column: one alias in every `UNION ALL` branch, one Java class, one column per
+participant. An *order* is what the SDL declared: a named order, or the base, as a list of entries,
+each entry pointing at a slot with a direction and a collation. Slots are shared between orders, so
+the direction, the collation, the order's name and `uniformAsc` cannot live on the slot: a slot that
+serves both an ascending `LAST_NAME` order and a descending order over the same column would need
+two of each. `uniformAsc` is a per-order fact in the tree already, a component of
+`OrderBySpec.Fixed`. In the register of:
 
 ```
 record PolymorphicOrdering(
     OrderingSurface surface,              // argument name / sortField / directionField / list-ness,
                                           //   or the Fixed-only arm
-    List<OrderingSlot> slots)             // ordered; the index IS the slot's identity
+    List<OrderingSlot> slots,             // ordered; the index IS the slot's identity
+    List<SlotOrder> namedOrders,          // declaration order; empty on the Fixed-only arm
+    SlotOrder base)                       // the @defaultOrder, or the primary-key fallback
 record OrderingSlot(
     int ordinal,
-    String namedOrderName,                // null on the Fixed / base arm
-    SortDirection direction, String collation, boolean uniformAsc,
+    String slotClass,                     // the one ColumnRef.columnClass every participant agrees on
     SequencedMap<ParticipantRef.TableBound, ColumnRef> columnByParticipant)
+sealed interface SlotOrder {
+    String name();                        // null on the base
+    boolean uniformAsc();
+    record OnSlots(String name, List<SlotEntry> entries, boolean uniformAsc)
+    record OnSyntheticKey(String name, SortDirection direction, boolean uniformAsc)
+}
+record SlotEntry(int slotOrdinal, SortDirection direction, String collation)
 ```
 
-The exact carving is the implementer's; what is load-bearing is that the field-level half appears
-once, that each slot carries its own ordinal rather than letting three emission sites recompute it,
-that the per-participant column is keyed on the `ParticipantRef.TableBound` object rather than on a
-typename string, and that the compact constructor requires every slot to be total over the
-participant set. Then the cross-participant agreement holds by construction, and the capability
-accessor returns one value rather than a list every consumer has to reconcile.
+The exact carving is the implementer's. What is load-bearing:
+
+* The field-level half appears once.
+* Each slot carries its own ordinal, and each entry refers to a slot by that ordinal, rather than
+  letting three emission sites recompute either.
+* The per-participant column is keyed on the `ParticipantRef.TableBound` object, not on a typename
+  string.
+* The compact constructors require every slot to be total over the participant set and every entry's
+  ordinal to name a slot that exists.
+* Direction and collation are stated once per entry, so a per-participant disagreement on either is
+  unrepresentable by type rather than checked. They cannot disagree in the tree anyway: both come
+  from the SDL directive, never from the database index (`OrderByResolver`'s `index:` arm builds
+  every entry with a null collation and the directive-level direction). So there is no agreement
+  rule for them to fail.
+
+Then the cross-participant agreement holds by construction, and the capability accessor returns one
+value rather than a list every consumer has to reconcile.
+
+**A slot's identity is its whole per-participant column map.** With `fields:` there is a column
+name to compare, but with `index:` there is not: each participant's index resolves to its own
+columns. So dedup compares maps, not names. Two entries, in the same order or in different ones,
+share a slot exactly when they resolve to the same column on every participant. Two entries that
+agree on one participant and differ on another are two slots.
+
+**`OnSyntheticKey` is how every primary-key-shaped order reaches `__sort__`, and the fold decides it
+from the columns.** Three declarations resolve to a participant's primary key:
+`@order(primaryKey: true)`, `@defaultOrder(primaryKey: true)`, and the implicit fallback.
+`OrderByResolver.resolveDefaultOrderSpec` hands the fallback up as `Argument.base` whenever a field
+has an `@orderBy` argument and no `@defaultOrder`. None of the three carries provenance: each
+arrives as a plain `Fixed`, indistinguishable from a `fields:` order that names the same columns. So
+the fold recognises the shape instead:
+
+* An order becomes `OnSyntheticKey` when, on every participant, its entries are exactly that
+  participant's `primaryKeyColumns()` in key order, all with one direction.
+* That rule is sound whatever the declaration, because ordering by the key columns and ordering by
+  `__sort__` are the same order. `__sort__` is the key column itself at arity 1, and a JSONB array
+  of the key at composite arity, whose lexicographic ordering the emitter already relies on.
+* An order that matches on some participants but not all is ordinary slots, and the agreement rules
+  apply to it.
+* A participant with no primary key resolves its fallback base to `None`. The fold treats that as
+  `OnSyntheticKey` too and mints nothing. The validator's existing "multi-table interface/union
+  fetchers require a primary key on every participant" rejection already fails that field, and a
+  second message about the same absence would only compete with it.
+
+Recognising the key this way is what keeps a field with `@orderBy` and no `@defaultOrder` from
+minting slots that duplicate `__sort__`. Without it, those duplicate slots would go through a
+positional type check that today's `__sort__` never asks of primary keys (it is typed off the first
+participant's key class), and the check could reject a schema over an ordering nobody wrote.
 
 Whether this earns a sealed sub-taxonomy or sits as a record beside `OrderBySpec` is open. It cannot
 *be* an `OrderBySpec` arm: no arm of that type can carry a per-participant column map, which is the
@@ -242,17 +308,26 @@ left alone: nothing about them becomes inaccurate, because the ordering does not
 sufficient. `@order` resolves through the same entry resolution as `@defaultOrder`, which admits
 `index:`, `primaryKey: true`, and a multi-entry `fields:` with per-entry `direction` and `collate`.
 A named order is therefore a *list* of `ColumnOrderEntry`, not one column, and the per-participant
-resolutions of one named order can disagree on more than type:
+resolutions of one named order can disagree on more than presence. The fold pairs entries
+positionally, entry *i* of an order on one participant against entry *i* of the same order on every
+other, and rejects on two counts:
 
 * **Arity.** Two participants' same-named indexes can project different numbers of columns. The
   fixed-slot projection assumes one slot count for the whole field, so unequal arity has to reject.
-* **Positional type.** `UNION ALL` requires the i-th projected column to be type-compatible across
-  branches. `VARCHAR` against `TEXT` unifies in PostgreSQL; `INT` against `VARCHAR` does not, and
-  would surface as a SQL error from generated code at a consumer rather than as a build-time
-  rejection here.
-* **Direction and collation.** The outer `ORDER BY` runs over the slot alias, once, so a
-  per-participant direction or collation disagreement is not merely unchecked, it is
-  unrepresentable in the design as drawn.
+* **Positional class.** `UNION ALL` requires the i-th projected column to be type-compatible across
+  branches, but what the emitter needs is stricter than what PostgreSQL will unify. Each slot becomes
+  one `DSL.field(DSL.name(<slot alias>), <slot class>)`, and `decodeCursor` converts each token
+  through that field's `DataType`, so a slot has to have exactly one Java class. The rule is
+  therefore equality of `ColumnRef.columnClass` across participants. `VARCHAR` against `TEXT`
+  passes, both being `String`. `INT` against `BIGINT` rejects even though PostgreSQL would widen
+  it, because `Integer` against `Long` leaves the emitter no single slot class, and widening is a
+  choice the generator should not guess on the author's behalf. The agreed class is what
+  `OrderingSlot.slotClass` carries.
+
+Direction and collation are not on this list. With the two-level carrier they are stated once per
+entry, and in the tree they cannot differ per participant anyway (see the model section above).
+Orders that `OnSyntheticKey` absorbs are not on it either: they project no slot, so there is
+nothing to agree on.
 
 State these per slot: in the carrier's compact constructor for the invariant, and as a located
 rejection at the field coordinate for the author-facing half, naming which participant disagreed and
@@ -342,15 +417,16 @@ that is what makes the branches unionable and what gives the cursor codec a `Fie
 The design: **project every candidate order column into every branch under a deterministic slot
 alias, and choose among the slots at runtime.**
 
-* The slot set is the deduplicated, ordered union of the columns named across the field's named
-  orders plus its `Fixed` / base columns. That dedup is a decision made once, in the model, and
-  carried as the slot list's ordinals. No emission site re-derives it.
+* The slot set is the deduplicated, ordered union of the slots the field's named orders and its base
+  reference, keyed on the whole per-participant column map (see the model section). That dedup is a
+  decision made once, in the model, and carried as the slot list's ordinals. No emission site
+  re-derives it.
 * `branchProjection` gains the slots. Stage 1 stays a static code block in both root paths.
 * `buildPerTypenameSelect` gains the slots too, because the per-edge cursor is encoded from the
   stage-2 record; without them `record.get(slotField)` is null and every cursor is a sentinel token.
   It is shared with the batched child connection arm, so the slots arrive as a list that is empty on
   the child call sites rather than as a second boolean beside `includeSortKey`.
-* A `@order(primaryKey: true)` value needs no slot; it selects the existing `__sort__`.
+* An `OnSyntheticKey` order needs no slot; it selects the existing `__sort__`, in its own direction.
 * The outer order-by and seek lists become runtime-chosen. A new per-field helper, sibling to
   `TypeFetcherGenerator.buildOrderByHelperMethod`, switches over the same named orders at build time
   and returns the generated `OrderByResult` over `DSL.field(DSL.name(<slot alias>), <slot class>)`
@@ -362,10 +438,22 @@ alias, and choose among the slots at runtime.**
   seek key stays `__sort__`, the seek predicate no longer matches the sort prefix and pages skip or
   duplicate rows at every boundary. This is the single easiest way to ship a worse bug than the one
   being fixed, and it is why the cursor work cannot be deferred behind the runtime-dispatch slice.
-* `__sort__` and `__typename` stay appended, after the author's columns, as the deterministic
+* `__sort__` and `__typename` are appended, after the author's columns, as the deterministic
   tiebreaker. They are what makes a cross-participant tie on every authored column page
   consistently; dropping them because the author supplied an ordering would reintroduce the
-  tie-boundary double-count the existing comment on `tieField` describes.
+  tie-boundary double-count the existing comment on `tieField` describes. The two arms differ
+  today, so "stay appended" is true of the connection arm only. `buildRootConnectionFetcher`
+  orders by `__sort__, __typename`, but `buildStage1Block` orders the list arm by `__sort__` alone.
+  The list arm therefore *gains* `__typename`, projected already by `branchProjection`, and it gains
+  it on the undeclared path too, so both arms compose their order in one way. On an undeclared list
+  read the only visible change is at a cross-participant primary-key tie, where an order the
+  database chose becomes a defined one.
+* **Nullable order columns take whatever jOOQ's `.seek()` gives them, as on every other path.**
+  The seek is `.seek(page.seekFields())` with no `NULLS` handling anywhere in emission, and
+  `encodeCursor` writes a `NULL` as a sentinel token, so paging over an order column holding `NULL`
+  inherits jOOQ's row-value semantics. This item neither changes nor promises that. The
+  every-row-once guarantee in the goal is stated for non-null order columns, which is also all the
+  execution fixture can show (`last_name` and `first_name` are `NOT NULL` on both participants).
 * The slot alias spelling belongs with `SORT_COLUMN` and `PK_COLUMN_PREFIX` as an emitter constant
   composed with the carried ordinal. A `__`-prefixed string literal is fine here: the generated-
   sources lint's dunder rule permits synthetic SQL column aliases as literals and names `__sort__` as
@@ -374,9 +462,15 @@ alias, and choose among the slots at runtime.**
   alias" invariant and which `TYPENAME_COLUMN` already delegates to, is a tidy-up this item may take
   or leave; it is not load-bearing.
 
-`ColumnOrderEntry.collation` has to reach the slot's `ORDER BY` through jOOQ's `Field.collate`. See
-the note in "Other solutions we've considered" on the state of collation on the single-table path,
-which decides whether that is a port or a fix.
+**Collation is carried and not emitted, which ports the single-table path rather than fixing it.**
+The reading in "Other solutions we've considered" is confirmed. `ColumnOrderEntry.collation` is
+populated by `OrderByResolver` from a `fields:` entry's `collate` and read nowhere in main code, and
+there is no `collate(` call in emission at all. The manual's "Collation pitfalls" section
+nonetheless says the value is passed verbatim to the database. That defect lives on every path, so
+it is not this coordinate's to fix, and fixing it here alone would make multitable ordering the one
+place `collate:` works. So `SlotEntry` carries `collation` and the helper does not emit it. When the
+cross-path defect is fixed, the value is already where the multitable helper can read it, and that
+fix owes this helper the same one-line change it owes `OrderByFragments.fixedSortParts`.
 
 ### Slicing
 
@@ -437,17 +531,72 @@ participant and lowers nothing, and a narrowing keyed on root-ness alone would s
 leave it silently accepted. Narrow on the conjunction the item actually lowers:
 
 * **The coordinate sits on the `QUERY` root operation type**, reachable through
-  `graphql_root_operation`, the same relation the `KEY_CAPTURE_SCATTER` arm uses to reach `MUTATION`.
+  `graphql_root_operation`, the relation `intent_mutation_routine_seat` joins to put the
+  `KEY_CAPTURE_SCATTER` arm on `MUTATION`.
 * **And its read is list-shaped in the sense `OrderByResolver` uses**: a list, a connection type, or
   an `@asConnection` application.
 
-That second conjunct has a trap. It is **not** `graphitron_field.is_list`: that column says whether
-the type expression is a list, and the `@asConnection` expansion rewrites the field's type expression
-to the minted connection type, so a connection root reads `is_list = FALSE`. A narrowing keyed on it
-would keep rejecting exactly the reported coordinate. If no single fact spells "list-shaped read"
-today, say so in the implementation commit and name it rather than open-coding a second spelling:
-R677 phase 3's population needs the same predicate, and two spellings of it is the drift this whole
-family keeps producing.
+That second conjunct has a trap. It is **not** `graphitron_field.is_list` alone: that column says
+whether the type expression is a list, and the `@asConnection` expansion rewrites the field's type
+expression to the minted connection type (`MacroCapture.mintField` sets `is_list` from the rewritten
+expression), so a connection root reads `is_list = FALSE`. A narrowing keyed on it alone would keep
+rejecting exactly the reported coordinate.
+
+The predicate needs no new fact, because the store already holds both halves in the `graphitron_`
+family. A list-shaped read is `graphitron_field.is_list = TRUE` **or**
+`graphitron_field_navigation.basis = 'CONNECTION_ELEMENT'`. The navigation rung is "the field's
+named type is structurally a connection", which is the same structural test
+`BuildContext.isConnectionType` applies (an object type with `edges`, whose element type has
+`node`). It covers an authored connection type and an `@asConnection` expansion alike, the
+expansion's rewritten type being a connection by construction. That is `OrderByResolver`'s
+three-way test spelled over captured relations. Pin the agreement between the two spellings with
+one pipeline case per form (list, authored connection type, `@asConnection`), so that if they ever
+drift apart the build fails instead of a coordinate going silent. Hand the same predicate to R677
+phase 3 (see "Roadmap entries").
+
+**Where the narrowing lives, given that the view's family is being retired.**
+`intent_field_unlowerable_ordering` is a view in the `intent_` family, whose header in
+`graphitron-model.sql` reads "DEPRECATED, THE WHOLE FAMILY" and states the rule for anything landing
+there: do not. The ownership section of `docs/architecture/explanation/fact-model.adoc` says why:
+a fact that is missing belongs in the family whose corpus it comes from, as early as it can be
+written, and an `intent_` relation is what a pipeline grows when nobody wrote it there. The same
+rule is what sent R677 phase 3 back to `Spec` on 2026-09-22, over two new `intent_` relations.
+This item stays on the right side of it as follows:
+
+* **No relation lands in `intent_`, and no new fact is minted anywhere.** The predicate reads three
+  captured relations: `graphql_root_operation` in `graphql_`, and `graphitron_field` and
+  `graphitron_field_navigation` in `graphitron_`. Every fact it needs is already written in the
+  family whose corpus it comes from, which is the state the ownership rule asks for. That is why
+  the plan spells the predicate over existing relations rather than capturing a "list-shaped read"
+  column. Such a column would be a third spelling of a fact the two relations already state.
+* **The edit tightens an existing arm, and says so.** The change is one exclusion on the
+  `PARTICIPANT_FAN_OUT` arm, per route. The header's "do not" is about a fact arriving late in a
+  family with no owner. Narrowing the population of a rule that already exists adds no fact and no
+  late derivation, and it leaves the view's own filing exactly as undecided as it was. What it must
+  not do is grow the view a new crossing: the added clause reads nothing from `intent_`.
+* **The view's future home is R677's call, not this item's.** R677's re-spec is deciding where the
+  verdict's parts are written, and this view is one of them. Whichever item lands second carries
+  the exclusion across (see "Roadmap entries"). R382 does not refile the view, and does not wait
+  for it to be refiled.
+
+In the register of (the exact SQL is the implementer's):
+
+```sql
+-- appended to the view's outer query; the IN list is ('DEFAULT_ORDER') after slice 1,
+-- and ('DEFAULT_ORDER', 'ORDER_BY_ARGUMENT') after slice 2
+WHERE NOT (shape.verdict = 'PARTICIPANT_FAN_OUT'
+           AND route.available_via IN ('DEFAULT_ORDER', 'ORDER_BY_ARGUMENT')
+           AND EXISTS (query-root: graphql_root_operation ro
+                        WHERE ro.operation = 'QUERY' AND ro.type_name = shape.type_name)
+           AND EXISTS (list-shaped: graphitron_field f.is_list
+                        OR graphitron_field_navigation nav.basis = 'CONNECTION_ELEMENT'))
+```
+
+The exclusion has a Java twin, and the two have to agree. The classifier lowers an ordering at
+exactly the coordinates the view stops rejecting. If the view excludes a coordinate the classifier
+does not lower, the declaration is accepted and discarded, which is the defect this item exists to
+remove. The per-form pipeline cases above, the single-valued root case and the child case are what
+hold the two together.
 
 Which availability route to narrow is the third axis, and the view's own grain already carries it.
 It is "one row per coordinate and availability route", and `UnlowerableOrderings.fanOutMessage`
@@ -499,11 +648,22 @@ can see that, so the execution tier is where this item is either delivered or no
 * **Pipeline tier, new `MultiTableOrderingLoweringTest`**, sibling to R363's
   `MultiTableFilterLoweringTest`: the classified shape rather than the SQL. The slot list is total
   over the participant set and in slot order, for interface and union, for a `Fixed` ordering and for
-  an `Argument` one; `@order(primaryKey: true)` selects the existing synthetic key rather than
-  minting a slot; and each agreement rule rejects with a message naming the disagreeing participant
-  (absent column, positionally incompatible type, unequal `index:` arity, disagreeing direction or
-  collation). Plus the single-valued declared multitable root, which lowers nothing and so keeps its
-  rejection.
+  an `Argument` one. Two entries resolving to the same column on every participant share one slot,
+  across named orders with different directions; two that agree on one participant only are two
+  slots. Each of the three primary-key shapes (`@order(primaryKey: true)`,
+  `@defaultOrder(primaryKey: true)`, and the fallback base of a field with `@orderBy` and no
+  `@defaultOrder`) comes out `OnSyntheticKey` and mints no slot. Each agreement rule rejects with a
+  message naming the disagreeing participant: an absent column, unequal `index:` arity, and unequal
+  `columnClass` at one position (`INT` against `BIGINT` rejects; `VARCHAR` against `TEXT` does not).
+  Direction and collation have no case, the two-level carrier making their disagreement
+  unrepresentable. Plus the single-valued declared multitable root, which lowers nothing and so
+  keeps its rejection.
+* **Pipeline tier, the narrowed rejection**, in `FieldUnlowerableOrderingTest` and
+  `UnlowerableOrderingRejectionPipelineTest`: one declared-root case per list-shaped form (a list, an
+  authored connection type, `@asConnection`) that loses its row, the single-valued declared root and
+  the child multitable field that keep theirs, and after slice 1 only, a field carrying both
+  `@defaultOrder` and an `@orderBy` argument whose `ORDER_BY_ARGUMENT` row survives. These are
+  what hold the view's exclusion and the classifier's lowering to the same population.
 * **Membership**, on `ConditionMembershipTest`'s precedent: the operation-member census reports an
   `ORDER_BY` member at a lowered polymorphic root. Without this the census silently under-reports and
   nothing notices.
@@ -514,31 +674,52 @@ can see that, so the execution tier is where this item is either delivered or no
   - `direction: ASC` and `direction: DESC` return reversed sequences. This is the report's exact
     symptom and the one assertion that cannot pass vacuously.
   - Rows of both participants interleave by the sort column. A seed that happens to keep every
-    `Customer` row before every `Staff` row passes under the bug, so the seed has to interleave.
+    `Customer` row before every `Staff` row passes under the bug, so the seed has to interleave. The
+    current seed does, by `last_name`: Brown (customer), Hillyer (staff), Johnson, Jones, Smith
+    (customers), Stephens (staff), Williams (customer).
+  - A field with `@orderBy` and no `@defaultOrder`, queried with no `orderBy`, returns the
+    primary-key order it returns today. This is the fallback-base case, and it is the one that
+    fails if the fold mints slots for the key instead of selecting `__sort__`.
   - On the `@asConnection` form, paging the whole set in pages of N under a non-PK ordering visits
     every row exactly once, no skip and no duplicate, forward and backward. This is the assertion
     that catches a seek key composed out of step with the page order, which is the failure mode the
     slicing note above exists to prevent.
   - A cross-participant tie on every authored column still pages deterministically, which is what
-    the appended synthetic key buys.
+    the appended synthetic key buys. The current seed has no such tie (no customer shares a staff
+    member's `last_name`), so this case owes a seeded row.
 * **Composite-PK regression.** `Query.pagedItems` in the example schema is the composite-PK
-  multitable connection coordinate, and the validator deliberately stays silent about the batched
-  arm typing its sort field by the first PK column only, because promoting that truncation to a
-  rejection would break the coordinate. It is therefore the natural regression anchor for "the
-  ordering slots compose with a JSONB `__sort__` tiebreaker" rather than quietly interacting with the
-  truncation.
+  multitable root connection (`PagedA` on `paged_a` and `PagedB` on `paged_b`, both keyed on
+  `(k1, k2)`), and it runs through `buildRootConnectionFetcher`'s JSONB `__sort__` path. That makes
+  it the natural regression anchor for "the ordering slots compose with a JSONB `__sort__`
+  tiebreaker". The first-PK truncation the validator stays silent about is on the batched child
+  connection arm, which this item does not touch. The validator comment
+  (`GraphitronSchemaValidator`, the "Not enforced here" note beside the uniform-arity check) names
+  `pagedItems` as the coordinate a rejection would break, which reads it as batched when it is a
+  root. That comment is not this item's to correct.
 * **No code-string assertions on generated bodies.** R363 held that line on the same emitter and the
   same fields; the ordering change is larger in the emitted text and correspondingly worse to pin by
   string.
 
 ## Roadmap entries
 
-R677 is `Spec` (phases 1 and 2 shipped; phase 3 reopened 2026-09-22) and owns the ordering-invariant census. This item's landing removes root multitable
-fan-out from that census's leak sites, and R677's body notes this coordinate leaks a step earlier
+R677 is `Spec` (phases 1 and 2 shipped; phase 3 reopened 2026-09-22) and owns the
+ordering-invariant census. This item's landing removes root multitable fan-out from that census's
+leak sites, and R677's body notes this coordinate leaks a step earlier
 than the others (the model never resolves the ordering, so an invariant checked at the model-to-SQL
 boundary would not see it). Once the slot exists, that note stops applying at the roots and starts
 applying only at the children. Whoever lands either item second updates the other's body rather than
 leaving both claiming the coordinate.
+
+Two further things pass between the items, because both concern R677's re-spec of phase 3:
+
+* **The list-shaped predicate.** R677's reopen section says phase 3's population should read
+  `graphitron_field.is_list`. On an `@asConnection` root that column reads `FALSE` (see "The
+  rejection this item narrows"), so a population keyed on it alone would drop every macro-built
+  connection. The predicate this item spells, `is_list` or a `CONNECTION_ELEMENT` navigation rung, is
+  the one to hand over, so the two items keep one spelling.
+* **The exclusion on `intent_field_unlowerable_ordering`.** If R677's re-spec refiles or dissolves
+  that view before this item lands, the exclusion goes wherever the `PARTICIPANT_FAN_OUT` arm goes.
+  If this item lands first, R677's re-spec inherits an arm with the exclusion already in it.
 
 ## Other solutions we've considered
 
@@ -571,7 +752,8 @@ before the application sees the rows. Not viable for a connection at all.
 **Reject at the coordinate instead of lowering.** Already shipped, by R677, and stated over read shape
 rather than at these two coordinates. This item is what retires it at the roots.
 
-**A note on collation, which is adjacent and not this item's.**
+**A note on collation, which is adjacent and not this item's.** Confirmed at review, and decided in
+"Emission" above as a port: carried, not emitted. The note is kept for the reasoning.
 `OrderBySpec.ColumnOrderEntry` carries a `collation`, and `render/OrderByFragments.fixedSortParts`
 emits `$L.$L.$L()` (alias, column, direction) without reading it. On that reading the `collate:`
 argument documented on `@defaultOrder` resolves into the model and never reaches the emitted SQL, on
@@ -614,6 +796,13 @@ direction and collation live once on the order entry, so the third rule is unrep
 The Tests bullet "disagreeing direction or collation" names a case no SDL can construct. Drop it,
 or restate it as a compact-constructor invariant with no author-facing rejection.
 
+*Author response (2026-09-23):* Took the two-level split. "Model: one field-level ordering" now
+carries `OrderingSlot` (ordinal, `slotClass`, per-participant column map) apart from a sealed
+`SlotOrder` (named or base, `uniformAsc`, entries pointing at slots by ordinal with direction and
+collation). Slot identity is stated as the whole per-participant column map, with a paragraph of its
+own. The direction and collation agreement rule is gone from the rules section and from Tests, and
+the model section says why it is unrepresentable and why it could not fire in the tree anyway.
+
 **Finding 2 (question two). The primary-key fallback base is not addressed, and the fold cannot
 recognise it.** A field with an `@orderBy` argument and no `@defaultOrder` resolves
 `Argument.base` per participant to that participant's PK as a plain `Fixed` with `uniformAsc = true`
@@ -629,6 +818,14 @@ value, `@defaultOrder(primaryKey: true)`, and the implicit fallback base) and ma
 Either the resolver hands up provenance, or the fold compares against the participant's
 `primaryKeyColumns()`. Pin with an execution case: `@orderBy` without `@defaultOrder`, request with
 no `orderBy`.
+
+*Author response (2026-09-23):* Chose the structural comparison over resolver provenance: an order is
+`OnSyntheticKey` when on every participant its entries are exactly that participant's
+`primaryKeyColumns()` in key order under one direction. That is sound whatever the declaration, and it
+leaves `OrderBySpec`, which the single-table paths share, untouched. It covers all three shapes, and
+a PK-less participant's `None` base is absorbed with the rejection left to the validator's existing
+check. New paragraph in the model section; "What the tree already has" and the emission bullet
+updated; pipeline and execution cases added to Tests.
 
 **Finding 3 (question two). The narrowing edits an `intent_` view, and the spec does not engage
 with that family's retirement.** `intent_field_unlowerable_ordering` is a view in the family whose
@@ -647,6 +844,17 @@ reopen section says phase 3's population should read `graphitron_field.is_list`.
 this spec shows reads FALSE on an `@asConnection` root (`MacroCapture.mintField`, `:525-527`), so at
 least one of the two items is wrong about it.
 
+*Author response (2026-09-23):* Took a narrower answer than the recommendation, and "The rejection
+this item narrows" argues it. No new fact is needed, because the predicate is already stated in
+`graphitron_`: `graphitron_field.is_list` or `graphitron_field_navigation.basis =
+'CONNECTION_ELEMENT'`, the latter being the same structural test as `BuildContext.isConnectionType`.
+A captured "list-shaped read" column would be a third spelling of it. The edit is one per-route
+exclusion on the existing arm, reading only `graphql_` and `graphitron_` relations. It adds no
+relation and no crossing to `intent_`, and it leaves the view's filing to R677's re-spec. A new
+subsection states this, with the exclusion sketched. The `is_list` hand-over to R677 and the "whoever
+lands second carries the exclusion" note are under "Roadmap entries". I did not edit R677's body,
+which is mid-re-spec in another session.
+
 **Finding 4 (question two, with a test consequence). "Type-compatible" is left undefined, and the
 emitter needs one slot class.** Each slot becomes `DSL.field(DSL.name(<alias>), <slot class>)`,
 and `decodeCursor` converts through that field's `DataType`. The agreement rule therefore has to
@@ -654,6 +862,12 @@ produce a single Java class per slot, not merely something PostgreSQL will unify
 `BIGINT` unifies in SQL but gives `Integer` against `Long`. Name the predicate. The natural one is
 equality of `ColumnRef.columnClass` across participants: `VARCHAR` / `TEXT` pass as `String`, and
 widening is rejected rather than guessed. Also name the Tests case that pins it.
+
+*Author response (2026-09-23):* Taken as recommended. The "Positional type" rule is now "Positional
+class", equality of `ColumnRef.columnClass`, with the reason stated (one `DSL.field` class per slot,
+and `decodeCursor` converting through its `DataType`). The agreed class is carried as
+`OrderingSlot.slotClass`. The `MultiTableOrderingLoweringTest` bullet names the `INT`/`BIGINT` reject
+and the `VARCHAR`/`TEXT` pass.
 
 **Non-blocking.**
 
@@ -663,16 +877,32 @@ widening is rejected rather than guessed. Also name the Tests case that pins it.
   verbatim to the database". Pick port-or-fix in the body. I would port (emit no collation, matching
   the single-table path) and file the documented-but-dropped `collate:` as its own Backlog item,
   since no item covers it today.
+
+  *Author response (2026-09-23):* Ported. The Emission section now says `SlotEntry` carries
+  `collation`, the helper does not emit it, and why fixing it here alone would be wrong. The
+  cross-path defect is left for its own item, which this spec does not name because none is filed
+  yet.
 * **The list root has no `__typename` tiebreaker today.** `buildStage1Block` orders by `__sort__`
   alone (`MultiTablePolymorphicEmitter.java:1307`); only the connection arms append `__typename`.
   "`__sort__` and `__typename` stay appended" is therefore true of the connection arm only. Say
   whether the list arm gains it.
+
+  *Author response (2026-09-23):* It gains it, on the undeclared path too, so both arms compose
+  their order one way. The only visible change on an undeclared list read is at a cross-participant
+  primary-key tie. Stated in the tiebreaker bullet under Emission.
 * **The composite-PK anchor is right, but its stated reason is not.** The quoted validator comment
   (`GraphitronSchemaValidator.java:845-849`) calls `Query.pagedItems` the coordinate a rejection
   would break. But `pagedItems` is a root and goes through `buildRootConnectionFetcher`'s JSONB
   path; the first-PK truncation is on the batched arm. Anchor on "JSONB `__sort__` as tiebreaker
   after authored slots", which is what it exercises.
+
+  *Author response (2026-09-23):* Rewritten on that basis in Tests, noting that the validator
+  comment misreads `pagedItems` and is not this item's to correct.
 * **Nullable sort columns are outside what the tests can see.** The seek is jOOQ's `.seek()` with
   no NULLS handling anywhere in emission, and both fixture columns are `NOT NULL`. So the "every row
   exactly once" assertion holds only for non-null order columns. That is inherited from the
   single-table path, not this item's, but the goal should not read as promising more.
+
+  *Author response (2026-09-23):* The goal's paging sentence is now scoped to order columns that
+  hold no `NULL`, and a new Emission bullet says what nullable columns inherit and that this item
+  neither changes nor promises it.
