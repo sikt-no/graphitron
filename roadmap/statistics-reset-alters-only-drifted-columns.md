@@ -1,7 +1,7 @@
 ---
 id: R967
 title: "The per-case statistics reset ALTERs every column of every base table, and is most of the store-heavy test build; reset only the columns that drifted"
-status: Ready
+status: In Progress
 bucket: dx
 priority: 1
 theme: tooling
