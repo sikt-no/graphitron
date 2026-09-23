@@ -307,8 +307,9 @@ public final class ClassifiedHarness {
 
     /**
      * The {@link OperationMember.Kind} column of a declared member arm, derived from the seal's
-     * own structure (the nested {@code Write} and {@code Condition} sub-seals name their kinds;
-     * every other leaf's simple name is its kind constant in upper snake case) rather than a
+     * own structure (the nested {@code Write} and {@code Condition} sub-seals name their kinds, and
+     * {@code PolymorphicOrderBy} shares {@code ORDER_BY} with {@code OrderBy}; every other leaf's
+     * simple name is its kind constant in upper snake case) rather than a
      * second hand-maintained switch that could drift from {@link OperationMember#kind()}.
      */
     public static OperationMember.Kind kindOf(Class<? extends OperationMember> arm) {
@@ -317,6 +318,9 @@ public final class ClassifiedHarness {
         }
         if (OperationMember.Condition.class.isAssignableFrom(arm)) {
             return OperationMember.Kind.CONDITION;
+        }
+        if (arm == OperationMember.PolymorphicOrderBy.class) {
+            return OperationMember.Kind.ORDER_BY;
         }
         return OperationMember.Kind.valueOf(
             arm.getSimpleName().replaceAll("([a-z])([A-Z])", "$1_$2").toUpperCase(java.util.Locale.ROOT));

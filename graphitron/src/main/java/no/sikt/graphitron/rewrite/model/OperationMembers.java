@@ -321,7 +321,7 @@ public final class OperationMembers {
             members.add(new Condition.OnReturnTable(table, filters));
         }
         if (!(orderBy instanceof OrderBySpec.None)) {
-            members.add(new OrderBy.OnReturnTable(orderBy));
+            members.add(new OrderBy(orderBy));
         }
         if (pagination != null) {
             members.add(new Paginate(pagination));
@@ -375,7 +375,7 @@ public final class OperationMembers {
                 members.add(new Condition.OnParticipant(pf.participant(), pf.filters()));
             }
         }
-        field.ordering().ifPresent(ordering -> members.add(new OrderBy.Polymorphic(ordering)));
+        field.ordering().ifPresent(ordering -> members.add(new OperationMember.PolymorphicOrderBy(ordering)));
         return members;
     }
 
@@ -394,7 +394,7 @@ public final class OperationMembers {
             members.add(new Condition.OnReturnTable(f.returnType().table(), f.filters()));
         }
         if (!(f.orderBy() instanceof OrderBySpec.None)) {
-            members.add(new OrderBy.OnReturnTable(f.orderBy()));
+            members.add(new OrderBy(f.orderBy()));
         }
         if (f.pagination() != null) {
             members.add(new Paginate(f.pagination()));

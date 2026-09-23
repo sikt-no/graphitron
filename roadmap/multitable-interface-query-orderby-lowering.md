@@ -94,10 +94,15 @@ trunk and has no case. What landed, against the plan below:
   `lowerParticipantFilters` already resolved; the agreement failures (unequal arity, unequal
   `sqlType` / `bindingType` pair read through `JooqCatalog.columnFactsOf`) join the existing
   `mintParticipantFailures` path.
-* **Census.** `OperationMember.OrderBy` is sealed into `OnReturnTable(OrderBySpec)` and
-  `Polymorphic(PolymorphicOrdering)`; `OperationMemberRelation` and
-  `OperationMembers.polymorphicRootRead` read the capability, and both `DECLARED_SHAPES` entries
-  admit `ORDER_BY`.
+* **Census.** The single-arm option: `OperationMember.OrderBy(OrderBySpec)` stays as it is and a
+  sibling arm `OperationMember.PolymorphicOrderBy(PolymorphicOrdering)` carries the same
+  `ORDER_BY` kind. Sealing `OrderBy` was tried first and does not fit: the classified-corpus DSL
+  names member arms by unique simple name (`OrderBy` in many documents, `OnReturnTable` already
+  taken by `Condition`). `OperationMemberRelation` and `OperationMembers.polymorphicRootRead` read
+  the capability, both `DECLARED_SHAPES` entries admit `ORDER_BY`, the corpus prelude's `Member`
+  enum and `ClassifiedHarness.kindOf` know the new arm, and `polymorphic-filter.graphqls`'s
+  `Query.people` now declares it (an undeclared root list orders on the synthetic key, which is a
+  member too). Nothing is retired, so the item owes no `## Retired vocabulary` section.
 * **Emission.** `MultiTablePolymorphicEmitter` projects `__ord<n>__` slots in both root stage-1
   paths and on the connection arm's stage-2 records, and emits a per-field `<field>OrderBy(env)`
   helper returning the `OrderByResult` (slots typed by the first participant's column
@@ -126,12 +131,6 @@ trunk and has no case. What landed, against the plan below:
 * **Docs.** `sort-results.adoc` "Sort across polymorphism" and its tie-breaker bullet,
   `polymorphic-types.adoc` Constraints, and one bullet each on the `@defaultOrder` / `@orderBy`
   reference pages.
-
-## Retired vocabulary
-
-* The single-arm record `OperationMember.OrderBy(OrderBySpec)`, spelled `new OrderBy(...)` /
-  `new OperationMember.OrderBy(...)`. `OrderBy` survives as the sealed interface; its arms are
-  `OrderBy.OnReturnTable` and `OrderBy.Polymorphic`.
 
 ## Problem
 

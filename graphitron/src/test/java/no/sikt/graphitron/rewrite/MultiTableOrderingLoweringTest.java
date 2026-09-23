@@ -266,7 +266,7 @@ class MultiTableOrderingLoweringTest {
 
         assertThat(schema.operationMembersOf("Query", "occupants"))
             .filteredOn(m -> m.kind() == OperationMember.Kind.ORDER_BY)
-            .containsExactly(new OperationMember.OrderBy.Polymorphic(ordering));
+            .containsExactly(new OperationMember.PolymorphicOrderBy(ordering));
         assertThat(schema.operationMembersOf("Query", "occupant"))
             .noneMatch(m -> m.kind() == OperationMember.Kind.ORDER_BY);
     }

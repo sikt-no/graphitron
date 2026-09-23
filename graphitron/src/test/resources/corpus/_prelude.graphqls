@@ -29,7 +29,7 @@
 enum SourceWrapper { Query Mutation OnlyChild Child }
 
 enum Member {
-  Select Join OnReturnTable OnParticipant OrderBy Paginate Lookup ServiceCall
+  Select Join OnReturnTable OnParticipant OrderBy PolymorphicOrderBy Paginate Lookup ServiceCall
   NodeResolve EntityResolve Count Facet Pivot Reentry
   Insert Upsert Update Delete UpdateMatching DeleteMatching RoutineWrite
 }

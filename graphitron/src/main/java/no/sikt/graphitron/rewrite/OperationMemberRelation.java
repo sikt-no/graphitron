@@ -323,9 +323,9 @@ public record OperationMemberRelation(Map<FieldCoordinates, List<OperationMember
         }
         if (kinds.contains(OperationMember.Kind.ORDER_BY)) {
             if (leaf instanceof PolymorphicOrderingField pof) {
-                members.add(new OperationMember.OrderBy.Polymorphic(pof.ordering().orElseThrow()));
+                members.add(new OperationMember.PolymorphicOrderBy(pof.ordering().orElseThrow()));
             } else {
-                members.add(new OperationMember.OrderBy.OnReturnTable(((SqlGeneratingField) leaf).orderBy()));
+                members.add(new OperationMember.OrderBy(((SqlGeneratingField) leaf).orderBy()));
             }
         }
         if (kinds.contains(OperationMember.Kind.PAGINATE)) {
