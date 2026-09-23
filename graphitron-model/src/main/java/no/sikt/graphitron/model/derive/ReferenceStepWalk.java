@@ -156,18 +156,39 @@ public final class ReferenceStepWalk {
     /** The finished chain with each element's arrivals ranked, which is what both counts read. */
     private static Select<? extends Record> ranked(DSLContext dsl, Coordinate coordinate,
                                                    Name chain) {
+        Name walked = name("walked");
         List<Field<?>> projected = new ArrayList<>();
         coordinate.chainColumns()
-            .forEach(column -> projected.add(chainField(chain, column, coordinate.typeOf(column))));
+            .forEach(column -> projected.add(chainField(walked, column, coordinate.typeOf(column))));
         List<Field<?>> partition = new ArrayList<>();
         coordinate.partition()
-            .forEach(column -> partition.add(chainField(chain, column, coordinate.typeOf(column))));
+            .forEach(column -> partition.add(chainField(walked, column, coordinate.typeOf(column))));
         projected.add(denseRank().over(partitionBy(partition)
-                .orderBy(chainField(chain, "to_source_name", coordinate.typeOf("to_source_name")),
-                    chainField(chain, "to_schema", coordinate.typeOf("to_schema")),
-                    chainField(chain, "to_table", coordinate.typeOf("to_table"))))
+                .orderBy(chainField(walked, "to_source_name", coordinate.typeOf("to_source_name")),
+                    chainField(walked, "to_schema", coordinate.typeOf("to_schema")),
+                    chainField(walked, "to_table", coordinate.typeOf("to_table"))))
             .as("target_rank"));
-        return dsl.select(projected).from(table(chain));
+        return dsl.select(projected).from(distinctChain(dsl, coordinate, chain).asTable(walked));
+    }
+
+    /**
+     * The chain as a set, which the recursion does not deliver on its own.
+     *
+     * <p>An element reached by two routes to one arrival puts that arrival in the chain twice, one
+     * row per route, and the recursive term then joins the next element's hops to each of them, so
+     * the next position holds every one of its hops once per route that reached its departure. The
+     * engine evaluates the recursive {@code UNION} without removing a row the same iteration
+     * produced twice, so those copies survive into the result. Every chain column is part of a
+     * hop's identity, so a copy is a duplicate and not a second answer: collapsing them here is what
+     * lets the keyed arm accept the rows and keeps {@code candidates} a count of routes rather than
+     * of the paths that led to them.
+     */
+    private static Select<? extends Record> distinctChain(DSLContext dsl, Coordinate coordinate,
+                                                          Name chain) {
+        List<Field<?>> columns = new ArrayList<>();
+        coordinate.chainColumns()
+            .forEach(column -> columns.add(chainField(chain, column, coordinate.typeOf(column))));
+        return dsl.selectDistinct(columns).from(table(chain));
     }
 
     /**

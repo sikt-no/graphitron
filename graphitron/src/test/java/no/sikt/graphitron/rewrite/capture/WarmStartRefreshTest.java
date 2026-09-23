@@ -102,10 +102,23 @@ class WarmStartRefreshTest {
      * that authors no path leaves the spelling resolution, both hop arms and the walk over them
      * empty, and a case asserting that a second capture changes no row count would pass on them
      * without ever writing one. With the path here it fails on a stage that appends instead of
-     * reconciling, which is the one failure mode the answer oracle cannot see.
+     * reconciling, which is the one failure mode the answer oracle cannot see. The same path is
+     * written a second and third time, on an argument and on an input field the same field
+     * consumes, because the argument-site and input-field walks are stages keyed at their own
+     * coordinates and a field-site path puts no row in either.
      */
     private static final String TABLE_BOUND_SDL = """
-        type Query { films: [Film!]! }
+        type Query {
+          films(
+            languageName: String
+              @reference(path: [{key: "film_language_id_fkey"}]) @field(name: "name")
+            filter: FilmFilter
+          ): [Film!]!
+        }
+        input FilmFilter {
+          languageName: String
+            @reference(path: [{key: "film_language_id_fkey"}]) @field(name: "name")
+        }
         type Film @table(name: "film") {
           title: String
           releaseYear: Int
@@ -179,6 +192,10 @@ class WarmStartRefreshTest {
                 + " zero against zero on the relations it is here for")
             .containsEntry("GRAPHITRON_SPELLED_TABLE", 2)
             .hasEntrySatisfying("GRAPHITRON_FIELD_REFERENCE_STEP_HOP_KEYED",
+                rows -> assertThat(rows).isPositive())
+            .hasEntrySatisfying("GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET_KEYED",
+                rows -> assertThat(rows).isPositive())
+            .hasEntrySatisfying("GRAPHITRON_INPUT_FIELD_REFERENCE_STEP_TARGET_KEYED",
                 rows -> assertThat(rows).isPositive())
             .hasEntrySatisfying("GRAPHITRON_CARRIER_DATA_FIELD",
                 rows -> assertThat(rows).isPositive());

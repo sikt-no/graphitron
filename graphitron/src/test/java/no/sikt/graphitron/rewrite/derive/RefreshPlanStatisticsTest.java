@@ -242,9 +242,10 @@ class RefreshPlanStatisticsTest {
      * <p><b>Two, and both {@code @nodeId} readers left together</b> when the argument-site and
      * input-field {@code @reference} walks became capture stages. Neither is a new kind of
      * departure: the decode hop joins both walks and the instruction rule the argument-site one,
-     * each of them a registered target whose statistics only the refresh could have written, and
-     * each is a base table the pass analyses before the refresh begins now. The decode hop is the statement the first paragraph
-     * works through and the instruction rule is the one that joined when the walk was first stored,
+     * each of them a registered target, or a view over registered targets, whose statistics only
+     * the refresh could have written, and each is a base table the pass analyses before the refresh
+     * begins now. The decode hop is the statement the first paragraph works through and the
+     * instruction rule is the one that joined when the walk was first stored,
      * so between them they are most of this set's history, and what took them out is the boundary
      * moving rather than either rule changing. {@link PartitionSelectivityWorthTest} watched the
      * same event through its own instrument and lost its control to it, which is worth reading

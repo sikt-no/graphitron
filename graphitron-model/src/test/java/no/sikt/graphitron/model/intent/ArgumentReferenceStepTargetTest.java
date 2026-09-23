@@ -19,6 +19,7 @@ import static no.sikt.graphitron.model.test.SeededStore.seedArgumentReference;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentReferenceCall;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentReferenceElement;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentReferenceStep;
+import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
 import static no.sikt.graphitron.model.test.SeededStore.seedConditionMethod;
 import static no.sikt.graphitron.model.test.SeededStore.seedConstraint;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
@@ -26,10 +27,12 @@ import static no.sikt.graphitron.model.test.SeededStore.seedFieldReference;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldReferenceStep;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldSynthesis;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
+import static no.sikt.graphitron.model.test.SeededStore.seedPrimaryKey;
 import static no.sikt.graphitron.model.test.SeededStore.seedReferentialConstraint;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedTable;
 import static no.sikt.graphitron.model.test.SeededStore.seedTableBinding;
+import static no.sikt.graphitron.model.test.SeededStore.seedUnionMember;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -44,9 +47,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Two things are this relation's own and the rest is agreement. The departure is the field's
  * named type's binding rather than the enclosing type's, which is what an argument filtering a
  * field's result means and what lets a root field's argument have a departure at all. And the
- * agreement itself is asserted rather than left to inspection: the two views are textually parallel
- * arm for arm, so a case that seeds one path shape at both sites and compares the answers is what
- * keeps them from drifting apart.
+ * agreement itself is asserted rather than left to inspection: the two hops state the same arms in
+ * two languages, the field-site one as the jOOQ statements
+ * {@link no.sikt.graphitron.model.derive.FieldReferenceStepHops} runs and this one as a view, so
+ * no reader can compare them as text, and a case that seeds one path shape at both sites and
+ * compares the answers is the only thing keeping them from drifting apart.
  */
 class ArgumentReferenceStepTargetTest {
 
@@ -200,6 +205,39 @@ class ArgumentReferenceStepTargetTest {
                 .containsExactly(1, 1);
             assertThat(rows.map(r -> r.get(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.CANDIDATES)))
                 .containsExactly(2, 2);
+        });
+    }
+
+    /**
+     * Both arities are the element's and not the arm's, on this walk's own seed. The relation is
+     * stored as two tables split on whether a foreign key identifies the row, and one element can
+     * be reached on both: an argument on a field returning a union departs from every participant's
+     * table, and a participant bound to a table-valued function's result reaches the element by a
+     * name match where the participant bound to a table reaches it by its foreign key. Two routes
+     * reach it, and each arm saying one is the reading every arity gate here would act on.
+     *
+     * <p>{@code ReferenceStepTargetTest} pins the same property for the field walk, whose cross-arm
+     * seed is an ambiguous binding. That seed does not reach this walk, the argument scope taking
+     * only a binding with one candidate, so the participant arm is the shape that does.
+     */
+    @Test
+    void bothArmsOfOneElementCountTowardsItsArities() {
+        withCrossArmSeed(dsl -> {
+            var rows = chain(dsl, GRAPH);
+            assertThat(rows.map(r -> r.get(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.VIA)))
+                .as("one element, reached on both arms")
+                .containsExactlyInAnyOrder("TABLE", "NAME_MATCH");
+            assertThat(rows.map(ArgumentReferenceStepTargetTest::hop))
+                .containsExactlyInAnyOrder("films->film_translation", "films->film_translation");
+            assertThat(rows.map(r -> r.get(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.FROM_SCHEMA)))
+                .as("the table participant and the function-result participant, one per arm")
+                .containsExactlyInAnyOrder(PUBLIC, "legacy");
+            assertThat(rows.map(r -> r.get(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.CANDIDATES)))
+                .as("two routes reach this element, and neither arm holds both")
+                .containsExactly(2, 2);
+            assertThat(rows.map(r -> r.get(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.TARGETS)))
+                .as("both routes land on the one table, so the destination is certain")
+                .containsExactly(1, 1);
         });
     }
 
@@ -430,6 +468,52 @@ class ArgumentReferenceStepTargetTest {
             foreignKey(dsl, "film_actor", "film_actor_film_id_fkey", "film");
             foreignKey(dsl, "film_actor", "film_actor_actor_id_fkey", "actor");
             foreignKey(dsl, "film_translation", "film_translation_film_id_fkey", "film");
+            body.accept(dsl);
+        });
+    }
+
+    /**
+     * A field returning a union whose two participants depart from the two kinds of table, which is
+     * the smallest catalog reaching one argument-site element on both arms of the stored walk.
+     * {@code Film} is bound to the table {@code public.films} and {@code LegacyFilm} to the
+     * table-valued function result {@code legacy.films}; the argument's element spells
+     * {@code film_translation}, which the table reaches by its foreign key and the function result
+     * by its whole primary key matched on column name.
+     *
+     * <p>A separate fixture from the catalog above for the reason the field-site sibling gives: the
+     * name match needs a primary key with its columns stated, where that catalog seeds the
+     * constraint alone.
+     */
+    private static void withCrossArmSeed(Consumer<DSLContext> body) {
+        withSeededStore(GRAPH, dsl -> {
+            seedSource(dsl, PKG, "JOOQ_SCHEMA");
+            seedGraphSource(dsl, GRAPH, PKG);
+
+            seedTable(dsl, PKG, PUBLIC, "films");
+            seedColumn(dsl, PKG, PUBLIC, "films", "film_id", 0, "FILM_ID");
+            seedPrimaryKey(dsl, PKG, PUBLIC, "films", "films_pkey", "film_id");
+
+            seedTable(dsl, PKG, PUBLIC, "film_translation");
+            seedColumn(dsl, PKG, PUBLIC, "film_translation", "translation_id", 0, "TRANSLATION_ID");
+            seedColumn(dsl, PKG, PUBLIC, "film_translation", "film_id", 1, "FILM_ID");
+            seedPrimaryKey(dsl, PKG, PUBLIC, "film_translation", "film_translation_pkey",
+                "translation_id");
+            seedConstraint(dsl, PKG, PUBLIC, "film_translation", "film_translation_film_id_fkey",
+                "FOREIGN KEY", null);
+            seedReferentialConstraint(dsl, PKG, PUBLIC, "film_translation",
+                "film_translation_film_id_fkey", PKG, PUBLIC, "films", "films_pkey");
+
+            // The function result: no key of its own, and it exposes the arriving table's whole
+            // primary key by name, which is the only route out of one.
+            seedTable(dsl, PKG, "legacy", "films", "FUNCTION");
+            seedColumn(dsl, PKG, "legacy", "films", "translation_id", 0, "TRANSLATION_ID");
+
+            seedTableBinding(dsl, GRAPH, "Film", "public.films");
+            seedTableBinding(dsl, GRAPH, "LegacyFilm", "legacy.films");
+            seedUnionMember(dsl, GRAPH, "AnyFilm", "Film", 1);
+            seedUnionMember(dsl, GRAPH, "AnyFilm", "LegacyFilm", 2);
+            seedField(dsl, GRAPH, "Query", "anyFilms", "AnyFilm", true);
+            seedTablePath(dsl, "Query", "anyFilms", "translated", "film_translation");
             body.accept(dsl);
         });
     }

@@ -159,7 +159,7 @@ class MaterializeRegistryGateTest {
      * displaces nothing. A registration lengthens the pass only when it stages the longest chain,
      * and that is a property of the register rather than of the rule being registered.
      *
-     * <p>Sixteen since {@code graphitron_argument_reference_step_target} was registered, and by that
+     * <p>Sixteen since the argument-site reference walk was registered, and by that
      * mechanism a fourth time: it sat between the registered {@code graphitron_argument_scope_table}
      * it reads and the registered {@code intent_node_id_instruction} and
      * {@code intent_node_id_decode_hop} that read it, so it is exactly the unregistered

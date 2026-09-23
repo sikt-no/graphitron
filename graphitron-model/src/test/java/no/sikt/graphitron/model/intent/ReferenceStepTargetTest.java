@@ -130,6 +130,31 @@ class ReferenceStepTargetTest {
     }
 
     /**
+     * Two routes to one arrival hand the next element that arrival once, not once per route. The
+     * first element reaches {@code language} by both of {@code film}'s foreign keys, and the second
+     * returns to {@code film} by the same two, so the second position holds two hops and each of
+     * them is reached by two routes. The case exists because the recursion does not collapse that on
+     * its own: the engine evaluates the walk's recursive {@code UNION} without removing a row the
+     * same iteration produced twice, so without a set-valued level above the chain the second
+     * position arrives as four rows, which a keyed table refuses and a keyless one would have
+     * counted as four candidates.
+     */
+    @Test
+    void anArrivalReachedByTwoRoutesIsWalkedOnwardOnce() {
+        withCatalog(dsl -> {
+            seedTableBinding(dsl, GRAPH, "Film", "film");
+            seedTablePath(dsl, "Film", "sameLanguage", "language", "film");
+
+            var rows = chain(dsl, GRAPH);
+            assertThat(rows.map(r -> r.get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.POSITION)
+                    + " " + hop(r) + " " + r.get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.CANDIDATES)))
+                .containsExactlyInAnyOrder(
+                    "0 film->language 2", "0 film->language 2",
+                    "1 language->film 2", "1 language->film 2");
+        });
+    }
+
+    /**
      * Both arities are the element's and not the arm's. The relation is stored as two tables split
      * on whether a foreign key identifies the row, and one element can be reached on both: a table
      * element departing an ambiguously bound type finds its foreign key from the bound table and a
