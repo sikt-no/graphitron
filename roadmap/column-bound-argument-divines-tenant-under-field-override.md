@@ -104,7 +104,10 @@ argument, whose `CallSiteExtraction.PruneOnMismatch` leaf `accessOf` *declines*,
 wire id decodes differently per participant and there is no single decode to route on. Suppressed,
 such a field rejects today with the generic "nothing maps to the tenant column"; after this item it
 rejects with that decline's own text, naming the shape. The verdict does not move, only the message,
-and it moves in the direction the decline channel exists for.
+and it moves in the direction the decline channel exists for. It holds whatever order the union lists
+its members in, including an order whose first participant's key omits the tenant column, because
+the fold reads each participant's ledger rows on their own, the way it reads each participant's
+filters today.
 
 The last row is the obligation that does not move: a field that binds nothing
 to the tenant column still rejects, because routing tenant data through a default connection when
@@ -162,8 +165,8 @@ captures, so at the moment `TenantBindingIndex` runs, this run's rows are not in
 store-sourced answer means moving the tenant verdict itself downstream of capture, which is a
 re-platforming of the axis (its verdicts feed emitters, not only the error stream) and not a bug fix.
 So the carrier below is interim by construction, and this plan says so rather than letting the next
-reader infer it: it is keyed and grained the way the relation would be, one row per coordinate and
-slot. Grain is the half that carries over cleanly; the row's `CallSiteExtraction` column is the half
+reader infer it: it is keyed and grained the way the relation would be, one row per coordinate,
+filtered table and slot. Grain is the half that carries over cleanly; the row's `CallSiteExtraction` column is the half
 that does not, being an emit carrier no relation can hold, so the retirement is a repoint of one
 reader *plus* a re-derivation of the extraction-to-read mapping from stored facts. That is a smaller
 job than dismantling a leaf component and a larger one than the word "repoint" suggests, and the plan
@@ -171,7 +174,8 @@ would rather say so than have a later reader discover it. It retires when the te
 onto the store, with the rest of the transitional surface.
 
 **A walk-minted ledger, tenancy-neutral.** New `ColumnBindingLedger` in `no.sikt.graphitron.rewrite`,
-rows keyed by `FieldCoordinates`, each row a list of
+rows keyed by `FieldCoordinates` and the `TableRef` the coordinate's filters resolve against, each
+row a list of
 `ColumnBoundSlot(String slotName, List<ColumnRef> columns, CallSiteExtraction extraction)`: every
 argument and input field on the predicate path whose classification resolved a column, whatever
 `projectFilters` then decided to emit for it. "On the predicate path" is doing work and the mint
@@ -212,17 +216,27 @@ on today's condition path, where the body param carries the same wrapped extract
 
 One thing `accessOf` owes on the way past, carried over from this plan's earlier draft and unchanged
 in force by R966. Its leaf switch ends in `default -> SlotProjection.Raw`, which reads "the wire value
-already is the tenant value". That is the right answer for `Direct`, `JooqConvert` and `EnumValueOf`,
-and the wrong one, silently, for any future extraction arm that decodes. Making the leaf switch
+already is the tenant value". That is the right answer for `Direct`, `JooqConvert`, `EnumValueOf`
+and `ContextArg`, and the wrong one, silently, for any future extraction arm that decodes. Making the leaf switch
 exhaustive turns a new arm into a compile error asking which projection it is. It changes no verdict
 today, because every arm reaching it keeps today's answer, and the four record-shaped arms
 (`NodeIdDecodeRecord`, `NodeIdDecodePolymorphicRecord`, `InputBean`, `JooqRecord`) throw an invariant
 naming the carrier rather than answering: they are whole-input extractions minted by
 `InputBeanResolver`, `ServiceCatalog` and the fetcher generator for arguments that bind no single
 column, so no column-bound slot can carry one, which is what makes the exhaustiveness worth more than
-a `default` under a longer spelling. The two location arms (`NestedInputField`, `ContextArg`) are
-answered by the first switch and reach the leaf switch only through a doubly-wrapped extraction
-nothing mints, so they throw the same invariant rather than earning a projection of their own.
+a `default` under a longer spelling.
+
+The two location arms differ at the leaf switch, because the first switch treats them differently.
+`NestedInputField` unwraps to its leaf, so it reaches the leaf switch only through a doubly-wrapped
+extraction nothing mints, and throws the same invariant. `ContextArg` does not unwrap: its first-switch
+arm sets the `SlotRead.ContextArg` location and passes the extraction itself on as the leaf, so a bare
+`ContextArg` reaches the leaf switch on every slot that carries one and resolves `Raw` today through
+the `default`. It keeps `Raw` as an explicit arm. A context value is a value the caller supplied, not
+an encoding of one, which is the same reading `Direct` gets; and throwing there would turn the
+first-switch arm, and the `SlotRead.ContextArg` renderings in `TenantDslEmitter` and
+`RoutineWriteCommands.slotReadOf`, into a guaranteed crash. Nothing mints a `ContextArg` on a
+column-bound carrier today (its one construction is `MethodRef`, for method parameters), so this
+decides what the switch says, not any verdict.
 
 **Held and threaded like the decode ledger.** A `private final ColumnBindingLedger` field on
 `BuildContext` beside `decodeLedger`, with a package-private accessor; `GraphitronSchemaBuilder` reads
@@ -275,7 +289,11 @@ path the slot needs:
   mint when `!lookupBoundNames.contains(<carrier>.name())`. The extraction the row carries here is the
   wrapped `NestedInputField(outerArgName, leafPath, leaf)` the body param would have carried and not
   the bare leaf, because that is what `accessOf` reads to resolve a `NestedInput` location while
-  taking the transform from the leaf.
+  taking the transform from the leaf. "Would have carried" is exact: `implicitBodyParam` rewrites a
+  `Direct` leaf on an `ID`-typed field to `JooqConvert` before wrapping it, and the row takes the
+  post-rewrite leaf, so the mint reuses the wrapping `implicitBodyParam` does rather than wrapping
+  `<carrier>.extraction()` a second way. Both leaves resolve `Raw`, so no verdict hangs on it; what
+  hangs on it is the row being what it says it is.
 
 Completeness is structural rather than reviewed, and the lookup clause is what makes the claim true in
 both directions. Those five arms are exactly where the `BodyParam`s `collectFromFilters`
@@ -301,14 +319,37 @@ already minted by `collectFromLookup` under the same slot names with the same ac
 duplicate ledger mint would change no verdict. The clause is uniform because the rule is about which
 mechanism owns a slot, not about which duplicates happen to be harmless.
 
-Both sites run once per participant on a polymorphic coordinate, so the ledger dedupes by slot name
-per coordinate, keeping the first mint, which is the dedup `SlotCollector` does across members today.
+**Why the filtered table is in the key.** Both sites run once per participant on a multi-table
+polymorphic coordinate, and the same slot name can bind a different column tuple on each. A bare
+`@nodeId` argument over `union Occ = Inventory | FilmActor` binds `[inventory_id]` for one participant
+and `(actor_id, film_id)` for the other, because each participant decodes the id as its own node
+type. A slot's columns are therefore a fact of the coordinate, the table the filters resolve against
+and the slot, and a row keyed by coordinate and slot alone would have to throw one participant's
+tuple away. Keeping the first would drop whichever participant classified second, *before* the fold
+has matched either against the tenant column. That is not the dedupe `SlotCollector` does. It matches
+first and dedupes after, among resolved slots only, and it keeps every distinct decline. In the
+`Inventory`-first order the first-mint row would carry no tenant column, and the field would lose the
+`PruneOnMismatch` decline it rejects with today, in either member order, with no override present.
+
+So the key is `(FieldCoordinates, TableRef)`, where the `TableRef` is the `rt` that `projectFilters`
+receives. That is the same table the coordinate's condition member names as `Condition.table()`:
+the multi-table loop hands `tb.table()` both to `resolveTableFieldComponents` and to the
+`ParticipantFilters` that `OperationMember.Condition.OnParticipant` is minted from, and the
+single-table paths hand the return type's table, which `OnReturnTable` reads back as
+`sgf.returnType().table()`. The containment pin below reads rows by `Condition.table()`, so any path
+where the two disagree turns it red on the first fixture that reaches it, rather than silently losing
+a slot. The ledger's only dedupe is first-mint-wins on slot name *within* one `(coordinate,
+table)` row, which absorbs a repeat visit of the same classification (`NodeIdDecodeLedger` keys
+first-mint-wins for the same reason) and never compares one participant with another.
 
 **The fold reads it.** `Fold.directBinding` replaces
-`case OperationMember.Condition c -> collectFromFilters(c.filters())` with one read of the
-coordinate's ledger row, calling `collector.add` once per column that `matchesTenantColumn` accepts
+`case OperationMember.Condition c -> collectFromFilters(c.filters())` with a read of the ledger row at
+`(coordinate, c.table())`, calling `collector.add` once per column that `matchesTenantColumn` accepts
 and resolving its access through `accessOf`, which is what `collectFromBodyParam` and
-`collectFromRow` do between them today. `collectFromFilters`, `collectFromBodyParam` and
+`collectFromRow` do between them today. The read is per member, as today's is: one condition member
+per participant, each reading its own participant's row, and `SlotCollector` matching then deduping
+across them exactly as it does now. `directBinding` gains the coordinate as a parameter to do it; its
+four callers in the fold already hold the coordinate they pass the members for. `collectFromFilters`, `collectFromBodyParam` and
 `collectFromRow` retire together: with the ledger in place nothing in production reads a `BodyParam`
 to answer a classification question, which is the one-place property this item is after. The
 `RemoteColumnPredicate` unwrap those functions perform retires with them, because the ledger records
@@ -363,8 +404,9 @@ inside `projectFilters`, which no `@service` coordinate reaches. `TenantDslEmitt
 body param, so the overridden-predicate case needs nothing new from them; `TenantDslEmitter.projected`
 renders the decode helper for a `DecodedKeySlot` projection off the slot, not off a predicate, which
 is what lets the goal table's eleventh row route at all. `MultiTablePolymorphicEmitter`'s
-`ArgumentBound` read is per-participant and unaffected: the ledger is keyed by coordinate, as the
-deduped slot list already was.
+`ArgumentBound` read is per-participant and unaffected: the ledger is keyed by coordinate and
+participant table and read per condition member, so the deduped slot list it produces is the one
+today's per-member read produces.
 
 **The disclosed gap.** A wire-valued argument whose own predicate an author overrode now divines the
 tenant. That is the intended reading, since routing chooses a database and an argument bound to the tenant column
@@ -412,15 +454,30 @@ coordinate mints a condition member and the ledger read actually fires:
   deliberate, being the shape a column-count discriminator would get wrong.
 
 Both fail in the direction a green build would not otherwise show, since a wrong answer there is
-a verdict rather than an error. The tenth row needs no fixture of this item's: R966 landed
-`sameTableNodeIdFilterDivinesTheDecodedSlot` on exactly that shape, and this item only has to leave
-it green.
+a verdict rather than an error. The tenth row's argument half needs no fixture of this item's: R966
+landed `sameTableNodeIdFilterDivinesTheDecodedSlot` on exactly that shape, and this item only has to
+leave it green. Its filter-input half has no pin in the tree, and this item re-sources exactly that
+read (a nested `@nodeId` field's slot moves from a body param to a ledger row), so it gets one
+regression case: a query filter input whose `@nodeId` field decodes a key embedding `film_id`,
+asserting `ArgumentBound` with a `NestedInput` read and a `DecodedKeySlot` projection.
 
-The multi-table polymorphic shape gets one case, over the `PruneOnMismatch` fixture
-`MultiTableFilterLoweringTest` already carries: the same field under a field-level
-`@condition(override: true)` still rejects, now through `accessOf`'s decline rather than through the
-generic "nothing maps to the tenant column". It pins that the uniform mint predicate reaches the
-declining carrier and that the decline channel, not a mint-side clause, is what holds it.
+The multi-table polymorphic shape gets two cases on one fixture of its own. The fixture
+`MultiTableFilterLoweringTest` carries for `PruneOnMismatch` (`Customer | Staff`) does not serve:
+neither table carries `film_id`, so under this test file's tenant column the field classifies
+untenanted and there is no rejection to assert. The fixture here is a bare
+`occ(id: ID! @nodeId): [Occ!]!` over `union Occ = Inventory | FilmActor`, with `Inventory` keyed on
+`inventory_id` and `FilmActor` on `(actor_id, film_id)`: both tables are tenant-scoped, and the
+member order puts first the participant whose key omits the tenant column, which is the order that
+tells a per-participant read from a coordinate-wide first-mint dedupe.
+
+- With no `@condition` anywhere, it rejects `Query.occ` with the `PruneOnMismatch` decline text. That
+  is today's verdict and today's message, measured on this tree in both member orders; the case pins
+  that the re-sourcing did not change it.
+- Under a field-level `@condition(override: true)` (`TestConditionStub.lifterFieldCondition`, which
+  binds no argument, so the dispatched-`@nodeId` divergence refusal does not fire first), it still
+  rejects with the decline text rather than the generic "nothing maps to the tenant column". It pins
+  that the uniform mint predicate reaches the declining carrier and that the decline channel, not a
+  mint-side clause, is what holds it.
 
 **The containment pin, which is the enforcer the census owes.** Today's `collectFromFilters` is total by
 accident of where it reads: it walks `gcf.bodyParams()`, so a sixth column-bound arm added to
@@ -434,10 +491,15 @@ folded in at `2772` and `2788`, and nowhere else), but a census true when writte
 as a drift smell.
 
 So `ColumnBindingLedgerContainmentTest`, a meta-test in `graphitron`'s test tier, driven over every
-fixture schema the tier already builds rather than over one fixture of its own: for each coordinate,
-every surviving `BodyParam` naming a column (unwrapping `RemoteColumnPredicate`) has a ledger row
-under the same slot name carrying that column. A new arm that emits without minting turns it red on
-whatever existing fixture first reaches the arm.
+fixture schema the tier already builds rather than over one fixture of its own: for each condition
+member, every surviving `BodyParam` in its filters naming a column (unwrapping
+`RemoteColumnPredicate`) has a ledger entry under the same slot name, in the row at
+`(coordinate, member.table())`, carrying that column. A new arm that emits without minting turns it
+red on whatever existing fixture first reaches the arm, and so does a classification path whose `rt`
+is not the table its condition member names, which is the one alignment the ledger's key relies on.
+Reading by member rather than by coordinate is what makes the pin and the key agree: the `Customer |
+Staff` fixture emits a `staff_id` body param for slot `id` on one participant and a `customer_id` one
+on the other, and each finds its own row.
 
 This is not the oracle the shadow tests (`ColumnMatchShadowTest` and siblings) are, and the difference
 is the one `fact-model.adoc` draws under "Name the row, not the question": what is forbidden is the
@@ -1101,3 +1163,38 @@ rejecting) match the rows.
   depends on it.
 - Row ten covers "a `@nodeId` argument or filter-input field", but
   `sameTableNodeIdFilterDivinesTheDecodedSlot` pins only the argument half.
+
+#### Author response (2026-09-23, reviewer session 01Fcw42ptsU6nBajgPdqiaJv taking the author role at the user's direction)
+
+Finding 4 addressed by putting the filtered table in the ledger's key and reading it per condition
+member. Of the three repairs the finding listed, this is the one that makes the plan's grain claim
+true rather than merely consistent. A slot's columns are a fact of the coordinate, the table the
+filters resolve against, and the slot; the old "one row per coordinate and slot" grain was false for
+a multi-table polymorphic coordinate, and the first-mint dedupe was what hid that. Keying by
+`(FieldCoordinates, TableRef)` and reading at `(coordinate, Condition.table())` restores today's
+per-member read exactly, so `SlotCollector`'s match-then-dedupe is again the only cross-participant
+dedupe and "Nothing else about the fold moves" holds as written. The alignment it relies on
+(`projectFilters`' `rt` is the table the condition member names) is stated with the paths that
+supply it, and the containment pin now reads by member table, so it enforces that alignment on every
+fixture instead of contradicting the key. The rejected alternatives: keeping every mint in one
+coordinate-wide row would work but leaves the grain unsayable, and deduping on the whole row keeps
+the right tuples while still pretending the table is not part of the fact. `directBinding` takes the
+coordinate as a parameter; all four of its callers already hold one.
+
+Finding 5 addressed with a fixture of this item's own, `Inventory | FilmActor` in the order that
+puts the key without `film_id` first, carrying two cases: the no-override regression, which is the
+case a coordinate-wide first-mint dedupe would have broken, and the override case the finding was
+about. The field-level condition is `TestConditionStub.lifterFieldCondition`, which binds no
+argument, so the dispatched-`@nodeId` divergence refusal cannot fire ahead of the tenant fold.
+
+Finding 6 addressed: `ContextArg` keeps `Raw` as an explicit leaf arm, for the reason the finding
+gave (its first-switch arm passes the bare extraction on as the leaf), and only `NestedInputField`
+throws the doubly-wrapped invariant.
+
+Both non-blocking notes taken. The input-field mint reuses `implicitBodyParam`'s wrapping, so the
+row carries the post-rewrite `JooqConvert` leaf a body param would have. The filter-input half of
+goal-table row ten gets a regression case, since nothing in the tree pins it and this item
+re-sources exactly that read.
+
+The reviewer of round 4 wrote this revision, so `Spec -> Ready` needs a session that has committed
+neither.
