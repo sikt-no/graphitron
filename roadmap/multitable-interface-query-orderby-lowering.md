@@ -1,7 +1,7 @@
 ---
 id: R382
 title: "Lower orderBy onto multitable-interface/union queries"
-status: Spec
+status: Ready
 bucket: bug
 priority: 3
 theme: interface-union
@@ -770,8 +770,9 @@ can see that, so the execution tier is where this item is either delivered or no
   unequal (`sqlType`, `bindingType`) pair at one position. `INT` against `BIGINT` rejects on both;
   the converter case rejects on `sqlType` alone, a converter-backed `org_code_domain` column bound
   to `String` against a plain `varchar` of the same name, which is the case a `columnClass`-only
-  rule would have admitted. The catalog has no plain column sharing a name with a converted one
-  today, so that fixture table is the implementer's to add to `init.sql`.
+  rule would have admitted. The catalog has no plain `varchar` column sharing a name with a converted
+  one today (`diverged_ref_child.org_code` is plain `bigint`), so that fixture table is the
+  implementer's to add to `init.sql`.
   Direction and collation have no case, the two-level carrier making their disagreement
   unrepresentable. Plus the single-valued declared multitable root, which lowers nothing and so
   keeps its rejection.
