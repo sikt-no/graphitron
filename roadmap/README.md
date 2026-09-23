@@ -29,12 +29,12 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Spec | 2026-09-22 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
 | `R382` | Lower orderBy onto multitable-interface/union queries | Spec | 2026-09-23 <sub>created 2026-06-25</sub> | [plan](multitable-interface-query-orderby-lowering.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
+| `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | Spec | 2026-09-23 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-09-22 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
 | `R966` | Write inputs keyed by a decoded node id divine the tenant | In Review | 2026-09-22 | [plan](write-input-node-id-divines-tenant.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
@@ -399,7 +399,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R523` [**Carry field SourceLocations through the tenant-binding fold rejections**](tenant-fold-rejection-source-locations.md) — Backlog, tech-debt
 - `R965` [**Column-bound argument slots divine the tenant under a field-level @condition override**](column-bound-argument-divines-tenant-under-field-override.md) — Spec, bug
 - `R852` [**A field-site terminal condition hop resolves only through its signature, never the declared target**](field-walk-declared-target-condition-rung.md) — Backlog, bug
-- `R682` [**Planners read facts, emitters read commands: dissolve the walk and the leaf zoo**](planners-read-facts-emitters-read-commands.md) — In Progress, architecture
+- `R682` [**Planners read facts, emitters read commands: dissolve the walk and the leaf zoo**](planners-read-facts-emitters-read-commands.md) — Spec, architecture
 - `R628` [**Producer-binding probe grounds a dot-path leaf parameter against the outer input type**](producer-probe-dotpath-misgrounding.md) — Backlog, bug
 - `R851` [**Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves**](corpus-directives-to-expect-equals.md) — In Progress, testing, blocked by [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)
 - `R333` [**The Graphitron data model**](coordinate-lowers-to-datafetcher-queryparts.md) — Ready, structural

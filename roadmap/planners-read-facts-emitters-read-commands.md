@@ -1,13 +1,13 @@
 ---
 id: R682
 title: "Planners read facts, emitters read commands: dissolve the walk and the leaf zoo"
-status: In Progress
+status: Spec
 bucket: architecture
 priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-08-14
-last-updated: 2026-09-22
+last-updated: 2026-09-23
 ---
 
 # Planners read facts, emitters read commands: dissolve the walk and the leaf zoo
