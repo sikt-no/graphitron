@@ -177,7 +177,8 @@ class ProjectionSqlBaselineTest {
     void polymorphicRoot_narrowUnionThenPerTypenameSelects() {
         execute("{ search { name } }");
         assertThat(SQL_LOG.stream().map(ProjectionSqlBaselineTest::collapseValuesTuples).toList())
-            .as("polymorphic root: stage 1 is the narrow UNION ALL (typename, pk, sort), stage 2 "
+            .as("polymorphic root: stage 1 is the narrow UNION ALL (typename, pk, sort) ordered on "
+                + "the synthetic key with the typename as its cross-participant tiebreaker, stage 2 "
                 + "is one VALUES-joined SELECT per participant, with the tuple run collapsed "
                 + "because its arity is the number of rows the union returned")
             .containsExactlyInAnyOrder(
@@ -186,7 +187,7 @@ class ProjectionSqlBaselineTest {
                     + "union all "
                     + "select 'film' as \"__typename\", \"public\".\"film\".\"film_id\" as \"__pk0__\", "
                     + "\"public\".\"film\".\"film_id\" as \"__sort__\" from \"public\".\"film\" "
-                    + "order by \"__sort__\"",
+                    + "order by \"__sort__\" asc, \"__typename\" asc",
                 "select \"public\".\"actor\".\"first_name\", "
                     + "'actor' as \"__typename\", \"actorinput\".\"idx\" from \"public\".\"actor\" "
                     + "join (values (?, ?)) as \"actorinput\" (\"idx\", \"actor_id\") "
