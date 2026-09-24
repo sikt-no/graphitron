@@ -22,9 +22,12 @@ item's fifteen and R954's and R958's before them: one
 register, its dependency table, the `_live` convention and the refresh pass are gone from the tree,
 and the one recursive rule among them, the `@nodeId` decode column, is evaluated once per capture
 instead of once per driving row. A consumer's `graphitron:dev` round and `generate` both take this
-path, because both run the capture and nothing else derives these tables. What this item does not
-claim is what that path costs a consumer: no `sis` round on the shipped tree has been timed, for the
-reason "Tests" records, and R972 holds the reading that is owed.
+path, because both run the capture and nothing else derives these tables, and on the `sis` consumer
+that path costs what the register's did: a `graphitron:capture` of `sis` takes 198 s cold and 119 s
+warm on the shipped tree against 204 to 212 s and 118 to 123 s before, the fourteen relations the
+register still held at `fc327fb` cost 4.1 s cold and 4.9 s warm as stages against 4.6 s and 5.8 s as
+registrations, and every one of them holds the same row count either side. "Tests" carries the
+figures.
 
 Four terms, glossed once. The *fact store* is the H2 database each generator pass captures the schema,
 the jOOQ catalog and the classpath into, and answers its verdicts out of by SQL. A *gatherer* is one
@@ -130,16 +133,96 @@ What demonstrates each claim of the goal, all in the tree:
   `meta_materialize_dependency`, `Materializations`, `MaterializeDependencies` or `RefreshProgress`,
   and `FactSchemaGateTest`'s frozen roster refuses a relation name coming back.
 
-**Not demonstrated, and why.** The body at sign-off named one more piece of evidence: the `sis`
-consumer's `graphitron:capture` timed warm and cold, before (`fc327fb`) and after, with the per-stage
-lines. It was not taken, and it cannot be from this repository: no `sis` store copy exists here, and
-one has to come from the consumer. R953, R954 and R958 closed on the same ground. The goal is narrowed
-to what the list above shows. The cost of narrowing is that what the stratum costs at consumer scale is
-inferred from the mechanism, not observed: each stage runs the statement its registration's refresh
-ran, on the same two cadences. The reading is filed as R972 so it has an owner rather than a line in
-a closed item. Also not shown: that a reader of `graphitron_node_id_decode_column` seeks into it. The
-key makes a seek possible, and `DerivedReadCostTest`, which priced such reads, left with the register it
-paired against.
+**What it costs a consumer, measured on `sis` (2026-09-24).** `graphitron:capture` of the `sis`
+module `sis-graphql-spec`, one graph of 8436 fields, run four ways, each on its own store directory
+(the plugin keeps it at `target/graphitron-model`) with the consumer's own store set aside: before at
+`fc327fb`, the last tree with the register, and after at `d0a86d0`, which differs from the tree this
+item ships only in test javadoc and roadmap files; each cold (an absent store directory) and warm (a
+second capture of the same graph into the store the cold run left). Each tree was installed into its
+own local repository and `sis` was pointed at the matching one with `-o`; the `-X` log names only
+that repository's `no.sikt` jars, and the installed `graphitron-model` jar carries `Materializations`
+before and `DerivationStratum` after. The `sis` tree was commit `9a17d34d` plus an uncommitted working
+tree (886 diff lines, which carry the `10-SNAPSHOT` pin), so the commit alone does not reproduce the
+run. The before runs were each taken twice; the after runs once. Nothing ran for longer than 213 s,
+and nothing failed to finish.
+
+End to end, and split at the log lines (Maven's project scan, then the capture up to the derivation
+bracket, the bracket, and the tail that closes and analyses the store):
+
+[cols="2,1,1,1,1,1,1"]
+|===
+| Run | Wall | Maven scan | To the bracket | Bracket | Tail | Up to and through the bracket
+
+| before, cold | 212 s, 204 s | 22 s | 164 s | refresh 4.8 s, 4.7 s | 10 s | 169 s
+| after, cold | 198 s | 22 s | 133 s | stratum 29.6 s | 10 s | 162 s
+| before, warm | 123 s, 118 s | 22 s | 77 s | refresh 5.9 s, 5.2 s | 11 s | 82 s
+| after, warm | 119 s | 22 s | 50 s | stratum 32.2 s | 12 s | 82 s
+|===
+
+The two brackets do not enclose the same work, and read side by side they suggest a sixfold
+regression that is not there. At `fc327fb` the stages R954 and R958 had already landed, and this
+item's first rung, `FieldColumnScopes`, ran ahead of the refresh with no log line of their own, inside
+"to the bracket"; after, the stratum's line encloses them. The last column is the like-for-like
+figure, and it is level warm and seven seconds lower cold. The cold after run printed
+`deriving 27 stages for graph 'sis-graphql-spec', committing and analysing each`, and the warm one the
+same line without the suffix.
+
+The five most expensive stages after, cold then warm, none of them slower than its pair before:
+
+[cols="3,1,1,1,2"]
+|===
+| Stage | Cold | Warm | Rows | Before
+
+| `ArgMappingCandidates` | 15.9 s | 16.4 s | 13270 | a stage already, unlogged
+| `InputOccurrencePaths` | 7.4 s | 8.8 s | 6553 | a stage already, unlogged
+| `NodeIdDecodeColumns` | 2.2 s | 2.9 s | 1320 | registration, 2.3 to 2.4 s cold, 2.9 to 3.3 s warm
+| `CarrierDataFields` | 1.1 s | 0.8 s | 151 | a stage already, unlogged
+| `MutationWriteDestinations` | 961 ms | 992 ms | 658 | registration, 1.0 s cold, 0.9 to 1.1 s warm
+|===
+
+The fourteen relations the register held at `fc327fb`, stage against registration by the relation
+written (`NodeIdDecodeHops` writes `graphitron_node_id_decode_hop`, which was the registration for
+`intent_node_id_decode_hop`), with the two before runs of each cadence:
+
+[cols="3,1,1,1,1,1"]
+|===
+| Stage | Before, cold | After, cold | Before, warm | After, warm | Rows
+
+| `ArgumentColumnScopes` | 5, 5 ms | 9 ms | 11, 11 ms | 11 ms | 968
+| `ArgumentColumnMatches` | 23, 23 ms | 20 ms | 21, 21 ms | 28 ms | 114
+| `MutationWritePayloads` | 2, 2 ms | 2 ms | 3, 4 ms | 3 ms | 85
+| `NodeIdInstructions` | 64, 68 ms | 155 ms | 207, 179 ms | 185 ms | 683
+| `NodeIdDecodeHops` | 45, 45 ms | 12 ms | 25, 16 ms | 23 ms | 377
+| `NodeIdDecodeHopColumns` | 39, 41 ms | 42 ms | 47, 47 ms | 57 ms | 1292
+| `NodeIdDecodeColumns` | 2.4, 2.3 s | 2.2 s | 3.3, 2.9 s | 2.9 s | 1320
+| `InputFieldColumnMatches` | 60, 62 ms | 64 ms | 63, 77 ms | 69 ms | 861
+| `InputFieldFilterRoles` | 56, 59 ms | 57 ms | 89, 89 ms | 92 ms | 1765
+| `InputFieldCarrierRoles` | 160, 111 ms | 21 ms | 184, 142 ms | 34 ms | 1254
+| `MutationPayloadRefusals` | 74, 71 ms | 11 ms | 102, 117 ms | 12 ms | 0
+| `MutationPayloadColumns` | 125, 116 ms | 13 ms | 173, 169 ms | 19 ms | 658
+| `MutationPayloadKeyMemberships` | 501, 495 ms | 484 ms | 515, 446 ms | 484 ms | 531
+| `MutationWriteDestinations` | 996 ms, 1.0 s | 961 ms | 1.1 s, 945 ms | 992 ms | 658
+| Sum | 4.6 s | 4.1 s | 5.8 s | 4.9 s |
+|===
+
+Every row count is identical before and after, on both cadences, which is answer preservation on a
+consumer store as well as on the fixtures. One stage is slower than its registration outside the
+spread of the two before runs: `NodeIdInstructions` cold, 155 ms against 64 and 68 ms, on one after
+sample. At 90 ms in a 198 s capture it is not a regression worth an item. The warm differences of
+under 10 ms are within the spread the before runs show against each other.
+
+One caveat binds the cold figures on both sides alike. A first capture into an empty store writes no
+`code_` rows at all (`code_method`, `code_type_slot`, `code_service_method` and the rest are empty
+after every cold run, before and after, and filled by the second capture), so the cold stratum derives
+over an empty classpath family: `intent_field_accessor_hop` holds 0 rows cold against 10180 warm, and
+the stages that read it write short (`FieldColumnScopes` 2802 rows cold against 3199 warm,
+`TypeBackingRows` 106 against 125). This predates the item, is identical before and after, and so
+leaves the comparison standing; it does mean a correct cold capture pays for classpath work these
+cold figures do not include. It is filed as R973.
+
+Also not shown: that a reader of `graphitron_node_id_decode_column` seeks into it. The key makes a
+seek possible, and `DerivedReadCostTest`, which priced such reads, left with the register it paired
+against.
 
 ## Retired vocabulary
 
@@ -169,7 +252,6 @@ Relation names, renamed by the move: the fifteen `intent_` names in the table ab
   touch; a stage is a better unit for that than a registration, but the scoping is theirs.
 - **It does not build the rule bench.** R899 owns making a rule's cost countable from the tree.
 - **It does not mint a `lint` gatherer.** R876 has designed one; `lint_violation` waits for it.
-- **It does not measure a consumer.** R972 owns that reading.
 
 ## Relation to other items
 
@@ -192,7 +274,9 @@ should be re-cut against `DerivationStratum`.
 register, its subject becomes a rule view named on the inner side of a join by another rule view, and
 its body should say so when next touched.
 
-**R972** holds the consumer-scale reading this item names in "Tests" and does not take.
+**R973** is a defect the `sis` reading surfaced and did not cause: a first capture into an empty store
+writes no `code_` rows, on both trees alike. It bears on this item only as the caveat on the cold
+figures under "Tests".
 
 Several other bodies still describe the register as live, and a few now have no subject:
 `materialize-dependency-derived-before-stamp`, `target-index-exemptions-in-the-model` and
@@ -447,6 +531,17 @@ claim, and records the `sis` reading as not taken, why it cannot be taken here, 
 costs. The reading is filed as R972 rather than handed to another item's gate. Judging the narrowing
 is the next gate's first job, and a reviewer who thinks the item should not close without the
 reading should say so.
+
+*Resolved by measurement (2026-09-24, local session d0c624da-545e-461a-88b6-2b9f12e28d45).* The reading was taken after
+all, by the first arm, on a local copy of the `sis` consumer: `graphitron:capture` before at `fc327fb`
+and after, each cold and warm, with the per-stage lines. The figures are under "Tests" in place of the
+paragraph that recorded the reading as not taken, and the Goal's consumer clause is restored, stated
+as what was measured: the capture is level with the register's end to end, the fourteen converted
+relations are cheaper in sum as stages than as registrations, no stage is slower than its
+registration beyond one 90 ms cold sample, and every row count agrees. R972, filed to hold the
+reading, is discarded now that the reading is here. The measurement also surfaced a pre-existing
+cold-store defect, identical on both trees, filed as R973 and named under "Tests" as the caveat on the
+cold figures.
 
 **Finding 2, blocking (approval precondition). The body does not reflect what shipped.** The two
 "Shipped" paragraphs sit on top of an Implementation section that still reads as the plan, and parts
