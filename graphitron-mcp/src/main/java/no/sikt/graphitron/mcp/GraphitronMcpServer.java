@@ -663,11 +663,9 @@ public final class GraphitronMcpServer implements AutoCloseable {
                 "type", "object",
                 "properties", Map.of(
                     "kind", Map.of("type", "string",
-                        "enum", List.of("service", "condition", "constructible"),
+                        "enum", List.of("service", "condition"),
                         "description", "What to look for: service (classes declaring a @service "
-                            + "candidate), condition (classes declaring a @condition candidate), or "
-                            + "constructible (classes a value of which the generator can make, with "
-                            + "the members that go in)."),
+                            + "candidate) or condition (classes declaring a @condition candidate)."),
                     "name", Map.of("type", "string",
                         "description", "Case-insensitive substring filter on the class FQN."),
                     "limit", Map.of("type", "integer",

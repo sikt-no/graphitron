@@ -778,44 +778,6 @@ class GraphitronMcpServerTest {
     }
 
     /**
-     * The record kind: the components in declaration order, with their declared types.
-     *
-     * <p>And the arm the shipped fixture could not express, because it declared a record with no
-     * methods and a real record has five. Every one of them is {@code notDeclared}: the classfile
-     * carries the accessors and the mandated {@code equals} / {@code hashCode} / {@code toString}, this
-     * record's source declares none of them, and the two populations are documented as allowed to
-     * disagree. The class itself still resolves, which is the whole point of keeping the two absences
-     * apart: nothing here is stale, and re-walking the source would change nothing.
-     */
-    @Test
-    @SuppressWarnings("unchecked")
-    void codeConstructibleKindListsWhatGoesInAndReportsMandatedMembersAsUndeclared(@TempDir Path tmp) {
-        try (var fixture = StoreFixture.ofCodeFixtures(tmp)) {
-            var entry = onlyClass(fixture, "constructible", FILM_CARD);
-
-            var components = (List<Map<String, Object>>) entry.get("components");
-            assertThat(components).containsExactly(
-                Map.of("name", "filmId", "type", "Integer"),
-                Map.of("name", "title", "type", "String"));
-
-            assertThat((Map<String, Object>) entry.get("location"))
-                .as("the record's own declaration is where the parse read it")
-                .containsEntry("uri", fixtureUri("FilmCard.java"))
-                .containsEntry("line", fixtureLine("FilmCard.java", "public record FilmCard"));
-
-            var methods = (List<Map<String, Object>>) entry.get("methods");
-            assertThat(methods).extracting(m -> m.get("name"))
-                .as("the classfile's own members, which is more than the source writes")
-                .containsExactly("equals", "filmId", "hashCode", "title", "toString");
-            assertThat(methods)
-                .as("a source that declares none of them is notDeclared, never notIndexed")
-                .allSatisfy(m -> assertThat(m)
-                    .containsEntry("locationStatus", "notDeclared")
-                    .doesNotContainKey("location"));
-        }
-    }
-
-    /**
      * A class the census reaches and no walked source root does, which is every class a consumer gets
      * from a dependency jar. Reported {@code notIndexed}, and kept apart from the record case above:
      * one says the source cadence has not covered this file, the other that the file does not declare
@@ -861,33 +823,13 @@ class GraphitronMcpServerTest {
         }
     }
 
-    /**
-     * One call answers for a class that is more than one kind, where two tools each answered half. The
-     * record is a service too, its accessors being public methods, which is the classpath's own answer
-     * rather than a guess at what the schema wires to.
-     */
-    @Test
-    @SuppressWarnings("unchecked")
-    void codeAnswersOnceForAClassThatIsBothAServiceAndConstructible(@TempDir Path tmp) {
-        try (var fixture = StoreFixture.ofCodeFixtures(tmp)) {
-            var asService = onlyClass(fixture, "service", FILM_CARD);
-            var asConstructible = onlyClass(fixture, "constructible", FILM_CARD);
-
-            assertThat((List<Map<String, Object>>) asService.get("components"))
-                .as("the service kind carries what goes in too, so neither half is missing")
-                .isEqualTo(asConstructible.get("components"));
-            assertThat((List<Map<String, Object>>) asService.get("methods"))
-                .isEqualTo(asConstructible.get("methods"));
-        }
-    }
-
     /** A kind the census has no population for is an argument error naming what it accepts. */
     @Test
     void codeRefusesAnAbsentOrUnknownKind(@TempDir Path tmp) {
         try (var fixture = StoreFixture.ofCodeFixtures(tmp)) {
             var missing = GraphitronMcpServer.codeResult(fixture.handle(), fixture.reader(), Map.of());
             assertThat(missing.isError()).isTrue();
-            assertThat(firstLine(missing)).startsWith("code:").contains("service, condition, constructible");
+            assertThat(firstLine(missing)).startsWith("code:").contains("service, condition");
 
             var unknown = GraphitronMcpServer.codeResult(
                 fixture.handle(), fixture.reader(), Map.of("kind", "conditions"));

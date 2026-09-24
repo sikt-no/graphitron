@@ -18,7 +18,6 @@ import java.util.Optional;
 import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
-import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTION;
 import static no.sikt.graphitron.model.Tables.CODE_WRITE_SLOT;
 import static no.sikt.graphitron.model.Tables.CODE_SERVICE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE;
@@ -95,20 +94,7 @@ final class CodeQueries {
         SERVICE,
 
         /** Classes declaring at least one method admissible at {@code @condition(condition:)}. */
-        CONDITION,
-
-        /**
-         * Classes a value of which this generator can make, with the members that go in and the
-         * call each goes in through.
-         *
-         * <p>Named for what it answers rather than for the directive it replaces. {@code @record}
-         * is deprecated and ignored, a class-backed type's class being reflected from the field
-         * that produces it, and "record" names three different things across a jOOQ record, a Java
-         * record and a row, so a kind carrying that word would say the least useful of the three.
-         * What an author is actually asking is what can be on the receiving end of an input, and
-         * that is a question about construction.
-         */
-        CONSTRUCTIBLE;
+        CONDITION;
 
         /** The kind {@code value} names, absent when it names none; the wire spells these lower-case. */
         static Optional<Kind> parse(String value) {
@@ -262,11 +248,6 @@ final class CodeQueries {
      * which is the whole of what the kinds are: what may be written at a directive is the store's
      * own answer, so the admission rule is not stated here and cannot drift from the one that
      * admits, and the population is the reactor, which is where something an author may name lives.
-     *
-     * <p>The third names a class by its type rather than by a method's owner, because what it is
-     * about is the class and not a member of one. It is also the one whose population is reached
-     * rather than admitted: a class is constructible here because something is passed it, so a
-     * class nothing takes has no row however makeable it looks.
      */
     private record Population(org.jooq.Table<?> relation, Field<String> source,
                               Field<String> className, Condition narrowing) {}
@@ -278,8 +259,6 @@ final class CodeQueries {
             case CONDITION -> new Population(CODE_CONDITION_METHOD,
                 CODE_CONDITION_METHOD.SOURCE_NAME, CODE_CONDITION_METHOD.CLASS_NAME,
                 noCondition());
-            case CONSTRUCTIBLE -> new Population(CODE_CONSTRUCTION, CODE_CONSTRUCTION.SOURCE_NAME,
-                CODE_CONSTRUCTION.TYPE_NAME, noCondition());
         };
     }
 

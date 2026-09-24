@@ -1,10 +1,6 @@
 package no.sikt.graphitron.mcp.fixtures.code;
 
-/**
- * The other construction shape: a plain class with a no-argument constructor, filled one member at
- * a time afterwards. Beside {@link FilmCard}, which is filled in the one call that makes it, so the
- * {@code code} tool's constructible kind has both arms in front of it rather than one.
- */
+/** A setter-shaped input holder, reached as a parameter of {@link FilmService#search}. */
 public class FilmFilter {
 
     private String title;

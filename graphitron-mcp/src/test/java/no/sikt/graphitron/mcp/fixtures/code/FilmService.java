@@ -38,11 +38,7 @@ public class FilmService {
         return title;
     }
 
-    /**
-     * Takes a class that is filled in one call, which is what puts {@link FilmCard} in the
-     * constructible population: a class is constructible because something is passed one, not
-     * because it looks makeable.
-     */
+    /** Takes a class filled in one call, so {@link FilmCard} is reached as a parameter type. */
     public String summarise(FilmCard card) {
         return card.title();
     }
