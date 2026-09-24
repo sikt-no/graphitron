@@ -34,7 +34,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
 | `R382` | Lower orderBy onto multitable-interface/union queries | In Review | 2026-09-23 <sub>created 2026-06-25</sub> | [plan](multitable-interface-query-orderby-lowering.md) |
-| `R970` | graphitron-mcp ships Jackson versions with open advisories, and the root pgjdbc pin trails two fixes | In Review | 2026-09-23 | [plan](jackson-and-pgjdbc-pins-past-open-advisories.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -728,7 +727,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R918` [**The fact store cache root is bounded in bytes, and quiet workspaces are reclaimed**](cache-root-byte-budget.md) — Backlog, dx
 - `R937` [**The fact store compacts on every close, at full price, whether or not there is anything to reclaim**](compaction-on-close-is-unconditional.md) — Backlog, dx
 - `R767` [**graphitron-maven-plugin writes its descriptor twice and runs its three ITs one at a time**](maven-plugin-descriptor-runs-twice.md) — Backlog, dx
-- `R970` [**graphitron-mcp ships Jackson versions with open advisories, and the root pgjdbc pin trails two fixes**](jackson-and-pgjdbc-pins-past-open-advisories.md) — In Review, cleanup
 - `R868` [**A checkout that is never built again keeps its whole store home**](sweep-dead-workspace-store-homes.md) — Backlog, cleanup
 - `R538` [**BgeEmbedderOnnxTest fails nondeterministically under full-reactor parallel load**](onnx-embedder-nondeterminism-under-parallel-load.md) — Backlog, testing
 - `R741` [**Date or refresh the parallelism figure in graphitron's junit-platform.properties**](parallelism-figure-in-junit-properties.md) — Backlog, dx
