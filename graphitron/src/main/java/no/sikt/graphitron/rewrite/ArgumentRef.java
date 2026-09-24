@@ -211,9 +211,9 @@ public sealed interface ArgumentRef {
          * Scalar {@code @nodeId} arg whose explicit {@code @condition(override: true)} method owns
          * the {@code WHERE} predicate entirely: no route from the field's table to the node type's
          * table resolved, and the author took responsibility instead. The argument coordinate's
-         * counterpart to {@link no.sikt.graphitron.rewrite.model.InputField.ConditionOwnedField},
-         * with the same defining fact and the same reason for having no columns: there is nothing
-         * for the generator to bind, and a column slot would be dead storage.
+         * counterpart to {@link no.sikt.graphitron.rewrite.model.InputField.ConditionOwnedField}
+         * on that carrier's no-route arm, where its {@code resolvedColumn} is empty: the same
+         * defining fact, and the same reason for having no columns, since no route resolved one.
          *
          * <p>The method receives the resolving table (each branch's own alias on a multitable
          * consumer) plus the leaf's decoded key, typed by the node type's key columns. The decode is
