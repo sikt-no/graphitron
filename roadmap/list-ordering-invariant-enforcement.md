@@ -455,6 +455,27 @@ population predicate rather than leaving the question open a second time. The ot
 about phase 1 and 2 code and are untouched by this reopen; the third in particular, the empty
 `OrderBySpec.Fixed` on a list multiset, is still the unmeasured one.
 
+**Handed over by R382 at its Done gate (2026-09-24).** R382 now lowers `@defaultOrder` and `@orderBy`
+onto list-shaped root `Query` fields over a multitable interface or union, and it did that by adding
+an exclusion to the `PARTICIPANT_FAN_OUT` arm of `intent_field_unlowerable_ordering`. So the
+statements above that the root "accepts and discards" the ordering, and that the rejection's
+population "empties on its own" with nothing to un-write, no longer hold at the roots. They still hold
+at child multitable fields and at single-valued roots, which keep their rows. The re-spec inherits
+two things from that exclusion. Its SQL comment carries the rationale.
+
+* **The list-shaped predicate.** `graphitron_field.is_list` alone reads `FALSE` on an `@asConnection`
+  root, because the macro rewrites the field's type expression to the connection. So a population
+  keyed on it alone drops every macro-built connection. The exclusion spells list-shaped as
+  `graphitron_field.is_list OR graphitron_field_navigation.basis = 'CONNECTION_ELEMENT'`, which is
+  `OrderByResolver`'s three-way test (list, connection type, `@asConnection`). Phase 3's population
+  should use the same spelling, so the two keep one.
+* **The route conjunct.** "List-shaped multitable root" also takes in roots the classifier routes
+  away from the multitable arm, and those read no ordering: `@service`, a `Node` named type (read off
+  `graphitron_field.named_type`, the rewritten expression, so `[Node] @asConnection` is lowered), an
+  argument `@lookupKey`, and `@routine`. The clause transcribes `classifyQueryField`'s precedence, so
+  a new route ahead of that arm owes it a clause. If phase 3 refiles or dissolves the view, the
+  exclusion goes wherever the `PARTICIPANT_FAN_OUT` arm goes.
+
 ## Tests
 
 Per phase, and each named test is what answers "how do we know the item is complete".
