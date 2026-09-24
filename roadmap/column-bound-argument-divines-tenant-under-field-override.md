@@ -190,8 +190,9 @@ job than dismantling a leaf component and a larger one than the word "repoint" s
 would rather say so than have a later reader discover it. It retires when the tenant fold re-sources
 onto the store, with the rest of the transitional surface, and `ConditionOwnedField.resolvedColumn`
 (below) retires with it. The re-sourced fold reads the column-match facts (today
-`intent_argument_column_match` and `intent_input_field_column_match`, or whatever the `intent_`
-family's dissolution replaces them with), not the ranked winner of `intent_input_field_filter_role`.
+`graphitron_argument_column_match` and `graphitron_input_field_column_match`, the stage relations the
+`intent_` family's dissolution replaced them with), not the ranked winner of
+`graphitron_input_field_filter_role`.
 That relation ranks `CONDITION_OWNED` above `NAME_MATCHED`, which is this item's coupling written in
 SQL, and a fold reading it would bring back the goal table's eighth row.
 
@@ -342,7 +343,7 @@ the condition axis:
 - the filter walk firing the method.
 
 The column is a second axis beside the condition, the binding axis, and the component's javadoc names
-it that rather than a carrier role. `intent_input_field_carrier_role` correctly states that this
+it that rather than a carrier role. `graphitron_input_field_carrier_role` correctly states that this
 field drives no rail, and nothing here contradicts it. The component is `Optional<ColumnRef>` rather
 than a column list with an extraction because the only path that resolves a column here is the
 plain single-column lookup, whose extraction is `Direct` by construction.
@@ -441,7 +442,8 @@ node-dispatch facts that already partition per decoded tenant.
 
 The gap an earlier draft recorded here as R966's is closed: `collectFromInputFields` now handles
 `InputField.ColumnBackedReferenceField`, reading a `FilterBinding.Local` tuple at its decode slot and
-declining a `FilterBinding.Remote` one, so the write path no longer drops the carrier its query-path
+leaving a `FilterBinding.Remote` one to `MutationInputResolver`, which rejects it before the write
+classifies, so the write path no longer drops the carrier its query-path
 twin handles. Nothing in this item touches that descent.
 
 **The emitter audit the producer relaxation owes.** Widening which coordinates classify
@@ -550,9 +552,9 @@ work. The ledger inverts that. Totality becomes a correspondence between the sit
 `columnBindingOf` answers nothing for reproduces this item's own bug, a field that names the tenant
 column rejected for not naming it, with nothing in the tree failing. The compiler cannot see that
 correspondence, since the exhaustive switch forces an answer but not the right one. The body params
-are constructed at five arms today (verified: `bodyParams` is appended at `FieldBuilder.java:2825`,
-`2832`, `2852`, `2868` and, through `implicitBodyParams`, `2954` and `3011` folded in at `2772` and
-`2788`, and nowhere else), and each is a carrier `columnBindingOf` answers for. But a census true
+are constructed at five arms today (verified: `bodyParams` is appended at `FieldBuilder.java:3036`,
+`3043`, `3063`, `3079` and, through `implicitBodyParams`, `3165` and `3222` folded in at `2983` and
+`2999`, and nowhere else), and each is a carrier `columnBindingOf` answers for. But a census true
 when written is the "unguarded census" the enforcer principle names as a drift smell.
 
 So `ColumnBindingLedgerContainmentTest`, a meta-test in `graphitron`'s test tier, driven over every
@@ -1417,3 +1419,108 @@ the `BuildContext` comment and `InputFieldCarrierRoleTest`.
 
 This session wrote both round 5 and this revision, so `Spec -> Ready` needs a session that has
 committed neither.
+
+### Round 6 (2026-09-24, Spec -> Ready, reviewer session 01B41uiTShFtDzZhqBARcpJq)
+
+Verdict: withhold. One blocking finding on question two. It is narrow, and it is the only thing
+standing between this plan and Ready.
+
+Question one passes. When this lands, a consumer whose query field binds the tenant column on an
+argument or a filter-input field, and whose authored `@condition` replaces that slot's implicit
+predicate (by `override:` at field or argument level, by an input field's own `@condition`, or by an
+input field's own `@condition(override: true)`), gets a schema that builds and routes on that slot,
+where today the build fails with "no argument or input field maps to tenant column". The outcome is
+reachable. Round 5's finding is settled: `classifyInputFieldInternal` really does drop the resolved
+column at `BuildContext.java:3058`, the three `ConditionOwnedField` mint sites are the only ones in
+main (`3058`, `3085`, `3173`), no reader destructures the record, and only `UpdateRowsWalkerTest` and
+`DeleteRowsWalkerTest` construct it. The mint ahead of the emission switch fits the tree better
+than the per-arm mints did. It is the shape `columnBindingOf` needs to be exhaustive, and
+`ArgumentRef`'s nine arms and `InputField`'s five match the plan's lists exactly.
+
+**Finding 8 (question two: architecture fit). The containment pin, which the plan makes the sole
+enforcer of the predicate-path half of the ledger's domain, is specified over a harness that does
+not exist. The nearest harness that does exist cannot deliver what the plan claims for the pin.**
+
+The completeness argument has two enforcers. The compiler owns the suppressed half; the plan
+states that part and it holds. The other half rests on `ColumnBindingLedgerContainmentTest`, "driven
+over every fixture schema the tier already builds rather than over one fixture of its own", which
+the plan says turns red "on whatever existing fixture first reaches the arm". The plan also says it
+catches a misaligned `rt` on the `Customer | Staff` fixture. Nothing in the test tier enumerates the
+schemas other tests build:
+
+- `TestSchemaHelper.buildSchema` is a plain static call to `GraphitronSchemaBuilder.build`. The one
+  autodetected extension is `ClassificationTraceContextExtension`, and it does not collect schemas.
+- The `Customer | Staff` bare-`@nodeId` fixture the plan names lives inline in
+  `MultiTableFilterLoweringTest`. No other test can reach it.
+- The tier's cross-schema pins run over `CorpusDocuments.documents()`, sometimes with named
+  fixtures added: `OperationMemberMintPinTest`, `ExemptionRegistry`, `NodeIdDecodeCoverageRatchetTest`.
+  `ExemptionRegistry`'s javadoc uses "every fixture schema" to mean exactly that corpus. That makes
+  the corpus the reading an implementer will land on. Measured on this tree, the corpus holds three
+  condition members in two documents (`polymorphic-filter`'s two `OnParticipant` rows and one
+  `OnReturnTable` in `faceted-connection`). All three are plain `@field` scalar arguments. So the
+  corpus reaches one of the five body-param arms the census counts, and none of the reference, row
+  or input-field arms. `OperationMemberMintPinTest` says the same thing from the other side: it adds
+  per-kind floor fixtures because "the corpus is thin" on CONDITION.
+
+On the corpus, then, the pin is close to vacuous for four of the five arms. It does not catch "a new
+arm that emits without minting", because a new arm arrives with its own test class, not with a
+corpus document. That leaves the five-arm census unguarded, which is the drift smell the plan quotes
+to justify the pin. An implementer following the plan has to design the harness themselves, and the
+choice decides whether the completeness argument holds. That is the redesign-as-you-go this gate
+exists to catch, and it lands on the half of the argument the compiler cannot back.
+
+What would satisfy it: name the harness the pin runs over, and make the pin's claims match what that
+harness reaches. Which harness is the author's call. These would each do it:
+
+- the corpus plus named floor fixtures, one per body-param arm and one multi-table participant
+  pair, in the `OperationMemberMintPinTest` shape, with the "whatever existing fixture first reaches
+  the arm" claim weakened to what floors give;
+- a check that runs on every schema build in the test tier, which is what the claim as written
+  needs, stating where it hooks in;
+- containment checked where both sides are produced, so that every build enforces it and not only
+  every test.
+
+Whichever it is, the `rt`-alignment claim has to name a fixture that harness actually reaches.
+
+**Corrected in this commit, none of it changing what the implementer builds.**
+
+- The five-arm census cited stale line numbers. `bodyParams` is now appended at
+  `FieldBuilder.java:3036`, `3043`, `3063`, `3079`, and through `implicitBodyParams` at `3165` and
+  `3222`, folded in at `2983` and `2999`. The census itself still holds: nowhere else, and
+  `GeneratedConditionFilter` is constructed only at `3092`, inside `projectFilters`, whose one caller
+  is `projectForFilter`.
+- R955 landed after the last revision and renamed the store relations the retirement paragraph
+  names. `intent_argument_column_match`, `intent_input_field_column_match`,
+  `intent_input_field_filter_role` and `intent_input_field_carrier_role` are now the `graphitron_*`
+  stage tables of the same names. The ranking claim still holds: `CONDITION_OWNED` ranks 7 and
+  `NAME_MATCHED` 8 in `graphitron_input_field_filter_role_rule`.
+- The R966 rework made `collectFromInputFields`' `FilterBinding.Remote` arm a no-op, because
+  `MutationInputResolver` rejects that carrier before the write classifies. The "What stays"
+  paragraph said the arm declines. The plan does not touch that descent either way.
+
+**Non-blocking.**
+
+- The R966 rework also removed `declineRoutineWriteDecodes`. The plan body no longer names it, and
+  the earlier rounds that do name it are history.
+- The plan lists five `ConditionOwnedField` readers. `ContextArgumentClassifier`,
+  `GraphitronSchemaValidator` (two arms), `ParentSourceBinding` and `TypeFetcherGenerator` also read
+  it. Every one branches on carrier identity or the condition, so "no current reader moves" holds.
+- The pin needs the ledger visible to a test. `Bundle` already carries `decodeLedger` for the same
+  reason, so this is a signature detail, not a design one.
+
+Verified this round beyond the above. The goal-table tallies match: six moving, five unchanged, two
+still rejecting. The emit guards read as the Mechanism quotes them. `directBinding`'s four callers
+(`282`, `383`, `495`, `1090`) each hold a `FieldCoordinates`. `OperationMember.Condition.table()`
+exists on both arms. The `rt` alignment holds on the participant loop (`FieldBuilder.java:1212` and
+`1228`) and on the routine chain (`3663`). R382's changes since the last revision (the
+`PolymorphicOrderBy` member) touch neither the condition members nor the fold's direct-binding
+read. `accessOf`'s two switches read as the plan describes, with `ContextArg` passing itself as the
+leaf, and `MethodRef` is its only construction. `implicitBodyParam`'s `Direct`-to-`JooqConvert`
+rewrite is where the plan says it is. `TestConditionStub.inputColumnCondition` /
+`lifterFieldCondition`, `InputFieldConditionFixtures.tilgangAdminOnly`, `multitenant.graphqls`,
+`sameTableNodeIdFilterDivinesTheDecodedSlot`, the three `GraphitronSchemaBuilderTest` cases,
+`InputFieldCarrierRoleTest.aConditionOwnedFieldIsNoCarrier`, `Rejection.AuthorError.NoTenantBinding`,
+`MutationInputResolver`'s INSERT refusal and `EnumMappingResolver.buildLookupBindings`' skip all
+exist as named. So do the `tenant-scoping.adoc` promise (line 35), the `pipeline-overview.adoc`
+heading (line 28), the `fact-model.adoc` "Name the row" heading (line 31) and its quote (line 39),
+and both override sections of `condition-cascade.adoc`.
