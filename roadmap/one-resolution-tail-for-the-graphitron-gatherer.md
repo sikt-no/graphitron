@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 2
 theme: model-cleanup
-depends-on: [register-rules-become-owner-written-facts]
+depends-on: []
 created: 2026-09-21
 last-updated: 2026-09-21
 ---

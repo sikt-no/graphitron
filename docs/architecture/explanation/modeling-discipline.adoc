@@ -169,8 +169,8 @@ model on it, and do not take a shape found there as precedent.
 
 
 What holds, and holds well, is that a **new** relation cannot arrive without an owner and a grain.
-`MetaDeclarationGateTest` compares every observed relation against the declarations, the register and
-a frozen roster of relations nobody has got to yet, and that roster only shrinks. If you add a
+`MetaDeclarationGateTest` compares every observed relation against the declarations and a frozen
+roster of relations nobody has got to yet, and that roster only shrinks. If you add a
 relation, this is the gate you will meet.
 
 What does not hold:
