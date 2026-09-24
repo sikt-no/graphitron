@@ -1,5 +1,5 @@
 ---
-id: R971
+id: R974
 title: "Ordinals stop being shifted: the store keeps the number SQL gives it, and the fourteen subtractions go"
 status: Backlog
 bucket: cleanup
