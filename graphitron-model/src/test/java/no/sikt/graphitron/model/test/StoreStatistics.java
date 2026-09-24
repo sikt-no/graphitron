@@ -25,10 +25,10 @@ import org.jooq.DSLContext;
  *
  * <p><b>One column is never in that state, and both operations here turn on it.</b> A created store
  * declares {@link GraphPartition#DECLARED_SELECTIVITY} on the partition column of every graph-keyed
- * base table, before any capture and before any {@code ANALYZE}, because a refresh planning inside a
- * transaction has no other way to be told what that column holds. So the partition column reports a
- * stated value on a store that has never been analysed, and it reports it again after the reset
- * below.
+ * base table, before any capture and before any {@code ANALYZE}, because a derivation stage
+ * planning inside a transaction has no other way to be told what that column holds. So the
+ * partition column reports a stated value on a store that has never been analysed, and it reports
+ * it again after the reset below.
  */
 public final class StoreStatistics {
 

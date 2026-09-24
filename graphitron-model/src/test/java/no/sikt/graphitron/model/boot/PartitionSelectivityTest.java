@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * That a store states the partition dimension's selectivity on every relation carrying it, which is
  * the one statistic no {@code ANALYZE} can reach the pass that needs it with:
  * {@link GraphPartition#DECLARED_SELECTIVITY} carries why, and the short form is that H2's
- * {@code ANALYZE} commits, so a refresh planning inside a transaction can never run one.
+ * {@code ANALYZE} commits, so a derivation stage planning inside a transaction can never run one.
  *
  * <p><b>Exact rather than approximate.</b> The claim is over every graph-keyed base table the schema
  * declares, not a sample of them, because the sweep's whole argument over a hand-written line per
@@ -55,7 +55,7 @@ class PartitionSelectivityTest {
     /**
      * That the declaration is a property of the schema rather than of a session. The sweep runs
      * where the schema is created and never on reopen, so a warm store carries what its own creation
-     * stated; were the value session state, every reopened store would plan the refresh of a second
+     * stated; were the value session state, every reopened store would plan the stages of a second
      * graph without it.
      */
     @Test

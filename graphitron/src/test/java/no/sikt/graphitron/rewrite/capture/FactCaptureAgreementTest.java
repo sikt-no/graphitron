@@ -152,10 +152,10 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
  *       {@code JavaSourceFactsTest}: it is written by neither capture nor a graph, so its
  *       lifecycle anchor is partitioned by source file where the oracle families' are partitioned
  *       by graph, and there is no fixture here that would fill it.</li>
- *   <li>{@link Arm#DERIVED} for shipped derivations: views, the materialized capture-cadence
- *       derivations, and the authored rows describing the schema itself. A hand-written
- *       materialized derivation ({@code intent_type_domain}) has a writer that re-derives it
- *       inside every capture, materialized only because H2 has no safe recursive view form for a
+ *   <li>{@link Arm#DERIVED} for shipped derivations: views, the tables the derivation
+ *       stratum's steps write, and the authored rows describing the schema itself. A producer's
+ *       table ({@code intent_type_domain}) has a writer that re-derives it inside every
+ *       capture, stored only because H2 has no safe recursive view form for a
  *       cyclic type graph; its cadence and clearing follow the derivation, not an oracle, and the
  *       warm/cold census anchors its lifecycle like any capture-written rows. A stage is two
  *       relations under one rule and both are derived: the {@code _rule} view stating it, and the
