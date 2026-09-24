@@ -8,13 +8,11 @@ import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
-import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.DomainReturnType;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.FilterBinding;
-import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
@@ -32,7 +30,6 @@ import no.sikt.graphitron.model.jooq.TableRef;
 import no.sikt.graphitron.rewrite.model.TargetShape;
 import no.sikt.graphitron.rewrite.model.TenantBinding;
 import no.sikt.graphitron.rewrite.model.TenantScopes;
-import no.sikt.graphitron.rewrite.model.WhereFilter;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -80,7 +77,8 @@ public record TenantBindingIndex(
      * {@code <tenantColumn>} is configured. The direct-binding surface is read off the minted
      * {@link OperationMemberRelation} rows (the coordinate's condition, lookup and write
      * members), so the fold sees the coordinate's whole operation set rather than one summary
-     * arm's payload.
+     * arm's payload. A condition member's slots are read from {@code columnBindings}, the column
+     * each filter slot binds whatever an authored {@code @condition} does to its predicate.
      */
     public static TenantBindingIndex compute(
             GraphQLSchema sdl,
@@ -88,7 +86,8 @@ public record TenantBindingIndex(
             Map<String, EntityResolution> entitiesByType,
             Map<String, GraphitronType> types,
             TenantScopes scopes,
-            OperationMemberRelation operationMembers) {
+            OperationMemberRelation operationMembers,
+            ColumnBindingLedger columnBindings) {
         if (sdl == null) {
             return EMPTY;
         }
@@ -100,7 +99,8 @@ public record TenantBindingIndex(
                 ? EMPTY
                 : new TenantBindingIndex(Map.of(), Map.of(), markerRejections);
         }
-        return new Fold(sdl, fields, entitiesByType, types, configured, operationMembers).run();
+        return new Fold(sdl, fields, entitiesByType, types, configured, operationMembers,
+            columnBindings).run();
     }
 
     /**
@@ -144,6 +144,7 @@ public record TenantBindingIndex(
         private final Map<String, GraphitronType> types;
         private final TenantScopes.Configured scopes;
         private final OperationMemberRelation operationMembers;
+        private final ColumnBindingLedger columnBindings;
 
         private final Set<String> roots = new HashSet<>();
         private final String mutationRootName;
@@ -172,7 +173,8 @@ public record TenantBindingIndex(
              Map<String, EntityResolution> entitiesByType,
              Map<String, GraphitronType> types,
              TenantScopes.Configured scopes,
-             OperationMemberRelation operationMembers) {
+             OperationMemberRelation operationMembers,
+             ColumnBindingLedger columnBindings) {
             this.sdl = sdl;
             this.fields = fields;
             this.entitiesByType = entitiesByType;
@@ -188,6 +190,13 @@ public record TenantBindingIndex(
                     "tenant-binding fold requires the walk-minted operation member relation");
             }
             this.operationMembers = operationMembers;
+            if (columnBindings == ColumnBindingLedger.EMPTY) {
+                // Same ground as the member relation: a hand-built schema that never ran the walk
+                // would otherwise read every condition path as binding nothing.
+                throw new IllegalArgumentException(
+                    "tenant-binding fold requires the walk-minted column-binding ledger");
+            }
+            this.columnBindings = columnBindings;
             this.mutationRootName = sdl.getMutationType() == null ? null : sdl.getMutationType().getName();
             recordRoot(sdl.getQueryType());
             recordRoot(sdl.getMutationType());
@@ -280,7 +289,7 @@ public record TenantBindingIndex(
                 return null;
             }
             var members = operationMembers.membersOf(coord);
-            var direct = directBinding(members);
+            var direct = directBinding(coord, members);
             if (anyTenant && !direct.declines().isEmpty()) {
                 // A declined shape names the tenant column but cannot route on it. Each decline
                 // carries its own detail rather than falling through to the generic
@@ -437,7 +446,7 @@ public record TenantBindingIndex(
                     "'" + coordinate + "' reaches no tenant-scoped table: its data is global,"
                         + " so there is nothing to fan out over.");
             }
-            var slots = directBinding(members).slots();
+            var slots = directBinding(coord, members).slots();
             if (!slots.isEmpty()) {
                 return rejectFanOut(coordinate, List.of(BuildContext.DIR_TENANT_FAN_OUT),
                     "'" + coordinate + "' already binds the tenant column through "
@@ -493,7 +502,7 @@ public record TenantBindingIndex(
         private boolean edgeDivinesTenant(FieldCoordinates edge) {
             if (fields.get(edge) instanceof OutputField) {
                 var members = operationMembers.membersOf(edge);
-                if (directBinding(members).divines()) {
+                if (directBinding(edge, members).divines()) {
                     return true;
                 }
                 if (hasKind(members, OperationMember.Kind.NODE_RESOLVE)) {
@@ -679,18 +688,22 @@ public record TenantBindingIndex(
 
         /**
          * The tenant-divining slots across the coordinate's whole member set: every condition
-         * member's filter surface (a polymorphic root carries one condition member per
-         * participant, so the per-participant filters need no fallback), the lookup member's
+         * member's column-bound filter slots, read from the column-binding ledger row at the
+         * member's {@code (coordinate, table)} rather than from its emitted predicates, so an
+         * authored {@code @condition} that suppresses a slot's predicate leaves its binding in
+         * place (a polymorphic root carries one condition member per participant, so the
+         * per-participant rows need no fallback), the lookup member's
          * key mapping, an INSERT / UPSERT write member's {@code @table} input, and the WHERE
          * surface of the two verbs that have one. Deduped by slot name across members (the same
          * argument typically binds on every polymorphic participant, and one slot per name
          * suffices for the agreement fold).
          */
-        private DirectBinding directBinding(List<OperationMember> members) {
+        private DirectBinding directBinding(FieldCoordinates coord, List<OperationMember> members) {
             var collector = new SlotCollector();
             for (OperationMember member : members) {
                 switch (member) {
-                    case OperationMember.Condition c -> collectFromFilters(c.filters(), collector);
+                    case OperationMember.Condition c ->
+                        collectFromColumnBindings(columnBindings.slotsAt(coord, c.table()), collector);
                     case OperationMember.Lookup l -> collectFromLookup(l.lookupMapping(), collector);
                     case OperationMember.Write.Insert i -> collectFromTableInput(i.input(), collector);
                     case OperationMember.Write.Upsert u -> collectFromTableInput(u.input(), collector);
@@ -710,51 +723,21 @@ public record TenantBindingIndex(
             return members.stream().anyMatch(m -> m.kind() == kind);
         }
 
-        private void collectFromFilters(List<WhereFilter> filters, SlotCollector collector) {
-            for (WhereFilter filter : filters) {
-                if (!(filter instanceof GeneratedConditionFilter gcf)) continue;
-                for (BodyParam param : gcf.bodyParams()) {
-                    collectFromBodyParam(param, collector);
-                }
-            }
-        }
-
-        private void collectFromBodyParam(BodyParam param, SlotCollector collector) {
-            switch (param) {
-                case BodyParam.Eq eq -> {
-                    if (matchesTenantColumn(eq.column())) {
-                        collector.add(eq.name(), eq.column(), accessOf(eq.extraction(),
-                            TenantBinding.SlotRead.TopLevelArg.INSTANCE, 0));
-                    }
-                }
-                case BodyParam.In in -> {
-                    if (matchesTenantColumn(in.column())) {
-                        collector.add(in.name(), in.column(), accessOf(in.extraction(),
-                            TenantBinding.SlotRead.TopLevelArg.INSTANCE, 0));
-                    }
-                }
-                case BodyParam.RowEq rowEq -> collectFromRow(rowEq.name(), rowEq.columns(),
-                    rowEq.extraction(), collector);
-                case BodyParam.RowIn rowIn -> collectFromRow(rowIn.name(), rowIn.columns(),
-                    rowIn.extraction(), collector);
-                case BodyParam.RemoteColumnPredicate remote ->
-                    // The predicate lands on a joined table's column; a tenant column reached
-                    // through a @reference path still divines the operation's tenant.
-                    collectFromBodyParam(remote.inner(), collector);
-            }
-        }
-
         /**
-         * A tuple-shaped predicate: the tenant column's position in the tuple is the slot of the
-         * decode record the carrier's extraction produces, so the projection is read off the same
-         * index the predicate binds.
+         * A condition member's column-bound slots. The tenant column's position in a slot's
+         * column tuple is the slot of the decode record the slot's extraction produces, since the
+         * ledger records the tuple the decode yields, so the projection is read off the same
+         * index; an arity-1 slot reads index 0. A {@code @reference}-reached tenant column divines
+         * the operation's tenant exactly as a local one does.
          */
-        private void collectFromRow(String name, List<ColumnRef> columns,
-                                    CallSiteExtraction extraction, SlotCollector collector) {
-            for (int i = 0; i < columns.size(); i++) {
-                if (matchesTenantColumn(columns.get(i))) {
-                    collector.add(name, columns.get(i), accessOf(extraction,
-                        TenantBinding.SlotRead.TopLevelArg.INSTANCE, i));
+        private void collectFromColumnBindings(List<ColumnBindingLedger.ColumnBoundSlot> slots,
+                                               SlotCollector collector) {
+            for (var slot : slots) {
+                for (int i = 0; i < slot.columns().size(); i++) {
+                    if (matchesTenantColumn(slot.columns().get(i))) {
+                        collector.add(slot.slotName(), slot.columns().get(i), accessOf(slot.extraction(),
+                            TenantBinding.SlotRead.TopLevelArg.INSTANCE, i));
+                    }
                 }
             }
         }
@@ -1088,7 +1071,7 @@ public record TenantBindingIndex(
             }
             if (fields.get(edge) instanceof OutputField) {
                 var members = operationMembers.membersOf(edge);
-                if (directBinding(members).divines()) {
+                if (directBinding(edge, members).divines()) {
                     return true;
                 }
                 if (hasKind(members, OperationMember.Kind.NODE_RESOLVE)) {

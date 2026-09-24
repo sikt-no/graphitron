@@ -74,6 +74,12 @@ type Query {
     # tenant column. The wire value is an encoded key rather than the tenant value, so the routed
     # acquisition decodes it and reads slot 1; every id in one call must decode to one tenant.
     filmActorsByNodeId(ids: [ID!] @nodeId(typeName: "FilmActor")): [FilmActor!]!
+    # The suppressed-predicate arm: the field-level override takes every argument's implicit
+    # predicate over, so no predicate names film_id, yet the argument still binds the tenant
+    # column and routes the statement. The only field here whose slot cannot come from a
+    # predicate. Compile-only: the authored method names a column film does not carry.
+    filmsUnderOverride(filmId: Int! @field(name: "film_id")): [Film!]!
+        @condition(condition: {className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures", method: "tilgangAdminOnly"}, override: true)
     # FanOut arm: the query runs once per tenant in the request's fan-out domain (the factory's
     # tenant collection intersected with the tenant map) and the results union in domain order;
     # each row carries its tenant as per-element localContext, so children (the @splitQuery

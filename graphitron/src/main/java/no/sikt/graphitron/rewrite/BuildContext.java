@@ -338,6 +338,12 @@ class BuildContext {
      */
     private final NodeIdDecodeLedger decodeLedger = new NodeIdDecodeLedger();
     /**
+     * Which columns each filter slot of this run's classified fields binds, whatever an authored
+     * {@code @condition} does to the slot's predicate. Minted by {@code FieldBuilder}'s filter
+     * projection and read by the tenant fold after the walk.
+     */
+    private final ColumnBindingLedger columnBindingLedger = new ColumnBindingLedger();
+    /**
      * The catalog-wide tenant-scope classification, computed once at construction from the
      * configured {@code <tenantColumn>} element. {@link TenantScopes.None} for single-tenant
      * builds and for tests that construct a {@code BuildContext} without a catalog. Field
@@ -418,6 +424,11 @@ class BuildContext {
      */
     NodeIdDecodeLedger decodeLedger() {
         return decodeLedger;
+    }
+
+    /** This run's column-binding ledger, the tenant fold's condition-path read. */
+    ColumnBindingLedger columnBindingLedger() {
+        return columnBindingLedger;
     }
 
     RunContext ctx() {
@@ -3050,22 +3061,23 @@ class BuildContext {
         if (colEntry.isPresent()) {
             var e = colEntry.get();
             Optional<ArgConditionRef> cond = buildInputFieldCondition(field, parentTypeName, name, conditionFailures);
-            // @condition(override: true) means the explicit method owns the predicate entirely;
-            // the resolved column is unused by construction, so the carrier is ConditionOwnedField
-            // and the column is deliberately not recorded (both classification outcomes, column
-            // resolved and column missing, mint the same carrier).
+            var column = new ColumnRef(e.sqlName(), e.javaName(), e.columnClass());
+            // @condition(override: true) means the explicit method owns the predicate entirely, so
+            // the carrier is ConditionOwnedField (both classification outcomes, column resolved and
+            // column missing, mint the same carrier). The resolved column rides it on the binding
+            // axis: the method owns the SQL, while the field still names the column.
             if (cond.isPresent() && cond.get().override()) {
                 return new InputFieldResolution.Resolved(new InputField.ConditionOwnedField(
                     parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                    cond.get()));
+                    cond.get(), Optional.of(column)));
             }
             return new InputFieldResolution.Resolved(new InputField.ColumnBackedField(
                 parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                List.of(new ColumnRef(e.sqlName(), e.javaName(), e.columnClass())), cond,
+                List.of(column), cond,
                 new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct()));
         }
         // Column miss. @condition(override: true) lifts to ConditionOwnedField (the method owns
-        // the predicate; whether a column also resolved is not the carrier's fact). Otherwise the
+        // the predicate, and with no column resolved its resolvedColumn is empty). Otherwise the
         // field is genuinely unbound: with an authored @condition (override: false, required to
         // compose with an implicit predicate that has no column to bind) the malformed-shape fact
         // is minted here, keyed by this definition and the resolving table, unconditional on any
@@ -3084,7 +3096,7 @@ class BuildContext {
         if (unboundCond.isPresent() && unboundCond.get().override()) {
             return new InputFieldResolution.Resolved(new InputField.ConditionOwnedField(
                 parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                unboundCond.get()));
+                unboundCond.get(), Optional.empty()));
         }
         if (conditionDirective != null && !conditionDirective.override()) {
             // Typed as UnknownName so the attempted column and the Levenshtein candidates
@@ -3160,8 +3172,9 @@ class BuildContext {
                 // No route resolved and the leaf's own @condition(override: true) took the
                 // predicate. Same carrier the column-miss arm mints for the same reason: the method
                 // owns the whole WHERE contribution, so there is no implicit predicate for the
-                // generator to bind and the carrier records no columns. The decode still happens, in
-                // the glue, and rides the condition's own bound parameter. A condition build that
+                // generator to bind, and with no route resolved the carrier's resolvedColumn is
+                // empty. The decode still happens, in the glue, and rides the condition's own bound
+                // parameter. A condition build that
                 // fails here leaves the field unresolved rather than silently dropping to an unbound
                 // carrier the resolver has already ruled out.
                 if (condition.isEmpty()) {
@@ -3171,7 +3184,8 @@ class BuildContext {
                         + " not be resolved."));
                 }
                 return new InputFieldResolution.Resolved(new InputField.ConditionOwnedField(
-                    parentTypeName, name, locationOf(field), typeName, nonNull, list, condition.get()));
+                    parentTypeName, name, locationOf(field), typeName, nonNull, list, condition.get(),
+                    Optional.empty()));
             }
             case NodeIdLeafResolver.Resolved.SameTable st -> {
                 // Authored input-field @nodeId filter throws on malformed/wrong-type ids.

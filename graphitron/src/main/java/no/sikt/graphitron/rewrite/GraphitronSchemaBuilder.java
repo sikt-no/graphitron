@@ -126,9 +126,14 @@ public class GraphitronSchemaBuilder {
      * it stood on. It surfaces here rather than on the model because its one reader meets it with a
      * store-side operand after classification, at the capture window's fold point; see
      * {@link NodeIdDecodeCoverage}.
+     *
+     * <p>{@code columnBindings} is which columns each filter slot binds. Its one reader, the
+     * tenant fold, runs inside the build; it surfaces here so a test can read the row a carrier
+     * produced, since the input-field carriers it is minted from are not retained on the model.
      */
     public record Bundle(GraphitronSchema model, graphql.schema.GraphQLSchema assembled, boolean federationLink,
-                         boolean usesOneOf, NodeIdDecodeLedger decodeLedger) {}
+                         boolean usesOneOf, NodeIdDecodeLedger decodeLedger,
+                         ColumnBindingLedger columnBindings) {}
 
     /**
      * Convenience overload for tests that hand-craft a {@link TypeDefinitionRegistry} without
@@ -206,7 +211,8 @@ public class GraphitronSchemaBuilder {
         fieldBuilder.setTypeBuilder(typeBuilder);
         var result = buildSchema(bctx, typeBuilder, fieldBuilder);
         return new Bundle(result.model, result.assembled, federationLink,
-            OneOfDirectiveSdl.usesOneOf(result.assembled), bctx.decodeLedger());
+            OneOfDirectiveSdl.usesOneOf(result.assembled), bctx.decodeLedger(),
+            bctx.columnBindingLedger());
     }
 
     /**
@@ -341,6 +347,11 @@ public class GraphitronSchemaBuilder {
         // surface reads these rows.
         var operationMembers = OperationMemberRelation.compute(
             ctx.schema, dedupedFields, ctx.types, ctx.facts);
+        // Every predicate a condition member emits must have its slot in the column-binding
+        // ledger the tenant fold reads, or a new predicate arm would divine nothing with no
+        // failure anywhere. Ungated on tenancy, so every schema any build makes enforces it.
+        var columnBindings = ctx.columnBindingLedger();
+        columnBindings.requireCovers(operationMembers);
         // The materialized delivery fact: the post-walk fold of the gathered delivery markers
         // with the shape facts, read through GraphitronSchema.deliveryOf; anchor-hood (the
         // launcher membership predicate) is its first view.
@@ -350,7 +361,8 @@ public class GraphitronSchemaBuilder {
         // reaching path bound), so it is computed post-walk; read by the validator's tenant
         // mirror and the routing emitters.
         var tenantBindings = TenantBindingIndex.compute(
-            ctx.schema, dedupedFields, entitiesByType, ctx.types, ctx.tenantScopes, operationMembers);
+            ctx.schema, dedupedFields, entitiesByType, ctx.types, ctx.tenantScopes, operationMembers,
+            columnBindings);
         // The argument-reachability closure over input types: a type-grain fact with more than
         // one consumer (the input-record emit membership today, the compile graph's inputRecord
         // nodes at the graph's migration), computed once here so no emit-side site re-derives it.

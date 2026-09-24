@@ -60,6 +60,14 @@ class TestConditionStub {
     }
 
     /**
+     * Arg-level {@code @condition} method on an {@code Int} argument named {@code filmId} bound to
+     * the {@code film_id} column: receives the target table plus the argument value.
+     */
+    public static Condition filmIdArgCondition(org.jooq.Table<?> table, Integer filmId) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * Input-field-level {@code @condition} for a {@code @reference}-navigating field named
      * {@code languageName}.
      */

@@ -97,7 +97,7 @@ public final class TestSchemaHelper {
     public static GraphitronSchemaBuilder.Bundle buildBundle(String schemaText, RunContext ctx) {
         var bundle = GraphitronSchemaBuilder.buildBundle(parseRegistryWithPrelude(schemaText), ctx);
         return new GraphitronSchemaBuilder.Bundle(bundle.model(), emittedSchema(schemaText, ctx),
-            bundle.federationLink(), bundle.usesOneOf(), bundle.decodeLedger());
+            bundle.federationLink(), bundle.usesOneOf(), bundle.decodeLedger(), bundle.columnBindings());
     }
 
     /**

@@ -216,10 +216,16 @@ public sealed interface InputField extends GraphitronField
 
     /**
      * Input field whose explicit {@code @condition(override: true)} method owns the WHERE
-     * predicate entirely. No implicit column predicate is emitted by construction, so whether the
-     * field's name also resolves a column on the resolving table is deliberately not recorded:
-     * the column would be dead storage either way, and both classification outcomes (column
-     * resolved, column missing) mint this one carrier so it means exactly one thing.
+     * predicate entirely. No implicit column predicate is emitted by construction, and both
+     * classification outcomes (column resolved, column missing) mint this one carrier so it means
+     * exactly one thing on the condition axis.
+     *
+     * <p>{@code resolvedColumn} is the binding axis, beside the condition axis, and not a carrier
+     * role: the column the field's name resolved on the resolving table when the plain column
+     * lookup found one, empty on a column miss and on a {@code @nodeId} leaf whose route did not
+     * resolve. The authored method still owns the predicate either way; the column is what lets
+     * {@link no.sikt.graphitron.rewrite.ColumnBindingLedger} record that the field binds it, so
+     * the tenant fold reads a tenant-column binding whatever the condition does to the predicate.
      *
      * <p>The compact constructor pins the defining fact: the condition is present with
      * {@code override: true}. Consumers branch on carrier identity, never on a
@@ -238,11 +244,13 @@ public sealed interface InputField extends GraphitronField
         String typeName,
         boolean nonNull,
         boolean list,
-        ArgConditionRef condition
+        ArgConditionRef condition,
+        Optional<ColumnRef> resolvedColumn
     ) implements InputField {
 
         public ConditionOwnedField {
             java.util.Objects.requireNonNull(condition, "condition");
+            java.util.Objects.requireNonNull(resolvedColumn, "resolvedColumn");
             if (!condition.override()) {
                 throw new IllegalArgumentException(
                     "InputField.ConditionOwnedField '" + name

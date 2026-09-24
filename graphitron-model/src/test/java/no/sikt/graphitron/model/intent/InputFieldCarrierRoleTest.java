@@ -305,9 +305,9 @@ class InputFieldCarrierRoleTest {
     }
 
     /**
-     * A field whose {@code @condition(override: true)} owns the whole contribution records no
-     * column, so there is nothing for a carrier to point at. Named for a real column, again, so the
-     * absence is the classifier's fork and not a failed lookup.
+     * A field whose {@code @condition(override: true)} owns the whole contribution drives no
+     * rail, so it is no carrier, even when its name resolves a column. Named for a real column,
+     * again, so the absence is the classifier's fork and not a failed lookup.
      */
     @Test
     void aConditionOwnedFieldIsNoCarrier() {

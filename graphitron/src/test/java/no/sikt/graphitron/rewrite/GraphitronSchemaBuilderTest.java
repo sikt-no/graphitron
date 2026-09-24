@@ -70,6 +70,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
+import java.util.List;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -4468,7 +4469,7 @@ class GraphitronSchemaBuilderTest {
      * {@code @condition(override: true)} on a plain-input field whose name does not
      * match any column on the resolving table classifies as
      * {@link InputField.ConditionOwnedField}: the method owns the predicate entirely, so
-     * whether a column also resolves is not the carrier's fact, and requiring one would reject
+     * no column needs to resolve (the carrier's {@code resolvedColumn} is empty), and requiring one would reject
      * schemas where the condition method owns the WHERE clause. The projected filter list
      * carries only the explicit {@link ConditionFilter}, no {@link GeneratedConditionFilter}
      * / {@link BodyParam}.
@@ -4478,14 +4479,15 @@ class GraphitronSchemaBuilderTest {
         // Mirrors the opptak-subgraph SakFilterV2Input.sakskode shape: bare String field with
         // @condition(override: true) and no @field(name:); the resolving table has no column
         // matching the field name.
-        var schema = build("""
+        var sdl = """
             input PlainFilter {
               sakskode: String
                 @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "sakskodeCondition"}, override: true)
             }
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Query { films(filter: PlainFilter): [Film!]! }
-            """);
+            """;
+        var schema = build(sdl);
         assertThat(schema.type("PlainFilter")).isInstanceOf(PojoInputType.class);
         var f = (QueryField.QueryTableField) schema.field("Query", "films");
         // No implicit BodyParam — the field has no column binding; override:true means there's
@@ -4498,6 +4500,37 @@ class GraphitronSchemaBuilderTest {
             .map(ConditionFilter.class::cast)
             .findFirst().orElseThrow();
         assertThat(explicit.methodName()).isEqualTo("sakskodeCondition");
+        // Nor does the carrier hold a resolved column: no column row for the field.
+        assertThat(filmsColumnBindings(sdl)).isEmpty();
+    }
+
+    /**
+     * The column-binding rows a {@link InputField.ConditionOwnedField} produces for
+     * {@code Query.films} against {@code film}. The carrier is not retained on the model past the
+     * walk, so its {@code resolvedColumn} is read through the one row it feeds.
+     */
+    private static List<ColumnBindingLedger.ColumnBoundSlot> filmsColumnBindings(String sdl) {
+        var bundle = TestSchemaHelper.buildBundle(sdl);
+        var film = ((TableType) bundle.model().type("Film")).table();
+        return bundle.columnBindings().slotsAt(
+            graphql.schema.FieldCoordinates.coordinates("Query", "films"), film);
+    }
+
+    @Test
+    void conditionOwnedField_keepsTheColumnItResolved() {
+        // The emission assertions of the case stay as they are: the binding axis moved, emission
+        // did not.
+        var slots = filmsColumnBindings(
+            ArgumentParsingCase.INPUT_IMPLICIT_CONDITION_EXPLICIT_OVERRIDE_SUPPRESSES_OWN.sdl);
+        var filmId = slots.stream().filter(s -> s.slotName().equals("filmId")).findFirst().orElseThrow();
+        assertThat(filmId.columns()).extracting(ColumnRef::sqlName).containsExactly("film_id");
+        assertThat(filmId.extraction()).isEqualTo(new CallSiteExtraction.NestedInputField(
+            "filter", List.of("filmId"), new CallSiteExtraction.JooqConvert("FILM_ID")));
+    }
+
+    @Test
+    void conditionOwnedField_withNoMatchingColumnResolvesNone() {
+        assertThat(filmsColumnBindings(InputFieldResolutionCase.CONDITION_OWNED_FIELD.sdl)).isEmpty();
     }
 
     /**

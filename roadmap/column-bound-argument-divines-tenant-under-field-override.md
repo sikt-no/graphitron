@@ -438,7 +438,12 @@ The carrier change is pinned where the carrier's classification already is. In
 `GraphitronSchemaBuilderTest`, `INPUT_IMPLICIT_CONDITION_EXPLICIT_OVERRIDE_SUPPRESSES_OWN` (column
 resolved) asserts `resolvedColumn` present and naming `film_id`, and `CONDITION_OWNED_FIELD` and
 `plainInput_overrideTrueWithoutMatchingColumn_classifiesAsConditionOwnedField` (column missing) assert it
-empty. The emission assertions those cases already make stay as they are, which is the statement that
+empty. *As implemented:* input-field carriers are not retained on the model past the walk, so these
+assertions read `resolvedColumn` through the one ledger row it feeds (a slot `filmId` over `[film_id]`
+with a `NestedInputField(filter, [filmId], JooqConvert)` extraction, and no row slot at all for the
+column-miss shape). The ledger surfaces for that on `GraphitronSchemaBuilder.Bundle` as
+`columnBindings`, beside `decodeLedger`, which is there for the same reason; the two column-resolved and
+column-missing assertions are the `conditionOwnedField_*` tests beside the plain-input one. The emission assertions those cases already make stay as they are, which is the statement that
 the binding axis moved and emission did not. `UpdateRowsWalkerTest` and `DeleteRowsWalkerTest`
 construct the carrier directly and gain the argument, with no assertion change.
 

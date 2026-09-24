@@ -279,7 +279,7 @@ class DeleteRowsWalkerTest {
 
     private static InputField.ConditionOwnedField conditionOwnedFieldAt(String name, SourceLocation location) {
         return new InputField.ConditionOwnedField("In", name, location, "String", false, false,
-            new ArgConditionRef(null, true));
+            new ArgConditionRef(null, true), Optional.empty());
     }
 
     private static CallSiteExtraction.NodeIdDecodeKeys dummyDecode(List<ColumnRef> columns) {

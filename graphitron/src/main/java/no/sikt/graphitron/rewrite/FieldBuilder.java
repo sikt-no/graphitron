@@ -2813,7 +2813,9 @@ class FieldBuilder {
     private TableFieldComponents projectForFilter(List<ArgumentRef> refs, String parentTypeName,
                                                   GraphQLFieldDefinition fieldDef,
                                                   TableRef rt, String returnTypeName, List<Rejection> errors) {
-        var filters = projectFilters(refs, parentTypeName, fieldDef, rt, returnTypeName, errors);
+        var columnSlots = new ArrayList<ColumnBindingLedger.ColumnBoundSlot>();
+        var filters = projectFilters(refs, parentTypeName, fieldDef, rt, returnTypeName, errors,
+            columnSlots);
         if (filters == null) return new TableFieldComponents.Rejected(foldRejections(errors));
         ConditionFilter fieldCondition;
         switch (conditionResolver.resolveField(fieldDef)) {
@@ -2880,6 +2882,10 @@ class FieldBuilder {
                 : foldRejections(errors);
             return new TableFieldComponents.Rejected(r);
         }
+        // Recorded only for a surface that projects, with its final filter list, so a rejected
+        // field leaves no row.
+        ctx.columnBindingLedger().record(
+            graphql.schema.FieldCoordinates.coordinates(parentTypeName, fieldDef.getName()), rt, columnSlots, filters);
         return new TableFieldComponents.Ok(filters, orderBy,
             paginationResolver.resolve(ctx.facts.pagination(), fieldDef), lookup);
     }
@@ -2939,10 +2945,15 @@ class FieldBuilder {
      * <p>All column-bound scalar args and implicit column-equality predicates from {@code @table}
      * input fields are grouped into a single {@link GeneratedConditionFilter} entry. The condition
      * class is named {@code <returnTypeName>Conditions} and the method {@code <fieldName>Condition}.
+     *
+     * <p>Every column-bound slot is added to {@code columnSlots} ahead of the emission decision
+     * (see {@link #columnBindingOf(ArgumentRef)}), so a predicate suppressed by an authored
+     * {@code @condition} still leaves the slot's column binding for the tenant fold.
      */
     private List<WhereFilter> projectFilters(List<ArgumentRef> refs, String parentTypeName,
                                              GraphQLFieldDefinition fieldDef,
-                                             TableRef rt, String returnTypeName, List<Rejection> errors) {
+                                             TableRef rt, String returnTypeName, List<Rejection> errors,
+                                             List<ColumnBindingLedger.ColumnBoundSlot> columnSlots) {
         var bodyParams = new ArrayList<BodyParam>();
         var argConditions = new ArrayList<WhereFilter>();
         boolean hadError = false;
@@ -2953,6 +2964,7 @@ class FieldBuilder {
         // derived occurrence-path relation uses as its key.
         String useSiteCoordinate = parentTypeName + "." + fieldDef.getName();
         for (var ref : refs) {
+            columnBindingOf(ref).ifPresent(columnSlots::add);
             switch (ref) {
                 case ArgumentRef.OrderByArg ignored -> {}                     // handled by OrderByResolver
                 case ArgumentRef.PaginationArgRef ignored -> {}               // handled by PaginationResolver
@@ -2977,7 +2989,7 @@ class FieldBuilder {
                     String tiaSummary = "plain input type '" + tia.typeName() + "'";
                     walkInputFieldConditions(tia.fields(), useSiteCoordinate, tia.name(), List.of(),
                         enclosingOverride, tia.nonNull(),
-                        lookupBoundNames, implicitParams, argConditions, errors,
+                        lookupBoundNames, implicitParams, columnSlots, argConditions, errors,
                         tia.inputTable(), tiaSummary);
                     if (errors.size() > errorsBefore) hadError = true;
                     bodyParams.addAll(implicitParams);
@@ -2993,7 +3005,7 @@ class FieldBuilder {
                     int errorsBefore = errors.size();
                     walkInputFieldConditions(pia.fields(), useSiteCoordinate, pia.name(), List.of(),
                         enclosingOverride, pia.nonNull(),
-                        Set.of(), implicitParams, argConditions, errors, rt,
+                        Set.of(), implicitParams, columnSlots, argConditions, errors, rt,
                         "plain input type '" + pia.typeName() + "'");
                     if (errors.size() > errorsBefore) hadError = true;
                     bodyParams.addAll(implicitParams);
@@ -3124,6 +3136,10 @@ class FieldBuilder {
      * {@code @lookupKey} bindings on the enclosing {@code TableInputArg}. These must not also
      * emit an implicit condition (the VALUES+JOIN path owns them).
      *
+     * <p>{@code columnSlots} collects every non-lookup-bound field's column binding
+     * ({@link #columnBindingOf(InputField, String, List)}) whether or not its implicit predicate
+     * is emitted.
+     *
      * <p>{@code outerArgName} is the top-level field-argument name (e.g. {@code "filter"}).
      * {@code pathPrefix} is the list of Map keys from {@code outerArgName} down to the parent of
      * {@code fields}; empty at the top level.
@@ -3142,6 +3158,7 @@ class FieldBuilder {
             List<InputField> fields, String useSiteCoordinate, String outerArgName, List<String> pathPrefix,
             boolean enclosingOverride, boolean effectiveNonNull, Set<String> lookupBoundNames,
             List<BodyParam> implicitBodyParams,
+            List<ColumnBindingLedger.ColumnBoundSlot> columnSlots,
             List<WhereFilter> out,
             List<Rejection> walkRejections,
             TableRef resolvingTable,
@@ -3151,6 +3168,12 @@ class FieldBuilder {
         for (var f : fields) {
             var leafPath = new ArrayList<>(pathPrefix);
             leafPath.add(f.name());
+            // Asked ahead of the emission guards below, whose suppression clauses decide only
+            // which SQL is emitted. The lookup clause stays: a lookup-bound field is not on the
+            // predicate path at all, and the lookup mapping owns its tenant slot.
+            if (!lookupBoundNames.contains(f.name())) {
+                columnBindingOf(f, outerArgName, leafPath).ifPresent(columnSlots::add);
+            }
             switch (f) {
                 case InputField.ColumnBackedField cf -> {
                     cf.condition().ifPresent(c -> out.add(conditionResolver.rewrapForNested(c.filter(), outerArgName, leafPath)));
@@ -3228,7 +3251,7 @@ class FieldBuilder {
                         || nf.condition().map(ArgConditionRef::override).orElse(false);
                     walkInputFieldConditions(nf.fields(), useSiteCoordinate, outerArgName, leafPath,
                         nestOverride, effectiveNonNull && nf.nonNull(),
-                        lookupBoundNames, implicitBodyParams, out, walkRejections,
+                        lookupBoundNames, implicitBodyParams, columnSlots, out, walkRejections,
                         resolvingTable, containerSummary);
                 }
                 case InputField.ConditionOwnedField cof ->
@@ -3330,9 +3353,7 @@ class FieldBuilder {
         // condition method as the column's Java type on the nested path exactly as it does
         // top-level. @nodeId leaves branch earlier in BuildContext and arrive here as
         // NodeIdDecodeKeys, so this substitution never touches them.
-        if (leaf instanceof CallSiteExtraction.Direct && "ID".equals(graphqlTypeName)) {
-            leaf = new CallSiteExtraction.JooqConvert(column.javaName());
-        }
+        leaf = implicitLeaf(leaf, graphqlTypeName, column);
         // For NodeId-decoded and JooqConvert leaves the post-coercion value is the column's typed
         // Java class (single scalar or List of it). For Direct, ID scalars stay String; everything
         // else takes the column's Java type.
@@ -3365,6 +3386,83 @@ class FieldBuilder {
         return list
             ? new BodyParam.RowIn(fieldName, columns, nonNull, nested)
             : new BodyParam.RowEq(fieldName, columns, nonNull, nested);
+    }
+
+    /**
+     * The leaf an implicit input-field predicate reads its value through: a {@code Direct} leaf
+     * on an {@code ID}-typed field coerces through the column's {@code DataType}
+     * ({@code JooqConvert}), every other leaf stands. Shared by the predicate builder and the
+     * column-binding question, so a slot's recorded extraction is the one its predicate carries.
+     */
+    private static CallSiteExtraction implicitLeaf(CallSiteExtraction leaf, String graphqlTypeName,
+                                                   ColumnRef column) {
+        if (leaf instanceof CallSiteExtraction.Direct && "ID".equals(graphqlTypeName)) {
+            return new CallSiteExtraction.JooqConvert(column.javaName());
+        }
+        return leaf;
+    }
+
+    /**
+     * Which columns an argument binds, asked ahead of the emission decision so an authored
+     * {@code @condition} that suppresses the argument's implicit predicate (a field-level or
+     * argument-level {@code override: true}) leaves the binding in place. The columns are the
+     * ones the predicate would bind, and the extraction the one it would carry.
+     *
+     * <p>A {@code @lookupKey} argument answers nothing: it is not on the predicate path, and the
+     * lookup mapping owns its tenant slot (including a decoded key, whose ids each carry their
+     * own tenant). The input arguments answer nothing here because their fields answer in
+     * {@link #walkInputFieldConditions}.
+     */
+    private static Optional<ColumnBindingLedger.ColumnBoundSlot> columnBindingOf(ArgumentRef ref) {
+        return switch (ref) {
+            case ArgumentRef.ScalarArg.ColumnBackedArg ca -> ca.isLookupKey()
+                ? Optional.empty()
+                : Optional.of(new ColumnBindingLedger.ColumnBoundSlot(
+                    ca.name(), ca.columns(), ca.extraction()));
+            // No lookup flag: an FK target is a filter, not a lookup.
+            case ArgumentRef.ScalarArg.ColumnBackedReferenceArg cra ->
+                Optional.of(new ColumnBindingLedger.ColumnBoundSlot(
+                    cra.name(), predicateColumns(cra.binding(), cra.columns()), cra.extraction()));
+            case ArgumentRef.ScalarArg.ConditionOwnedArg ignored -> Optional.empty();
+            case ArgumentRef.ScalarArg.UnboundArg ignored -> Optional.empty();
+            case ArgumentRef.UnclassifiedArg ignored -> Optional.empty();
+            case ArgumentRef.OrderByArg ignored -> Optional.empty();
+            case ArgumentRef.PaginationArgRef ignored -> Optional.empty();
+            case ArgumentRef.InputTypeArg.TableInputArg ignored -> Optional.empty();
+            case ArgumentRef.InputTypeArg.PlainInputArg ignored -> Optional.empty();
+        };
+    }
+
+    /**
+     * Which columns an input field binds at one use site, asked ahead of the emission decision so
+     * an enclosing {@code override: true} or the field's own {@code @condition} (either override
+     * value) leaves the binding in place. The extraction is the
+     * {@link CallSiteExtraction.NestedInputField} the field's implicit predicate would carry. A
+     * {@link InputField.ConditionOwnedField} answers with the column its name resolved, when one
+     * did; a nesting field's own fields answer on the recursive visit.
+     */
+    private static Optional<ColumnBindingLedger.ColumnBoundSlot> columnBindingOf(
+            InputField field, String outerArgName, List<String> leafPath) {
+        return switch (field) {
+            case InputField.ColumnBackedField cf -> Optional.of(nestedSlot(
+                cf.name(), cf.columns(), cf.extraction(), cf.typeName(), outerArgName, leafPath));
+            case InputField.ColumnBackedReferenceField rf -> Optional.of(nestedSlot(
+                rf.name(), predicateColumns(rf.binding(), rf.columns()), rf.extraction(),
+                rf.typeName(), outerArgName, leafPath));
+            case InputField.ConditionOwnedField cof -> cof.resolvedColumn().map(column -> nestedSlot(
+                cof.name(), List.of(column), new CallSiteExtraction.Direct(), cof.typeName(),
+                outerArgName, leafPath));
+            case InputField.NestingField ignored -> Optional.empty();
+            case InputField.UnboundField ignored -> Optional.empty();
+        };
+    }
+
+    private static ColumnBindingLedger.ColumnBoundSlot nestedSlot(
+            String name, List<ColumnRef> columns, CallSiteExtraction leaf, String graphqlTypeName,
+            String outerArgName, List<String> leafPath) {
+        return new ColumnBindingLedger.ColumnBoundSlot(name, columns,
+            new CallSiteExtraction.NestedInputField(outerArgName, List.copyOf(leafPath),
+                implicitLeaf(leaf, graphqlTypeName, columns.get(0))));
     }
 
     /**

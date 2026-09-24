@@ -656,6 +656,278 @@ class TenantBindingClassificationTest {
                 && r.detail().contains("no argument or input field maps to tenant column"));
     }
 
+    // ===== A column-bound filter slot divines whatever @condition does to its predicate =====
+
+    private static final String STUB = "no.sikt.graphitron.rewrite.TestConditionStub";
+
+    /** A field-level {@code @condition(override: true)} whose method binds no argument. */
+    private static final String FIELD_OVERRIDE =
+        "@condition(condition: {className: \"" + STUB + "\", method: \"lifterFieldCondition\"}, override: true)";
+
+    private static TenantBinding.BoundSlot onlySlot(GraphitronSchema schema, String field) {
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+        var binding = schema.tenantBindingOf("Query", field);
+        assertThat(binding).isInstanceOf(TenantBinding.ArgumentBound.class);
+        var bound = (TenantBinding.ArgumentBound) binding;
+        assertThat(bound.bindings()).hasSize(1);
+        assertThat(bound.primary().column().sqlName()).isEqualTo("film_id");
+        return bound.primary();
+    }
+
+    private static void assertNoTenantBinding(GraphitronSchema schema, String field, String detail) {
+        assertThat(schema.tenantBindingOf("Query", field)).isNull();
+        assertThat(schema.tenantBindings().rejections())
+            .anyMatch(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding r
+                && r.coordinate().equals("Query." + field)
+                && r.detail().contains(detail));
+    }
+
+    @Test
+    void siblingArgumentOverrideLeavesTheTenantArgumentBound() {
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type Query {
+                films(filmId: Int @field(name: "film_id"),
+                      title: String @field(name: "title")
+                        @condition(condition: {className: "%s", method: "argConditionRenamed",
+                            argMapping: "city: title"}, override: true)): [Film!]!
+            }
+            """.formatted(STUB));
+
+        var slot = onlySlot(schema, "films");
+        assertThat(slot.slotName()).isEqualTo("filmId");
+        assertThat(slot.read()).isEqualTo(TenantBinding.SlotRead.TopLevelArg.INSTANCE);
+        assertThat(slot.projection()).isEqualTo(TenantBinding.SlotProjection.Raw.INSTANCE);
+    }
+
+    @Test
+    void fieldLevelOverrideLeavesTheTenantArgumentBound() {
+        // The field-level override suppresses every argument's implicit predicate; the argument
+        // still names the tenant column, and routing reads the binding, not the predicate.
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type Query {
+                films(filmId: Int @field(name: "film_id")): [Film!]! %s
+            }
+            """.formatted(FIELD_OVERRIDE));
+
+        var slot = onlySlot(schema, "films");
+        assertThat(slot.slotName()).isEqualTo("filmId");
+        assertThat(slot.read()).isEqualTo(TenantBinding.SlotRead.TopLevelArg.INSTANCE);
+        assertThat(slot.projection()).isEqualTo(TenantBinding.SlotProjection.Raw.INSTANCE);
+    }
+
+    @Test
+    void tenantArgumentsOwnOverrideLeavesItBound() {
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type Query {
+                films(filmId: Int @field(name: "film_id")
+                    @condition(condition: {className: "%s", method: "filmIdArgCondition"}, override: true)): [Film!]!
+            }
+            """.formatted(STUB));
+
+        var slot = onlySlot(schema, "films");
+        assertThat(slot.slotName()).isEqualTo("filmId");
+        assertThat(slot.read()).isEqualTo(TenantBinding.SlotRead.TopLevelArg.INSTANCE);
+        assertThat(slot.projection()).isEqualTo(TenantBinding.SlotProjection.Raw.INSTANCE);
+    }
+
+    @Test
+    void tenantArgumentsOwnConditionWithoutOverrideStaysBound() {
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type Query {
+                films(filmId: Int @field(name: "film_id")
+                    @condition(condition: {className: "%s", method: "filmIdArgCondition"})): [Film!]!
+            }
+            """.formatted(STUB));
+
+        var slot = onlySlot(schema, "films");
+        assertThat(slot.slotName()).isEqualTo("filmId");
+        assertThat(slot.read()).isEqualTo(TenantBinding.SlotRead.TopLevelArg.INSTANCE);
+        assertThat(slot.projection()).isEqualTo(TenantBinding.SlotProjection.Raw.INSTANCE);
+    }
+
+    @Test
+    void filterInputFieldUnderFieldLevelOverrideIsBound() {
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            input FilmFilter { filmId: Int @field(name: "film_id") }
+            type Query {
+                films(filter: FilmFilter): [Film!]! %s
+            }
+            """.formatted(FIELD_OVERRIDE));
+
+        var slot = onlySlot(schema, "films");
+        assertThat(slot.slotName()).isEqualTo("filmId");
+        assertThat(slot.read()).isEqualTo(new TenantBinding.SlotRead.NestedInput("filter", List.of("filmId")));
+        assertThat(slot.projection()).isEqualTo(TenantBinding.SlotProjection.Raw.INSTANCE);
+    }
+
+    @Test
+    void filterInputFieldCarryingItsOwnConditionIsBound() {
+        // An input field's own @condition replaces its implicit predicate rather than stacking with
+        // it, so this shape lost the binding with no override anywhere in the schema.
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            input FilmFilter {
+                filmId: ID @field(name: "film_id")
+                    @condition(condition: {className: "%s", method: "inputColumnCondition"})
+            }
+            type Query { films(filter: FilmFilter): [Film!]! }
+            """.formatted(STUB));
+
+        var slot = onlySlot(schema, "films");
+        assertThat(slot.slotName()).isEqualTo("filmId");
+        assertThat(slot.read()).isEqualTo(new TenantBinding.SlotRead.NestedInput("filter", List.of("filmId")));
+        assertThat(slot.projection()).isEqualTo(TenantBinding.SlotProjection.Raw.INSTANCE);
+    }
+
+    @Test
+    void filterInputFieldCarryingItsOwnOverrideIsBound() {
+        // The one suppression made at classification: the field classifies ConditionOwnedField,
+        // which emits no predicate at all, so only its resolved column says it binds film_id.
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            input FilmFilter {
+                filmId: ID @field(name: "film_id")
+                    @condition(condition: {className: "%s", method: "inputColumnCondition"}, override: true)
+            }
+            type Query { films(filter: FilmFilter): [Film!]! }
+            """.formatted(STUB));
+
+        var slot = onlySlot(schema, "films");
+        assertThat(slot.slotName()).isEqualTo("filmId");
+        assertThat(slot.read()).isEqualTo(new TenantBinding.SlotRead.NestedInput("filter", List.of("filmId")));
+        assertThat(slot.projection()).isEqualTo(TenantBinding.SlotProjection.Raw.INSTANCE);
+    }
+
+    @Test
+    void lookupKeyTenantArgumentUnderFieldLevelOverrideStaysBound() {
+        // The lookup mapping owns this slot; it never came from a predicate.
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type Query {
+                films(filmId: [Int!]! @field(name: "film_id") @lookupKey): [Film]! %s
+            }
+            """.formatted(FIELD_OVERRIDE));
+
+        var slot = onlySlot(schema, "films");
+        assertThat(slot.slotName()).isEqualTo("filmId");
+        assertThat(slot.read()).isEqualTo(TenantBinding.SlotRead.TopLevelArg.INSTANCE);
+        assertThat(slot.projection()).isEqualTo(TenantBinding.SlotProjection.Raw.INSTANCE);
+    }
+
+    @Test
+    void decodedLookupKeyStaysRejectedWithNoSuppressionActive() {
+        // Each decoded @lookupKey id carries its own tenant, so the batch has no single tenant to
+        // route one statement on. With a plain @condition and no override anywhere, the lookup
+        // clause of the column-binding question is the only thing keeping this slot out of the
+        // ledger; without it a cross-tenant ids: batch would read one tenant's database.
+        var schema = build("""
+            type FilmActor implements Node @table(name: "film_actor")
+                    @node(keyColumns: ["actor_id", "film_id"]) {
+                id: ID! @nodeId
+            }
+            type Query {
+                filmActorsByIds(ids: [ID!]! @nodeId(typeName: "FilmActor") @lookupKey): [FilmActor]!
+                    @condition(condition: {className: "%s", method: "lifterFieldCondition"})
+            }
+            """.formatted(STUB));
+
+        assertNoTenantBinding(schema, "filmActorsByIds", "no argument or input field maps to tenant column");
+        var error = schema.tenantBindings().rejections().stream()
+            .filter(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding r
+                && r.coordinate().equals("Query.filmActorsByIds"))
+            .findFirst().orElseThrow();
+        assertThat(error.rejection()).isInstanceOf(Rejection.AuthorError.NoTenantBinding.class);
+    }
+
+    @Test
+    void nodeIdFilterInputFieldDivinesTheDecodedSlot() {
+        // The filter-input half of the decoded-key read: the nested @nodeId field's slot comes
+        // from the column-binding ledger, reading the input path and decoding the key.
+        var schema = build("""
+            type FilmActor implements Node @table(name: "film_actor")
+                    @node(keyColumns: ["actor_id", "film_id"]) {
+                id: ID! @nodeId
+            }
+            input FilmActorFilter { id: ID @nodeId(typeName: "FilmActor") }
+            type Query { filmActors(filter: FilmActorFilter): [FilmActor!]! }
+            """);
+
+        var slot = onlySlot(schema, "filmActors");
+        assertThat(slot.slotName()).isEqualTo("id");
+        assertThat(slot.read()).isEqualTo(new TenantBinding.SlotRead.NestedInput("filter", List.of("id")));
+        assertThat(slot.projection())
+            .isInstanceOfSatisfying(TenantBinding.SlotProjection.DecodedKeySlot.class,
+                decoded -> assertThat(decoded.slot()).isEqualTo(1));
+    }
+
+    @Test
+    void sameTableNodeIdArgumentUnderFieldLevelOverrideDivinesTheDecodedSlot() {
+        // The two axes compose: the location comes from the suppressed carrier the ledger
+        // recorded, the transform from its extraction. Arity 1 on purpose, the shape a
+        // column-count discriminator would get wrong.
+        var schema = build("""
+            type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+                id: ID! @nodeId
+                title: String
+            }
+            type Query {
+                filmsByNodeId(ids: [ID!] @nodeId(typeName: "Film")): [Film!]! %s
+            }
+            """.formatted(FIELD_OVERRIDE));
+
+        var slot = onlySlot(schema, "filmsByNodeId");
+        assertThat(slot.slotName()).isEqualTo("ids");
+        assertThat(slot.read()).isEqualTo(TenantBinding.SlotRead.TopLevelArg.INSTANCE);
+        assertThat(slot.projection())
+            .isInstanceOfSatisfying(TenantBinding.SlotProjection.DecodedKeySlot.class,
+                decoded -> assertThat(decoded.slot()).isZero());
+    }
+
+    private static final String DECLINE =
+        "no single decode to route the statement on";
+
+    private static String occSchema(String members, String fieldDirectives) {
+        return """
+            type Inventory implements Node @table(name: "inventory") @node(keyColumns: ["inventory_id"]) {
+                id: ID! @nodeId
+            }
+            type FilmActor implements Node @table(name: "film_actor")
+                    @node(keyColumns: ["actor_id", "film_id"]) {
+                id: ID! @nodeId
+            }
+            union Occ = %s
+            type Query { occ(id: ID! @nodeId): [Occ!]! %s }
+            """.formatted(members, fieldDirectives);
+    }
+
+    @Test
+    void multiTablePolymorphicNodeIdDeclinesInBothMemberOrders() {
+        // Inventory's key omits film_id and FilmActor's embeds it; putting Inventory first is the
+        // order that tells a per-participant read from a coordinate-wide one.
+        for (String members : List.of("Inventory | FilmActor", "FilmActor | Inventory")) {
+            assertNoTenantBinding(build(occSchema(members, "")), "occ", DECLINE);
+        }
+    }
+
+    @Test
+    void multiTablePolymorphicNodeIdUnderFieldLevelOverrideDeclinesWithItsOwnMessage() {
+        // The suppressed carrier still reaches the fold, and the decline channel, not a mint-side
+        // clause, keeps it from routing.
+        for (String members : List.of("Inventory | FilmActor", "FilmActor | Inventory")) {
+            var schema = build(occSchema(members, FIELD_OVERRIDE));
+            assertNoTenantBinding(schema, "occ", DECLINE);
+            assertThat(schema.tenantBindings().rejections())
+                .noneMatch(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding r
+                    && r.coordinate().equals("Query.occ")
+                    && r.detail().contains("no argument or input field maps to tenant column"));
+        }
+    }
+
     @Test
     void noTenantColumnMeansNoAxis() {
         var schema = TestSchemaHelper.buildSchema("""

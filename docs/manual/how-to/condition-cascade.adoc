@@ -42,6 +42,8 @@ type Query {
 
 The implementation key is `ScalarArg.suppressedByFieldOverride() || argCondition.override()` in `FieldBuilder.projectFilters`: only the argument's own `BodyParam` is skipped; sibling arguments build their own `BodyParam` independently.
 
+The override governs which predicate is emitted, never tenant routing: an argument bound to the tenant column still routes the statement to the tenant it names when its own predicate is overridden (see xref:tenant-scoping.adoc[How-to: Tenant scoping]).
+
 == Field-level `override: true`: scoped to all direct arguments
 
 The wide override:
@@ -59,6 +61,8 @@ type Query {
 Field-level `override: true` suppresses the implicit predicates for *every* direct argument and, when an argument is an input type, every implicit column-equality predicate inside the input. The explicit method runs alone (in this example, alongside whatever inner explicit `@condition` annotations might be on the input's fields, but those are already covered by argument-level conditions; on a flat scalar arg list, there's just the field's own method).
 
 This is the right shape when the developer's condition method takes over completely: a multi-column boolean expression that the implicit equality decomposition would interfere with.
+
+The suppression is about SQL only. An argument or input field bound to the tenant column still routes the statement to the tenant it names under a field-level override, although no implicit predicate for it is emitted (see xref:tenant-scoping.adoc[How-to: Tenant scoping]).
 
 == Filter input + outer `override: true`: the cascade rule
 
@@ -94,6 +98,8 @@ Net SQL `WHERE`: `(film_id >= 2) AND (film_id = 1)`. With the fixture data (`fil
 The implementation key is `walkInputFieldConditions` in `FieldBuilder`: every `case` arm adds the `cf.condition()` filter to `out` unconditionally, while the implicit `BodyParam` is gated on `!enclosingOverride && cf.condition().isEmpty()`. The two paths are independent.
 
 The same shape applies recursively to nested input types: a `NestingField` propagates `enclosingOverride = enclosingOverride || (this nesting's @condition has override:true)` to its children. Implicit predicates anywhere below an override layer are suppressed; explicit predicates anywhere below are preserved.
+
+None of this touches tenant routing. An input field bound to the tenant column routes the statement on its value whether its implicit predicate is suppressed by an enclosing override, replaced by the field's own `@condition`, or owned outright by the field's own `@condition(override: true)`: those decide the SQL, and the column binding alone decides the tenant (see xref:tenant-scoping.adoc[How-to: Tenant scoping]).
 
 == Divergence from legacy semantics
 
