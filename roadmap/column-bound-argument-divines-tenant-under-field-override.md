@@ -1,44 +1,29 @@
 ---
 id: R965
-title: "Column-bound argument slots divine the tenant under a field-level @condition override"
+title: "A column-bound filter slot divines the tenant whatever @condition does to its predicate"
 status: Spec
 bucket: bug
 priority: 2
 theme: classification-model
 depends-on: []
 created: 2026-09-22
-last-updated: 2026-09-23
+last-updated: 2026-09-24
 ---
 
-# Column-bound argument slots divine the tenant under a field-level @condition override
+# A column-bound filter slot divines the tenant whatever @condition does to its predicate
 
 ## Goal
 
-A query field whose argument, or whose filter input's field, is bound to the tenant column keeps its
-tenant binding whatever an authored `@condition` does to the predicate for that argument. Today it
-loses it: the field is rejected at build time with "no argument or input field maps to tenant column
-'X'", although the argument names exactly that column, so a schema that is correct by the author's
-reading does not generate. *Tenant binding* is how a generated fetcher knows which tenant database to
-route a query to; a *tenant-scoped* table is one carrying the column named by the Mojo's
-`<tenantColumn>`, and a field reaching such a table is accepted only when something in scope can
-*divine* that column, meaning supply one value for it. Whether a predicate is emitted for an argument
-is an emission decision; where the tenant value comes from is a classification fact, and the two
-should not be tied together.
-
-The separation holds for every wire shape, including an encoded node id. It did not when this plan
-was first written: the tenant component of a node key existed only after a decode the predicate path
-performed, so dropping the predicate dropped the only place the value was produced, and the plan
-carried a clause preserving today's behaviour for those carriers. R966 has since landed and made a
-bound slot carry its *transform* beside its location, so the decode is a property of the slot
-(`TenantBinding.SlotProjection.DecodedKeySlot`, resolved by `accessOf` and rendered by
-`TenantDslEmitter.projected`) rather than of the predicate. The clause is therefore never written and
-the mint predicate is uniform, which is the outcome this plan's seam section predicted for the order
-the two items actually landed in.
-
-One family still stays out, and it is a routing fact rather than an emission one: a `@lookupKey`
-decoded key carries one tenant per row, so a list of them has no single tenant to route a statement
-on. That exclusion is the lookup clause below, it is owned by `collectFromLookup` today, and it is
-unaffected by anything here.
+A query field whose argument, or whose filter input's field, is bound to the tenant column routes on
+that value whatever an authored `@condition` does to the predicate for it. Today it does not: when the
+`@condition` takes the predicate over (an `override: true` on the field or on the argument, or any
+`@condition` on the input field itself), the build rejects the field with "no argument or input field
+maps to tenant column 'X'", although the argument names exactly that column. *Tenant binding* is how
+a generated fetcher picks the tenant database a query runs on; a *tenant-scoped* table is one carrying
+the column the Mojo's `<tenantColumn>` names, and a field reaching one builds only when something in
+scope *divines* that column, meaning supplies one value for it. After this item, `override:` and an
+input field's `@condition` decide which SQL predicate is emitted and nothing else; which tenant the
+statement routes to is decided by the column binding alone.
 
 The pair that reported it, both real sis fields (2026-09-22 spike,
 `<tenantColumn>INSTITUSJONSNR_EIER</tenantColumn>`):
@@ -60,11 +45,17 @@ type Query {
 `eierOrganisasjonskode` binds `INSTITUSJONSNR_EIER`, which is the tenant column. The field is rejected
 anyway.
 
-The reach is wider than that pair, and the discriminating set is what this item delivers. Every row
-below is a schema that was built against the sakila fixture catalog with `film_id` as the tenant
-column and its verdict read off `GraphitronSchema.tenantBindingOf`, not a reading of the code
-(2026-09-22 spike; the `today` column re-checked against the post-R966 tree on 2026-09-23, where no
-verdict moved, only the read behind the eleventh):
+In the sis schema this shape accounts for 11 of the 121 root fields a tenant-configured build rejects
+(`brukere`, `personProfiler`, `studenter`, `emner`, `emnerV2`, `esiKandidater`, `evuKurs`,
+`studieoppbygninger`, `utvekslingsavtaler`, `personProfilerGittFeideBrukere`,
+`studenterGittFeideBrukere`), and more than that in effect: a child of a tenant-scoped type inherits its
+tenant only when every path into the type binds one, so `Query.personProfiler` failing keeps every
+`PersonProfil` child red too.
+
+The shapes this item moves are wider than that pair, and the table below is the discriminating set it
+delivers. Every row is a schema built against the sakila fixture catalog with `film_id` as the tenant
+column, its verdict read off `GraphitronSchema.tenantBindingOf` (measured 2026-09-22, re-measured
+2026-09-23):
 
 | SDL shape, on a field returning tenant-scoped `film` | today | when this lands |
 |------------------------------------------------------|-------|-----------------|
@@ -82,616 +73,457 @@ verdict moved, only the read behind the eleventh):
 | the same, under a field-level `@condition(override: true)` | rejected | `ArgumentBound` |
 | a field where nothing binds the tenant column | rejected | rejected |
 
-Six rows are worth reading twice. The fourth says the Backlog framing was half right: it is not that
-an argument-level override is safe and a field-level one is not, it is that an override anywhere over
-the *tenant argument's own* predicate loses the binding, and the reported field only classified
-because its override sat on a sibling. The seventh says `override:` is not even necessary to trigger
-this: an input field carrying an ordinary `@condition` replaces its implicit predicate too, so the
-same binding disappears with no override in the schema at all. The eighth is the fourth's input-field
-twin, and it loses the binding one stage earlier than the others: the classifier mints a carrier for
-it that records no column, so no emission decision is involved at all. It is the one row whose repair
-touches a carrier rather than only the fold.
+Four things the table says that its rows do not say one at a time:
 
-The tenth, eleventh and twelfth are the decoded-key family, and they now split on one line rather than
-sharing a reason. The tenth stays rejecting because `@lookupKey` routes it to the per-row family,
-where one tenant per row belongs; that is the lookup clause, and it is the only decoded-key exclusion
-this item keeps. The eleventh is pure regression: it classifies `ArgumentBound` today reading the
-decoded slot, and R966 pins that with `sameTableNodeIdFilterDivinesTheDecodedSlot`, so this item only
-has to not break it. The twelfth is the row this item moves, and it moves because R966 landed
-first: the suppression drops the predicate, the ledger mints anyway, and `accessOf` resolves the
-slot's projection to the tenant component of the decoded key, so the field builds and routes where it
-used to reject. Under the pre-R966 read it would have built and failed at request time, which is why
-the earlier draft of this plan kept it rejecting.
+- **The trigger is an override over the tenant argument's own predicate, wherever it sits.** The
+  reported field classified only because its override sat on a sibling (row two); the same override
+  on the tenant argument itself rejects (row four).
+- **`override:` is not needed.** An input field carrying an ordinary `@condition` replaces its implicit
+  predicate rather than stacking with it (the documented filter-input semantics), so row seven loses
+  the binding with no override anywhere in the schema.
+- **Encoded ids behave like any other wire shape.** A `@nodeId` argument whose decoded key embeds the
+  tenant column already routes on the decoded tenant (row eleven), so under an override it moves with
+  the rest (row twelve).
+- **Two rows stay rejected, and neither is about emission.** Row ten is a routing fact: decoded
+  `@lookupKey` ids each carry their own tenant, so a batch of them has no single tenant to route one
+  statement on, and they keep partitioning per id as they do today. Row thirteen is the obligation
+  this axis exists for: routing tenant data through the default connection when nothing named the
+  tenant is the leak it prevents.
 
-A carrier the uniform mint predicate now reaches, and should: a multi-table polymorphic `@nodeId`
-argument, whose `CallSiteExtraction.PruneOnMismatch` leaf `accessOf` *declines*, because the same
-wire id decodes differently per participant and there is no single decode to route on. Suppressed,
-such a field rejects today with the generic "nothing maps to the tenant column"; after this item it
-rejects with that decline's own text, naming the shape. The verdict does not move, only the message,
-and it moves in the direction the decline channel exists for. It holds whatever order the union lists
-its members in, including an order whose first participant's key omits the tenant column, because
-the fold reads each participant's ledger rows on their own, the way it reads each participant's
-filters today.
+One shape changes its message but not its verdict. A multi-table polymorphic `@nodeId` argument (a
+field returning a union of tenant-scoped tables, filtered by one `id: ID! @nodeId` argument) decodes
+the same wire id differently per member table, so there is no single decode to route on. Under a
+field-level override it rejects today with the generic "nothing maps to the tenant column"; after this
+item it rejects with the specific text it already gets without an override, which names the shape. That
+holds whatever order the union lists its members in.
 
-The last row is the obligation that does not move: a field that binds nothing
-to the tenant column still rejects, because routing tenant data through a default connection when
-nothing named the tenant is the leak this axis exists to prevent.
+## Mechanism
 
-## Mechanism (verified against the tree, 2026-09-23, post-R966)
-
-`TenantBindingIndex.Fold.directBinding` discovers an operation's tenant slots per member. For a
-condition member it delegates to `collectFromFilters`, which walks
-`GeneratedConditionFilter.bodyParams()` and, through `collectFromBodyParam` and `collectFromRow`,
-mints a `TenantBinding.BoundSlot` for every `BodyParam` whose column matches the tenant column. The
-slot therefore exists only where a predicate was emitted. R966 renamed these three and gave the slot
-a second axis; it did not change where the condition path sources them from, so this is the same
-defect the item was filed against.
+`TenantBindingIndex.Fold.directBinding` collects a coordinate's tenant slots per operation member.
+For a condition member (the WHERE contribution against one table) it calls `collectFromFilters`, which
+walks `GeneratedConditionFilter.bodyParams()`, the implicit predicates the generator emits, and mints a
+`TenantBinding.BoundSlot` for every `BodyParam` whose column is the tenant column (through
+`collectFromBodyParam` and `collectFromRow`). A slot therefore exists only where a predicate was
+emitted.
 
 `FieldBuilder.projectFilters` is the single construction site of `GeneratedConditionFilter`, and it
-declines to emit a predicate in three places, each of which removes a tenant slot as a side effect:
+declines to emit an implicit predicate in three places:
 
-- `suppressedByFieldOverride` on the `ColumnBackedArg` / `ColumnBackedReferenceArg` arms: a
-  field-level `@condition(override: true)` suppresses every classified argument's implicit predicate.
-  The comment at the site reads "Either flag flipping true suppresses the implicit predicate for
-  every classified field".
-- `argCondition().override()` on the same arms: an argument-level override suppresses that one
-  argument's predicate. Where the override sits on the tenant argument itself, its slot goes with it.
-- `walkInputFieldConditions`, whose implicit predicate for a `ColumnBackedField` is conditioned on
-  `!enclosingOverride && cf.condition().isEmpty() && !lookupBoundNames.contains(...)`. The middle
-  clause is the documented input-field semantics (an authored `@condition` on an input field
-  *replaces* the implicit equality rather than stacking with it, unlike the top-level argument case),
-  so this arm loses the tenant slot with no override present anywhere.
+- `ScalarArg.suppressedByFieldOverride()` on the `ColumnBackedArg` and `ColumnBackedReferenceArg`
+  arms: a field-level `@condition(override: true)` suppresses every classified argument's predicate.
+- `argCondition().override()` on the same arms: an argument-level override suppresses that argument's
+  predicate.
+- `walkInputFieldConditions`, which emits an input field's implicit predicate only under
+  `!enclosingOverride && condition().isEmpty() && !lookupBoundNames.contains(name)`. The middle clause
+  is the replace-rather-than-stack rule for input fields, so this arm drops the predicate with no
+  override present.
 
-The column binding survives all three. `ConditionResolver.resolveArg` documents the condition
-axis as coexisting with the column-binding axis on the same argument; `ArgumentRef.ScalarArg.ColumnBackedArg`
-still carries `columns()` beside `suppressedByFieldOverride`, and `InputField.ColumnBackedField` still
-carries `columns()` beside `condition()`. The fold reads the wrong axis.
+In all three the column binding survives on the carrier: `ArgumentRef.ScalarArg.ColumnBackedArg` and
+`ColumnBackedReferenceArg` still carry `columns()`, and `InputField.ColumnBackedField` and
+`ColumnBackedReferenceField` still carry `columns()` beside `condition()`. The fold reads the wrong
+axis.
 
-A fourth suppression happens before `projectFilters` runs, and there the binding does not survive.
+A fourth suppression happens earlier, at classification, and there the binding does not survive.
 `BuildContext.classifyInputFieldInternal` resolves a plain input field's column and then, when the
-field's own condition is `override: true`, mints `InputField.ConditionOwnedField`, whose record carries
-no column: its javadoc calls the resolved column "dead storage", and both outcomes (column resolved,
-column missing) mint the one carrier. The argument side has no such fork, since a scalar argument
-under its own override stays `ColumnBackedArg` (only a no-route `@nodeId` argument becomes
-`ConditionOwnedArg`). Nor does the `@nodeId` input leaf: a same-table or FK-target leaf under its own
-override stays `ColumnBackedField` / `ColumnBackedReferenceField` (`inputFieldFromNodeIdResolved`),
-and only its no-route `AuthorOwnedPredicate` arm becomes `ConditionOwnedField`. So this is the goal
-table's eighth row. The walk would have suppressed the implicit predicate anyway, because its guard
-drops any `ColumnBackedField` whose `condition()` is present, so the carrier choice costs the
-emission nothing and costs the classification the column.
+field's own condition is `override: true`, mints `InputField.ConditionOwnedField`, which records no
+column (both the column-resolved and the column-missing outcome mint it). This is row eight. The
+argument side has no such fork: a scalar argument under its own override stays `ColumnBackedArg`, and
+so do the `@nodeId` input leaves under their own override (`inputFieldFromNodeIdResolved`); only their
+no-route arms become condition-owned.
 
-The other direct-slot paths do not have this problem, and the reason is the design this item
-generalises: `collectFromLookup` reads `LookupMapping.ColumnMapping`, `collectFromTableInput` reads
-`ArgumentRef.InputTypeArg.TableInputArg`, and `collectFromWhereKeys` reads `Dml.whereKeyColumns()`.
-All three are classification carriers rather than emitted
-predicates, so suppression cannot reach them. The ninth row of the goal table is that fact measured:
-a `@lookupKey` tenant argument still classifies under a field-level override, because its slot never
-came from a predicate.
+The fold's other direct-binding descents do not have the problem, because they read classification
+carriers rather than emitted predicates: `collectFromLookup` reads `LookupMapping.ColumnMapping`,
+`collectFromTableInput` reads the `ArgumentRef.InputTypeArg.TableInputArg` envelope, and
+`collectFromWhereKeys` reads `Dml.whereKeyColumns()`. Row nine is that fact measured: a `@lookupKey`
+tenant argument keeps divining under a field-level override because its slot never came from a
+predicate. This item moves the condition path onto the same footing.
+
+Two facts about the fold the plan leans on. A bound slot carries its transform beside its location:
+`accessOf` resolves a node-id extraction to `TenantBinding.SlotProjection.DecodedKeySlot`, and
+`TenantDslEmitter.projected` renders the decode helper for it off the slot, not off a predicate, so a
+decoded tenant does not need an emitted predicate to be read (row twelve). And `collectFromLookup`
+skips `LookupMapping.ColumnMapping.LookupArg.DecodedRecord` on purpose, since decoded lookup ids carry
+per-id tenants; that skip is row ten, and this item leaves it alone.
 
 ## Implementation
 
-The fold gets the column-binding axis as a fact of its own, minted where the walk holds it.
+The fold gets the column-binding axis as a fact of its own, minted where the walk holds it and read
+where it reads the other classification carriers.
 
-**Why this fact travels walk-side, and what retires it.** The store is where a new fact belongs
-(`pipeline-overview.adoc`, "Classification gathers (transitional)": new facts land only in the store,
-never in a new leaf type or walk-side registry), and the raw materials are already captured
-(`graphitron_argument_binding_entry` for an argument's `@field` binding, `graphitron_field_column_scope`
-for the table its names resolve against). This item cannot read them, and the reason is the pipeline's
-stage order rather than a preference: `GraphQLRewriteGenerator.runPipeline` classifies before it
-captures, so at the moment `TenantBindingIndex` runs, this run's rows are not in the store yet. A
-store-sourced answer means moving the tenant verdict itself downstream of capture, which is a
-re-platforming of the axis (its verdicts feed emitters, not only the error stream) and not a bug fix.
-So the carrier below is interim by construction, and this plan says so rather than letting the next
-reader infer it: it is keyed and grained the way the relation would be, one row per coordinate,
-filtered table and slot. Grain is the half that carries over cleanly; the row's `CallSiteExtraction` column is the half
-that does not, being an emit carrier no relation can hold, so the retirement is a repoint of one
-reader *plus* a re-derivation of the extraction-to-read mapping from stored facts. That is a smaller
-job than dismantling a leaf component and a larger one than the word "repoint" suggests, and the plan
-would rather say so than have a later reader discover it. It retires when the tenant fold re-sources
-onto the store, with the rest of the transitional surface, and `ConditionOwnedField.resolvedColumn`
-(below) retires with it. The re-sourced fold reads the column-match facts (today
-`graphitron_argument_column_match` and `graphitron_input_field_column_match`, the stage relations the
-`intent_` family's dissolution replaced them with), not the ranked winner of
-`graphitron_input_field_filter_role`.
-That relation ranks `CONDITION_OWNED` above `NAME_MATCHED`, which is this item's coupling written in
-SQL, and a fold reading it would bring back the goal table's eighth row.
+**Where the fact lives, and why there.** Every filter slot's column binding is already captured in the
+store (`graphitron_argument_column_match` and `graphitron_input_field_column_match`, with
+`graphitron_field_column_scope` naming the table the names resolve against), and that is where the
+tenant fold belongs once it re-sources. It cannot read those rows here: `GraphQLRewriteGenerator.runPipeline`
+classifies before it captures, so this run's rows do not exist yet when `TenantBindingIndex` runs, and
+moving the tenant verdict downstream of capture re-platforms the whole axis (its verdicts feed
+emitters, not only the error stream). So what this item adds is a transitional read path for a
+walk-side reader: a ledger the walk fills and the fold reads, retiring with that reader when the fold
+re-sources onto the store. `pipeline-overview.adoc` forbids a walk-side registry for a *new* fact; this
+one carries an existing fact to an existing reader, is grained the way the relation is (one row per
+coordinate, filtered table and slot), and has `NodeIdDecodeLedger` as its shape precedent. Two notes
+bind the re-sourcing. The row's `CallSiteExtraction` is an emit carrier no relation holds, so the
+retirement is a repoint plus a re-derivation of the extraction-to-read mapping from stored facts. And
+the re-sourced fold must read the column-match relations, not the ranked winner of
+`graphitron_input_field_filter_role`: that relation ranks `CONDITION_OWNED` above `NAME_MATCHED`, which
+restates this item's coupling in SQL and would bring back the goal table's eighth row.
 
-**A walk-minted ledger, tenancy-neutral.** New `ColumnBindingLedger` in `no.sikt.graphitron.rewrite`,
-rows keyed by `FieldCoordinates` and the `TableRef` the coordinate's filters resolve against, each
-row a list of
-`ColumnBoundSlot(String slotName, List<ColumnRef> columns, CallSiteExtraction extraction)`: every
-argument and input field on the filter walk whose classification resolved a column, whatever
-`projectFilters` then decided to emit for it. A `@lookupKey` slot is excluded, and keeps the owner it
-has; the mint predicate below states the exclusion exactly. It knows nothing about tenancy; it answers "which column does this slot name, and how is its value read at the
-call site", which the classification has already answered and then been throwing away. The tuple is a
-list because a composite carrier (the node-key case) binds several columns at once, and the columns
-recorded are the ones the predicate would have bound (`predicateColumns(binding, columns)` on the
-reference arms), so a `@reference`-reached tenant column keeps divining exactly as today's
-`RemoteColumnPredicate` unwrap does. `NodeIdDecodeLedger` is the shape precedent, not the provenance
-precedent: that ledger records what the walk *did*, which no relation could hold, while this one
-records a function of the SDL and the catalog that a relation will hold.
+**`ColumnBindingLedger`.** A new final class in `no.sikt.graphitron.rewrite`. Rows are keyed by
+`(FieldCoordinates, TableRef)`, and each row is a `List<ColumnBoundSlot>`, where
+`ColumnBoundSlot(String slotName, List<ColumnRef> columns, CallSiteExtraction extraction)` answers
+"which columns does this argument or input field bind, and how is its value read at the call site". The
+columns are the ones the implicit predicate binds (`predicateColumns(binding, columns)` on the reference
+arms, so a `@reference`-reached tenant column divines exactly as today's `RemoteColumnPredicate` unwrap
+lets it), and the extraction is the one the predicate carries. The columns are a list because a
+node-key carrier binds a tuple. The ledger names no tenancy type: the fold supplies the tenancy reading
+when it reads a row.
 
-**The row carries the extraction, and `accessOf` stays the one resolver.** A row holds the
-`CallSiteExtraction` the classification already resolved for that slot beside the columns the
-predicate would have bound, and the fold turns the pair into a `TenantBinding.BoundSlot` through the
-existing `accessOf`, which is where the tenancy projection belongs: the ledger stays free of tenancy
-vocabulary, and the extraction-to-access mapping stays in one function rather than being copied to a
-second site. The honest cost is that `CallSiteExtraction` is an emission carrier (its decode arms
-reach `HelperRef`), so a row holding one is not yet the plain value row the relation this prefigures
-would hold; that conversion belongs with the re-sourcing, not ahead of it.
+The table is in the key because on a multi-table polymorphic coordinate both walks run once per
+participant table, and one slot can bind a different tuple per participant: a bare
+`occ(id: ID! @nodeId)` over `union Occ = Inventory | FilmActor` binds `[inventory_id]` on one and
+`(actor_id, film_id)` on the other, since each decodes the id as its own node type. The key is the
+`(coordinate, table)` a condition member carries (`OperationMember.Condition.table()`), so the fold
+reads one row per member and `SlotCollector`'s match-then-dedupe stays the only dedupe across
+participants.
 
-The ledger read hands `accessOf` the same three things `collectFromRow` hands it today, which is what
-makes this a re-sourcing rather than a new resolution path: the row's extraction, a fallback read of
-`TenantBinding.SlotRead.TopLevelArg.INSTANCE`, and the matching column's index in the row's own
-column list. The index needs no new component on the row, and that is worth stating because it is the
-one place a reader would expect one. `accessOf`'s `decodeSlot` parameter is the tenant column's
-position in the key tuple a decode returns, and today `collectFromRow` derives exactly that from the
-position in `rowEq.columns()`, which is `predicateColumns(binding, columns)`, which is what the row
-records. The alignment holds on both bindings: `FilterBinding.Local` contributes `ownTableColumns`,
-the lifted FK tuple R966's write path already reads at the decode slot its position names, and
-`FilterBinding.Remote` contributes the carrier's own columns, which are the target NodeType's key
-tuple and so are the decode's output by construction.
-
-A nested input field needs no special handling either. Its row carries the wrapped
-`NestedInputField(outerArgName, leafPath, leaf)` extraction, and `accessOf` matches that arm first,
-taking the read from it and the transform from its leaf, so the fallback is ignored exactly as it is
-on today's condition path, where the body param carries the same wrapped extraction.
-
-One thing `accessOf` owes on the way past, carried over from this plan's earlier draft and unchanged
-in force by R966. Its leaf switch ends in `default -> SlotProjection.Raw`, which reads "the wire value
-already is the tenant value". That is the right answer for `Direct`, `JooqConvert`, `EnumValueOf`
-and `ContextArg`, and the wrong one, silently, for any future extraction arm that decodes. Making the leaf switch
-exhaustive turns a new arm into a compile error asking which projection it is. It changes no verdict
-today, because every arm reaching it keeps today's answer, and the four record-shaped arms
-(`NodeIdDecodeRecord`, `NodeIdDecodePolymorphicRecord`, `InputBean`, `JooqRecord`) throw an invariant
-naming the carrier rather than answering: they are whole-input extractions minted by
-`InputBeanResolver`, `ServiceCatalog` and the fetcher generator for arguments that bind no single
-column, so no column-bound slot can carry one, which is what makes the exhaustiveness worth more than
-a `default` under a longer spelling.
-
-The two location arms differ at the leaf switch, because the first switch treats them differently.
-`NestedInputField` unwraps to its leaf, so it reaches the leaf switch only through a doubly-wrapped
-extraction nothing mints, and throws the same invariant. `ContextArg` does not unwrap: its first-switch
-arm sets the `SlotRead.ContextArg` location and passes the extraction itself on as the leaf, so a bare
-`ContextArg` reaches the leaf switch on every slot that carries one and resolves `Raw` today through
-the `default`. It keeps `Raw` as an explicit arm. A context value is a value the caller supplied, not
-an encoding of one, which is the same reading `Direct` gets; and throwing there would turn the
-first-switch arm, and the `SlotRead.ContextArg` renderings in `TenantDslEmitter` and
-`RoutineWriteCommands.slotReadOf`, into a guaranteed crash. Nothing mints a `ContextArg` on a
-column-bound carrier today (its one construction is `MethodRef`, for method parameters), so this
-decides what the switch says, not any verdict.
-
-**Held and threaded like the decode ledger.** A `private final ColumnBindingLedger` field on
-`BuildContext` beside `decodeLedger`, with a package-private accessor; `GraphitronSchemaBuilder` reads
-it off the context at schema assembly, the same read it already makes for `bctx.decodeLedger()`, and
-passes it into `TenantBindingIndex.compute` beside `operationMembers`. `compute` keeps its
-not-computed sentinel discipline: a `ColumnBindingLedger.EMPTY` compared by reference identity, so a
-hand-built schema that never ran the walk is refused rather than silently classifying everything
-unbound, exactly as the `OperationMemberRelation.EMPTY` check does today.
-
-**One mint per classified slot, ahead of the emission decision.** The ledger is not minted inside
-the emission guards. Before each walk decides what to emit for a slot, it asks the slot one question,
-"which columns does this carrier bind", and records the answer. The emission switch that follows is
-untouched. The question is two private static functions in `FieldBuilder`, each an exhaustive switch
-with no `default`:
+**One question per slot, asked ahead of the emission decision.** Two private static functions in
+`FieldBuilder`, each an exhaustive switch with no `default`, answer "which columns does this carrier
+bind":
 
 - `columnBindingOf(ArgumentRef)`, called at the top of `projectFilters`' loop body.
   - `ColumnBackedArg` answers its `columns()` with its `extraction()`, unless `isLookupKey()`.
   - Both `ColumnBackedReferenceArg` arms answer `predicateColumns(binding(), columns())` with their
-    `extraction()`. They have no `isLookupKey` slot by construction, an FK target being a filter and
-    not a lookup.
-  - Every other arm answers nothing: `ConditionOwnedArg`, whose no-route `@nodeId` resolved no
-    column; `UnboundArg`; `UnclassifiedArg`; `OrderByArg`; `PaginationArgRef`; and the two
+    `extraction()`. They carry no lookup flag: an FK target is a filter, not a lookup.
+  - Every other arm answers nothing: `ConditionOwnedArg` (a no-route `@nodeId` that resolved no
+    column), `UnboundArg`, `UnclassifiedArg`, `OrderByArg`, `PaginationArgRef`, and the two
     `InputTypeArg` arms, whose fields the walk answers for.
 - `columnBindingOf(InputField, outerArgName, leafPath)`, called at the top of
-  `walkInputFieldConditions`' loop body, where `leafPath` is already computed, and only when
-  `!lookupBoundNames.contains(f.name())`.
+  `walkInputFieldConditions`' loop body when `!lookupBoundNames.contains(f.name())`.
   - `ColumnBackedField` answers its `columns()`.
   - `ColumnBackedReferenceField` answers `predicateColumns(binding(), columns())`.
-  - `ConditionOwnedField` answers its `resolvedColumn()` when present (the carrier change below).
+  - `ConditionOwnedField` answers its `resolvedColumn()` when present (below).
   - `NestingField` and `UnboundField` answer nothing; a nesting field's own fields answer on the
     recursive visit.
 
-  The extraction is the wrapped `NestedInputField(outerArgName, leafPath, leaf)`, not the bare leaf,
-  because `accessOf` reads the wrapper to resolve a `NestedInput` location while taking the transform
-  from the leaf. The leaf is the one a body param carries. `implicitBodyParam` rewrites a `Direct`
-  leaf on an `ID`-typed field to `JooqConvert` before wrapping it, and that rewrite moves into a helper
-  that both `implicitBodyParam` and this function call, so the substitution stays in one place. A
-  `ConditionOwnedField` builds no body param and still takes the same rewrite. Both leaves resolve
-  `Raw`, so no verdict hangs on the choice; what hangs on it is the row being exactly what a body
-  param would have been.
+  The extraction is the wrapped `NestedInputField(outerArgName, leafPath, leaf)` a body param would
+  carry, since `accessOf` reads the location from the wrapper and the transform from the leaf. The leaf
+  is the body param's too: `implicitBodyParam` rewrites a `Direct` leaf on an `ID`-typed field to
+  `JooqConvert`, and that rewrite moves into a helper both it and this function call, so the
+  substitution is written once. A `ConditionOwnedField` builds no body param and takes the same
+  rewrite.
 
-The mint predicate is therefore "the carrier binds a column, and the slot is not lookup-bound". Every
-clause of the emission guards that is not a lookup clause drops out of it without being named, and
-every one of those clauses is a suppression: `!autoSuppressed` on the argument arms, and
-`!enclosingOverride && <carrier>.condition().isEmpty()` on the input-field arms, the second pair being
-the documented replace-rather-than-stack semantics for an input field. A suppression drops a
-predicate in favour of authored SQL. That is emission, and the ledger answering ahead of it is the
-whole of this item. The lookup clauses (`!ca.isLookupKey()`, `!lookupBoundNames.contains(...)`) are
-kept because they say something different: the slot is not on the predicate path at all, since
-`@lookupKey` routes it to `LookupMappingResolver` and the VALUES+JOIN input-rows helper, a mechanism
-that mints its own tenant slots through `collectFromLookup`.
+The emission switches that follow are untouched. The mint predicate is therefore "the carrier binds a
+column, and the slot is not lookup-bound". Every other clause of the emission guards drops out without
+being named, and every one of them is a suppression: `!autoSuppressed` on the argument arms, and
+`!enclosingOverride && condition().isEmpty()` on the input-field arms. A suppression drops a predicate
+in favour of authored SQL; that is emission, and answering ahead of it is the whole of this item.
 
-Completeness has one enforcer per half of the ledger's domain. Stated as a set, that domain is the
-predicate path's domain plus the suppressed column bindings, which is this item restated without
-prose.
+The lookup clauses stay because they say something else: the slot is not on the predicate path at all.
+`@lookupKey` routes it to `LookupMappingResolver` and the VALUES+JOIN input-rows helper, and
+`collectFromLookup` owns its tenant slot. For a scalar `@lookupKey` argument or a `MapGroup` input field
+the clause is inert, since `collectFromLookup` mints the same slot with the same access. For a decoded
+key it is load-bearing: `LookupMappingResolver` routes a composite `@lookupKey` `ColumnBackedArg`, and an
+input's `InputColumnBindingGroup.DecodedRecordGroup`, to `LookupMapping.ColumnMapping.LookupArg.DecodedRecord`,
+which `collectFromLookup` skips on purpose because each decoded id carries its own tenant. A ledger slot
+there would hand the fold one tenant for the whole batch, and a cross-tenant `ids:` batch would read
+whichever database the first key pointed at. That is the goal table's tenth row.
 
-- The compiler owns the suppressed half. A new `ArgumentRef` or `InputField` arm is a compile error
-  in `columnBindingOf` asking whether it binds a column. And because the mint sits ahead of the
-  emission guards, no edit to a guard can remove a row. That includes a suppression carried by carrier
-  identity rather than by a guard clause, which is the eighth row's shape and the reason a per-arm
-  mint inside the guards would have missed it.
-- The containment pin in `## Tests` owns the predicate-path half: every body param has a row.
+**Recorded once per filter surface a leaf carries.** `projectForFilter` owns the row: it creates the
+accumulator, passes it into `projectFilters`, which passes it into `walkInputFieldConditions` beside
+`implicitBodyParams`, and calls `ColumnBindingLedger.record(coordinate, rt, slots, filters)` immediately
+before returning `TableFieldComponents.Ok`, with the final filter list. So a field that
+`projectForFilter` rejects leaves no row. `record` makes two checks, each throwing
+`IllegalStateException` naming the coordinate:
 
-The lookup clause keeps the domain from being strictly larger than those two halves, in the one
-direction where larger is wrong rather than merely redundant.
+- *A non-empty row comes with non-empty filters.* This holds by construction, since every suppression
+  is an authored `@condition` whose own filter lands in the same list (the argument's, the enclosing
+  input's, the input field's own, or the field-level one `projectForFilter` appends). It is stated as a
+  check because it is what guarantees a condition member exists wherever a row matters: a leaf carrying
+  non-empty filters mints one (`OperationMemberRelation.memberKindsOf`), and a row with no member would
+  be the bug one level up, a binding nobody reads.
+- *A repeat record at one key carries an equal row.* With the table in the key, a repeat is the same
+  classification of the same slots, so a different row is a walk defect, and keeping either silently
+  would let the verdict read a slot the leaf does not carry. (`NodeIdDecodeLedger` keeps its first mint
+  instead because its key has no table, so its repeats are genuinely different participants.)
 
 **`ConditionOwnedField` keeps the column it resolved.** The carrier gains
-`Optional<ColumnRef> resolvedColumn`, set at the three sites that mint it:
+`Optional<ColumnRef> resolvedColumn`: present at `classifyInputFieldInternal`'s column-resolved arm,
+empty at its column-miss arm, and empty at `inputFieldFromNodeIdResolved`'s `AuthorOwnedPredicate` arm,
+where no route resolved. It is `Optional<ColumnRef>` rather than a column list with an extraction
+because the only path resolving a column here is the plain single-column lookup, whose extraction is
+`Direct` by construction. The carrier's identity does not change and no reader moves: every reader
+(the rail membership keeping it out of `LookupKeyField` and `SetField`, `MutationInputResolver`'s
+INSERT refusal, the `UpdateRowsWalker` / `DeleteRowsWalker` refusals, `EnumMappingResolver`'s skip, the
+filter walk firing the method, and the validator, context-argument and fetcher-generator arms)
+branches on carrier identity or on the condition. The component's javadoc names it the binding axis,
+beside the condition axis, not a carrier role; `graphitron_input_field_carrier_role` rightly keeps
+saying the field drives no rail. The component adds no variant, so `LeafRatchetTest` does not move, and
+it retires with the ledger. It widens a transitional record, and what makes that acceptable is that the
+classifier already computes the column and throws it away, while the carrier's siblings
+(`ColumnBackedField`, `ColumnBackedArg`, and the `@nodeId` input leaves under their own override)
+already carry it.
 
-- present at `classifyInputFieldInternal`'s column-resolved arm;
-- empty at its column-miss arm;
-- empty at `inputFieldFromNodeIdResolved`'s `AuthorOwnedPredicate` arm, where no route resolved.
+**Held and threaded like the decode ledger.** A `private final ColumnBindingLedger` on `BuildContext`
+beside `decodeLedger`, with a package-private accessor. `GraphitronSchemaBuilder` reads it at schema
+assembly, runs the containment check below, and passes it to `TenantBindingIndex.compute` beside
+`operationMembers`. The fold refuses a `ColumnBindingLedger.EMPTY` sentinel by reference identity, in
+the same constructor that refuses `OperationMemberRelation.EMPTY`, so a hand-built schema that never
+ran the walk is refused rather than silently classifying every condition path unbound.
 
-The carrier's identity does not change, and no current reader moves. Every one of them branches on
-the condition axis:
+**The containment check: every emitted predicate has its slot.** The compiler owns half of the ledger's
+completeness: a new `ArgumentRef` or `InputField` arm is a compile error in `columnBindingOf`, and since
+the question is asked ahead of the emission guards, no edit to a guard can remove a row, including a
+suppression carried by carrier identity (row eight). The other half is a correspondence the compiler
+cannot see: every body param the emission arms construct must come from a carrier `columnBindingOf`
+answers for, or a new predicate arm reproduces this item's bug with nothing failing. Today that holds
+at every construction site; the check keeps it holding.
 
-- the rail membership that keeps it out of `LookupKeyField` and `SetField`;
-- `MutationInputResolver`'s INSERT refusal;
-- the `UpdateRowsWalker` / `DeleteRowsWalker` refusals;
-- `EnumMappingResolver`'s skip;
-- the filter walk firing the method.
+`ColumnBindingLedger.requireCovers(OperationMemberRelation)`, called in `GraphitronSchemaBuilder`
+directly after `OperationMemberRelation.compute` and not gated on tenancy. For every
+`OperationMember.Condition`, every `BodyParam` in its `GeneratedConditionFilter`s (unwrapping
+`RemoteColumnPredicate`) must have a slot in the row at `(coordinate, member.table())` with the same
+name, the same columns and an equal extraction; otherwise it throws `IllegalStateException` saying it is
+a generator invariant failure and naming the coordinate, table and slot. The extraction is compared
+because it is half of what the fold reads: a slot matching on name and columns with a different
+extraction would move the verdict's read or transform silently. Every `CallSiteExtraction` arm is a
+record, so the comparison is value equality.
 
-The column is a second axis beside the condition, the binding axis, and the component's javadoc names
-it that rather than a carrier role. `graphitron_input_field_carrier_role` correctly states that this
-field drives no rail, and nothing here contradicts it. The component is `Optional<ColumnRef>` rather
-than a column list with an extraction because the only path that resolves a column here is the
-plain single-column lookup, whose extraction is `Direct` by construction.
+It sits where both sides first exist, after the member relation is minted and before the tenant fold
+reads either, and it follows `OperationMembers.validateAgainstDeclaredShape`, which fences the same
+relation on every build the same way. Its domain is exactly the fold's read domain: the condition
+members of the flat classified index. It also enforces the one alignment the key relies on, that the
+table `projectForFilter` received is the table its condition member names. Reading by member is what
+makes the check and the key agree: `MultiTableFilterLoweringTest`'s `Customer | Staff` bare-`@nodeId`
+fixture emits a `staff_id` body param for slot `id` on one participant and a `customer_id` one on the
+other, and each finds its own row.
 
-This sits against the pipeline doc's rule that new facts land only in the store. What makes it
-acceptable is that the fact is not new: the classifier already computes it and then throws it away,
-and the carrier's siblings already carry it (`ColumnBackedField`, `ColumnBackedArg`, and the
-`@nodeId` input leaves under their own override). It adds no variant, so `LeafRatchetTest` does not
-move, and it widens one record. It retires with the ledger.
+It is ungated because gating would take its reach away: most schemas the test tier builds configure no
+tenant column, so a check inside the fold would run on a handful of fixtures, while this one runs on
+every schema any test in any tier builds, and a new predicate arm's own tests trip it. The price is
+stated: a missed mint on an arm no tenant consumer uses fails the build of every consumer that reaches
+the arm, though the defect would have been harmless there. An internal invariant failing loudly is the
+posture the member relation already takes.
 
-`LookupMappingResolver` routes a composite `@lookupKey` `ColumnBackedArg`, and
-an input argument's `InputColumnBindingGroup.DecodedRecordGroup`, to
-`LookupMapping.ColumnMapping.LookupArg.DecodedRecord`, which `collectFromLookup` skips on purpose: a
-decoded node id carries its own tenant per row, so a list of them has no single tenant to route the
-statement on. A ledger minted ahead of the lookup clause would hand the fold one anyway, and a
-cross-tenant `ids:` batch would read whichever database the first decoded key pointed at. That is the
-tenth row of the goal table, and it is the one decoded-key exclusion that survives R966: the read
-R966 widened resolves a single decode, which is exactly what a per-row family does not have.
+It is not the oracle the shadow tests (`ColumnMatchShadowTest` and siblings) are, and the difference is
+the one `fact-model.adoc` draws under "Name the row, not the question". What is forbidden is the
+*total-agreement* test, asserting a replacement equals its predecessor, which would make the
+predecessor normative and pin its gaps. What is asked for is "agreement asserted where the two are meant
+to agree, and each deliberate departure asserted in the direction it was meant to go". Containment in
+one direction is that: `bodyParams()` is a live production that stays, not a predecessor kept alive,
+and the check asserts nothing about the ledger-only direction, which is where both deliberate
+departures live (the suppressed bindings this item adds, and the lookup slots it keeps out). The check
+reads body params to verify coverage; nothing reads them to classify.
 
-The scalar half of the lookup exclusion is inert rather than load-bearing, and saying so keeps that
-clause from looking arbitrary: a scalar `@lookupKey` argument and a `MapGroup` input field are
-already minted by `collectFromLookup` under the same slot names with the same accesses, so a
-duplicate ledger mint would change no verdict. The clause is uniform because the rule is about which
-mechanism owns a slot, not about which duplicates happen to be harmless.
+**The fold reads it.** `Fold.directBinding` gains the coordinate as a parameter (its four callers
+already hold the one they pass members for) and replaces
+`case OperationMember.Condition c -> collectFromFilters(c.filters(), collector)` with a read of the row
+at `(coordinate, c.table())`. For each slot and each index `i` whose column `matchesTenantColumn`
+accepts, it calls `collector.add(slotName, column, accessOf(extraction, TenantBinding.SlotRead.TopLevelArg.INSTANCE, i))`,
+which is what `collectFromBodyParam` and `collectFromRow` do between them today: the same three
+arguments to `accessOf`, from a ledger row instead of a body param. The index is the decode slot
+`accessOf` wants, because the row records `predicateColumns(binding, columns)`, which is the tuple the
+decode produces: a `FilterBinding.Local` carrier's lifted own-table tuple, or a `FilterBinding.Remote`
+carrier's target key. A nested input field needs nothing extra, since `accessOf` matches the
+`NestedInputField` wrapper first and ignores the fallback. `collectFromFilters`, `collectFromBodyParam`
+and `collectFromRow` retire, and the fold's `RemoteColumnPredicate` unwrap with them.
 
-**Why the filtered table is in the key.** Both walks run once per participant on a multi-table
-polymorphic coordinate, and the same slot name can bind a different column tuple on each. A bare
-`@nodeId` argument over `union Occ = Inventory | FilmActor` binds `[inventory_id]` for one participant
-and `(actor_id, film_id)` for the other, because each participant decodes the id as its own node
-type. A slot's columns are therefore a fact of the coordinate, the table the filters resolve against
-and the slot, and a row keyed by coordinate and slot alone would have to throw one participant's
-tuple away. Keeping the first would drop whichever participant classified second, *before* the fold
-has matched either against the tenant column. That is not the dedupe `SlotCollector` does. It matches
-first and dedupes after, among resolved slots only, and it keeps every distinct decline. In the
-`Inventory`-first order the first-mint row would carry no tenant column, and the field would lose the
-`PruneOnMismatch` decline it rejects with today, in either member order, with no override present.
+Nothing else about the fold moves: `accessOf`, `SlotAccess`, `SlotCollector` and `DirectBinding` are
+read as they are, so a slot whose access comes back `SlotAccess.Declined` (the multi-table
+`PruneOnMismatch` leaf) declines the coordinate through the channel every other carrier uses.
+`collectFromLookup`, `collectFromTableInput` and `collectFromWhereKeys` stay as they are, and
+`collectFromLookup` stays the sole owner of lookup-bound slots, which the lookup clauses of the mint
+predicate enforce. Giving a decoded lookup key a tenant verdict of its own is the per-row family's
+question and belongs with the node-dispatch facts that already partition per decoded tenant.
 
-So the key is `(FieldCoordinates, TableRef)`, where the `TableRef` is the `rt` that `projectFilters`
-receives. That is the same table the coordinate's condition member names as `Condition.table()`:
-the multi-table loop hands `tb.table()` both to `resolveTableFieldComponents` and to the
-`ParticipantFilters` that `OperationMember.Condition.OnParticipant` is minted from, and the
-single-table paths hand the return type's table, which `OnReturnTable` reads back as
-`sgf.returnType().table()`. The containment pin below reads rows by `Condition.table()`, so any path
-where the two disagree turns it red on the first fixture that reaches it, rather than silently losing
-a slot. The ledger's only dedupe is first-mint-wins on slot name *within* one `(coordinate,
-table)` row, which absorbs a repeat visit of the same classification (`NodeIdDecodeLedger` keys
-first-mint-wins for the same reason) and never compares one participant with another.
-
-**The fold reads it.** `Fold.directBinding` replaces
-`case OperationMember.Condition c -> collectFromFilters(c.filters())` with a read of the ledger row at
-`(coordinate, c.table())`, calling `collector.add` once per column that `matchesTenantColumn` accepts
-and resolving its access through `accessOf`, which is what `collectFromBodyParam` and
-`collectFromRow` do between them today. The read is per member, as today's is: one condition member
-per participant, each reading its own participant's row, and `SlotCollector` matching then deduping
-across them exactly as it does now. `directBinding` gains the coordinate as a parameter to do it; its
-four callers in the fold already hold the coordinate they pass the members for. `collectFromFilters`, `collectFromBodyParam` and
-`collectFromRow` retire together: with the ledger in place nothing in production reads a `BodyParam`
-to answer a classification question, which is the one-place property this item is after. The
-`RemoteColumnPredicate` unwrap those functions perform retires with them, because the ledger records
-`predicateColumns(binding, columns)` at mint time and so never sees the wrapper. The containment pin
-below still reads `bodyParams()`, and deliberately: it reads them to enforce that the ledger covers
-them, which is the opposite of deriving a classification from them.
-
-Nothing else about the fold moves. `directBinding` keeps its `SlotCollector`, its dedupe-by-name and
-its `DirectBinding` result, so a ledger row whose access comes back `SlotAccess.Declined` declines the
-coordinate through the same channel every other carrier uses, and `divines()` keeps its meaning.
-
-**The seam with R966, which has landed.** R966 put a second component on
-`TenantBinding.BoundSlot`, a projection axis beside the location axis, and routed every minting site
-through `accessOf`, which replaced `readOf` and now answers both axes plus a decline. It landed
-first, so this plan is written against its fold rather than predicting it, and the prediction this
-plan made for that order held: the decode clause is never written, the mint predicate is uniform, and
-the goal table's twelfth row moves to `ArgumentBound` instead of staying rejected.
-
-What remains of the seam is one direction, and it is additive. This item removes
-`collectFromFilters` as a minting site and puts the ledger read in its place, so R966's minting-site
-list becomes the ledger read, `collectFromLookup`, `collectFromTableInput` and `collectFromWhereKeys`.
-No R966 surface changes: `accessOf`, `SlotAccess`, `SlotCollector` and `DirectBinding` are read as
-they are, and the ledger hands `accessOf` the same three arguments `collectFromRow` hands it today.
-
-An earlier draft of this plan worried about a naming inversion, a tenancy-neutral ledger reaching a
-type nested under `TenantBinding`. It does not arise: the row holds a `CallSiteExtraction` and a
-column list and nothing else, and the fold supplies the `TenantBinding.SlotRead` fallback at the call
-to `accessOf`. The ledger names no tenancy type, which is the property that keeps it retirable onto a
-relation.
-
-**What stays.** `collectFromLookup`, `collectFromTableInput` and `collectFromWhereKeys` stay
-as they are. They already read classification carriers (`LookupMapping.ColumnMapping`, the
-`TableInputArg` envelope, `Dml.whereKeyColumns()`), which is why they are already override-proof, and
-this item leaves the fold with three direct-binding descents where it has four today rather than
-adding a fifth. `collectFromLookup`
-also stays the *sole* owner of lookup-bound slots, which the lookup clauses on the mint predicate are
-what enforce; its `DecodedRecord` skip therefore keeps meaning what it says. Giving a decoded key a
-tenant verdict of its own is the per-row family's question, not this axis's, and it belongs with the
-node-dispatch facts that already partition per decoded tenant.
-
-The gap an earlier draft recorded here as R966's is closed: `collectFromInputFields` now handles
-`InputField.ColumnBackedReferenceField`, reading a `FilterBinding.Local` tuple at its decode slot and
-leaving a `FilterBinding.Remote` one to `MutationInputResolver`, which rejects it before the write
-classifies, so the write path no longer drops the carrier its query-path
-twin handles. Nothing in this item touches that descent.
-
-**The emitter audit the producer relaxation owes.** Widening which coordinates classify
-`ArgumentBound` is a producer relaxation, so every emit site assuming the old population was audited:
-`TenantDslEmitter.dslExpression` throws on `ArgumentBound` at its expression-only site, justified by
-service operations contributing no argument slots, and that claim survives because the mint stays
-inside `projectFilters`, which no `@service` coordinate reaches. `TenantDslEmitter.slotReads` and
-`TenantAcquisitionFragments.slotRead` render over the slot's two axes alone and assume no matching
-body param, so the overridden-predicate case needs nothing new from them; `TenantDslEmitter.projected`
-renders the decode helper for a `DecodedKeySlot` projection off the slot, not off a predicate, which
-is what lets the goal table's twelfth row route at all. `MultiTablePolymorphicEmitter`'s
-`ArgumentBound` read is per-participant and unaffected: the ledger is keyed by coordinate and
-participant table and read per condition member, so the deduped slot list it produces is the one
-today's per-member read produces.
+**The emitter audit the producer relaxation owes.** More coordinates classify `ArgumentBound`, so every
+emit site assuming the old population was checked. No leaf type newly reaches `ArgumentBound`, since a
+suppression never changes a field's leaf type and every shape this item moves has an unsuppressed twin
+that classifies `ArgumentBound` today. `TenantDslEmitter.dslExpression` throws on `ArgumentBound` at its
+expression-only site on the ground that `@service` operations contribute no argument slots, which
+survives because the mint stays inside `projectForFilter`, which no service coordinate reaches.
+`TenantDslEmitter.slotReads` and `TenantAcquisitionFragments.slotRead` render from the slot's two axes
+alone and assume no matching body param; `TenantDslEmitter.projected` renders the decode helper for a
+`DecodedKeySlot` off the slot, which is what lets row twelve route. `MultiTablePolymorphicEmitter` reads
+`ArgumentBound` per participant, and the per-member read produces the slot list it gets today.
 
 **The disclosed gap.** A wire-valued argument whose own predicate an author overrode now divines the
-tenant. That is the intended reading, since routing chooses a database and an argument bound to the tenant column
-names a tenant whatever predicate runs inside that database. The cost is that a condition method
+tenant. That is the intended reading, since routing chooses a database and an argument bound to the
+tenant column names a tenant whatever predicate runs inside it. The cost is that a condition method
 reinterpreting the value (a prefix match, a deliberately cross-tenant `IN`) routes on a value the
-author did not mean as a tenant id, and nothing at build time enforces that it did not; the generated
-`divinedTenant` agreement guard is a runtime check and not an enforcer. There is no SDL way to say
-"names the column, does not divine", and inventing one here would widen this item into a directive
-surface. Stated as a gap, to be an item of its own if an author need appears.
+author did not mean as a tenant id, and nothing at build time says so; the generated `divinedTenant`
+agreement guard checks at request time. There is no SDL way to say "names the column, does not
+divine", and inventing one would widen this item into a directive surface. Stated as a gap, to be an
+item of its own if an author need appears.
 
 ## Retired vocabulary
 
-- `TenantBindingIndex.Fold.collectFromFilters`, `collectFromBodyParam` and `collectFromRow`: the
-  predicate-derived slot mint, and with them the fold's `RemoteColumnPredicate` unwrap. `accessOf`
-  survives and keeps its name; prose describing the tenant fold as reading body params
-  is stale after this item, with the one exception the containment pin makes explicit, which reads
-  them to check coverage rather than to classify.
-- The "not recorded" rationale for `InputField.ConditionOwnedField`: its javadoc's "whether the
-  field's name also resolves a column on the resolving table is deliberately not recorded: the
-  column would be dead storage either way", the matching comment at the column-resolved mint in
+- `TenantBindingIndex.Fold.collectFromFilters`, `collectFromBodyParam` and `collectFromRow`, and with
+  them the fold's `RemoteColumnPredicate` unwrap. `accessOf` keeps its name. Prose describing the
+  tenant fold as reading body params is stale after this item; the containment check reads them to
+  verify coverage, not to classify.
+- The "not recorded" rationale for `InputField.ConditionOwnedField`: its javadoc's "whether the field's
+  name also resolves a column on the resolving table is deliberately not recorded: the column would be
+  dead storage either way", the comment at the column-resolved mint in
   `BuildContext.classifyInputFieldInternal` ("the resolved column is unused by construction ... the
-  column is deliberately not recorded"), and `InputFieldCarrierRoleTest.aConditionOwnedFieldIsNoCarrier`'s
-  "records no column". The carrier still drives no rail, which the test's assertion keeps saying; what
-  is retired is the claim that it holds no column.
-- `decodesAKey`: never written. It is named here because two rounds of this item's review argued
-  about it, so a reader meeting the term in the findings below should know it did not reach the tree.
+  column is deliberately not recorded"), and the "records no column" in the javadoc of
+  `InputFieldCarrierRoleTest.aConditionOwnedFieldIsNoCarrier`. The carrier still drives no rail, which
+  that test's assertion keeps saying; what retires is the claim that it holds no column.
 
 ## Tests
 
-`TenantBindingClassificationTest` (L2 unit tier, the file that already carries one fixture per
-`TenantBinding` arm) takes the goal table as cases: the six rejecting rows that become
-`ArgumentBound`, the five unchanged rows as regression, and the two rows that stay rejected
-asserting the rejection is still typed `Rejection.AuthorError.NoTenantBinding`. Each `ArgumentBound`
-assertion names the slot and both its axes, so a nested filter-input row pins
-`NestedInput(filter, [filmId])` with a `Raw` projection and not merely that something bound.
+`TenantBindingClassificationTest` (`@UnitTier`, with `film_id` as the tenant column) takes the goal
+table as cases: the six rows that become `ArgumentBound`, the five unchanged rows as regression, and
+the two rows that stay rejected asserting the rejection is still typed
+`Rejection.AuthorError.NoTenantBinding`. Each `ArgumentBound` assertion names the slot and both its
+axes, so a nested filter-input row pins `NestedInput(filter, [filmId])` with a `Raw` projection, not
+merely that something bound.
 
-Three of those fixtures carry more weight than the rest, because each is a case where a wrong mint
-still produces a green build. All three sit on a field that also carries a `@condition`, so the
-coordinate mints a condition member and the ledger read actually fires:
+Three of those fixtures carry more weight than the rest, because in each a wrong mint still gives a
+green build, the wrong answer being a verdict rather than an error. All three sit on a field that also
+carries a `@condition`, so the coordinate mints a condition member and the ledger read fires.
 
-- The eighth: a plain filter-input field `filmId: ID @field(name: "film_id")` carrying its own
+- *Row eight*: a plain filter-input field `filmId: ID @field(name: "film_id")` carrying its own
   `@condition(condition: {...inputColumnCondition}, override: true)` (the shape
-  `INPUT_IMPLICIT_CONDITION_EXPLICIT_OVERRIDE_SUPPRESSES_OWN` already builds), asserting
-  `ArgumentBound` with a `NestedInput(filter, [filmId])` read and a `Raw` projection. It fails if
-  `columnBindingOf` answers nothing for `ConditionOwnedField`, or if the classifier stops setting
-  `resolvedColumn`. The containment pin cannot see either, because this shape emits no body param.
+  `INPUT_IMPLICIT_CONDITION_EXPLICIT_OVERRIDE_SUPPRESSES_OWN` already builds), asserting `ArgumentBound`
+  with a `NestedInput(filter, [filmId])` read and a `Raw` projection. It fails if `columnBindingOf`
+  answers nothing for `ConditionOwnedField`, or if the classifier stops setting `resolvedColumn`. The
+  containment check cannot see either, since this shape emits no body param, so this fixture and the
+  `GraphitronSchemaBuilderTest` assertions below are row eight's enforcers.
+- *Row ten*: a composite `@nodeId @lookupKey` argument whose decoded key embeds `film_id`, with a plain
+  `@condition` and no `override` anywhere. With no suppression active, the lookup clause is the only
+  thing keeping this slot out of the ledger, so the fixture fails if the clause is simplified away;
+  without it the row classifies `ArgumentBound`, which is a cross-tenant `ids:` batch reading one
+  tenant's database.
+- *Row twelve*: a same-table `@nodeId` argument at arity 1 whose decoded key is `film_id`, under a
+  field-level `@condition(override: true)`, asserting `ArgumentBound` with the projection pinned to
+  `DecodedKeySlot` at index 0. It is the assertion that the two axes compose: the location comes from
+  the suppressed carrier the ledger recorded, the transform from `accessOf` reading its extraction.
+  Arity 1 is deliberate, being the shape a column-count discriminator would get wrong.
 
-- The tenth: a composite `@nodeId @lookupKey` argument whose decoded key embeds the tenant column,
-  with a plain `@condition` and no `override` anywhere. It fails if the mint predicate drops its
-  lookup clauses, and the absence of an override is what makes that true rather than incidental: with
-  no suppression active, the lookup clause is the only thing keeping this row out of the ledger. A
-  reader who simplifies it away gets a green build and row ten classifying `ArgumentBound`, which is
-  a cross-tenant `ids:` batch reading one tenant's database.
-- The twelfth: a same-table `@nodeId` argument at arity 1 whose decoded key is the tenant column,
-  under a field-level `@condition(override: true)`, asserting `ArgumentBound` with the slot's
-  projection pinned to `DecodedKeySlot` at the right index. This is the row this item moves, and it is
-  the one assertion that proves the two axes compose: the location comes from the suppressed carrier
-  the ledger recorded, and the transform comes from `accessOf` reading its extraction. Arity 1 is
-  deliberate, being the shape a column-count discriminator would get wrong.
+Row eleven's argument half is `sameTableNodeIdFilterDivinesTheDecodedSlot`, already in the file, which
+this item only has to leave green. Its filter-input half has no pin, and this item re-sources exactly
+that read (a nested `@nodeId` field's slot moves from a body param to a ledger row), so it gets one: a
+query filter input whose `@nodeId` field decodes a key embedding `film_id`, asserting `ArgumentBound`
+with a `NestedInput` read and a `DecodedKeySlot` projection.
 
-All three fail in the direction a green build would not otherwise show, since a wrong answer there is
-a verdict rather than an error. The eleventh row's argument half needs no fixture of this item's: R966
-landed `sameTableNodeIdFilterDivinesTheDecodedSlot` on exactly that shape, and this item only has to
-leave it green. Its filter-input half has no pin in the tree, and this item re-sources exactly that
-read (a nested `@nodeId` field's slot moves from a body param to a ledger row), so it gets one
-regression case: a query filter input whose `@nodeId` field decodes a key embedding `film_id`,
-asserting `ArgumentBound` with a `NestedInput` read and a `DecodedKeySlot` projection.
+The multi-table polymorphic shape gets its own fixture, because `MultiTableFilterLoweringTest`'s
+`Customer | Staff` reaches no tenant-scoped table under `film_id` and so classifies untenanted. The
+fixture is a bare `occ(id: ID! @nodeId): [Occ!]!` over `union Occ = Inventory | FilmActor`, `Inventory`
+keyed on `inventory_id` and `FilmActor` on `(actor_id, film_id)`: both tables are tenant-scoped, and the
+member order puts first the participant whose key omits `film_id`, the order that tells a
+per-participant read from a coordinate-wide one.
 
-The multi-table polymorphic shape gets two cases on one fixture of its own. The fixture
-`MultiTableFilterLoweringTest` carries for `PruneOnMismatch` (`Customer | Staff`) does not serve:
-neither table carries `film_id`, so under this test file's tenant column the field classifies
-untenanted and there is no rejection to assert. The fixture here is a bare
-`occ(id: ID! @nodeId): [Occ!]!` over `union Occ = Inventory | FilmActor`, with `Inventory` keyed on
-`inventory_id` and `FilmActor` on `(actor_id, film_id)`: both tables are tenant-scoped, and the
-member order puts first the participant whose key omits the tenant column, which is the order that
-tells a per-participant read from a coordinate-wide first-mint dedupe.
-
-- With no `@condition` anywhere, it rejects `Query.occ` with the `PruneOnMismatch` decline text. That
-  is today's verdict and today's message, measured on this tree in both member orders; the case pins
-  that the re-sourcing did not change it.
+- With no `@condition`, it rejects `Query.occ` with the `PruneOnMismatch` decline text, today's verdict
+  and message in both member orders; the case pins that the re-sourcing did not change them.
 - Under a field-level `@condition(override: true)` (`TestConditionStub.lifterFieldCondition`, which
-  binds no argument, so the dispatched-`@nodeId` divergence refusal does not fire first), it still
-  rejects with the decline text rather than the generic "nothing maps to the tenant column". It pins
-  that the uniform mint predicate reaches the declining carrier and that the decline channel, not a
-  mint-side clause, is what holds it.
+  binds no argument, so the dispatched-`@nodeId` divergence refusal does not fire first), it rejects
+  with the decline text rather than the generic "nothing maps to the tenant column". It pins that the
+  mint reaches the declining carrier and that the decline channel, not a mint-side clause, holds it.
 
-**The containment pin, which is the enforcer the predicate-path half owes.** Today's
-`collectFromFilters` is total by accident of where it reads: it walks `gcf.bodyParams()`, so a new
-column-bound predicate added to `projectFilters` tomorrow contributes a tenant slot with no further
-work. The ledger inverts that. Totality becomes a correspondence between the sites that construct a
-`BodyParam` and the carriers `columnBindingOf` answers for. A predicate built from something
-`columnBindingOf` answers nothing for reproduces this item's own bug, a field that names the tenant
-column rejected for not naming it, with nothing in the tree failing. The compiler cannot see that
-correspondence, since the exhaustive switch forces an answer but not the right one. The body params
-are constructed at five arms today (verified: `bodyParams` is appended at `FieldBuilder.java:3036`,
-`3043`, `3063`, `3079` and, through `implicitBodyParams`, `3165` and `3222` folded in at `2983` and
-`2999`, and nowhere else), and each is a carrier `columnBindingOf` answers for. But a census true
-when written is the "unguarded census" the enforcer principle names as a drift smell.
+`ColumnBindingLedgerTest` (`@UnitTier`, beside the class) pins the ledger's own checks on hand-built inputs, since a check nobody
+has seen fire is not yet an enforcer:
 
-So `ColumnBindingLedgerContainmentTest`, a meta-test in `graphitron`'s test tier, driven over every
-fixture schema the tier already builds rather than over one fixture of its own: for each condition
-member, every surviving `BodyParam` in its filters naming a column (unwrapping
-`RemoteColumnPredicate`) has a ledger entry under the same slot name, in the row at
-`(coordinate, member.table())`, carrying that column. A new arm that emits without minting turns it
-red on whatever existing fixture first reaches the arm, and so does a classification path whose `rt`
-is not the table its condition member names, which is the one alignment the ledger's key relies on.
-Reading by member rather than by coordinate is what makes the pin and the key agree: the `Customer |
-Staff` fixture emits a `staff_id` body param for slot `id` on one participant and a `customer_id` one
-on the other, and each finds its own row.
+- `requireCovers` throws when a condition member's body param has no slot in its row, when the slot
+  sits in the row of a different table (the key misalignment), and when name and columns match but the
+  extraction differs; each message names the coordinate, table and slot.
+- `requireCovers` passes when a row carries slots beyond the body params (the suppressed bindings) and
+  when a composite `RowEq` is wrapped in `RemoteColumnPredicate`.
+- A repeat record at one key passes with an equal row and throws with a different one; a non-empty row
+  recorded with empty filters throws.
 
-This is not the oracle the shadow tests (`ColumnMatchShadowTest` and siblings) are, and the difference
-is the one `fact-model.adoc` draws under "Name the row, not the question": what is forbidden is the
-*total-agreement* test, asserting the replacement equals the predecessor, which would install
-`collectFromFilters` as normative and pin its gaps. What is asked for instead is "agreement asserted
-where the two are meant to agree, and each deliberate departure asserted in the direction it was meant
-to go". Containment in one direction is exactly that. It keeps no predecessor alive, since
-`bodyParams()` is a live production that stays; it asserts nothing about the ledger-only direction,
-which is where both deliberate departures live (the suppressed column bindings this item adds,
-and the lookup slots); and the unchanged rows of the goal table remain the
-regression statement for the verdicts themselves.
+Beyond those, the check runs on every schema build in every tier, which is its coverage: both
+multi-table fixtures above exercise the per-participant key on every run, and every existing fixture
+that emits a column-bound predicate exercises the covered direction.
 
 The carrier change is pinned where the carrier's classification already is. In
 `GraphitronSchemaBuilderTest`, `INPUT_IMPLICIT_CONDITION_EXPLICIT_OVERRIDE_SUPPRESSES_OWN` (column
 resolved) asserts `resolvedColumn` present and naming `film_id`, and `CONDITION_OWNED_FIELD` and
-`plainInput_overrideTrueWithoutMatchingColumn_classifiesAsConditionOwnedField` (column missing) assert
-it empty. The emission assertions those cases already make stay as they are: that is the statement
-that the binding axis moved and the emission did not. `UpdateRowsWalkerTest` and
-`DeleteRowsWalkerTest` construct the carrier directly and gain the argument, with no assertion
-change.
+`plainInput_overrideTrueWithoutMatchingColumn_classifiesAsConditionOwnedField` (column missing) assert it
+empty. The emission assertions those cases already make stay as they are, which is the statement that
+the binding axis moved and emission did not. `UpdateRowsWalkerTest` and `DeleteRowsWalkerTest`
+construct the carrier directly and gain the argument, with no assertion change.
 
-The compile tier gets one field in
-`graphitron-sakila-example/src/main/resources/graphql/multitenant.graphqls`, that module's proof that
-every `TenantBinding` arm emits valid Java 17: a root whose tenant argument sits under a field-level
-`@condition(override: true)`, using `tilgangAdminOnly` from
+The compile tier gets one field in `graphitron-sakila-example/src/main/resources/graphql/multitenant.graphqls`,
+that module's proof that every `TenantBinding` arm emits valid Java 17: a root whose tenant argument sits
+under a field-level `@condition(override: true)`, using `tilgangAdminOnly` from
 `no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures` (the class the example's other
-`@condition` fixtures already use, and its one method binding no argument). It earns a place in a
-fixture whose discipline is "one field per arm, nothing else" by being the only field there whose slot
-cannot come from a predicate.
+`@condition` fixtures use, and its one method binding no argument). It earns a place in a fixture whose
+discipline is one field per arm by being the only field there whose slot cannot come from a predicate.
+It stays compile-only, like the rest of that file: the predicate `tilgangAdminOnly` builds names
+`rollekode`, which `film` does not carry.
 
 No execution-tier case: the arm's runtime behaviour is unchanged, only which schemas reach it.
 
 ## Documentation
 
-`docs/manual/how-to/condition-cascade.adoc` gains one sentence in each override section saying that
-`override:` governs predicate emission and never the tenant routing a column-bound argument or input
-field divines, cross-referencing `tenant-scoping.adoc`. The filter-input section's sentence names the
-input field's own `override: true` too, since that is the case the reader of the replace-rather-than-stack
-rule is most likely to wonder about. `docs/manual/how-to/tenant-scoping.adoc` already promises that
-"an argument bound to the tenant column routes the statement and hands the tenant down its subtree"; it
-needs no change, because this item is what makes the promise true.
+`docs/manual/how-to/condition-cascade.adoc` gains one sentence in each of its two override sections
+(argument-level and field-level) and in the filter-input cascade section, saying that `override:` and
+an input field's own `@condition` govern predicate emission and never the tenant routing a
+column-bound argument or input field divines, cross-referencing `tenant-scoping.adoc`. The
+filter-input sentence names the input field's own `@condition(override: true)` explicitly, since that
+is the case a reader of the replace-rather-than-stack rule is most likely to wonder about.
+`docs/manual/how-to/tenant-scoping.adoc` already promises that "an argument bound to the tenant column
+routes the statement and hands the tenant down its subtree"; it needs no change, because this item is
+what makes the promise true.
 
 ## Other solutions we've considered
 
 **Stop suppressing the tenant argument's predicate.** The fold would find its body param again with no
-new fact anywhere. Rejected: it changes the SQL an author explicitly asked to own, and it does it by
-making the emission decision depend on the tenant column, which is the coupling this item exists to
-remove.
+new fact anywhere. Rejected: it changes the SQL an author explicitly asked to own, and it does so by
+making the emission decision depend on the tenant column, which is the coupling this item removes.
 
 **Emit the suppressed `BodyParam`s carrying a `suppressed` flag.** Every consumer of `bodyParams()`
 would have to filter, and the renderer's contract, that a body param is a predicate, is worth more than
 the one reader it would save.
 
-**Carry the slots as a `TableFieldComponents` component and an `SqlGeneratingField` accessor.** The
-fact would ride an existing surface instead of a new one, but that surface is implemented by every
-SQL-generating leaf variant and read by every generator, and the fact has exactly one reader. It is
-also the leaf-extension half of what the pipeline doc rules out, with no retirement story: a ledger of
-value rows repoints at a relation, a leaf component has to be dismantled.
+**Carry the slots on the leaf, as a `TableFieldComponents` component and an `SqlGeneratingField`
+accessor.** The fact would ride an existing surface, but that surface is implemented by every
+SQL-generating leaf variant and read by every generator, and the fact has one reader. It is the
+leaf-extension half of what the pipeline doc rules out, with no retirement story: a ledger of value
+rows repoints at a relation, a leaf component has to be dismantled.
+
+**Carry the slots on `OperationMember.Condition`.** The member is already keyed `(coordinate, table)`,
+so the ledger row is naturally its payload, and the fold would read one relation instead of two. It
+loses on where the member's payloads come from: `OperationMemberRelation.payloadsFor` extracts them
+from leaf-carried resolutions, so the slots would have to ride the leaf first (the alternative above),
+or the member production would join the walk-side ledger in, which gives the member relation a second
+producer input for one reader. `OperationMembers.membersOf`, the leaf-derived projection the
+membership-agreement pin compares against, has no ledger to join, so the two productions would carry
+different `Condition` payloads.
 
 **Reclassify a column-resolved override field as `ColumnBackedField`.** The argument side and the
-`@nodeId` input leaves already work this way, and it would need no new component. Rejected because
-the carrier change reaches every reader, and two of them would change behaviour silently rather
-than fail:
-
-- `MutationInputResolver.admitMutationInputFields` admits a non-composite `ColumnBackedField` on
-  INSERT without reading its `condition()`. A field refused today with a typed rejection would be
-  admitted, and its authored condition dropped.
-- `EnumMappingResolver.buildLookupBindings` would turn it into a `MapGroup` lookup binding.
-
-It also moves the carrier into the `LookupKeyField` / `SetField` rails its javadoc keeps it out of,
-and reshapes a leaf population `LeafRatchetTest` pins. Changing the leaf taxonomy belongs in its own
-item, not inside a tenant bug fix.
+`@nodeId` input leaves already work this way, and it would need no new component. Rejected because the
+carrier change reaches every reader, and two would change behaviour silently rather than fail:
+`MutationInputResolver.admitMutationInputFields` admits a non-composite `ColumnBackedField` on INSERT
+without reading its `condition()`, so a field refused today would be admitted with its authored
+condition dropped; and `EnumMappingResolver.buildLookupBindings` would turn it into a `MapGroup` lookup
+binding. It would also move the carrier into the `LookupKeyField` / `SetField` rails its javadoc keeps
+it out of, and reshape a leaf population `LeafRatchetTest` pins. Changing the leaf taxonomy belongs in
+its own item.
 
 **Mint the input-field column at the classification site.** `classifyInputFieldInternal` holds the
-column, so it could record it directly. Rejected on keying. That function is keyed on the definition
-(input type, field, resolving table), and one input type is shared across use sites. A ledger row is
-keyed on the use site: the coordinate, plus the `NestedInputField(outerArgName, leafPath, leaf)`
-extraction, which exists only in the walk. Minting there would need a second, definition-keyed
-walk-side registry joined back at the walk. The carrier is the right home for a definition-keyed fact
-and the walk for the use-keyed join, which is the split the plan uses.
+column and could record it directly. Rejected on keying: that function is keyed on the definition
+(input type, field, resolving table), and one input type is shared across use sites, while a ledger
+row is keyed on the use site (the coordinate, plus the `NestedInputField(outerArgName, leafPath, leaf)`
+extraction, which exists only in the walk). The carrier is the right home for the definition-keyed
+fact and the walk for the use-keyed join.
 
-**Leave the input field's own override out of this item.** A goal-table row saying rejected before
-and after, with the goal and documentation sentences narrowed to match. Rejected because the goal as
-written already covers the shape, and the repair is one component on one record. Stopping short
-would leave the item's thesis applied to three of four suppressions, and the one left out is the
-suppression made at classification, where the next reader would least expect it.
+**Leave the input field's own override out of this item.** Row eight would read rejected before and
+after, with the goal and documentation sentences narrowed to match. Rejected because the goal already
+covers the shape and the repair is one component on one record; stopping short would apply the item's
+rule to three of four suppressions, leaving out the one made at classification, where the next reader
+would least expect it.
 
 **Source the fact from the store now.** The documented destination, and unreachable at this stage
 order: classification runs before capture, so the relations this would read hold the previous run's
 rows, if any. See the first Implementation paragraph.
 
-**Mint the decoded-key carriers too, and table the request-time failure.** Considered and rejected
-while R966 was still in flight, and recorded because the two rounds of findings below turn on it. The
-proposal was a uniform mint predicate with no decode clause, and two goal-table rows saying those
-shapes move from a build error to a request-time one until R966 widened the read. Rejected then: a
-build error an author can see is worth more than a request error their consumers see, and a plan that
-knowingly ships a wrong read because a sibling item will fix it stops being reviewable on its own
-terms. R966 landing first is what makes the uniform predicate correct rather than merely cheaper, so
-this plan now has the end state the proposal wanted without the interval it would have shipped.
-
-**Depend on R966.** Rejected as a *dependency* rather than as a design, and the distinction survived
-the event: the two items composed in either order, a `depends-on` would have bought sequencing this
-item did not need while putting eleven sis roots behind a hundred and five, and R966 landed first
-anyway. What the alternative was right about is now simply the tree.
-
-## Provenance
-
-A sis spike on 2026-09-22 configured `<tenantColumn>INSTITUSJONSNR_EIER</tenantColumn>` against the
-sis schema and counted 875 `Rejection.AuthorError.NoTenantBinding` errors, against 0 on the same tree
-and database without the setting. 121 of those are root fields; the remaining 750 are children
-cascaded by the every-path fold in `TenantBindingIndex.tenantContextOf`, which demands a tenant
-context on every path into a tenant-scoped type. 11 of the 121 roots are this item: `brukere`,
-`personProfiler`, `studenter`, `emner`, `emnerV2`, `esiKandidater`, `evuKurs`, `studieoppbygninger`,
-`utvekslingsavtaler`, `personProfilerGittFeideBrukere`, `studenterGittFeideBrukere`. The count
-understates the reach, because `Query.personProfiler` is among them and its failure keeps every
-`PersonProfil` child red through the every-path fold.
-
-105 more of the 121 are R966, the sibling classifier gap for write inputs keyed by a decoded node id,
-which has since landed and sits In Review. The two were independent and neither unblocked the other;
-the cascade this one clears is its own, the 11 roots plus every `PersonProfil` child that
-`Query.personProfiler` keeps red. Those 11 are still red on the tree R966 left, since R966 widened how
-a slot is read and this item is what mints the slot at all.
-
-Every one of the 875 rejections printed without file:line coordinates, because the fold's rejections
-carry `SourceLocation.EMPTY`. That is R523; sis is its motivating multi-file case.
+**Enforce the predicate-path half with a test over built schemas.** A meta-test asserting that every
+emitted body param has a ledger row needs a harness enumerating the schemas the tier builds, and none
+exists: `TestSchemaHelper.buildSchema` is a plain static call, and the cross-schema pins
+(`OperationMemberMintPinTest`, `NodeIdDecodeCoverageRatchetTest`) run over `CorpusDocuments`, whose
+condition members reach one of the body-param shapes. Named floor fixtures per arm would guard the arms
+that exist today and not the next one, which arrives with its own test class rather than a corpus
+document. The build-time check runs wherever a schema is built, which is the reach the enforcer needs.
 
 ## Reviewer findings
 
@@ -1524,3 +1356,62 @@ rewrite is where the plan says it is. `TestConditionStub.inputColumnCondition` /
 exist as named. So do the `tenant-scoping.adoc` promise (line 35), the `pipeline-overview.adoc`
 heading (line 28), the `fact-model.adoc` "Name the row" heading (line 31) and its quote (line 39),
 and both override sections of `condition-cascade.adoc`.
+
+#### Author response (2026-09-24, session 01ABw9PkCVJQNGg9EQyXeyHo, after consulting the principles-architect agent)
+
+Finding 8 addressed with the third way out the finding offered: containment is checked where both
+sides are produced, so every build enforces it and not only every test. `ColumnBindingLedgerContainmentTest`
+is gone. In its place `ColumnBindingLedger.requireCovers(OperationMemberRelation)` runs in
+`GraphitronSchemaBuilder` directly after the member relation is minted, ungated on tenancy, following
+`OperationMembers.validateAgainstDeclaredShape`, which already fences the same relation with
+`IllegalStateException` on every build. For every condition member it requires each body param to have a
+slot in the row at `(coordinate, member.table())` with the same name, the same columns and an equal
+extraction. The extraction is compared because it is half of what the fold reads. That puts the
+enforcer's reach where the claim needs it: every schema any test in any tier builds, and every consumer
+build, so a new predicate arm's own tests trip it. The `rt`-alignment claim now names fixtures the check
+reaches, since it runs on `MultiTableFilterLoweringTest`'s `Customer | Staff` and this item's
+`Inventory | FilmActor` on every run. The line-number census goes with the test, because the check is
+what it was standing in for. `ColumnBindingLedgerTest` pins that the check fires. The cost of running it
+ungated is stated in the plan: a missed mint on an arm no tenant consumer uses fails the build of every
+consumer that reaches it.
+
+Three tightenings came out of the consultation, and they are worth the returning reviewer's attention.
+
+- The row is recorded by `projectForFilter` immediately before it returns `TableFieldComponents.Ok`,
+  with its final filter list, so a rejected field leaves no row.
+- A repeat record at one key must carry an equal row and throws otherwise. This replaces first-mint-wins,
+  which the table in the key made unnecessary and which would have hidden a divergent second
+  classification.
+- A non-empty row recorded with empty filters throws. This enforces, rather than argues, what round 3
+  noted as implicit: a condition member exists wherever a row matters. A relation-level reverse check
+  (every non-empty row has a member) was considered and not taken. `OperationMemberRelation`'s
+  domain-boundary javadoc records that a nested coordinate can alias a flat one, so a row can be
+  legitimately unread, and a check at that grain could fire on a correct schema.
+
+One scope reduction. The exhaustive leaf switch in `accessOf` is dropped from this item and filed as
+R971. The ledger hands `accessOf` exactly the extractions body params already carry, plus a wrapped
+`Direct` / `JooqConvert` from `ConditionOwnedField`, which `ColumnBackedField` body params already
+produce. So the hardening is independent of this bug and changes no verdict here.
+
+The plan body is rewritten in place, per `roadmap/workflow.adoc` § Item file conventions ("A revision
+improves the plan in place"; "Anchor code references in item bodies on symbols, not line numbers").
+
+- **Removed:** the draft-history narration, the `decodesAKey` retired-vocabulary entry for a term that
+  never reached the tree, and the two alternatives R966's landing made moot (minting decoded-key carriers
+  with a tabled request-time failure, and depending on R966).
+- **Relocated:** generator mechanism moved out of the Goal into Mechanism. The sis reach moved into the
+  Goal, and `## Provenance` went, since the item settles no question.
+- **Retitled:** the title is widened to the goal's actual scope, which was never field-level overrides
+  alone.
+- **Added:** two alternatives, carrying the slots on `OperationMember.Condition` (round 3's
+  non-blocking note, costed against the two `Condition` productions) and a test over built schemas
+  (why the check replaced it).
+- **Carried over:** round 6's corrections (the R955 relation names, the `FilterBinding.Remote` no-op)
+  are in the body. On the non-blocking notes: the reader list now includes the validator,
+  context-argument and fetcher-generator arms, and the `Bundle` visibility note is moot because the
+  check takes the relation directly.
+
+Nothing in the design's substance moved beyond the enforcer. The ledger, its key, the mint predicate,
+`ConditionOwnedField.resolvedColumn` and the fold's read are as round 6 verified them.
+
+This session wrote the revision, so `Spec -> Ready` needs a session that has committed neither.
