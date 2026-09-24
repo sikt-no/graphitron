@@ -270,7 +270,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphql_ast_entry", Arm.DERIVED);
         registrations.put("graphql_ast_element_entry", Arm.DERIVED);
         registrations.put("graphql_ast_directive_application_entry", Arm.DERIVED);
-        registrations.put("graphql_directive_site", Arm.DERIVED);
         registrations.put("graphql_element_field", Arm.DERIVED);
         registrations.put("graphitron_tabletype", Arm.DERIVED);
         registrations.put("graphitron_node", Arm.DERIVED);
@@ -454,8 +453,8 @@ class RelationRegistrationGateTest {
         registrations.put("intent_field_unlowerable_ordering", Arm.DERIVED);
         registrations.put("intent_field_unlowerable_ordering_rejection", Arm.DERIVED);
         // The diagnostics union view is a pure re-projection of its five arms, so its agreement
-        // is vacuous by construction on the graphql_directive_site precedent; the arm-specific
-        // derived columns are pinned by DiagnosticFactsTest against their Java spellings.
+        // is vacuous by construction; the arm-specific derived columns are pinned by
+        // DiagnosticFactsTest against their Java spellings.
         registrations.put("diagnostic", Arm.DERIVED);
         // The schema self-description stratum: views over row values authored in the DDL itself,
         // so capture never writes them and agreement with the walk is vacuous by construction.

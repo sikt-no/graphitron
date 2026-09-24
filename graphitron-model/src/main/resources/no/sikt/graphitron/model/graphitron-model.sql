@@ -1846,39 +1846,6 @@ COMMENT ON COLUMN graphql_poly_member.source_line IS 'source line of that token,
 COMMENT ON COLUMN graphql_poly_member.source_column IS 'source column of that token, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_poly_member.touched_at IS 'when the reading that derived the underlying row ran, carried through from the arm that holds it';
 
-CREATE VIEW graphql_directive_site AS
-SELECT graph_name, 'SCHEMA' AS site_kind, CAST(NULL AS VARCHAR) AS type_name,
-       CAST(NULL AS VARCHAR) AS member_name, CAST(NULL AS VARCHAR) AS argument_name,
-       directive_name, ordinal, source_name, source_line, source_column
-  FROM graphql_schema_directive
-UNION ALL
-SELECT graph_name, 'TYPE', type_name, NULL, NULL,
-       directive_name, ordinal, source_name, source_line, source_column
-  FROM graphql_type_directive
-UNION ALL
-SELECT graph_name, 'FIELD', type_name, field_name, NULL,
-       directive_name, ordinal, source_name, source_line, source_column
-  FROM graphql_field_directive
-UNION ALL
-SELECT graph_name, 'ARGUMENT', type_name, field_name, argument_name,
-       directive_name, ordinal, source_name, source_line, source_column
-  FROM graphql_argument_directive
-UNION ALL
-SELECT graph_name, 'ENUM_VALUE', type_name, value_name, NULL,
-       directive_name, ordinal, source_name, source_line, source_column
-  FROM graphql_enum_value_directive;
-COMMENT ON VIEW graphql_directive_site IS 'The one view the DDL ships: every application regardless of site, so a consumer that wants "all applications of @x" reads one relation.';
-COMMENT ON COLUMN graphql_directive_site.graph_name IS 'the owning graph''s partition, carried through from every arm''s base relation';
-COMMENT ON COLUMN graphql_directive_site.site_kind IS 'which element family the application sits on; the arm this row came from';
-COMMENT ON COLUMN graphql_directive_site.type_name IS 'the owning type, NULL on the schema-level arm';
-COMMENT ON COLUMN graphql_directive_site.member_name IS 'the field or enum value the application sits on, NULL where the site has none';
-COMMENT ON COLUMN graphql_directive_site.argument_name IS 'the field argument the application sits on, NULL where the site has none';
-COMMENT ON COLUMN graphql_directive_site.directive_name IS 'the applied directive name, without the leading @';
-COMMENT ON COLUMN graphql_directive_site.ordinal IS '0 unless the directive is repeatable; repeats number in document order';
-COMMENT ON COLUMN graphql_directive_site.source_name IS 'the SDL file the application was captured from';
-COMMENT ON COLUMN graphql_directive_site.source_line IS 'source line of the application, 1-based';
-COMMENT ON COLUMN graphql_directive_site.source_column IS 'source column of the application, 1-based';
-
 -- ==== The decoded graphitron and federation inventory =============================
 -- A derivation over the transcription: every relation below is a function of the generic
 -- directive applications the graphql_ family captured, decoded into graphitron's vocabulary.
@@ -8464,7 +8431,7 @@ SELECT g.graph_name, g.type_name, g.field_name,
 COMMENT ON VIEW intent_authored_claim_conflict IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. The authored-claim conflict rule as a resident of the intent_ stratum: one row per violated coordinate, both grains, the store-native pilot of the diagnostics stratum''s derivation arms. A coordinate violates when two or more distinct classifiers claim it, and that is the whole predicate: the relation is total over the authored claims and carries no population filter of its own. An authored contradiction is a contradiction wherever it sits, so each consumer applies the population its own question needs (the build-error surface joins intent_type_domain, type grain directly and field grain through the claim''s owning type, because only the emitted surface can fail a build; the editor''s diagnostic arm reads these rows ungated, a type no field reaches being precisely where an author most needs the signal). What this relation does not carry is any accept line: a filter wearing the view''s name would substitute one consumer''s population for the fact. Nor does it carry the claiming directives or the violation''s message. The claims are rows on the two claim views under this relation''s own key, so a consumer wanting their names joins them and asks membership as well as set equality; the message is a render whose naming order is AuthoredClaim''s declaration order, which is not a captured fact and so is no view''s to express, and it is minted post-capture into intent_authored_claim_rejection instead. One piece of Java logic still lives in this SQL and is pinned by the registered agreement anchor (no.sikt.graphitron.rewrite.derive.AuthoredClaimConflictsTest): the routine-plus-lookup carve-out, exactly that claim pair being the recognised-but-unsupported combination, which yields DEFERRED instead of CONFLICT. Locations join as the legacy mint did: a field violation carries the field''s own declared position, a type violation the type''s base declaration site at merge ordinal 0.';
 COMMENT ON COLUMN intent_authored_claim_conflict.graph_name IS 'the owning graph''s partition, carried from the claim views';
 COMMENT ON COLUMN intent_authored_claim_conflict.type_name IS 'the violated coordinate''s owning type (the coordinate itself at the type grain)';
-COMMENT ON COLUMN intent_authored_claim_conflict.field_name IS 'the violated coordinate''s field name; NULL exactly on type-grain rows, the two-grain union''s key shape (graphql_directive_site''s member_name precedent)';
+COMMENT ON COLUMN intent_authored_claim_conflict.field_name IS 'the violated coordinate''s field name; NULL exactly on type-grain rows, which is what a union over two grains costs in a key';
 COMMENT ON COLUMN intent_authored_claim_conflict.verdict IS 'CONFLICT for mutually exclusive claims, DEFERRED for the recognised routine-plus-lookup pair; a closed two-value vocabulary the reduction''s own output type discriminates';
 COMMENT ON COLUMN intent_authored_claim_conflict.source_name IS 'the violated coordinate''s own declaration file (the field''s position at the field grain, the base declaration''s at the type grain); NULL where the declaration carries no position';
 COMMENT ON COLUMN intent_authored_claim_conflict.source_line IS 'source line of the violated coordinate''s declaration, 1-based';
@@ -14338,7 +14305,7 @@ COMMENT ON COLUMN meta_family.definition IS 'the family''s charter: whose vocabu
 
 CREATE VIEW meta_family_headline (relation_name, ordinal) AS VALUES
   ('store_graph', 0), ('store_graph_source', 1), ('store_stamp', 2),
-  ('graphql_type_element', 0), ('graphql_field', 1), ('graphql_directive_site', 2),
+  ('graphql_type_element', 0), ('graphql_field', 1), ('graphql_field_directive', 2),
   ('graphitron_table_entry', 0), ('graphitron_field_reference_entry', 1), ('graphitron_undecoded_argument_entry', 2),
   ('graphitron_node_type', 3),
   ('sql_table', 0), ('sql_column', 1), ('sql_referential_constraint', 2),

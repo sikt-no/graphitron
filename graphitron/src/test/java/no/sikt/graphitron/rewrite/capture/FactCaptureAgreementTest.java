@@ -63,7 +63,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MINTED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_FEDERATION_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SYNTHESIZED_FEDERATION_KEY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_SITE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.JAVAC_DIAGNOSTIC;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_DISABLED_RULE;
@@ -103,6 +106,7 @@ import static no.sikt.graphitron.model.Tables.JVM_CLASS_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD;
 import static no.sikt.graphitron.model.Tables.JVM_DECLARED_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
+import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_ELEMENT;
@@ -163,7 +167,7 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
  *       table its stage writes from that view inside the derivation stratum. The {@code meta_}
  *       rows are derived in the widest sense of the arm, being rows the DDL alone determines
  *       rather than anything a run reads, which is why the rosters sit here. A pure re-projection
- *       ({@code graphql_directive_site}) registers the base relations it projects and its
+ *       (the {@code diagnostic} union) registers the base relations it projects and its
  *       agreement is vacuous by construction; a semantic derivation (the {@code intent_} claim
  *       views and the demand stratum) registers with its own anchor instead, which lives with
  *       its reader's test
@@ -740,11 +744,31 @@ class FactCaptureAgreementTest {
     void appliedDirectiveCountsMatchTheSdl(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, AgreementCorpus.SDL)) {
             var captured = new LinkedHashMap<String, Integer>();
+            var noName = inline((String) null);
             store.dsl()
-                .select(GRAPHQL_DIRECTIVE_SITE.SITE_KIND, GRAPHQL_DIRECTIVE_SITE.TYPE_NAME,
-                    GRAPHQL_DIRECTIVE_SITE.MEMBER_NAME, GRAPHQL_DIRECTIVE_SITE.ARGUMENT_NAME,
-                    GRAPHQL_DIRECTIVE_SITE.DIRECTIVE_NAME)
-                .from(GRAPHQL_DIRECTIVE_SITE)
+                .select(inline("SCHEMA"), noName, noName, noName,
+                    GRAPHQL_SCHEMA_DIRECTIVE.DIRECTIVE_NAME)
+                .from(GRAPHQL_SCHEMA_DIRECTIVE)
+                .unionAll(store.dsl()
+                    .select(inline("TYPE"), GRAPHQL_TYPE_DIRECTIVE.TYPE_NAME, noName, noName,
+                        GRAPHQL_TYPE_DIRECTIVE.DIRECTIVE_NAME)
+                    .from(GRAPHQL_TYPE_DIRECTIVE))
+                .unionAll(store.dsl()
+                    .select(inline("FIELD"), GRAPHQL_FIELD_DIRECTIVE.TYPE_NAME,
+                        GRAPHQL_FIELD_DIRECTIVE.FIELD_NAME, noName,
+                        GRAPHQL_FIELD_DIRECTIVE.DIRECTIVE_NAME)
+                    .from(GRAPHQL_FIELD_DIRECTIVE))
+                .unionAll(store.dsl()
+                    .select(inline("ARGUMENT"), GRAPHQL_ARGUMENT_DIRECTIVE.TYPE_NAME,
+                        GRAPHQL_ARGUMENT_DIRECTIVE.FIELD_NAME,
+                        GRAPHQL_ARGUMENT_DIRECTIVE.ARGUMENT_NAME,
+                        GRAPHQL_ARGUMENT_DIRECTIVE.DIRECTIVE_NAME)
+                    .from(GRAPHQL_ARGUMENT_DIRECTIVE))
+                .unionAll(store.dsl()
+                    .select(inline("ENUM_VALUE"), GRAPHQL_ENUM_VALUE_DIRECTIVE.TYPE_NAME,
+                        GRAPHQL_ENUM_VALUE_DIRECTIVE.VALUE_NAME, noName,
+                        GRAPHQL_ENUM_VALUE_DIRECTIVE.DIRECTIVE_NAME)
+                    .from(GRAPHQL_ENUM_VALUE_DIRECTIVE))
                 .fetch()
                 .forEach(row -> captured.merge(
                     String.join("|", String.valueOf(row.value1()), String.valueOf(row.value2()),

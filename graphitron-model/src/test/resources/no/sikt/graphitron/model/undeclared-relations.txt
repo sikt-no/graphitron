@@ -58,7 +58,6 @@ graphql_argument_element
 graphql_directive
 graphql_directive_argument
 graphql_directive_location
-graphql_directive_site
 graphql_enum_value
 graphql_enum_value_directive
 graphql_enum_value_directive_arg
