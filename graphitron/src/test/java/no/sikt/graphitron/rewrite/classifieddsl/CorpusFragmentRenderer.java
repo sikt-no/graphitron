@@ -1,7 +1,8 @@
 package no.sikt.graphitron.rewrite.classifieddsl;
 
+import no.sikt.graphitron.model.test.CorpusDocuments;
 import no.sikt.graphitron.rewrite.ArchitectureDocSymbolScanner;
-import no.sikt.graphitron.rewrite.classifieddsl.CorpusDocuments.Document;
+import no.sikt.graphitron.model.test.CorpusDocuments.Document;
 
 import java.io.IOException;
 import java.nio.file.Files;

@@ -1,4 +1,4 @@
-package no.sikt.graphitron.model.capture.macro;
+package no.sikt.graphitron.model.capture.document;
 
 import org.jooq.Condition;
 import org.jooq.DSLContext;
@@ -17,10 +17,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ELEMENT_MINTED_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_AUTHORED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_MINTED;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_MINTED_CANDIDATE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_MINTED_CANDIDATE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_CONFLICT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MINTED_CANDIDATE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_AUTHORED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MINTED;
@@ -47,7 +47,7 @@ import static org.jooq.impl.DSL.when;
 
 /**
  * The anchor phase of macro expansion: the schema elements the generator emits, which are what the
- * author declared unioned with what {@link MacroCapture} minted.
+ * author declared unioned with what {@code graphitron_connection_carrier} minted.
  *
  * <p>A phase rather than a stage beside the expansion, on the shape the other gatherers already
  * have: each transcribes, then anchors what it transcribed, the anchoring living in a class of its
@@ -62,53 +62,11 @@ import static org.jooq.impl.DSL.when;
  * carrying any other instant, children first. A relation whose lifetime is a property of whatever
  * pass runs around it cannot move to another pass.
  */
-public final class MacroAnchor {
+public final class EmittedAnchor {
 
-    private MacroAnchor() {}
+    private EmittedAnchor() {}
 
     private static final String REPLACE = "REPLACE";
-
-    /**
-     * Any one coordinate whose application coined this minted element.
-     *
-     * <p>One rather than all, and not the smallest or the earliest either. Shared machinery is
-     * stated whole by every carrier that wants it, so the rows differ in nothing but which carrier
-     * wrote them: every candidate is as true as every other, and the first one found says what the
-     * column exists to say. Aggregating over the group would read all of them to answer a question
-     * the first already answers, and ordering them would invent a precedence the facts do not have.
-     *
-     * <p>Correlated to the outer row's coordinate rather than its source, which is what makes the
-     * value the same for every carrier of one element and so lets the {@code DISTINCT} above
-     * collapse them as it did before this column existed.
-     */
-    private static Field<String> aCoinerOfType() {
-        var coiner = GRAPHITRON_MINTED_TYPE.as("coiner");
-        return field(select(coiner.SOURCE_COORDINATE).from(coiner)
-            .where(coiner.GRAPH_NAME.eq(GRAPHITRON_MINTED_TYPE.GRAPH_NAME))
-            .and(coiner.TYPE_NAME.eq(GRAPHITRON_MINTED_TYPE.TYPE_NAME))
-            .limit(1));
-    }
-
-    /** {@link #aCoinerOfType()} for a minted field. */
-    private static Field<String> aCoinerOfField() {
-        var coiner = GRAPHITRON_MINTED_FIELD.as("coiner");
-        return field(select(coiner.SOURCE_COORDINATE).from(coiner)
-            .where(coiner.GRAPH_NAME.eq(GRAPHITRON_MINTED_FIELD.GRAPH_NAME))
-            .and(coiner.TYPE_NAME.eq(GRAPHITRON_MINTED_FIELD.TYPE_NAME))
-            .and(coiner.FIELD_NAME.eq(GRAPHITRON_MINTED_FIELD.FIELD_NAME))
-            .limit(1));
-    }
-
-    /** {@link #aCoinerOfType()} for a minted field argument. */
-    private static Field<String> aCoinerOfArgument() {
-        var coiner = GRAPHITRON_MINTED_ARGUMENT.as("coiner");
-        return field(select(coiner.SOURCE_COORDINATE).from(coiner)
-            .where(coiner.GRAPH_NAME.eq(GRAPHITRON_MINTED_ARGUMENT.GRAPH_NAME))
-            .and(coiner.TYPE_NAME.eq(GRAPHITRON_MINTED_ARGUMENT.TYPE_NAME))
-            .and(coiner.FIELD_NAME.eq(GRAPHITRON_MINTED_ARGUMENT.FIELD_NAME))
-            .and(coiner.ARGUMENT_NAME.eq(GRAPHITRON_MINTED_ARGUMENT.ARGUMENT_NAME))
-            .limit(1));
-    }
 
     /**
      * Derives the graph's element anchors; see the class javadoc.
@@ -188,148 +146,42 @@ public final class MacroAnchor {
     private static void conflicts(DSLContext dsl, String graphName) {
         dsl.deleteFrom(GRAPHITRON_MINTED_CONFLICT)
             .where(GRAPHITRON_MINTED_CONFLICT.GRAPH_NAME.eq(graphName)).execute();
+        contested(dsl, graphName, GRAPHITRON_TYPE_MINTED_CANDIDATE.GRAPH_NAME,
+            GRAPHITRON_TYPE_MINTED_CANDIDATE.COORDINATE, GRAPHITRON_TYPE_MINTED_CANDIDATE,
+            "NAMED_TYPE");
+        contested(dsl, graphName, GRAPHITRON_FIELD_MINTED_CANDIDATE.GRAPH_NAME,
+            GRAPHITRON_FIELD_MINTED_CANDIDATE.COORDINATE, GRAPHITRON_FIELD_MINTED_CANDIDATE,
+            "FIELD");
+        contested(dsl, graphName, GRAPHITRON_ARGUMENT_MINTED_CANDIDATE.GRAPH_NAME,
+            GRAPHITRON_ARGUMENT_MINTED_CANDIDATE.COORDINATE, GRAPHITRON_ARGUMENT_MINTED_CANDIDATE,
+            "FIELD_ARGUMENT");
+    }
 
-        var types = dsl.selectDistinct(GRAPHITRON_MINTED_TYPE.GRAPH_NAME,
-                GRAPHITRON_MINTED_TYPE.TYPE_NAME, GRAPHITRON_MINTED_TYPE.KIND,
-                GRAPHITRON_MINTED_TYPE.DESCRIPTION)
-            .from(GRAPHITRON_MINTED_TYPE)
-            .where(GRAPHITRON_MINTED_TYPE.GRAPH_NAME.eq(graphName))
-            .and(mintedTypeTakesEffect())
-            .asTable("m");
+    /**
+     * Records the coordinates one candidate set states more than one way.
+     *
+     * <p>A count of distinct payloads rather than of rows: the candidate views distinct their whole
+     * projection, so two carriers stating one shared type identically are already one row, and what
+     * survives to be counted here is genuine disagreement. Nothing is picked; the coordinate is
+     * withheld from the set and a row here says how many ways the schema disagreed with itself.
+     */
+    private static void contested(DSLContext dsl, String graphName,
+                                  org.jooq.Field<String> graphColumn,
+                                  org.jooq.Field<String> coordinateColumn,
+                                  org.jooq.Table<?> candidates, String elementKind) {
         dsl.insertInto(GRAPHITRON_MINTED_CONFLICT)
             .columns(GRAPHITRON_MINTED_CONFLICT.GRAPH_NAME, GRAPHITRON_MINTED_CONFLICT.COORDINATE,
                 GRAPHITRON_MINTED_CONFLICT.ELEMENT_KIND, GRAPHITRON_MINTED_CONFLICT.VARIANTS)
             .select(dsl
-                .select(types.field(GRAPHITRON_MINTED_TYPE.GRAPH_NAME),
-                    typeCoordinate(types.field(GRAPHITRON_MINTED_TYPE.TYPE_NAME)),
-                    val("NAMED_TYPE"), count())
-                .from(types)
-                .groupBy(types.field(GRAPHITRON_MINTED_TYPE.GRAPH_NAME),
-                    types.field(GRAPHITRON_MINTED_TYPE.TYPE_NAME))
-                .having(count().gt(1)))
-            .execute();
-
-        var fields = dsl.selectDistinct(GRAPHITRON_MINTED_FIELD.GRAPH_NAME,
-                GRAPHITRON_MINTED_FIELD.TYPE_NAME, GRAPHITRON_MINTED_FIELD.FIELD_NAME,
-                GRAPHITRON_MINTED_FIELD.ORDINAL, GRAPHITRON_MINTED_FIELD.TYPE_SDL,
-                GRAPHITRON_MINTED_FIELD.NAMED_TYPE, GRAPHITRON_MINTED_FIELD.NON_NULL,
-                GRAPHITRON_MINTED_FIELD.IS_LIST, GRAPHITRON_MINTED_FIELD.ITEM_NON_NULL,
-                GRAPHITRON_MINTED_FIELD.DESCRIPTION)
-            .from(GRAPHITRON_MINTED_FIELD)
-            .where(GRAPHITRON_MINTED_FIELD.GRAPH_NAME.eq(graphName))
-            .and(mintedFieldTakesEffect())
-            .asTable("m");
-        dsl.insertInto(GRAPHITRON_MINTED_CONFLICT)
-            .columns(GRAPHITRON_MINTED_CONFLICT.GRAPH_NAME, GRAPHITRON_MINTED_CONFLICT.COORDINATE,
-                GRAPHITRON_MINTED_CONFLICT.ELEMENT_KIND, GRAPHITRON_MINTED_CONFLICT.VARIANTS)
-            .select(dsl
-                .select(fields.field(GRAPHITRON_MINTED_FIELD.GRAPH_NAME),
-                    fieldCoordinate(fields.field(GRAPHITRON_MINTED_FIELD.TYPE_NAME),
-                        fields.field(GRAPHITRON_MINTED_FIELD.FIELD_NAME)),
-                    val("FIELD"), count())
-                .from(fields)
-                .groupBy(fields.field(GRAPHITRON_MINTED_FIELD.GRAPH_NAME),
-                    fields.field(GRAPHITRON_MINTED_FIELD.TYPE_NAME),
-                    fields.field(GRAPHITRON_MINTED_FIELD.FIELD_NAME))
-                .having(count().gt(1)))
-            .execute();
-
-        var arguments = dsl.selectDistinct(GRAPHITRON_MINTED_ARGUMENT.GRAPH_NAME,
-                GRAPHITRON_MINTED_ARGUMENT.TYPE_NAME, GRAPHITRON_MINTED_ARGUMENT.FIELD_NAME,
-                GRAPHITRON_MINTED_ARGUMENT.ARGUMENT_NAME, GRAPHITRON_MINTED_ARGUMENT.ORDINAL,
-                GRAPHITRON_MINTED_ARGUMENT.TYPE_SDL, GRAPHITRON_MINTED_ARGUMENT.NAMED_TYPE,
-                GRAPHITRON_MINTED_ARGUMENT.NON_NULL, GRAPHITRON_MINTED_ARGUMENT.IS_LIST,
-                GRAPHITRON_MINTED_ARGUMENT.ITEM_NON_NULL,
-                GRAPHITRON_MINTED_ARGUMENT.DEFAULT_VALUE_SDL,
-                GRAPHITRON_MINTED_ARGUMENT.DESCRIPTION)
-            .from(GRAPHITRON_MINTED_ARGUMENT)
-            .where(GRAPHITRON_MINTED_ARGUMENT.GRAPH_NAME.eq(graphName))
-            .and(mintedArgumentTakesEffect())
-            .asTable("m");
-        dsl.insertInto(GRAPHITRON_MINTED_CONFLICT)
-            .columns(GRAPHITRON_MINTED_CONFLICT.GRAPH_NAME, GRAPHITRON_MINTED_CONFLICT.COORDINATE,
-                GRAPHITRON_MINTED_CONFLICT.ELEMENT_KIND, GRAPHITRON_MINTED_CONFLICT.VARIANTS)
-            .select(dsl
-                .select(arguments.field(GRAPHITRON_MINTED_ARGUMENT.GRAPH_NAME),
-                    argumentCoordinate(arguments.field(GRAPHITRON_MINTED_ARGUMENT.TYPE_NAME),
-                        arguments.field(GRAPHITRON_MINTED_ARGUMENT.FIELD_NAME),
-                        arguments.field(GRAPHITRON_MINTED_ARGUMENT.ARGUMENT_NAME)),
-                    val("FIELD_ARGUMENT"), count())
-                .from(arguments)
-                .groupBy(arguments.field(GRAPHITRON_MINTED_ARGUMENT.GRAPH_NAME),
-                    arguments.field(GRAPHITRON_MINTED_ARGUMENT.TYPE_NAME),
-                    arguments.field(GRAPHITRON_MINTED_ARGUMENT.FIELD_NAME),
-                    arguments.field(GRAPHITRON_MINTED_ARGUMENT.ARGUMENT_NAME))
-                .having(count().gt(1)))
+                .select(graphColumn, coordinateColumn,
+                    org.jooq.impl.DSL.val(elementKind, GRAPHITRON_MINTED_CONFLICT.ELEMENT_KIND),
+                    org.jooq.impl.DSL.count().cast(org.jooq.impl.SQLDataType.INTEGER))
+                .from(candidates)
+                .where(graphColumn.eq(graphName))
+                .groupBy(graphColumn, coordinateColumn)
+                .having(org.jooq.impl.DSL.count().gt(1)))
             .execute();
     }
-
-    /**
-     * A minted type takes effect: it fills a name no author declared.
-     *
-     * <p>No second arm about replacing, though the column that would carry one is here. Every
-     * minted type yields, and {@code graphitron_minted_type.precedence}'s {@code CHECK} is what
-     * holds the expansions to it, so a disjunct on {@code REPLACE} could not be the reason a row
-     * survived. Stated once because the conflict scan and the type set are the same rule projected
-     * two ways.
-     */
-    private static Condition mintedTypeTakesEffect() {
-        return notExists(selectOne().from(GRAPHQL_TYPE_ELEMENT)
-            .where(GRAPHQL_TYPE_ELEMENT.GRAPH_NAME.eq(GRAPHITRON_MINTED_TYPE.GRAPH_NAME))
-            .and(GRAPHQL_TYPE_ELEMENT.TYPE_NAME.eq(GRAPHITRON_MINTED_TYPE.TYPE_NAME)));
-    }
-
-    /**
-     * A minted field takes effect. Two conditions, and the second is the one the row's own
-     * precedence cannot carry.
-     *
-     * <p>The first is the field's own: it replaces, or it yields to nobody. This is the one grain
-     * where both values occur, a rewritten carrier replacing what its author wrote.
-     *
-     * <p>The second is that a field the macro wrote while minting a type shares that type's fate.
-     * An author who declared {@code type PageInfo { foo: String }} collides with the minted type,
-     * and the four machinery fields collide with nothing, so the first condition alone would let
-     * {@code hasNextPage} land on the author's type and fuse two types nobody asked to merge.
-     * Machinery is told from a rewritten carrier by its source: a machinery field shares a source
-     * coordinate with a minted type row for its own owning type, where a rewritten
-     * {@code Query.films} coined no minted {@code Query}. Nothing here asks what that type row's
-     * precedence was, {@link #mintedTypeTakesEffect()} saying why.
-     */
-    private static Condition mintedFieldTakesEffect() {
-        Condition ownCoordinateIsFree = GRAPHITRON_MINTED_FIELD.PRECEDENCE.eq(REPLACE)
-            .or(notExists(selectOne().from(GRAPHQL_FIELD_ELEMENT)
-                .where(GRAPHQL_FIELD_ELEMENT.GRAPH_NAME.eq(GRAPHITRON_MINTED_FIELD.GRAPH_NAME))
-                .and(GRAPHQL_FIELD_ELEMENT.TYPE_NAME.eq(GRAPHITRON_MINTED_FIELD.TYPE_NAME))
-                .and(GRAPHQL_FIELD_ELEMENT.FIELD_NAME.eq(GRAPHITRON_MINTED_FIELD.FIELD_NAME))));
-        Condition owningTypeLost = exists(selectOne().from(GRAPHITRON_MINTED_TYPE)
-            .where(GRAPHITRON_MINTED_TYPE.GRAPH_NAME.eq(GRAPHITRON_MINTED_FIELD.GRAPH_NAME))
-            .and(GRAPHITRON_MINTED_TYPE.SOURCE_COORDINATE
-                .eq(GRAPHITRON_MINTED_FIELD.SOURCE_COORDINATE))
-            .and(GRAPHITRON_MINTED_TYPE.TYPE_NAME.eq(GRAPHITRON_MINTED_FIELD.TYPE_NAME))
-            .and(exists(selectOne().from(GRAPHQL_TYPE_ELEMENT)
-                .where(GRAPHQL_TYPE_ELEMENT.GRAPH_NAME.eq(GRAPHITRON_MINTED_TYPE.GRAPH_NAME))
-                .and(GRAPHQL_TYPE_ELEMENT.TYPE_NAME.eq(GRAPHITRON_MINTED_TYPE.TYPE_NAME)))));
-        return ownCoordinateIsFree.and(owningTypeLost.not());
-    }
-
-    /**
-     * A minted argument takes effect, on the type grain's terms and for its reason: every argument
-     * minted today yields, and the {@code CHECK} on
-     * {@code graphitron_minted_argument.precedence} holds it there.
-     *
-     * <p>No rule of the field grain's second kind is owed either. Every argument minted today lands
-     * on the carrier the directive sits on, and that field survives whether the expansion rewrote
-     * it or left it, so there is no owning element whose fate an argument could have to share.
-     */
-    private static Condition mintedArgumentTakesEffect() {
-        return notExists(selectOne().from(GRAPHQL_ARGUMENT_ELEMENT)
-            .where(GRAPHQL_ARGUMENT_ELEMENT.GRAPH_NAME.eq(GRAPHITRON_MINTED_ARGUMENT.GRAPH_NAME))
-            .and(GRAPHQL_ARGUMENT_ELEMENT.TYPE_NAME.eq(GRAPHITRON_MINTED_ARGUMENT.TYPE_NAME))
-            .and(GRAPHQL_ARGUMENT_ELEMENT.FIELD_NAME.eq(GRAPHITRON_MINTED_ARGUMENT.FIELD_NAME))
-            .and(GRAPHQL_ARGUMENT_ELEMENT.ARGUMENT_NAME
-                .eq(GRAPHITRON_MINTED_ARGUMENT.ARGUMENT_NAME)));
-    }
-
 
     // ---------------------------------------------------------------- the fills
 

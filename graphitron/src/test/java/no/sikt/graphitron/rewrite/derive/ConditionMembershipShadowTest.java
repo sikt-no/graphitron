@@ -6,7 +6,7 @@ import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.model.classpath.ClasspathScanner;
 import no.sikt.graphitron.model.classpath.CompletionData;
-import no.sikt.graphitron.rewrite.classifieddsl.CorpusDocuments;
+import no.sikt.graphitron.model.test.CorpusDocuments;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;

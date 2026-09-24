@@ -15,7 +15,7 @@ import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedConstraint;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
-import static no.sikt.graphitron.model.test.SeededStore.seedFieldSynthesis;
+import static no.sikt.graphitron.model.test.SeededStore.seedConnectionCarrier;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedImplements;
 import static no.sikt.graphitron.model.test.SeededStore.seedMutation;
@@ -101,12 +101,20 @@ class FieldParticipantScopeTableTest {
         withCatalog(dsl -> {
             seedTableBinding(dsl, GRAPH, "Film", "film");
             seedUnionMember(dsl, GRAPH, "Document", "Film", 1);
-            seedType(dsl, GRAPH, "DocumentConnection", "OBJECT");
-            seedField(dsl, GRAPH, "Query", "documents", "DocumentConnection", false);
-            seedFieldSynthesis(dsl, GRAPH, "Query", "documents", "[Document!]!");
+            // The authored shape: a bare list of the union it pages over. The connection type is
+            // what this carrier mints rather than what the author wrote, so the field states the
+            // element and the expansion states the wrapper.
+            seedField(dsl, GRAPH, "Query", "documents", "Document", true);
+            seedConnectionCarrier(dsl, GRAPH, "Query", "documents");
 
+            // The carrier and the machinery its expansion mints, all three reaching the same
+            // element. The connection's nodes and its edge's node are fields of the schema like
+            // any other, so they participate; the fixture used to state a rewrite with no
+            // machinery behind it, which is a shape no capture produces.
             assertThat(rows(dsl).map(FieldParticipantScopeTableTest::render))
-                .containsExactly("Query.documents Film film");
+                .containsExactly("Query.documents Film film",
+                    "QueryDocumentsConnection.nodes Film film",
+                    "QueryDocumentsConnectionEdge.node Film film");
         });
     }
 

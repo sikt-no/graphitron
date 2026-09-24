@@ -1,7 +1,6 @@
-package no.sikt.graphitron.rewrite.classifieddsl;
+package no.sikt.graphitron.model.test;
 
-import no.sikt.graphitron.rewrite.classifieddsl.CorpusExpectations.Block;
-import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.model.test.CorpusExpectations.Block;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
@@ -21,7 +20,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Decoding needs no store: a block is CSV, and jOOQ parses CSV without a connection, which is the
  * whole point of not owning a parser.
  */
-@UnitTier
 class CorpusExpectationsTest {
 
     private static final DSLContext PARSER = DSL.using(SQLDialect.DEFAULT);
@@ -114,10 +112,10 @@ class CorpusExpectationsTest {
 
     @Test
     void aRelationOwnsItsSilenceWhenItsCommentSaysSo() {
-        assertThat(CorpusExpectationTest.ownsItsSilence(
+        assertThat(CorpusExpectations.ownsItsSilence(
             "One row per claimed coordinate; no row where the walk reached nothing."))
             .isTrue();
-        assertThat(CorpusExpectationTest.ownsItsSilence("One row per claimed coordinate."))
+        assertThat(CorpusExpectations.ownsItsSilence("One row per claimed coordinate."))
             .isFalse();
     }
 
@@ -158,7 +156,7 @@ class CorpusExpectationsTest {
 
     @Test
     void aCheckedVocabularyIsReadOffTheClauseTheStoreDeclares() {
-        assertThat(CorpusExpectationTest.CHECKED_MEMBERSHIP
+        assertThat(CorpusExpectations.CHECKED_MEMBERSHIP
             .matcher("(\"TIER\" IN ('AUTHORED', 'INFERRED'))").find())
             .as("the clause shape the store spells its closed sets in")
             .isTrue();

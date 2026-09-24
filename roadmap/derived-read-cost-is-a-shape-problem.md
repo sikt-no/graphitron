@@ -7,7 +7,7 @@ priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-09-22
+last-updated: 2026-09-24
 ---
 
 # Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject
@@ -186,6 +186,45 @@ rather than left in a transcript.
   prose out of a booted H2 store, so the DDL it sees is the compiled resource rather than the file it
   names, and it labels every finding with the `src/main/resources` path. On an incremental build that
   pair means it reports against a stale copy while pointing at a source file that is already fixed.
+
+* **Seeding is the fallout of a module boundary this item already moved.** `SeededStore` exists
+  because the gatherers lived in `graphitron`, where a test had no way to run a capture: writing
+  rows was the only way to put facts in front of a rule. The gatherers are in `graphitron-model`
+  now and the corpus and its `@expectEquals` runner moved with them, so a test can state SDL and
+  read the relations back. What is left is the fallout: a seeding helper of a few thousand lines and
+  most of the test classes in the module reaching for it, because seeding was once the only option.
+
+  The cost is measurable now that the alternative exists. Converting the macro expansion to a
+  derivation broke six seeded fixtures, and each was asserting over a state capture cannot reach:
+  five seeded a carrier whose *authored* field was already the connection type, which no
+  transcription holds because the rewrite is derived, and one expected a carrier's row without the
+  `nodes` and `node` its expansion mints. A seventh counted `graphql_field` to assert a per-field
+  invariant a relation states over the emitted population. None of them could fail before, because
+  seeding writes both halves of a claim and nothing checks the halves against each other.
+
+* **The classpath half has its corpus already; it is the seeding that has no excuse.** `SeededStore`
+  seeds `code_` too, and that arrived on 2026-09-20 with the commits introducing the family, so it is
+  not even old fallout. What makes it worse than the SDL half is not that a corpus is missing: the
+  three strata all have one, and two of them are modules the tests already depend on. The SDL corpus
+  is the fact documents; the catalog corpus is `graphitron-sakila-db`, a real jOOQ-generated catalog;
+  the classpath corpus is `graphitron-sakila-service`, ninety-six real Java classes. Extending any of
+  them is adding a class, a table or a converter to a module that already compiles, not designing
+  anything. A seeded `code_method` row is a claim about a method; a method in `sakila-service` is
+  one. The failure mode is the worst available, generated code calling a method that does not exist,
+  failing in a consumer's build rather than ours, and it is self-confirming: a fixture seeds a method
+  name and asserts the emitted text contains it, so the test cannot fail for the reason it exists.
+  `graphitron-model` depends on `graphitron-sakila-db` only, so the conversion owes it one test
+  dependency on a module that is already in the reactor.
+
+* **The fixtures are static, which is what makes a warm store possible.** No `sql_`, `jvm_` or
+  `code_` relation carries `graph_name`: the catalog and the classpath are store-wide by
+  construction, while every `graphql_` and `graphitron_` relation is partitioned by graph. So one
+  store can hold many graphs against one shared reading of the catalog and the classpath, and the
+  reading that costs the most happens once rather than per document. The second half is the part
+  that is not an optimisation: varying which SDL loads into a warm store is the only thing that
+  exercises refresh at all. A fresh store per test means every refresh runs against an empty store,
+  which is the one case where sweeping, re-anchoring and incremental invalidation are all trivially
+  correct, so the cheap path and the untested path are currently the same path.
 
 ## What a reviewer should press on
 

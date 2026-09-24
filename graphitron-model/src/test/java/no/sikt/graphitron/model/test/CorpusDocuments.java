@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.classifieddsl;
+package no.sikt.graphitron.model.test;
 
 import graphql.language.Definition;
 import graphql.language.FragmentDefinition;
@@ -20,7 +20,7 @@ import java.util.stream.Stream;
 
 /**
  * The spec-by-example corpus, loaded from the folder of GraphQL documents at
- * {@code graphitron/src/test/resources/corpus}. One example is one document: the annotated fixture
+ * {@code graphitron-model/src/test/resources/corpus}. One example is one document: the annotated fixture
  * schema, the prose that teaches it as SDL descriptions, and optionally the projection operation the
  * documentation renders it through. The filename is the example's id, so adding an example is adding
  * a file.
@@ -34,7 +34,7 @@ import java.util.stream.Stream;
  * definitions, their SDL enums, {@code interface Node}, the {@code Query} root and the
  * {@code CorpusAnchor} type; the leading underscore keeps it out of the document glob. Every reader
  * prepends {@link #prelude()} to a document's {@link Document#sdl()} before classifying it, which is
- * what {@link ClassifiedHarness#classify(String)} does.
+ * what the generator's classification harness does with one.
  *
  * <p><b>A folder is the container that can pass while empty</b>, so the documents are executed and
  * never surveyed. {@link #MIN_DOCUMENTS} is the non-vacuity ratchet, and {@code CorpusDocumentsTest}
@@ -52,7 +52,7 @@ public final class CorpusDocuments {
      * that stops resolving, or a glob that stops matching, reads as an empty corpus and passes every
      * sweep over it; this is what makes that failure loud instead.
      */
-    static final int MIN_DOCUMENTS = 58;
+    public static final int MIN_DOCUMENTS = 58;
 
     /** The prelude document's filename, excluded from the document glob by its leading underscore. */
     static final String PRELUDE_DOCUMENT = "_prelude.graphqls";
@@ -74,8 +74,11 @@ public final class CorpusDocuments {
     public record Folder(String name, int minDocuments) {
 
         List<Path> candidates() {
-            return List.of(Path.of("graphitron", "src", "test", "resources", name),
-                Path.of("src", "test", "resources", name));
+            return List.of(Path.of("graphitron-model", "src", "test", "resources", name),
+                Path.of("src", "test", "resources", name),
+                // A consumer module's tests run with their own directory as the working one, so
+                // the corpus is reached by stepping out of it rather than down from the root.
+                Path.of("..", "graphitron-model", "src", "test", "resources", name));
         }
     }
 
@@ -210,49 +213,6 @@ public final class CorpusDocuments {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
-    }
-
-    /**
-     * The set of sealed {@code GraphitronField} / {@code GraphitronType} leaves the corpus
-     * demonstrates classification for, by classifying every document and collecting the leaf each
-     * {@code @classified} / {@code @classifiedType} coordinate landed on, descending the ridden lists
-     * a classified leaf carries ({@code NestingField.nestedFields()}, {@code PivotSpec.slots()}); a
-     * pivot slot or a nesting child has no top-level coordinate of its own, so the descent is what
-     * lets the corpus walk observe it. This set alone carries the output-field and type side of the
-     * variant-coverage obligation ({@code ExemptionRegistry}): a leaf absent here fails coverage even
-     * when an enum case still asserts it.
-     *
-     * <p>Synthesised type leaves join through {@code @synthesises} on a carrier coordinate: an arm
-     * counts only when a declared mint agrees with the connection-synthesis relation's produced row
-     * (same name, same arm, registry entry matching), never from the producer's output alone, so the
-     * coverage stays author-checkable.
-     */
-    public static Set<Class<?>> coveredLeaves() {
-        var leaves = new HashSet<Class<?>>();
-        var mintedArmsBySimpleName = new java.util.HashMap<String, Class<?>>();
-        for (var arm : no.sikt.graphitron.rewrite.model.ConnectionSynthesis.MINTED_ARM_VOCABULARY) {
-            mintedArmsBySimpleName.put(arm.getSimpleName(), arm);
-        }
-        for (Document document : documents()) {
-            var result = ClassifiedHarness.classify(document.sdl());
-            for (var fc : result.fields()) {
-                var field = result.schema().field(fc.parentType(), fc.fieldName());
-                ClassifiedHarness.forEachWithRiddenFields(field, f -> leaves.add(f.getClass()));
-            }
-            for (var tc : result.types()) {
-                if (tc.leaf() != null) {
-                    leaves.add(tc.leaf());
-                }
-            }
-            for (var sc : result.synthesises()) {
-                for (var declared : sc.declared()) {
-                    if (sc.produced().contains(declared)) {
-                        leaves.add(mintedArmsBySimpleName.get(declared.arm()));
-                    }
-                }
-            }
-        }
-        return leaves;
     }
 
     /** The loaded document ids, for the floors that compare the loader against the folder. */

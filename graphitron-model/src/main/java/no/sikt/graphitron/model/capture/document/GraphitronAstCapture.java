@@ -87,8 +87,20 @@ public final class GraphitronAstCapture {
      * these resolve against what that settled rather than asking the corpus again. They key into
      * {@code graphql_type_element} and {@code graphql_type_declaration}, so they run after whichever
      * producer of those the pass has.
+     *
+     * <p>The emitted population is the last step and not a pass of its own. What a macro mints is
+     * derived from the application that coins it, and an application is a thing written at a
+     * position in a document, so the reading that decodes the document is the reading that knows
+     * it. Expanding somewhere later meant reading a coordinate the corpus had already resolved,
+     * which is a grain with no application in it and nothing to tell two applications apart by.
      */
     public static void anchor(DSLContext dsl, GraphIdentity graph, LocalDateTime readAt) {
         GraphitronAnchor.write(dsl, graph.name(), readAt);
+        // Then what the applications just anchored mint. Second by our choice rather than by
+        // necessity of the entries: at the entry grain an @asConnection and an @asFacet are
+        // siblings, each decoded from its own position and reading nothing of the other. It is
+        // here that one depends on the other, the emitted population being resolved out of the
+        // applications this gatherer settled a statement earlier.
+        EmittedAnchor.derive(dsl, graph.name(), readAt);
     }
 }

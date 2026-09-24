@@ -99,8 +99,7 @@ class RelationRegistrationGateTest {
             "graphitron_federation_key_entry", "graphitron_federation_key_field_entry",
             "graphitron_federation_key_field_segment_entry", "graphitron_link_entry",
             "graphitron_link_import_entry", "graphitron_multitable_reference_entry", "graphitron_record_entry",
-            "graphitron_undecoded_argument_entry", "graphitron_minted_type",
-            "graphitron_minted_field", "graphitron_minted_argument",
+            "graphitron_undecoded_argument_entry",
             // The three supertypes ride the arm of the sites that spell them. The spelled reference
             // and the method reference are written in the same walk as the per-site row they sit
             // beside, so a coordinate the walk claims contributes to both; the pair relation has no
@@ -332,8 +331,6 @@ class RelationRegistrationGateTest {
         registrations.put("intent_field_chain_node", Arm.DERIVED);
         registrations.put("intent_field_chain_terminus", Arm.DERIVED);
         registrations.put("intent_field_reference_discovery", Arm.DERIVED);
-        registrations.put("graphitron_minted_type", Arm.DERIVED);
-        registrations.put("graphitron_minted_field", Arm.DERIVED);
         registrations.put("graphitron_connection_element_type", Arm.DERIVED);
         registrations.put("intent_field_navigated_type", Arm.DERIVED);
         registrations.put("intent_routine_return_binding", Arm.DERIVED);
@@ -412,6 +409,12 @@ class RelationRegistrationGateTest {
         registrations.put("intent_argument_filter_role", Arm.DERIVED);
         registrations.put("graphitron_facet_binding", Arm.DERIVED);
         registrations.put("graphitron_connection_facet", Arm.DERIVED);
+        registrations.put("graphitron_connection_carrier", Arm.DERIVED);
+        registrations.put("graphitron_carrier_facet_mint", Arm.DERIVED);
+        registrations.put("graphitron_minted_coinage", Arm.DERIVED);
+        registrations.put("graphitron_type_minted_candidate", Arm.DERIVED);
+        registrations.put("graphitron_field_minted_candidate", Arm.DERIVED);
+        registrations.put("graphitron_argument_minted_candidate", Arm.DERIVED);
         registrations.put("graphitron_argument_reachable_input", Arm.DERIVED);
         registrations.put("intent_field_column_table", Arm.DERIVED);
         registrations.put("intent_field_separate_fetch", Arm.DERIVED);

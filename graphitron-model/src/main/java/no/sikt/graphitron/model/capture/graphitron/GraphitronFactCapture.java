@@ -12,7 +12,6 @@ import graphql.language.ObjectValue;
 import graphql.language.SourceLocation;
 import graphql.language.StringValue;
 import graphql.language.Value;
-import no.sikt.graphitron.model.capture.macro.MacroCapture;
 import no.sikt.graphitron.model.derive.FieldChainApplications;
 import no.sikt.graphitron.model.derive.FieldEndpoints;
 import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
@@ -59,11 +58,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENUM_VALUE_BINDING_ENTR
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_HANDLER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FACET_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_LOOKUP_KEY_ENTRY;
@@ -340,17 +337,6 @@ public final class GraphitronFactCapture {
     public void captureFieldDirective(String type, String field, Directive directive, int ordinal,
                                boolean inputField) {
         switch (directive.getName()) {
-            case "field" -> {
-                if (!sink.claim(GRAPHITRON_FIELD_BINDING_ENTRY, type, field)) return;
-                String name = string(directive, "name");
-                if (name == null) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_FIELD_BINDING_ENTRY);
-                record.setTypeName(type);
-                record.setFieldName(field);
-                position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
-                record.setNameRef(name);
-                sink.add(record);
-            }
             case "condition" -> {
                 if (!sink.claim(GRAPHITRON_FIELD_CONDITION_ENTRY, type, field)) return;
                 var reference = codeReference(directive, "condition");
@@ -545,7 +531,6 @@ public final class GraphitronFactCapture {
                     type, field, null, null, null,
                     string(directive, "className"), string(directive, "method"), directive);
             }
-            case "asFacet" -> marker(GRAPHITRON_FACET_ENTRY, type, field, directive);
             case "splitQuery" -> marker(GRAPHITRON_SPLIT_QUERY_ENTRY, type, field, directive);
             case "tenantFanOut" -> marker(GRAPHITRON_TENANT_FAN_OUT_ENTRY, type, field, directive);
             case "multitableReference" -> marker(GRAPHITRON_MULTITABLE_REFERENCE_ENTRY, type, field, directive);
@@ -602,6 +587,9 @@ public final class GraphitronFactCapture {
     public void captureArgumentDirective(String type, String field, String argument,
                                   Directive directive, int ordinal) {
         switch (directive.getName()) {
+            // @field is decoded here and on enum values, and anchored in its other two habitats:
+            // GraphitronAnchor writes the output-field and input-field halves out of the AST
+            // binding entries. One directive, two mechanisms, split by where it was written.
             case "field" -> {
                 if (!sink.claim(GRAPHITRON_ARGUMENT_BINDING_ENTRY, type, field, argument)) return;
                 String name = string(directive, "name");
@@ -771,6 +759,7 @@ public final class GraphitronFactCapture {
 
     public void captureEnumValueDirective(String type, String value, Directive directive, int ordinal) {
         switch (directive.getName()) {
+            // The other half of @field's decode; see captureArgumentDirective for the split.
             case "field" -> {
                 if (!sink.claim(GRAPHITRON_ENUM_VALUE_BINDING_ENTRY, type, value)) return;
                 String name = string(directive, "name");
@@ -1231,11 +1220,9 @@ public final class GraphitronFactCapture {
         GRAPHITRON_ERROR_ENTRY,
         GRAPHITRON_ERROR_HANDLER_ENTRY,
         GRAPHITRON_EXTERNAL_FIELD_ENTRY,
-        GRAPHITRON_FACET_ENTRY,
         GRAPHITRON_FEDERATION_KEY_ENTRY,
         GRAPHITRON_FEDERATION_KEY_FIELD_ENTRY,
         GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY,
-        GRAPHITRON_FIELD_BINDING_ENTRY,
         GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG_ENTRY,
         GRAPHITRON_FIELD_CONDITION_ENTRY,
         GRAPHITRON_FIELD_LOOKUP_KEY_ENTRY,

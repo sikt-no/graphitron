@@ -10,7 +10,7 @@ import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.classifieddsl.CorpusDocuments;
+import no.sikt.graphitron.model.test.CorpusDocuments;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -61,7 +61,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <ul>
  *   <li><b>The carrier lost the author's outer non-null.</b> {@code ConnectionPromoter} carries the
  *       authored expression's outer nullability across the rewrite, so {@code films: [Film!]!}
- *       emits as {@code QueryFilmsConnection!}; {@code MacroCapture.rewriteCarrier} wrote a bare
+ *       emits as {@code QueryFilmsConnection!}; {@code the emitted anchoring.rewriteCarrier} wrote a bare
  *       nullable name unconditionally. Four documents disagreed on exactly that character. The
  *       expansion replaces what a field returns and says nothing about whether the field may be
  *       null, so the author's claim survives it, and a row saying otherwise described a schema the
@@ -70,7 +70,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@code graphitron_facet_entry} held the applications and {@code graphitron_connection_facet}
  *       already resolved which facets a carrier surfaces and in what order, its own comment naming
  *       itself what a consumer emitting a faceted connection reads. What was missing was the mint,
- *       which {@code MacroCapture.expandFacets} now does from that relation. It came down to one
+ *       which {@code the emitted anchoring.expandFacets} now does from that relation. It came down to one
  *       description differing on one line after the types already matched, which is the kind of
  *       last mile a relation-count comparison would have called agreement.</li>
  * </ul>

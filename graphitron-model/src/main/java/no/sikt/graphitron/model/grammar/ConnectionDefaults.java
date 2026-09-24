@@ -7,7 +7,7 @@ package no.sikt.graphitron.model.grammar;
  * the generator, and a fallback either side spells for itself is a fact with two homes. This module
  * is the one both can see, so the constant lives here and is read rather than restated.
  *
- * <p>It used to be spelled twice, once in {@code MacroCapture} and once on the generator's
+ * <p>It used to be spelled twice, once in {@code the emitted anchoring} and once on the generator's
  * {@code FieldWrapper}, with a test comparing an emitted row against the generator's field to hold
  * them equal. That test was standing in for a constant the two were said to be unable to share,
  * which was not so: the generator depends on this module and could always have read a constant

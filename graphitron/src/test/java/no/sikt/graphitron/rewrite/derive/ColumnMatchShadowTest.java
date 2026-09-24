@@ -4,7 +4,7 @@ import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.classifieddsl.CorpusDocuments;
+import no.sikt.graphitron.model.test.CorpusDocuments;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedDsl;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField;

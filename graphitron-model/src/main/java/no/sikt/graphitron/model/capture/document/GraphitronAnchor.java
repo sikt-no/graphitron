@@ -49,6 +49,11 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_BINDING_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_BINDING_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FACET_ENTRY;
 import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.concat;
 import static org.jooq.impl.DSL.condition;
@@ -130,6 +135,11 @@ public final class GraphitronAnchor {
         defaultOrders(dsl, graph, touchedAt);
         defaultOrderFields(dsl, graph, touchedAt);
         chainLinks(dsl, graph, touchedAt);
+        // The bound name in both habitats it can be written in. One relation rather than two,
+        // because what a reader asks is which name a slot binds and not which kind of slot it is.
+        fieldBindings(dsl, graph, touchedAt);
+        inputFieldBindings(dsl, graph, touchedAt);
+        facets(dsl, graph, touchedAt);
         // Last, and children before parents within it, for the reason every delete here has that
         // order: a sweep that took a parent first would meet its own child's foreign key.
         sweep(dsl, graph, touchedAt);
@@ -296,7 +306,8 @@ public final class GraphitronAnchor {
             GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY, GRAPHITRON_DEFAULT_ORDER_ENTRY,
             GRAPHITRON_NODE_KEYCOLUMN_ENTRY, GRAPHITRON_NODE_ENTRY,
             GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY, GRAPHITRON_ROUTINE_ENTRY,
-            GRAPHITRON_FIELD_CHAIN_LINK);
+            GRAPHITRON_FIELD_CHAIN_LINK,
+            GRAPHITRON_FACET_ENTRY, GRAPHITRON_FIELD_BINDING_ENTRY);
 
     /**
      * A directive whose description carries the token. Read off {@code graphql_directive} rather
@@ -335,7 +346,7 @@ public final class GraphitronAnchor {
         var e = GRAPHITRON_AST_INPUT_VALUE_DEPRECATED_ENTRY;
         var a = GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY;
         var d = GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY;
-        var applied = no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
+        var applied = GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
         var t = GRAPHITRON_DEPRECATED;
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.COORDINATE, t.REASON, t.TOUCHED_AT)
@@ -380,7 +391,7 @@ public final class GraphitronAnchor {
                                         LocalDateTime touchedAt) {
         var e = GRAPHITRON_AST_INPUT_VALUE_DEPRECATED_ENTRY;
         var f = GRAPHQL_AST_INPUT_FIELD_ENTRY;
-        var applied = no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
+        var applied = GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
         var t = GRAPHITRON_DEPRECATED;
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.COORDINATE, t.REASON, t.TOUCHED_AT)
@@ -780,6 +791,109 @@ public final class GraphitronAnchor {
 
     /** The position a list element was written at, carried up out of the ranking. */
     private static final Field<Integer> WRITTEN_AT = field(name("written_at"), Integer.class);
+
+    /**
+     * The applications of {@code directive} on input-object fields, one row per coordinate.
+     *
+     * <p>{@link #claimedOnField}'s counterpart for the other habitat a field directive can be
+     * written in, and the same precedence: where several documents declare one input type, the
+     * declaration the corpus honours is the one whose application wins, and the rank settles it
+     * rather than leaving two rows for a consumer to choose between.
+     */
+    private static Table<?> claimedOnInputField(DSLContext dsl, String graph, String directive) {
+        var a = GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
+        var f = GRAPHQL_AST_INPUT_FIELD_ENTRY;
+        var m = GRAPHQL_TYPE_DECLARATION;
+        return dsl
+            .select(f.TYPE_NAME.as(TYPE_NAME), f.NAME.as(FIELD_NAME),
+                a.SOURCE_NAME.as(SITE_NAME), a.SOURCE_LINE.as(SITE_LINE),
+                a.SOURCE_COLUMN.as(SITE_COLUMN),
+                rowNumber().over(partitionBy(f.TYPE_NAME, f.NAME).orderBy(
+                    m.MERGE_ORDINAL.asc(), a.SOURCE_LINE.asc(), a.SOURCE_COLUMN.asc())).as(RANK))
+            .from(a)
+            .join(f).on(f.GRAPH_NAME.eq(a.GRAPH_NAME))
+                .and(f.SOURCE_NAME.eq(a.SOURCE_NAME))
+                .and(f.SOURCE_LINE.eq(a.PARENT_LINE))
+                .and(f.SOURCE_COLUMN.eq(a.PARENT_COLUMN))
+            .join(m).on(m.GRAPH_NAME.eq(graph))
+                .and(m.TYPE_NAME.eq(f.TYPE_NAME))
+                .and(m.SOURCE_NAME.eq(f.SOURCE_NAME))
+                .and(m.SOURCE_LINE.eq(f.PARENT_LINE))
+                .and(m.SOURCE_COLUMN.eq(f.PARENT_COLUMN))
+            .where(a.GRAPH_NAME.eq(graph))
+            .and(a.NAME.eq(directive))
+            .asTable("claimed_input_field");
+    }
+
+    /**
+     * What an {@code @field} on an output field binds. An inner join: the name is the whole of what
+     * the application says, so one written without it has no fact to state.
+     */
+    private static void fieldBindings(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var c = claimedOnField(dsl, graph, "field");
+        var e = GRAPHITRON_AST_FIELD_BINDING_ENTRY;
+        writeBinding(dsl, graph, touchedAt, c, e.NAME_REF,
+            onSite(e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN, graph, c), e);
+    }
+
+    /** The same application in the other habitat, on an input-object field. */
+    private static void inputFieldBindings(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var c = claimedOnInputField(dsl, graph, "field");
+        var e = GRAPHITRON_AST_INPUT_VALUE_BINDING_ENTRY;
+        writeBinding(dsl, graph, touchedAt, c, e.NAME_REF,
+            onSite(e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN, graph, c), e);
+    }
+
+    /**
+     * The shared insert both habitats make, which differ in the relation the bound name is read
+     * from and in nothing else.
+     */
+    private static void writeBinding(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                     Table<?> claimed, Field<String> nameRef,
+                                     Condition onSite, Table<?> payload) {
+        var t = GRAPHITRON_FIELD_BINDING_ENTRY;
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.SOURCE_NAME, t.SOURCE_LINE,
+                t.SOURCE_COLUMN, t.NAME_REF, t.TOUCHED_AT)
+            .select(dsl
+                .select(val(graph, t.GRAPH_NAME), claimed.field(TYPE_NAME), claimed.field(FIELD_NAME),
+                    claimed.field(SITE_NAME), claimed.field(SITE_LINE), claimed.field(SITE_COLUMN),
+                    nameRef, val(touchedAt, t.TOUCHED_AT))
+                .from(claimed)
+                .join(payload).on(onSite)
+                .where(claimed.field(RANK).eq(1)))
+            .onDuplicateKeyUpdate()
+            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
+            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
+            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
+            .set(t.NAME_REF, excluded(t.NAME_REF))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+    }
+
+    /**
+     * Where an {@code @asFacet} was written. A marker: the application says nothing beyond its own
+     * presence, so there is no payload relation to join and the row is the position it sits at.
+     */
+    private static void facets(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var c = claimedOnInputField(dsl, graph, "asFacet");
+        var t = GRAPHITRON_FACET_ENTRY;
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.SOURCE_NAME, t.SOURCE_LINE,
+                t.SOURCE_COLUMN, t.TOUCHED_AT)
+            .select(dsl
+                .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME), c.field(FIELD_NAME),
+                    c.field(SITE_NAME), c.field(SITE_LINE), c.field(SITE_COLUMN),
+                    val(touchedAt, t.TOUCHED_AT))
+                .from(c)
+                .where(c.field(RANK).eq(1)))
+            .onDuplicateKeyUpdate()
+            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
+            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
+            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+    }
 
     /**
      * {@link #claimed} at the field site: every application of one field-site directive, ranked so

@@ -12,6 +12,28 @@ last-updated: 2026-08-14
 
 # Does capture still need to expand `@asFacet` the way it expands `@asConnection`?
 
+## Answered, and the answer is yes
+
+This was decided by building it rather than by argument, so the evidence is what to read rather than
+the reasoning below it. The expansion landed as part of the emitted-population work: `@asFacet` is
+anchored beside `@asConnection`, and the facet types are minted by the same derivation that mints the
+connection, its edge and its page info.
+
+The consumer the item could not name in August exists now, and it is not a store-reading classifier.
+It is `EmittedRegistry`, which derives the emitted schema out of the store and is what a run reads
+its schema from. With the facet arms absent the emitted schema simply lacks
+`QueryFilmsConnectionFacets` and its value types, and the two producers of the emitted schema
+disagree on the `faceted-connection` corpus document. That divergence is what found it.
+
+So the first of the two possibilities below is closed: the need was not gone, it had moved. The
+exit criterion named at the time, pinning the implementation against `ConnectionPromoter`'s facet
+arm, is met in the form the agreement test takes, which compares the two producers over the whole
+corpus rather than one subtraction.
+
+What remains of this item is nothing; it is kept only until someone confirms the above and discards
+it. The paragraphs that follow are the question as it stood, left unedited.
+
+
 This item exists to re-decide a question, not to carry a decision forward. It was filed once as R678,
 absorbed into R667 as a deliverable, and then silently dropped when R667 was repointed onto a
 different target. Rather than re-inherit it into R667's successor, the question is restated here so

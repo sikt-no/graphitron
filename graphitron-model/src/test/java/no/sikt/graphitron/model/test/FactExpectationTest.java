@@ -1,9 +1,7 @@
-package no.sikt.graphitron.rewrite.classifieddsl;
+package no.sikt.graphitron.model.test;
 
-import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
-import no.sikt.graphitron.rewrite.classifieddsl.CorpusExpectations.Block;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
+import no.sikt.graphitron.model.test.CorpusExpectations.Block;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -14,7 +12,6 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 import java.util.List;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -31,7 +28,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * no projection operation, no documentation fragment, no verdict, no launcher-command apparatus. A
  * fact document is an SDL example and the rows it says the store holds for it.
  */
-@PipelineTier
 class FactExpectationTest {
 
     /** The fact folder, with the floor that stops a folder which has stopped resolving. */
@@ -45,7 +41,7 @@ class FactExpectationTest {
 
     @BeforeAll
     static void captureEveryDocument() {
-        var ctx = testContext();
+        var ctx = TestRunContext.of();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         var documents = CorpusDocuments.documents(FACTS);
         captured = CapturedStore.ofCatalog(tmp, documents.getFirst().id(), full(documents.getFirst()), jooq);

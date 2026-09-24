@@ -473,6 +473,7 @@ class ArgumentFilterRoleTest {
         seedArgument(dsl, GRAPH, "Query", "films", argumentName, namedType);
         dsl.update(GRAPHQL_ARGUMENT)
             .set(GRAPHQL_ARGUMENT.IS_LIST, true)
+            .set(GRAPHQL_ARGUMENT.LIST_DEPTH, 1)
             .set(GRAPHQL_ARGUMENT.ITEM_NON_NULL, false)
             .where(GRAPHQL_ARGUMENT.GRAPH_NAME.eq(GRAPH)
                 .and(GRAPHQL_ARGUMENT.TYPE_NAME.eq("Query"))

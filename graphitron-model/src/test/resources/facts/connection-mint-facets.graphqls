@@ -1,0 +1,28 @@
+"A carrier whose filter declares a facet, stated as the rows the expansion derives. The facet is an @asFacet application the carrier reaches through its own filter argument, so the container, its field per facet and the bucket type all follow from one carrier and one facet; the connection's own facets field is the fifth on it, after the four the pagination machinery states."
+type Film @table(name: "film") { title: String }
+
+input FilmFilter { title: [String!] @field(name: "title") @asFacet }
+
+extend type Query { films(filter: FilmFilter): [Film!]! @asConnection }
+
+extend schema @expectEquals(relation: "graphitron_carrier_facet_mint", rows: """
+  type_name, field_name, connection_name,      facets_type_name,           position, facet_field_name, value_type_name,  value_scalar, value_nullable
+  Query,     films,      QueryFilmsConnection, QueryFilmsConnectionFacets, 1,        title,            StringFacetValue, String,       FALSE
+  """)
+
+extend schema @expectEquals(relation: "graphitron_type_minted", rows: """
+  type_name
+  QueryFilmsConnection
+  QueryFilmsConnectionEdge
+  QueryFilmsConnectionFacets
+  StringFacetValue
+  PageInfo
+  """)
+
+extend schema @assertContains(relation: "graphitron_field_minted", rows: """
+  type_name,                  field_name, ordinal, type_sdl
+  QueryFilmsConnection,       facets,     4,       QueryFilmsConnectionFacets
+  QueryFilmsConnectionFacets, title,      1,       [StringFacetValue!]
+  StringFacetValue,           value,      0,       String!
+  StringFacetValue,           count,      1,       Int!
+  """)

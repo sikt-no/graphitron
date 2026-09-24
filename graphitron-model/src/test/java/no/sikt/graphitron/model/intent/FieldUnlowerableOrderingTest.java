@@ -15,7 +15,7 @@ import static no.sikt.graphitron.model.test.SeededStore.seedArgumentLookupKey;
 import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
 import static no.sikt.graphitron.model.test.SeededStore.seedDefaultOrder;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
-import static no.sikt.graphitron.model.test.SeededStore.seedFieldSynthesis;
+import static no.sikt.graphitron.model.test.SeededStore.seedConnectionCarrier;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraph;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedImplements;
@@ -225,7 +225,7 @@ class FieldUnlowerableOrderingTest {
             multitableUnion(dsl);
             connectionOver(dsl, "DocumentConnection", "DocumentEdge", "Document");
             seedField(dsl, GRAPH, "Query", "documents", "Document", true);
-            seedFieldSynthesis(dsl, GRAPH, "Query", "documents", "DocumentConnection");
+            seedConnectionCarrier(dsl, GRAPH, "Query", "documents", "DocumentConnection");
             seedDefaultOrder(dsl, GRAPH, "Query", "documents");
 
             assertThat(rendered(dsl)).isEmpty();
@@ -243,7 +243,7 @@ class FieldUnlowerableOrderingTest {
             nodeInterface(dsl);
             connectionOver(dsl, "NodeConnection", "NodeEdge", "Node");
             seedField(dsl, GRAPH, "Query", "nodes", "Node", true);
-            seedFieldSynthesis(dsl, GRAPH, "Query", "nodes", "NodeConnection");
+            seedConnectionCarrier(dsl, GRAPH, "Query", "nodes", "NodeConnection");
             seedDefaultOrder(dsl, GRAPH, "Query", "nodes");
 
             assertThat(rendered(dsl)).isEmpty();

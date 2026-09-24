@@ -1,0 +1,34 @@
+"Two applications landing on one connection name over different element types. They disagree about what the shared name's nodes and its edge's node are, and the anchor declines rather than picking: each contested coordinate draws a conflict row and no emitted row at all. The coordinates the two agree about are unaffected, which is what makes this a withholding rather than a failure."
+type Film @table(name: "film") { id: ID }
+type Language @table(name: "language") { id: ID }
+
+extend type Query {
+  films: [Film!]! @asConnection(connectionName: "Shared")
+  tongues: [Language!]! @asConnection(connectionName: "Shared")
+}
+
+extend schema @expectEquals(relation: "graphitron_connection_carrier", rows: """
+  type_name, field_name, connection_name, edge_name,   element_type
+  Query,     films,      Shared,          SharedEdge,  Film
+  Query,     tongues,    Shared,          SharedEdge,  Language
+  """)
+
+extend schema @expectEquals(relation: "graphitron_minted_conflict", rows: """
+  coordinate,      element_kind, variants
+  Shared.nodes,    FIELD,        2
+  SharedEdge.node, FIELD,        2
+  """)
+
+extend schema @expectEquals(relation: "graphitron_field_minted", rows: """
+  type_name,  field_name,      ordinal, type_sdl
+  Shared,     edges,           0,       [SharedEdge!]!
+  Shared,     pageInfo,        2,       PageInfo!
+  Shared,     totalCount,      3,       Int
+  SharedEdge, cursor,          0,       String!
+  PageInfo,   hasNextPage,     0,       Boolean!
+  PageInfo,   hasPreviousPage, 1,       Boolean!
+  PageInfo,   startCursor,     2,       String
+  PageInfo,   endCursor,       3,       String
+  Query,      films,           1,       Shared!
+  Query,      tongues,         2,       Shared!
+  """)

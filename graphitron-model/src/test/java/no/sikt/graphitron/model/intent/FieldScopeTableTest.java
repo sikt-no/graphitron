@@ -15,7 +15,7 @@ import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedConstraint;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
-import static no.sikt.graphitron.model.test.SeededStore.seedFieldSynthesis;
+import static no.sikt.graphitron.model.test.SeededStore.seedConnectionCarrier;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedMutation;
 import static no.sikt.graphitron.model.test.SeededStore.seedRootOperation;
@@ -71,12 +71,17 @@ class FieldScopeTableTest {
     void aConnectionFieldScopesOnItsElementTypesTable() {
         withCatalog(dsl -> {
             seedTableBinding(dsl, GRAPH, "Film", "film");
-            seedType(dsl, GRAPH, "FilmConnection", "OBJECT");
-            seedField(dsl, GRAPH, "Query", "films", "FilmConnection", false);
-            seedFieldSynthesis(dsl, GRAPH, "Query", "films", "[Film!]!");
+            seedField(dsl, GRAPH, "Query", "films", "Film", true);
+            seedConnectionCarrier(dsl, GRAPH, "Query", "films");
 
+            // The carrier and the machinery its expansion mints, all three scoping on the element's
+            // table. The connection and its edge are minted here rather than seeded, so the rows
+            // they contribute are the expansion's and appear whether or not a fixture thought of
+            // them.
             assertThat(rows(dsl).map(FieldScopeTableTest::render))
-                .containsExactly("Query.films NAMED_TYPE_TABLE film");
+                .containsExactly("Query.films NAMED_TYPE_TABLE film",
+                    "QueryFilmsConnection.nodes NAMED_TYPE_TABLE film",
+                    "QueryFilmsConnectionEdge.node NAMED_TYPE_TABLE film");
         });
     }
 

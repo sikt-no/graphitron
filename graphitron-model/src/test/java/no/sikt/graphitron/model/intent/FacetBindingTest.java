@@ -194,39 +194,10 @@ class FacetBindingTest {
         });
     }
 
-    /** A {@code @reference}-bound facet is join-mediated, which the direct-column reading does not serve. */
-    @Test
-    void aReferenceBoundFacetResolvesToNothing() {
-        withStore(dsl -> {
-            facet(dsl, "FilmFilter", "rating", "String", 0, "rating");
-            seedFieldReference(dsl, GRAPH, "FilmFilter", "rating", 0);
-
-            assertThat(rows(dsl)).isEmpty();
-        });
-    }
-
-    /** A {@code @condition}-bound facet declines for the same reason, its predicate being authored. */
-    @Test
-    void aConditionBoundFacetResolvesToNothing() {
-        withStore(dsl -> {
-            facet(dsl, "FilmFilter", "rating", "String", 0, "rating");
-            seedFieldCondition(dsl, GRAPH, "FilmFilter", "rating", null);
-
-            assertThat(rows(dsl)).isEmpty();
-        });
-    }
-
-    /** A {@code @nodeId}-bound facet routes through the node-id machinery rather than a column. */
-    @Test
-    void aNodeIdBoundFacetResolvesToNothing() {
-        withStore(dsl -> {
-            facet(dsl, "FilmFilter", "rating", "String", 0, "rating");
-            seedFieldNodeId(dsl, GRAPH, "FilmFilter", "rating", null);
-
-            assertThat(rows(dsl)).isEmpty();
-        });
-    }
-
+    // The three applications that decline are stated as a fact document rather than seeded here,
+    // facts/facet-binding-refused.graphqls. What excludes the field is that the directive was
+    // written on it, which is a fact about the document; a seeded store holds decoded rows and no
+    // applications, so it cannot state the case at all.
     /**
      * The application's owning type is an input object, which is this predicate's domain rather
      * than an arm of it. An {@code @asFacet} written on an output field is a use-keyed misuse, and

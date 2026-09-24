@@ -17,7 +17,7 @@ import no.sikt.graphitron.model.derive.NodeIdDecodeColumns;
 import no.sikt.graphitron.model.derive.NodeIdDecodeHopColumns;
 import no.sikt.graphitron.model.derive.NodeIdDecodeHops;
 import no.sikt.graphitron.model.derive.NodeIdInstructions;
-import no.sikt.graphitron.model.capture.macro.MacroAnchor;
+import no.sikt.graphitron.model.capture.document.EmittedAnchor;
 import no.sikt.graphitron.model.derive.NameMatchedKeys;
 import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
@@ -73,8 +73,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_LINK_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
@@ -249,7 +247,7 @@ public final class SeededStore {
         // call, so a fixture cannot hold its own idea of what the emitted population is.
         for (var graph : dsl.select(STORE_GRAPH.GRAPH_NAME).from(STORE_GRAPH)
                 .fetch(STORE_GRAPH.GRAPH_NAME)) {
-            MacroAnchor.derive(dsl, graph, SEED_INSTANT);
+            EmittedAnchor.derive(dsl, graph, SEED_INSTANT);
         }
         transcribeSupertypes(dsl);
         // The candidate tree, by the same call capture makes. Stated here rather than seeded row by
@@ -634,6 +632,7 @@ public final class SeededStore {
             .set(GRAPHQL_FIELD.NAMED_TYPE, namedType)
             .set(GRAPHQL_FIELD.NON_NULL, false)
             .set(GRAPHQL_FIELD.IS_LIST, isList)
+            .set(GRAPHQL_FIELD.LIST_DEPTH, isList ? 1 : 0)
             .set(GRAPHQL_FIELD.SOURCE_NAME, SEED_SOURCE)
             .set(GRAPHQL_FIELD.SOURCE_LINE, 2)
             .set(GRAPHQL_FIELD.SOURCE_COLUMN, 3)
@@ -680,6 +679,7 @@ public final class SeededStore {
             .set(GRAPHQL_FIELD.NAMED_TYPE, namedType)
             .set(GRAPHQL_FIELD.NON_NULL, nonNull)
             .set(GRAPHQL_FIELD.IS_LIST, isList)
+            .set(GRAPHQL_FIELD.LIST_DEPTH, isList ? 1 : 0)
             .set(GRAPHQL_FIELD.ITEM_NON_NULL, itemNonNull)
             .set(GRAPHQL_FIELD.SOURCE_NAME, SEED_SOURCE)
             .set(GRAPHQL_FIELD.SOURCE_LINE, 2)
@@ -727,6 +727,7 @@ public final class SeededStore {
             .set(GRAPHQL_ARGUMENT.NAMED_TYPE, namedType)
             .set(GRAPHQL_ARGUMENT.NON_NULL, false)
             .set(GRAPHQL_ARGUMENT.IS_LIST, false)
+            .set(GRAPHQL_ARGUMENT.LIST_DEPTH, 0)
             .set(GRAPHQL_ARGUMENT.SOURCE_NAME, SEED_SOURCE)
             .set(GRAPHQL_ARGUMENT.SOURCE_LINE, sourceLine)
             .set(GRAPHQL_ARGUMENT.SOURCE_COLUMN, 3)
@@ -760,6 +761,7 @@ public final class SeededStore {
             .set(GRAPHQL_ARGUMENT.NAMED_TYPE, namedType)
             .set(GRAPHQL_ARGUMENT.NON_NULL, false)
             .set(GRAPHQL_ARGUMENT.IS_LIST, true)
+            .set(GRAPHQL_ARGUMENT.LIST_DEPTH, 1)
             .set(GRAPHQL_ARGUMENT.ITEM_NON_NULL, true)
             .set(GRAPHQL_ARGUMENT.SOURCE_NAME, SEED_SOURCE)
             .set(GRAPHQL_ARGUMENT.SOURCE_LINE, 2)
@@ -769,35 +771,35 @@ public final class SeededStore {
     }
 
     /**
-     * What a macro put at a field it rewrote, which at this grain is a minted field whose coining
-     * coordinate is its own: the field's own row still carries the type the author wrote and this
-     * one carries the expansion's replacement. A case about the reading the generator takes states
-     * both spellings, and the two deliberately disagree.
+     * The {@code @asConnection} application that makes a field a carrier, which is what the
+     * expansion reads and all a fixture can state: what gets minted follows from the application
+     * and the field's own shape rather than being seeded beside it.
      *
-     * <p>REPLACE, because a rewrite is exactly a mint that takes the author's place, and the whole
-     * row is stated including the ordinal and description the expansion did not change.
-     *
-     * @param typeSdl the expression the macro put there, a bare type name for every macro today
+     * <p>{@code connectionName} is what the author wrote in the directive, or null to let the
+     * default naming build one from the coordinate. The field must already be a bare list of a
+     * named type, which is the admission test {@code graphitron_connection_carrier} applies; a
+     * fixture pointing this at anything else seeds no carrier at all, deliberately.
      */
-    public static void seedFieldSynthesis(DSLContext dsl, String graphName, String typeName,
-                                          String fieldName, String typeSdl) {
+    public static void seedConnectionCarrier(DSLContext dsl, String graphName, String typeName,
+                                             String fieldName, String connectionName) {
         seedCoiningDirective(dsl, graphName);
-        dsl.insertInto(GRAPHITRON_MINTED_FIELD)
-            .set(GRAPHITRON_MINTED_FIELD.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_MINTED_FIELD.SOURCE_COORDINATE,
-                SchemaCoordinateSyntax.ofField(typeName, fieldName))
-            .set(GRAPHITRON_MINTED_FIELD.TYPE_NAME, typeName)
-            .set(GRAPHITRON_MINTED_FIELD.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_MINTED_FIELD.DIRECTIVE_NAME, CONNECTION_DIRECTIVE)
-            .set(GRAPHITRON_MINTED_FIELD.PRECEDENCE, "REPLACE")
-            .set(GRAPHITRON_MINTED_FIELD.ORDINAL, 0)
-            .set(GRAPHITRON_MINTED_FIELD.TYPE_SDL, typeSdl)
-            .set(GRAPHITRON_MINTED_FIELD.NAMED_TYPE, typeSdl.replace("[", "")
-                .replace("]", "").replace("!", ""))
-            .set(GRAPHITRON_MINTED_FIELD.NON_NULL, typeSdl.endsWith("!"))
-            .set(GRAPHITRON_MINTED_FIELD.IS_LIST, typeSdl.startsWith("["))
-            .set(GRAPHITRON_MINTED_FIELD.TOUCHED_AT, SEEDED_READING)
+        dsl.insertInto(GRAPHITRON_CONNECTION_ENTRY)
+            .set(GRAPHITRON_CONNECTION_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_CONNECTION_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_CONNECTION_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_CONNECTION_ENTRY.SOURCE_NAME, "seeded.graphqls")
+            .set(GRAPHITRON_CONNECTION_ENTRY.SOURCE_LINE, 1)
+            .set(GRAPHITRON_CONNECTION_ENTRY.SOURCE_COLUMN, 1)
+            .set(GRAPHITRON_CONNECTION_ENTRY.CONNECTION_NAME, connectionName)
+            .set(GRAPHITRON_CONNECTION_ENTRY.TOUCHED_AT, SEEDED_READING)
+            .onDuplicateKeyIgnore()
             .execute();
+    }
+
+    /** {@link #seedConnectionCarrier} under the default naming. */
+    public static void seedConnectionCarrier(DSLContext dsl, String graphName, String typeName,
+                                             String fieldName) {
+        seedConnectionCarrier(dsl, graphName, typeName, fieldName, null);
     }
 
     /**
@@ -813,84 +815,6 @@ public final class SeededStore {
             .set(GRAPHQL_DIRECTIVE.REPEATABLE, false)
             .set(GRAPHQL_DIRECTIVE.TOUCHED_AT, SEEDED_READING)
             .onDuplicateKeyIgnore()
-            .execute();
-    }
-
-    /**
-     * A type one macro application would mint, under the coordinate that coined it. The counterpart
-     * to {@link #seedType} on the other side of the emitted population: a reader that admits
-     * authored and minted types alike must be stated against both, and the two live in different
-     * relations precisely so that a reader can tell them apart when it needs to.
-     *
-     * <p>No {@code graphql_type_element} row comes with it, and that is the point rather than an
-     * omission: the transcription holds what the author wrote, so a name nobody wrote has no
-     * coordinate there to claim, and a relation over the emitted population keys into
-     * {@code graphitron_element} instead.
-     *
-     * <p>YIELD, which is what every type mint carries: adding machinery to a type the author wrote
-     * would merge two types nobody asked to merge, so where the name is taken the row records an
-     * application that stood down. A case wanting the suppressed reading seeds the authored type
-     * beside this.
-     *
-     * <p>Idempotent, on {@link #seedType}'s terms, so a case that mints an Edge and a Connection
-     * from one carrier can ask for either without tracking which came first.
-     *
-     * @param carrierTypeName the type whose field carried the macro application
-     * @param carrierFieldName that field's name; the two together are the coining coordinate, which
-     *                         has to be a field the case has seeded, the key being into the
-     *                         transcription and minting being single level
-     */
-    public static void seedMintedType(DSLContext dsl, String graphName, String typeName,
-                                      String carrierTypeName, String carrierFieldName) {
-        seedCoiningDirective(dsl, graphName);
-        dsl.insertInto(GRAPHITRON_MINTED_TYPE)
-            .set(GRAPHITRON_MINTED_TYPE.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_MINTED_TYPE.SOURCE_COORDINATE,
-                SchemaCoordinateSyntax.ofField(carrierTypeName, carrierFieldName))
-            .set(GRAPHITRON_MINTED_TYPE.TYPE_NAME, typeName)
-            .set(GRAPHITRON_MINTED_TYPE.DIRECTIVE_NAME, CONNECTION_DIRECTIVE)
-            .set(GRAPHITRON_MINTED_TYPE.PRECEDENCE, "YIELD")
-            .set(GRAPHITRON_MINTED_TYPE.KIND, "OBJECT")
-            .set(GRAPHITRON_MINTED_TYPE.TOUCHED_AT, SEEDED_READING)
-            .onDuplicateKeyIgnore()
-            .execute();
-    }
-
-    /**
-     * One field one macro application would put on a type it minted, with its wrapping stated the
-     * way {@link #seedInputField} states an input field's: a minted field's cardinality is what a
-     * reader of the emitted population compares against, so it cannot be a default here.
-     *
-     * <p>The coining coordinate is the case's to give, and it must be the one that minted the
-     * owning type: a machinery field is told from a rewritten carrier by sharing its type's source,
-     * and a field whose source disagrees with its type's would survive its type losing.
-     *
-     * @param itemNonNull the element's non-nullability when {@code isList}, and {@code null}
-     *                    otherwise, which the DDL checks rather than tolerates
-     */
-    public static void seedMintedField(DSLContext dsl, String graphName, String typeName,
-                                       String fieldName, String carrierTypeName,
-                                       String carrierFieldName, String namedType, int ordinal,
-                                       boolean nonNull, boolean isList, Boolean itemNonNull) {
-        seedCoiningDirective(dsl, graphName);
-        var wrapped = isList
-            ? "[" + namedType + (Boolean.TRUE.equals(itemNonNull) ? "!" : "") + "]"
-            : namedType;
-        dsl.insertInto(GRAPHITRON_MINTED_FIELD)
-            .set(GRAPHITRON_MINTED_FIELD.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_MINTED_FIELD.SOURCE_COORDINATE,
-                SchemaCoordinateSyntax.ofField(carrierTypeName, carrierFieldName))
-            .set(GRAPHITRON_MINTED_FIELD.TYPE_NAME, typeName)
-            .set(GRAPHITRON_MINTED_FIELD.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_MINTED_FIELD.DIRECTIVE_NAME, CONNECTION_DIRECTIVE)
-            .set(GRAPHITRON_MINTED_FIELD.PRECEDENCE, "YIELD")
-            .set(GRAPHITRON_MINTED_FIELD.ORDINAL, ordinal)
-            .set(GRAPHITRON_MINTED_FIELD.TYPE_SDL, wrapped + (nonNull ? "!" : ""))
-            .set(GRAPHITRON_MINTED_FIELD.NAMED_TYPE, namedType)
-            .set(GRAPHITRON_MINTED_FIELD.NON_NULL, nonNull)
-            .set(GRAPHITRON_MINTED_FIELD.IS_LIST, isList)
-            .set(GRAPHITRON_MINTED_FIELD.ITEM_NON_NULL, itemNonNull)
-            .set(GRAPHITRON_MINTED_FIELD.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 
@@ -1060,6 +984,7 @@ public final class SeededStore {
             .set(GRAPHITRON_FIELD_BINDING_ENTRY.SOURCE_LINE, 2)
             .set(GRAPHITRON_FIELD_BINDING_ENTRY.SOURCE_COLUMN, 3)
             .set(GRAPHITRON_FIELD_BINDING_ENTRY.NAME_REF, nameRef)
+            .set(GRAPHITRON_FIELD_BINDING_ENTRY.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 
@@ -2162,6 +2087,7 @@ public final class SeededStore {
             .set(GRAPHITRON_FACET_ENTRY.SOURCE_NAME, SEED_SOURCE)
             .set(GRAPHITRON_FACET_ENTRY.SOURCE_LINE, 2)
             .set(GRAPHITRON_FACET_ENTRY.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_FACET_ENTRY.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 
@@ -3223,7 +3149,7 @@ public final class SeededStore {
      * done for it rather than remembered.
      */
     public static void seedTypeDomain(DSLContext dsl, String graphName, String typeName) {
-        MacroAnchor.derive(dsl, graphName, SEED_INSTANT);
+        EmittedAnchor.derive(dsl, graphName, SEED_INSTANT);
         dsl.insertInto(INTENT_TYPE_DOMAIN)
             .set(INTENT_TYPE_DOMAIN.GRAPH_NAME, graphName)
             .set(INTENT_TYPE_DOMAIN.TYPE_NAME, typeName)

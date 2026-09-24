@@ -18,7 +18,7 @@ import static no.sikt.graphitron.model.test.SeededStore.seedExternalField;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldReference;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldReferenceStep;
-import static no.sikt.graphitron.model.test.SeededStore.seedFieldSynthesis;
+import static no.sikt.graphitron.model.test.SeededStore.seedConnectionCarrier;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraph;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedPivot;
@@ -204,8 +204,8 @@ class FieldColumnTableTest {
     void aConnectionFieldResolvesItsElementsTable() {
         withBoundTypes(dsl -> {
             seedType(dsl, GRAPH, "LanguageConnection", "OBJECT");
-            seedField(dsl, GRAPH, "Film", "languages", "LanguageConnection", false);
-            seedFieldSynthesis(dsl, GRAPH, "Film", "languages", "[Language!]!");
+            seedField(dsl, GRAPH, "Film", "languages", "Language", true);
+            seedConnectionCarrier(dsl, GRAPH, "Film", "languages");
 
             var row = row(dsl, "Film", "languages").orElseThrow();
             assertThat(row.get(INTENT_FIELD_COLUMN_TABLE.BASIS)).isEqualTo("NAMED_TYPE_TABLE");

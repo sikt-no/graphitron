@@ -1,0 +1,37 @@
+"The expansion of one @asConnection application, stated as the rows it derives. The carrier is a bare list of a table-backed type, which is the only shape the expansion admits, and everything below follows from that one application: the connection, its edge, the shared page info, the machinery fields on each, the rewritten carrier and the pagination arguments."
+type Film @table(name: "film") { id: ID title: String }
+
+extend type Query { films: [Film!]! @asConnection }
+
+extend schema @expectEquals(relation: "graphitron_connection_carrier", rows: """
+  type_name, field_name, connection_name,      edge_name,                element_type, item_non_null, argument_count
+  Query,     films,      QueryFilmsConnection, QueryFilmsConnectionEdge, Film,         TRUE,          0
+  """)
+
+extend schema @expectEquals(relation: "graphitron_type_minted", rows: """
+  type_name
+  QueryFilmsConnection
+  QueryFilmsConnectionEdge
+  PageInfo
+  """)
+
+extend schema @expectEquals(relation: "graphitron_field_minted", rows: """
+  type_name,                field_name,      ordinal, type_sdl
+  QueryFilmsConnection,     edges,           0,       [QueryFilmsConnectionEdge!]!
+  QueryFilmsConnection,     nodes,           1,       [Film!]!
+  QueryFilmsConnection,     pageInfo,        2,       PageInfo!
+  QueryFilmsConnection,     totalCount,      3,       Int
+  QueryFilmsConnectionEdge, cursor,          0,       String!
+  QueryFilmsConnectionEdge, node,            1,       Film!
+  PageInfo,                 hasNextPage,     0,       Boolean!
+  PageInfo,                 hasPreviousPage, 1,       Boolean!
+  PageInfo,                 startCursor,     2,       String
+  PageInfo,                 endCursor,       3,       String
+  Query,                    films,           1,       QueryFilmsConnection!
+  """)
+
+extend schema @expectEquals(relation: "graphitron_argument_minted", rows: """
+  type_name, field_name, argument_name, ordinal, type_sdl, default_value_sdl
+  Query,     films,      first,         0,       Int,      100
+  Query,     films,      after,         1,       String,
+  """)

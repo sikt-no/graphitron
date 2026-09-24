@@ -219,7 +219,7 @@ class SdlCoordinateCensusTest {
                 .as("the base union's members come first though its extension is written above it")
                 .containsExactly("Film=0", "Poster=1", "Trailer=2");
 
-            // MacroCaptureTest.repeatedApplicationsNumberAcrossSites already pins this family by
+            // the emitted anchoringTest.repeatedApplicationsNumberAcrossSites already pins this family by
             // value; what it cannot pin is the out-of-order case, its own fixture writing the base
             // above the extension. This arm is that case and nothing more.
             assertThat(dsl.select(GRAPHQL_TYPE_DIRECTIVE_ARG.ORDINAL, GRAPHQL_TYPE_DIRECTIVE_ARG.VALUE_SDL)

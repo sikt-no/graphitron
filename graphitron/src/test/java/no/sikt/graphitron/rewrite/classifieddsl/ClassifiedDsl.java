@@ -1,5 +1,8 @@
 package no.sikt.graphitron.rewrite.classifieddsl;
 
+import no.sikt.graphitron.model.test.CorpusExpectations;
+import no.sikt.graphitron.model.test.CorpusDocuments;
+
 /**
  * The test-only classification directives and their SDL enums (the {@code @classified}
  * spec-by-example), by name. The declarations themselves live in the corpus's own prelude document

@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Every case here drives a real capture rather than seeding rows, because the subject is whether
  * the patch and the expansion agree, and seeding the expansion's own output would assume the thing
  * under test. What the fixture writes is a schema with an {@code @asConnection} on it; what the
- * store then holds is whatever {@code MacroCapture} decided, and what these cases assert is that
+ * store then holds is whatever {@code the emitted anchoring} decided, and what these cases assert is that
  * the emitted registry says the same.
  *
  * <p>The control case matters as much as the connection ones. A patch that added the machinery and

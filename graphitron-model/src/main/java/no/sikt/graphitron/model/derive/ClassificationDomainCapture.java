@@ -28,7 +28,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_MINTED_CANDIDATE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
 import static org.jooq.impl.DSL.select;
@@ -149,9 +149,9 @@ public final class ClassificationDomainCapture {
      */
     private static Map<String, Set<String>> mintedEdges(DSLContext dsl, String graphName) {
         var edges = new LinkedHashMap<String, Set<String>>();
-        dsl.select(GRAPHITRON_MINTED_FIELD.TYPE_NAME, GRAPHITRON_MINTED_FIELD.NAMED_TYPE)
-            .from(GRAPHITRON_MINTED_FIELD)
-            .where(GRAPHITRON_MINTED_FIELD.GRAPH_NAME.eq(graphName))
+        dsl.select(GRAPHITRON_FIELD_MINTED_CANDIDATE.TYPE_NAME, GRAPHITRON_FIELD_MINTED_CANDIDATE.NAMED_TYPE)
+            .from(GRAPHITRON_FIELD_MINTED_CANDIDATE)
+            .where(GRAPHITRON_FIELD_MINTED_CANDIDATE.GRAPH_NAME.eq(graphName))
             .forEach(row -> edges
                 .computeIfAbsent(row.value1(), name -> new LinkedHashSet<>())
                 .add(row.value2()));

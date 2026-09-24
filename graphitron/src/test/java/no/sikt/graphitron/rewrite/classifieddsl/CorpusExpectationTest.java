@@ -1,9 +1,11 @@
 package no.sikt.graphitron.rewrite.classifieddsl;
 
+import no.sikt.graphitron.model.test.CorpusExpectations;
+import no.sikt.graphitron.model.test.CorpusDocuments;
 import no.sikt.graphitron.model.catalog.StoreCatalog;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
-import no.sikt.graphitron.rewrite.classifieddsl.CorpusExpectations.Block;
+import no.sikt.graphitron.model.test.CorpusExpectations.Block;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
@@ -100,10 +102,6 @@ class CorpusExpectationTest {
      */
     static final List<String> SILENCE_IS_STATED =
         List.of("no row", "absent", "silence", "never a decline", "nothing");
-
-    /** {@code CHECK (COL IN ('A', 'B'))}, the only closed-set shape the store spells in DDL. */
-    static final Pattern CHECKED_MEMBERSHIP = Pattern.compile(
-        "\"?(\\w+)\"?\\s+IN\\s*\\(([^)]*)\\)", Pattern.CASE_INSENSITIVE);
 
     @TempDir
     static Path tmp;
@@ -227,7 +225,7 @@ class CorpusExpectationTest {
 
         var defects = blocks.stream()
             .flatMap(block -> CorpusExpectations.defects(block,
-                ownsItsSilence(commentsByRelation
+                CorpusExpectations.ownsItsSilence(commentsByRelation
                     .getOrDefault(block.relation().toLowerCase(Locale.ROOT), ""))).stream())
             .toList();
         assertThat(defects).as("every block is well formed").isEmpty();
@@ -276,12 +274,6 @@ class CorpusExpectationTest {
             .isEmpty();
     }
 
-    /** Whether a relation's own comment says what its silence means, which is what an empty block needs. */
-    static boolean ownsItsSilence(String comment) {
-        String text = comment == null ? "" : comment.toLowerCase(Locale.ROOT);
-        return SILENCE_IS_STATED.stream().anyMatch(text::contains);
-    }
-
     /** The {@code CHECK (x IN (...))} vocabularies of one relation, by lower-cased column name. */
     static Map<String, Set<String>> checkedVocabularies(String relationName) {
         var vocabularies = new LinkedHashMap<String, Set<String>>();
@@ -289,7 +281,7 @@ class CorpusExpectationTest {
             .filter(relation -> relation.relationName().equalsIgnoreCase(relationName))
             .flatMap(relation -> relation.checks().stream())
             .forEach(check -> {
-                Matcher matcher = CHECKED_MEMBERSHIP.matcher(check.clause());
+                Matcher matcher = CorpusExpectations.CHECKED_MEMBERSHIP.matcher(check.clause());
                 while (matcher.find()) {
                     var literals = new LinkedHashSet<String>();
                     for (String literal : matcher.group(2).split(",")) {

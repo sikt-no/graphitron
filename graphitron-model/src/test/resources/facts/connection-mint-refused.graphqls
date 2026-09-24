@@ -1,0 +1,26 @@
+"The shapes @asConnection does not expand, stated as the rows that are absent. The expansion admits a bare list of a named type and nothing else, so a list of lists and a field that is not a list at all carry the application and mint nothing; the carrier relation is where that verdict lives, and a field missing from it is the whole of it. The admitted carrier beside them is the control: an empty carrier relation would pass this document whether the rule worked or not."
+type Film @table(name: "film") { id: ID }
+
+extend type Query {
+  admitted: [Film!]! @asConnection
+  nested: [[Film!]!]! @asConnection
+  single: Film @asConnection
+}
+
+extend schema @expectEquals(relation: "graphitron_connection_carrier", rows: """
+  type_name, field_name, connection_name
+  Query,     admitted,   QueryAdmittedConnection
+  """)
+
+extend schema @expectEquals(relation: "graphitron_type_minted", rows: """
+  type_name
+  QueryAdmittedConnection
+  QueryAdmittedConnectionEdge
+  PageInfo
+  """)
+
+extend schema @expectEquals(relation: "graphitron_argument_minted", rows: """
+  type_name, field_name, argument_name
+  Query,     admitted,   first
+  Query,     admitted,   after
+  """)

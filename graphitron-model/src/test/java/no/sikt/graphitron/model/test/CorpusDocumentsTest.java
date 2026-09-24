@@ -1,11 +1,10 @@
-package no.sikt.graphitron.rewrite.classifieddsl;
+package no.sikt.graphitron.model.test;
 
 import graphql.language.Definition;
 import graphql.language.FragmentDefinition;
 import graphql.language.OperationDefinition;
 import graphql.language.SDLDefinition;
 import graphql.parser.Parser;
-import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -37,7 +36,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>The fourth floor the corpus rests on lives with the test it belongs to: every document annotates
  * at least one coordinate, asserted per document by {@code ClassifiedDslTest}.
  */
-@UnitTier
 class CorpusDocumentsTest {
 
     @Test
@@ -67,14 +65,6 @@ class CorpusDocumentsTest {
             .as("every file in the corpus folder is either the prelude or a document the loader "
                 + "admitted; a file the glob or the loader skipped is a fixture nothing reads")
             .isEqualTo(expected);
-    }
-
-    @Test
-    void theCorpusTestClaimsEveryLoadedDocument() {
-        assertThat(ClassifiedDslTest.corpus().toList())
-            .as("the parameterized corpus test must run over every loaded document; a document that "
-                + "loads and is never asserted on is a fixture the build believes it checked")
-            .containsExactlyElementsOf(CorpusDocuments.documents());
     }
 
     @Test

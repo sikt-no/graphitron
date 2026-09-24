@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.classifieddsl;
 
+import no.sikt.graphitron.model.test.CorpusDocuments;
 import graphql.language.Argument;
 import graphql.language.ArrayValue;
 import graphql.language.Directive;

@@ -1,6 +1,5 @@
 package no.sikt.graphitron.model.capture.graphitron;
 
-import no.sikt.graphitron.model.capture.macro.MacroCapture;
 import no.sikt.graphitron.model.derive.FieldChainApplications;
 import no.sikt.graphitron.model.derive.FieldEndpoints;
 import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
@@ -66,10 +65,6 @@ public final class GraphitronAssemblyCapture {
         TableTypes.derive(dsl, graph);
         Nodes.derive(dsl, graph);
         NodeKeyColumns.derive(dsl, graph);
-        MacroCapture.expand(dsl, graph, readAt);
-        // The anchors before every stage that keys at a coordinate, the expansion above being the
-        // second arm of their population and everything below reading them rather than the union.
-        MacroCapture.anchor(dsl, graph, readAt);
         navigation(dsl, graph, readAt);
         // The reference stratum's own resolutions, bottom rung first: what a written table name
         // resolves to against the catalog census, then the hops a @reference path element could

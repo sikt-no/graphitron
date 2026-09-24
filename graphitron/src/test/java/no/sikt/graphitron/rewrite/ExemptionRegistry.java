@@ -1,8 +1,9 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.classifieddsl.CorpusDocuments;
+import no.sikt.graphitron.rewrite.classifieddsl.CorpusCoverage;
+import no.sikt.graphitron.model.test.CorpusDocuments;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedHarness;
-import no.sikt.graphitron.rewrite.classifieddsl.CorpusExpectations;
+import no.sikt.graphitron.model.test.CorpusExpectations;
 import no.sikt.graphitron.rewrite.generators.GeneratorCoverageTest;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -306,7 +307,7 @@ public final class ExemptionRegistry {
     public static final Obligation VARIANT_COVERAGE_OUTPUT = new Obligation(
         "variant-coverage: output-field and type leaves vs the corpus walk",
         memo(ExemptionRegistry::corpusOwnedLeaves),
-        memo(CorpusDocuments::coveredLeaves),
+        memo(CorpusCoverage::coveredLeaves),
         CORPUS_NO_CASE_REQUIRED);
 
     public static final Obligation VARIANT_COVERAGE_INPUT = new Obligation(

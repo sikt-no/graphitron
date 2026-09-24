@@ -71,3 +71,12 @@ intent_type_exemption graphql_type
 
 graphitron_field_authored graphql_field
 graphitron_type_authored graphql_type
+
+# Adjudicated and kept: the carrier the macro expansion expands.
+#
+# graphitron_connection_carrier reads graphql_field to ask what the author wrote at the carrier's
+# coordinate, which is the whole of its admission test: @asConnection expands a bare list of a named
+# type, and the list is the author's. Reading the emitted anchor would ask what the schema emits
+# there, which after the rewrite is the connection this very relation is deciding to mint. That is
+# the circularity as much as the wrong question, so the transcription is the population it means.
+graphitron_connection_carrier graphql_field

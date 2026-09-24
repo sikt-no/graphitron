@@ -10,7 +10,7 @@ import graphql.language.Type;
 import graphql.language.TypeDefinition;
 import graphql.schema.FieldCoordinates;
 import graphql.schema.idl.TypeDefinitionRegistry;
-import no.sikt.graphitron.rewrite.classifieddsl.CorpusDocuments;
+import no.sikt.graphitron.model.test.CorpusDocuments;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedHarness;
 import no.sikt.graphitron.rewrite.generators.GeneratorCoverageTest;
 import no.sikt.graphitron.rewrite.model.OutputField;

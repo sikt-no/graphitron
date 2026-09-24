@@ -12,7 +12,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SCOPE_TABLE;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedConstraint;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
-import static no.sikt.graphitron.model.test.SeededStore.seedFieldSynthesis;
+import static no.sikt.graphitron.model.test.SeededStore.seedConnectionCarrier;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraph;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
@@ -158,7 +158,7 @@ class FieldNavigatedTypeTest {
         withCatalog(dsl -> {
             seedConnection(dsl, "FilmConnection", "FilmEdge", "Film");
             seedField(dsl, GRAPH, "Query", "films", "Film", true);
-            seedFieldSynthesis(dsl, GRAPH, "Query", "films", "FilmConnection");
+            seedConnectionCarrier(dsl, GRAPH, "Query", "films", "FilmConnection");
 
             assertThat(navigatedRows(dsl)).contains("Query.films CONNECTION_ELEMENT Film");
         });
@@ -192,7 +192,7 @@ class FieldNavigatedTypeTest {
         withCatalog(dsl -> {
             seedConnection(dsl, "FilmConnection", "FilmEdge", "Film");
             seedField(dsl, GRAPH, "Query", "films", "Film", true);
-            seedFieldSynthesis(dsl, GRAPH, "Query", "films", "FilmConnection");
+            seedConnectionCarrier(dsl, GRAPH, "Query", "films", "FilmConnection");
 
             assertThat(navigatedRows(dsl)).contains("Query.films CONNECTION_ELEMENT Film");
             assertThat(elementRows(dsl)).contains("FilmConnection Film");
@@ -222,11 +222,14 @@ class FieldNavigatedTypeTest {
             seedConnection(dsl, "FilmsConnection", "FilmsEdge", "Film");
             seedField(dsl, GRAPH, "Query", "filmsConnection", "FilmsConnection", false);
             seedField(dsl, GRAPH, "Query", "films", "Film", true);
-            seedFieldSynthesis(dsl, GRAPH, "Query", "films", "[Film!]!");
+            seedConnectionCarrier(dsl, GRAPH, "Query", "films");
 
             derive(dsl);
-            long fields = dsl.fetchCount(no.sikt.graphitron.model.Tables.GRAPHQL_FIELD,
-                no.sikt.graphitron.model.Tables.GRAPHQL_FIELD.GRAPH_NAME.eq(GRAPH));
+            // Every field the schema has, which is the emitted population rather than the
+            // transcription: a minted field navigates like any other, and counting what the author
+            // wrote would make the invariant pass by asking a smaller question than it states.
+            long fields = dsl.fetchCount(no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD,
+                no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD.GRAPH_NAME.eq(GRAPH));
             assertThat(navigatedRows(dsl)).hasSize((int) fields);
         });
     }
@@ -261,8 +264,8 @@ class FieldNavigatedTypeTest {
         withCatalog(dsl -> {
             seedTableBinding(dsl, GRAPH, "Film", "film");
             seedConnection(dsl, "FilmConnection", "FilmEdge", "Film");
-            seedField(dsl, GRAPH, "Query", "films", "FilmConnection", false);
-            seedFieldSynthesis(dsl, GRAPH, "Query", "films", "[Film!]!");
+            seedField(dsl, GRAPH, "Query", "films", "Film", true);
+            seedConnectionCarrier(dsl, GRAPH, "Query", "films");
 
             assertThat(scopeRows(dsl)).contains("Query.films NAMED_TYPE_TABLE film");
         });

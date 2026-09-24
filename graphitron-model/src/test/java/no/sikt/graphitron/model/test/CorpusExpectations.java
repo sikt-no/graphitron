@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.classifieddsl;
+package no.sikt.graphitron.model.test;
 
 import graphql.language.StringValue;
 import graphql.parser.Parser;
@@ -455,5 +455,23 @@ public final class CorpusExpectations {
     public static Set<String> relations(List<Block> blocks) {
         return blocks.stream().map(Block::relation)
             .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    /** Comment phrasings that say what a relation's silence means. */
+    private static final java.util.List<String> SILENCE_IS_STATED =
+        java.util.List.of("no row", "absent", "silence", "never a decline", "nothing");
+
+    /** {@code CHECK (COL IN ('A', 'B'))}, the only closed-set shape the store spells in DDL. */
+    public static final java.util.regex.Pattern CHECKED_MEMBERSHIP =
+        java.util.regex.Pattern.compile("\"?(\\w+)\"?\\s+IN\\s*\\(([^)]*)\\)",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Whether a relation's own comment says what its silence means, which is what an empty
+     * expectation block needs in order to assert anything.
+     */
+    public static boolean ownsItsSilence(String comment) {
+        String text = comment == null ? "" : comment.toLowerCase(java.util.Locale.ROOT);
+        return SILENCE_IS_STATED.stream().anyMatch(text::contains);
     }
 }

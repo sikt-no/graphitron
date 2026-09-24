@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.classifieddsl;
 
-import no.sikt.graphitron.rewrite.classifieddsl.CorpusDocuments.Document;
+import no.sikt.graphitron.model.test.CorpusDocuments;
+import no.sikt.graphitron.model.test.CorpusDocuments.Document;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 

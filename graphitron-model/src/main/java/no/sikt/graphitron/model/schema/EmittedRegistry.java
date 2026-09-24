@@ -27,7 +27,7 @@ import java.util.stream.Collectors;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_COINAGE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SYNTHESIZED_FEDERATION_KEY;
 import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.select;
@@ -45,7 +45,7 @@ import static org.jooq.impl.DSL.select;
  *
  * <p>The point of deriving it here rather than in the generator is that the schema and the store
  * then come from the same facts. An expansion implemented twice is two readings of one rule with
- * nothing saying they agree, which is what {@code MacroCapture}'s own javadoc records about the
+ * nothing saying they agree, which is what {@code the emitted anchoring}'s own javadoc records about the
  * split it inherited; an expansion read out of the rows the expansion wrote cannot disagree with
  * them.
  *
@@ -389,18 +389,22 @@ public final class EmittedRegistry {
      * state the same {@code PageInfo}, and it carries each tag once rather than twice.
      */
     private static void applyInheritedTags(TypeDefinitionRegistry patched, StoreHandle store) {
-        var m = GRAPHITRON_MINTED_TYPE;
+        var m = GRAPHITRON_MINTED_COINAGE;
+        // Which application coined each minted name, asked of the relation that states it. The
+        // arms are not enumerated here: a mint arm added to the schema is one this fold already
+        // reads. The whole fold goes when the emitted population carries its own applied
+        // directives; see the method's note.
         var coined = store.dsl()
-            .selectDistinct(m.TYPE_NAME, m.SOURCE_COORDINATE)
+            .select(m.TYPE_NAME, m.COORDINATE)
             .from(m)
             .where(m.GRAPH_NAME.eq(store.graphName()))
-            .orderBy(m.TYPE_NAME, m.SOURCE_COORDINATE)
+            .orderBy(m.TYPE_NAME, m.COORDINATE)
             .fetch();
 
         var byType = new LinkedHashMap<String, LinkedHashSet<String>>();
         for (var row : coined) {
             byType.computeIfAbsent(row.get(m.TYPE_NAME), ignored -> new LinkedHashSet<>())
-                .addAll(tagsAt(patched, row.get(m.SOURCE_COORDINATE)));
+                .addAll(tagsAt(patched, row.get(m.COORDINATE)));
         }
 
         var replacements = new ArrayList<Replacement>();

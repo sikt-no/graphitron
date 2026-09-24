@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.derive;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.classifieddsl.CorpusDocuments;
+import no.sikt.graphitron.model.test.CorpusDocuments;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.model.diagnostics.UpdateRowsError;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;

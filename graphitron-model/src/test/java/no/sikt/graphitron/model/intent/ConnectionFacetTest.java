@@ -14,7 +14,7 @@ import static no.sikt.graphitron.model.test.SeededStore.seedConnection;
 import static no.sikt.graphitron.model.test.SeededStore.seedFacet;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldBinding;
-import static no.sikt.graphitron.model.test.SeededStore.seedFieldSynthesis;
+import static no.sikt.graphitron.model.test.SeededStore.seedConnectionCarrier;
 import static no.sikt.graphitron.model.test.SeededStore.seedInputField;
 import static no.sikt.graphitron.model.test.SeededStore.seedType;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
@@ -217,10 +217,13 @@ class ConnectionFacetTest {
      */
     private static void carrier(DSLContext dsl, String fieldName, String argumentName,
                                 String inputTypeName, int ordinal) {
-        seedType(dsl, GRAPH, "FilmConnection", "OBJECT");
-        seedField(dsl, GRAPH, "Query", fieldName, "FilmConnection", false);
+        // The authored shape, which is what the expansion reads: a bare list of the element it
+        // pages over. The connection is what the carrier mints, not what the author wrote, so
+        // seeding the rewritten field here would leave nothing to expand.
+        seedType(dsl, GRAPH, "Film", "OBJECT");
+        seedField(dsl, GRAPH, "Query", fieldName, "Film", true);
         seedConnection(dsl, GRAPH, "Query", fieldName);
-        seedFieldSynthesis(dsl, GRAPH, "Query", fieldName, "[Film!]!");
+        seedConnectionCarrier(dsl, GRAPH, "Query", fieldName);
         argument(dsl, fieldName, argumentName, inputTypeName, ordinal);
     }
 

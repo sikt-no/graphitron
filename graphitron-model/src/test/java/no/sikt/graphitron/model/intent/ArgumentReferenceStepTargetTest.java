@@ -25,7 +25,7 @@ import static no.sikt.graphitron.model.test.SeededStore.seedConstraint;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldReference;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldReferenceStep;
-import static no.sikt.graphitron.model.test.SeededStore.seedFieldSynthesis;
+import static no.sikt.graphitron.model.test.SeededStore.seedConnectionCarrier;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedPrimaryKey;
 import static no.sikt.graphitron.model.test.SeededStore.seedReferentialConstraint;
@@ -146,8 +146,10 @@ class ArgumentReferenceStepTargetTest {
     void aConnectionFieldDepartsItsElementTypesTable() {
         withCatalog(dsl -> {
             seedTableBinding(dsl, GRAPH, "Film", "film");
-            seedQueryField(dsl, "films", "FilmConnection");
-            seedFieldSynthesis(dsl, GRAPH, "Query", "films", "[Film!]!");
+            // The authored shape, a bare list of the element: the connection is what this carrier
+            // mints rather than what the author wrote.
+            seedField(dsl, GRAPH, "Query", "films", "Film", true);
+            seedConnectionCarrier(dsl, GRAPH, "Query", "films");
             seedKeyPath(dsl, "Query", "films", "inActor", "film_actor_film_id_fkey");
 
             var rows = chain(dsl, GRAPH);

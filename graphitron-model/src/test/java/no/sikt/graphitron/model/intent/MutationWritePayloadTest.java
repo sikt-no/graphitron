@@ -302,6 +302,7 @@ class MutationWritePayloadTest {
     private static void seedListArgument(DSLContext dsl, String fieldName, String argumentName) {
         dsl.update(GRAPHQL_ARGUMENT)
             .set(GRAPHQL_ARGUMENT.IS_LIST, true)
+            .set(GRAPHQL_ARGUMENT.LIST_DEPTH, 1)
             .where(GRAPHQL_ARGUMENT.GRAPH_NAME.eq(GRAPH))
             .and(GRAPHQL_ARGUMENT.FIELD_NAME.eq(fieldName))
             .and(GRAPHQL_ARGUMENT.ARGUMENT_NAME.eq(argumentName))

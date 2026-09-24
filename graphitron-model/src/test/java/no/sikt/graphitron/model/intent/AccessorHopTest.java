@@ -19,14 +19,13 @@ import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedClass;
 import static no.sikt.graphitron.model.test.SeededStore.seedDeclaredType;
+import static no.sikt.graphitron.model.test.SeededStore.seedConnectionCarrier;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldBinding;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraph;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedMethod;
 import static no.sikt.graphitron.model.test.SeededStore.seedMethodParameter;
-import static no.sikt.graphitron.model.test.SeededStore.seedMintedField;
-import static no.sikt.graphitron.model.test.SeededStore.seedMintedType;
 import static no.sikt.graphitron.model.test.SeededStore.seedRecordComponent;
 import static no.sikt.graphitron.model.test.SeededStore.seedReturnTypeRef;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
@@ -523,9 +522,9 @@ class AccessorHopTest {
             // minted rows keying into the transcription, which is what says minting is single level.
             seedField(dsl, GRAPH, "Store", "films", "Film", true);
 
-            seedMintedType(dsl, GRAPH, "FilmEdge", "Store", "films");
-            seedMintedField(dsl, GRAPH, "FilmEdge", "node", "Store", "films", "Film", 0,
-                false, false, null);
+            // One application, and FilmEdge with its node field follow from it: the edge is the
+            // connection's name and a suffix, and its node is what the carrier pages over.
+            seedConnectionCarrier(dsl, GRAPH, "Store", "films", "Film");
 
             assertThat(hops(dsl, GRAPH, "Store", "node"))
                 .as("the authored coordinate, which is the control: empty here means the case is"

@@ -1,0 +1,19 @@
+"The applications @asFacet declines to bind, stated as the rows that are absent. A facet counts by reading one column directly, so a field that also carries @reference, @condition or @nodeId is asking for something else: a join-mediated reach, an authored predicate, or the node-id machinery. Each of the three declines and the clean field beside them is the control, an empty binding relation being something this document would otherwise pass whether the rule worked or not."
+type Film @table(name: "film") { id: ID rating: String }
+
+input FilmFilter {
+  rating: [String!] @field(name: "rating") @asFacet
+  viaReference: [String!] @field(name: "rating") @asFacet @reference(path: [{table: "film"}])
+  viaCondition: [String!] @field(name: "rating") @asFacet
+    @condition(condition: {className: "no.example.Conditions", method: "rated"})
+  viaNodeId: [String!] @field(name: "rating") @asFacet @nodeId
+}
+
+extend type Query {
+  films(filter: FilmFilter): [Film!]! @asConnection
+}
+
+extend schema @expectEquals(relation: "graphitron_facet_binding", rows: """
+  type_name,  field_name, column_name
+  FilmFilter, rating,     rating
+  """)

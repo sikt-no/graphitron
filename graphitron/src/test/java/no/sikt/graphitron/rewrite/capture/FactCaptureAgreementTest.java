@@ -56,9 +56,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_ARGUMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_MINTED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_CARRIER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_MINTED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MINTED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_FEDERATION_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SYNTHESIZED_FEDERATION_KEY;
@@ -507,14 +508,14 @@ class FactCaptureAgreementTest {
             var dsl = store.dsl();
             // The fixture has no collision, so at every grain the emitted population is the
             // transcription and the mint with nothing removed. That is what makes these plain
-            // unions the right statement here and MacroCaptureTest the place the precedence rules
+            // unions the right statement here and the emitted anchor's own test the place the precedence rules
             // are pinned: a collision case belongs beside the expansion that creates it.
             assertThat(dsl.select(GRAPHITRON_TYPE.TYPE_NAME).from(GRAPHITRON_TYPE).fetch())
                 .as("the emitted type anchor against the transcription and the mint")
                 .containsExactlyInAnyOrderElementsOf(
                     dsl.select(GRAPHQL_TYPE.TYPE_NAME).from(GRAPHQL_TYPE)
-                        .unionAll(dsl.selectDistinct(GRAPHITRON_MINTED_TYPE.TYPE_NAME)
-                            .from(GRAPHITRON_MINTED_TYPE))
+                        .unionAll(dsl.selectDistinct(GRAPHITRON_TYPE_MINTED.TYPE_NAME)
+                            .from(GRAPHITRON_TYPE_MINTED))
                         .fetch());
             assertThat(dsl.select(GRAPHITRON_FIELD.TYPE_NAME, GRAPHITRON_FIELD.FIELD_NAME)
                 .from(GRAPHITRON_FIELD).fetch())
@@ -522,10 +523,13 @@ class FactCaptureAgreementTest {
                     + " a rewritten carrier counting once because its mint is at its own coordinate")
                 .containsExactlyInAnyOrderElementsOf(
                     dsl.select(GRAPHQL_FIELD.TYPE_NAME, GRAPHQL_FIELD.FIELD_NAME).from(GRAPHQL_FIELD)
-                        .unionAll(dsl.selectDistinct(GRAPHITRON_MINTED_FIELD.TYPE_NAME,
-                                GRAPHITRON_MINTED_FIELD.FIELD_NAME)
-                            .from(GRAPHITRON_MINTED_FIELD)
-                            .where(GRAPHITRON_MINTED_FIELD.PRECEDENCE.ne("REPLACE")))
+                        .unionAll(dsl.selectDistinct(GRAPHITRON_FIELD_MINTED.TYPE_NAME,
+                                GRAPHITRON_FIELD_MINTED.FIELD_NAME)
+                            .from(GRAPHITRON_FIELD_MINTED)
+                            .where(GRAPHITRON_FIELD_MINTED.COORDINATE.notIn(
+                                dsl.select(GRAPHQL_FIELD.TYPE_NAME.concat(".")
+                                        .concat(GRAPHQL_FIELD.FIELD_NAME))
+                                    .from(GRAPHQL_FIELD))))
                         .fetch());
             assertThat(dsl.select(GRAPHITRON_ARGUMENT.TYPE_NAME, GRAPHITRON_ARGUMENT.FIELD_NAME,
                     GRAPHITRON_ARGUMENT.ARGUMENT_NAME).from(GRAPHITRON_ARGUMENT).fetch())
@@ -533,10 +537,10 @@ class FactCaptureAgreementTest {
                 .containsExactlyInAnyOrderElementsOf(
                     dsl.select(GRAPHQL_ARGUMENT.TYPE_NAME, GRAPHQL_ARGUMENT.FIELD_NAME,
                         GRAPHQL_ARGUMENT.ARGUMENT_NAME).from(GRAPHQL_ARGUMENT)
-                        .unionAll(dsl.selectDistinct(GRAPHITRON_MINTED_ARGUMENT.TYPE_NAME,
-                                GRAPHITRON_MINTED_ARGUMENT.FIELD_NAME,
-                                GRAPHITRON_MINTED_ARGUMENT.ARGUMENT_NAME)
-                            .from(GRAPHITRON_MINTED_ARGUMENT))
+                        .unionAll(dsl.selectDistinct(GRAPHITRON_ARGUMENT_MINTED.TYPE_NAME,
+                                GRAPHITRON_ARGUMENT_MINTED.FIELD_NAME,
+                                GRAPHITRON_ARGUMENT_MINTED.ARGUMENT_NAME)
+                            .from(GRAPHITRON_ARGUMENT_MINTED))
                         .fetch());
             // The supertype against the three under it, on the transcription family's terms: a
             // foreign key refuses an anchor with no supertype row and nothing refuses a supertype
@@ -562,7 +566,7 @@ class FactCaptureAgreementTest {
                 .as("the fixture has to reach every kind this family holds, or the supertype"
                     + " equality above is partly vacuous")
                 .containsExactlyInAnyOrder("NAMED_TYPE", "FIELD", "INPUT_FIELD", "FIELD_ARGUMENT");
-            assertThat(dsl.select(GRAPHITRON_MINTED_TYPE.TYPE_NAME).from(GRAPHITRON_MINTED_TYPE)
+            assertThat(dsl.select(GRAPHITRON_TYPE_MINTED.TYPE_NAME).from(GRAPHITRON_TYPE_MINTED)
                 .fetch(0, String.class))
                 .as("the fixture has to mint a type, or every union above is a copy of one arm")
                 .isNotEmpty();
@@ -685,9 +689,13 @@ class FactCaptureAgreementTest {
 
             var captured = new LinkedHashSet<String>();
             store.dsl()
-                .select(GRAPHITRON_MINTED_TYPE.TYPE_NAME, GRAPHITRON_MINTED_TYPE.SOURCE_COORDINATE)
-                .from(GRAPHITRON_MINTED_TYPE)
-                .where(GRAPHITRON_MINTED_TYPE.TYPE_NAME.ne("PageInfo"))
+                .select(GRAPHITRON_CONNECTION_CARRIER.CONNECTION_NAME,
+                    GRAPHITRON_CONNECTION_CARRIER.COORDINATE)
+                .from(GRAPHITRON_CONNECTION_CARRIER)
+                .unionAll(store.dsl()
+                    .select(GRAPHITRON_CONNECTION_CARRIER.EDGE_NAME,
+                        GRAPHITRON_CONNECTION_CARRIER.COORDINATE)
+                    .from(GRAPHITRON_CONNECTION_CARRIER))
                 .fetch()
                 .forEach(row -> captured.add(row.value1() + "<-" + row.value2()));
             assertThat(captured).isEqualTo(expected);
@@ -698,8 +706,8 @@ class FactCaptureAgreementTest {
                 .anyMatch(minted -> minted.declaredArm() == GraphitronType.PageInfoType.class);
             long carriers = relation.rows().values().stream()
                 .filter(ConnectionSynthesis.DirectiveDriven.class::isInstance).count();
-            assertThat(store.dsl().fetchCount(GRAPHITRON_MINTED_TYPE,
-                GRAPHITRON_MINTED_TYPE.TYPE_NAME.eq("PageInfo")))
+            assertThat(store.dsl().fetchCount(GRAPHITRON_TYPE_MINTED,
+                GRAPHITRON_TYPE_MINTED.TYPE_NAME.eq("PageInfo")))
                 .isEqualTo(modelMintedPageInfo ? (int) carriers : 0);
         }
     }
@@ -722,11 +730,8 @@ class FactCaptureAgreementTest {
             // A rewritten carrier is a minted field at its own coordinate, which is also its
             // coining coordinate, so the projection and the filter are the same expression.
             var captured = new LinkedHashSet<>(store.dsl()
-                .select(GRAPHITRON_MINTED_FIELD.SOURCE_COORDINATE)
-                .from(GRAPHITRON_MINTED_FIELD)
-                .where(GRAPHITRON_MINTED_FIELD.SOURCE_COORDINATE
-                    .eq(GRAPHITRON_MINTED_FIELD.TYPE_NAME.concat(".")
-                        .concat(GRAPHITRON_MINTED_FIELD.FIELD_NAME)))
+                .select(GRAPHITRON_CONNECTION_CARRIER.COORDINATE)
+                .from(GRAPHITRON_CONNECTION_CARRIER)
                 .fetch(0, String.class));
             assertThat(captured).isEqualTo(expected);
         }

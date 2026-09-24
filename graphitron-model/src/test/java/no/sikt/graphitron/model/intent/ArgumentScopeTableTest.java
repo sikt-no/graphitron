@@ -13,7 +13,7 @@ import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedConstraint;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
-import static no.sikt.graphitron.model.test.SeededStore.seedFieldSynthesis;
+import static no.sikt.graphitron.model.test.SeededStore.seedConnectionCarrier;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedMutation;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
@@ -66,8 +66,8 @@ class ArgumentScopeTableTest {
         withCatalog(dsl -> {
             seedTableBinding(dsl, GRAPH, "Film", "film");
             seedType(dsl, GRAPH, "FilmConnection", "OBJECT");
-            seedField(dsl, GRAPH, "Query", "films", "FilmConnection", false);
-            seedFieldSynthesis(dsl, GRAPH, "Query", "films", "[Film!]!");
+            seedField(dsl, GRAPH, "Query", "films", "Film", true);
+            seedConnectionCarrier(dsl, GRAPH, "Query", "films");
             seedArgument(dsl, GRAPH, "Query", "films", "inActor", "ID");
 
             assertThat(rows(dsl).map(ArgumentScopeTableTest::render))

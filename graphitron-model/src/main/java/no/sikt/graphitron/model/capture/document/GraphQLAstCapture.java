@@ -479,6 +479,7 @@ public final class GraphQLAstCapture {
     private static final Field<Boolean> NON_NULL = field(name("non_null"), Boolean.class);
     private static final Field<Boolean> IS_LIST = field(name("is_list"), Boolean.class);
     private static final Field<Boolean> ITEM_NON_NULL = field(name("item_non_null"), Boolean.class);
+    private static final Field<Integer> LIST_DEPTH = field(name("list_depth"), Integer.class);
     private static final Field<String> DEFAULT_VALUE_SDL = field(name("default_value_sdl"), String.class);
     private static final Field<String> DESCRIPTION = field(name("description"), String.class);
     private static final Field<Integer> MERGE_ORDINAL = field(name("merge_ordinal"), Integer.class);
@@ -645,7 +646,7 @@ public final class GraphQLAstCapture {
             .select(f.TYPE_NAME.as(TYPE_NAME), f.NAME.as(FIELD_NAME),
                 f.PARENT_LINE.as(DECLARATION_LINE), f.PARENT_COLUMN.as(DECLARATION_COLUMN),
                 f.TYPE_SDL.as(TYPE_SDL), f.NAMED_TYPE.as(NAMED_TYPE), f.NON_NULL.as(NON_NULL),
-                f.IS_LIST.as(IS_LIST), f.ITEM_NON_NULL.as(ITEM_NON_NULL),
+                f.IS_LIST.as(IS_LIST), f.ITEM_NON_NULL.as(ITEM_NON_NULL), f.LIST_DEPTH.as(LIST_DEPTH),
                 castNull(t.DEFAULT_VALUE_SDL).as(DEFAULT_VALUE_SDL), f.DESCRIPTION.as(DESCRIPTION),
                 f.SOURCE_NAME.as(SITE_NAME), f.SOURCE_LINE.as(SITE_LINE),
                 f.SOURCE_COLUMN.as(SITE_COLUMN), m.MERGE_ORDINAL.as(MERGE_ORDINAL))
@@ -658,7 +659,7 @@ public final class GraphQLAstCapture {
             .where(f.GRAPH_NAME.eq(graph))
             .unionAll(dsl
                 .select(i.TYPE_NAME, i.NAME, i.PARENT_LINE, i.PARENT_COLUMN, i.TYPE_SDL,
-                    i.NAMED_TYPE, i.NON_NULL, i.IS_LIST, i.ITEM_NON_NULL, i.DEFAULT_VALUE_SDL,
+                    i.NAMED_TYPE, i.NON_NULL, i.IS_LIST, i.ITEM_NON_NULL, i.LIST_DEPTH, i.DEFAULT_VALUE_SDL,
                     i.DESCRIPTION, i.SOURCE_NAME, i.SOURCE_LINE, i.SOURCE_COLUMN, m.MERGE_ORDINAL)
                 .from(i)
                 .join(m).on(m.GRAPH_NAME.eq(graph))
@@ -682,14 +683,14 @@ public final class GraphQLAstCapture {
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.ORDINAL, t.DECLARATION_LINE,
                 t.DECLARATION_COLUMN, t.TYPE_SDL, t.NAMED_TYPE, t.NON_NULL, t.IS_LIST,
-                t.ITEM_NON_NULL, t.DEFAULT_VALUE_SDL, t.DESCRIPTION, t.SOURCE_NAME, t.SOURCE_LINE,
+                t.ITEM_NON_NULL, t.LIST_DEPTH, t.DEFAULT_VALUE_SDL, t.DESCRIPTION, t.SOURCE_NAME, t.SOURCE_LINE,
                 t.SOURCE_COLUMN, t.TOUCHED_AT)
             .select(dsl
                 .select(val(graph, t.GRAPH_NAME), ranked.field(TYPE_NAME), ranked.field(FIELD_NAME),
                     ranked.field(ORDINAL), ranked.field(DECLARATION_LINE),
                     ranked.field(DECLARATION_COLUMN), ranked.field(TYPE_SDL),
                     ranked.field(NAMED_TYPE), ranked.field(NON_NULL), ranked.field(IS_LIST),
-                    ranked.field(ITEM_NON_NULL), ranked.field(DEFAULT_VALUE_SDL),
+                    ranked.field(ITEM_NON_NULL), ranked.field(LIST_DEPTH), ranked.field(DEFAULT_VALUE_SDL),
                     ranked.field(DESCRIPTION), ranked.field(SITE_NAME), ranked.field(SITE_LINE),
                     ranked.field(SITE_COLUMN), val(touchedAt, t.TOUCHED_AT))
                 .from(ranked).where(ranked.field(RANK).eq(1)))
@@ -702,6 +703,7 @@ public final class GraphQLAstCapture {
             .set(t.NON_NULL, excluded(t.NON_NULL))
             .set(t.IS_LIST, excluded(t.IS_LIST))
             .set(t.ITEM_NON_NULL, excluded(t.ITEM_NON_NULL))
+            .set(t.LIST_DEPTH, excluded(t.LIST_DEPTH))
             .set(t.DEFAULT_VALUE_SDL, excluded(t.DEFAULT_VALUE_SDL))
             .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
             .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
@@ -770,7 +772,7 @@ public final class GraphQLAstCapture {
         var t = GRAPHQL_ARGUMENT;
         var ranked = dsl
             .select(a.TYPE_NAME, a.FIELD_NAME, a.NAME, a.TYPE_SDL, a.NAMED_TYPE, a.NON_NULL,
-                a.IS_LIST, a.ITEM_NON_NULL, a.DEFAULT_VALUE_SDL, a.DESCRIPTION, a.SOURCE_NAME,
+                a.IS_LIST, a.ITEM_NON_NULL, a.LIST_DEPTH, a.DEFAULT_VALUE_SDL, a.DESCRIPTION, a.SOURCE_NAME,
                 a.SOURCE_LINE, a.SOURCE_COLUMN,
                 rowNumber().over(partitionBy(a.TYPE_NAME, a.FIELD_NAME, a.NAME).orderBy(
                     m.MERGE_ORDINAL.asc(), a.SOURCE_LINE.asc(), a.SOURCE_COLUMN.asc())).as(RANK),
@@ -791,7 +793,7 @@ public final class GraphQLAstCapture {
             .asTable("ranked");
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.ARGUMENT_NAME, t.ORDINAL,
-                t.TYPE_SDL, t.NAMED_TYPE, t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL,
+                t.TYPE_SDL, t.NAMED_TYPE, t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH,
                 t.DEFAULT_VALUE_SDL, t.DESCRIPTION, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                 t.TOUCHED_AT)
             .select(dsl
@@ -799,6 +801,7 @@ public final class GraphQLAstCapture {
                     ranked.field(a.FIELD_NAME), ranked.field(a.NAME), ranked.field(ORDINAL),
                     ranked.field(a.TYPE_SDL), ranked.field(a.NAMED_TYPE), ranked.field(a.NON_NULL),
                     ranked.field(a.IS_LIST), ranked.field(a.ITEM_NON_NULL),
+                    ranked.field(a.LIST_DEPTH),
                     ranked.field(a.DEFAULT_VALUE_SDL), ranked.field(a.DESCRIPTION),
                     ranked.field(a.SOURCE_NAME), ranked.field(a.SOURCE_LINE),
                     ranked.field(a.SOURCE_COLUMN), val(touchedAt, t.TOUCHED_AT))
@@ -810,6 +813,7 @@ public final class GraphQLAstCapture {
             .set(t.NON_NULL, excluded(t.NON_NULL))
             .set(t.IS_LIST, excluded(t.IS_LIST))
             .set(t.ITEM_NON_NULL, excluded(t.ITEM_NON_NULL))
+            .set(t.LIST_DEPTH, excluded(t.LIST_DEPTH))
             .set(t.DEFAULT_VALUE_SDL, excluded(t.DEFAULT_VALUE_SDL))
             .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
             .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))

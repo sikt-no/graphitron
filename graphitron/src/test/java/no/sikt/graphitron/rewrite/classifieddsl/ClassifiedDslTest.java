@@ -1,7 +1,8 @@
 package no.sikt.graphitron.rewrite.classifieddsl;
 
+import no.sikt.graphitron.model.test.CorpusDocuments;
 import no.sikt.graphitron.rewrite.ExemptionRegistry;
-import no.sikt.graphitron.rewrite.classifieddsl.CorpusDocuments.Document;
+import no.sikt.graphitron.model.test.CorpusDocuments.Document;
 import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.OperationMembers;
 import no.sikt.graphitron.rewrite.model.OutputField;
