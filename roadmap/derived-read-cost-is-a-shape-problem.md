@@ -30,10 +30,12 @@ its subject rather than its justification.
 When this lands, a contributor adding a derived relation picks a family and an owner, and there is no
 register to add a row to.
 
-**Status against the thesis: confirmed in shape, refuted in scope.** Emptying the register outright
-is not reachable. What survives is the claim about which lever to reach for first, and that has a
-direct measurement: the workload's worst reader was fixed by restating its rule, register untouched,
-every relation returning identical rows.
+**Status against the thesis: confirmed, and the scope reservation was wrong.** This item said
+emptying the register outright was not reachable. R955 reached it. `meta_materialize` is gone, no
+registration is left and no `_live` view is left, so the thesis holds in full rather than in shape
+only. The claim about which lever to reach for first also has a direct measurement behind it: the
+workload's worst reader was fixed by restating its rule, register untouched, every relation
+returning identical rows.
 
 ## The plan
 
@@ -57,15 +59,16 @@ not declared is cleared by whatever clear still stands and, once its old writer 
 written back. And the declaration is a build-time gate, not a runtime mechanism: nothing that runs
 reads `meta_relation`, and what the gate buys is that a new relation cannot arrive without an owner.
 
-**8. The register.** Downstream of all of it, and where the thesis is settled: a registration either
-has no rule left to buy or it is re-argued on its own evidence. Not retired row by row and not shrunk
-to a defensible core; the gatherer it compensated for stops existing and the mechanism is left with
-no work.
+**8. The register. Done, by R955.** Not retired row by row and not shrunk to a defensible core: the
+gatherer it compensated for stopped existing and the mechanism was left with no work, which is the
+shape this item argued for. `meta_materialize`, every registration and every `_live` view are gone.
+The credit is R955's; what this item contributed is the argument that the register had no subject
+once ownership was computed.
 
-**9. The materialization targets**, whatever is still standing. The registered targets are the
-relations carrying no primary key, so nothing refuses a duplicate row and the gate checking a key
-against its grain is vacuous on every one. Deliberately last, because most dissolve with slice 8 and
-keying them now would harden relations on their way out.
+**9. The materialization targets. Moot.** The subject was the registered targets, which were the
+relations carrying no primary key. Six stored `intent_` tables remain and every one of them is keyed,
+so there is nothing left to key and no vacuous grain check to fix. Slice 8 took the rest with it,
+which is what this slice being deliberately last was betting on.
 
 **The rule that keeps the default from coming back is that an owner is computed, not chosen.** A
 relation's owner is the latest, in gatherer dependency order, of the owners of the relations it
@@ -85,10 +88,13 @@ went stale during the arc, one of them twice inside a working day.
 
 ## Tests
 
-The Done gate confirms that `MaterializeDependencies.populate` actually reaches zero rather than
-assuming it, which is six lines timing the call against a booted store. It must not infer a cheaper
-boot from a dissolved register: the DDL half of the boot goes up under this item's own remedy, which
-replaces registrations with stored keys and indexes. Both figures are in
+The obligation this section carried is discharged and not by being measured. It asked the Done gate
+to confirm that `MaterializeDependencies.populate` reaches zero rather than assuming it. That class no
+longer exists, so the step it timed cannot run at all.
+
+What the gate should still refuse is the inference the obligation was guarding against: a cheaper boot
+does not follow from a dissolved register. The DDL half of the boot goes up under this item's own
+remedy, which replaces registrations with stored keys and indexes. The figures for both halves are in
 `roadmap/audits/2026-09-22-capture-dissolution-measurements.md`.
 
 ## Retired vocabulary
@@ -176,9 +182,10 @@ rather than left in a transcript.
   roster row points at `SdlFactCapture`, which creates no record and writes no relation, so the
   declaration names a writer that does not write. Repointing it is a one-line change that wants
   checking rather than guessing.
-* **`SchemaIdentifierDriftCheck` reports a stale path.** It reads the DDL from `target/classes` and
-  prints the `src/main/resources` path in its message, so on an incremental build it names findings
-  the source no longer holds.
+* **`SchemaIdentifierDriftCheck` can report findings the source no longer holds.** It reads the store
+  prose out of a booted H2 store, so the DDL it sees is the compiled resource rather than the file it
+  names, and it labels every finding with the `src/main/resources` path. On an incremental build that
+  pair means it reports against a stale copy while pointing at a source file that is already fixed.
 
 ## What a reviewer should press on
 
