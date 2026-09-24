@@ -70,6 +70,60 @@ relations carrying no primary key. Six stored `intent_` tables remain and every 
 so there is nothing left to key and no vacuous grain check to fix. Slice 8 took the rest with it,
 which is what this slice being deliberately last was betting on.
 
+**10. The directive applications collapse onto the coordinate.** Ready to start, designed and not
+begun. Ten relations become two, and the two key into a supertype that is a table.
+
+The five `graphql_*_directive` relations state one fact, a directive applied at a site, and key it
+five different ways because each decomposes its own site: `(graph_name, directive_name, ordinal)` at
+the schema, seven columns at a field argument. The five `graphql_*_directive_arg` relations repeat
+the split one level down. They do not key differently because the fact differs. They key differently
+because each carries its site's decomposed key rather than the site's coordinate.
+
+`graphql_element` already collapses those five shapes into one: it is keyed `(graph_name,
+coordinate)`, carries an `element_kind`, and the four site relations key into it. So the applications
+can key on the coordinate too:
+
+```sql
+CREATE TABLE graphql_directive_application (
+  graph_name     VARCHAR NOT NULL,
+  coordinate     VARCHAR NOT NULL,
+  directive_name VARCHAR NOT NULL,
+  ordinal        INT     NOT NULL,
+  source_name    VARCHAR, source_line INT, source_column INT,
+  touched_at     TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, directive_name, ordinal),
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE
+);
+```
+
+and `graphql_directive_application_arg` takes the same key plus `directive_argument_name`, carries
+`value_sdl`, and keys into the application above.
+
+Two rulings this rests on, both the architect's.
+
+A supertype is a table carrying a primary key its subtypes reference. A view cannot be one, because a
+foreign key cannot name a view, so a union standing in for a supertype buys the vocabulary and none
+of the integrity. That is why `graphql_directive_site` was deleted rather than kept as the shape, and
+why `graphql_element` is the example the fact model now cites.
+
+The schema block gets a coordinate, `$schema`. The spec has no such coordinate, but we own ours, and
+`$` is illegal in a GraphQL name so it can never collide with a type an author writes. That is what
+lets the schema arm stop being the exception: `graphql_element` gains a `SCHEMA` kind, the anchor
+writes the row, and all five sites collapse into one relation instead of four plus a remainder.
+
+What it touches, counted rather than estimated. Four views join one of the ten each:
+`intent_authored_field_claim`, `intent_authored_type_claim`, `graphitron_carrier_data_field_rule`,
+`graphitron_input_field_filter_role_rule`. Three main sources: `GraphQLAstCapture`, where five writer
+methods and five argument writers become one of each and the `$schema` row and its sweep are added;
+`FieldChainApplications`; and `SdlFactCapture`'s claims. `FactCaptureAgreementTest`'s cross-site
+count, which is a five-arm union today, becomes a plain select. The family headline already points at
+`graphql_field_directive` and will need repointing again.
+
+The two survivors are declared as part of the work, not after it. Their grain descriptions name the
+columns that identify a row, which is what `meta_grain.instance_text` is for and what the ten drafted
+declarations got wrong.
+
 **The rule that keeps the default from coming back is that an owner is computed, not chosen.** A
 relation's owner is the latest, in gatherer dependency order, of the owners of the relations it
 reads. That is a function of the schema, so a gate can check it, and it makes the default impossible
