@@ -1,7 +1,7 @@
 ---
 id: R965
 title: "A column-bound filter slot divines the tenant whatever @condition does to its predicate"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 2
 theme: classification-model
