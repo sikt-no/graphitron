@@ -30,9 +30,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
-| `R977` | A self-FK reference writing the tenant column in an UPDATE SET is agreement-checked, not declined | Ready | 2026-09-25 | [plan](update-set-self-fk-tenant-agreement.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
+| `R977` | A self-FK reference writing the tenant column in an UPDATE SET is agreement-checked, not declined | In Progress | 2026-09-25 | [plan](update-set-self-fk-tenant-agreement.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
@@ -577,7 +577,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R975` [**Routed tenant acquisition: authorize the key and hand it to the session mount**](tenant-routed-mount-authorization.md) — Spec, bug
 - `R978` [**Refuse a connection-binding root service that names no tenant under database-per-tenant**](service-undecoded-node-id-tenant.md) — Backlog, bug, blocked by [service-tenant-binding](service-tenant-binding.md)
 - `R664` [**A growth-proof staged builder over the generated ExecutionInput factory**](execution-input-staged-builder.md) — Backlog, dx
-- `R977` [**A self-FK reference writing the tenant column in an UPDATE SET is agreement-checked, not declined**](update-set-self-fk-tenant-agreement.md) — Ready, bug
+- `R977` [**A self-FK reference writing the tenant column in an UPDATE SET is agreement-checked, not declined**](update-set-self-fk-tenant-agreement.md) — In Progress, bug
 - `R469` [**Enable @defer/incremental delivery on the owned-connection path**](defer-under-owned-connections.md) — Backlog, architecture
 - `R468` [**Oracle/RAS execution-tier coverage for session identity hooks**](oracle-ras-session-hook-execution-coverage.md) — Backlog, architecture
 - `R460` [**Targeted read-only enforcement for query paths graphitron does not control (@routine, @service)**](query-read-only-enforcement.md) — Backlog, architecture
