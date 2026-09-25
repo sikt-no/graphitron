@@ -149,3 +149,29 @@ Non-blocking:
 - `handDownOnly` takes an `OutputField`, but the two `MultiTablePolymorphicEmitter` service roots carry only `fieldName`. They will need the carrier threaded through, or a by-name variant like `resolveByName`. This is mechanical and does not affect the verdict.
 
   *Author, round 1:* noted in Design § Route and stamp.
+
+### Round 2 (2026-09-25, Spec -> Ready, reviewer session 01XcpZBdZ6qRnL4TvtTJJpvM)
+
+Verdict: withhold. One finding on question two. Question one passes: under a `<tenantColumn>` build, a root `@service` whose arguments carry the tenant (a jOOQ record parameter binding the tenant column, a `@nodeId` record member, or a decoded `@nodeId` argument) runs on that tenant's connection and hands the tenant down, so the tenant-scoped fields under its payload resolve instead of failing the build. A connection-binding service under a tenant-bound parent runs on the parent's tenant. Both round-1 findings are closed. Every premise in Observed holds against the tree, and every symbol the spec names exists as named.
+
+1. **Neither new route checks whether the service's own reach is global, and graphitron's own SQL then reads a global table on the tenant connection (question 2).** `armOf` computes `anyTenant` and `anyGlobal` from `reachedTables`, and the spec places both new routes where only `anyTenant` is consulted. The first is the `ServiceCall` slot, which returns `ArgumentBound` ahead of `!anyTenant`. The second is `bindsConnection`, which keeps the `bindsSessionHandle` place ahead of `!anyTenant -> Untenanted`. That is sound for an empty reach (a wrapper or record return), which is the shape the spec argues from. It is not sound for a service whose return is a `@table` type over a global table. In that shape graphitron runs its own statement over the return table on the same `dsl`:
+   - At the root, a `QueryServiceTableField` or `MutationServiceTableField` has the re-entry companion (`emitServiceReentryLift`), whose declaration is `TenantDslEmitter.resolve(ctx, lift.field(), ...)`.
+   - At a child, the `ChildField.ServiceTableField` rows method calls the service and then re-projects through `Type.$project(...)` under one `resolve(ctx, stf, ...)` declaration (`TypeFetcherGenerator`, the `ServiceTableField` dispatch arm).
+
+   Two cases follow:
+   - A root service that takes a `FilmRecord` and returns `Language` (global in the fixture) would divine, and then read `language` by primary key from `tenant_1`.
+   - A `ChildField.ServiceTableField` returning `Language` under `Film`, with a method taking a `DSLContext`, classifies `Untenanted` today and works on the default source. Under the widened rung it becomes `Inherited` and reads `language` from the tenant database.
+
+   The manual says global tables are served from the default source (`docs/manual/how-to/tenant-scoping.adoc`), and `armOf`'s cross-scope rejection says one connection cannot serve both. So the second case is a field that runs today and starts failing, or silently reads the wrong database. The consumer cannot remedy it, because the statement is graphitron's, not the service's. That contradicts both "nothing that runs today starts failing" and the behaviour-change paragraph's "the remedy is on the consumer side".
+
+   What satisfies it: state the rule for a service field whose reach is non-empty and has no tenant-scoped table, for both routes. Pin it with a classification test at the root and at the child, in the fixture's `Language` terms. The choices I can see:
+   - Gate both routes on an empty reach. A global-returning service then stays `Untenanted` and joins the accepted gap, and today's child fields keep working.
+   - Reject with its own text, as the cross-scope rung does. This is honest, but it turns working child fields into build errors, which the spec would then have to own.
+   - Route the service call and graphitron's re-projection on two connections. That is a new emitter shape.
+
+   I would take the first. It is the smallest change, it keeps the spec's "nothing that runs today starts failing" true, and it matches the existing reading of a non-empty reach as the field's own scope. The choice is the author's. Note that the existing `$session` rung already has this exposure for a `$session`-bound child `ServiceTableField` over a global table. Whichever rule is chosen should cover it too, since the spec folds that rung into `bindsConnection`.
+
+Non-blocking:
+
+- The behaviour change is consumer-facing: services divine, and connection-binding children inherit. The spec names the changelog, but `docs/manual/how-to/tenant-scoping.adoc` states the routing rule an author reads ("an argument bound to the tenant column routes the statement"), and Implementation names no manual edit. A sentence there on `@service` divining, and on the accepted gap, would keep the manual current.
+- `RecordKeyDecode` carries only `typeId`, so the `NodeType` lookup in the fold is by `typeId` over `types`. That is sound, because `TypeBuilder` enforces `typeId` uniqueness, but the spec reads as if the map were keyed by it.
