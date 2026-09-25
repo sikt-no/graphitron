@@ -355,6 +355,14 @@ class RejectionSeverityCoverageTest {
                 "com.example.Hooks", "mount", "SessionHandleRecord",
                 "com.example.Hooks", "unmount", "String");
         }
+        if (permit == no.sikt.graphitron.model.diagnostics.ReflectionError.TenantSlotDuplicated.class) {
+            return new no.sikt.graphitron.model.diagnostics.ReflectionError.TenantSlotDuplicated(
+                "com.example.Hooks", "mount", "Long");
+        }
+        if (permit == no.sikt.graphitron.model.diagnostics.ReflectionError.TenantSlotMistyped.class) {
+            return new no.sikt.graphitron.model.diagnostics.ReflectionError.TenantSlotMistyped(
+                "com.example.Hooks", "mount", "tenant", "Optional<String>", "Long");
+        }
         // UpdateRowsError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
         // switch on Rejection.AuthorError catches the whole sub-family uniformly (Error severity).
         if (permit == no.sikt.graphitron.model.diagnostics.UpdateRowsError.NoUniqueKeyCoverage.class) {

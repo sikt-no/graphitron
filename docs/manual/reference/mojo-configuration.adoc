@@ -301,7 +301,7 @@ When identity lives behind a database routine, you usually already have the meth
 </sessionState>
 ----
 
-Graphitron reads the signatures at build time: everything but the `Configuration` parameter is the payload, and the return type is the handle later passed to `unmount`. Each payload parameter becomes an ordinary contextArgument on the generated factory, so passing the wrong shape is a compile error rather than a cast failure inside the database. Compile the module that owns the named class with `-parameters` so the parameter names are real (graphitron fails the build naming the method if they are missing); the factory parameter names are the method's own, jOOQ's `pClaims`-style names on a generated routine method, yours on a facade. If a service method also needs the same value, declare it as a `contextArgument` with the same name and type; it is the same fact, supplied once, not two separately-maintained copies:
+Graphitron reads the signatures at build time: everything but the `Configuration` parameter (and, in a multi-tenant build, the tenant slot described below) is the payload, and the return type is the handle later passed to `unmount`. Each payload parameter becomes an ordinary contextArgument on the generated factory, so passing the wrong shape is a compile error rather than a cast failure inside the database. Compile the module that owns the named class with `-parameters` so the parameter names are real (graphitron fails the build naming the method if they are missing); the factory parameter names are the method's own, jOOQ's `pClaims`-style names on a generated routine method, yours on a facade. If a service method also needs the same value, declare it as a `contextArgument` with the same name and type; it is the same fact, supplied once, not two separately-maintained copies:
 
 [source,java]
 ----
@@ -341,6 +341,10 @@ One check has to wait until runtime, because the build cannot see which factory 
 === The seam parameter
 
 The `Configuration` you are handed is bound to the connection your `mount` is mounting and carries the jOOQ `Settings` you gave the runtime, so a schema mapping you configured applies to your routine call as it does to graphitron's own SQL. It carries no transaction provider, because both methods run outside any transaction, on a connection graphitron holds in autocommit. Declare a `Connection` parameter instead if you want raw JDBC. A throwing `mount` evicts the connection rather than returning it to the pool, and fails the request before any of your query's SQL runs.
+
+=== The tenant slot
+
+In a build that configures `<tenantColumn>`, your `mount` can also declare a parameter typed `Optional` of the tenant column's Java type, anywhere in its signature, and graphitron hands it the tenant the connection is being mounted for: the routed tenant's key, or `Optional.empty()` for the default source that serves global tables. Like the seam, it is recognised by type, so it is neither payload nor a factory parameter. Two such parameters, or any other `Optional` parameter on a multi-tenant mount, fail the build; a plain parameter of the tenant type stays ordinary payload. Graphitron takes one connection and runs one mount per tenant key, even when several keys share a `DataSource`, so the identity you mount is per connection and tenant. `unmount` does not receive the tenant; put it in the handle your `mount` returns if you need it there. Which tenants a request may touch is a separate, request-level set, checked before any connection is taken; see xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping].
 
 === When your methods run, and what your `mount` must mount
 

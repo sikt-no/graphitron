@@ -111,9 +111,14 @@ unsecured or uses the escape hatch exclusively.
 
 For database-per-tenant deployments, build the runtime over a default
 `DataSource` plus a `Map<TenantId, DataSource>`; Graphitron pins one connection
-per distinct divined tenant within an operation and mounts identity on each. The
-schema-side inference that divines the tenant key is the tenant-column work;
-the runtime seam it rides is part of this path.
+per distinct divined tenant within an operation and mounts identity on each,
+handing a mount that declares the `Optional<K>` tenant slot the key it is mounting
+for. Only tenants in the request tenant set (the factories' leading parameter in a
+`<tenantColumn>` build) are ever acquired: the generated per-operation connection
+carrier refuses any other key with a client error before a connection is taken. The schema-side
+inference that divines the tenant key is the tenant-column work; the runtime seam
+it rides is part of this path. The consumer-facing recipe is
+xref:../../manual/how-to/tenant-scoping.adoc[How-to: Tenant scoping].
 
 [#escape-hatch-path]
 == The escape-hatch path: GraphitronContext

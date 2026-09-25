@@ -84,6 +84,19 @@ public sealed interface SessionHooks permits SessionHooks.NotConfigured, Session
     }
 
     /**
+     * The mount's tenant slot: the one parameter classified
+     * {@link no.sikt.graphitron.rewrite.model.ParamSource.SessionTenant} (typed
+     * {@code Optional<K>} for the build's tenant column type), present only when the mount declares
+     * it in a {@code <tenantColumn>} build. Resolved here so the emitters read one fact rather than
+     * each filtering on the arm; it is never part of {@link #payloadParams()}.
+     */
+    default Optional<MethodRef.Param> tenantSlot() {
+        return mountRef().flatMap(m -> m.params().stream()
+            .filter(p -> p.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.SessionTenant)
+            .findFirst());
+    }
+
+    /**
      * The payload shape the dev tools can construct from one string: present exactly when the
      * mount's payload is a single {@code java.lang.String} parameter, carrying that parameter's
      * name (its contextArgument key). Resolved here, on the reflected facts, so the dev-goal and

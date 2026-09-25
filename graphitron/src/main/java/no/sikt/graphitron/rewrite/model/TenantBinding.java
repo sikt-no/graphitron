@@ -180,7 +180,7 @@ public sealed interface TenantBinding {
      * The deliberate no-binding arm: the field carries {@code @tenantFanOut}, so its query runs
      * once per tenant in the request's fan-out domain and the results union. The arm is the
      * verdict alone; <em>what</em> it fans over is a request-level fact (the factory-supplied
-     * tenant collection intersected with the configured tenant map), so there is nothing for the
+     * request tenant set intersected with the configured tenant map), so there is nothing for the
      * model to carry. Children below a fanned field inherit each unioned row's tenant through
      * per-element {@code localContext} stamping and classify {@link Inherited}.
      */

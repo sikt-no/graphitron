@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Pipeline coverage for the fanned-fetcher emission (fields classified
  * {@link no.sikt.graphitron.rewrite.model.TenantBinding.FanOut}) and the factory's dedicated
- * fan-out tenant-collection parameter, as {@code TypeSpec}-structure assertions; the collapse
+ * request-tenant-set parameter, as {@code TypeSpec}-structure assertions; the collapse
  * behaviour (null placement, error path, union order) is pinned at the execution tier per the
  * behaviour-above-pipeline discipline. Fixtures ride the real catalog with {@code film_id} as
  * the tenant column, mirroring {@link TenantRoutedFetcherPipelineTest}.
@@ -112,39 +112,43 @@ class TenantFanOutFetcherPipelineTest {
     }
 
     @Test
-    void factoriesGainTheTenantCollectionParameterExactlyWhenAFannedFieldExists() {
+    void factoriesCarryTheRequestTenantSetInEveryMultiTenantBuild() {
         var fanned = multiTenant("""
             type Film @table(name: "film") { title: String }
             type Query { films: [Film] @tenantFanOut }
             """);
-
-        var facade = renderFacade(fanned);
-        assertThat(facade)
-            // Both factory forms carry the dedicated typed slot (missing or mis-typed is a
-            // compile error at the call site), null-checked like every factory parameter, and
-            // stashed under the carrier's own graphitron-owned key.
-            .contains("newExecutionInput(org.jooq.DSLContext defaultDsl,\n"
-                + "      java.util.Collection<java.lang.Integer> fanOutTenants)")
-            .contains("newOwnedExecutionInput(\n"
-                + "      java.util.Collection<java.lang.Integer> fanOutTenants)")
-            .contains("java.util.Objects.requireNonNull(fanOutTenants, \"fanOutTenants\")")
-            .contains("b.put(fake.code.generated.schema.TenantConnections.FAN_OUT_TENANTS_KEY, fanOutTenants);");
-    }
-
-    @Test
-    void factoriesOmitTheTenantCollectionParameterWithoutAFannedField() {
-        var unfanned = multiTenant("""
+        // A routed-only schema has no fanned field, and still carries the set: routing checks
+        // every divined tenant against it, and the gate is the build's tenant column, never an
+        // evolving schema property on a public factory signature.
+        var routedOnly = multiTenant("""
             type Film @table(name: "film") { title: String }
             type Query {
                 films(filmId: Int @field(name: "film_id")): [Film!]!
             }
             """);
-        assertThat(renderFacade(unfanned)).doesNotContain("fanOutTenants");
 
+        for (var schema : java.util.List.of(fanned, routedOnly)) {
+            assertThat(renderFacade(schema))
+                // Both factory forms carry the dedicated typed slot (missing or mis-typed is a
+                // compile error at the call site), null-checked like every factory parameter, and
+                // stashed under the carrier's own graphitron-owned key.
+                .contains("newExecutionInput(org.jooq.DSLContext defaultDsl,\n"
+                    + "      java.util.Collection<java.lang.Integer> tenants)")
+                .contains("newOwnedExecutionInput(\n"
+                    + "      java.util.Collection<java.lang.Integer> tenants)")
+                .contains("java.util.Objects.requireNonNull(tenants, \"tenants\")")
+                .contains("b.put(fake.code.generated.schema.TenantConnections.TENANTS_KEY, tenants);");
+        }
+    }
+
+    @Test
+    void factoriesOmitTheRequestTenantSetInASingleTenantBuild() {
         var singleTenant = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             type Query { allFilms: [Film!]! }
             """);
-        assertThat(renderFacade(singleTenant)).doesNotContain("fanOutTenants");
+        assertThat(renderFacade(singleTenant))
+            .doesNotContain("tenants")
+            .doesNotContain("TENANTS_KEY");
     }
 }

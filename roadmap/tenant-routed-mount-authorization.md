@@ -94,6 +94,18 @@ Draft for `tenant-scoping.adoc` §2, after the `GraphitronRuntime` constructor e
 - **Unit tier, reflection:** `ServiceCatalog` session-hook tests cover `Optional<K>` classified as `SessionTenant`, two `Optional<K>` rejected, `Optional<String>` and `Optional<Long>` against an `Integer` column rejected, `Optional<Integer>` in a single-tenant build staying payload, and a bare `K` staying payload.
 - **Pipeline tier:** `SessionHookImplGeneratorTest` and `TenantRuntimeKeyTypeTest` pin the tenant parameter on `mount`/`acquire` and its spread position; `TenantConnectionsGeneratorTest` pins the membership check ahead of the entry-map mint, `permits`, and `fanOutDomain` reading the carrier's set; `TenantRoutedFetcherPipelineTest` pins the dispatcher's `permits` skip between `divinedTenant` and `dslFor`; `TenantFanOutFetcherPipelineTest` and the facade tests pin the renamed parameter on a routed-only multi-tenant schema.
 
+## Implementation notes
+
+Landed as one commit against the plan above; where the landing differs from the plan's wording, or the plan left a choice open:
+
+- **The model fact** is `GraphitronSchema.requestTenantKeyType()` (the boxed tenant type, present exactly when `TenantScopes.Configured`); the facade, the dev executor and the entity dispatcher's `HandleMethodBody.TenantRouting` read it. `GraphitronConnectionInstrumentationGenerator.generate` now takes the tenant key type rather than a `multiTenant` boolean, since it declares the decoded `Set<K>`.
+- **Where the carrier pins landed.** The membership-before-mint, `permits` and `fanOutDomain`-reads-the-carrier pins sit in `TenantRuntimeKeyTypeTest` beside the existing carrier-surface pins, not in `TenantConnectionsGeneratorTest` (which drives the single-tenant carrier). A new `TenantAuthorizationSubstrateTest` drives the compiled multi-tenant carrier over fake JDBC: refusal before any `getConnection`, the unhosted-and-unauthorized key getting the same refusal as a hosted one, an unhosted key inside the set still failing the hosting check, the mount receiving `Optional.of(key)` and `Optional.empty()`, and two keys on one `DataSource` getting two pins and two mounts.
+- **Code-string assertions.** The pipeline pins the plan names (the dispatcher's `permits` skip between `divinedTenant` and `dslFor`, the runtime's tenant arguments) follow the body-string style `TenantRoutedFetcherPipelineTest` and `TenantRuntimeKeyTypeTest` already use; `testing.adoc` bans that style, so the behaviour is also pinned where it runs, in `TenantDivinedRoutingExecutionTest` and the substrate test.
+- **Mount recording under parallel classes.** sakila-example runs test classes concurrently and the multitenant fixture's classes share one facade (`SakilaTenantSessionIdentity`), so each mount is recorded with its claims' `sub` and the two mount tests filter on a per-test `sub`.
+- **`unknownDivinedTenant_errorsBeforeAnyTenantAcquisition`** now passes the set `{1, 2, 99}`, so it still exercises the hosting check; the refused cases have their own tests.
+- **The generated parameter is `mountedTenant`, not `tenant`.** `GraphitronSessionHook.mount` and `PinnedConnection.acquire` also declare the consumer's payload parameters under their own names, so a multi-tenant mount taking a payload named `tenant` (plausible in exactly these builds) would otherwise not compile on upgrade; `SessionHookImplGeneratorTest` pins the non-collision.
+- **The dev executor** passes `Set.of()` to the factory and `Optional.empty()` to its preflight mount in multi-tenant builds.
+
 ## Retired vocabulary
 
 - `FAN_OUT_TENANTS_KEY`, `FAN_OUT_TENANTS_KEY_FIELD`, `FAN_OUT_TENANTS_KEY_VALUE` (`no.sikt.graphitron.request.fanOutTenants`)

@@ -21,7 +21,7 @@ import no.sikt.graphitron.model.jooq.TableRef;
 public sealed interface ParamSource
     permits ParamSource.RoutineParamSource, ParamSource.Context, ParamSource.Sources,
             ParamSource.DslContext, ParamSource.Table, ParamSource.SourceTable,
-            ParamSource.SessionSeam, ParamSource.SessionHandle {
+            ParamSource.SessionSeam, ParamSource.SessionHandle, ParamSource.SessionTenant {
 
     /**
      * The two arms a {@link RoutineRef.ArgBinding} may carry, named as a type so the routine
@@ -269,4 +269,15 @@ public sealed interface ParamSource
      * filtered out of {@link MethodRef#callParams()}.
      */
     record SessionHandle() implements ParamSource {}
+
+    /**
+     * A {@code <mount>} method's tenant slot: the one parameter typed exactly
+     * {@code java.util.Optional<K>}, {@code K} being the boxed Java type of the configured
+     * {@code <tenantColumn>}. Recognised by type in {@code ServiceCatalog} at reflection time, the
+     * way {@link SessionSeam} is, and only in a {@code <tenantColumn>} build. The generated hook
+     * passes the tenant the connection is being mounted for ({@code Optional.empty()} for the
+     * default source); it is neither payload nor a factory slot, so it is filtered out of
+     * {@link MethodRef#callParams()} and never reaches the contextArgument classifier.
+     */
+    record SessionTenant() implements ParamSource {}
 }

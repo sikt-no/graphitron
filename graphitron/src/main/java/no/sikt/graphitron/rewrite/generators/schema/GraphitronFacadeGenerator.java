@@ -47,6 +47,8 @@ public final class GraphitronFacadeGenerator {
 
     private static final String LOGGER_FIELD = "LOGGER";
     private static final String ESCAPE_HATCH_NOTICE_FIELD = "ESCAPE_HATCH_NOTICE_LOGGED";
+    /** The factories' request-tenant-set parameter, present in every {@code <tenantColumn>} build. */
+    public static final String TENANTS_PARAM = "tenants";
 
     private GraphitronFacadeGenerator() {}
 
@@ -80,17 +82,14 @@ public final class GraphitronFacadeGenerator {
         // so both consumers see one producer.
         List<ResolvedContextArg> contextArgs = schema.contextArguments().resolved().values().stream().toList();
 
-        // When at least one field classifies FanOut, both factory forms gain a dedicated
-        // Collection<tenantKey> parameter for the request's fan-out tenant set: a first-class
-        // typed slot (a compile error when missing, never a runtime lookup), stashed under the
-        // carrier's graphitron-owned key, outside the contextArgument namespace.
-        no.sikt.graphitron.javapoet.TypeName fanOutTenantKey = null;
-        if (schema.tenantScopes() instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured configured
-                && schema.hasFanOutBinding()) {
-            fanOutTenantKey = configured.tenantType().isPrimitive()
-                ? configured.tenantType().box()
-                : configured.tenantType();
-        }
+        // In every <tenantColumn> build both factory forms gain a dedicated Collection<tenantKey>
+        // parameter for the request tenant set, the tenants this request may touch in this
+        // deployment: a first-class typed slot (a compile error when missing, never a runtime
+        // lookup), stashed under the carrier's graphitron-owned key, outside the contextArgument
+        // namespace. Both forms carry it so their signatures stay identical; on the escape-hatch
+        // form nothing reads it, since TenantConnections.of(env) fails before any routed or
+        // fanned field runs there.
+        no.sikt.graphitron.javapoet.TypeName requestTenantKey = schema.requestTenantKeyType().orElse(null);
         var tenantConnections = ClassName.get(schemaPackage,
             no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
 
@@ -100,8 +99,8 @@ public final class GraphitronFacadeGenerator {
             "newExecutionInput", dslContext, "defaultDsl",
             CodeBlock.of("b.put($T.class, defaultDsl);", dslContext),
             graphitronContext, graphitronContextImpl, executionInput, executionInputBuilder,
-            dataLoaderRegistry, contextArgs, fanOutTenantKey, tenantConnections,
-            escapeHatchJavadoc(contextArgs, fanOutTenantKey != null));
+            dataLoaderRegistry, contextArgs, requestTenantKey, tenantConnections,
+            escapeHatchJavadoc(contextArgs, requestTenantKey != null));
 
         // The owned-connection factory: the caller brings only the declared contextArguments
         // (the mount's payload parameters among them, ordinary name-keyed slots); the execution
@@ -109,8 +108,8 @@ public final class GraphitronFacadeGenerator {
         var newOwnedExecutionInput = buildExecutionInputFactory(
             "newOwnedExecutionInput", null, null, null,
             graphitronContext, graphitronContextImpl, executionInput, executionInputBuilder,
-            dataLoaderRegistry, contextArgs, fanOutTenantKey, tenantConnections,
-            ownedExecutionInputJavadoc(contextArgs, fanOutTenantKey != null));
+            dataLoaderRegistry, contextArgs, requestTenantKey, tenantConnections,
+            ownedExecutionInputJavadoc(contextArgs, requestTenantKey != null));
 
         // Emit the caller-owns-everything notice once per process, even if the engine is rebuilt.
         var newGraphQL = MethodSpec.methodBuilder("newGraphQL")
@@ -212,7 +211,7 @@ public final class GraphitronFacadeGenerator {
             ClassName graphitronContext, ClassName graphitronContextImpl,
             ClassName executionInput, ClassName executionInputBuilder,
             ClassName dataLoaderRegistry, List<ResolvedContextArg> contextArgs,
-            no.sikt.graphitron.javapoet.TypeName fanOutTenantKey, ClassName tenantConnections,
+            no.sikt.graphitron.javapoet.TypeName requestTenantKey, ClassName tenantConnections,
             String javadoc) {
         var method = MethodSpec.methodBuilder(methodName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -220,9 +219,9 @@ public final class GraphitronFacadeGenerator {
         if (firstParamType != null) {
             method.addParameter(firstParamType, firstParamName);
         }
-        if (fanOutTenantKey != null) {
+        if (requestTenantKey != null) {
             method.addParameter(ParameterizedTypeName.get(
-                ClassName.get("java.util", "Collection"), fanOutTenantKey), "fanOutTenants");
+                ClassName.get("java.util", "Collection"), requestTenantKey), TENANTS_PARAM);
         }
         for (ResolvedContextArg arg : contextArgs) {
             method.addParameter(arg.javaType(), arg.name());
@@ -230,8 +229,8 @@ public final class GraphitronFacadeGenerator {
         if (firstParamType != null) {
             method.addStatement("$T.requireNonNull($L, $S)", Objects.class, firstParamName, firstParamName);
         }
-        if (fanOutTenantKey != null) {
-            method.addStatement("$T.requireNonNull($L, $S)", Objects.class, "fanOutTenants", "fanOutTenants");
+        if (requestTenantKey != null) {
+            method.addStatement("$T.requireNonNull($L, $S)", Objects.class, TENANTS_PARAM, TENANTS_PARAM);
         }
         for (ResolvedContextArg arg : contextArgs) {
             method.addStatement("$T.requireNonNull($L, $S)", Objects.class, arg.name(), arg.name());
@@ -245,11 +244,12 @@ public final class GraphitronFacadeGenerator {
         if (firstPut != null) {
             method.addCode("        $L\n", firstPut);
         }
-        if (fanOutTenantKey != null) {
-            // The carrier's own key constant, so the write here and the fanOutDomain read cannot
-            // drift, and no contextArgument name can collide with it.
-            method.addCode("        b.put($T.$L, fanOutTenants);\n", tenantConnections,
-                no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator.FAN_OUT_TENANTS_KEY_FIELD);
+        if (requestTenantKey != null) {
+            // The carrier's own key constant, so the write here and the instrumentation's read
+            // cannot drift, and no contextArgument name can collide with it.
+            method.addCode("        b.put($T.$L, $L);\n", tenantConnections,
+                no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator.TENANTS_KEY_FIELD,
+                TENANTS_PARAM);
         }
         for (ResolvedContextArg arg : contextArgs) {
             method.addCode("        b.put($S, $L);\n", arg.name(), arg.name());
@@ -315,17 +315,22 @@ public final class GraphitronFacadeGenerator {
             + "surface over schema construction and per-request input shaping.\n";
     }
 
-    private static void appendFanOutTenantsParam(StringBuilder sb, boolean fanOut) {
-        if (fanOut) {
-            sb.append("@param fanOutTenants the tenants this request may fan @tenantFanOut fields out\n");
-            sb.append("over, derived from the request's claims and narrowed by any request-level policy;\n");
-            sb.append("intersected with the configured tenant map at execution (a hosted tenant absent\n");
-            sb.append("here is never queried; a named tenant the deployment does not host fails the\n");
-            sb.append("request before any SQL). Must not be {@code null}; may be empty\n");
+    private static void appendTenantsParam(StringBuilder sb, boolean multiTenant) {
+        if (multiTenant) {
+            sb.append("@param ").append(TENANTS_PARAM)
+              .append(" the tenants this request may touch in this deployment, derived from the\n");
+            sb.append("caller's claims and narrowed to this deployment's tenants. Graphitron checks every\n");
+            sb.append("tenant an operation routes to against it before taking a connection: a routed field\n");
+            sb.append("whose tenant is outside it fails with a client error, and {@code node}/{@code nodes}/\n");
+            sb.append("{@code _entities} answer such an id with {@code null}. It also bounds\n");
+            sb.append("{@code @tenantFanOut} fields, where a tenant in it that this deployment has no\n");
+            sb.append("{@code DataSource} for fails the field before any SQL. There is no unrestricted\n");
+            sb.append("value: a caller entitled to everything passes {@code runtime.tenantKeys()}. Must not\n");
+            sb.append("be {@code null}; may be empty\n");
         }
     }
 
-    private static String escapeHatchJavadoc(List<ResolvedContextArg> contextArgs, boolean fanOut) {
+    private static String escapeHatchJavadoc(List<ResolvedContextArg> contextArgs, boolean multiTenant) {
         var sb = new StringBuilder();
         sb.append("Builds an {@link graphql.ExecutionInput.Builder} for the low-opinion escape-hatch path,\n");
         sb.append("pre-wired with a caller-supplied jOOQ {@code DSLContext} and any declared\n");
@@ -352,13 +357,13 @@ public final class GraphitronFacadeGenerator {
         sb.append("the factory's empty registry if you need to supply a pre-populated one.\n");
         sb.append("@param defaultDsl the {@code DSLContext} every fetch in this request should use;\n");
         sb.append("must not be {@code null}\n");
-        appendFanOutTenantsParam(sb, fanOut);
+        appendTenantsParam(sb, multiTenant);
         appendContextArgParams(sb, contextArgs);
         sb.append("@return a builder ready for {@code .query(...).build()}\n");
         return sb.toString();
     }
 
-    private static String ownedExecutionInputJavadoc(List<ResolvedContextArg> contextArgs, boolean fanOut) {
+    private static String ownedExecutionInputJavadoc(List<ResolvedContextArg> contextArgs, boolean multiTenant) {
         var sb = new StringBuilder();
         sb.append("Builds an {@link graphql.ExecutionInput.Builder} for the owned-connection path:\n");
         sb.append("pass only the declared {@code contextArguments} (a configured {@code <mount>} method's\n");
@@ -375,7 +380,7 @@ public final class GraphitronFacadeGenerator {
         sb.append("null-checked and read back the same way as on the escape-hatch path; a mount payload\n");
         sb.append("value and a same-named {@code @service} contextArgument are the same fact, supplied\n");
         sb.append("once in the one slot.\n");
-        appendFanOutTenantsParam(sb, fanOut);
+        appendTenantsParam(sb, multiTenant);
         appendContextArgParams(sb, contextArgs);
         sb.append("@return a builder ready for {@code .query(...).build()}\n");
         return sb.toString();

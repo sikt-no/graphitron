@@ -1,10 +1,12 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
+import graphql.ExecutionInput;
 import graphql.ExecutionResult;
 import graphql.GraphQL;
 import no.sikt.graphitron.generated.multitenant.Graphitron;
 import no.sikt.graphitron.generated.multitenant.schema.GraphitronRuntime;
 import no.sikt.graphitron.generated.multitenant.util.NodeIdEncoder;
+import no.sikt.graphitron.rewrite.test.services.SakilaTenantSessionIdentity;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
@@ -137,10 +139,25 @@ class TenantDivinedRoutingExecutionTest {
     }
 
     private static ExecutionResult execute(String query) {
-        // The fixture carries @tenantFanOut fields, so the factory requires the fan-out tenant
-        // collection; these tests never touch the fanned fields, and the full hosted set is inert.
-        return graphql.execute(Graphitron.newOwnedExecutionInput(List.of(1, 2), "{\"sub\":\"test-user\"}")
+        // The request tenant set admits both hosted tenants, so these tests see routing alone.
+        return execute(query, List.of(1, 2));
+    }
+
+    private static ExecutionResult execute(String query, java.util.Collection<Integer> tenants) {
+        return executeAs(query, tenants, "test-user");
+    }
+
+    private static ExecutionResult executeAs(String query, java.util.Collection<Integer> tenants, String sub) {
+        return graphql.execute(Graphitron.newOwnedExecutionInput(tenants, "{\"sub\":\"" + sub + "\"}")
             .query(query).build());
+    }
+
+    /** The tenants this test's own mounts received, told apart from concurrent classes by {@code sub}. */
+    private static List<java.util.Optional<Integer>> mountedTenants(String sub) {
+        return SakilaTenantSessionIdentity.MOUNTS.stream()
+            .filter(m -> sub.equals(m.sub()))
+            .map(SakilaTenantSessionIdentity.Mount::tenant)
+            .toList();
     }
 
     // ===== ArgumentBound: the filter argument routes the whole subtree =====
@@ -213,7 +230,8 @@ class TenantDivinedRoutingExecutionTest {
 
     @Test
     void unknownDivinedTenant_errorsBeforeAnyTenantAcquisition() {
-        var result = execute("{ films(filmId: 99) { title } }");
+        // Tenant 99 is in the request set but hosted by no DataSource here: the hosting check.
+        var result = execute("{ films(filmId: 99) { title } }", List.of(1, 2, 99));
         assertThat(result.getErrors())
             .as("an unconfigured tenant key is a request-level error")
             .isNotEmpty();
@@ -223,6 +241,117 @@ class TenantDivinedRoutingExecutionTest {
         assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get())
             .as("the error fires before any tenant connection is acquired")
             .isZero();
+    }
+
+    // ===== The request tenant set: routing only to tenants the request may touch =====
+
+    @Test
+    void argumentRoutedTenantOutsideTheSet_isRefused_andItsDatabaseNeverOpened() {
+        var result = execute("{ films(filmId: 2) { title } }", List.of(1));
+        assertThat(result.getErrors())
+            .as("the caller named a tenant explicitly, so the refusal is an error, surfaced to the client"
+                + " (films is [Film!]!, so graphql-java adds its non-null bubbling error beside it)")
+            .anySatisfy(e -> assertThat(e.getMessage()).contains("'2' is not permitted for this request"));
+        assertThat(TENANT_2_OPENED.get()).as("no connection to a refused tenant is taken").isZero();
+    }
+
+    @Test
+    void unhostedTenantOutsideTheSet_getsTheSameRefusal_soHostingCannotBeProbed() {
+        var result = execute("{ films(filmId: 99) { title } }", List.of(1));
+        assertThat(result.getErrors())
+            .anySatisfy(e -> assertThat(e.getMessage()).contains("'99' is not permitted for this request"))
+            .noneSatisfy(e -> assertThat(e.getMessage()).contains("No source configured"));
+    }
+
+    @Test
+    void nodeIdArgumentDecodedToATenantOutsideTheSet_isRefused() {
+        var result = execute("mutation { updateFilmByNodeId(in: { id: \""
+            + NodeIdEncoder.encodeFilm(2) + "\", title: \"Never Written\" }) { title } }", List.of(1));
+        assertThat(result.getErrors())
+            .as("a decoded String key and the set's boxed Integer compare equal, so this is the refusal,"
+                + " not a silent pass")
+            .singleElement()
+            .satisfies(e -> assertThat(e.getMessage()).contains("'2' is not permitted for this request"));
+        assertThat(TENANT_2_OPENED.get()).isZero();
+        try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
+            assertThat(t2.fetchValue("select title from film where film_id = 2")).isEqualTo("Tenant Two Film");
+        }
+    }
+
+    @Test
+    void node_idOfATenantOutsideTheSet_answersNull_likeAnUnknownId() {
+        var result = execute("{ node(id: \"" + NodeIdEncoder.encodeFilm(2) + "\") { id } }", List.of(1));
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        assertThat(((Map<String, Object>) result.getData()).get("node")).isNull();
+        assertThat(TENANT_2_OPENED.get()).isZero();
+    }
+
+    @Test
+    void nodes_batchSpanningTheSetsEdge_resolvesThePermittedTenant_andNullsTheOther() {
+        String t1Actor = NodeIdEncoder.encodeFilmActor(10, 1);
+        String t2Actor = NodeIdEncoder.encodeFilmActor(20, 2);
+
+        var result = execute("{ nodes(ids: [\"" + t1Actor + "\", \"" + t2Actor + "\"]) {"
+            + " ... on FilmActor { actorId } } }", List.of(1));
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        assertThat((List<Map<String, Object>>) ((Map<String, Object>) result.getData()).get("nodes"))
+            .extracting(m -> m == null ? null : m.get("actorId"))
+            .containsExactly(10, null);
+        assertThat(TENANT_1_OPENED.get()).isEqualTo(1);
+        assertThat(TENANT_2_OPENED.get()).as("the refused group takes no connection").isZero();
+    }
+
+    @Test
+    void operationBuiltWithoutTheSet_failsBeforeAnyDatabaseIsOpened() {
+        // An ExecutionInput assembled by hand rather than through the generated factory: no
+        // request tenant set, and the set has no unrestricted meaning.
+        var input = ExecutionInput.newExecutionInput()
+            .query("{ films(filmId: 1) { title } }")
+            .graphQLContext(b -> b.put("claims", "{\"sub\":\"test-user\"}"))
+            .build();
+        Throwable failure = null;
+        ExecutionResult result = null;
+        try {
+            result = graphql.execute(input);
+        } catch (RuntimeException e) {
+            failure = e;
+        }
+        if (failure != null) {
+            assertThat(failure).hasStackTraceContaining("No request tenant set");
+        } else {
+            assertThat(result.getErrors().toString()).contains("No request tenant set");
+        }
+        assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get()).isZero();
+    }
+
+    // ===== The tenant slot: each mount learns the tenant it is mounting for =====
+
+    @Test
+    void mount_receivesEachRoutedTenant_andEmptyForTheDefaultSource() {
+        String sub = "mount-probe-" + java.util.UUID.randomUUID();
+        var result = executeAs("{ a: films(filmId: 1) { title } b: films(filmId: 2) { title }"
+            + " languages { name } }", List.of(1, 2), sub);
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        assertThat(mountedTenants(sub))
+            .as("one mount per pinned connection, each told its own tenant")
+            .containsExactlyInAnyOrder(java.util.Optional.of(1), java.util.Optional.of(2), java.util.Optional.empty());
+    }
+
+    @Test
+    void mount_tenantsSharingOneDataSource_getOneMountEach_withTheirOwnKey() {
+        DataSource shared = countingDataSource("tenant_1", null);
+        Map<Integer, DataSource> byTenant = Map.of(1, shared, 2, shared);
+        var sharedEngine = new GraphitronRuntime(countingDataSource(null, null), byTenant, SQLDialect.POSTGRES)
+            .newGraphQL(Graphitron.buildSchema(b -> {})).build();
+        String sub = "mount-probe-" + java.util.UUID.randomUUID();
+
+        var result = sharedEngine.execute(Graphitron.newOwnedExecutionInput(List.of(1, 2),
+                "{\"sub\":\"" + sub + "\"}")
+            .query("{ a: films(filmId: 1) { title } b: films(filmId: 2) { title } }").build());
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        assertThat(mountedTenants(sub))
+            .as("session identity is per (connection, tenant): two keys on one pool are two mounts")
+            .containsExactlyInAnyOrder(java.util.Optional.of(1), java.util.Optional.of(2));
     }
 
     // ===== ArgumentBound mutation: the input's tenant field routes the write =====

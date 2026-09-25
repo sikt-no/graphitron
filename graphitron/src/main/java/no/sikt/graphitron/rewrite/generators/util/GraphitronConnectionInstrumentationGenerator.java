@@ -4,6 +4,7 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.FieldSpec;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.session.SessionHooks;
 
@@ -21,6 +22,10 @@ import java.util.List;
  *
  * <h2>Per-operation sequence ({@code beginExecuteOperation})</h2>
  * <ol>
+ *   <li>In a {@code <tenantColumn>} build, decode the request tenant set the factory wrote under
+ *       {@code TenantConnections.TENANTS_KEY} into an immutable {@code Set}, failing the
+ *       operation before any fetcher runs when it is absent (an {@code ExecutionInput} built
+ *       without the generated factory): the set has no "unrestricted" meaning.</li>
  *   <li>Read each mount payload contextArgument off the {@code graphQLContext} (the name-keyed
  *       entries the {@code Graphitron.newOwnedExecutionInput(...)} factory writes, the same
  *       per-request extraction {@code @service} call sites use).</li>
@@ -69,17 +74,20 @@ public final class GraphitronConnectionInstrumentationGenerator {
      *                      {@code outputPackage + ".schema"} (beside {@code GraphitronRuntime})
      */
     public static List<TypeSpec> generate(String outputPackage) {
-        return generate(outputPackage, false, SessionHooks.NotConfigured.INSTANCE);
+        return generate(outputPackage, null, SessionHooks.NotConfigured.INSTANCE);
     }
 
     /**
-     * Canonical form. {@code multiTenant} is true when {@code <tenantColumn>} is configured (the
-     * carrier then additionally carries the fan-out machinery); acquisition is lazy on both
+     * Canonical form. {@code tenantKeyType} is the tenant column's Java type when
+     * {@code <tenantColumn>} is configured, {@code null} otherwise (the carrier then additionally
+     * carries the request tenant set and the fan-out machinery); acquisition is lazy on both
      * topologies, so this instrumentation publishes the per-operation carrier and pins nothing
      * itself. {@code sessionHooks} supplies the mount's payload contextArguments, read here off
      * the {@code graphQLContext} and retained by the carrier for the life of the request.
      */
-    public static List<TypeSpec> generate(String outputPackage, boolean multiTenant, SessionHooks sessionHooks) {
+    public static List<TypeSpec> generate(String outputPackage, TypeName tenantKeyType, SessionHooks sessionHooks) {
+        TypeName tenantKey = tenantKeyType == null ? null
+            : (tenantKeyType.isPrimitive() ? tenantKeyType.box() : tenantKeyType);
         String schemaPackage = outputPackage + ".schema";
         var self = ClassName.get(schemaPackage, CLASS_NAME);
         var runtime = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
@@ -87,13 +95,13 @@ public final class GraphitronConnectionInstrumentationGenerator {
         var provider = ClassName.get(schemaPackage, GraphitronTransactionProviderGenerator.CLASS_NAME);
         var commitPolicy = provider.nestedClass(GraphitronTransactionProviderGenerator.COMMIT_POLICY_ENUM_NAME);
         var state = self.nestedClass("State");
-        return List.of(instrumentation(self, runtime, tenantConnections, commitPolicy, state, multiTenant,
+        return List.of(instrumentation(self, runtime, tenantConnections, commitPolicy, state, tenantKey,
             sessionHooks));
     }
 
     private static TypeSpec instrumentation(
             ClassName self, ClassName runtime, ClassName tenantConnections,
-            ClassName commitPolicy, ClassName state, boolean multiTenant, SessionHooks sessionHooks) {
+            ClassName commitPolicy, ClassName state, TypeName tenantKey, SessionHooks sessionHooks) {
 
         var runtimeField = FieldSpec.builder(runtime, "runtime", Modifier.PRIVATE, Modifier.FINAL).build();
         var policyField = FieldSpec.builder(commitPolicy, "commitPolicy", Modifier.PRIVATE, Modifier.FINAL).build();
@@ -147,6 +155,26 @@ public final class GraphitronConnectionInstrumentationGenerator {
                 + "owned-connection path; it is a named follow-on")
             .endControlFlow()
             .addCode("\n");
+        if (tenantKey != null) {
+            var collection = ClassName.get("java.util", "Collection");
+            var set = ClassName.get("java.util", "Set");
+            beginExecuteOperationBuilder
+                .addComment("The request tenant set, written by the generated factory. Decoded once, here, into an")
+                .addComment("immutable Set so membership is well defined and O(1) whatever collection the caller")
+                .addComment("passed; the carrier owns it from here on. Absent means the ExecutionInput was not")
+                .addComment("built by the generated factory, and the set has no unrestricted meaning, so fail")
+                .addComment("before any fetcher runs.")
+                .addStatement("$T<$T> requestedTenants = graphQLContext.get($T.$L)", collection, tenantKey,
+                    tenantConnections, ConnectionRuntimeClassGenerator.TENANTS_KEY_FIELD)
+                .beginControlFlow("if (requestedTenants == null)")
+                .addStatement("throw new $T($S)", IllegalStateException.class,
+                    "No request tenant set in the GraphQL context: a <tenantColumn> build's generated"
+                        + " factories (newOwnedExecutionInput / newExecutionInput) take the set of tenants"
+                        + " the request may touch; build the request through one of them.")
+                .endControlFlow()
+                .addStatement("$T<$T> tenants = $T.copyOf(requestedTenants)", set, tenantKey, set)
+                .addCode("\n");
+        }
         if (!payload.isEmpty()) {
             beginExecuteOperationBuilder.addComment(
                 "The mount's payload contextArguments, written name-keyed by newOwnedExecutionInput;");
@@ -158,6 +186,9 @@ public final class GraphitronConnectionInstrumentationGenerator {
             }
         }
         var carrierArgs = new StringBuilder("runtime, commitPolicy");
+        if (tenantKey != null) {
+            carrierArgs.append(", tenants");
+        }
         for (var p : payload) {
             carrierArgs.append(", ").append(p.name());
         }

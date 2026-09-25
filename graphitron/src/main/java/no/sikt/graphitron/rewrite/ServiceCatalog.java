@@ -2332,15 +2332,25 @@ class ServiceCatalog {
      * parameters as {@link ParamSource.Context} (feeding the contextArgument classifier as an
      * additional root), and the unmount's optional handle parameter as
      * {@link ParamSource.SessionHandle}, type-checked against the mount's reflected return.
+     *
+     * <p>{@code tenantType} is the Java type of the configured {@code <tenantColumn>}, or
+     * {@code null} in a single-tenant build. When present, a mount parameter typed exactly
+     * {@code Optional<K>} (with {@code K} the boxed tenant type) is the tenant slot
+     * ({@link ParamSource.SessionTenant}), and any other {@code Optional}-typed mount parameter is
+     * rejected rather than falling through into a payload slot. A bare {@code K} parameter stays
+     * payload in every build.
      */
-    SessionHookResolution resolveSessionHooks(no.sikt.graphitron.model.config.SessionStateConfig config) {
+    SessionHookResolution resolveSessionHooks(no.sikt.graphitron.model.config.SessionStateConfig config,
+                                              TypeName tenantType) {
         if (!(config instanceof no.sikt.graphitron.model.config.SessionStateConfig.MethodHooks methodHooks)) {
             return new SessionHookResolution(SessionHooks.NotConfigured.INSTANCE, List.of());
         }
+        TypeName boxedTenant = tenantType == null ? null
+            : (tenantType.isPrimitive() ? tenantType.box() : tenantType);
         var rejections = new ArrayList<Rejection>();
-        MethodRef.StaticOnly mount = reflectSessionHook(methodHooks.mount(), true, rejections);
+        MethodRef.StaticOnly mount = reflectSessionHook(methodHooks.mount(), true, boxedTenant, rejections);
         MethodRef.StaticOnly unmount = methodHooks.unmount()
-            .map(u -> reflectSessionHook(u, false, rejections))
+            .map(u -> reflectSessionHook(u, false, null, rejections))
             .orElse(null);
         if (mount == null || (methodHooks.unmount().isPresent() && unmount == null)) {
             return new SessionHookResolution(SessionHooks.NotConfigured.INSTANCE, List.copyOf(rejections));
@@ -2376,11 +2386,13 @@ class ServiceCatalog {
      * Reflects one hook reference into a {@link MethodRef.StaticOnly}, or registers the typed
      * rejection and returns {@code null}. {@code isMount} decides how non-seam parameters
      * classify: payload ({@link ParamSource.Context}, name required) on the mount, handle
-     * ({@link ParamSource.SessionHandle}, structural, no name needed) on the unmount.
+     * ({@link ParamSource.SessionHandle}, structural, no name needed) on the unmount. On the mount
+     * of a multi-tenant build ({@code boxedTenant} non-null), {@code Optional<boxedTenant>} is the
+     * tenant slot and every other {@code Optional} parameter is rejected.
      */
     private MethodRef.StaticOnly reflectSessionHook(
             no.sikt.graphitron.model.config.SessionStateConfig.HookRef ref,
-            boolean isMount, List<Rejection> rejections) {
+            boolean isMount, TypeName boxedTenant, List<Rejection> rejections) {
         String className = ref.className();
         String methodName = ref.methodName();
         Class<?> cls;
@@ -2408,9 +2420,31 @@ class ServiceCatalog {
             return null;
         }
         var params = new ArrayList<MethodRef.Param>();
+        boolean tenantSlotSeen = false;
         for (var p : javaMethod.getParameters()) {
             String typeName = p.getParameterizedType().getTypeName();
             TypeName javaType = TypeName.get(p.getParameterizedType());
+            if (isMount && boxedTenant != null && p.getType() == Optional.class) {
+                // Recognition by type, the seam precedent: exactly Optional<K> is the tenant slot.
+                // Any other Optional has no meaning as a contextArgument, and letting it fall
+                // through would silently take a mistyped slot for payload.
+                boolean isTenantSlot = p.getParameterizedType() instanceof java.lang.reflect.ParameterizedType pt
+                    && TypeName.get(pt.getActualTypeArguments()[0]).equals(boxedTenant);
+                String name = p.isNamePresent() ? p.getName() : "tenant";
+                if (!isTenantSlot) {
+                    rejections.add(new ReflectionError.TenantSlotMistyped(
+                        className, methodName, name, typeName, boxedTenant.toString()));
+                    return null;
+                }
+                if (tenantSlotSeen) {
+                    rejections.add(new ReflectionError.TenantSlotDuplicated(
+                        className, methodName, boxedTenant.toString()));
+                    return null;
+                }
+                tenantSlotSeen = true;
+                params.add(new MethodRef.Param.Typed(name, typeName, javaType, new ParamSource.SessionTenant()));
+                continue;
+            }
             if (isSeamParameter(p)) {
                 var kind = p.getType() == org.jooq.Configuration.class
                     ? ParamSource.SessionSeam.Kind.CONFIGURATION

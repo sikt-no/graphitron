@@ -47,6 +47,59 @@ class TenantRuntimeKeyTypeTest {
     }
 
     @Test
+    void multiTenantAcquisitionHandsTheMountTheTenantItIsFor() {
+        var units = ConnectionRuntimeClassGenerator.generate(
+            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class));
+
+        var pinned = render(units, ConnectionRuntimeClassGenerator.PINNED_CONNECTION_CLASS_NAME);
+        assertThat(pinned).contains("acquire(javax.sql.DataSource dataSource,\n"
+            + "      org.jooq.SQLDialect dialect, org.jooq.conf.Settings settings,\n"
+            + "      java.util.Optional<java.lang.Integer> mountedTenant,\n"
+            + "      java.util.concurrent.Executor abortExecutor)");
+
+        var runtime = render(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
+        assertThat(runtime)
+            .as("a routed acquisition mounts for its key, the default source for none")
+            .contains("tenantSource.settings(), java.util.Optional.of(tenantKey), abortExecutor)")
+            .contains("defaultSource.settings(), java.util.Optional.empty(), abortExecutor)");
+    }
+
+    @Test
+    void singleTenantAcquisitionCarriesNoTenant() {
+        var units = ConnectionRuntimeClassGenerator.generate(
+            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE);
+
+        assertThat(render(units, ConnectionRuntimeClassGenerator.PINNED_CONNECTION_CLASS_NAME))
+            .doesNotContain("Optional");
+        assertThat(render(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME))
+            .doesNotContain("Optional");
+    }
+
+    @Test
+    void multiTenantCarrierChecksTheRequestTenantSetAheadOfTheEntryMapMint() {
+        var units = ConnectionRuntimeClassGenerator.generate(
+            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class));
+
+        var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+        assertThat(carrier)
+            .contains("private final java.util.Set<java.lang.Integer> tenants;")
+            .contains("fake.code.generated.schema.GraphitronTransactionProvider.CommitPolicy commitPolicy,\n"
+                + "      java.util.Set<java.lang.Integer> tenants)")
+            .contains("if (key.isPresent() && !tenants.contains(key.get())) {")
+            .contains("throw new fake.code.generated.schema.GraphitronClientException(\"Tenant '\" + key.get() + \"' is not permitted for this request.\");")
+            // The read side for the per-row lookups' null-not-error skip.
+            .contains("public static boolean permits(graphql.schema.DataFetchingEnvironment env,\n"
+                + "      java.lang.Integer tenantKey)")
+            .contains("return of(env).tenants.contains(tenantKey);");
+        // Membership runs first in entryFor: before the timed-out quarantine and before the one
+        // computeIfAbsent mint, so only an authorized key ever enters the entry map.
+        int membership = carrier.indexOf("!tenants.contains(key.get())");
+        assertThat(membership).isPositive()
+            .isLessThan(carrier.indexOf("timedOutTenants.contains(key.get())"))
+            .isLessThan(carrier.indexOf("entries.computeIfAbsent("));
+    }
+
+    @Test
     void multiTenantCarrierShipsTheRoutingStatics() {
         var units = ConnectionRuntimeClassGenerator.generate(
             "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class));
@@ -147,11 +200,14 @@ class TenantRuntimeKeyTypeTest {
 
         var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
         assertThat(carrier)
-            // The graphitron-owned request key the factory writes and fanOutDomain reads.
-            .contains("String FAN_OUT_TENANTS_KEY = \"no.sikt.graphitron.request.fanOutTenants\"")
-            // Domain: map-order intersection; named-but-unhosted is a pre-SQL request error.
+            // The graphitron-owned request key the factory writes and the instrumentation reads.
+            .contains("String TENANTS_KEY = \"no.sikt.graphitron.request.tenants\"")
+            // Domain: map-order intersection with the carrier's request tenant set (never the
+            // context); a tenant in the set that is not hosted is a pre-SQL request error.
             .contains("static java.util.List<java.lang.Integer> fanOutDomain(")
+            .contains("java.util.Set<java.lang.Integer> requested = carrier.tenants;")
             .contains("hosted.contains(claimed)")
+            .doesNotContain("env.getGraphQlContext().get(TENANTS_KEY)")
             // Union with per-element tenant stamping, failures appended after successful rows.
             .contains("static <R> java.util.List<java.lang.Object> fanOutRows(")
             .contains(".localContext(success.key())")

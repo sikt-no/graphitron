@@ -158,11 +158,19 @@ public final class ConnectionRuntimeClassGenerator {
     private static final ClassName SLF4J_LOGGER = ClassName.get("org.slf4j", "Logger");
     private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
     private static final ClassName UUID_CLASS = ClassName.get("java.util", "UUID");
+    private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
+    /**
+     * The generated {@code mount}/{@code acquire} parameter carrying the tenant a connection is
+     * mounted for in multi-tenant builds. Not {@code tenant}: those methods also declare the
+     * consumer's payload parameters under their own names, and a payload named {@code tenant} is
+     * plausible in exactly these builds.
+     */
+    static final String MOUNTED_TENANT = "mountedTenant";
 
-    /** The graphQLContext key the request's fan-out tenant collection is published under. */
-    public static final String FAN_OUT_TENANTS_KEY_FIELD = "FAN_OUT_TENANTS_KEY";
-    /** The literal value of the emitted {@code FAN_OUT_TENANTS_KEY} constant (also written by the factory). */
-    public static final String FAN_OUT_TENANTS_KEY_VALUE = "no.sikt.graphitron.request.fanOutTenants";
+    /** The graphQLContext key the request tenant set is published under. */
+    public static final String TENANTS_KEY_FIELD = "TENANTS_KEY";
+    /** The literal value of the emitted {@code TENANTS_KEY} constant (also written by the factory). */
+    public static final String TENANTS_KEY_VALUE = "no.sikt.graphitron.request.tenants";
     /**
      * The client-facing {@code extensions.classification} vocabulary for per-tenant fan-out
      * failures: one value per non-success {@code Outcome} arm, emitted as named constants on the
@@ -210,12 +218,12 @@ public final class ConnectionRuntimeClassGenerator {
         boolean multiTenant = tenantKeyType != null;
 
         var units = new ArrayList<TypeSpec>();
-        units.add(pinnedConnection(pinnedConnection, sessionHookImpl, sessionHooks, multiTenant));
+        units.add(pinnedConnection(pinnedConnection, sessionHookImpl, sessionHooks, tenantKey, multiTenant));
         units.add(runtime(runtime, pinnedConnection, instrumentation, sessionHooks, tenantKey, multiTenant));
         units.add(tenantConnections(tenantConnections, runtime, pinnedConnection, provider, commitPolicy, tenantKey,
             multiTenant, sessionHooks));
         if (sessionHooks.emitsHookImplementation()) {
-            units.add(sessionHookImpl(sessionHooks));
+            units.add(sessionHookImpl(sessionHooks, tenantKey, multiTenant));
         }
         return List.copyOf(units);
     }
@@ -232,9 +240,11 @@ public final class ConnectionRuntimeClassGenerator {
      * still be executing on the connection. The emitted shape follows the resolved
      * {@link SessionHooks} arm: no hook configured means no mount call at all; a handle-less mount
      * means no handle field; a handled mount adds the typed handle field {@code release} reads.
+     * Multi-tenant builds give {@code acquire} an {@code Optional<K>} parameter ({@value #MOUNTED_TENANT}) naming the
+     * tenant the connection is acquired for, handed on to the mount.
      */
     private static TypeSpec pinnedConnection(ClassName pinnedConnection, ClassName sessionHookImpl,
-            SessionHooks sessionHooks, boolean multiTenant) {
+            SessionHooks sessionHooks, TypeName tenantKey, boolean multiTenant) {
         var payload = payloadParams(sessionHooks);
         boolean mounts = sessionHooks.emitsHookImplementation();
         boolean unmounts = sessionHooks.unmountRef().isPresent();
@@ -284,8 +294,11 @@ public final class ConnectionRuntimeClassGenerator {
             .returns(pinnedConnection)
             .addParameter(DATA_SOURCE, "dataSource")
             .addParameter(SQL_DIALECT, "dialect")
-            .addParameter(SETTINGS, "settings")
-            .addParameter(EXECUTOR, "abortExecutor");
+            .addParameter(SETTINGS, "settings");
+        if (multiTenant) {
+            acquireBuilder.addParameter(ParameterizedTypeName.get(OPTIONAL, tenantKey), MOUNTED_TENANT);
+        }
+        acquireBuilder.addParameter(EXECUTOR, "abortExecutor");
         for (var p : payload) {
             acquireBuilder.addParameter(p.javaType(), p.name());
         }
@@ -304,7 +317,7 @@ public final class ConnectionRuntimeClassGenerator {
             .addComment("runs before any hook SQL.")
             .addStatement("connection.setAutoCommit(true)");
         if (mounts) {
-            String args = mountCallArgs(sessionHooks, payload);
+            String args = mountCallArgs(payload, multiTenant);
             if (handleType != null) {
                 acquireBuilder.addStatement("handle = $T.mount($L)", sessionHookImpl, args);
             } else {
@@ -511,11 +524,15 @@ public final class ConnectionRuntimeClassGenerator {
 
     /**
      * The argument list for the generated hook's static {@code mount}: the connection, the
-     * resolved source's dialect and settings, then the payload in the mount method's own
-     * declaration order (the one call site that invokes the consumer's method positionally).
+     * resolved source's dialect and settings, the tenant in multi-tenant builds, then the payload
+     * in the generated mount's parameter order (the generated mount spreads it into the
+     * consumer's method's own declaration order).
      */
-    private static String mountCallArgs(SessionHooks sessionHooks, List<MethodRef.Param.Typed> payload) {
+    private static String mountCallArgs(List<MethodRef.Param.Typed> payload, boolean multiTenant) {
         var args = new StringBuilder("connection, dialect, settings");
+        if (multiTenant) {
+            args.append(", ").append(MOUNTED_TENANT);
+        }
         for (var p : payload) {
             args.append(", ").append(p.name());
         }
@@ -810,10 +827,15 @@ public final class ConnectionRuntimeClassGenerator {
             acquireForTenantBuilder.addParameter(p.javaType(), p.name());
             payloadArgs.append(", ").append(p.name());
         }
+        // Multi-tenant builds hand the mount the tenant it is mounting for: none for the default
+        // source, the routed key for a tenant source.
+        CodeBlock defaultTenantArg = multiTenant ? CodeBlock.of(", $T.empty()", OPTIONAL) : CodeBlock.of("");
+        CodeBlock keyedTenantArg = multiTenant ? CodeBlock.of(", $T.of(tenantKey)", OPTIONAL) : CodeBlock.of("");
         var acquire = acquireBuilder
             .addException(SQL_EXCEPTION)
             .addStatement("return $T.acquire(defaultSource.dataSource(), defaultSource.dialect(),"
-                + " defaultSource.settings(), abortExecutor$L)", pinnedConnection, payloadArgs.toString())
+                + " defaultSource.settings()$L, abortExecutor$L)", pinnedConnection, defaultTenantArg,
+                payloadArgs.toString())
             .addJavadoc("Pins one connection from the default source"
                 + (payload.isEmpty() ? "" : " and mounts identity on it from the typed\npayload")
                 + ". Fail-closed. The caller releases the returned\n"
@@ -831,7 +853,8 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("throw new $T($S + tenantKey)", NO_SUCH_ELEMENT, "No source configured for tenant key: ")
             .endControlFlow()
             .addStatement("return $T.acquire(tenantSource.dataSource(), tenantSource.dialect(),"
-                + " tenantSource.settings(), abortExecutor$L)", pinnedConnection, payloadArgs.toString())
+                + " tenantSource.settings()$L, abortExecutor$L)", pinnedConnection, keyedTenantArg,
+                payloadArgs.toString())
             .addJavadoc("Pins one connection from the {@code tenantKey}'s source"
                 + (payload.isEmpty() ? "" : " and mounts identity on it")
                 + ", for\ndatabase-per-tenant routing. An unknown key raises\n"
@@ -988,6 +1011,8 @@ public final class ConnectionRuntimeClassGenerator {
         var payload = payloadParams(sessionHooks);
         TypeName handleType = sessionHooks instanceof SessionHooks.Handled h ? h.handleType() : null;
         boolean handled = handleType != null;
+        var clientException = ClassName.get(self.packageName(),
+            no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator.CLASS_NAME);
         var optionalKey = ParameterizedTypeName.get(ClassName.get("java.util", "Optional"), tenantKey);
         var entryType = self.nestedClass("Entry");
         var entryMapType = ParameterizedTypeName.get(MAP, optionalKey, entryType);
@@ -1029,16 +1054,29 @@ public final class ConnectionRuntimeClassGenerator {
                 + "violation throws immediately instead.\n")
             .build();
 
+        var tenantSetType = ParameterizedTypeName.get(SET, tenantKey);
+        var tenantsField = FieldSpec.builder(tenantSetType, "tenants", Modifier.PRIVATE, Modifier.FINAL)
+            .addJavadoc("The request tenant set: the tenants this request may touch in this deployment,\n"
+                + "decoded once from the factory's parameter by the instrumentation. Every keyed\n"
+                + "acquisition is checked against it in {@link #entryFor} before a connection is taken,\n"
+                + "and it bounds {@link #fanOutDomain}, so routing and fan-out read one fact.\n")
+            .build();
         var constructorBuilder = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
             .addParameter(runtime, "runtime")
             .addParameter(commitPolicy, "commitPolicy");
+        if (multiTenant) {
+            constructorBuilder.addParameter(tenantSetType, "tenants");
+        }
         for (var p : payload) {
             constructorBuilder.addParameter(p.javaType(), p.name());
         }
         constructorBuilder
             .addStatement("this.runtime = runtime")
             .addStatement("this.commitPolicy = commitPolicy");
+        if (multiTenant) {
+            constructorBuilder.addStatement("this.tenants = $T.requireNonNull(tenants, $S)", OBJECTS, "tenants");
+        }
         for (var p : payload) {
             constructorBuilder.addStatement("this.$L = $L", p.name(), p.name());
         }
@@ -1048,7 +1086,8 @@ public final class ConnectionRuntimeClassGenerator {
                     + "operation. Concurrency is confined to {@link #scatter}'s bounded workers, each owning\n"
                     + "one keyed connection single-threaded through {@link #dslFor}, with the dispatch thread\n"
                     + "blocked on the join for the scatter's whole duration; every other access runs serially\n"
-                    + "on the dispatch thread.\n"
+                    + "on the dispatch thread. {@code tenants} is the request tenant set, the only tenants\n"
+                    + "this carrier will acquire a connection for.\n"
                 : "Builds a per-operation carrier over {@code runtime} for one request. One instance per\n"
                     + "operation; entries are pinned on first demand.\n")
                 + (payload.isEmpty() ? ""
@@ -1071,6 +1110,15 @@ public final class ConnectionRuntimeClassGenerator {
             .addException(SQL_EXCEPTION);
         if (multiTenant) {
             entryForBuilder
+                .addComment("Authorization before anything else: only a key in the request tenant set ever")
+                .addComment("reaches the entry map, and the refusal runs ahead of the runtime's hosting check,")
+                .addComment("so an unauthorized caller cannot probe which tenants this deployment hosts. Every")
+                .addComment("keyed acquisition funnels through here (the static and instance dslFor, and the")
+                .addComment("scatter worker); nothing calls runtime.acquireForTenant directly.")
+                .beginControlFlow("if (key.isPresent() && !tenants.contains(key.get()))")
+                .addStatement("throw new $T($S + key.get() + $S)", clientException,
+                    "Tenant '", "' is not permitted for this request.")
+                .endControlFlow()
                 .beginControlFlow("if (key.isPresent() && timedOutTenants.contains(key.get()))")
                 .addComment("The key's scatter worker missed the join deadline; its connection may still be")
                 .addComment("executing, so it is never reused within the operation.")
@@ -1127,7 +1175,12 @@ public final class ConnectionRuntimeClassGenerator {
         var entryFor = entryForBuilder
             .addStatement("return entry")
             .addJavadoc("Resolves (minting on first demand) the carrier entry for {@code key}:\n"
-                + "{@code Optional.empty()} is the default source, a present value routes per tenant.\n")
+                + "{@code Optional.empty()} is the default source, a present value routes per tenant.\n"
+                + (multiTenant
+                    ? "A present key outside the request tenant set is refused with a client error before\n"
+                        + "any connection is taken. This is the one enforcer: every keyed acquisition in the\n"
+                        + "carrier resolves through this method.\n"
+                    : ""))
             .build();
 
         var dslFor = MethodSpec.methodBuilder("dslFor")
@@ -1257,6 +1310,9 @@ public final class ConnectionRuntimeClassGenerator {
         }
         carrier.addField(runtimeField)
             .addField(policyField);
+        if (multiTenant) {
+            carrier.addField(tenantsField);
+        }
         for (var p : payload) {
             carrier.addField(FieldSpec.builder(p.javaType(), p.name(), Modifier.PRIVATE, Modifier.FINAL)
                 .addJavadoc("Mount payload, held for the life of the request; any fetcher may trigger the\n"
@@ -1280,13 +1336,14 @@ public final class ConnectionRuntimeClassGenerator {
         }
         carrier.addType(entryClass);
         if (multiTenant) {
-            carrier.addField(FieldSpec.builder(String.class, FAN_OUT_TENANTS_KEY_FIELD,
+            carrier.addField(FieldSpec.builder(String.class, TENANTS_KEY_FIELD,
                     Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
-                .initializer("$S", FAN_OUT_TENANTS_KEY_VALUE)
-                .addJavadoc("The {@code graphQLContext} key the request's fan-out tenant collection is\n"
-                    + "published under. Written by the generated factory's dedicated tenant-collection\n"
-                    + "parameter; read here by {@link #fanOutDomain}. One constant so the two sites cannot\n"
-                    + "drift, and a graphitron-owned name no contextArgument can collide with.\n")
+                .initializer("$S", TENANTS_KEY_VALUE)
+                .addJavadoc("The {@code graphQLContext} key the request tenant set is published under.\n"
+                    + "Written by the generated factory's dedicated tenant-set parameter; read once by the\n"
+                    + "execution instrumentation, which hands the decoded set to this carrier. One constant so\n"
+                    + "the two sites cannot drift, and a graphitron-owned name no contextArgument can collide\n"
+                    + "with.\n")
                 .build());
             carrier.addField(FieldSpec.builder(SLF4J_LOGGER, "LOGGER",
                     Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
@@ -1301,8 +1358,8 @@ public final class ConnectionRuntimeClassGenerator {
                 .addMethod(logFanOutFailure(self))
                 .addMethod(staticDslFor(self, tenantKey))
                 .addMethod(divinedTenant(tenantKey))
-                .addMethod(divinedTenantAgree(ClassName.get(self.packageName(),
-                    no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator.CLASS_NAME)))
+                .addMethod(divinedTenantAgree(clientException))
+                .addMethod(permits(self, tenantKey))
                 .addMethod(tenantSlot())
                 .addMethod(loaderName())
                 .addMethod(tenantLoaderName())
@@ -1314,11 +1371,12 @@ public final class ConnectionRuntimeClassGenerator {
 
     /**
      * {@code static List<K> fanOutDomain(DataFetchingEnvironment env)}: the request's fan-out
-     * domain, the intersection of the configured tenant map's keys and the factory-supplied
-     * tenant collection, with the two directions of the difference treated differently: a hosted
-     * tenant the request did not name is silently never queried (the authorization pre-filter),
-     * while a named tenant the deployment does not host is a request-level error before any SQL
-     * runs (the derived tenant set is the statement that data could exist there; skipping would
+     * domain, the intersection of the configured tenant map's keys and the carrier's request
+     * tenant set (the tenants this request may touch in this deployment), with the two directions
+     * of the difference treated differently: a hosted tenant outside the set is silently never
+     * queried (the authorization pre-filter), while a tenant in the set that the deployment does
+     * not host is a request-level error before any SQL runs (graphitron cannot tell a tenant
+     * served by another deployment from a {@code DataSource} nobody wired, and skipping would
      * return incomplete results presented as complete). Iteration order is the tenant map's
      * configured key order filtered by the request set, so the union's concatenation order is
      * deployment-stable and the request collection's own iteration order is never load-bearing.
@@ -1328,16 +1386,9 @@ public final class ConnectionRuntimeClassGenerator {
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(ParameterizedTypeName.get(LIST, tenantKey))
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
-            .addStatement("$T<$T> requested = env.getGraphQlContext().get($L)",
-                COLLECTION, tenantKey, FAN_OUT_TENANTS_KEY_FIELD)
-            .beginControlFlow("if (requested == null)")
-            .addStatement("throw new $T($S)", IllegalStateException.class,
-                "No fan-out tenant collection in the GraphQL context: a schema with @tenantFanOut"
-                    + " fields adds a dedicated tenant-collection parameter to the generated"
-                    + " factories (newExecutionInput / newOwnedExecutionInput); build the request"
-                    + " through one of them.")
-            .endControlFlow()
-            .addStatement("$T<$T> hosted = of(env).runtime.tenantKeys()", SET, tenantKey)
+            .addStatement("$T carrier = of(env)", self)
+            .addStatement("$T<$T> requested = carrier.tenants", SET, tenantKey)
+            .addStatement("$T<$T> hosted = carrier.runtime.tenantKeys()", SET, tenantKey)
             .beginControlFlow("for ($T claimed : requested)", tenantKey)
             .beginControlFlow("if (!hosted.contains(claimed))")
             .addStatement("throw new $T($S + claimed + $S)", NO_SUCH_ELEMENT,
@@ -1355,10 +1406,32 @@ public final class ConnectionRuntimeClassGenerator {
             .endControlFlow()
             .addStatement("return domain")
             .addJavadoc("The request's fan-out domain: the configured tenant map's keys, in configured\n"
-                + "order, filtered by the factory-supplied tenant collection. A hosted tenant the\n"
-                + "request did not name is never queried; a named tenant the deployment does not host\n"
-                + "is a request-level error before any SQL runs.\n"
+                + "order, filtered by the request tenant set. A hosted tenant the request may not touch\n"
+                + "is never queried; a tenant in the set that the deployment does not host is a\n"
+                + "request-level error before any SQL runs.\n"
                 + "@param env the fanned field's {@code DataFetchingEnvironment}\n")
+            .build();
+    }
+
+    /**
+     * {@code static boolean permits(DataFetchingEnvironment env, K tenantKey)}: whether the
+     * request tenant set admits {@code tenantKey}. The read side of the rule {@code entryFor}
+     * enforces, for surfaces that answer a refused tenant as presentation rather than an error
+     * (the per-row lookups skip a refused group so its positions stay {@code null}); the rule
+     * itself stays single-sourced on the carrier.
+     */
+    private static MethodSpec permits(ClassName self, TypeName tenantKey) {
+        return MethodSpec.methodBuilder("permits")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(boolean.class)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addParameter(tenantKey, "tenantKey")
+            .addStatement("return of(env).tenants.contains(tenantKey)")
+            .addJavadoc("Whether the request tenant set admits {@code tenantKey}. {@link #entryFor} stays the\n"
+                + "enforcer; this lets a per-row lookup skip a refused tenant's group, answering its ids\n"
+                + "with {@code null} exactly as it answers an id that does not exist.\n"
+                + "@param env the field's {@code DataFetchingEnvironment}\n"
+                + "@param tenantKey the divined tenant value\n")
             .build();
     }
 
@@ -2081,9 +2154,12 @@ public final class ConnectionRuntimeClassGenerator {
      * {@code Configuration} is built, from the connection and the resolved source's dialect and
      * settings (so a consumer's schema mapping reaches their own mount method, and the
      * transaction-demarcation provider structurally cannot), and where the payload is spread into
-     * the mount method's own declaration order; {@code PinnedConnection} stays free of both.
+     * the mount method's own declaration order; {@code PinnedConnection} stays free of both. In
+     * multi-tenant builds the generated {@code mount} also takes the {@code Optional<K>} tenant it
+     * is mounting for, spread into the consumer's tenant slot when the method declares one
+     * ({@link SessionHooks#tenantSlot()}) and dropped otherwise.
      */
-    private static TypeSpec sessionHookImpl(SessionHooks sessionHooks) {
+    private static TypeSpec sessionHookImpl(SessionHooks sessionHooks, TypeName tenantKey, boolean multiTenant) {
         MethodRef.StaticOnly mountRef = sessionHooks.mountRef().orElseThrow(() -> new IllegalStateException(
             "no session hook implementation exists for the not-configured arm; gate on emitsHookImplementation()"));
         TypeName handleType = sessionHooks instanceof SessionHooks.Handled handled ? handled.handleType() : null;
@@ -2095,6 +2171,9 @@ public final class ConnectionRuntimeClassGenerator {
             .addParameter(CONNECTION, "connection")
             .addParameter(SQL_DIALECT, "dialect")
             .addParameter(SETTINGS, "settings");
+        if (multiTenant) {
+            mountBuilder.addParameter(ParameterizedTypeName.get(OPTIONAL, tenantKey), MOUNTED_TENANT);
+        }
         for (var p : payload) {
             mountBuilder.addParameter(p.javaType(), p.name());
         }
@@ -2111,6 +2190,12 @@ public final class ConnectionRuntimeClassGenerator {
                 + "{@code " + mountRef.className() + "#" + mountRef.methodName() + "} directly, spreading the\n"
                 + "typed payload in that method's own declaration order"
                 + (handleType == null ? "" : " and returning its handle") + ".\n"
+                + (!multiTenant ? ""
+                    : sessionHooks.tenantSlot().isPresent()
+                        ? "{@code " + MOUNTED_TENANT + "} is the tenant this connection is mounted for, passed to the method's\n"
+                            + "tenant slot: the routed key, or {@code Optional.empty()} for the default source.\n"
+                        : "{@code " + MOUNTED_TENANT + "} is the tenant this connection is mounted for; the method declares no\n"
+                            + "tenant slot, so it is not passed on.\n")
                 + "Runs before any operation SQL, with autocommit asserted by the runtime: the mount is\n"
                 + "its own committed transaction, so a later transaction's rollback cannot revert it, and\n"
                 + "what the method sets must be <em>session-scoped</em> state in the database's own\n"
@@ -2184,8 +2269,8 @@ public final class ConnectionRuntimeClassGenerator {
      * The argument list for the direct call into a consumer hook method, in the method's own
      * declaration order: the seam parameter becomes the provider-free {@code Configuration}
      * (or the raw connection, per the {@link ParamSource.SessionSeam.Kind} decided once at
-     * reflection), payload parameters read the generated method's same-named locals, and the
-     * unmount's handle parameter reads {@code handle}.
+     * reflection), payload parameters read the generated method's same-named locals, the mount's
+     * tenant slot reads {@value #MOUNTED_TENANT}, and the unmount's handle parameter reads {@code handle}.
      */
     private static CodeBlock hookCallArgs(MethodRef.StaticOnly ref) {
         var args = CodeBlock.builder();
@@ -2205,6 +2290,7 @@ public final class ConnectionRuntimeClassGenerator {
                 }
                 case ParamSource.Context ignored -> args.add("$L", p.name());
                 case ParamSource.SessionHandle ignored -> args.add("handle");
+                case ParamSource.SessionTenant ignored -> args.add(MOUNTED_TENANT);
                 default -> throw new IllegalStateException(
                     "unexpected hook parameter source " + p.source().getClass().getSimpleName()
                         + " on " + ref.className() + "#" + ref.methodName());

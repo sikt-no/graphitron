@@ -309,8 +309,20 @@ class TenantRoutedFetcherPipelineTest {
             // classified decoded position (film_id is position 1 of the FilmActor key).
             .contains("java.util.Map<java.lang.Integer, java.util.Map<java.lang.Object, java.util.List<java.lang.Object[]>>> groups")
             .contains(".computeIfAbsent(cols[1], k -> new java.util.ArrayList<>())")
-            .contains("dslFor(groupEnv, fake.code.generated.schema.TenantConnections.divinedTenant(tenantEntry.getKey()))")
+            .contains("java.lang.Integer tenantKey = fake.code.generated.schema.TenantConnections.divinedTenant(tenantEntry.getKey());")
+            .contains("dslFor(groupEnv, tenantKey)")
             .doesNotContain("getDslContext(groupEnv)");
+        // A tenant group outside the request tenant set is skipped between decoding its key and
+        // acquiring it: its positions stay null (an unknown id's answer) and no connection to that
+        // tenant is taken, while the other groups resolve.
+        assertThat(handle.indexOf("divinedTenant(tenantEntry.getKey())"))
+            .isLessThan(handle.indexOf("if (!fake.code.generated.schema.TenantConnections.permits(groupEnv, tenantKey)) {"));
+        assertThat(handle.indexOf("permits(groupEnv, tenantKey)"))
+            .isLessThan(handle.indexOf("dslFor(groupEnv, tenantKey)"));
+        assertThat(handle).containsSubsequence(
+            "if (!fake.code.generated.schema.TenantConnections.permits(groupEnv, tenantKey)) {",
+            "continue;",
+            "}");
     }
 
     @Test

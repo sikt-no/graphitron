@@ -75,9 +75,9 @@ public final class GraphitronDevExecutorGenerator {
             ClassName.get(Map.class), ClassName.get(String.class), ClassName.get(Object.class));
 
         List<ResolvedContextArg> contextArgs = schema.contextArguments().resolved().values().stream().toList();
-        // The facade's factory signatures fork on the same predicate; reading the one schema
-        // seam keeps this call and the emitted parameter list from drifting.
-        boolean fanOut = schema.hasFanOutBinding();
+        // The facade's factory signatures fork on the same fact; reading the one schema seam
+        // keeps this call and the emitted parameter list from drifting.
+        boolean multiTenant = schema.requestTenantKeyType().isPresent();
 
         // The fail-loud question and the payload shape are read off the resolved carrier, never
         // re-derived here: the string-constructible predicate is SessionHooks' own.
@@ -150,7 +150,16 @@ public final class GraphitronDevExecutorGenerator {
                 .addComment("Preflight: surface a rejected payload as the mount method's own exception.")
                 .addStatement("$T devDialect = $T.valueOf(dialect)", sqlDialect, sqlDialect)
                 .addStatement("$T devSettings = new $T()", settings, settings);
-            String payloadArg = stringPayloadName == null ? "" : ", claimsPayload";
+            // A multi-tenant mount also takes the tenant it mounts for; the dev executor's one
+            // connection is the default source, so it mounts for none.
+            var payloadArgBuilder = CodeBlock.builder();
+            if (multiTenant) {
+                payloadArgBuilder.add(", $T.empty()", ClassName.get("java.util", "Optional"));
+            }
+            if (stringPayloadName != null) {
+                payloadArgBuilder.add(", claimsPayload");
+            }
+            CodeBlock payloadArg = payloadArgBuilder.build();
             if (sessionHooks instanceof SessionHooks.Handled handled
                     && sessionHooks.unmountRef().isPresent()) {
                 execute.addStatement(
@@ -178,7 +187,7 @@ public final class GraphitronDevExecutorGenerator {
                     + "    .variables(variables == null ? $T.of() : variables)\n"
                     + "    .build()",
                 executionInput, facade, "newOwnedExecutionInput",
-                ownedFactoryArgs(contextArgs, fanOut, stringPayloadName),
+                ownedFactoryArgs(contextArgs, multiTenant, stringPayloadName),
                 ClassName.get(Map.class))
             .addStatement("$T result = engine.execute(input)", executionResult)
             .addStatement("return $T.toJSONString(result.toSpecification())", jsonValue);
@@ -202,15 +211,16 @@ public final class GraphitronDevExecutorGenerator {
      * single-String payload slot, when the schema has one, reads the dev host's claims string
      * instead of the contextArgs map.
      */
-    private static CodeBlock ownedFactoryArgs(List<ResolvedContextArg> contextArgs, boolean fanOut,
+    private static CodeBlock ownedFactoryArgs(List<ResolvedContextArg> contextArgs, boolean multiTenant,
             String stringPayloadName) {
         var args = CodeBlock.builder().add("(");
         boolean first = true;
-        if (fanOut) {
-            // The dev executor runs single-connection with no tenant map, so the fan-out domain
-            // is structurally empty: an empty collection satisfies the factory slot, and a fanned
-            // field resolves to an empty union rather than a missing-parameter failure.
-            args.add("java.util.List.of()");
+        if (multiTenant) {
+            // The dev executor runs single-connection with no tenant map, so no tenant can be
+            // served: an empty request tenant set satisfies the factory slot, a fanned field
+            // resolves to an empty union, and a routed field fails with the refusal rather than
+            // a missing-parameter or unhosted-tenant failure.
+            args.add("$T.of()", ClassName.get("java.util", "Set"));
             first = false;
         }
         for (ResolvedContextArg arg : contextArgs) {

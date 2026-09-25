@@ -124,6 +124,11 @@ public final class ArgCallEmitter {
                     "ParamSource.SessionSeam reached buildMethodBackedCallArgs — the seam parameter exists "
                     + "only on <mount>/<unmount> hook methods, which the generated hook class calls directly: param '"
                     + param.name() + "'");
+            case ParamSource.SessionTenant ignored ->
+                throw new IllegalStateException(
+                    "ParamSource.SessionTenant reached buildMethodBackedCallArgs: the tenant slot exists "
+                    + "only on <mount> hook methods, which the generated hook class calls directly: param '"
+                    + param.name() + "'");
             // The $session sigil: the handle rides the resolved DSLContext's own per-Configuration
             // data() map, written once at mount by the connection runtime. Reading it through the
             // carrier's guarded accessor off the dsl local (never graphQLContext) is what scopes

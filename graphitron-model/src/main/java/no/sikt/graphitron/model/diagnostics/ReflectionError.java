@@ -33,7 +33,9 @@ public sealed interface ReflectionError extends Rejection.AuthorError permits
     ReflectionError.SeamCandidateAmbiguous,
     ReflectionError.HookNotStatic,
     ReflectionError.HookThrowsChecked,
-    ReflectionError.HandleTypeMismatch
+    ReflectionError.HandleTypeMismatch,
+    ReflectionError.TenantSlotDuplicated,
+    ReflectionError.TenantSlotMistyped
 {
     /** LSP wire code under the {@code graphitron.reflect.} namespace. */
     String lspCode();
@@ -282,5 +284,45 @@ public sealed interface ReflectionError extends Rejection.AuthorError permits
                 + " (or the unmount takes only the seam parameter, discarding the handle)";
         }
         @Override public String lspCode() { return "graphitron.reflect.handle-type-mismatch"; }
+    }
+
+    /**
+     * A {@code <mount>} method in a {@code <tenantColumn>} build declares more than one parameter
+     * typed {@code Optional} of the tenant column's Java type. The tenant slot is recognised by
+     * type alone, so two of them leave the generated hook no way to tell which one is meant.
+     */
+    record TenantSlotDuplicated(
+        String className,
+        String methodName,
+        String tenantTypeSimple
+    ) implements ReflectionError {
+        @Override public String message() {
+            return "<mount> method '" + methodName + "' in class '" + className
+                + "' declares more than one 'Optional<" + tenantTypeSimple + ">' parameter; the tenant"
+                + " slot is recognised by type, so declare it at most once";
+        }
+        @Override public String lspCode() { return "graphitron.reflect.tenant-slot-duplicated"; }
+    }
+
+    /**
+     * A {@code <mount>} method in a {@code <tenantColumn>} build declares an {@code Optional}
+     * parameter whose element type is not the tenant column's Java type. Only
+     * {@code Optional<K>} is the tenant slot; any other {@code Optional} would otherwise fall
+     * through into a payload slot silently, and has no sensible meaning as a contextArgument.
+     */
+    record TenantSlotMistyped(
+        String className,
+        String methodName,
+        String parameterName,
+        String declaredTypeSimple,
+        String tenantTypeSimple
+    ) implements ReflectionError {
+        @Override public String message() {
+            return "<mount> method '" + methodName + "' in class '" + className + "' declares parameter '"
+                + parameterName + "' as '" + declaredTypeSimple + "', but the tenant column's Java type is '"
+                + tenantTypeSimple + "'; the tenant slot must be typed 'Optional<" + tenantTypeSimple
+                + ">', and no other Optional parameter is accepted on a multi-tenant mount";
+        }
+        @Override public String lspCode() { return "graphitron.reflect.tenant-slot-mistyped"; }
     }
 }

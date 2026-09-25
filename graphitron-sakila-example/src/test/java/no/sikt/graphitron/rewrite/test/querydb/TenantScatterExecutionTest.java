@@ -87,7 +87,7 @@ class TenantScatterExecutionTest {
             dataSource(null, null, null),
             Map.of(1, dataSource("scatter_t1", null, null), 2, dataSource("scatter_t2", null, null)),
             SQLDialect.POSTGRES, 2, Duration.ofSeconds(10));
-        var tenants = new TenantConnections(runtime, CommitPolicy.COMMIT, "{}");
+        var tenants = new TenantConnections(runtime, CommitPolicy.COMMIT, java.util.Set.of(1, 2), "{}");
         try {
             long start = System.nanoTime();
             List<Outcome<String>> outcomes = tenants.scatter(List.of(1, 2), perTenant ->
@@ -115,7 +115,7 @@ class TenantScatterExecutionTest {
             dataSource(null, null, null),
             Map.of(1, dataSource("scatter_t1", null, null), 2, dataSource("scatter_t2", null, null)),
             SQLDialect.POSTGRES);
-        var tenants = new TenantConnections(runtime, CommitPolicy.COMMIT, "{}");
+        var tenants = new TenantConnections(runtime, CommitPolicy.COMMIT, java.util.Set.of(1, 2), "{}");
         try {
             List<Outcome<List<String>>> outcomes = tenants.scatter(List.of(1, 2), perTenant ->
                 perTenant.fetch("select title from film order by title").getValues("title", String.class));
@@ -140,7 +140,7 @@ class TenantScatterExecutionTest {
             dataSource(null, opened, closed),
             Map.of(1, dataSource("scatter_t1", opened, closed), 2, dataSource("scatter_t2", opened, closed)),
             SQLDialect.POSTGRES);
-        var tenants = new TenantConnections(runtime, CommitPolicy.COMMIT, "{}");
+        var tenants = new TenantConnections(runtime, CommitPolicy.COMMIT, java.util.Set.of(1, 2), "{}");
 
         List<Outcome<Integer>> outcomes = tenants.scatter(List.of(1, 2), perTenant ->
             perTenant.fetchOne("select 1").get(0, Integer.class));

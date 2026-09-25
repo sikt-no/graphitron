@@ -70,7 +70,7 @@ class TenantScatterSubstrateTest {
         for (TypeSpec spec : GraphitronTransactionProviderGenerator.generate(PACKAGE)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
-        for (TypeSpec spec : GraphitronConnectionInstrumentationGenerator.generate(PACKAGE, true, hooks)) {
+        for (TypeSpec spec : GraphitronConnectionInstrumentationGenerator.generate(PACKAGE, ClassName.get(String.class), hooks)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
         // The tenant-agreement guard raises the client-error type, which a real build always
@@ -419,8 +419,11 @@ class TenantScatterSubstrateTest {
     }
 
     private Object newTenantConnections(Object runtime) throws Throwable {
-        return tenantConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, String.class)
-            .newInstance(runtime, commitPolicyCommit, "{}");
+        // The request tenant set admits every hosted tenant: these proofs are about concurrency,
+        // and authorization has its own harness test.
+        Object hosted = runtimeClass.getMethod("tenantKeys").invoke(runtime);
+        return tenantConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, java.util.Set.class, String.class)
+            .newInstance(runtime, commitPolicyCommit, java.util.Set.copyOf((java.util.Set<?>) hosted), "{}");
     }
 
     private List<?> scatter(Object tc, Collection<String> keys, Function<Object, Object> perTenant) throws Throwable {

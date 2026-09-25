@@ -117,14 +117,20 @@ public record GraphitronSchema(
     }
 
     /**
-     * Whether any coordinate classified {@link no.sikt.graphitron.rewrite.model.TenantBinding.FanOut}:
-     * the one predicate the factory generators fork the {@code ExecutionInput} signatures on (the
-     * dedicated fan-out tenant-collection parameter exists exactly when this is true), so the
-     * emitters cannot drift on what "the schema has a fanned field" means.
+     * The element type of the request tenant set, the tenants a request may touch in this
+     * deployment: present exactly when {@code <tenantColumn>} is configured
+     * ({@link TenantScopes.Configured}), whatever the schema's tenant bindings, carrying the
+     * tenant column's Java type boxed. The one fact the factory, the connection instrumentation,
+     * the carrier and the dev executor read to decide whether the set exists and how it is typed,
+     * so they cannot disagree. Deliberately not gated on the schema having a routed or fanned
+     * field: that would put an evolving schema property on a public factory signature.
      */
-    public boolean hasFanOutBinding() {
-        return tenantBindings.byCoordinate().values().stream()
-            .anyMatch(b -> b instanceof no.sikt.graphitron.rewrite.model.TenantBinding.FanOut);
+    public java.util.Optional<no.sikt.graphitron.javapoet.TypeName> requestTenantKeyType() {
+        if (!(tenantScopes instanceof TenantScopes.Configured configured)) {
+            return java.util.Optional.empty();
+        }
+        var type = configured.tenantType();
+        return java.util.Optional.of(type.isPrimitive() ? type.box() : type);
     }
 
     /**

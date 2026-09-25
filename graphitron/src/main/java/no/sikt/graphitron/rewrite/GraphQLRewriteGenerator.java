@@ -719,7 +719,7 @@ public class GraphQLRewriteGenerator {
             case GRAPHITRON_CONTEXT -> GraphitronContextInterfaceGenerator.generate();
             case CONNECTION_RUNTIME -> ConnectionRuntimeClassGenerator.generate(outputPackage, schema.sessionHooks(), tenantKeyType);
             case TRANSACTION_PROVIDER -> GraphitronTransactionProviderGenerator.generate(outputPackage);
-            case CONNECTION_INSTRUMENTATION -> GraphitronConnectionInstrumentationGenerator.generate(outputPackage, tenantKeyType != null, schema.sessionHooks());
+            case CONNECTION_INSTRUMENTATION -> GraphitronConnectionInstrumentationGenerator.generate(outputPackage, tenantKeyType, schema.sessionHooks());
             case CONSTRAINT_VIOLATIONS -> ConstraintViolationsClassGenerator.generate();
             case CLIENT_EXCEPTION -> GraphitronClientExceptionClassGenerator.generate();
             case ERROR_ROUTER -> ErrorRouterClassGenerator.generate(outputPackage);

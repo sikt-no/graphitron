@@ -416,6 +416,15 @@
                             <jooqPackage>${jooqPackage}</jooqPackage>
                             <outputPackage>no.sikt.graphitron.generated.multitenant</outputPackage>
                             <tenantColumn>film_id</tenantColumn>
+                            <!--
+                                A mount declaring the tenant slot (Optional<Integer>, the film_id
+                                type), so the execution tests can prove each connection's mount
+                                receives the tenant it is mounted for.
+                            -->
+                            <sessionState>
+                                <mount>no.sikt.graphitron.rewrite.test.services.SakilaTenantSessionIdentity#mount</mount>
+                                <unmount>no.sikt.graphitron.rewrite.test.services.SakilaTenantSessionIdentity#unmount</unmount>
+                            </sessionState>
                         </configuration>
                     </execution>
                     <execution>

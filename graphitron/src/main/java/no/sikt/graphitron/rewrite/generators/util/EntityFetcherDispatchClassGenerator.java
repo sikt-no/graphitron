@@ -113,7 +113,8 @@ public final class EntityFetcherDispatchClassGenerator {
         for (var entity : entities) {
             HandleMethodBody.TenantRouting routing = multiTenant
                 ? new HandleMethodBody.TenantRouting(tenantConnections,
-                    schema.tenantBindings().byEntityType().get(entity.typeName()))
+                    schema.tenantBindings().byEntityType().get(entity.typeName()),
+                    schema.requestTenantKeyType().orElseThrow())
                 : null;
             spec.addMethod(buildHandleMethod(entity, outputPackage, nodeIdEncoder, routing));
             for (int i = 0; i < entity.alternatives().size(); i++) {

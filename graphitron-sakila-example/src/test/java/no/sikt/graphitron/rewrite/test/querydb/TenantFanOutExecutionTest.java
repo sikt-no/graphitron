@@ -173,8 +173,8 @@ class TenantFanOutExecutionTest {
         assertThat(TENANT_2_SQL).containsExactly(mount, statement, unmount);
     }
 
-    private static ExecutionResult execute(String query, Collection<Integer> fanOutTenants) {
-        return graphql.execute(Graphitron.newOwnedExecutionInput(fanOutTenants, "{}")
+    private static ExecutionResult execute(String query, Collection<Integer> tenants) {
+        return graphql.execute(Graphitron.newOwnedExecutionInput(tenants, "{}")
             .query(query)
             .build());
     }

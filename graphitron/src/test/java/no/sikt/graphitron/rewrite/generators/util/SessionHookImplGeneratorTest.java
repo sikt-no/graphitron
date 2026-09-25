@@ -170,18 +170,85 @@ class SessionHookImplGeneratorTest {
         assertThat(HookInvocationFixture.EVENTS).containsExactly("mountVoid");
     }
 
+    @Test
+    void multiTenantMount_takesTheTenant_andSpreadsItIntoTheDeclaredSlot() throws Throwable {
+        var hooks = new SessionHooks.Handled(
+            SessionHooksFixtures.hookRef(FIXTURE, "mountTenantInMiddle", ClassName.get(String.class),
+                SessionHooksFixtures.stringPayload("first"),
+                SessionHooksFixtures.configurationSeam(),
+                SessionHooksFixtures.tenantSlot("tenant", ClassName.get(Integer.class)),
+                SessionHooksFixtures.stringPayload("second")),
+            ClassName.get(String.class), Optional.empty());
+        Class<?> hookClass = compileHook(hooks, ClassName.get(Integer.class));
+
+        // The generated mount's shape: the tenant after settings, before the payload.
+        var mount = hookClass.getMethod("mount",
+            Connection.class, SQLDialect.class, Settings.class, Optional.class, String.class, String.class);
+        mount.invoke(null, fakeConnection(), SQLDialect.POSTGRES, new Settings(), Optional.of(2), "a", "b");
+        mount.invoke(null, fakeConnection(), SQLDialect.POSTGRES, new Settings(), Optional.empty(), "a", "b");
+
+        assertThat(HookInvocationFixture.EVENTS)
+            .as("the tenant lands in the consumer's own declared position, payload order preserved")
+            .containsExactly("mountTenantInMiddle:a:Optional[2]:b", "mountTenantInMiddle:a:Optional.empty:b");
+    }
+
+    @Test
+    void multiTenantMount_withoutATenantSlot_takesTheTenant_andDropsIt() throws Throwable {
+        var hooks = new SessionHooks.Handled(
+            SessionHooksFixtures.hookRef(FIXTURE, "mountConnection", ClassName.get(String.class),
+                SessionHooksFixtures.connectionSeam(),
+                SessionHooksFixtures.stringPayload("claims")),
+            ClassName.get(String.class), Optional.empty());
+        Class<?> hookClass = compileHook(hooks, ClassName.get(Integer.class));
+
+        hookClass.getMethod("mount", Connection.class, SQLDialect.class, Settings.class, Optional.class, String.class)
+            .invoke(null, fakeConnection(), SQLDialect.POSTGRES, new Settings(), Optional.of(1), "c");
+
+        assertThat(HookInvocationFixture.EVENTS).containsExactly("mountConnection:c");
+    }
+
+    @Test
+    void multiTenantMount_payloadNamedTenant_doesNotCollideWithTheGeneratedTenantParameter() throws Throwable {
+        // A multi-tenant consumer whose mount takes a payload named "tenant" and declares no slot:
+        // the generated parameters must not clash, or the upgrade breaks their compile.
+        var hooks = new SessionHooks.Handled(
+            SessionHooksFixtures.hookRef(FIXTURE, "mount", ClassName.get(String.class),
+                SessionHooksFixtures.configurationSeam(),
+                SessionHooksFixtures.stringPayload("tenant"),
+                SessionHooksFixtures.payload("count", ClassName.get(Integer.class))),
+            ClassName.get(String.class), Optional.empty());
+        Class<?> hookClass = compileHook(hooks, ClassName.get(Integer.class));
+
+        hookClass.getMethod("mount", Connection.class, SQLDialect.class, Settings.class, Optional.class,
+                String.class, Integer.class)
+            .invoke(null, fakeConnection(), SQLDialect.POSTGRES, new Settings(), Optional.of(3), "t1", 7);
+
+        assertThat(HookInvocationFixture.EVENTS).containsExactly("mount:t1:7");
+    }
+
     // --- harness helpers ---------------------------------------------------------------------
 
     private Class<?> compileHook(SessionHooks hooks) {
+        return compileHook(hooks, null);
+    }
+
+    private Class<?> compileHook(SessionHooks hooks, TypeName tenantKeyType) {
         Map<String, TypeSpec> units = new LinkedHashMap<>();
-        for (TypeSpec spec : ConnectionRuntimeClassGenerator.generate(PACKAGE, hooks)) {
+        for (TypeSpec spec : ConnectionRuntimeClassGenerator.generate(PACKAGE, hooks, tenantKeyType)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
         for (TypeSpec spec : GraphitronTransactionProviderGenerator.generate(PACKAGE)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
-        for (TypeSpec spec : GraphitronConnectionInstrumentationGenerator.generate(PACKAGE, false, hooks)) {
+        for (TypeSpec spec : GraphitronConnectionInstrumentationGenerator.generate(PACKAGE, tenantKeyType, hooks)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
+        }
+        if (tenantKeyType != null) {
+            // The multi-tenant carrier raises the client-error type, which a real build always
+            // emits beside the runtime.
+            for (TypeSpec spec : no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator.generate()) {
+                units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
+            }
         }
         harness = EmittedCodeHarness.compile(units);
         return harness.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.SESSION_HOOK_IMPL_CLASS_NAME);

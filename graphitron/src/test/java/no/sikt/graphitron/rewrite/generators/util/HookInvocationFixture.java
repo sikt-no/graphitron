@@ -59,6 +59,14 @@ public final class HookInvocationFixture {
         EVENTS.add("unmountHandleIgnoring");
     }
 
+    /** The tenant slot between two payload parameters, for an {@code Integer}-tenant build. */
+    public static String mountTenantInMiddle(String first, Configuration cfg,
+                                             java.util.Optional<Integer> tenant, String second) {
+        lastConfiguration = cfg;
+        EVENTS.add("mountTenantInMiddle:" + first + ":" + tenant + ":" + second);
+        return "H";
+    }
+
     /** Handle-less mount: void return, no payload. */
     public static void mountVoid(Configuration cfg) {
         lastConfiguration = cfg;

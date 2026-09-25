@@ -86,7 +86,7 @@ class ConnectionRuntimeClassGeneratorTest {
         for (TypeSpec spec : GraphitronTransactionProviderGenerator.generate(PACKAGE)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
-        for (TypeSpec spec : GraphitronConnectionInstrumentationGenerator.generate(PACKAGE, false, hooks)) {
+        for (TypeSpec spec : GraphitronConnectionInstrumentationGenerator.generate(PACKAGE, null, hooks)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
         return EmittedCodeHarness.compile(units);

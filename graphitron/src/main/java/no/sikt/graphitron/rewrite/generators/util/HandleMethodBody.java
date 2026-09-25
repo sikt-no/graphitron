@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.generators.util;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.KeyAlternative;
 import no.sikt.graphitron.rewrite.model.TenantBinding;
@@ -56,9 +57,10 @@ final class HandleMethodBody {
      * The dispatch surface's tenant routing for one entity type. {@code null} for a
      * single-tenant build. {@code bound} carries the per-alternative decoded tenant
      * positions for a tenant-scoped entity, or {@code null} for a global entity (which
-     * acquires the default source).
+     * acquires the default source). {@code tenantKey} is the boxed tenant column type, the type
+     * each tenant group's decoded key is held in.
      */
-    record TenantRouting(ClassName tenantConnections, TenantBinding.EntityRepBound bound) {}
+    record TenantRouting(ClassName tenantConnections, TenantBinding.EntityRepBound bound, TypeName tenantKey) {}
 
     /** Single-tenant emission: no tenant routing. */
     static CodeBlock emit(EntityResolution entity, ClassName nodeIdEncoder) {
@@ -211,8 +213,18 @@ final class HandleMethodBody {
             b.addStatement("$T groupEnv = ($T) first[2]", ENV, ENV);
             // One tenant-homogeneous SELECT per group: a null decoded tenant fails loudly in the
             // divined-key guard rather than routing anywhere.
-            b.addStatement("$T dsl = $T.dslFor(groupEnv, $T.divinedTenant(tenantEntry.getKey()))",
-                DSL_CONTEXT, routing.tenantConnections(), routing.tenantConnections());
+            b.addStatement("$T tenantKey = $T.divinedTenant(tenantEntry.getKey())",
+                routing.tenantKey(), routing.tenantConnections());
+            // A tenant outside the request tenant set: skip the group, so its positions stay null,
+            // exactly how node/nodes/_entities answer an id that does not exist, and no connection
+            // to that tenant is taken. The other groups resolve normally. entryFor remains the
+            // enforcer; this is presentation above it, and a refused id reads like a nonexistent
+            // one, so the lookups cannot be used to probe tenants.
+            b.beginControlFlow("if (!$T.permits(groupEnv, tenantKey))", routing.tenantConnections());
+            b.addStatement("continue");
+            b.endControlFlow();
+            b.addStatement("$T dsl = $T.dslFor(groupEnv, tenantKey)",
+                DSL_CONTEXT, routing.tenantConnections());
             emitAltSwitch(b, entity);
             b.endControlFlow();
             b.endControlFlow();

@@ -11,7 +11,7 @@ type Query {
 }
 ----
 
-The field must return a *list* of a tenant-scoped `@table` type. Which tenants are queried is decided per request: the tenant collection your application supplies to the generated factory (see xref:../../how-to/tenant-scoping.adoc[How-to: Tenant scoping]) intersected with the tenants this deployment actually hosts. A tenant in your collection that the deployment does not host is a request error before any SQL runs; a hosted tenant absent from your collection is never queried.
+The field must return a *list* of a tenant-scoped `@table` type. Which tenants are queried is decided per request: the request tenant set your application passes to the generated factory, the tenants the request may touch in this deployment (see xref:../../how-to/tenant-scoping.adoc[How-to: Tenant scoping]), intersected with the tenants this deployment actually hosts. A tenant in the set that the deployment does not host is a request error before any SQL runs; a hosted tenant absent from the set is never queried.
 
 == SDL signature
 

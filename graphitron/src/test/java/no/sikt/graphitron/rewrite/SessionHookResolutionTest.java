@@ -44,7 +44,13 @@ class SessionHookResolutionTest {
     }
 
     private static ServiceCatalog.SessionHookResolution resolve(String mount, String unmount) {
-        return newCatalog().resolveSessionHooks(SessionStateConfig.from(mount, unmount));
+        return newCatalog().resolveSessionHooks(SessionStateConfig.from(mount, unmount), null);
+    }
+
+    /** Resolves as a {@code <tenantColumn>} build whose tenant column is {@code Integer}. */
+    private static ServiceCatalog.SessionHookResolution resolveMultiTenant(String mount) {
+        return newCatalog().resolveSessionHooks(SessionStateConfig.from(mount, null),
+            no.sikt.graphitron.javapoet.ClassName.get(Integer.class));
     }
 
     private static String ref(String method) {
@@ -55,7 +61,7 @@ class SessionHookResolutionTest {
 
     @Test
     void noneConfig_resolvesToNotConfiguredWithNoRejections() {
-        var result = newCatalog().resolveSessionHooks(SessionStateConfig.none());
+        var result = newCatalog().resolveSessionHooks(SessionStateConfig.none(), null);
         assertThat(result.hooks()).isSameAs(SessionHooks.NotConfigured.INSTANCE);
         assertThat(result.rejections()).isEmpty();
     }
@@ -98,6 +104,74 @@ class SessionHookResolutionTest {
             .findFirst().orElseThrow();
         assertThat(((ParamSource.SessionSeam) connSeam.source()).kind())
             .isEqualTo(ParamSource.SessionSeam.Kind.CONNECTION);
+    }
+
+    // ===== Tenant slot =====
+
+    @Test
+    void optionalOfTenantType_inMultiTenantBuild_isTheTenantSlotAndNotPayload() {
+        var result = resolveMultiTenant(ref("mountTenantSlot"));
+
+        assertThat(result.rejections()).isEmpty();
+        var slot = result.hooks().tenantSlot().orElseThrow();
+        assertThat(slot.name()).isEqualTo("tenant");
+        assertThat(slot.source()).isInstanceOf(ParamSource.SessionTenant.class);
+        assertThat(result.hooks().payloadParams()).extracting(MethodRef.Param::name).containsExactly("claims");
+    }
+
+    @Test
+    void optionalOfTenantType_primitiveTenantColumn_comparesBoxed() {
+        var result = newCatalog().resolveSessionHooks(
+            SessionStateConfig.from(ref("mountTenantSlot"), null), no.sikt.graphitron.javapoet.TypeName.INT);
+
+        assertThat(result.rejections()).isEmpty();
+        assertThat(result.hooks().tenantSlot()).isPresent();
+    }
+
+    @Test
+    void twoTenantSlots_rejected() {
+        var result = resolveMultiTenant(ref("mountTwoTenantSlots"));
+
+        assertThat(result.hooks()).isSameAs(SessionHooks.NotConfigured.INSTANCE);
+        assertThat(result.rejections()).singleElement()
+            .isInstanceOfSatisfying(ReflectionError.TenantSlotDuplicated.class, dup -> {
+                assertThat(dup.methodName()).isEqualTo("mountTwoTenantSlots");
+                assertThat(dup.tenantTypeSimple()).isEqualTo("java.lang.Integer");
+            });
+    }
+
+    @Test
+    void optionalOfOtherType_inMultiTenantBuild_rejected() {
+        for (String method : java.util.List.of("mountOptionalString", "mountOptionalLong")) {
+            var result = resolveMultiTenant(ref(method));
+
+            assertThat(result.hooks()).isSameAs(SessionHooks.NotConfigured.INSTANCE);
+            assertThat(result.rejections()).singleElement()
+                .isInstanceOfSatisfying(ReflectionError.TenantSlotMistyped.class, mistyped -> {
+                    assertThat(mistyped.methodName()).isEqualTo(method);
+                    assertThat(mistyped.parameterName()).isEqualTo("tenant");
+                    assertThat(mistyped.tenantTypeSimple()).isEqualTo("java.lang.Integer");
+                });
+        }
+    }
+
+    @Test
+    void optionalOfTenantType_inSingleTenantBuild_staysPayload() {
+        var result = resolve(ref("mountTenantSlot"), null);
+
+        assertThat(result.rejections()).isEmpty();
+        assertThat(result.hooks().tenantSlot()).isEmpty();
+        assertThat(result.hooks().payloadParams()).extracting(MethodRef.Param::name)
+            .containsExactly("tenant", "claims");
+    }
+
+    @Test
+    void bareTenantTypedParameter_staysPayloadInMultiTenantBuild() {
+        var result = resolveMultiTenant(ref("mountBareInteger"));
+
+        assertThat(result.rejections()).isEmpty();
+        assertThat(result.hooks().tenantSlot()).isEmpty();
+        assertThat(result.hooks().payloadParams()).extracting(MethodRef.Param::name).containsExactly("userId");
     }
 
     @Test

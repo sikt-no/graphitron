@@ -369,7 +369,10 @@ public class GraphitronSchemaBuilder {
         // as a schema-wide, coordinate-less ValidationError (the same channel the reductions
         // above use) and the carrier stays NotConfigured, so no hook unit is planned for a
         // build that already failed.
-        var sessionHookResolution = ctx.svc.resolveSessionHooks(ctx.ctx().sessionStateConfig());
+        var sessionHookResolution = ctx.svc.resolveSessionHooks(ctx.ctx().sessionStateConfig(),
+            ctx.tenantScopes instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured configuredTenancy
+                ? configuredTenancy.tenantType()
+                : null);
         for (var rejection : sessionHookResolution.rejections()) {
             ctx.addDiagnostic(new ValidationError("<schema>",
                 rejection.prefixedWith("<sessionState>: "), SourceLocation.EMPTY));

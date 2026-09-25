@@ -92,6 +92,28 @@ public final class SessionHooksFixtures {
         return new SessionHooks.Handled(mount, ClassName.get(String.class), Optional.of(unmount));
     }
 
+    /** The mount's tenant slot ({@link ParamSource.SessionTenant}-sourced), typed {@code Optional<tenantType>}. */
+    public static MethodRef.Param.Typed tenantSlot(String name, TypeName tenantType) {
+        TypeName optional = no.sikt.graphitron.javapoet.ParameterizedTypeName.get(
+            ClassName.get(Optional.class), tenantType);
+        return new MethodRef.Param.Typed(name, optional.toString(), optional, new ParamSource.SessionTenant());
+    }
+
+    /**
+     * {@link #recordingConnectionHooks()} with the mount swapped for
+     * {@code RecordingHookFixture.mountForTenant}, which declares the tenant slot for a
+     * {@code String}-tenant build between the seam and the payload.
+     */
+    public static SessionHooks recordingTenantSlotHooks() {
+        String fixture = "no.sikt.graphitron.rewrite.generators.util.RecordingHookFixture";
+        var mount = new MethodRef.StaticOnly(fixture, "mountForTenant", ClassName.get(String.class),
+            List.of(connectionSeam(), tenantSlot("tenant", ClassName.get(String.class)), stringPayload("claims")),
+            List.of());
+        var unmount = new MethodRef.StaticOnly(fixture, "unmount", TypeName.VOID,
+            List.of(connectionSeam(), handleParam(ClassName.get(String.class))), List.of());
+        return new SessionHooks.Handled(mount, ClassName.get(String.class), Optional.of(unmount));
+    }
+
     /** A copy of {@code model} carrying {@code hooks}, with the classifier population recomputed. */
     public static GraphitronSchema withHooks(GraphitronSchema model, SessionHooks hooks) {
         return new GraphitronSchema(model.types(), model.fields(), model.entitiesByType(),

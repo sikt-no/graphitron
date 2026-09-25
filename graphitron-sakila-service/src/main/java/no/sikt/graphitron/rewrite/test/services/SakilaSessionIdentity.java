@@ -44,7 +44,7 @@ public final class SakilaSessionIdentity {
      * deliberately minimal extraction: the fixture payloads are one-level JSON objects with
      * string values, and this facade's point is the reshaping seam, not JSON parsing.
      */
-    private static String subOf(String claims) {
+    static String subOf(String claims) {
         if (claims == null) {
             return null;
         }

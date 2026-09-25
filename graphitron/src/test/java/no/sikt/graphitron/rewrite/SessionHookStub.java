@@ -4,6 +4,7 @@ import org.jooq.Configuration;
 
 import java.io.IOException;
 import java.sql.Connection;
+import java.util.Optional;
 
 /**
  * Hook-shaped methods for {@code SessionHookResolutionTest}: every signature the
@@ -66,7 +67,32 @@ public final class SessionHookStub {
         throw new UnsupportedOperationException();
     }
 
-    // ===== Rejection shapes =====
+    /** The tenant slot beside a payload, for an {@code Integer}-tenant build. */
+    public static String mountTenantSlot(Configuration cfg, Optional<Integer> tenant, String claims) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** A bare {@code Integer} parameter: payload in every build, never taken for the key. */
+    public static String mountBareInteger(Configuration cfg, Integer userId) {
+        throw new UnsupportedOperationException();
+    }
+
+        // ===== Rejection shapes =====
+
+    /** Two tenant slots for an {@code Integer}-tenant build. */
+    public static void mountTwoTenantSlots(Configuration cfg, Optional<Integer> a, Optional<Integer> b) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** An {@code Optional<String>} against an {@code Integer} tenant column. */
+    public static void mountOptionalString(Configuration cfg, Optional<String> tenant) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** An {@code Optional<Long>} against an {@code Integer} tenant column. */
+    public static void mountOptionalLong(Configuration cfg, Optional<Long> tenant) {
+        throw new UnsupportedOperationException();
+    }
 
     /** No seam parameter at all. */
     public static void noSeam(String claims) {
