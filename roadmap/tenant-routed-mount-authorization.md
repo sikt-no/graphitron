@@ -1,7 +1,7 @@
 ---
 id: R975
 title: "Routed tenant acquisition: authorize the key and hand it to the session mount"
-status: Spec
+status: Ready
 bucket: bug
 priority: 1
 theme: runtime-connection
