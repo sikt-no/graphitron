@@ -1075,13 +1075,22 @@ public final class SeededStore {
      */
     public static void seedFieldReference(DSLContext dsl, String graphName, String typeName,
                                           String fieldName, int ordinal) {
+        seedFieldReference(dsl, graphName, typeName, fieldName, ordinal, 2);
+    }
+
+    /**
+     * The same application at a line the case names. A relation ordering a field's applications
+     * against each other reads the position, so a fixture about that ordering states it.
+     */
+    public static void seedFieldReference(DSLContext dsl, String graphName, String typeName,
+                                          String fieldName, int ordinal, int sourceLine) {
         dsl.insertInto(GRAPHITRON_FIELD_REFERENCE_ENTRY)
             .set(GRAPHITRON_FIELD_REFERENCE_ENTRY.GRAPH_NAME, graphName)
             .set(GRAPHITRON_FIELD_REFERENCE_ENTRY.TYPE_NAME, typeName)
             .set(GRAPHITRON_FIELD_REFERENCE_ENTRY.FIELD_NAME, fieldName)
             .set(GRAPHITRON_FIELD_REFERENCE_ENTRY.ORDINAL, ordinal)
             .set(GRAPHITRON_FIELD_REFERENCE_ENTRY.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_FIELD_REFERENCE_ENTRY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_FIELD_REFERENCE_ENTRY.SOURCE_LINE, sourceLine)
             .set(GRAPHITRON_FIELD_REFERENCE_ENTRY.SOURCE_COLUMN, 3)
             .execute();
     }
@@ -1250,12 +1259,19 @@ public final class SeededStore {
     public static void seedFieldCondition(DSLContext dsl, String graphName, String typeName,
                                           String fieldName, String className, String method,
                                           Boolean override) {
+        seedFieldCondition(dsl, graphName, typeName, fieldName, className, method, override, 2);
+    }
+
+    /** The same application at a line the case names, for a relation that reads the position. */
+    public static void seedFieldCondition(DSLContext dsl, String graphName, String typeName,
+                                          String fieldName, String className, String method,
+                                          Boolean override, int sourceLine) {
         dsl.insertInto(GRAPHITRON_FIELD_CONDITION_ENTRY)
             .set(GRAPHITRON_FIELD_CONDITION_ENTRY.GRAPH_NAME, graphName)
             .set(GRAPHITRON_FIELD_CONDITION_ENTRY.TYPE_NAME, typeName)
             .set(GRAPHITRON_FIELD_CONDITION_ENTRY.FIELD_NAME, fieldName)
             .set(GRAPHITRON_FIELD_CONDITION_ENTRY.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_FIELD_CONDITION_ENTRY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_FIELD_CONDITION_ENTRY.SOURCE_LINE, sourceLine)
             .set(GRAPHITRON_FIELD_CONDITION_ENTRY.SOURCE_COLUMN, 3)
             .set(GRAPHITRON_FIELD_CONDITION_ENTRY.CLASS_NAME, className)
             .set(GRAPHITRON_FIELD_CONDITION_ENTRY.METHOD, method)
@@ -1277,13 +1293,21 @@ public final class SeededStore {
     public static void seedArgumentCondition(DSLContext dsl, String graphName, String typeName,
                                              String fieldName, String argumentName, String className,
                                              String method, Boolean override) {
+        seedArgumentCondition(dsl, graphName, typeName, fieldName, argumentName, className, method,
+            override, 2);
+    }
+
+    /** The same application at a line the case names, for a relation that reads the position. */
+    public static void seedArgumentCondition(DSLContext dsl, String graphName, String typeName,
+                                             String fieldName, String argumentName, String className,
+                                             String method, Boolean override, int sourceLine) {
         dsl.insertInto(GRAPHITRON_ARGUMENT_CONDITION_ENTRY)
             .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.GRAPH_NAME, graphName)
             .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.TYPE_NAME, typeName)
             .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.FIELD_NAME, fieldName)
             .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.ARGUMENT_NAME, argumentName)
             .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.SOURCE_LINE, sourceLine)
             .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.SOURCE_COLUMN, 3)
             .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.CLASS_NAME, className)
             .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.METHOD, method)
@@ -2037,13 +2061,19 @@ public final class SeededStore {
      */
     public static void seedOrderBy(DSLContext dsl, String graphName, String typeName,
                                    String fieldName, String argumentName) {
+        seedOrderBy(dsl, graphName, typeName, fieldName, argumentName, 2);
+    }
+
+    /** The same application at a line the case names, for a relation that reads the position. */
+    public static void seedOrderBy(DSLContext dsl, String graphName, String typeName,
+                                   String fieldName, String argumentName, int sourceLine) {
         dsl.insertInto(GRAPHITRON_ORDER_BY_ENTRY)
             .set(GRAPHITRON_ORDER_BY_ENTRY.GRAPH_NAME, graphName)
             .set(GRAPHITRON_ORDER_BY_ENTRY.TYPE_NAME, typeName)
             .set(GRAPHITRON_ORDER_BY_ENTRY.FIELD_NAME, fieldName)
             .set(GRAPHITRON_ORDER_BY_ENTRY.ARGUMENT_NAME, argumentName)
             .set(GRAPHITRON_ORDER_BY_ENTRY.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_ORDER_BY_ENTRY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_ORDER_BY_ENTRY.SOURCE_LINE, sourceLine)
             .set(GRAPHITRON_ORDER_BY_ENTRY.SOURCE_COLUMN, 3)
             .execute();
     }

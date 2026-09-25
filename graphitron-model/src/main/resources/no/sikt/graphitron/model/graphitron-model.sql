@@ -7061,6 +7061,25 @@ COMMENT ON COLUMN intent_node_metadata_defect.defect IS 'which defect, in a clos
 COMMENT ON COLUMN intent_node_metadata_defect.position IS 'the offending entry''s index in the stated array, on the two per-entry defects; NULL on the eight that are about a whole constant, which is the stated absent bucket rather than a missing value';
 
 
+CREATE TABLE graphitron_defect_type (
+  code      VARCHAR NOT NULL,
+  severity  VARCHAR NOT NULL,
+  fault     VARCHAR NOT NULL,
+  lsp_code  VARCHAR,
+  statement VARCHAR NOT NULL,
+  PRIMARY KEY (code),
+  CHECK (severity IN ('error', 'warning')),
+  CHECK (fault IN ('AUTHOR', 'GENERATOR'))
+);
+COMMENT ON TABLE graphitron_defect_type IS 'One defect a written graphitron directive can carry, declared once: what to call it, how bad it is, whose problem it is, and the sentence that states the rule. For example CONNECTION_RETURN is an error the generator owes an emitter, whose statement is that a @routine write re-reads by the keys it returned rather than by a page.';
+COMMENT ON COLUMN graphitron_defect_type.code IS 'the defect''s name, and the whole key. Declared here rather than captured, so it carries no graph and no instant: the vocabulary is a property of this generator and not of anybody''s schema';
+COMMENT ON COLUMN graphitron_defect_type.severity IS 'whether a build stops on it, stated once per defect rather than once per row. A function of the code and nothing else, which is why it lives beside the code and not on the findings';
+COMMENT ON COLUMN graphitron_defect_type.fault IS 'whose problem it is: AUTHOR where changing the schema removes the defect, GENERATOR where the schema is legitimate and this generator has no emitter for the shape. A function of the code exactly as the severity is, which is why it sits here; a code whose fault depended on the row would be two codes, and splitting it is what tells an author to edit from what tells them to wait';
+COMMENT ON COLUMN graphitron_defect_type.lsp_code IS 'the diagnostic code an editor shows and filters by, null where none is published. The one part of a defect''s name a consumer reads as data rather than as prose, which is what keeps the code column load-bearing rather than a label';
+COMMENT ON COLUMN graphitron_defect_type.statement IS 'the rule, as one author-facing sentence. The message a consumer renders quotes this and the finding''s detail; neither is stored per row';
+
+
+
 CREATE VIEW graphitron_synthesized_federation_key
   (graph_name, type_name, fields_sdl, resolvable) AS
 SELECT n.graph_name, n.type_name, 'id', TRUE
@@ -7682,6 +7701,70 @@ COMMENT ON VIEW graphitron_connection_element_type IS 'Which type a connection t
 COMMENT ON COLUMN graphitron_connection_element_type.graph_name IS 'the owning graph''s partition, carried from the connection type''s own row; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_connection_element_type.type_name IS 'the connection type itself, the wrapper a field returns; with the graph, the grain';
 COMMENT ON COLUMN graphitron_connection_element_type.element_type_name IS 'the type the connection paginates, read off the edge type''s node field''s named type with its wrappers already stripped by graphql_field. A name and not a binding: whether the element is bound to a table is graphitron_resolved_type_binding''s answer and deliberately not asked here';
+
+CREATE VIEW graphitron_entry_defect
+  (graph_name, source_name, source_line, source_column, code, detail) AS
+-- The @routine that heads a chain: the last one written at a mutation-root field.
+WITH head (graph_name, type_name, field_name, source_name, source_line, source_column) AS (
+  SELECT r.graph_name, r.type_name, r.field_name, r.source_name, r.source_line, r.source_column
+    FROM graphitron_routine_entry r
+    JOIN graphql_root_operation ro
+      ON ro.graph_name = r.graph_name AND ro.type_name = r.type_name
+     AND ro.operation = 'MUTATION'
+   WHERE r.source_name IS NOT NULL
+     AND r.ordinal = (SELECT MAX(r2.ordinal) FROM graphitron_routine_entry r2
+                       WHERE r2.graph_name = r.graph_name AND r2.type_name = r.type_name
+                         AND r2.field_name = r.field_name)
+)
+-- More than one write on one field. The row sits at the head, the individual applications
+-- being legal each on their own and the plurality being what has no emitter.
+SELECT h.graph_name, h.source_name, h.source_line, h.source_column,
+       'MULTIPLE_ROUTINE_NODES', NULL
+  FROM head h
+ WHERE 1 < (SELECT COUNT(*) FROM graphitron_routine_entry r2
+             WHERE r2.graph_name = h.graph_name AND r2.type_name = h.type_name
+               AND r2.field_name = h.field_name)
+UNION ALL
+-- A paginated return on a write. Stated for every write and not only for the chain shape:
+-- the wrapper and the write are both seat-independent facts, and this relation ranks nothing,
+-- so a coordinate the seat would have answered about its carrier says this as well.
+SELECT h.graph_name, h.source_name, h.source_line, h.source_column,
+       'CONNECTION_RETURN', NULL
+  FROM head h
+  JOIN graphitron_field cf
+    ON cf.graph_name = h.graph_name AND cf.type_name = h.type_name
+   AND cf.field_name = h.field_name
+  JOIN graphitron_connection_element_type ce
+    ON ce.graph_name = cf.graph_name AND ce.type_name = cf.named_type
+UNION ALL
+-- A read surface written on a write. Three sites state one, and each row sits at its own.
+SELECT fc.graph_name, fc.source_name, fc.source_line, fc.source_column,
+       'READ_SURFACE_ON_WRITE', 'condition'
+  FROM graphitron_field_condition_entry fc
+  JOIN head h
+    ON h.graph_name = fc.graph_name AND h.type_name = fc.type_name AND h.field_name = fc.field_name
+ WHERE fc.source_name IS NOT NULL
+UNION ALL
+SELECT ac.graph_name, ac.source_name, ac.source_line, ac.source_column,
+       'READ_SURFACE_ON_WRITE', 'condition'
+  FROM graphitron_argument_condition_entry ac
+  JOIN head h
+    ON h.graph_name = ac.graph_name AND h.type_name = ac.type_name AND h.field_name = ac.field_name
+ WHERE ac.source_name IS NOT NULL
+UNION ALL
+SELECT ob.graph_name, ob.source_name, ob.source_line, ob.source_column,
+       'READ_SURFACE_ON_WRITE', 'orderBy'
+  FROM graphitron_order_by_entry ob
+  JOIN head h
+    ON h.graph_name = ob.graph_name AND h.type_name = ob.type_name AND h.field_name = ob.field_name
+ WHERE ob.source_name IS NOT NULL;
+COMMENT ON VIEW graphitron_entry_defect IS 'A written graphitron directive the generator will not emit for, at the position it was written and under the rule that stopped it. For example a mutation field carrying @routine and an @orderBy draws one row at the @orderBy''s own line, reading READ_SURFACE_ON_WRITE.';
+COMMENT ON COLUMN graphitron_entry_defect.graph_name IS 'the owning graph''s partition, carried from the entry; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_entry_defect.source_name IS 'the file the offending directive was written in, the first of the three columns naming its position; with them a reference into graphql_ast_entry, which is the supertype that makes a @routine application and a path element the same kind of thing to point at';
+COMMENT ON COLUMN graphitron_entry_defect.source_line IS 'the offending directive''s source line, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_entry_defect.source_column IS 'the offending directive''s source column; with the two columns above, the entry this defect is about. The key is the entry and not the coordinate, because a coordinate is an aggregate over the sites that declare it and two offending applications at one coordinate are two things to fix';
+COMMENT ON COLUMN graphitron_entry_defect.code IS 'which defect, a graphitron_defect_type key. With the entry the whole key: one entry may break two rules and then carries two rows, there being no ranking here and nothing to choose between them';
+COMMENT ON COLUMN graphitron_entry_defect.detail IS 'the specific a rendered message quotes back, null where the code says everything. One column and never a payload: what a consumer needs beyond this is a join from the entry, and the columns that used to differ per defect were all message material';
 
 CREATE VIEW intent_field_navigated_type
   (graph_name, type_name, field_name, basis, navigated_type_name) AS
@@ -13661,6 +13744,10 @@ INSERT INTO meta_stated_relation VALUES
    'One relation whose rows this file supplies: what one of its rows is, an example of one, and why it is stated rather than gathered.',
    'For example lint_rule is stated, its rows being the vocabulary the schema''s own constraints rest on.',
    'The roster names itself, as meta_relation does, because a roster exempting itself is a roster with one unchecked member. What it exists for is a category the schema had without naming: a relation whose rows are a function of this file, which meta_relation cannot describe because that declaration needs a grain in a corpus and an owning gatherer, and a stated relation reads no corpus and has no producer. Every instance was grandfathered onto the undeclared roster instead, which is a list of what nobody has got to rather than a statement about anything, and which only shrinks; a new stated relation therefore had nowhere legal to go. The gatherer roster could not absorb them either: it keys on a class a gate loads, so declaring one would mean naming a producer that does not exist. Splitting the roster rather than widening meta_relation keeps the two claims apart: a declared relation names who fills it and from what, and a stated one asserts there is no such thing to name.'),
+  ('graphitron_defect_type',
+   'One defect a written graphitron directive can carry, declared once: what to call it, how bad it is, whose problem it is, and the sentence that states the rule.',
+   'For example CONNECTION_RETURN is an error the generator owes an emitter, whose statement is that a @routine write re-reads by the keys it returned rather than by a page.',
+   'Declared rather than captured, so no graph partition and no instant: which defects exist is a property of this generator and not of anybody''s schema, which is lint_rule''s reason beside it. Severity, fault and the editor''s code live here because each is a function of the defect and nothing else, so carrying any of them on a finding would repeat one value per row; intent_mutation_routine_seat made exactly that argument about severity, found no relation to put it in, and stated it in prose per value instead, which is the gap this row closes. Fault is the axis that prose was really carrying: whether an author edits their schema or waits for an emitter. A code whose fault depends on which row it is is two codes, and splitting it is the same argument as the collapse run the other way, payload sameness merging relations and action difference splitting codes. The statement is the rule in one author-facing sentence, and it plus a finding''s detail is what a consumer composes a message from, which is why no finding stores prose.'),
   ('lint_rule',
    'One lint rule the generator declares: its identity, which producer mints its findings, and how severe a finding of it is.',
    'For example field-names-camel-case is an engine rule and a warning.',
@@ -14338,6 +14425,9 @@ INSERT INTO meta_grain VALUES
   ('reachable-input-type',
    'one input type some field argument reaches, in one graph',
    'graph_name, type_name', 'sdl'),
+  ('graphitron-entry-defect',
+   'one defect one written graphitron directive carries, in one graph',
+   'graph_name, source_name, source_line, source_column, code', 'sdl'),
   ('graph-field',
    'one field one type declares, in one graph',
    'graph_name, type_name, field_name', 'sdl'),
@@ -14654,6 +14744,14 @@ INSERT INTO meta_grain VALUES
    'one diagnostic the compiler reported at one position of one file, in one graph''s round',
    'graph_name, file, line_number, column_number, ordinal', 'javac');
 
+INSERT INTO graphitron_defect_type VALUES
+  ('READ_SURFACE_ON_WRITE', 'error', 'GENERATOR', 'GRAPHITRON_READ_SURFACE_ON_WRITE',
+   'A mutation field carrying @routine writes, and neither write shape has a filter or an ordering to resolve a @condition or an @orderBy against, so the generator emits nothing for one written here.'),
+  ('MULTIPLE_ROUTINE_NODES', 'error', 'GENERATOR', 'GRAPHITRON_MULTIPLE_ROUTINE_NODES',
+   'A mutation field carrying more than one @routine writes more than once, and the generator emits one write per field.'),
+  ('CONNECTION_RETURN', 'error', 'GENERATOR', 'GRAPHITRON_CONNECTION_RETURN',
+   'A @routine write re-reads its committed row by the keys the write returned, which is not a page, so the generator emits nothing for a field @asConnection rewrote.');
+
 INSERT INTO meta_relation VALUES
   ('graphql_schema_problem', 'graph-schema-problem', 'graphql-assembly',
    'Reading this graph''s documents and making a schema of them produced this problem: one of the errors graphql-java raised, whichever of the three stages raised it.',
@@ -14800,6 +14898,10 @@ INSERT INTO meta_relation VALUES
    'The class a type says it is backed by through @record, which is deprecated and read only to warn.',
    'For example type Film @record(record: {className: "com.example.FilmRecord"}) gives one row naming that class.',
    'Derived from the entry beside it by the same rank the table binding takes, and joined outwards for a reason that costs nothing to state: the class name is this relation''s only payload column and it is nullable, so an application whose literal named no class lands as the null row rather than as no row, which is what the walk this replaces wrote. The directive is deprecated and its own definition says the backing class is inferred, so the one consumer left compares this against what reflection found and warns where they differ; that is why the relation survives the directive being ignored.'),
+  ('graphitron_entry_defect', 'graphitron-entry-defect', 'graphitron',
+   'A written graphitron directive the generator will not emit for, at the position it was written and under the rule that stopped it.',
+   'For example a mutation field carrying @routine and an @orderBy draws one row at the @orderBy''s own line, reading READ_SURFACE_ON_WRITE.',
+   'The key is the entry, not the coordinate. A coordinate is an aggregate over the sites that declare it, so keying a defect there loses which of two offending applications to fix and reintroduces by the key the ranking this relation exists without. The entry is what the author edits. One relation and not one per defect: eleven sibling relations differed almost only in payload, and every payload column went into a rendered sentence, a prose coordinate or a file position, with nothing computing on them. The family follows the grain rather than being chosen: a defect registers at an entry, this family owns those entries, so it is filed here. A defect at a grain this family does not own belongs with whoever owns it, which is why a generated class publishing malformed constants is not in this population.'),
   ('graphitron_connection_entry', 'graph-field', 'graphitron',
    'The connection an @asConnection application asks the macro to expand a field into, as one row per field however many applications the corpus wrote on it.',
    'For example films: [Film!] @asConnection(defaultFirstValue: 25) gives one row carrying that page size and no name, the type name being derived where the author wrote none.',

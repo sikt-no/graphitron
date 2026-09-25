@@ -440,6 +440,11 @@ class RelationRegistrationGateTest {
         registrations.put("intent_input_occurrence_descent_order", Arm.DERIVED);
         registrations.put("intent_input_occurrence_override", Arm.DERIVED);
         registrations.put("intent_authored_claim_conflict", Arm.DERIVED);
+        // The defect collapse. UNSHADOWED because the model it would be compared against
+        // states no defect population at all: the walk threw, and a thrown error is not a
+        // row anything can be held to. What pins it is EntryDefectTest.
+        registrations.put("graphitron_entry_defect", Arm.UNSHADOWED);
+        registrations.put("graphitron_defect_type", Arm.UNSHADOWED);
         registrations.put("intent_authored_claim_rejection", Arm.DERIVED);
         // The never-unsorted honesty rule and its post-capture mint, on the claim-conflict pair's
         // terms exactly: there is no walk-side answer to agree with, the walk having no rule that
