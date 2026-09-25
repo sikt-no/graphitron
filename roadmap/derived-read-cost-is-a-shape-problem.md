@@ -226,7 +226,16 @@ rather than left in a transcript.
 * **Nothing checks that a declared grain is the right grain.** The key gate compares
   `meta_grain.key_shape` against the actual primary key, which is two authored strings agreeing with
   each other, and it excludes views. A relation whose key and whose declaration state the same wrong
-  grain passes.
+  grain passes. The view exclusion is not hypothetical: `graphitron_field_chain_link_reading`
+  arrived declaring a grain that did not identify a row, naming the constraint by its own name
+  alone where that name is unique per table, and omitting the endpoints entirely, which are all
+  that tells apart the two arms carrying no constraint. It was found by reading and fixed by
+  reading, which is the part that does not scale.
+* **`graphitron_entry_defect` states what `intent_mutation_routine_seat` still answers.** Three of
+  the seat's refusals are arms of the new view and the rest are not, so the seat stands and
+  `RoutineWriteFacts` still reads it. Two producers of one fact with nothing comparing them, which
+  is the shape this item exists to remove; it is a migration in flight rather than a resting
+  place, and the remaining arms are what finish it.
 * **`graphitron_field_navigation` is a stored derivation with no rule view.** Its grain is
   `graphitron_field`'s, unchanged, and it is stored so a reader meets an indexed column. That is a
   real reason, but the rule is stated once in jOOQ with nothing to diff it against, where
