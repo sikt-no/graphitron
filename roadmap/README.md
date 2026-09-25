@@ -16,7 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R976` | @service fields divine a tenant from their arguments and hand it down | Spec | 2026-09-25 | [plan](service-tenant-binding.md) |
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-09-24 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
-| `R975` | Routed tenant acquisition: authorize the key and hand it to the session mount | In Progress | 2026-09-25 | [plan](tenant-routed-mount-authorization.md) |
+| `R975` | Routed tenant acquisition: authorize the key and hand it to the session mount | In Review | 2026-09-25 | [plan](tenant-routed-mount-authorization.md) |
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |
 | `R923` | A grain declares its corpora, so a cross-corpus grain can say so | Spec | 2026-09-05 | [plan](grain-declares-its-corpora.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
@@ -574,7 +574,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### runtime-connection
 
 - `R976` [**@service fields divine a tenant from their arguments and hand it down**](service-tenant-binding.md) — Spec, bug
-- `R975` [**Routed tenant acquisition: authorize the key and hand it to the session mount**](tenant-routed-mount-authorization.md) — In Progress, bug
+- `R975` [**Routed tenant acquisition: authorize the key and hand it to the session mount**](tenant-routed-mount-authorization.md) — In Review, bug
 - `R978` [**Refuse a connection-binding root service that names no tenant under database-per-tenant**](service-undecoded-node-id-tenant.md) — Backlog, bug, blocked by [service-tenant-binding](service-tenant-binding.md)
 - `R664` [**A growth-proof staged builder over the generated ExecutionInput factory**](execution-input-staged-builder.md) — Backlog, dx
 - `R977` [**A self-FK reference writing the tenant column in an UPDATE SET is agreement-checked, not declined**](update-set-self-fk-tenant-agreement.md) — In Review, bug
