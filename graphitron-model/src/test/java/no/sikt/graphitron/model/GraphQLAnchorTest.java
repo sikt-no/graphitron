@@ -36,16 +36,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE_ARG;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE_ARG;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_DIRECTIVE_ARG;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_DIRECTIVE_ARG;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_DIRECTIVE_ARG;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
@@ -123,55 +115,49 @@ class GraphQLAnchorTest {
                 """);
             read(dsl, LocalDateTime.now(), file);
 
-            assertThat(dsl.select(GRAPHQL_TYPE_DIRECTIVE.TYPE_NAME,
-                        GRAPHQL_TYPE_DIRECTIVE.DIRECTIVE_NAME, GRAPHQL_TYPE_DIRECTIVE.ORDINAL)
-                    .from(GRAPHQL_TYPE_DIRECTIVE).fetch())
+            assertThat(dsl.select(GRAPHQL_DIRECTIVE_APPLICATION.COORDINATE,
+                        GRAPHQL_DIRECTIVE_APPLICATION.DIRECTIVE_NAME,
+                        GRAPHQL_DIRECTIVE_APPLICATION.ORDINAL)
+                    .from(GRAPHQL_DIRECTIVE_APPLICATION).fetch())
+                .as("every site in one relation, told apart by the coordinate rather than by "
+                    + "which relation holds the row, and the schema block among them")
                 .extracting(r -> r.value1(), r -> r.value2(), r -> r.value3())
-                .containsExactly(tuple("Film", "mark", 0));
+                .containsExactlyInAnyOrder(
+                    // graphitron's own directive schema is read with every corpus, and the
+                    // @deprecated on this argument is the sixth site: a formal argument of a
+                    // directive definition, which the specification spells and which reached no
+                    // relation while the applications were kept one per site.
+                    tuple("@asConnection(connectionName:)", "deprecated", 0),
+                    tuple("Film", "mark", 0),
+                    tuple("Film.title", "mark", 0),
+                    tuple("FilmFilter.title", "mark", 0),
+                    tuple("Film.title(prefix:)", "mark", 0),
+                    tuple("Rating.G", "mark", 0),
+                    tuple("$schema", "mark", 0));
 
-            assertThat(dsl.select(GRAPHQL_FIELD_DIRECTIVE.TYPE_NAME,
-                        GRAPHQL_FIELD_DIRECTIVE.FIELD_NAME, GRAPHQL_FIELD_DIRECTIVE.DIRECTIVE_NAME)
-                    .from(GRAPHQL_FIELD_DIRECTIVE).fetch())
-                .as("an input object's field is a field here, as it is in graphql_field")
-                .extracting(r -> r.value1(), r -> r.value2(), r -> r.value3())
-                .containsExactlyInAnyOrder(tuple("Film", "title", "mark"),
-                    tuple("FilmFilter", "title", "mark"));
-
-            assertThat(dsl.select(GRAPHQL_ARGUMENT_DIRECTIVE.TYPE_NAME,
-                        GRAPHQL_ARGUMENT_DIRECTIVE.FIELD_NAME,
-                        GRAPHQL_ARGUMENT_DIRECTIVE.ARGUMENT_NAME).from(GRAPHQL_ARGUMENT_DIRECTIVE)
-                    .fetch())
-                .extracting(r -> r.value1(), r -> r.value2(), r -> r.value3())
-                .containsExactly(tuple("Film", "title", "prefix"));
-
-            assertThat(dsl.select(GRAPHQL_ENUM_VALUE_DIRECTIVE.TYPE_NAME,
-                        GRAPHQL_ENUM_VALUE_DIRECTIVE.VALUE_NAME).from(GRAPHQL_ENUM_VALUE_DIRECTIVE)
-                    .fetch())
-                .extracting(r -> r.value1(), r -> r.value2())
-                .containsExactly(tuple("Rating", "G"));
-
-            assertThat(dsl.select(GRAPHQL_SCHEMA_DIRECTIVE.DIRECTIVE_NAME,
-                        GRAPHQL_SCHEMA_DIRECTIVE.ORDINAL).from(GRAPHQL_SCHEMA_DIRECTIVE).fetch())
-                .as("the graph is the coordinate, a schema block having no name")
-                .extracting(r -> r.value1(), r -> r.value2())
-                .containsExactly(tuple("mark", 0));
-
-            assertThat(List.of(
-                    dsl.select(GRAPHQL_TYPE_DIRECTIVE_ARG.VALUE_SDL)
-                        .from(GRAPHQL_TYPE_DIRECTIVE_ARG).fetchOne(0, String.class),
-                    dsl.select(GRAPHQL_ARGUMENT_DIRECTIVE_ARG.VALUE_SDL)
-                        .from(GRAPHQL_ARGUMENT_DIRECTIVE_ARG).fetchOne(0, String.class),
-                    dsl.select(GRAPHQL_ENUM_VALUE_DIRECTIVE_ARG.VALUE_SDL)
-                        .from(GRAPHQL_ENUM_VALUE_DIRECTIVE_ARG).fetchOne(0, String.class),
-                    dsl.select(GRAPHQL_SCHEMA_DIRECTIVE_ARG.VALUE_SDL)
-                        .from(GRAPHQL_SCHEMA_DIRECTIVE_ARG).fetchOne(0, String.class)))
+            assertThat(dsl.select(GRAPHQL_DIRECTIVE_APPLICATION_ARG.COORDINATE,
+                        GRAPHQL_DIRECTIVE_APPLICATION_ARG.VALUE_SDL)
+                    .from(GRAPHQL_DIRECTIVE_APPLICATION_ARG)
+                    .where(GRAPHQL_DIRECTIVE_APPLICATION_ARG.DIRECTIVE_NAME.eq("mark")).fetch())
                 .as("each application's argument lands beside it, keyed by the ordinal the "
                     + "application took rather than by one counted again")
-                .containsExactly("\"t\"", "\"a\"", "\"e\"", "\"s\"");
-            assertThat(dsl.select(GRAPHQL_FIELD_DIRECTIVE_ARG.VALUE_SDL)
-                    .from(GRAPHQL_FIELD_DIRECTIVE_ARG).fetch(0, String.class))
-                .as("and the field arm carries both of its coordinates' arguments")
-                .containsExactlyInAnyOrder("\"f\"", "\"i\"");
+                .extracting(r -> r.value1(), r -> r.value2())
+                .containsExactlyInAnyOrder(
+                    tuple("Film", "\"t\""),
+                    tuple("Film.title", "\"f\""),
+                    tuple("FilmFilter.title", "\"i\""),
+                    tuple("Film.title(prefix:)", "\"a\""),
+                    tuple("Rating.G", "\"e\""),
+                    tuple("$schema", "\"s\""));
+
+            assertThat(dsl.select(GRAPHQL_DIRECTIVE_APPLICATION_ARG.DIRECTIVE_ARGUMENT_NAME)
+                    .from(GRAPHQL_DIRECTIVE_APPLICATION_ARG)
+                    .where(GRAPHQL_DIRECTIVE_APPLICATION_ARG.COORDINATE
+                        .eq("@asConnection(connectionName:)"))
+                    .fetch(0, String.class))
+                .as("and the sixth site carries its argument like the rest; the value is a long "
+                    + "deprecation reason this case has no business restating")
+                .containsExactly("reason");
         });
     }
 
@@ -191,7 +177,9 @@ class GraphQLAnchorTest {
                 type Film @mark(note: "first") { title: String }
                 """);
             read(dsl, LocalDateTime.now(), file);
-            assertThat(dsl.fetchCount(GRAPHQL_TYPE_DIRECTIVE_ARG)).as("written").isEqualTo(1);
+            assertThat(dsl.fetchCount(GRAPHQL_DIRECTIVE_APPLICATION_ARG,
+                    GRAPHQL_DIRECTIVE_APPLICATION_ARG.COORDINATE.eq("Film")))
+                .as("written").isEqualTo(1);
 
             write(directory, "schema.graphqls", """
                 directive @mark(note: String) on OBJECT
@@ -200,12 +188,16 @@ class GraphQLAnchorTest {
                 """);
             read(dsl, LocalDateTime.now(), file);
 
-            assertThat(dsl.select(GRAPHQL_TYPE_DIRECTIVE.DIRECTIVE_NAME)
-                    .from(GRAPHQL_TYPE_DIRECTIVE).fetch(0, String.class))
+            assertThat(dsl.select(GRAPHQL_DIRECTIVE_APPLICATION.DIRECTIVE_NAME)
+                    .from(GRAPHQL_DIRECTIVE_APPLICATION)
+                    .where(GRAPHQL_DIRECTIVE_APPLICATION.COORDINATE.eq("Film"))
+                    .fetch(0, String.class))
                 .as("one application at that position, the one the author now writes")
                 .containsExactly("other");
-            assertThat(dsl.select(GRAPHQL_TYPE_DIRECTIVE_ARG.VALUE_SDL)
-                    .from(GRAPHQL_TYPE_DIRECTIVE_ARG).fetch(0, String.class))
+            assertThat(dsl.select(GRAPHQL_DIRECTIVE_APPLICATION_ARG.VALUE_SDL)
+                    .from(GRAPHQL_DIRECTIVE_APPLICATION_ARG)
+                    .where(GRAPHQL_DIRECTIVE_APPLICATION_ARG.COORDINATE.eq("Film"))
+                    .fetch(0, String.class))
                 .as("and one argument, belonging to it")
                 .containsExactly("\"second\"");
         });
@@ -229,9 +221,11 @@ class GraphQLAnchorTest {
                 "extend type Film @mark(note: \"second\")");
             read(dsl, LocalDateTime.now(), base, extension);
 
-            assertThat(dsl.select(GRAPHQL_TYPE_DIRECTIVE.ORDINAL, GRAPHQL_TYPE_DIRECTIVE.SOURCE_NAME)
-                    .from(GRAPHQL_TYPE_DIRECTIVE)
-                    .orderBy(GRAPHQL_TYPE_DIRECTIVE.ORDINAL).fetch())
+            assertThat(dsl.select(GRAPHQL_DIRECTIVE_APPLICATION.ORDINAL,
+                        GRAPHQL_DIRECTIVE_APPLICATION.SOURCE_NAME)
+                    .from(GRAPHQL_DIRECTIVE_APPLICATION)
+                    .where(GRAPHQL_DIRECTIVE_APPLICATION.COORDINATE.eq("Film"))
+                    .orderBy(GRAPHQL_DIRECTIVE_APPLICATION.ORDINAL).fetch())
                 .as("zero on the base declaration, one on the extension")
                 .extracting(r -> r.value1(), r -> r.value2().endsWith("extension.graphqls"))
                 .containsExactly(tuple(0, false), tuple(1, true));

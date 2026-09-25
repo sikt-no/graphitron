@@ -22,7 +22,8 @@ import java.util.Locale;
 import java.util.Map;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_FIELD_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_CLAIM;
@@ -232,15 +233,17 @@ class ColumnMatchShadowTest {
     private static Map<String, List<MaskedClaim>> maskedClaimsByGraph(DSLContext dsl) {
         var i = INTENT_COLUMN_MATCH_CLAIM;
         var a = INTENT_AUTHORED_FIELD_CLAIM;
-        var d = GRAPHQL_FIELD_DIRECTIVE;
+        var d = GRAPHQL_DIRECTIVE_APPLICATION;
+        var fe = GRAPHQL_FIELD_ELEMENT;
         return dsl.select(i.GRAPH_NAME, i.TYPE_NAME, i.FIELD_NAME, i.TABLE_NAME, i.COLUMN_NAME)
             .from(i)
             .whereNotExists(selectOne().from(a)
                 .where(a.GRAPH_NAME.eq(i.GRAPH_NAME)).and(a.TYPE_NAME.eq(i.TYPE_NAME))
                 .and(a.FIELD_NAME.eq(i.FIELD_NAME)))
             .andNotExists(selectOne().from(d)
-                .where(d.GRAPH_NAME.eq(i.GRAPH_NAME)).and(d.TYPE_NAME.eq(i.TYPE_NAME))
-                .and(d.FIELD_NAME.eq(i.FIELD_NAME))
+                .join(fe).on(fe.GRAPH_NAME.eq(d.GRAPH_NAME), fe.COORDINATE.eq(d.COORDINATE))
+                .where(d.GRAPH_NAME.eq(i.GRAPH_NAME)).and(fe.TYPE_NAME.eq(i.TYPE_NAME))
+                .and(fe.FIELD_NAME.eq(i.FIELD_NAME))
                 .and(d.DIRECTIVE_NAME.in("reference", "pivot", "sourceRow")))
             .fetchGroups(i.GRAPH_NAME, r -> new MaskedClaim(r.get(i.TYPE_NAME),
                 r.get(i.FIELD_NAME), r.get(i.TABLE_NAME), r.get(i.COLUMN_NAME)));

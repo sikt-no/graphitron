@@ -7,7 +7,7 @@ priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-09-24
+last-updated: 2026-09-25
 ---
 
 # Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject
@@ -39,7 +39,7 @@ returning identical rows.
 
 ## The plan
 
-Nine slices. Six have landed; what they moved is in `roadmap/changelog.md` and in the September 2026
+Ten slices. Seven have landed; what they moved is in `roadmap/changelog.md` and in the September 2026
 chapter of `docs/history/road-to-the-relational-core.adoc`.
 
 1. The entry migration. Landed 2026-09-07.
@@ -70,59 +70,55 @@ relations carrying no primary key. Six stored `intent_` tables remain and every 
 so there is nothing left to key and no vacuous grain check to fix. Slice 8 took the rest with it,
 which is what this slice being deliberately last was betting on.
 
-**10. The directive applications collapse onto the coordinate.** Ready to start, designed and not
-begun. Ten relations become two, and the two key into a supertype that is a table.
+**10. The directive applications collapse onto the coordinate. Landed.** Ten relations became two,
+and the two key into `graphql_element`, which is a table.
 
-The five `graphql_*_directive` relations state one fact, a directive applied at a site, and key it
-five different ways because each decomposes its own site: `(graph_name, directive_name, ordinal)` at
-the schema, seven columns at a field argument. The five `graphql_*_directive_arg` relations repeat
-the split one level down. They do not key differently because the fact differs. They key differently
-because each carries its site's decomposed key rather than the site's coordinate.
+The five `graphql_*_directive` relations stated one fact, a directive applied at a site, and keyed it
+five different ways because each decomposed its own site: `(graph_name, directive_name, ordinal)` at
+the schema, seven columns at a field argument. The five `graphql_*_directive_arg` relations repeated
+the split one level down. They did not key differently because the fact differed. They keyed
+differently because each carried its site's decomposed key rather than the site's coordinate.
+`graphql_directive_application` carries the coordinate and keys into `graphql_element`;
+`graphql_directive_application_arg` takes the same key plus `directive_argument_name`.
 
-`graphql_element` already collapses those five shapes into one: it is keyed `(graph_name,
-coordinate)`, carries an `element_kind`, and the four site relations key into it. So the applications
-can key on the coordinate too:
+Two rulings it rested on, both the architect's. A supertype is a table carrying a primary key its
+subtypes reference, because a foreign key cannot name a view. And the schema block gets the
+coordinate `$schema`: the specification has no such coordinate, but we own ours, and `$` is illegal
+in a GraphQL name so it can never collide with a type an author writes. That is what let the schema
+arm stop being the exception.
 
-```sql
-CREATE TABLE graphql_directive_application (
-  graph_name     VARCHAR NOT NULL,
-  coordinate     VARCHAR NOT NULL,
-  directive_name VARCHAR NOT NULL,
-  ordinal        INT     NOT NULL,
-  source_name    VARCHAR, source_line INT, source_column INT,
-  touched_at     TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, coordinate, directive_name, ordinal),
-  FOREIGN KEY (graph_name, coordinate)
-    REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE
-);
-```
+Four things the work found that the design did not have.
 
-and `graphql_directive_application_arg` takes the same key plus `directive_argument_name`, carries
-`value_sdl`, and keys into the application above.
+The coordinate needed no per-site join at all. `graphql_ast_directive_application_entry` was already
+the supertype over all five application entry kinds and `graphql_ast_element_entry` already mapped a
+written position to its coordinate, so the five arms were one join. What the five arms did not share
+was the *ordering*: a repeat is numbered in the merge order of the type declaration it sits inside,
+one to three parent hops up depending on the site, and the schema block sits inside none. That is
+`graphql_ast_element_declaration`, a third relation and a recursive walk up the parent chain the
+entry supertype already carries. It is stated once rather than climbed at each consumer, and the
+schema block is a stop alongside the type declaration so the fallback to file age is the same ORDER
+BY rather than an arm of its own.
 
-Two rulings this rests on, both the architect's.
+`graphql_type_directive` was not only the same fact keyed differently. It carried
+`declaration_line`, `declaration_column` and a second foreign key into `graphql_type_declaration`.
+Nothing read those columns; only the seeding harness wrote them. They went, and the cascade they
+provided is covered by mark and sweep, a directive on a removed `extend type` not being rewritten
+and so being swept.
 
-A supertype is a table carrying a primary key its subtypes reference. A view cannot be one, because a
-foreign key cannot name a view, so a union standing in for a supertype buys the vocabulary and none
-of the integrity. That is why `graphql_directive_site` was deleted rather than kept as the shape, and
-why `graphql_element` is the example the fact model now cites.
+The collapse gained a site. A formal argument of a directive definition is a coordinate the
+specification spells and `graphql_element` already anchored, but no relation was shaped to hold an
+application on one, so those reached nothing: graphitron's own `@deprecated` on
+`@asConnection(connectionName:)` was captured nowhere. The old javadoc said minting a spelling for
+it would put a coordinate in the store that the specification does not have, which was simply wrong.
+Both producers now write it.
 
-The schema block gets a coordinate, `$schema`. The spec has no such coordinate, but we own ours, and
-`$` is illegal in a GraphQL name so it can never collide with a type an author writes. That is what
-lets the schema arm stop being the exception: `graphql_element` gains a `SCHEMA` kind, the anchor
-writes the row, and all five sites collapse into one relation instead of four plus a remainder.
+`graphitron_field_chain_application` was the one relation keying into the ten by foreign key. It
+carries the coordinate now beside the type and field that are its own grain, and the cascade on that
+reference is still its sweep.
 
-What it touches, counted rather than estimated. Four views join one of the ten each:
-`intent_authored_field_claim`, `intent_authored_type_claim`, `graphitron_carrier_data_field_rule`,
-`graphitron_input_field_filter_role_rule`. Three main sources: `GraphQLAstCapture`, where five writer
-methods and five argument writers become one of each and the `$schema` row and its sweep are added;
-`FieldChainApplications`; and `SdlFactCapture`'s claims. `FactCaptureAgreementTest`'s cross-site
-count, which is a five-arm union today, becomes a plain select. The family headline already points at
-`graphql_field_directive` and will need repointing again.
-
-The two survivors are declared as part of the work, not after it. Their grain descriptions name the
-columns that identify a row, which is what `meta_grain.instance_text` is for and what the ten drafted
-declarations got wrong.
+What it touched, as it turned out: four views, the family headline, `FieldChainApplications`,
+`SdlFactCapture`'s claims, and eight tests. Ten rows left the undeclared roster and three
+declarations arrived, which is the discipline's own trade.
 
 **The rule that keeps the default from coming back is that an owner is computed, not chosen.** A
 relation's owner is the latest, in gatherer dependency order, of the owners of the relations it

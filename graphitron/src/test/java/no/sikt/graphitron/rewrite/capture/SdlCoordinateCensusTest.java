@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.capture;
 
+import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import graphql.schema.GraphQLEnumType;
 import graphql.schema.GraphQLFieldsContainer;
 import graphql.schema.GraphQLInputObjectType;
@@ -22,6 +23,7 @@ import java.util.TreeSet;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE;
@@ -30,7 +32,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 import static no.sikt.graphitron.model.test.CapturedStore.withCapturedStore;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -222,12 +223,14 @@ class SdlCoordinateCensusTest {
             // the emitted anchoringTest.repeatedApplicationsNumberAcrossSites already pins this family by
             // value; what it cannot pin is the out-of-order case, its own fixture writing the base
             // above the extension. This arm is that case and nothing more.
-            assertThat(dsl.select(GRAPHQL_TYPE_DIRECTIVE_ARG.ORDINAL, GRAPHQL_TYPE_DIRECTIVE_ARG.VALUE_SDL)
-                .from(GRAPHQL_TYPE_DIRECTIVE_ARG)
-                .where(GRAPHQL_TYPE_DIRECTIVE_ARG.GRAPH_NAME.eq(CapturedStore.GRAPH))
-                .and(GRAPHQL_TYPE_DIRECTIVE_ARG.TYPE_NAME.eq("Film"))
-                .and(GRAPHQL_TYPE_DIRECTIVE_ARG.DIRECTIVE_NAME.eq("tag"))
-                .orderBy(GRAPHQL_TYPE_DIRECTIVE_ARG.ORDINAL)
+            assertThat(dsl.select(GRAPHQL_DIRECTIVE_APPLICATION_ARG.ORDINAL,
+                    GRAPHQL_DIRECTIVE_APPLICATION_ARG.VALUE_SDL)
+                .from(GRAPHQL_DIRECTIVE_APPLICATION_ARG)
+                .where(GRAPHQL_DIRECTIVE_APPLICATION_ARG.GRAPH_NAME.eq(CapturedStore.GRAPH))
+                .and(GRAPHQL_DIRECTIVE_APPLICATION_ARG.COORDINATE
+                    .eq(SchemaCoordinateSyntax.ofType("Film")))
+                .and(GRAPHQL_DIRECTIVE_APPLICATION_ARG.DIRECTIVE_NAME.eq("tag"))
+                .orderBy(GRAPHQL_DIRECTIVE_APPLICATION_ARG.ORDINAL)
                 .fetch(r -> r.value1() + "=" + r.value2()))
                 .as("a repeatable type directive numbers across the sites, the base's application "
                     + "first though an extension carrying one is written above it")

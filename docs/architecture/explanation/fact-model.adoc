@@ -88,7 +88,7 @@ A verdict is a conclusion, and the recompute test was stated over declarations, 
 
 One of those results is still an inversion rather than a description, and naming it is not the same as acting on it: the macro case stores a derivation where the captured fact belongs. Saying which assignment is right is what this page owes; moving the rows is a schema change. The `lint_` inversion was the other, and it is worth recording that the rule found it before anybody was looking for it: the family derived what it stored, the rule said so, and the family is now a view.
 
-That schema change has its first instance, so the sentence above is no longer only a promise. Federation's key synthesis used to run inside the capture walk and land a synthesized `@key` in `graphql_type_directive`, its decode in `graphitron_federation_key_entry`, and a provenance row in a relation whose only purpose was to say which of those rows a macro put there. The rule is now `graphitron_synthesized_federation_key`, a derivation whose own presence is its provenance, the provenance relation is gone, and stratum one at that coordinate is pure transcription of the SDL. What the instance demonstrates is the cost profile rather than the difficulty: the readers moved, the anchors moved, and no consumer of generated code noticed, the emitted schema's synthesized `@key` having always come from the pipeline's registry rewrite rather than from the store.
+That schema change has its first instance, so the sentence above is no longer only a promise. Federation's key synthesis used to run inside the capture walk and land a synthesized `@key` in the type site's application relation, its decode in `graphitron_federation_key_entry`, and a provenance row in a relation whose only purpose was to say which of those rows a macro put there. The rule is now `graphitron_synthesized_federation_key`, a derivation whose own presence is its provenance, the provenance relation is gone, and stratum one at that coordinate is pure transcription of the SDL. What the instance demonstrates is the cost profile rather than the difficulty: the readers moved, the anchors moved, and no consumer of generated code noticed, the emitted schema's synthesized `@key` having always come from the pipeline's registry rewrite rather than from the store.
 
 The corollary worth stating because it looks like a counter-argument: the foreign keys from `graphitron_` into `graphql_` are a derivation's edges to its inputs. They are correct and permanent, and they argue neither for nor against separating the two families. Stated without a count, since an unguarded census rots silently; `meta_relation_family` and the roster gates are where the enumerable answer lives.
 
@@ -458,22 +458,24 @@ The four anchors and what hangs off each:
 
 | type
 | `graphql_type_element`
-| `graphql_type` (kind and description), `graphql_type_declaration` (every declaration site), `graphql_poly_member`, `graphql_type_directive`, the type-keyed `graphitron_` decodes, `intent_type_domain`, `intent_type_backing_class`
+| `graphql_type` (kind and description), `graphql_type_declaration` (every declaration site), `graphql_poly_member`, the type-keyed `graphitron_` decodes, `intent_type_domain`, `intent_type_backing_class`
 
 | field
 | `graphql_field_element`
-| `graphql_field` (type expression, description, default, contributing site), `graphql_field_directive`, the field-keyed `graphitron_` decodes, `intent_input_occurrence_path_step`
+| `graphql_field` (type expression, description, default, contributing site), the field-keyed `graphitron_` decodes, `intent_input_occurrence_path_step`
 
 | argument
 | `graphql_argument_element`
-| `graphql_argument`, `graphql_argument_directive`, the argument-keyed `graphitron_` decodes, `intent_input_occurrence_path`
+| `graphql_argument`, the argument-keyed `graphitron_` decodes, `intent_input_occurrence_path`
 
 | enum value
 | `graphql_enum_value_element`
-| `graphql_enum_value`, `graphql_enum_value_directive`, `graphitron_ast_enum_value_binding_entry`
+| `graphql_enum_value`, `graphitron_ast_enum_value_binding_entry`
 |===
 
 The directive-definition family has no anchor of its own and needs none: a directive is defined once, nothing merges into a definition, and only its own two children reference it.
+
+What an author applied is not in the table above, and that is the point of it. `graphql_directive_application` keys on the coordinate rather than on any of the four anchors, so one relation answers at every site including the schema block, which is not an element of the specification's grammar and carries the coordinate `$schema` for this purpose. It was five relations, one per site, and they differed only in which decomposed key they copied down; the coordinate is what all five had and none of them stored. Its arguments hang off it in `graphql_directive_application_arg`, which was five relations for the same reason and is now one.
 
 *Enforced by:* `SdlCoordinateCensusTest` pins capture's merge against graphql-java's own composition at all four grains, and every merge-ordered ordinal family by value rather than by density, on a fixture whose base definitions and extensions are deliberately out of order. The ordinal families are merge-ordered because capture numbers a type's fields, arguments, enum values, union members and repeated directive applications with counters it holds per type and carries across the declaration sites, so a family checked only for density passes with the merge order inverted. `FactCaptureAgreementTest` pins each anchor against its attribute relation in both directions, the direction no foreign key can see.
 

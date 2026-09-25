@@ -90,16 +90,15 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_FAN_OUT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT;
 import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_IMPLEMENTS_INTERFACE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_UNION_MEMBER;
 import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH;
@@ -2132,17 +2131,10 @@ public final class SeededStore {
     public static void seedFieldDirective(DSLContext dsl, String graphName, String typeName,
                                           String fieldName, String directiveName, int ordinal,
                                           int sourceLine) {
-        dsl.insertInto(GRAPHQL_FIELD_DIRECTIVE)
-            .set(GRAPHQL_FIELD_DIRECTIVE.GRAPH_NAME, graphName)
-            .set(GRAPHQL_FIELD_DIRECTIVE.TYPE_NAME, typeName)
-            .set(GRAPHQL_FIELD_DIRECTIVE.FIELD_NAME, fieldName)
-            .set(GRAPHQL_FIELD_DIRECTIVE.DIRECTIVE_NAME, directiveName)
-            .set(GRAPHQL_FIELD_DIRECTIVE.ORDINAL, ordinal)
-            .set(GRAPHQL_FIELD_DIRECTIVE.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHQL_FIELD_DIRECTIVE.SOURCE_LINE, sourceLine)
-            .set(GRAPHQL_FIELD_DIRECTIVE.SOURCE_COLUMN, 3)
-            .set(GRAPHQL_FIELD_DIRECTIVE.TOUCHED_AT, SEEDED_READING)
-            .execute();
+        seedDirectiveApplication(dsl, graphName,
+            anchorCoordinate(dsl, graphName, SchemaCoordinateSyntax.ofField(typeName, fieldName),
+                "FIELD"),
+            directiveName, ordinal, sourceLine);
     }
 
     /**
@@ -2163,17 +2155,29 @@ public final class SeededStore {
     public static void seedTypeDirective(DSLContext dsl, String graphName, String typeName,
                                          String directiveName, int ordinal, int sourceLine) {
         seedDeclaredType(dsl, graphName, typeName, "OBJECT");
-        dsl.insertInto(GRAPHQL_TYPE_DIRECTIVE)
-            .set(GRAPHQL_TYPE_DIRECTIVE.GRAPH_NAME, graphName)
-            .set(GRAPHQL_TYPE_DIRECTIVE.TYPE_NAME, typeName)
-            .set(GRAPHQL_TYPE_DIRECTIVE.DIRECTIVE_NAME, directiveName)
-            .set(GRAPHQL_TYPE_DIRECTIVE.ORDINAL, ordinal)
-            .set(GRAPHQL_TYPE_DIRECTIVE.DECLARATION_LINE, SEED_LINE)
-            .set(GRAPHQL_TYPE_DIRECTIVE.DECLARATION_COLUMN, SEED_COLUMN)
-            .set(GRAPHQL_TYPE_DIRECTIVE.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHQL_TYPE_DIRECTIVE.SOURCE_LINE, sourceLine)
-            .set(GRAPHQL_TYPE_DIRECTIVE.SOURCE_COLUMN, 3)
-            .set(GRAPHQL_TYPE_DIRECTIVE.TOUCHED_AT, SEEDED_READING)
+        seedDirectiveApplication(dsl, graphName,
+            anchorCoordinate(dsl, graphName, SchemaCoordinateSyntax.ofType(typeName),
+                "NAMED_TYPE"),
+            directiveName, ordinal, sourceLine);
+    }
+
+    /**
+     * One application at whatever coordinate the caller resolved, which is all the relation asks
+     * for now: the seeders above differ in how they spell a coordinate and in nothing else, where
+     * before they differed in which relation they wrote to.
+     */
+    private static void seedDirectiveApplication(DSLContext dsl, String graphName,
+                                                 String coordinate, String directiveName,
+                                                 int ordinal, int sourceLine) {
+        dsl.insertInto(GRAPHQL_DIRECTIVE_APPLICATION)
+            .set(GRAPHQL_DIRECTIVE_APPLICATION.GRAPH_NAME, graphName)
+            .set(GRAPHQL_DIRECTIVE_APPLICATION.COORDINATE, coordinate)
+            .set(GRAPHQL_DIRECTIVE_APPLICATION.DIRECTIVE_NAME, directiveName)
+            .set(GRAPHQL_DIRECTIVE_APPLICATION.ORDINAL, ordinal)
+            .set(GRAPHQL_DIRECTIVE_APPLICATION.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHQL_DIRECTIVE_APPLICATION.SOURCE_LINE, sourceLine)
+            .set(GRAPHQL_DIRECTIVE_APPLICATION.SOURCE_COLUMN, 3)
+            .set(GRAPHQL_DIRECTIVE_APPLICATION.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 

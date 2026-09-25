@@ -8,8 +8,10 @@ import static org.jooq.impl.DSL.val;
 /**
  * The GraphQL specification's schema-coordinate grammar, as the one place that spells it.
  *
- * <p>The specification admits five forms and this states each once:
+ * <p>The specification admits five forms and this states each once, with one of our own beside
+ * them for the schema block, which the grammar gives none:
  * <ul>
+ *   <li>{@code $schema} for the schema block, which is ours and not the specification's</li>
  *   <li>{@code Name} for a named type</li>
  *   <li>{@code Name.Name} for a field of one, and equally for an enum value of one</li>
  *   <li>{@code Name.Name(Name:)} for an argument of a field</li>
@@ -40,6 +42,19 @@ import static org.jooq.impl.DSL.val;
 public final class SchemaCoordinateSyntax {
 
     private SchemaCoordinateSyntax() {}
+
+    /**
+     * {@code $schema}, which is ours rather than the specification's.
+     *
+     * <p>The grammar has no coordinate for the schema block, and a relation keyed at a coordinate
+     * needs one or the block is the single site it cannot name: that absence is what kept directive
+     * applications in a relation per site. A dollar sign is illegal in a GraphQL name, so this can
+     * never collide with a type an author declares. It is stated here with the five the
+     * specification does give because a caller should not have to know which of the six is ours.
+     */
+    public static String ofSchema() {
+        return "$schema";
+    }
 
     /** {@code Type}. */
     public static String ofType(String typeName) {

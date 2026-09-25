@@ -20,12 +20,9 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
 
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SUPERGRAPH;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
@@ -467,21 +464,17 @@ class FactSchemaGateTest {
     @DisplayName("application ordinals are dense from zero within each coordinate")
     void applicationOrdinalsAreDense(@TempDir Path tmp) {
         try (var store = CapturedStore.ownStore(tmp, FIXTURE)) {
+            // One check where this was one per site, and it now covers every site rather than the
+            // two that had a relation worth spelling twice: the partition the ordinal is dense
+            // within is the coordinate, which is what the relation is keyed by.
             assertThat(store.dsl()
-                .select(GRAPHQL_TYPE_DIRECTIVE.TYPE_NAME, GRAPHQL_TYPE_DIRECTIVE.DIRECTIVE_NAME)
-                .from(GRAPHQL_TYPE_DIRECTIVE)
-                .groupBy(GRAPHQL_TYPE_DIRECTIVE.TYPE_NAME, GRAPHQL_TYPE_DIRECTIVE.DIRECTIVE_NAME)
-                .having(max(GRAPHQL_TYPE_DIRECTIVE.ORDINAL).ne(count().minus(1)))
-                .fetch()).as("type-level application ordinals").isEmpty();
-
-            assertThat(store.dsl()
-                .select(GRAPHQL_FIELD_DIRECTIVE.TYPE_NAME, GRAPHQL_FIELD_DIRECTIVE.FIELD_NAME,
-                    GRAPHQL_FIELD_DIRECTIVE.DIRECTIVE_NAME)
-                .from(GRAPHQL_FIELD_DIRECTIVE)
-                .groupBy(GRAPHQL_FIELD_DIRECTIVE.TYPE_NAME, GRAPHQL_FIELD_DIRECTIVE.FIELD_NAME,
-                    GRAPHQL_FIELD_DIRECTIVE.DIRECTIVE_NAME)
-                .having(max(GRAPHQL_FIELD_DIRECTIVE.ORDINAL).ne(count().minus(1)))
-                .fetch()).as("field-level application ordinals").isEmpty();
+                .select(GRAPHQL_DIRECTIVE_APPLICATION.COORDINATE,
+                    GRAPHQL_DIRECTIVE_APPLICATION.DIRECTIVE_NAME)
+                .from(GRAPHQL_DIRECTIVE_APPLICATION)
+                .groupBy(GRAPHQL_DIRECTIVE_APPLICATION.COORDINATE,
+                    GRAPHQL_DIRECTIVE_APPLICATION.DIRECTIVE_NAME)
+                .having(max(GRAPHQL_DIRECTIVE_APPLICATION.ORDINAL).ne(count().minus(1)))
+                .fetch()).as("application ordinals, at every coordinate that carries one").isEmpty();
         }
     }
 
@@ -529,16 +522,8 @@ class FactSchemaGateTest {
     void everyApplicationResolvesToItsDefinition(@TempDir Path tmp) {
         try (var store = CapturedStore.ownStore(tmp, FIXTURE)) {
             var defined = store.dsl().select(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME).from(GRAPHQL_DIRECTIVE);
-            assertThat(store.dsl().fetchCount(GRAPHQL_SCHEMA_DIRECTIVE,
-                GRAPHQL_SCHEMA_DIRECTIVE.DIRECTIVE_NAME.notIn(defined))).isZero();
-            assertThat(store.dsl().fetchCount(GRAPHQL_TYPE_DIRECTIVE,
-                GRAPHQL_TYPE_DIRECTIVE.DIRECTIVE_NAME.notIn(defined))).isZero();
-            assertThat(store.dsl().fetchCount(GRAPHQL_FIELD_DIRECTIVE,
-                GRAPHQL_FIELD_DIRECTIVE.DIRECTIVE_NAME.notIn(defined))).isZero();
-            assertThat(store.dsl().fetchCount(GRAPHQL_ARGUMENT_DIRECTIVE,
-                GRAPHQL_ARGUMENT_DIRECTIVE.DIRECTIVE_NAME.notIn(defined))).isZero();
-            assertThat(store.dsl().fetchCount(GRAPHQL_ENUM_VALUE_DIRECTIVE,
-                GRAPHQL_ENUM_VALUE_DIRECTIVE.DIRECTIVE_NAME.notIn(defined))).isZero();
+            assertThat(store.dsl().fetchCount(GRAPHQL_DIRECTIVE_APPLICATION,
+                GRAPHQL_DIRECTIVE_APPLICATION.DIRECTIVE_NAME.notIn(defined))).isZero();
         }
     }
 
@@ -558,10 +543,13 @@ class FactSchemaGateTest {
             assertThat(decoded).as("the fixture applies @table, so the gate has something to pin")
                 .isNotEmpty();
             var verbatim = store.dsl()
-                .select(GRAPHQL_TYPE_DIRECTIVE.TYPE_NAME)
-                .from(GRAPHQL_TYPE_DIRECTIVE)
-                .where(GRAPHQL_TYPE_DIRECTIVE.DIRECTIVE_NAME.eq("table"))
-                .fetch(GRAPHQL_TYPE_DIRECTIVE.TYPE_NAME);
+                .select(GRAPHQL_TYPE_ELEMENT.TYPE_NAME)
+                .from(GRAPHQL_DIRECTIVE_APPLICATION)
+                .join(GRAPHQL_TYPE_ELEMENT)
+                    .on(GRAPHQL_TYPE_ELEMENT.GRAPH_NAME.eq(GRAPHQL_DIRECTIVE_APPLICATION.GRAPH_NAME),
+                        GRAPHQL_TYPE_ELEMENT.COORDINATE.eq(GRAPHQL_DIRECTIVE_APPLICATION.COORDINATE))
+                .where(GRAPHQL_DIRECTIVE_APPLICATION.DIRECTIVE_NAME.eq("table"))
+                .fetch(GRAPHQL_TYPE_ELEMENT.TYPE_NAME);
             assertThat(verbatim).containsExactlyInAnyOrderElementsOf(decoded);
         }
     }
@@ -654,9 +642,12 @@ class FactSchemaGateTest {
             assertThat(decoded).as("the fixture applies @key twice, so the gate has something to pin")
                 .hasSize(2);
             var verbatim = store.dsl()
-                .select(GRAPHQL_TYPE_DIRECTIVE.TYPE_NAME, GRAPHQL_TYPE_DIRECTIVE.ORDINAL)
-                .from(GRAPHQL_TYPE_DIRECTIVE)
-                .where(GRAPHQL_TYPE_DIRECTIVE.DIRECTIVE_NAME.eq("key"))
+                .select(GRAPHQL_TYPE_ELEMENT.TYPE_NAME, GRAPHQL_DIRECTIVE_APPLICATION.ORDINAL)
+                .from(GRAPHQL_DIRECTIVE_APPLICATION)
+                .join(GRAPHQL_TYPE_ELEMENT)
+                    .on(GRAPHQL_TYPE_ELEMENT.GRAPH_NAME.eq(GRAPHQL_DIRECTIVE_APPLICATION.GRAPH_NAME),
+                        GRAPHQL_TYPE_ELEMENT.COORDINATE.eq(GRAPHQL_DIRECTIVE_APPLICATION.COORDINATE))
+                .where(GRAPHQL_DIRECTIVE_APPLICATION.DIRECTIVE_NAME.eq("key"))
                 .fetch();
             assertThat(verbatim).containsExactlyInAnyOrderElementsOf(decoded);
         }

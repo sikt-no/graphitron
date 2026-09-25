@@ -207,7 +207,7 @@ class ChainTerminusTest {
      * with nothing relating them. The manual's own sandwich example, and the case the chain walk
      * reports two nodes for where the manual describes four.
      *
-     * <p>The order was captured all along, in {@code graphql_field_directive}, which holds every
+     * <p>The order was captured all along, in {@code graphql_directive_application}, which holds every
      * application with its position; what this relation adds is that a reader joins the answer
      * rather than re-ranking by position, and that the ranking happens once where it is known.
      */

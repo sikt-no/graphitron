@@ -313,12 +313,12 @@ CREATE TABLE graphql_element (
   PRIMARY KEY (graph_name, coordinate),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   CHECK (element_kind IN ('NAMED_TYPE', 'FIELD', 'INPUT_FIELD', 'ENUM_VALUE', 'FIELD_ARGUMENT',
-                          'DIRECTIVE', 'DIRECTIVE_ARGUMENT'))
+                          'DIRECTIVE', 'DIRECTIVE_ARGUMENT', 'SCHEMA'))
 );
 COMMENT ON TABLE graphql_element IS 'A schema element exists in this graph: the supertype of the four element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it. For example the input argument of Mutation.rentFilm is the row Mutation.rentFilm(input:), the field it sits on is Mutation.rentFilm, and the type declaring that field is Mutation.';
 COMMENT ON COLUMN graphql_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_element.coordinate IS 'the coordinate itself, in the specification''s own grammar: Type for a named type, Type.field for a field of one, for an input field of one and for an enum value of one, and Type.field(argument:) for an argument of a field. Total by construction, which is what lets one column stand for a coordinate of any kind where the decomposed keys beside it cannot, the parts being different parts at each of the four. A relation naming a coordinate carries this column and a foreign key, and joins the subtype relation for the kind it cares about when it wants the parts';
-COMMENT ON COLUMN graphql_element.element_kind IS 'which kind of schema element this row is, in the specification''s own vocabulary, and so which relation beside this one a reader joins to get the parts, FIELD and INPUT_FIELD sharing one. All seven of the specification''s kinds appear here: the two directive forms joined the other five when a relation needed to name a deprecated directive and found the coordinate unanchored. Stored rather than read off the spelling because Type.field spells a field, an input field and an enum value alike, the three being told apart by the parent type''s kind and not by the text; deciding it at the write, where the walk already knows which it is, is what keeps every reader from asking that question again';
+COMMENT ON COLUMN graphql_element.coordinate IS 'the coordinate itself, in the specification''s own grammar: Type for a named type, Type.field for a field of one, for an input field of one and for an enum value of one, and Type.field(argument:) for an argument of a field. Total by construction, which is what lets one column stand for a coordinate of any kind where the decomposed keys beside it cannot, the parts being different parts at each of the four. A relation naming a coordinate carries this column and a foreign key, and joins the subtype relation for the kind it cares about when it wants the parts. One coordinate here is ours rather than the specification''s: the schema block is $schema, which the grammar has no spelling for and which a relation keyed at a coordinate needs if the schema block is not to be the one site it cannot reach. A dollar sign is illegal in a GraphQL name, so it can never collide with a type an author declares';
+COMMENT ON COLUMN graphql_element.element_kind IS 'which kind of schema element this row is, in the specification''s own vocabulary, and so which relation beside this one a reader joins to get the parts, FIELD and INPUT_FIELD sharing one. All seven of the specification''s kinds appear here, and SCHEMA beside them for the block the specification gives no coordinate: the two directive forms joined the other five when a relation needed to name a deprecated directive and found the coordinate unanchored, and the schema block joined them when directive applications collapsed onto the coordinate and it was the only site left out. Stored rather than read off the spelling because Type.field spells a field, an input field and an enum value alike, the three being told apart by the parent type''s kind and not by the text; deciding it at the write, where the walk already knows which it is, is what keeps every reader from asking that question again';
 COMMENT ON COLUMN graphql_element.touched_at IS 'when the reading that derived this row ran. The derivation finishes by deleting this graph''s rows carrying a different instant, which are the coordinates the corpus stopped declaring. Swept per graph rather than per file because a coordinate is declared by the corpus and no one file''s reading can say it went away. NOT NULL, which is what makes the sweep total: a row with no instant would be a row no reading claims and no sweep reaches, so the column that decides what survives cannot be the one column a writer may forget';
 
 CREATE TABLE graphql_type_element (
@@ -559,13 +559,13 @@ CREATE TABLE graphql_ast_element_entry (
     REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphql_ast_element_entry IS 'This written position declares a schema element, and this is the coordinate it declares: the seven entry kinds that name one, under the nineteen that need not. For example type Widget declares Widget, the field under it declares Widget.name, and a directive definition declares @widget and @widget(arg:), while the directive applied to that field declares nothing and has no row here.';
+COMMENT ON TABLE graphql_ast_element_entry IS 'This written position declares a schema element, and this is the coordinate it declares: the eight entry kinds that name one, under the nineteen that need not. For example type Widget declares Widget, the field under it declares Widget.name, and a directive definition declares @widget and @widget(arg:), while the directive applied to that field declares nothing and has no row here. A schema block declares $schema, which is ours.';
 COMMENT ON COLUMN graphql_ast_element_entry.graph_name IS 'the owning graph''s partition, carried from the entry this describes';
 COMMENT ON COLUMN graphql_ast_element_entry.source_name IS 'the file the declaration was written in';
 COMMENT ON COLUMN graphql_ast_element_entry.source_line IS 'line of the declaration, which is the entry''s own position';
 COMMENT ON COLUMN graphql_ast_element_entry.source_column IS 'column of the same. Keyed by the position and not by the coordinate, two documents declaring one type being two rows here and one row in graphql_element, which is the whole difference between what a document wrote and what the corpus settled on';
 COMMENT ON COLUMN graphql_ast_element_entry.touched_at IS 'when the reading that produced this row ran, carried from the entry this describes. The reading finishes by deleting its file''s rows carrying an older instant, and this relation is swept beside the arms that write it so a position the author removed leaves the hierarchy whole';
-COMMENT ON COLUMN graphql_ast_element_entry.coordinate IS 'the coordinate this declaration names, in the specification''s grammar. A string the document''s own names compose and nothing else: no key into graphql_element, which does not exist when this is written and which is this relation''s composed counterpart rather than its parent. The five subtypes each generate the same expression from their own columns, and this is where that spelling is stated once for a reader who wants the coordinate without knowing which kind declared it';
+COMMENT ON COLUMN graphql_ast_element_entry.coordinate IS 'the coordinate this declaration names, in the specification''s grammar. A string the document''s own names compose and nothing else: no key into graphql_element, which does not exist when this is written and which is this relation''s composed counterpart rather than its parent. The subtypes each generate the same expression from their own columns, and this is where that spelling is stated once for a reader who wants the coordinate without knowing which kind declared it. The schema block''s $schema is the one spelling composed from no name at all, a schema block having none, and a dollar sign being illegal in a GraphQL name is what makes a constant safe here';
 
 CREATE TABLE graphql_ast_directive_application_entry (
   graph_name    VARCHAR NOT NULL,
@@ -586,6 +586,45 @@ COMMENT ON COLUMN graphql_ast_directive_application_entry.source_line IS 'line o
 COMMENT ON COLUMN graphql_ast_directive_application_entry.source_column IS 'column of the same. Keyed by the position because a position is what an application has: a directive applied twice in one file is two rows here, and the name is what they share rather than what tells them apart';
 COMMENT ON COLUMN graphql_ast_directive_application_entry.touched_at IS 'when the reading that produced this row ran, carried from the entry this describes. The reading finishes by deleting its file''s rows carrying an older instant, and this relation is swept beside the arms that write it so a position the author removed leaves the hierarchy whole';
 COMMENT ON COLUMN graphql_ast_directive_application_entry.name IS 'the directive name written here, without the at sign. The one column the five sites share, which is why this relation exists: a reader asking where a named directive was written joins this once instead of unioning five relations that differ only in what the application was written inside. What it was written inside is the parent hop graphql_ast_entry already carries, so the site is a join away and not a column here';
+
+CREATE VIEW graphql_ast_element_declaration
+  (graph_name, source_name, source_line, source_column,
+   declaration_kind, declaration_line, declaration_column) AS
+-- Up the parent chain the entry supertype already carries, stopping at the first position that is
+-- a declaration in its own right. A type declaration, a schema block and a directive definition
+-- are each their own, which is the base case as much as the stop: the walk starts at every
+-- element-declaring position and a declaration reaches itself in nought hops.
+WITH RECURSIVE up (graph_name, source_name, source_line, source_column,
+                   at_line, at_column, at_kind) AS (
+  SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
+         n.source_line, n.source_column, n.entry_kind
+    FROM graphql_ast_element_entry e
+    JOIN graphql_ast_entry n
+      ON n.graph_name = e.graph_name AND n.source_name = e.source_name
+     AND n.source_line = e.source_line AND n.source_column = e.source_column
+  UNION ALL
+  SELECT u.graph_name, u.source_name, u.source_line, u.source_column,
+         p.source_line, p.source_column, p.entry_kind
+    FROM up u
+    JOIN graphql_ast_entry c
+      ON c.graph_name = u.graph_name AND c.source_name = u.source_name
+     AND c.source_line = u.at_line AND c.source_column = u.at_column
+    JOIN graphql_ast_entry p
+      ON p.graph_name = c.graph_name AND p.source_name = c.source_name
+     AND p.source_line = c.parent_line AND p.source_column = c.parent_column
+   WHERE u.at_kind NOT IN ('TYPE_DECLARATION', 'SCHEMA_DEFINITION', 'DIRECTIVE_DEFINITION')
+)
+SELECT graph_name, source_name, source_line, source_column, at_kind, at_line, at_column
+  FROM up
+ WHERE at_kind IN ('TYPE_DECLARATION', 'SCHEMA_DEFINITION', 'DIRECTIVE_DEFINITION');
+COMMENT ON VIEW graphql_ast_element_declaration IS 'The declaration one element-declaring position was written inside, which is itself where the position is a declaration. For example the lang: of Film.title(lang:) reaches the type declaration Film in two hops, through the field it is an argument of, and that type declaration reaches itself in nought.';
+COMMENT ON COLUMN graphql_ast_element_declaration.graph_name IS 'the owning graph''s partition, carried from the element entry this is about';
+COMMENT ON COLUMN graphql_ast_element_declaration.source_name IS 'the file the element was declared in, the first of the three columns naming its position. The declaration is in the same file by construction, a node being written inside the file that holds it, so the position below names both';
+COMMENT ON COLUMN graphql_ast_element_declaration.source_line IS 'line of the element''s own position, the second';
+COMMENT ON COLUMN graphql_ast_element_declaration.source_column IS 'column of the same, the third; with the two columns above, a reference into graphql_ast_element_entry, and the whole grain. A position sits inside exactly one declaration, so this answers once per element and never twice';
+COMMENT ON COLUMN graphql_ast_element_declaration.declaration_kind IS 'which of the three kinds of declaration was reached: a type declaration, the schema block, or a directive definition. Carried rather than left to be joined because the three are told apart in the entry supertype and a reader stopping here should not have to go back for it';
+COMMENT ON COLUMN graphql_ast_element_declaration.declaration_line IS 'line of the declaration reached, the first of the two columns naming it within the file above';
+COMMENT ON COLUMN graphql_ast_element_declaration.declaration_column IS 'column of the same. With the file name above, the key of graphql_type_declaration for a type, which is where the merge order that numbers a repeated directive application comes from. Stated here rather than at each consumer because the hop count differs by what the element is, nought for a declaration, one for a field or an enum value, two for a field''s argument, and a consumer that unioned an arm per depth would be re-deriving the parent chain the entries already hold';
 
 CREATE TABLE graphql_ast_type_declaration_entry (
   graph_name     VARCHAR NOT NULL,
@@ -1587,239 +1626,56 @@ COMMENT ON COLUMN graphql_directive_argument.touched_at IS 'when the reading tha
 -- other, and the ones that carry meaning additionally get a decoded row in the graphitron_
 -- family. A directive that is both re-emitted and decoded (federation's @key) is just an
 -- application with both projections rather than a special case.
-CREATE TABLE graphql_schema_directive (
+--
+-- One relation for every site, keyed at the coordinate the application was written on. The five
+-- relations this replaces stated one fact and keyed it five ways, three columns at the schema
+-- block and seven at a field argument, because each carried its site's decomposed key instead of
+-- the site's coordinate. graphql_element holds the coordinate for all of them, so an application
+-- keys into that and a reader stops choosing a relation by where the author happened to write.
+CREATE TABLE graphql_directive_application (
   graph_name     VARCHAR NOT NULL,
+  coordinate     VARCHAR NOT NULL,
   directive_name VARCHAR NOT NULL,
   ordinal        INT     NOT NULL,
   source_name    VARCHAR,
   source_line    INT,
   source_column  INT,
   touched_at     TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, directive_name, ordinal),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+  PRIMARY KEY (graph_name, coordinate, directive_name, ordinal),
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate)
+    ON DELETE CASCADE
 );
-COMMENT ON TABLE graphql_schema_directive IS 'A directive is applied to the schema definition (@link lives here).';
-COMMENT ON COLUMN graphql_schema_directive.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_schema_directive.directive_name IS 'the applied or defined directive name, without the leading @';
-COMMENT ON COLUMN graphql_schema_directive.ordinal IS '0 unless the directive is repeatable; repeats number in document order';
-COMMENT ON COLUMN graphql_schema_directive.source_name IS 'position of the application site';
-COMMENT ON COLUMN graphql_schema_directive.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_schema_directive.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_schema_directive.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
+COMMENT ON TABLE graphql_directive_application IS 'One directive an author applied, at the coordinate they applied it to: one row per application, however many sites the corpus writes them at. For example type Film @key(fields: "id") is one row at coordinate Film, and the @external on Film.title is another at Film.title.';
+COMMENT ON COLUMN graphql_directive_application.graph_name IS 'the owning graph''s partition, anchored by store_graph through the element below; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_directive_application.coordinate IS 'the schema coordinate the application was written on, in the specification''s grammar: a type is its own name, a field or an enum value or an input field is the parent''s name and a dot, an argument goes one deeper, and the schema block is $schema. A reference into graphql_element, which is a table and not a union so this foreign key can name it, and the whole reason five relations are one: the coordinate is what every site has and the decomposed key is what none of them shares';
+COMMENT ON COLUMN graphql_directive_application.directive_name IS 'the applied directive name, without the leading @';
+COMMENT ON COLUMN graphql_directive_application.ordinal IS 'the repeat, numbered from zero within one coordinate and one directive name, in the order the declarations carrying them merge. A directive is not repeatable unless its definition says so, so on almost every application this is zero and the column exists for the ones that are';
+COMMENT ON COLUMN graphql_directive_application.source_name IS 'the file the application was written in, the first of the three columns naming its position. Nullable because a synthesised application has no position to name, an injector building a directive with no source location being a writer this relation admits rather than refuses';
+COMMENT ON COLUMN graphql_directive_application.source_line IS 'source line, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_directive_application.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_directive_application.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total. The sweep is what collects an application an author deleted from a coordinate that still stands; a coordinate the author deleted takes its applications with it through the cascade above';
 
-CREATE TABLE graphql_schema_directive_arg (
+CREATE TABLE graphql_directive_application_arg (
   graph_name              VARCHAR NOT NULL,
+  coordinate              VARCHAR NOT NULL,
   directive_name          VARCHAR NOT NULL,
   ordinal                 INT     NOT NULL,
   directive_argument_name VARCHAR NOT NULL,
   value_sdl               VARCHAR NOT NULL,
-  touched_at     TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, directive_name, ordinal, directive_argument_name),
-  FOREIGN KEY (graph_name, directive_name, ordinal)
-    REFERENCES graphql_schema_directive (graph_name, directive_name, ordinal) ON DELETE CASCADE
+  touched_at              TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, directive_name, ordinal, directive_argument_name),
+  FOREIGN KEY (graph_name, coordinate, directive_name, ordinal)
+    REFERENCES graphql_directive_application (graph_name, coordinate, directive_name, ordinal)
+    ON DELETE CASCADE
 );
-COMMENT ON TABLE graphql_schema_directive_arg IS 'An argument the author passed to a schema-level application.';
-COMMENT ON COLUMN graphql_schema_directive_arg.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_schema_directive_arg.directive_name IS 'the applied or defined directive name, without the leading @';
-COMMENT ON COLUMN graphql_schema_directive_arg.ordinal IS 'the owning application''s ordinal';
-COMMENT ON COLUMN graphql_schema_directive_arg.directive_argument_name IS 'the definition''s formal argument this value binds';
-COMMENT ON COLUMN graphql_schema_directive_arg.value_sdl IS 'the value as written, rendered from the AST; omitted arguments are absent rows';
-COMMENT ON COLUMN graphql_schema_directive_arg.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
-
-CREATE TABLE graphql_type_directive (
-  graph_name          VARCHAR NOT NULL,
-  type_name           VARCHAR NOT NULL,
-  directive_name      VARCHAR NOT NULL,
-  ordinal             INT     NOT NULL,
-  declaration_line    INT     NOT NULL,
-  declaration_column  INT     NOT NULL,
-  source_name         VARCHAR NOT NULL,
-  source_line         INT,
-  source_column       INT,
-  touched_at     TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, directive_name, ordinal),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name) ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column) ON DELETE CASCADE
-);
-COMMENT ON TABLE graphql_type_directive IS 'A directive is applied to a type (OBJECT, INTERFACE, UNION, ENUM, INPUT_OBJECT, or SCALAR; the parent kind is a join away).';
-COMMENT ON COLUMN graphql_type_directive.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_type_directive.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphql_type_directive.directive_name IS 'the applied or defined directive name, without the leading @';
-COMMENT ON COLUMN graphql_type_directive.ordinal IS 'as on graphql_schema_directive; federation''s @key repeats here';
-COMMENT ON COLUMN graphql_type_directive.declaration_line IS 'the applying site (extensions apply type directives too). Every row here is a site the author wrote: no expansion applies a type directive, federation''s synthesized @key being a derivation (graphitron_synthesized_federation_key) rather than a row in this family';
-COMMENT ON COLUMN graphql_type_directive.declaration_column IS 'column of the contributing declaration site, the site key''s fourth part';
-COMMENT ON COLUMN graphql_type_directive.source_name IS 'NOT NULL as on graphql_field: half of the site FK';
-COMMENT ON COLUMN graphql_type_directive.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_type_directive.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_type_directive.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
-
-CREATE TABLE graphql_type_directive_arg (
-  graph_name              VARCHAR NOT NULL,
-  type_name               VARCHAR NOT NULL,
-  directive_name          VARCHAR NOT NULL,
-  ordinal                 INT     NOT NULL,
-  directive_argument_name VARCHAR NOT NULL,
-  value_sdl               VARCHAR NOT NULL,
-  touched_at     TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, directive_name, ordinal, directive_argument_name),
-  FOREIGN KEY (graph_name, type_name, directive_name, ordinal)
-    REFERENCES graphql_type_directive (graph_name, type_name, directive_name, ordinal) ON DELETE CASCADE
-);
-COMMENT ON TABLE graphql_type_directive_arg IS 'An argument the author passed to a type-level application.';
-COMMENT ON COLUMN graphql_type_directive_arg.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_type_directive_arg.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphql_type_directive_arg.directive_name IS 'the applied or defined directive name, without the leading @';
-COMMENT ON COLUMN graphql_type_directive_arg.ordinal IS 'the owning application''s ordinal';
-COMMENT ON COLUMN graphql_type_directive_arg.directive_argument_name IS 'the definition''s formal argument this value binds';
-COMMENT ON COLUMN graphql_type_directive_arg.value_sdl IS 'the value as written, rendered from the AST';
-COMMENT ON COLUMN graphql_type_directive_arg.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
-
-CREATE TABLE graphql_field_directive (
-  graph_name     VARCHAR NOT NULL,
-  type_name      VARCHAR NOT NULL,
-  field_name     VARCHAR NOT NULL,
-  directive_name VARCHAR NOT NULL,
-  ordinal        INT     NOT NULL,
-  source_name    VARCHAR,
-  source_line    INT,
-  source_column  INT,
-  touched_at     TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, directive_name, ordinal),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name) ON DELETE CASCADE
-);
-COMMENT ON TABLE graphql_field_directive IS 'A directive is applied to a field (output or input-object; the parent type''s kind decides which SDL location this was).';
-COMMENT ON COLUMN graphql_field_directive.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_field_directive.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphql_field_directive.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphql_field_directive.directive_name IS 'the applied or defined directive name, without the leading @';
-COMMENT ON COLUMN graphql_field_directive.ordinal IS '0 unless the directive is repeatable; repeats number in document order';
-COMMENT ON COLUMN graphql_field_directive.source_name IS 'the SDL file the row was captured from';
-COMMENT ON COLUMN graphql_field_directive.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_field_directive.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_field_directive.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
-
-CREATE TABLE graphql_field_directive_arg (
-  graph_name              VARCHAR NOT NULL,
-  type_name               VARCHAR NOT NULL,
-  field_name              VARCHAR NOT NULL,
-  directive_name          VARCHAR NOT NULL,
-  ordinal                 INT     NOT NULL,
-  directive_argument_name VARCHAR NOT NULL,
-  value_sdl               VARCHAR NOT NULL,
-  touched_at     TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, directive_name, ordinal, directive_argument_name),
-  FOREIGN KEY (graph_name, type_name, field_name, directive_name, ordinal)
-    REFERENCES graphql_field_directive (graph_name, type_name, field_name, directive_name, ordinal) ON DELETE CASCADE
-);
-COMMENT ON TABLE graphql_field_directive_arg IS 'An argument the author passed to a field-level application.';
-COMMENT ON COLUMN graphql_field_directive_arg.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_field_directive_arg.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphql_field_directive_arg.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphql_field_directive_arg.directive_name IS 'the applied or defined directive name, without the leading @';
-COMMENT ON COLUMN graphql_field_directive_arg.ordinal IS 'the owning application''s ordinal';
-COMMENT ON COLUMN graphql_field_directive_arg.directive_argument_name IS 'the definition''s formal argument this value binds';
-COMMENT ON COLUMN graphql_field_directive_arg.value_sdl IS 'the value as written, rendered from the AST';
-COMMENT ON COLUMN graphql_field_directive_arg.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
-
-CREATE TABLE graphql_argument_directive (
-  graph_name     VARCHAR NOT NULL,
-  type_name      VARCHAR NOT NULL,
-  field_name     VARCHAR NOT NULL,
-  argument_name  VARCHAR NOT NULL,
-  directive_name VARCHAR NOT NULL,
-  ordinal        INT     NOT NULL,
-  source_name    VARCHAR,
-  source_line    INT,
-  source_column  INT,
-  touched_at     TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, argument_name, directive_name, ordinal),
-  FOREIGN KEY (graph_name, type_name, field_name, argument_name)
-    REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name) ON DELETE CASCADE
-);
-COMMENT ON TABLE graphql_argument_directive IS 'A directive is applied to a field argument (ARGUMENT_DEFINITION site).';
-COMMENT ON COLUMN graphql_argument_directive.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_argument_directive.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphql_argument_directive.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphql_argument_directive.argument_name IS 'the SDL argument the directive sits on';
-COMMENT ON COLUMN graphql_argument_directive.directive_name IS 'the applied or defined directive name, without the leading @';
-COMMENT ON COLUMN graphql_argument_directive.ordinal IS 'as on graphql_field_directive';
-COMMENT ON COLUMN graphql_argument_directive.source_name IS 'the SDL file the row was captured from';
-COMMENT ON COLUMN graphql_argument_directive.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_argument_directive.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_argument_directive.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
-
-CREATE TABLE graphql_argument_directive_arg (
-  graph_name              VARCHAR NOT NULL,
-  type_name               VARCHAR NOT NULL,
-  field_name              VARCHAR NOT NULL,
-  argument_name           VARCHAR NOT NULL,
-  directive_name          VARCHAR NOT NULL,
-  ordinal                 INT     NOT NULL,
-  directive_argument_name VARCHAR NOT NULL,
-  value_sdl               VARCHAR NOT NULL,
-  touched_at     TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, argument_name, directive_name, ordinal, directive_argument_name),
-  FOREIGN KEY (graph_name, type_name, field_name, argument_name, directive_name, ordinal)
-    REFERENCES graphql_argument_directive (graph_name, type_name, field_name, argument_name, directive_name, ordinal) ON DELETE CASCADE
-);
-COMMENT ON TABLE graphql_argument_directive_arg IS 'An argument the author passed to an argument-level application.';
-COMMENT ON COLUMN graphql_argument_directive_arg.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_argument_directive_arg.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphql_argument_directive_arg.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphql_argument_directive_arg.argument_name IS 'the argument name within the owning field';
-COMMENT ON COLUMN graphql_argument_directive_arg.directive_name IS 'the applied or defined directive name, without the leading @';
-COMMENT ON COLUMN graphql_argument_directive_arg.ordinal IS 'the owning application''s ordinal';
-COMMENT ON COLUMN graphql_argument_directive_arg.directive_argument_name IS 'the definition''s formal argument this value binds';
-COMMENT ON COLUMN graphql_argument_directive_arg.value_sdl IS 'the value as written, rendered from the AST';
-COMMENT ON COLUMN graphql_argument_directive_arg.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
-
-CREATE TABLE graphql_enum_value_directive (
-  graph_name     VARCHAR NOT NULL,
-  type_name      VARCHAR NOT NULL,
-  value_name     VARCHAR NOT NULL,
-  directive_name VARCHAR NOT NULL,
-  ordinal        INT     NOT NULL,
-  source_name    VARCHAR,
-  source_line    INT,
-  source_column  INT,
-  touched_at     TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, value_name, directive_name, ordinal),
-  FOREIGN KEY (graph_name, type_name, value_name) REFERENCES graphql_enum_value_element (graph_name, type_name, value_name) ON DELETE CASCADE
-);
-COMMENT ON TABLE graphql_enum_value_directive IS 'A directive is applied to an enum value (@deprecated lives here, and so does the graphitron enum-value inventory, which is additionally decoded).';
-COMMENT ON COLUMN graphql_enum_value_directive.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_enum_value_directive.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphql_enum_value_directive.value_name IS 'the enum value name within the owning enum type';
-COMMENT ON COLUMN graphql_enum_value_directive.directive_name IS 'the applied or defined directive name, without the leading @';
-COMMENT ON COLUMN graphql_enum_value_directive.ordinal IS 'as on graphql_schema_directive';
-COMMENT ON COLUMN graphql_enum_value_directive.source_name IS 'the SDL file the row was captured from';
-COMMENT ON COLUMN graphql_enum_value_directive.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_enum_value_directive.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_enum_value_directive.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
-
-CREATE TABLE graphql_enum_value_directive_arg (
-  graph_name              VARCHAR NOT NULL,
-  type_name               VARCHAR NOT NULL,
-  value_name              VARCHAR NOT NULL,
-  directive_name          VARCHAR NOT NULL,
-  ordinal                 INT     NOT NULL,
-  directive_argument_name VARCHAR NOT NULL,
-  value_sdl               VARCHAR NOT NULL,
-  touched_at     TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, value_name, directive_name, ordinal, directive_argument_name),
-  FOREIGN KEY (graph_name, type_name, value_name, directive_name, ordinal)
-    REFERENCES graphql_enum_value_directive (graph_name, type_name, value_name, directive_name, ordinal) ON DELETE CASCADE
-);
-COMMENT ON TABLE graphql_enum_value_directive_arg IS 'An argument the author passed to an enum-value application.';
-COMMENT ON COLUMN graphql_enum_value_directive_arg.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_enum_value_directive_arg.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphql_enum_value_directive_arg.value_name IS 'the enum value name within the owning enum type';
-COMMENT ON COLUMN graphql_enum_value_directive_arg.directive_name IS 'the applied or defined directive name, without the leading @';
-COMMENT ON COLUMN graphql_enum_value_directive_arg.ordinal IS 'the owning application''s ordinal';
-COMMENT ON COLUMN graphql_enum_value_directive_arg.directive_argument_name IS 'the definition''s formal argument this value binds';
-COMMENT ON COLUMN graphql_enum_value_directive_arg.value_sdl IS 'the value as written, rendered from the AST';
-COMMENT ON COLUMN graphql_enum_value_directive_arg.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
+COMMENT ON TABLE graphql_directive_application_arg IS 'One argument an author passed to an application: the application''s own key and the formal argument the value binds. For example the fields: "id" of type Film @key(fields: "id") is one row.';
+COMMENT ON COLUMN graphql_directive_application_arg.graph_name IS 'the owning graph''s partition, carried from the application above; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_directive_application_arg.coordinate IS 'the coordinate the owning application was written on, the second of the four columns naming it';
+COMMENT ON COLUMN graphql_directive_application_arg.directive_name IS 'the owning application''s directive name, the third';
+COMMENT ON COLUMN graphql_directive_application_arg.ordinal IS 'the owning application''s ordinal, the fourth; with the three columns above, a reference into graphql_directive_application';
+COMMENT ON COLUMN graphql_directive_application_arg.directive_argument_name IS 'the definition''s formal argument this value binds, and the rest of the grain. An argument is named once inside one application, so nothing is ranked here; a document naming one twice is a schema problem and the upsert keeps the later of the two rather than refusing the row';
+COMMENT ON COLUMN graphql_directive_application_arg.value_sdl IS 'the value as written, rendered from the AST. The literal rather than a parse of it, so an application is legible without knowing what the directive means, and so a consumer that does know reads the same string the author typed';
+COMMENT ON COLUMN graphql_directive_application_arg.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
 CREATE VIEW graphql_poly_member (graph_name, container_kind, container_name, member_type_name,
     position, declared_on, declaration_line, declaration_column, source_name, source_line,
@@ -3464,12 +3320,13 @@ CREATE TABLE graphitron_field_chain_application (
   type_name      VARCHAR NOT NULL,
   field_name     VARCHAR NOT NULL,
   chain_position INT     NOT NULL,
+  coordinate     VARCHAR NOT NULL,
   directive_name VARCHAR NOT NULL,
   ordinal        INT     NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name, chain_position),
-  UNIQUE (graph_name, type_name, field_name, directive_name, ordinal),
-  FOREIGN KEY (graph_name, type_name, field_name, directive_name, ordinal)
-    REFERENCES graphql_field_directive (graph_name, type_name, field_name, directive_name, ordinal)
+  UNIQUE (graph_name, coordinate, directive_name, ordinal),
+  FOREIGN KEY (graph_name, coordinate, directive_name, ordinal)
+    REFERENCES graphql_directive_application (graph_name, coordinate, directive_name, ordinal)
     ON DELETE CASCADE,
   CHECK (chain_position >= 0),
   CHECK (directive_name IN ('reference', 'routine'))
@@ -3479,8 +3336,9 @@ COMMENT ON COLUMN graphitron_field_chain_application.graph_name IS 'the owning g
 COMMENT ON COLUMN graphitron_field_chain_application.type_name IS 'the type owning the field the application sits on';
 COMMENT ON COLUMN graphitron_field_chain_application.field_name IS 'the field the application sits on; with the two columns above, the coordinate whose chain this row is a step of';
 COMMENT ON COLUMN graphitron_field_chain_application.chain_position IS 'the application''s place in the written order, dense from 0 across every directive that contributes to the chain. The manual states the order is load-bearing and the decode relations cannot carry it: each numbers its own applications, so @reference#0, @routine#0 and @reference#1 are three ordinals in two relations with no relation between them. In the key, so two applications at one position are unwritable rather than merely unexpected';
+COMMENT ON COLUMN graphitron_field_chain_application.coordinate IS 'the coordinate the application was written on, which with the two columns after it is the reference into graphql_directive_application. Carried beside the type and field above rather than instead of them: those are this relation''s own grain, which its chain siblings key by, and this is how the application it points at is named. The cascade on that reference is this relation''s sweep, there being no instant here to mark';
 COMMENT ON COLUMN graphitron_field_chain_application.directive_name IS 'which directive this application is of, in graphql_directive''s spelling. Two contribute: @reference adds hops and @routine adds its result table as a node. @referenceFor does not, being one participant''s own path rather than the field''s chain, which is why it is a route of its own and not a step of this one';
-COMMENT ON COLUMN graphitron_field_chain_application.ordinal IS 'that directive''s own ordinal at this coordinate, which is the join down to the decode relation carrying what the application says. Unique with the coordinate and the directive name, so one application cannot occupy two positions, and a foreign key into graphql_field_directive, so a position cannot be minted for an application nobody wrote';
+COMMENT ON COLUMN graphitron_field_chain_application.ordinal IS 'that directive''s own ordinal at this coordinate, which is the join down to the decode relation carrying what the application says. Unique with the coordinate and the directive name, so one application cannot occupy two positions, and a foreign key into graphql_directive_application, so a position cannot be minted for an application nobody wrote';
 
 CREATE TABLE graphitron_field_reference_entry (
   graph_name    VARCHAR NOT NULL,
@@ -4295,7 +4153,7 @@ CREATE TABLE graphitron_federation_key_entry (
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_federation_key_entry IS 'Federation @key as the author wrote it, decoded for consumption (its verbatim twin lives in graphql_type_directive for re-emission; a gate query pins agreement). Authored applications alone, which is what this family''s charter says a decode is: the key federation synthesizes for a node type is a derivation over these rows and the node metadata, and it lives in graphitron_synthesized_federation_key. A reader wanting every key the emitted schema carries reads intent_federation_key, which unions the two. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_federation_key_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
+COMMENT ON TABLE graphitron_federation_key_entry IS 'Federation @key as the author wrote it, decoded for consumption (its verbatim twin lives in graphql_directive_application for re-emission; a gate query pins agreement). Authored applications alone, which is what this family''s charter says a decode is: the key federation synthesizes for a node type is a derivation over these rows and the node metadata, and it lives in graphitron_synthesized_federation_key. A reader wanting every key the emitted schema carries reads intent_federation_key, which unions the two. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_federation_key_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
 COMMENT ON COLUMN graphitron_federation_key_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_federation_key_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_federation_key_entry.ordinal IS '@key is repeatable; document order';
@@ -4353,7 +4211,7 @@ CREATE TABLE graphitron_link_entry (
   PRIMARY KEY (graph_name, ordinal),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
 );
-COMMENT ON TABLE graphitron_link_entry IS '@link on the schema definition, decoded. All @link applications decode here (the verbatim twin sits in graphql_schema_directive); whether a link is the federation opt-in is a predicate over url, a derivation. @tag and @shareable get no decoded relations: their only readers are the expansion machinery itself, which is the capture walk with the AST in hand, so downstream consumers see them only as fidelity rows for re-emission. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_link_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
+COMMENT ON TABLE graphitron_link_entry IS '@link on the schema definition, decoded. All @link applications decode here (the verbatim twin sits in graphql_directive_application at coordinate $schema); whether a link is the federation opt-in is a predicate over url, a derivation. @tag and @shareable get no decoded relations: their only readers are the expansion machinery itself, which is the capture walk with the AST in hand, so downstream consumers see them only as fidelity rows for re-emission. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_link_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
 COMMENT ON COLUMN graphitron_link_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_link_entry.ordinal IS '@link is repeatable; document order';
 COMMENT ON COLUMN graphitron_link_entry.source_name IS 'the SDL file the row was captured from';
@@ -4579,7 +4437,7 @@ COMMENT ON COLUMN graphitron_argument.description IS 'the docstring, authored or
 -- expands into another macro's output fails, at capture rather than in a reader.
 --
 -- Positions are not carried. The source coordinate reaches the field's own position through
--- graphql_field and the application's through graphql_field_directive, which is strictly more than
+-- graphql_field and the application's through graphql_directive_application, which is strictly more than
 -- a flattened site row held.
 --
 -- Each carries an index on its own coordinate tuple, which the key leads with the source instead of.
@@ -7123,41 +6981,47 @@ SELECT s.graph_name, s.type_name, s.field_name, 'SERVICE', 'service', TRUE,
        s.source_name, s.source_line, s.source_column
   FROM graphitron_service_entry s
 UNION ALL
-SELECT d.graph_name, d.type_name, d.field_name, 'SERVICE', 'service', FALSE,
+SELECT d.graph_name, fe.type_name, fe.field_name, 'SERVICE', 'service', FALSE,
        d.source_name, d.source_line, d.source_column
-  FROM graphql_field_directive d
+  FROM graphql_directive_application d
+  JOIN graphql_field_element fe
+    ON fe.graph_name = d.graph_name AND fe.coordinate = d.coordinate
  WHERE d.directive_name = 'service'
    AND NOT EXISTS (SELECT 1 FROM graphitron_service_entry s
-                    WHERE s.graph_name = d.graph_name AND s.type_name = d.type_name
-                      AND s.field_name = d.field_name)
+                    WHERE s.graph_name = d.graph_name AND s.type_name = fe.type_name
+                      AND s.field_name = fe.field_name)
 UNION ALL
 SELECT e.graph_name, e.type_name, e.field_name, 'EXTERNAL_FIELD', 'externalField', TRUE,
        e.source_name, e.source_line, e.source_column
   FROM graphitron_external_field_entry e
  WHERE e.type_name NOT IN ('Query', 'Mutation', 'Subscription')
 UNION ALL
-SELECT d.graph_name, d.type_name, d.field_name, 'EXTERNAL_FIELD', 'externalField', FALSE,
+SELECT d.graph_name, fe.type_name, fe.field_name, 'EXTERNAL_FIELD', 'externalField', FALSE,
        d.source_name, d.source_line, d.source_column
-  FROM graphql_field_directive d
+  FROM graphql_directive_application d
+  JOIN graphql_field_element fe
+    ON fe.graph_name = d.graph_name AND fe.coordinate = d.coordinate
  WHERE d.directive_name = 'externalField'
-   AND d.type_name NOT IN ('Query', 'Mutation', 'Subscription')
+   AND fe.type_name NOT IN ('Query', 'Mutation', 'Subscription')
    AND NOT EXISTS (SELECT 1 FROM graphitron_external_field_entry e
-                    WHERE e.graph_name = d.graph_name AND e.type_name = d.type_name
-                      AND e.field_name = d.field_name)
+                    WHERE e.graph_name = d.graph_name AND e.type_name = fe.type_name
+                      AND e.field_name = fe.field_name)
 UNION ALL
 SELECT n.graph_name, n.type_name, n.field_name, 'NODE_ID', 'nodeId', TRUE,
        n.source_name, n.source_line, n.source_column
   FROM graphitron_field_node_id_entry n
  WHERE n.type_name NOT IN ('Query', 'Mutation', 'Subscription')
 UNION ALL
-SELECT d.graph_name, d.type_name, d.field_name, 'NODE_ID', 'nodeId', FALSE,
+SELECT d.graph_name, fe.type_name, fe.field_name, 'NODE_ID', 'nodeId', FALSE,
        d.source_name, d.source_line, d.source_column
-  FROM graphql_field_directive d
+  FROM graphql_directive_application d
+  JOIN graphql_field_element fe
+    ON fe.graph_name = d.graph_name AND fe.coordinate = d.coordinate
  WHERE d.directive_name = 'nodeId'
-   AND d.type_name NOT IN ('Query', 'Mutation', 'Subscription')
+   AND fe.type_name NOT IN ('Query', 'Mutation', 'Subscription')
    AND NOT EXISTS (SELECT 1 FROM graphitron_field_node_id_entry n
-                    WHERE n.graph_name = d.graph_name AND n.type_name = d.type_name
-                      AND n.field_name = d.field_name)
+                    WHERE n.graph_name = d.graph_name AND n.type_name = fe.type_name
+                      AND n.field_name = fe.field_name)
 UNION ALL
 SELECT f.graph_name, f.type_name, f.field_name, 'LOOKUP_KEY', 'lookupKey', TRUE,
        direct.source_name, direct.source_line, direct.source_column
@@ -7192,15 +7056,17 @@ SELECT picked.graph_name, picked.type_name, picked.field_name, 'ROUTINE', 'routi
 UNION ALL
 SELECT picked.graph_name, picked.type_name, picked.field_name, 'ROUTINE', 'routine', FALSE,
        picked.source_name, picked.source_line, picked.source_column
-  FROM (SELECT d.graph_name, d.type_name, d.field_name,
+  FROM (SELECT d.graph_name, fe.type_name, fe.field_name,
                d.source_name, d.source_line, d.source_column,
-               ROW_NUMBER() OVER (PARTITION BY d.graph_name, d.type_name, d.field_name
+               ROW_NUMBER() OVER (PARTITION BY d.graph_name, fe.type_name, fe.field_name
                                   ORDER BY d.ordinal) AS rn
-          FROM graphql_field_directive d
+          FROM graphql_directive_application d
+  JOIN graphql_field_element fe
+    ON fe.graph_name = d.graph_name AND fe.coordinate = d.coordinate
          WHERE d.directive_name = 'routine'
            AND NOT EXISTS (SELECT 1 FROM graphitron_routine_entry r
-                            WHERE r.graph_name = d.graph_name AND r.type_name = d.type_name
-                              AND r.field_name = d.field_name)) picked
+                            WHERE r.graph_name = d.graph_name AND r.type_name = fe.type_name
+                              AND r.field_name = fe.field_name)) picked
  WHERE picked.rn = 1 AND picked.type_name NOT IN ('Mutation', 'Subscription')
 UNION ALL
 SELECT m.graph_name, m.type_name, m.field_name, 'MUTATION', 'mutation', TRUE,
@@ -7208,14 +7074,16 @@ SELECT m.graph_name, m.type_name, m.field_name, 'MUTATION', 'mutation', TRUE,
   FROM graphitron_mutation_entry m
  WHERE m.type_name = 'Mutation'
 UNION ALL
-SELECT d.graph_name, d.type_name, d.field_name, 'MUTATION', 'mutation', FALSE,
+SELECT d.graph_name, fe.type_name, fe.field_name, 'MUTATION', 'mutation', FALSE,
        d.source_name, d.source_line, d.source_column
-  FROM graphql_field_directive d
+  FROM graphql_directive_application d
+  JOIN graphql_field_element fe
+    ON fe.graph_name = d.graph_name AND fe.coordinate = d.coordinate
  WHERE d.directive_name = 'mutation'
-   AND d.type_name = 'Mutation'
+   AND fe.type_name = 'Mutation'
    AND NOT EXISTS (SELECT 1 FROM graphitron_mutation_entry m
-                    WHERE m.graph_name = d.graph_name AND m.type_name = d.type_name
-                      AND m.field_name = d.field_name);
+                    WHERE m.graph_name = d.graph_name AND m.type_name = fe.type_name
+                      AND m.field_name = fe.field_name);
 COMMENT ON VIEW intent_authored_field_claim IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. The author''s field-grain classification claims. One arm pair per claiming directive (@service, @externalField, @nodeId, @lookupKey, @routine, @mutation): the decoded arm reads the semantic relation, the presence arm falls back to the raw application where the decode declined. The per-arm type_name masks transcribe the walk''s per-position detector gates: @service claims at every position, @externalField and @nodeId nowhere on a root, @routine not on Mutation or Subscription (a Mutation @routine is the walk''s own typed deferral, never a conflict slot), @lookupKey only on Query, @mutation only on Mutation. The @lookupKey arm fires on the whole argument surface, matching LookupFacts.triggersFor: a directly marked argument, or an argument whose named type is in the transitive lookup-bearing input closure (the recursive path-guarded closure above, seeded from the retired input-field site, so on accepted schemas the recursion never expands). That closure recurses over input_object_field_edge, the field edges deduplicated to the pairs they denote, and not over graphql_field: the hop joins on the named type and projects the declaring type, so two fields of one named type are identical output rows that UNION ALL keeps and re-expands at the next hop, doubling the frontier per level of input-object nesting. Consumption is through EXISTS, so deduplicating the edges changes no answer. The @routine arms collapse the repeatable ordinal grain to the minimum-ordinal application''s row.';
 COMMENT ON COLUMN intent_authored_field_claim.graph_name IS 'the owning graph''s partition, carried through from every arm''s base relation';
 COMMENT ON COLUMN intent_authored_field_claim.type_name IS 'the claimed field''s owning type';
@@ -7237,13 +7105,15 @@ SELECT t.graph_name, t.type_name, 'TABLE', 'table', TRUE,
 UNION ALL
 SELECT picked.graph_name, picked.type_name, 'TABLE', 'table', FALSE,
        picked.source_name, picked.source_line, picked.source_column
-  FROM (SELECT d.graph_name, d.type_name, d.source_name, d.source_line, d.source_column,
-               ROW_NUMBER() OVER (PARTITION BY d.graph_name, d.type_name
+  FROM (SELECT d.graph_name, te.type_name, d.source_name, d.source_line, d.source_column,
+               ROW_NUMBER() OVER (PARTITION BY d.graph_name, te.type_name
                                   ORDER BY d.ordinal) AS rn
-          FROM graphql_type_directive d
+          FROM graphql_directive_application d
+          JOIN graphql_type_element te
+            ON te.graph_name = d.graph_name AND te.coordinate = d.coordinate
          WHERE d.directive_name = 'table'
            AND NOT EXISTS (SELECT 1 FROM graphitron_table_entry t
-                            WHERE t.graph_name = d.graph_name AND t.type_name = d.type_name)) picked
+                            WHERE t.graph_name = d.graph_name AND t.type_name = te.type_name)) picked
  WHERE picked.rn = 1 AND picked.type_name NOT IN ('Query', 'Mutation', 'Subscription')
 UNION ALL
 SELECT e.graph_name, e.type_name, 'ERROR', 'error', TRUE,
@@ -7253,13 +7123,15 @@ SELECT e.graph_name, e.type_name, 'ERROR', 'error', TRUE,
 UNION ALL
 SELECT picked.graph_name, picked.type_name, 'ERROR', 'error', FALSE,
        picked.source_name, picked.source_line, picked.source_column
-  FROM (SELECT d.graph_name, d.type_name, d.source_name, d.source_line, d.source_column,
-               ROW_NUMBER() OVER (PARTITION BY d.graph_name, d.type_name
+  FROM (SELECT d.graph_name, te.type_name, d.source_name, d.source_line, d.source_column,
+               ROW_NUMBER() OVER (PARTITION BY d.graph_name, te.type_name
                                   ORDER BY d.ordinal) AS rn
-          FROM graphql_type_directive d
+          FROM graphql_directive_application d
+          JOIN graphql_type_element te
+            ON te.graph_name = d.graph_name AND te.coordinate = d.coordinate
          WHERE d.directive_name = 'error'
            AND NOT EXISTS (SELECT 1 FROM graphitron_error_entry e
-                            WHERE e.graph_name = d.graph_name AND e.type_name = d.type_name)) picked
+                            WHERE e.graph_name = d.graph_name AND e.type_name = te.type_name)) picked
  WHERE picked.rn = 1 AND picked.type_name NOT IN ('Query', 'Mutation', 'Subscription');
 COMMENT ON VIEW intent_authored_type_claim IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. The author''s type-grain classification claims: @table and @error, decoded arm plus presence fallback each, with the root names masked out (transcribing the walk''s root short-circuit, which classifies a root before any type directive is read). That a conflict here can only occur on an OBJECT is guaranteed upstream by assembly (@error is declared on OBJECT), the same assembly dependency graphitron_undecoded_argument_entry records; a lone @table claim on an INPUT_OBJECT or INTERFACE is an honest single claim that conflicts with nothing. The applications sit at the type grain even when applied on an extension site; the presence arms collapse a base-plus-extension double application to the minimum-ordinal row.';
 COMMENT ON COLUMN intent_authored_type_claim.graph_name IS 'the owning graph''s partition, carried through from every arm''s base relation';
@@ -9287,7 +9159,7 @@ SELECT p.graph_name, d.type_name, d.field_name, p.family, d.element_kind, d.data
                                          AND tb.declared_via = 'BACKING_CLOSURE'))
    -- Does any field of this payload carry a reading that routes it out of the carrier mold?
    -- Asked of the decoded family, one probe per relation, rather than of a name list matched
-   -- against graphql_field_directive. The question is a semantic one and the decode is where the
+   -- against graphql_directive_application. The question is a semantic one and the decode is where the
    -- semantics are, so a directive this generator learns to read arrives here as a relation name
    -- the schema declares rather than as a string nothing can check, which is what let the name
    -- list carry @orderBy: that directive is ARGUMENT_DEFINITION only, so no application of it
@@ -9343,10 +9215,13 @@ SELECT p.graph_name, d.type_name, d.field_name, p.family, d.element_kind, d.data
                                          WHERE x.graph_name = g.graph_name
                                            AND x.type_name = g.type_name
                                            AND x.field_name = g.field_name))
-                        OR EXISTS (SELECT 1 FROM graphql_field_directive ng
+                        OR EXISTS (SELECT 1 FROM graphql_directive_application ng
+                                    JOIN graphql_field_element nfe
+                                      ON nfe.graph_name = ng.graph_name
+                                     AND nfe.coordinate = ng.coordinate
                                     WHERE ng.graph_name = g.graph_name
-                                      AND ng.type_name = g.type_name
-                                      AND ng.field_name = g.field_name
+                                      AND nfe.type_name = g.type_name
+                                      AND nfe.field_name = g.field_name
                                       AND ng.directive_name = 'notGenerated')))
    AND NOT EXISTS (SELECT 1 FROM graphql_field u
                     WHERE u.graph_name = d.graph_name AND u.type_name = d.type_name
@@ -12826,10 +12701,13 @@ SELECT graph_name, type_name, field_name,
                        rt.table_name AS resolving_table,
                        'NONE' AS role, 1 AS precedence
                   FROM graphitron_input_field_resolving_table rt
-                 WHERE EXISTS (SELECT 1 FROM graphql_field_directive d
+                 WHERE EXISTS (SELECT 1 FROM graphql_directive_application d
+                                JOIN graphql_field_element dfe
+                                  ON dfe.graph_name = d.graph_name
+                                 AND dfe.coordinate = d.coordinate
                                 WHERE d.graph_name = rt.graph_name
-                                  AND d.type_name = rt.type_name
-                                  AND d.field_name = rt.field_name
+                                  AND dfe.type_name = rt.type_name
+                                  AND dfe.field_name = rt.field_name
                                   AND d.directive_name = 'notGenerated')
                  UNION ALL
                 SELECT rt.graph_name, rt.type_name, rt.field_name,
@@ -14548,7 +14426,7 @@ COMMENT ON COLUMN meta_family.definition IS 'the family''s charter: whose vocabu
 
 CREATE VIEW meta_family_headline (relation_name, ordinal) AS VALUES
   ('store_graph', 0), ('store_graph_source', 1), ('store_stamp', 2),
-  ('graphql_type_element', 0), ('graphql_field', 1), ('graphql_field_directive', 2),
+  ('graphql_type_element', 0), ('graphql_field', 1), ('graphql_directive_application', 2),
   ('graphitron_table_entry', 0), ('graphitron_field_reference_entry', 1), ('graphitron_undecoded_argument_entry', 2),
   ('graphitron_node_type', 3),
   ('sql_table', 0), ('sql_column', 1), ('sql_referential_constraint', 2),
@@ -14898,6 +14776,12 @@ INSERT INTO meta_grain VALUES
   ('schema-element',
    'one schema element in one graph, identified by the coordinate the GraphQL specification spells for it',
    'graph_name, coordinate', 'sdl'),
+  ('directive-application',
+   'one directive one author applied at one coordinate, in one graph',
+   'graph_name, coordinate, directive_name, ordinal', 'sdl'),
+  ('directive-application-argument',
+   'one argument one author passed to one application, in one graph',
+   'graph_name, coordinate, directive_name, ordinal, directive_argument_name', 'sdl'),
   ('directive-name',
    'one directive definition in one graph, identified by the name it is applied under',
    'graph_name, directive_name', 'sdl'),
@@ -15221,9 +15105,13 @@ INSERT INTO meta_relation VALUES
    'For example the @field on name: String @field(name: "title") is one row of kind FIELD_DIRECTIVE, written inside the field declaration whose position it names as its parent.',
    'Nineteen entry relations share a primary key and nothing else, so a reader holding a position had to know which of them to look in before it could ask anything, and a relation naming a position had nothing to reference. Written by the arms themselves as each writes its own rows, which is what lets them key into it and what keeps the two from disagreeing: one reading of one node produces the supertype row and the subtype row together. It carries the tree as well as the position, because three of the nineteen have a parent whose relation is not fixed and could otherwise reference nothing at all. What it does not carry is any name resolved against a later cadence: this is written while one document is being read, and the anchors that settle what the corpus honours do not exist yet.'),
   ('graphql_ast_element_entry', 'sdl-entry-position', 'graphql-ast',
-   'This written position declares a schema element, and this is the coordinate it declares: the seven entry kinds that name one, under the nineteen that need not.',
-   'For example type Widget declares Widget, the field under it declares Widget.name, and a directive definition declares @widget and @widget(arg:), while the directive applied to that field declares nothing and has no row here.',
+   'This written position declares a schema element, and this is the coordinate it declares: the eight entry kinds that name one, under the nineteen that need not.',
+   'For example type Widget declares Widget, the field under it declares Widget.name, and a directive definition declares @widget and @widget(arg:), while the directive applied to that field declares nothing and has no row here. A schema block declares $schema, which is ours.',
    'The middle of the entry hierarchy, and why the coordinate is stated once rather than seven times: it was a generated column on each kind that declares one, so every reader wanting a coordinate without knowing which kind declared it unioned all seven, which capture did twice and the lint rules did again. Seven and not five because the specification''s coordinate grammar spells a directive and an argument of one, and graphitron keys deprecations on exactly those; the narrower five are what graphql_element held while a walk wrote it, the walk having no arm for a directive coordinate. Keyed by the position and not by the coordinate, two documents declaring one type being two rows here and one row in graphql_element, which is the whole difference between what a document wrote and what the corpus settled on. No key into graphql_element, for the reason nothing in this family has one: that relation is written long after this, and a coordinate here is a string the document''s own names compose rather than a reference to anything.'),
+  ('graphql_ast_element_declaration', 'sdl-entry-position', 'graphql-ast',
+   'The declaration one element-declaring position was written inside, which is itself where the position is a declaration.',
+   'For example the lang: of Film.title(lang:) reaches the type declaration Film in two hops, through the field it is an argument of, and that type declaration reaches itself in nought.',
+   'The parent chain the entry supertype carries, walked once and stated as a fact rather than climbed again at each consumer. Which declaration a position sits inside is the same question however deep the position is, but the depth is not the same: nought for a declaration, one for a field or an enum value, two for a field''s argument. A consumer that wanted it had to union an arm per depth, which is a shape that reads as five site-specific joins and is really one recursive rule. What it is first needed for is the order a repeated directive application takes, which is the merge order of the declaration carrying it, and that consumer is why the schema block is a stop alongside the type declaration: a schema directive reaches a declaration that has no merge order, and reaching nothing at all would have made it an arm of its own again. Keyed at the element position and not at the coordinate, because two documents declaring one name are two positions and each sits inside its own declaration.'),
   ('graphql_ast_directive_application_entry', 'sdl-entry-position', 'graphql-ast',
    'This written position applies a directive, and this is the name it applies: the five entry kinds that are an application, under the nineteen that need not be.',
    'For example the @key on type Widget @key(fields: "id") is one row here, and the declaration it was written on is one row of graphql_ast_element_entry beside it.',
@@ -15248,6 +15136,14 @@ INSERT INTO meta_relation VALUES
    'A schema element exists in this graph: the supertype of the four element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it.',
    'For example the input argument of Mutation.rentFilm is the row Mutation.rentFilm(input:), the field it sits on is Mutation.rentFilm, and the type declaring that field is Mutation.',
    'The element family states an element''s existence at four grains and states nowhere that an element exists, so a relation naming any coordinate has nothing to reference and renders one into a string instead, where no foreign key reaches it. This is the supertype those four have always implied, written by capture beside the anchors it generalises rather than stated as a union over them, which is what makes a reference to any coordinate one column and one key. The four carry the spelling and a foreign key back here, which is the join down to the parts and what makes an anchor with no coordinate impossible; one call writes both rows from one string, so there is no second rendering for a constraint to have to check. Keyed by the spelling and not by a decomposition, because the decompositions are exactly what differ between the four and the specification has already settled the grammar. The element kind names the row in the specification''s own vocabulary, so a reader wanting the parts joins the relation for it instead of splitting the spelling, FIELD and INPUT_FIELD sharing one because they share a coordinate form and are told apart by the parent''s kind.'),
+  ('graphql_directive_application', 'directive-application', 'sdl',
+   'One directive an author applied, at the coordinate they applied it to: one row per application, however many sites the corpus writes them at.',
+   'For example type Film @key(fields: "id") is one row at coordinate Film, and the @external on Film.title is another at Film.title.',
+   'One relation where there were five, and the five were not five facts. Each stated that a directive was applied somewhere and keyed it by its own site decomposed, three columns at the schema block and seven at a field argument; none of them carried the coordinate, which is the one thing every site has. A reader therefore chose a relation by where the author happened to write, and a reader wanting all of them unioned five. graphql_element is a table rather than a union, so this keys into it and the choosing stops. The schema block was the site that made the collapse look impossible, having no coordinate in the specification''s grammar; it has ours, $schema, which a GraphQL name cannot spell. What orders a repeat is the merge order of the declaration the application sits inside, which is graphql_ast_element_declaration''s to say, and the schema block sorts by its file''s age instead, the same ORDER BY rather than a second arm because its merge order is null and its coordinate shares a partition with nothing.'),
+  ('graphql_directive_application_arg', 'directive-application-argument', 'sdl',
+   'One argument an author passed to an application: the application''s own key and the formal argument the value binds.',
+   'For example the fields: "id" of type Film @key(fields: "id") is one row.',
+   'One relation for the reason the applications above are one, and by an easier argument: the five this replaces were identical but for the site key they copied down from their parent, so there was never a fact here that differed by site. The value is the rendered SDL literal rather than a parse of it, which is what makes an application legible without knowing what the directive means and what lets a consumer that does know read the same string the author typed. Nothing is ranked, an argument being named once inside one application; a document naming one twice is a schema problem and the upsert keeps the later of the two.'),
   ('graphitron_ast_input_value_deprecated_entry', 'sdl-declaration-site', 'graphitron-ast',
    'What a deprecation marker on an input value says: the replacement hint the author gave, decoded.',
    'For example a connectionName argument marked with the reason "own your Connection type" gives one row carrying that text.',
@@ -15504,7 +15400,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_field_chain_application', 'field-chain-application', 'graphitron',
    'One directive application composing a field''s table chain, at its place in the written order: one row per contributing application, numbered from 0.',
    'For example a field carrying @reference then @routine then @reference draws three rows at positions 0, 1 and 2, where the two decode relations under them number their own applications 0, 0 and 1 and no relation says which came first.',
-   'The written order across directive names, which the manual states is load-bearing and which no relation carried. The decode relations each number their own applications, so the order between them was recoverable only by comparing source positions, and the one reader that recovers it gets it wrong: intent_field_chain_node anchors on the routine and admits only applications following it, so on the manual''s own sandwich example it reports two nodes where the manual describes four, the hop written before the routine being excluded by the predicate. The order was captured all along, in graphql_field_directive, which holds every application with its position; what was missing is a relation that states it, so a reader joins the answer instead of re-ranking by position, on the terms graphitron_field_navigation''s comment sets out. The population is the two directives that contribute a node, and @referenceFor is deliberately not among them: it is one participant''s own path rather than the field''s chain, so it is a route of its own.'),
+   'The written order across directive names, which the manual states is load-bearing and which no relation carried. The decode relations each number their own applications, so the order between them was recoverable only by comparing source positions, and the one reader that recovers it gets it wrong: intent_field_chain_node anchors on the routine and admits only applications following it, so on the manual''s own sandwich example it reports two nodes where the manual describes four, the hop written before the routine being excluded by the predicate. The order was captured all along, in graphql_directive_application, which holds every application with its position; what was missing is a relation that states it, so a reader joins the answer instead of re-ranking by position, on the terms graphitron_field_navigation''s comment sets out. The population is the two directives that contribute a node, and @referenceFor is deliberately not among them: it is one participant''s own path rather than the field''s chain, so it is a route of its own.'),
   ('graphitron_minted_conflict', 'minted-conflict', 'graphitron',
    'A coordinate several macro applications would mint and disagree about: one row per contested coordinate in the graph.',
    'For example two carriers naming one connection through connectionName over different element types disagree about that connection''s own nodes field, which draws a row here and no row at all in graphitron_field.',

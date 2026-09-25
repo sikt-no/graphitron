@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.capture;
 
+import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
@@ -12,8 +13,8 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 import java.util.List;
 
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.INTENT_FEDERATION_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
@@ -236,12 +237,13 @@ class FederationKeyDerivationTest {
 
     /** The ordinals of the {@code @key} applications transcribed for a type, in order. */
     private static List<Integer> keyApplicationsOf(DSLContext dsl, String typeName) {
-        return dsl.select(GRAPHQL_TYPE_DIRECTIVE.ORDINAL)
-            .from(GRAPHQL_TYPE_DIRECTIVE)
-            .where(GRAPHQL_TYPE_DIRECTIVE.TYPE_NAME.eq(typeName))
-            .and(GRAPHQL_TYPE_DIRECTIVE.DIRECTIVE_NAME.eq("key"))
-            .orderBy(GRAPHQL_TYPE_DIRECTIVE.ORDINAL)
-            .fetch(GRAPHQL_TYPE_DIRECTIVE.ORDINAL);
+        return dsl.select(GRAPHQL_DIRECTIVE_APPLICATION.ORDINAL)
+            .from(GRAPHQL_DIRECTIVE_APPLICATION)
+            .where(GRAPHQL_DIRECTIVE_APPLICATION.COORDINATE
+                .eq(SchemaCoordinateSyntax.ofType(typeName)))
+            .and(GRAPHQL_DIRECTIVE_APPLICATION.DIRECTIVE_NAME.eq("key"))
+            .orderBy(GRAPHQL_DIRECTIVE_APPLICATION.ORDINAL)
+            .fetch(GRAPHQL_DIRECTIVE_APPLICATION.ORDINAL);
     }
 
     /** A type's composed keys as {@code ordinal:fields}, the derived row rendering its null ordinal. */

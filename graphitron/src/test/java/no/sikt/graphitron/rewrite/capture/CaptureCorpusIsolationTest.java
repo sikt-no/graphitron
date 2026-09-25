@@ -61,7 +61,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * federation-linked and carries an inferred-node shape, a {@code @table} type implementing
  * {@code Node} over a table whose generated class publishes node metadata, which is the exact pair
  * the retired capture-time expansion read across: before that move the catalog arm wrote a
- * synthesized {@code @key} into {@code graphql_type_directive} and its decode, and the bare arm did
+ * synthesized {@code @key} into {@code graphql_directive_application} and its decode, and the bare arm did
  * not. The second is the entry fixture, which exists because most of the entry half holds no row
  * under the first: a differential over relations nobody wrote to agrees by being empty twice rather
  * than by agreeing, so that case holds every entry relation to being populated as well as to

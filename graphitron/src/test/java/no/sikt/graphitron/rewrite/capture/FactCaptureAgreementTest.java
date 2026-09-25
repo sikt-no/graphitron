@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.capture;
 
+import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.run.ModelCapture;
 import graphql.language.Directive;
@@ -63,12 +64,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MINTED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_FEDERATION_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SYNTHESIZED_FEDERATION_KEY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.JAVAC_DIAGNOSTIC;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_DISABLED_RULE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_EXCLUDED_TYPE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_OUTPUT;
@@ -114,6 +110,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_ELEMENT;
@@ -743,38 +740,18 @@ class FactCaptureAgreementTest {
     @DisplayName("per-coordinate applied-directive counts match the SDL")
     void appliedDirectiveCountsMatchTheSdl(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, AgreementCorpus.SDL)) {
+            // One select where this was a five-arm union, and the key is the coordinate rather
+            // than a site kind plus whichever of three names that site decomposes into. The walk
+            // spells the same coordinate from what it holds, so the two sides compare the string
+            // the store is keyed by instead of a tuple assembled to stand in for it.
             var captured = new LinkedHashMap<String, Integer>();
-            var noName = inline((String) null);
             store.dsl()
-                .select(inline("SCHEMA"), noName, noName, noName,
-                    GRAPHQL_SCHEMA_DIRECTIVE.DIRECTIVE_NAME)
-                .from(GRAPHQL_SCHEMA_DIRECTIVE)
-                .unionAll(store.dsl()
-                    .select(inline("TYPE"), GRAPHQL_TYPE_DIRECTIVE.TYPE_NAME, noName, noName,
-                        GRAPHQL_TYPE_DIRECTIVE.DIRECTIVE_NAME)
-                    .from(GRAPHQL_TYPE_DIRECTIVE))
-                .unionAll(store.dsl()
-                    .select(inline("FIELD"), GRAPHQL_FIELD_DIRECTIVE.TYPE_NAME,
-                        GRAPHQL_FIELD_DIRECTIVE.FIELD_NAME, noName,
-                        GRAPHQL_FIELD_DIRECTIVE.DIRECTIVE_NAME)
-                    .from(GRAPHQL_FIELD_DIRECTIVE))
-                .unionAll(store.dsl()
-                    .select(inline("ARGUMENT"), GRAPHQL_ARGUMENT_DIRECTIVE.TYPE_NAME,
-                        GRAPHQL_ARGUMENT_DIRECTIVE.FIELD_NAME,
-                        GRAPHQL_ARGUMENT_DIRECTIVE.ARGUMENT_NAME,
-                        GRAPHQL_ARGUMENT_DIRECTIVE.DIRECTIVE_NAME)
-                    .from(GRAPHQL_ARGUMENT_DIRECTIVE))
-                .unionAll(store.dsl()
-                    .select(inline("ENUM_VALUE"), GRAPHQL_ENUM_VALUE_DIRECTIVE.TYPE_NAME,
-                        GRAPHQL_ENUM_VALUE_DIRECTIVE.VALUE_NAME, noName,
-                        GRAPHQL_ENUM_VALUE_DIRECTIVE.DIRECTIVE_NAME)
-                    .from(GRAPHQL_ENUM_VALUE_DIRECTIVE))
+                .select(GRAPHQL_DIRECTIVE_APPLICATION.COORDINATE,
+                    GRAPHQL_DIRECTIVE_APPLICATION.DIRECTIVE_NAME)
+                .from(GRAPHQL_DIRECTIVE_APPLICATION)
                 .fetch()
                 .forEach(row -> captured.merge(
-                    String.join("|", String.valueOf(row.value1()), String.valueOf(row.value2()),
-                        String.valueOf(row.value3()), String.valueOf(row.value4()),
-                        String.valueOf(row.value5())),
-                    1, Integer::sum));
+                    String.join("|", row.value1(), row.value2()), 1, Integer::sum));
             assertThat(captured).as("the fixture applies foreign directives, so this pins something")
                 .isNotEmpty();
             assertThat(captured).containsExactlyInAnyOrderEntriesOf(sdlApplicationCounts(store));
@@ -2249,9 +2226,17 @@ class FactCaptureAgreementTest {
         var registry = store.registry();
 
         registry.schemaDefinition().ifPresent(schema ->
-            count(counts, schema.getDirectives(), "SCHEMA", null, null, null));
+            count(counts, schema.getDirectives(), SchemaCoordinateSyntax.ofSchema()));
         registry.getSchemaExtensionDefinitions().forEach(extension ->
-            count(counts, extension.getDirectives(), "SCHEMA", null, null, null));
+            count(counts, extension.getDirectives(), SchemaCoordinateSyntax.ofSchema()));
+
+        // A formal argument of a directive definition is a coordinate too, and an application on
+        // one is a row like any other. It reached no relation while the applications were kept per
+        // site; the walk counts it here because the store now holds it.
+        registry.getDirectiveDefinitions().values().forEach(definition ->
+            definition.getInputValueDefinitions().forEach(argument ->
+                count(counts, argument.getDirectives(), SchemaCoordinateSyntax
+                    .ofDirectiveArgument(definition.getName(), argument.getName()))));
 
         // graphql-java declares types() over the raw TypeDefinition; widen once here rather than
         // naming the raw type at every use site.
@@ -2267,15 +2252,17 @@ class FactCaptureAgreementTest {
 
         for (TypeDefinition<?> definition : definitions) {
             String type = definition.getName();
-            count(counts, definition.getDirectives(), "TYPE", type, null, null);
+            count(counts, definition.getDirectives(), SchemaCoordinateSyntax.ofType(type));
             switch (definition) {
                 case ObjectTypeDefinition object -> countFields(counts, type, object.getFieldDefinitions());
                 case InterfaceTypeDefinition iface -> countFields(counts, type, iface.getFieldDefinitions());
                 case InputObjectTypeDefinition input -> input.getInputValueDefinitions().forEach(field ->
-                    count(counts, field.getDirectives(), "FIELD", type, field.getName(), null));
+                    count(counts, field.getDirectives(),
+                        SchemaCoordinateSyntax.ofField(type, field.getName())));
                 case EnumTypeDefinition enumType -> {
                     for (EnumValueDefinition value : enumType.getEnumValueDefinitions()) {
-                        count(counts, value.getDirectives(), "ENUM_VALUE", type, value.getName(), null);
+                        count(counts, value.getDirectives(),
+                            SchemaCoordinateSyntax.ofEnumValue(type, value.getName()));
                     }
                 }
                 default -> { /* unions and scalars carry no member-level applications */ }
@@ -2286,18 +2273,19 @@ class FactCaptureAgreementTest {
 
     private static void countFields(Map<String, Integer> counts, String type, List<FieldDefinition> fields) {
         for (FieldDefinition field : fields) {
-            count(counts, field.getDirectives(), "FIELD", type, field.getName(), null);
+            count(counts, field.getDirectives(),
+                SchemaCoordinateSyntax.ofField(type, field.getName()));
             for (InputValueDefinition argument : field.getInputValueDefinitions()) {
-                count(counts, argument.getDirectives(), "ARGUMENT", type, field.getName(), argument.getName());
+                count(counts, argument.getDirectives(),
+                    SchemaCoordinateSyntax.ofArgument(type, field.getName(), argument.getName()));
             }
         }
     }
 
     private static void count(Map<String, Integer> counts, List<Directive> directives,
-                              String siteKind, String type, String member, String argument) {
+                              String coordinate) {
         for (Directive directive : directives) {
-            counts.merge(String.join("|", siteKind, String.valueOf(type), String.valueOf(member),
-                String.valueOf(argument), directive.getName()), 1, Integer::sum);
+            counts.merge(String.join("|", coordinate, directive.getName()), 1, Integer::sum);
         }
     }
 

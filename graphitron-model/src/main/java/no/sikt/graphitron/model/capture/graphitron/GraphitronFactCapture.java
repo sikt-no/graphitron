@@ -222,7 +222,7 @@ public final class GraphitronFactCapture {
 
     /**
      * Federation's {@code @key}, decoded for consumption. Its verbatim twin lives in
-     * {@code graphql_type_directive} for re-emission and both are written in the same pass, so a
+     * {@code graphql_directive_application} for re-emission and both are written in the same pass, so a
      * gate query can pin the two projections in agreement.
      */
     private void captureFederationKey(SiteRef site, Directive directive, int ordinal) {

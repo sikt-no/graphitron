@@ -135,10 +135,12 @@ class SupertypeSignatureGateTest {
      * being about the same constants, and the incumbent was retired rather than reconciled.
      *
      * <p>One row left the roster in the same change and for the same reason read backwards.
-     * {@code graphitron_error_entry} and {@code graphql_type_directive} shared a payload only while
-     * provenance was counted in it; what they actually share is the declaration site, which both
-     * declare as a foreign key into {@code graphql_type_declaration}. Their supertype was written
-     * all along and the columns beside it were hiding that.
+     * {@code graphitron_error_entry} and the type-site application relation shared a payload only
+     * while provenance was counted in it; what they actually shared is the declaration site, which
+     * both declared as a foreign key into {@code graphql_type_declaration}. Their supertype was
+     * written all along and the columns beside it were hiding that. The application relation has
+     * since collapsed onto the coordinate with its four siblings, which took the declaration site
+     * off it, so the pair cannot be looked up as it stood.
      *
      * <p>Worth recording how they became visible, because it says something about the rule above
      * rather than about them. Each pair was invisible while one side carried a mark-and-sweep stamp
@@ -214,9 +216,12 @@ class SupertypeSignatureGateTest {
         Set.of("graphql_ast_enum_value_directive_entry", "graphql_ast_field_directive_entry",
                "graphql_ast_input_value_directive_entry", "graphql_ast_schema_directive_entry",
                "graphql_ast_type_directive_entry"),
-        Set.of("graphitron_undecoded_argument_entry", "graphql_argument_directive_arg",
-               "graphql_enum_value_directive_arg", "graphql_field_directive_arg",
-               "graphql_schema_directive_arg", "graphql_type_directive_arg"),
+        // Two members where there were six. The five that left were the argument relations of the
+        // five application sites, and they shared a payload because they were one fact keyed five
+        // ways; they are one relation now, keyed at the coordinate, so the sharing they were
+        // recorded for is gone rather than discharged. What is left is the pair that genuinely
+        // shares one: an argument an author passed and an argument the decode could not read.
+        Set.of("graphitron_undecoded_argument_entry", "graphql_directive_application_arg"),
         Set.of("graphitron_argument_reference_for_step_entry", "graphitron_argument_reference_step_entry",
                "graphitron_field_reference_step_entry", "graphitron_reference_for_step_entry"),
         Set.of("sql_constraint_column", "sql_index_column", "sql_node_key_column"),
@@ -450,8 +455,8 @@ class SupertypeSignatureGateTest {
      * members carry the same columns outside their own keys, so the converted shape is those very
      * columns, all of them, referencing one relation: the members agree on a spelling and the
      * database holds them to it. The whole payload and not merely some of it, because a reference
-     * carrying part of one is a different fact entirely. graphitron_error_entry and
-     * graphql_type_directive share five columns and both point three of them at
+     * carrying part of one is a different fact entirely. graphitron_error_entry and the type-site
+     * application relation shared five columns and both pointed three of them at
      * graphql_type_declaration, which is where each was written and not what each is a kind of.
      */
     private static Collection<Set<String>> undeclaredSets(DSLContext dsl) {

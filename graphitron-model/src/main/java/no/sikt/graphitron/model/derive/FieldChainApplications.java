@@ -3,7 +3,8 @@ package no.sikt.graphitron.model.derive;
 import org.jooq.DSLContext;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CHAIN_APPLICATION;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.partitionBy;
 import static org.jooq.impl.DSL.rowNumber;
@@ -18,7 +19,7 @@ import static org.jooq.impl.DSL.rowNumber;
  * {@code @routine}, {@code @reference} holds ordinals 0, 0 and 1 across two relations with nothing
  * relating them.
  *
- * <p>The order was captured all along. {@code graphql_field_directive} holds every application with
+ * <p>The order was captured all along. {@code graphql_directive_application} holds every application with
  * its source position, so the sequence is a rank over positions rather than something a walk has to
  * rediscover. What was missing is a relation that states it, and the difference is not cosmetic: the
  * one reader that recovers the order by comparing positions gets it wrong, anchoring on the routine
@@ -47,13 +48,16 @@ public final class FieldChainApplications {
         dsl.deleteFrom(GRAPHITRON_FIELD_CHAIN_APPLICATION)
             .where(GRAPHITRON_FIELD_CHAIN_APPLICATION.GRAPH_NAME.eq(graphName)).execute();
 
-        var d = GRAPHQL_FIELD_DIRECTIVE;
+        var d = GRAPHQL_DIRECTIVE_APPLICATION;
+        // One relation holds every site's applications now, and a field's coordinate is what
+        // picks its own out, which is what joining the field element does here.
+        var e = GRAPHQL_FIELD_ELEMENT;
         // Position first, which is the written order the manual means. The ordinal breaks a tie the
         // transcription should never produce, two applications of one directive at one position, and
         // is there so the rank is total: a rank with ties would number two rows the same and the
         // primary key would refuse the second, turning a capture oddity into a failed capture.
         var position = rowNumber()
-            .over(partitionBy(d.GRAPH_NAME, d.TYPE_NAME, d.FIELD_NAME)
+            .over(partitionBy(d.GRAPH_NAME, d.COORDINATE)
                 .orderBy(d.SOURCE_LINE.asc().nullsLast(), d.SOURCE_COLUMN.asc().nullsLast(),
                     d.DIRECTIVE_NAME.asc(), d.ORDINAL.asc()))
             .minus(inline(1));
@@ -63,12 +67,14 @@ public final class FieldChainApplications {
                 GRAPHITRON_FIELD_CHAIN_APPLICATION.TYPE_NAME,
                 GRAPHITRON_FIELD_CHAIN_APPLICATION.FIELD_NAME,
                 GRAPHITRON_FIELD_CHAIN_APPLICATION.CHAIN_POSITION,
+                GRAPHITRON_FIELD_CHAIN_APPLICATION.COORDINATE,
                 GRAPHITRON_FIELD_CHAIN_APPLICATION.DIRECTIVE_NAME,
                 GRAPHITRON_FIELD_CHAIN_APPLICATION.ORDINAL)
             .select(dsl
-                .select(d.GRAPH_NAME, d.TYPE_NAME, d.FIELD_NAME, position, d.DIRECTIVE_NAME,
-                    d.ORDINAL)
+                .select(d.GRAPH_NAME, e.TYPE_NAME, e.FIELD_NAME, position, d.COORDINATE,
+                    d.DIRECTIVE_NAME, d.ORDINAL)
                 .from(d)
+                .join(e).on(e.GRAPH_NAME.eq(d.GRAPH_NAME), e.COORDINATE.eq(d.COORDINATE))
                 .where(d.GRAPH_NAME.eq(graphName))
                 .and(d.DIRECTIVE_NAME.in(inline("reference"), inline("routine"))))
             .execute();

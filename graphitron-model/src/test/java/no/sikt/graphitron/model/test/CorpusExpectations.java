@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.test;
 
+import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import graphql.language.StringValue;
 import graphql.parser.Parser;
 import graphql.schema.idl.SchemaParser;
@@ -38,7 +39,7 @@ import java.util.Set;
  * document never spells: it is the document's own identity, supplied here.
  *
  * <p><b>Nothing here owns a CSV parser.</b> Capture writes the application as rows
- * ({@code graphql_schema_directive} plus its {@code _arg} child, the argument value in
+ * ({@code graphql_directive_application} at the schema block's coordinate, plus its argument child, the argument value in
  * {@code AstPrinter} form), {@link Parser#parseValue} recovers the block's text, and
  * {@link DSLContext#fetchFromCSV} turns it into a result whose field names are the header. Quoting,
  * embedded separators and escaping are graphql-java's and jOOQ's problem. Cells and headers are
@@ -159,15 +160,21 @@ public final class CorpusExpectations {
                 DSL.field(id("a", "directive_argument_name"), String.class),
                 DSL.field(id("a", "value_sdl"), String.class),
                 DSL.field(id("d", "directive_name"), String.class))
-            .from(DSL.table(id("graphql_schema_directive")).as("D"))
-            .join(DSL.table(id("graphql_schema_directive_arg")).as("A"))
+            .from(DSL.table(id("graphql_directive_application")).as("D"))
+            .join(DSL.table(id("graphql_directive_application_arg")).as("A"))
             .on(DSL.field(id("a", "graph_name"), String.class)
                 .eq(DSL.field(id("d", "graph_name"), String.class)))
+            .and(DSL.field(id("a", "coordinate"), String.class)
+                .eq(DSL.field(id("d", "coordinate"), String.class)))
             .and(DSL.field(id("a", "directive_name"), String.class)
                 .eq(DSL.field(id("d", "directive_name"), String.class)))
             .and(DSL.field(id("a", "ordinal"), Integer.class)
                 .eq(DSL.field(id("d", "ordinal"), Integer.class)))
-            .where(DSL.field(id("d", "directive_name"), String.class).in(DIRECTIVE, CONTAINS_DIRECTIVE))
+            // The schema block's own applications, which is what these expectations are written
+            // on: one relation holds every site now, and the coordinate is what selects this one.
+            .where(DSL.field(id("d", "coordinate"), String.class)
+                .eq(SchemaCoordinateSyntax.ofSchema()))
+            .and(DSL.field(id("d", "directive_name"), String.class).in(DIRECTIVE, CONTAINS_DIRECTIVE))
             .orderBy(DSL.field(id("d", "graph_name")), DSL.field(id("d", "ordinal")))
             .fetch();
 

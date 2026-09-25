@@ -74,11 +74,10 @@ class RelationRegistrationGateTest {
             // reading it through graphql_poly_member is reading both.
             "graphql_implements_interface", "graphql_union_member",
             "graphql_root_operation", "graphql_directive",
-            "graphql_directive_location", "graphql_directive_argument", "graphql_schema_directive",
-            "graphql_schema_directive_arg", "graphql_type_directive", "graphql_type_directive_arg",
-            "graphql_field_directive", "graphql_field_directive_arg", "graphql_argument_directive",
-            "graphql_argument_directive_arg", "graphql_enum_value_directive",
-            "graphql_enum_value_directive_arg",
+            "graphql_directive_location", "graphql_directive_argument",
+            // One pair where there were ten. The five sites and their five argument relations
+            // keyed one fact five ways; both producers now write the coordinate instead.
+            "graphql_directive_application", "graphql_directive_application_arg",
             "graphitron_table_entry", "graphitron_field_binding_entry",
             "graphitron_argument_binding_entry", "graphitron_scalar_type_entry",
             "graphitron_field_condition_entry", "graphitron_field_condition_context_arg_entry",
@@ -352,6 +351,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_mutation_payload_column", Arm.DERIVED);
         registrations.put("graphitron_mutation_payload_column_rule", Arm.DERIVED);
         registrations.put("sql_constraint_hop", Arm.DERIVED);
+        registrations.put("graphql_ast_element_declaration", Arm.DERIVED);
         registrations.put("graphitron_field_chain_link_reading", Arm.DERIVED);
         registrations.put("graphitron_field_table_link_rule", Arm.DERIVED);
         registrations.put("intent_mutation_matched_key", Arm.DERIVED);

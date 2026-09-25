@@ -311,7 +311,7 @@ class CarrierDataFieldTest {
      * <p>Every spelling here is answered by the decoded relation the directive writes rather than by
      * the application row, so a probe pointed at the wrong relation passes the arm and admits the
      * payload. That is what this case is for: the arms were one name list against
-     * {@code graphql_field_directive} and are now one probe each, and a list of strings is checked
+     * {@code graphql_directive_application} and are now one probe each, and a list of strings is checked
      * by nothing where a relation name is checked by the compiler.
      *
      * <p>{@code @notGenerated} and {@code @splitQuery} have cases of their own, the first because it

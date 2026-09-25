@@ -5,7 +5,6 @@ import graphql.parser.Parser;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
-import org.jooq.Table;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -14,11 +13,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_DIRECTIVE_ARG;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_DIRECTIVE_ARG;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE_ARG;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_DIRECTIVE_ARG;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE_ARG;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION_ARG;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -73,10 +68,6 @@ class DirectiveLiteralRoundTripTest {
         enum Rating { G @carrier(text: "general") }
         """;
 
-    private static final List<Table<?>> LITERAL_RELATIONS = List.of(
-        GRAPHQL_SCHEMA_DIRECTIVE_ARG, GRAPHQL_TYPE_DIRECTIVE_ARG, GRAPHQL_FIELD_DIRECTIVE_ARG,
-        GRAPHQL_ARGUMENT_DIRECTIVE_ARG, GRAPHQL_ENUM_VALUE_DIRECTIVE_ARG);
-
     @Test
     @DisplayName("every stored literal parses back to the value it was printed from")
     void everyStoredLiteralParsesBack(@TempDir Path tmp) {
@@ -84,7 +75,7 @@ class DirectiveLiteralRoundTripTest {
             var stored = literalsOf(store.dsl());
             assertThat(stored)
                 .as("the fixture has to reach every literal shape, so an empty read would pass"
-                    + " vacuously; each of the five application grains carries at least one")
+                    + " vacuously; the fixture writes one at each of the sites")
                 .hasSizeGreaterThanOrEqualTo(9);
 
             var broken = new ArrayList<String>();
@@ -101,14 +92,13 @@ class DirectiveLiteralRoundTripTest {
         }
     }
 
-    /** Every authored literal a capture stored, across the five directive-application grains. */
+    /**
+     * Every authored literal a capture stored. One relation, where this walked five: the arguments
+     * of an application are one fact whatever site the application sits at.
+     */
     private static List<String> literalsOf(DSLContext dsl) {
-        var literals = new ArrayList<String>();
-        for (Table<?> relation : LITERAL_RELATIONS) {
-            literals.addAll(dsl.select(relation.field("VALUE_SDL", String.class))
-                .from(relation)
-                .fetch(0, String.class));
-        }
-        return literals;
+        return dsl.select(GRAPHQL_DIRECTIVE_APPLICATION_ARG.VALUE_SDL)
+            .from(GRAPHQL_DIRECTIVE_APPLICATION_ARG)
+            .fetch(0, String.class);
     }
 }

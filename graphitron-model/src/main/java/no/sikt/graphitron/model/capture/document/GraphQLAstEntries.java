@@ -6,6 +6,7 @@ import graphql.language.BooleanValue;
 import graphql.language.DescribedNode;
 import graphql.language.Description;
 import graphql.language.Directive;
+import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import graphql.language.DirectiveDefinition;
 import graphql.language.DirectiveLocation;
 import graphql.language.EnumTypeDefinition;
@@ -344,6 +345,11 @@ public final class GraphQLAstEntries {
                                            TypeDefinitionRegistry document) {
         supertype(dsl, graph, touchedAt, EntryKind.SCHEMA_DEFINITION,
             schemas(document).map(GraphQLAstEntries::root).toList());
+        // The schema block declares a coordinate like every other site, and the coordinate is a
+        // constant because a schema block has no name to compose one from. A dollar sign is
+        // illegal in a GraphQL name, so this can never be a type an author wrote.
+        element(dsl, graph, touchedAt, schemas(document).map(GraphQLAstEntries::root).toList(),
+            nested -> SchemaCoordinateSyntax.ofSchema());
         var t = GRAPHQL_AST_SCHEMA_DEFINITION_ENTRY;
         var rows = schemas(document).collect(Rows.toRowList(
             node -> val(graph, t.GRAPH_NAME),

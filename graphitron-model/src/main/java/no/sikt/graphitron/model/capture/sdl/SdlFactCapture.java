@@ -4,6 +4,7 @@ import no.sikt.graphitron.model.schema.SiteRef;
 import graphql.language.AstPrinter;
 import graphql.language.Description;
 import graphql.language.Directive;
+import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import graphql.language.DirectiveDefinition;
 import graphql.language.EnumTypeDefinition;
 import graphql.language.EnumValueDefinition;
@@ -44,26 +45,18 @@ import java.util.Map;
 import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_DIRECTIVE_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_LOCATION;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_DIRECTIVE_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_IMPLEMENTS_INTERFACE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_UNION_MEMBER;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_DIRECTIVE_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE_ARG;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 
 /**
@@ -186,14 +179,24 @@ public final class SdlFactCapture {
 
     // ---------------------------------------------------------------- directive definitions
 
+    /** The directives the specification gives every schema; see {@link #captureDirectiveDefinitions}. */
+    private static final List<String> SPECIFIED_DIRECTIVES =
+        List.of("deprecated", "include", "oneOf", "skip", "specifiedBy");
+
     /**
-     * Records what each directive <em>is</em>, for every definition the registry holds. Graphitron's
-     * own bundled definitions are rows too, so an application's directive name always resolves to a
-     * definition and reading a repeatable flag or an argument default stays a join. Which
-     * definitions an emitter re-declares is a question about their {@code source_name}, answered
-     * where the emitting happens.
+     * Records what each directive <em>is</em>, for every definition the registry holds and for the
+     * five the specification gives every schema. Graphitron's own bundled definitions are rows too,
+     * so an application's directive name always resolves to a definition and reading a repeatable
+     * flag or an argument default stays a join. Which definitions an emitter re-declares is a
+     * question about their {@code source_name}, answered where the emitting happens.
      */
     private void captureDirectiveDefinitions() {
+        // The five the specification gives every schema, which no document declares and the
+        // registry therefore does not list. They are claimed because an author can apply them and
+        // the anchor writes an existence row for each; graphitron applies one of them itself.
+        for (String specified : SPECIFIED_DIRECTIVES) {
+            sink.claim(GRAPHQL_DIRECTIVE, specified);
+        }
         for (DirectiveDefinition definition : registry.getDirectiveDefinitions().values()) {
             String name = definition.getName();
             if (!sink.claim(GRAPHQL_DIRECTIVE, name)) {
@@ -213,6 +216,33 @@ public final class SdlFactCapture {
                     continue;
                 }
                 var wrapping = Wrapping.of(argument.getType());
+                // A formal argument of a directive definition is a coordinate the specification
+                // spells and graphql_element anchors, so an application written on one is a row
+                // like any other. It reached no relation while the applications were kept per
+                // site, there being no relation shaped for this one; keying them at the
+                // coordinate is what makes the site ordinary rather than absent.
+                captureDirectiveArgumentDirectives(name, argumentName, argument.getDirectives());
+            }
+        }
+    }
+
+    /** The applications written on one formal argument of a directive definition. */
+    private void captureDirectiveArgumentDirectives(String directiveName, String argumentName,
+                                                    List<Directive> directives) {
+        var ordinals = new LinkedHashMap<String, Integer>();
+        for (Directive directive : directives) {
+            int ordinal = ordinals.merge(directive.getName(), 0, (old, ignored) -> old + 1);
+            String coordinate =
+                SchemaCoordinateSyntax.ofDirectiveArgument(directiveName, argumentName);
+            if (!sink.claim(GRAPHQL_DIRECTIVE_APPLICATION, coordinate, directive.getName(),
+                    ordinal)) {
+                continue;
+            }
+            for (var argument : directive.getArguments()) {
+                if (!sink.claim(GRAPHQL_DIRECTIVE_APPLICATION_ARG, coordinate,
+                        directive.getName(), ordinal, argument.getName())) {
+                    continue;
+                }
             }
         }
     }
@@ -249,11 +279,13 @@ public final class SdlFactCapture {
                 : ((graphql.language.SchemaExtensionDefinition) definition).getDirectives();
             for (Directive directive : directives) {
                 int ordinal = ordinals.merge(directive.getName(), 0, (old, ignored) -> old + 1);
-                if (!sink.claim(GRAPHQL_SCHEMA_DIRECTIVE, directive.getName(), ordinal)) {
+                String coordinate = SchemaCoordinateSyntax.ofSchema();
+                if (!sink.claim(GRAPHQL_DIRECTIVE_APPLICATION, coordinate, directive.getName(),
+                        ordinal)) {
                     continue;
                 }
                 for (var argument : directive.getArguments()) {
-                    if (!sink.claim(GRAPHQL_SCHEMA_DIRECTIVE_ARG,
+                    if (!sink.claim(GRAPHQL_DIRECTIVE_APPLICATION_ARG, coordinate,
                             directive.getName(), ordinal, argument.getName())) {
                         continue;
                     }
@@ -536,12 +568,13 @@ public final class SdlFactCapture {
 
     /** One authored type-level application, at the position the author wrote it. */
     private void captureTypeDirective(SiteRef site, Directive directive, int ordinal) {
-        if (!sink.claim(GRAPHQL_TYPE_DIRECTIVE, site.typeName(), directive.getName(), ordinal)) {
+        String coordinate = SchemaCoordinateSyntax.ofType(site.typeName());
+        if (!sink.claim(GRAPHQL_DIRECTIVE_APPLICATION, coordinate, directive.getName(), ordinal)) {
             return;
         }
         for (var argument : directive.getArguments()) {
-            if (!sink.claim(GRAPHQL_TYPE_DIRECTIVE_ARG,
-                    site.typeName(), directive.getName(), ordinal, argument.getName())) {
+            if (!sink.claim(GRAPHQL_DIRECTIVE_APPLICATION_ARG,
+                    coordinate, directive.getName(), ordinal, argument.getName())) {
                 continue;
             }
         }
@@ -553,12 +586,14 @@ public final class SdlFactCapture {
         var ordinals = new LinkedHashMap<String, Integer>();
         for (Directive directive : directives) {
             int ordinal = ordinals.merge(directive.getName(), 0, (old, ignored) -> old + 1);
-            if (!sink.claim(GRAPHQL_FIELD_DIRECTIVE, typeName, fieldName, directive.getName(), ordinal)) {
+            String coordinate = SchemaCoordinateSyntax.ofField(typeName, fieldName);
+            if (!sink.claim(GRAPHQL_DIRECTIVE_APPLICATION, coordinate, directive.getName(),
+                    ordinal)) {
                 continue;
             }
             for (var argument : directive.getArguments()) {
-                if (!sink.claim(GRAPHQL_FIELD_DIRECTIVE_ARG,
-                        typeName, fieldName, directive.getName(), ordinal, argument.getName())) {
+                if (!sink.claim(GRAPHQL_DIRECTIVE_APPLICATION_ARG,
+                        coordinate, directive.getName(), ordinal, argument.getName())) {
                     continue;
                 }
             }
@@ -571,12 +606,14 @@ public final class SdlFactCapture {
         var ordinals = new LinkedHashMap<String, Integer>();
         for (Directive directive : directives) {
             int ordinal = ordinals.merge(directive.getName(), 0, (old, ignored) -> old + 1);
-            if (!sink.claim(GRAPHQL_ARGUMENT_DIRECTIVE,
-                    typeName, fieldName, argumentName, directive.getName(), ordinal)) {
+            String coordinate =
+                SchemaCoordinateSyntax.ofArgument(typeName, fieldName, argumentName);
+            if (!sink.claim(GRAPHQL_DIRECTIVE_APPLICATION, coordinate, directive.getName(),
+                    ordinal)) {
                 continue;
             }
             for (var argument : directive.getArguments()) {
-                if (!sink.claim(GRAPHQL_ARGUMENT_DIRECTIVE_ARG, typeName, fieldName, argumentName,
+                if (!sink.claim(GRAPHQL_DIRECTIVE_APPLICATION_ARG, coordinate,
                         directive.getName(), ordinal, argument.getName())) {
                     continue;
                 }
