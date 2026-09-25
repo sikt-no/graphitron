@@ -62,11 +62,13 @@ import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.concat;
 import static org.jooq.impl.DSL.condition;
 import static org.jooq.impl.DSL.excluded;
+import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.name;
 import static org.jooq.impl.DSL.partitionBy;
 import static org.jooq.impl.DSL.rowNumber;
+import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.val;
 
 /**
@@ -192,6 +194,7 @@ public final class GraphitronAnchor {
         var ra = GRAPHITRON_AST_ROUTINE_ENTRY;
         var aa = GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
         var v = GRAPHQL_AST_VALUE_ENTRY;
+        var pv = GRAPHQL_AST_VALUE_ENTRY.as("pv");
         var t = GRAPHITRON_FIELD_CHAIN_LINK;
 
         // The coordinate is read off the declaration the application was written on, one hop up
@@ -254,7 +257,18 @@ public final class GraphitronAnchor {
             .join(v).on(v.GRAPH_NAME.eq(aa.GRAPH_NAME), v.SOURCE_NAME.eq(aa.SOURCE_NAME),
                 v.HOLDER_LINE.eq(aa.SOURCE_LINE), v.HOLDER_COLUMN.eq(aa.SOURCE_COLUMN),
                 v.KIND.eq("OBJECT"))
-            .and(v.POSITION.isNotNull().or(v.PARENT_LINE.isNull()))
+            // An element is an object written directly in the path list, or the lone object the
+            // list was coerced around. Depth is what this states and what neither of the other two
+            // columns can: the holder is the same node for every value of the expression, so an
+            // object nested inside an element names it just as directly, and the schema ties a
+            // position to parenthood, so a nested object holds a position among its own object's
+            // fields exactly as an element holds one in the list. A @reference element carrying a
+            // condition is the shape that shows it, the condition's own argument object having
+            // read as a second link of the chain.
+            .and(v.PARENT_LINE.isNull().or(exists(selectOne().from(pv)
+                .where(pv.GRAPH_NAME.eq(v.GRAPH_NAME), pv.SOURCE_NAME.eq(v.SOURCE_NAME),
+                    pv.SOURCE_LINE.eq(v.PARENT_LINE), pv.SOURCE_COLUMN.eq(v.PARENT_COLUMN),
+                    pv.KIND.eq("LIST"), pv.PARENT_LINE.isNull()))))
             .where(applications.field("name", String.class).in("reference", "referenceFor"));
 
         var elements = routines.unionAll(steps).asTable("elements");

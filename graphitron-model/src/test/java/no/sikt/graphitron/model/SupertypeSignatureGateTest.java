@@ -353,6 +353,17 @@ class SupertypeSignatureGateTest {
      * coordinates, and the set is on the roster above with nothing declared over it.
      */
     private static final Set<String> RECONSTRUCTIONS = Set.of(
+        // The chain resolution, which reconstructs the @reference and @referenceFor step pairs
+        // once per element shape. Not a reconstruction this roster gained, but one it can finally
+        // see: GraphitronAnchor and the resolution stage below it both unioned these pairs in
+        // jOOQ, where no parse over a stored definition reaches, and the rule moving into the
+        // catalog is what put it in front of this gate. Three rows and not one because the pair
+        // is spelled per element shape, which is what a supertype over the four would collapse;
+        // the four are recorded as deliberately unconverted, so this records the sites rather
+        // than pre-empting that decision.
+        "graphitron_field_chain_link_reading|graphitron_ast_field_reference_condition_step_entry,graphitron_ast_field_reference_for_condition_step_entry",
+        "graphitron_field_chain_link_reading|graphitron_ast_field_reference_for_key_step_entry,graphitron_ast_field_reference_key_step_entry",
+        "graphitron_field_chain_link_reading|graphitron_ast_field_reference_for_table_step_entry,graphitron_ast_field_reference_table_step_entry",
         // Older than this roster and unchanged by it. It unions two element relations, which was
         // not a reconstruction while the four declared over graphql_element and discharged; adding
         // the entry position to their set is what made the set undeclared and this view visible as

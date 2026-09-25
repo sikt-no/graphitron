@@ -17,6 +17,7 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TABLE_LINK;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TABLE_LINK_RULE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -250,6 +251,81 @@ class FieldTableLinksTest {
                 .isNotEmpty();
             assertThat(links(dsl, "Query", "films")).isEmpty();
         });
+    }
+
+    /**
+     * That the stage loses nothing between the rule and the table. It is a weak claim and worth
+     * saying so: the stage is an INSERT from the view, so the two agree by construction and this
+     * fails only where the insert drops a row the rule stated. The conversion's own oracle is the
+     * cases above, which say what each arm resolves to and did so before the rule moved into the
+     * catalog.
+     *
+     * <p>What this adds is a place to read the disagreement from. It is stated against this
+     * fixture because this is the one exercising every arm, a key traversed both ways, a table
+     * element, a table element out of a function result, two condition signatures and a two-key
+     * chain, and it reports the links and their readings on failure, which is where a lost
+     * resolution is diagnosed.
+     *
+     * <p>Both directions, because they fail differently. Rows the rule does not produce are a
+     * resolution the view lost; rows the table does not hold are one it invented.
+     */
+    @Test
+    @DisplayName("the stored links are exactly what the rule states, both ways")
+    void theTableAndTheRuleAgree() {
+        withCaptured(dsl -> {
+            assertThat(ruleRows(dsl))
+                .as("the rule and the table disagree.%n  links:    %s%n  readings: %s",
+                    chainLinks(dsl), readings(dsl))
+                .containsExactlyInAnyOrderElementsOf(tableRows(dsl));
+        });
+    }
+
+    /** Every written chain link, which is what a reading is a reading of. */
+    private static List<String> chainLinks(DSLContext dsl) {
+        var l = no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CHAIN_LINK;
+        return dsl.select(l.TYPE_NAME, l.FIELD_NAME, l.POSITION, l.SOURCE_LINE, l.SOURCE_COLUMN)
+            .from(l).where(l.GRAPH_NAME.eq(CapturedStore.GRAPH))
+            .orderBy(l.TYPE_NAME, l.FIELD_NAME, l.POSITION)
+            .fetch(FieldTableLinksTest::line);
+    }
+
+    /**
+     * Every reading of every link, which is what a disagreement is diagnosed from: a link the rule
+     * dropped has either no reading here or several, and the difference is the whole question.
+     */
+    private static List<String> readings(DSLContext dsl) {
+        var r = no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CHAIN_LINK_READING;
+        return dsl.select(r.TYPE_NAME, r.FIELD_NAME, r.TARGET_TABLE, r.POSITION, r.LAST_POSITION,
+                r.VIA, r.CONSTRAINT_NAME, r.FK_ON_FROM, r.FROM_TABLE, r.TO_TABLE)
+            .from(r).where(r.GRAPH_NAME.eq(CapturedStore.GRAPH))
+            .orderBy(r.TYPE_NAME, r.FIELD_NAME, r.POSITION)
+            .fetch(FieldTableLinksTest::line);
+    }
+
+    /** Every stored link of the fixture's graph, as a comparable line. */
+    private static List<String> tableRows(DSLContext dsl) {
+        var t = GRAPHITRON_FIELD_TABLE_LINK;
+        return dsl.select(t.TYPE_NAME, t.FIELD_NAME, t.TARGET_TABLE, t.POSITION, t.VIA,
+                t.KEY_MATCHED_BY, t.CONSTRAINT_NAME, t.FK_ON_FROM, t.FROM_TABLE, t.TO_TABLE)
+            .from(t).where(t.GRAPH_NAME.eq(CapturedStore.GRAPH))
+            .fetch(FieldTableLinksTest::line);
+    }
+
+    /** The same, as the rule states it. */
+    private static List<String> ruleRows(DSLContext dsl) {
+        var r = GRAPHITRON_FIELD_TABLE_LINK_RULE;
+        return dsl.select(r.TYPE_NAME, r.FIELD_NAME, r.TARGET_TABLE, r.POSITION, r.VIA,
+                r.KEY_MATCHED_BY, r.CONSTRAINT_NAME, r.FK_ON_FROM, r.FROM_TABLE, r.TO_TABLE)
+            .from(r).where(r.GRAPH_NAME.eq(CapturedStore.GRAPH))
+            .fetch(FieldTableLinksTest::line);
+    }
+
+    private static String line(org.jooq.Record r) {
+        var parts = new java.util.ArrayList<String>();
+        for (int i = 0; i < r.size(); i++) {
+            parts.add(String.valueOf(r.get(i)));
+        }
+        return String.join(" ", parts);
     }
 
     private static List<String> links(DSLContext dsl, String typeName, String fieldName) {

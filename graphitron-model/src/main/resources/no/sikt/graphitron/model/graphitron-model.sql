@@ -5597,6 +5597,32 @@ COMMENT ON COLUMN sql_referential_constraint.referenced_table IS 'the referenced
 COMMENT ON COLUMN sql_referential_constraint.referenced_constraint_name IS 'the referenced constraint''s name';
 COMMENT ON COLUMN sql_referential_constraint.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
 
+CREATE VIEW sql_constraint_hop
+  (source_name, table_schema, table_name, constraint_name, fk_on_from,
+   from_source_name, from_schema, from_table,
+   to_source_name, to_schema, to_table) AS
+SELECT rc.source_name, rc.table_schema, rc.table_name, rc.constraint_name, TRUE,
+       rc.source_name, rc.table_schema, rc.table_name,
+       rc.referenced_source_name, rc.referenced_schema, rc.referenced_table
+  FROM sql_referential_constraint rc
+UNION ALL
+SELECT rc.source_name, rc.table_schema, rc.table_name, rc.constraint_name, FALSE,
+       rc.referenced_source_name, rc.referenced_schema, rc.referenced_table,
+       rc.source_name, rc.table_schema, rc.table_name
+  FROM sql_referential_constraint rc;
+COMMENT ON VIEW sql_constraint_hop IS 'One direction a foreign key can be travelled in: two rows per referential constraint, naming where a hop riding it departs and where it arrives. For example film_actor''s foreign key to film draws a row departing film_actor and arriving at film, and a second departing film and arriving at film_actor.';
+COMMENT ON COLUMN sql_constraint_hop.source_name IS 'the constraint''s own generated-package source, the first column of the sql_referential_constraint key this row is about';
+COMMENT ON COLUMN sql_constraint_hop.table_schema IS 'the schema of the table declaring the constraint, carried from the constraint rather than from either end of the hop: the declaring table is a property of the key and is the same whichever way the key is travelled';
+COMMENT ON COLUMN sql_constraint_hop.table_name IS 'the table declaring the constraint; with the two columns above and the name beside it, the constraint this hop rides';
+COMMENT ON COLUMN sql_constraint_hop.constraint_name IS 'the constraint''s SQL name; with the three columns above, a reference into sql_referential_constraint';
+COMMENT ON COLUMN sql_constraint_hop.fk_on_from IS 'whether the key is declared on the departure, which is what tells the two rows of one constraint apart and is the rest of the grain. True is the forward reading, departing the declaring table and arriving at what it references; false is the same key ridden against itself, which is how a parent reaches its children and is no less a hop for it';
+COMMENT ON COLUMN sql_constraint_hop.from_source_name IS 'the generated-package source of the table a hop riding this key departs from, the first of the three columns naming it';
+COMMENT ON COLUMN sql_constraint_hop.from_schema IS 'the departure''s schema as the catalog spells it';
+COMMENT ON COLUMN sql_constraint_hop.from_table IS 'the departure''s own name; with the two columns above, a table of sql_table. A fact about the database rather than about any schema that names the key: a constraint affords both of these hops whether or not an author ever writes a path through it, which is why they are written down once here instead of being derived again at every element that names the key';
+COMMENT ON COLUMN sql_constraint_hop.to_source_name IS 'the generated-package source of the table a hop riding this key arrives at, the first of the three columns naming it';
+COMMENT ON COLUMN sql_constraint_hop.to_schema IS 'the arrival''s schema as the catalog spells it';
+COMMENT ON COLUMN sql_constraint_hop.to_table IS 'the arrival''s own name; with the two columns above, a table of sql_table. The two ends swap between the row pair and nothing else does, so a reader holding one direction holds the other by the constraint';
+
 CREATE TABLE sql_table_reference (
   source_name            VARCHAR NOT NULL,
   table_schema           VARCHAR NOT NULL,
@@ -6448,6 +6474,348 @@ COMMENT ON COLUMN code_condition_method_parameter_table.table_source_name IS 'th
 COMMENT ON COLUMN code_condition_method_parameter_table.table_schema IS 'the schema the table is in, the second of the three';
 COMMENT ON COLUMN code_condition_method_parameter_table.table_name IS 'the table''s SQL name, the third. Keyed to sql_table rather than carrying the generated class name, so a reader joins a primary key instead of sql_table.class_fqn, which is no key and can match more than one row';
 COMMENT ON COLUMN code_condition_method_parameter_table.touched_at IS 'when the reading that produced this row ran; swept with the parameter it hangs on';
+
+CREATE VIEW graphitron_field_chain_link_reading
+  (graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+   position, last_position, via, key_matched_by,
+   constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from,
+   from_source_name, from_schema, from_table, to_source_name, to_schema, to_table) AS
+WITH
+-- The key an element named, whichever directive wrote it. One fact with one shape, so one
+-- relation; a written position is never under both directives at once, so a bag costs nothing.
+key_spelling (graph_name, source_name, source_line, source_column, namespace_upper, name_upper) AS (
+  SELECT graph_name, source_name, source_line, source_column,
+         key_ref_namespace_part_upper, key_ref_name_part_upper
+    FROM graphitron_ast_field_reference_key_step_entry
+  UNION ALL
+  SELECT graph_name, source_name, source_line, source_column,
+         key_ref_namespace_part_upper, key_ref_name_part_upper
+    FROM graphitron_ast_field_reference_for_key_step_entry
+),
+table_spelling (graph_name, source_name, source_line, source_column, namespace_upper, name_upper) AS (
+  SELECT graph_name, source_name, source_line, source_column,
+         table_ref_namespace_part_upper, table_ref_name_part_upper
+    FROM graphitron_ast_field_reference_table_step_entry
+  UNION ALL
+  SELECT graph_name, source_name, source_line, source_column,
+         table_ref_namespace_part_upper, table_ref_name_part_upper
+    FROM graphitron_ast_field_reference_for_table_step_entry
+),
+condition_spelling (graph_name, source_name, source_line, source_column, class_name, method) AS (
+  SELECT graph_name, source_name, source_line, source_column, class_name, method
+    FROM graphitron_ast_field_reference_condition_step_entry
+  UNION ALL
+  SELECT graph_name, source_name, source_line, source_column, class_name, method
+    FROM graphitron_ast_field_reference_for_condition_step_entry
+),
+-- One link of one chain toward one target, which is the grain every arm below answers at: the
+-- chain's order is stated once at the coordinate and the target is what a resolution belongs to.
+link (graph_name, type_name, field_name, position, last_position,
+      source_name, source_line, source_column,
+      target_source_name, target_schema, target_table) AS (
+  SELECT cl.graph_name, cl.type_name, cl.field_name, cl.position,
+         (SELECT MAX(cl2.position) FROM graphitron_field_chain_link cl2
+           WHERE cl2.graph_name = cl.graph_name AND cl2.type_name = cl.type_name
+             AND cl2.field_name = cl.field_name),
+         cl.source_name, cl.source_line, cl.source_column,
+         ft.to_source_name, ft.to_schema, ft.to_table
+    FROM graphitron_field_chain_link cl
+    JOIN graphitron_field_table ft
+      ON ft.graph_name = cl.graph_name AND ft.type_name = cl.type_name
+     AND ft.field_name = cl.field_name
+)
+-- Every way one link could be read, before anything says which. An arm states its arrival always
+-- and its departure where the element decides it; a key element reads both of the hops its
+-- constraint affords, which sql_constraint_hop states once for the catalog rather than here.
+  -- A @routine application arrives at its result and departs from nothing, whatever its position:
+  -- a function result is where a chain's rows begin.
+  SELECT l.graph_name, l.type_name, l.field_name,
+         l.target_source_name, l.target_schema, l.target_table,
+         l.position, l.last_position, 'ROUTINE', CAST(NULL AS VARCHAR),
+         CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+         CAST(NULL AS VARCHAR), CAST(NULL AS BOOLEAN),
+         CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+         fr.result_source_name, fr.result_schema, fr.result_table
+    FROM link l
+    JOIN graphitron_routine_entry r
+      ON r.graph_name = l.graph_name AND r.type_name = l.type_name
+     AND r.field_name = l.field_name AND r.source_name = l.source_name
+     AND r.source_line = l.source_line AND r.source_column = l.source_column
+    JOIN graphitron_field_routine fr
+      ON fr.graph_name = l.graph_name AND fr.type_name = l.type_name
+     AND fr.field_name = l.field_name AND fr.ordinal = r.ordinal
+     AND fr.to_source_name = l.target_source_name AND fr.to_schema = l.target_schema
+     AND fr.to_table = l.target_table
+  UNION ALL
+  -- An element naming a key is a route, and the catalog says a key is two hops, so this is two
+  -- readings. Which one the author meant is the one the chain reaches, and the walk below decides.
+  SELECT l.graph_name, l.type_name, l.field_name,
+         l.target_source_name, l.target_schema, l.target_table,
+         l.position, l.last_position, 'KEY',
+         CASE WHEN c.constraint_name_upper = ks.name_upper THEN 'SQL_NAME' ELSE 'JOOQ_NAME' END,
+         h.source_name, h.table_schema, h.table_name, h.constraint_name, h.fk_on_from,
+         h.from_source_name, h.from_schema, h.from_table,
+         h.to_source_name, h.to_schema, h.to_table
+    FROM link l
+    JOIN key_spelling ks
+      ON ks.graph_name = l.graph_name AND ks.source_name = l.source_name
+     AND ks.source_line = l.source_line AND ks.source_column = l.source_column
+    JOIN store_graph_source m ON m.graph_name = l.graph_name
+    JOIN sql_constraint c
+      ON c.source_name = m.source_name
+     AND (ks.namespace_upper IS NOT NULL
+          AND c.table_schema_upper = ks.namespace_upper
+          AND c.constraint_name_upper = ks.name_upper
+       OR ks.namespace_upper IS NULL
+          AND (c.constraint_name_upper = ks.name_upper
+            OR c.jooq_name_upper = ks.name_upper
+           AND NOT EXISTS (SELECT 1 FROM sql_constraint c2
+                             JOIN store_graph_source m2 ON m2.source_name = c2.source_name
+                            WHERE m2.graph_name = l.graph_name
+                              AND c2.constraint_name_upper = ks.name_upper)))
+    JOIN sql_constraint_hop h
+      ON h.source_name = c.source_name AND h.table_schema = c.table_schema
+     AND h.table_name = c.table_name AND h.constraint_name = c.constraint_name
+  UNION ALL
+  -- An element naming a table alone arrives there, and the route is a hop of some key that lands
+  -- on it. Each such hop is a reading; the chain picks the one whose departure it reaches.
+  SELECT l.graph_name, l.type_name, l.field_name,
+         l.target_source_name, l.target_schema, l.target_table,
+         l.position, l.last_position, 'TABLE', CAST(NULL AS VARCHAR),
+         h.source_name, h.table_schema, h.table_name, h.constraint_name, h.fk_on_from,
+         h.from_source_name, h.from_schema, h.from_table,
+         h.to_source_name, h.to_schema, h.to_table
+    FROM link l
+    JOIN table_spelling ts
+      ON ts.graph_name = l.graph_name AND ts.source_name = l.source_name
+     AND ts.source_line = l.source_line AND ts.source_column = l.source_column
+    JOIN store_graph_source m ON m.graph_name = l.graph_name
+    JOIN sql_table st
+      ON st.source_name = m.source_name
+     AND st.table_name_upper = ts.name_upper
+     AND (ts.namespace_upper IS NULL OR st.table_schema_upper = ts.namespace_upper)
+    JOIN sql_constraint_hop h
+      ON h.to_source_name = st.source_name AND h.to_schema = st.table_schema
+     AND h.to_table = st.table_name
+   WHERE NOT EXISTS (SELECT 1 FROM key_spelling k
+                      WHERE k.graph_name = l.graph_name AND k.source_name = l.source_name
+                        AND k.source_line = l.source_line AND k.source_column = l.source_column)
+  UNION ALL
+  -- The same element where the departure is a function result, which declares no foreign key for
+  -- the arm above to find. The route is then the arrival's primary key matched to the function's
+  -- columns by name, which sql_name_matched_key_column states and states whole.
+  SELECT DISTINCT l.graph_name, l.type_name, l.field_name,
+         l.target_source_name, l.target_schema, l.target_table,
+         l.position, l.last_position, 'NAME_MATCH', CAST(NULL AS VARCHAR),
+         CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+         CAST(NULL AS VARCHAR), CAST(NULL AS BOOLEAN),
+         pair.source_name, pair.table_schema, pair.table_name,
+         st.source_name, st.table_schema, st.table_name
+    FROM link l
+    JOIN table_spelling ts
+      ON ts.graph_name = l.graph_name AND ts.source_name = l.source_name
+     AND ts.source_line = l.source_line AND ts.source_column = l.source_column
+    JOIN store_graph_source m ON m.graph_name = l.graph_name
+    JOIN sql_table st
+      ON st.source_name = m.source_name
+     AND st.table_name_upper = ts.name_upper
+     AND (ts.namespace_upper IS NULL OR st.table_schema_upper = ts.namespace_upper)
+    JOIN sql_name_matched_key_column pair
+      ON pair.to_source_name = st.source_name AND pair.to_schema = st.table_schema
+     AND pair.to_table = st.table_name
+   WHERE NOT EXISTS (SELECT 1 FROM key_spelling k
+                      WHERE k.graph_name = l.graph_name AND k.source_name = l.source_name
+                        AND k.source_line = l.source_line AND k.source_column = l.source_column)
+  UNION ALL
+  -- An element carrying a condition and naming neither a key nor a table has no foreign key to
+  -- read, so its route is what its method's signature declares: the second parameter names the
+  -- arrival, and the first names the departure or leaves it open for the chain's own to stand.
+  SELECT l.graph_name, l.type_name, l.field_name,
+         l.target_source_name, l.target_schema, l.target_table,
+         l.position, l.last_position, 'CONDITION', CAST(NULL AS VARCHAR),
+         CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+         CAST(NULL AS VARCHAR), CAST(NULL AS BOOLEAN),
+         departs.table_source_name, departs.table_schema, departs.table_name,
+         arrives.table_source_name, arrives.table_schema, arrives.table_name
+    FROM link l
+    JOIN condition_spelling cs
+      ON cs.graph_name = l.graph_name AND cs.source_name = l.source_name
+     AND cs.source_line = l.source_line AND cs.source_column = l.source_column
+    JOIN store_graph_source m ON m.graph_name = l.graph_name
+    JOIN code_condition_method cm
+      ON cm.source_name = m.source_name AND cm.class_name = cs.class_name
+     AND cm.method_name = cs.method
+    JOIN code_condition_method_parameter_table arrives
+      ON arrives.source_name = cm.source_name AND arrives.class_name = cm.class_name
+     AND arrives.method_name = cm.method_name AND arrives.descriptor = cm.descriptor
+     AND arrives.position = 1
+    LEFT JOIN code_condition_method_parameter_table departs
+      ON departs.source_name = cm.source_name AND departs.class_name = cm.class_name
+     AND departs.method_name = cm.method_name AND departs.descriptor = cm.descriptor
+     AND departs.position = 0
+   WHERE NOT EXISTS (SELECT 1 FROM key_spelling k
+                      WHERE k.graph_name = l.graph_name AND k.source_name = l.source_name
+                        AND k.source_line = l.source_line AND k.source_column = l.source_column)
+     AND NOT EXISTS (SELECT 1 FROM table_spelling t
+                      WHERE t.graph_name = l.graph_name AND t.source_name = l.source_name
+                        AND t.source_line = l.source_line AND t.source_column = l.source_column);
+
+COMMENT ON VIEW graphitron_field_chain_link_reading IS 'One way one written link of a field''s chain could be read: the route it would take, where it would depart and where it would arrive. For example an element naming film_actor_film_id_fkey draws two readings, one departing film_actor and one departing film, and the chain keeps whichever it reaches.';
+COMMENT ON COLUMN graphitron_field_chain_link_reading.graph_name IS 'the graph_name of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
+COMMENT ON COLUMN graphitron_field_chain_link_reading.type_name IS 'the type_name of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
+COMMENT ON COLUMN graphitron_field_chain_link_reading.field_name IS 'the field_name of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
+COMMENT ON COLUMN graphitron_field_chain_link_reading.target_source_name IS 'the target_source_name of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
+COMMENT ON COLUMN graphitron_field_chain_link_reading.target_schema IS 'the target_schema of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
+COMMENT ON COLUMN graphitron_field_chain_link_reading.target_table IS 'the target_table of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
+COMMENT ON COLUMN graphitron_field_chain_link_reading.position IS 'the position of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
+COMMENT ON COLUMN graphitron_field_chain_link_reading.last_position IS 'the last_position of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
+COMMENT ON COLUMN graphitron_field_chain_link_reading.via IS 'the via of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
+COMMENT ON COLUMN graphitron_field_chain_link_reading.key_matched_by IS 'the key_matched_by of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
+COMMENT ON COLUMN graphitron_field_chain_link_reading.constraint_source_name IS 'the constraint_source_name of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
+COMMENT ON COLUMN graphitron_field_chain_link_reading.constraint_schema IS 'the constraint_schema of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
+COMMENT ON COLUMN graphitron_field_chain_link_reading.constraint_table IS 'the constraint_table of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
+COMMENT ON COLUMN graphitron_field_chain_link_reading.constraint_name IS 'the constraint_name of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
+COMMENT ON COLUMN graphitron_field_chain_link_reading.fk_on_from IS 'the fk_on_from of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
+COMMENT ON COLUMN graphitron_field_chain_link_reading.from_source_name IS 'the from_source_name of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
+COMMENT ON COLUMN graphitron_field_chain_link_reading.from_schema IS 'the from_schema of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
+COMMENT ON COLUMN graphitron_field_chain_link_reading.from_table IS 'the from_table of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
+COMMENT ON COLUMN graphitron_field_chain_link_reading.to_source_name IS 'the to_source_name of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
+COMMENT ON COLUMN graphitron_field_chain_link_reading.to_schema IS 'the to_schema of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
+COMMENT ON COLUMN graphitron_field_chain_link_reading.to_table IS 'the to_table of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
+CREATE VIEW graphitron_field_table_link_rule
+  (graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+   position, via, key_matched_by,
+   constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from,
+   from_source_name, from_schema, from_table, to_source_name, to_schema, to_table) AS
+WITH RECURSIVE
+-- The chain walked from its end. The target is where the last link arrives and it is the one
+-- anchor that always exists: a field's departure is null exactly where a @routine heads the chain,
+-- which is the root case. Each earlier link is a reading arriving where the link after it departs.
+from_tail (graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+   position, via, key_matched_by,
+   constraint_source_name, constraint_schema, constraint_table, constraint_name,
+   fk_on_from, from_source_name, from_schema, from_table,
+   to_source_name, to_schema, to_table) AS (
+  SELECT
+         r.graph_name, r.type_name, r.field_name,
+         r.target_source_name, r.target_schema, r.target_table,
+         r.position, r.via, r.key_matched_by,
+         r.constraint_source_name, r.constraint_schema, r.constraint_table, r.constraint_name,
+         r.fk_on_from, r.from_source_name, r.from_schema, r.from_table,
+         r.to_source_name, r.to_schema, r.to_table
+    FROM graphitron_field_chain_link_reading r
+   WHERE r.position = r.last_position
+     AND r.to_source_name = r.target_source_name AND r.to_schema = r.target_schema
+     AND r.to_table = r.target_table
+  UNION ALL
+  SELECT
+         r.graph_name, r.type_name, r.field_name,
+         r.target_source_name, r.target_schema, r.target_table,
+         r.position, r.via, r.key_matched_by,
+         r.constraint_source_name, r.constraint_schema, r.constraint_table, r.constraint_name,
+         r.fk_on_from, r.from_source_name, r.from_schema, r.from_table,
+         r.to_source_name, r.to_schema, r.to_table
+    FROM from_tail w
+    JOIN graphitron_field_chain_link_reading r
+      ON r.graph_name = w.graph_name AND r.type_name = w.type_name
+     AND r.field_name = w.field_name AND r.target_source_name = w.target_source_name
+     AND r.target_schema = w.target_schema AND r.target_table = w.target_table
+     AND r.position = w.position - 1
+     AND r.to_source_name = w.from_source_name AND r.to_schema = w.from_schema
+     AND r.to_table = w.from_table
+),
+-- And walked from its start, which is the half the tail cannot supply. A reading the tail reaches
+-- is a suffix, not a chain: it says this link could end the chain and nothing about whether the
+-- chain gets here. The head says the other half, departing where the field departs, or departing
+-- nothing where a @routine begins the chain, or taking the field's departure where the element
+-- left it open.
+from_head (graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+   position, via, key_matched_by,
+   constraint_source_name, constraint_schema, constraint_table, constraint_name,
+   fk_on_from, from_source_name, from_schema, from_table,
+   to_source_name, to_schema, to_table) AS (
+  SELECT
+         r.graph_name, r.type_name, r.field_name,
+         r.target_source_name, r.target_schema, r.target_table,
+         r.position, r.via, r.key_matched_by,
+         r.constraint_source_name, r.constraint_schema, r.constraint_table, r.constraint_name,
+         r.fk_on_from, r.from_source_name, r.from_schema, r.from_table,
+         r.to_source_name, r.to_schema, r.to_table
+    FROM graphitron_field_chain_link_reading r
+    JOIN graphitron_field_table ft
+      ON ft.graph_name = r.graph_name AND ft.type_name = r.type_name
+     AND ft.field_name = r.field_name AND ft.to_source_name = r.target_source_name
+     AND ft.to_schema = r.target_schema AND ft.to_table = r.target_table
+   WHERE r.position = 0
+     AND (r.from_source_name IS NULL
+          OR ft.from_source_name = r.from_source_name AND ft.from_schema = r.from_schema
+             AND ft.from_table = r.from_table)
+  UNION ALL
+  SELECT
+         r.graph_name, r.type_name, r.field_name,
+         r.target_source_name, r.target_schema, r.target_table,
+         r.position, r.via, r.key_matched_by,
+         r.constraint_source_name, r.constraint_schema, r.constraint_table, r.constraint_name,
+         r.fk_on_from, r.from_source_name, r.from_schema, r.from_table,
+         r.to_source_name, r.to_schema, r.to_table
+    FROM from_head w
+    JOIN graphitron_field_chain_link_reading r
+      ON r.graph_name = w.graph_name AND r.type_name = w.type_name
+     AND r.field_name = w.field_name AND r.target_source_name = w.target_source_name
+     AND r.target_schema = w.target_schema AND r.target_table = w.target_table
+     AND r.position = w.position + 1
+     AND (r.from_source_name IS NULL
+          OR r.from_source_name = w.to_source_name AND r.from_schema = w.to_schema
+             AND r.from_table = w.to_table)
+)
+-- A reading both walks reach lies on a chain that runs the whole way, because the two halves
+-- compose into one. INTERSECT and not a join, the route columns being null on the arms that carry
+-- no constraint, and a join on them would drop exactly those rows.
+SELECT
+       graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+       position, via, key_matched_by,
+       constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from,
+       from_source_name, from_schema, from_table, to_source_name, to_schema, to_table
+  FROM (SELECT resolved.*,
+               COUNT(*) OVER (PARTITION BY resolved.graph_name, resolved.type_name,
+                              resolved.field_name, resolved.target_source_name,
+                              resolved.target_schema, resolved.target_table,
+                              resolved.position) AS readings
+          FROM (SELECT
+       graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+       position, via, key_matched_by,
+       constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from,
+       from_source_name, from_schema, from_table, to_source_name, to_schema, to_table
+                  FROM from_tail
+                INTERSECT
+                SELECT
+       graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+       position, via, key_matched_by,
+       constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from,
+       from_source_name, from_schema, from_table, to_source_name, to_schema, to_table
+                  FROM from_head) resolved) counted
+ WHERE readings = 1;
+COMMENT ON VIEW graphitron_field_table_link_rule IS 'One row the chain-link resolution computes, in the shape graphitron_field_table_link stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_field_table_link, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
+COMMENT ON COLUMN graphitron_field_table_link_rule.graph_name IS 'the graph_name of a row of this rule, which the stage inserts into graphitron_field_table_link.graph_name';
+COMMENT ON COLUMN graphitron_field_table_link_rule.type_name IS 'the type_name of a row of this rule, which the stage inserts into graphitron_field_table_link.type_name';
+COMMENT ON COLUMN graphitron_field_table_link_rule.field_name IS 'the field_name of a row of this rule, which the stage inserts into graphitron_field_table_link.field_name';
+COMMENT ON COLUMN graphitron_field_table_link_rule.target_source_name IS 'the target_source_name of a row of this rule, which the stage inserts into graphitron_field_table_link.target_source_name';
+COMMENT ON COLUMN graphitron_field_table_link_rule.target_schema IS 'the target_schema of a row of this rule, which the stage inserts into graphitron_field_table_link.target_schema';
+COMMENT ON COLUMN graphitron_field_table_link_rule.target_table IS 'the target_table of a row of this rule, which the stage inserts into graphitron_field_table_link.target_table';
+COMMENT ON COLUMN graphitron_field_table_link_rule.position IS 'the position of a row of this rule, which the stage inserts into graphitron_field_table_link.position';
+COMMENT ON COLUMN graphitron_field_table_link_rule.via IS 'the via of a row of this rule, which the stage inserts into graphitron_field_table_link.via';
+COMMENT ON COLUMN graphitron_field_table_link_rule.key_matched_by IS 'the key_matched_by of a row of this rule, which the stage inserts into graphitron_field_table_link.key_matched_by';
+COMMENT ON COLUMN graphitron_field_table_link_rule.constraint_source_name IS 'the constraint_source_name of a row of this rule, which the stage inserts into graphitron_field_table_link.constraint_source_name';
+COMMENT ON COLUMN graphitron_field_table_link_rule.constraint_schema IS 'the constraint_schema of a row of this rule, which the stage inserts into graphitron_field_table_link.constraint_schema';
+COMMENT ON COLUMN graphitron_field_table_link_rule.constraint_table IS 'the constraint_table of a row of this rule, which the stage inserts into graphitron_field_table_link.constraint_table';
+COMMENT ON COLUMN graphitron_field_table_link_rule.constraint_name IS 'the constraint_name of a row of this rule, which the stage inserts into graphitron_field_table_link.constraint_name';
+COMMENT ON COLUMN graphitron_field_table_link_rule.fk_on_from IS 'the fk_on_from of a row of this rule, which the stage inserts into graphitron_field_table_link.fk_on_from';
+COMMENT ON COLUMN graphitron_field_table_link_rule.from_source_name IS 'the from_source_name of a row of this rule, which the stage inserts into graphitron_field_table_link.from_source_name';
+COMMENT ON COLUMN graphitron_field_table_link_rule.from_schema IS 'the from_schema of a row of this rule, which the stage inserts into graphitron_field_table_link.from_schema';
+COMMENT ON COLUMN graphitron_field_table_link_rule.from_table IS 'the from_table of a row of this rule, which the stage inserts into graphitron_field_table_link.from_table';
+COMMENT ON COLUMN graphitron_field_table_link_rule.to_source_name IS 'the to_source_name of a row of this rule, which the stage inserts into graphitron_field_table_link.to_source_name';
+COMMENT ON COLUMN graphitron_field_table_link_rule.to_schema IS 'the to_schema of a row of this rule, which the stage inserts into graphitron_field_table_link.to_schema';
+COMMENT ON COLUMN graphitron_field_table_link_rule.to_table IS 'the to_table of a row of this rule, which the stage inserts into graphitron_field_table_link.to_table';
 
 CREATE TABLE code_scalar_constant (
   source_name VARCHAR NOT NULL,
@@ -14352,6 +14720,15 @@ INSERT INTO meta_gatherer_dependency VALUES
   ('graphitron', 'graphql-ast'),
   ('graphitron', 'jooq'),
   ('graphitron', 'jvm'),
+  -- The AST decode of what a graphitron directive says, which this gatherer's own anchoring has
+  -- read since it was written: GraphitronAnchor resolves every application against these entries.
+  -- The edge is new to the roster and not to the store, the gate inspecting view bodies alone and
+  -- every one of those reads having been in jOOQ, where no parse over a stored definition reaches.
+  ('graphitron', 'graphitron-ast'),
+  -- A condition element routes by its method's signature, which the classpath reading captured.
+  -- ModelCapture runs CodeCapture before this gatherer for that reason, and the chain resolution
+  -- has read the signature across that boundary for as long as the arm has existed.
+  ('graphitron', 'code'),
   -- A concrete table position is keyed to the table it names, so the arm reads the catalog the
   -- jOOQ gatherer wrote. ModelCapture runs the two in this order for that reason.
   ('code', 'classpath-source'),
@@ -14620,6 +14997,9 @@ INSERT INTO meta_grain VALUES
   ('field-chain-link',
    'one link of the chain one field''s rows travel, in one graph',
    'graph_name, type_name, field_name, position', 'sdl'),
+  ('field-chain-link-reading',
+   'one way one written chain link could be read, toward one target, in one graph',
+   'graph_name, type_name, field_name, target_source_name, target_schema, target_table, position, via, constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table', 'sdl'),
   ('field-table-link',
    'one link of one field''s chain toward one target, resolved, in one graph',
    'graph_name, type_name, field_name, target_source_name, target_schema, target_table, position',
@@ -14657,6 +15037,9 @@ INSERT INTO meta_grain VALUES
   ('database-schema',
    'one schema of one generated catalog source',
    'source_name, table_schema', 'catalog'),
+  ('constraint-hop',
+   'one direction one foreign key can be travelled in',
+   'source_name, table_schema, table_name, constraint_name, fk_on_from', 'catalog'),
   ('database-table',
    'one table of one schema, in one generated catalog source',
    'source_name, table_schema, table_name', 'catalog'),
@@ -15250,6 +15633,14 @@ INSERT INTO meta_relation VALUES
    'One link of the chain a field''s rows travel, in the order it was written: one row per element of the composed @routine and @reference applications at one field.',
    'For example Query.hopped over @routine(name: "films_for_actor") then @reference(path: [{table: "film"}]) draws two links, the routine at position 0 and the table element at position 1.',
    'The chain between a field''s endpoints, which graphitron_field_table asks for by name and nothing held: readers wanting the endpoints outnumber readers wanting the hops, so the pair was stated first and the route left to be walked. The position is why this exists rather than a column elsewhere. A chain composes @routine and @reference applications in written order, and neither directive''s ordinal can express it: each numbers its own applications from zero, so a routine at ordinal 0 and a reference at ordinal 0 say nothing about which came first. That order survives only in the entry stratum, where a written position is the primary key, and it is ranked here rather than copied because the entry numbers a path element by its authored index and skips one it does not transcribe, where a chain wants its links counted. Keyed at the coordinate and not at the target: the order is the same for every table a field''s rows may come from, so keying by target would state one order once per participant. What varies by target is where each link departs and arrives, which is a resolution rather than a reading. What a link does is likewise not here; its facts are keyed by the written position this row points at, one relation per shape as the entry stratum states them, so this never grows a discriminator that would have to be single-valued where an element writing a table beside a condition is one link with two facts.'),
+  ('graphitron_field_chain_link_reading', 'field-chain-link-reading', 'graphitron',
+   'One way one written link of a field''s chain could be read: the route it would take, where it would depart and where it would arrive.',
+   'For example an element naming film_actor_film_id_fkey draws two readings, one departing film_actor and one departing film, and the chain keeps whichever it reaches.',
+   'The candidacy a resolution narrows, stated as rows so that narrowing is a walk in the catalog rather than a loop in Java. Every arm states its arrival outright, a routine''s result, the table an element named, a key hop''s far end, a condition method''s second parameter, and only the departure is ever open, which is what lets a link be read without knowing which reading the link before it took. A key element draws both of the hops its constraint affords and does not compute them: sql_constraint_hop says what a key affords, this says what an element could mean, and the two are different sentences about different things. Separate from the rule that narrows it because the narrowing throws the losers away and a diagnostic wants them: a link with no reading is a chain that does not resolve and a link with several is one that resolves ambiguously, and only here can a reader say which readings competed. The route is in the key and not beside it, because a reading is its route and two readings of one link differ by nothing else: the arms carrying a constraint are told apart by which constraint and which of its two directions, and the arms carrying none, a table matched to a function result by column name and a condition method''s signature, are told apart by their endpoints alone.'),
+  ('graphitron_field_table_link_rule', 'field-table-link', 'graphitron',
+   'One row the chain-link resolution computes, in the shape graphitron_field_table_link stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a capture inserts this view''s rows for one graph into graphitron_field_table_link, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_field_scope_table_rule''s terms and for its reasons. What is particular here is the shape the rule takes, because the resolution it replaces was a loop in Java: each link''s departure is the previous link''s arrival, and a loop over positions read back the rows the pass before it had written. Every arm states its arrival outright, a routine''s result, the table an element named, a key''s far end, a condition method''s second parameter, so an arrival is known without knowing which candidate won. Only the departure is ever open. A key is therefore two rows and not a choice, one per direction, and the chain picks by walking the readings from both of its ends. From the tail because the target is the one anchor that always exists, and from the head as well because a reading the tail reaches is a suffix and says nothing about whether the chain gets there; a reading both walks reach lies on a chain that runs the whole way. The two are intersected rather than joined, the route columns being null on the arms that carry no constraint, where a join would drop exactly those rows. What a reader gets that the loop did not give is the EXCEPT between this and the table it fills, runnable for as long as both exist, and a read set the ownership and stage-order gates can parse, which no hand-written producer offers.'),
   ('graphitron_field_table_link', 'field-table-link', 'graphitron',
    'Where one link of a field''s chain departs and where it arrives, toward one of the field''s targets: one row per written link per target, with the constraint it joins through where it joins through one.',
    'For example Actor.films over @reference(path: [{key: "film_actor_actor_id_fkey"}, {key: "film_actor_film_id_fkey"}]) draws two rows toward the film target, actor to film_actor and then film_actor to film.',
@@ -15514,6 +15905,10 @@ INSERT INTO meta_relation VALUES
    'One column of the key that matches a table-valued function''s result to a table by column name.',
    'For example a function result exposing organisasjonskode, matched against the primary key of public.organisasjon, is one row at position 0.',
    'A function result declares no foreign key, so a join leaving one has no constraint to read and the only rule available is the column name. Derived rather than transcribed, on sql_table_record_supertype''s terms: a closure the catalog gatherer computes over rows it has just written, in the family whose facts it is about. Only complete keys are stated, which is what separates this from the intent view it replaces. A key one of whose columns the function does not expose is not a key, so it is absent rather than flagged, and the four consumers that demanded a zero shortfall now join these rows instead of counting them: on the sakila example, four rows where the flagged form held 324. What an author wrote that needed a key which is not here is a fact at that author''s coordinate, a catalog being unable to fail to connect two tables and able only to not connect them. Catalog only, so it carries no graph partition and gates on no directive, which lets one relation serve consumers finding their endpoints in different places. Matching is case-insensitive as the resolver compares, against the arrival''s primary key alone, a unique constraint being no candidate. The position is carried because a consumer building a key tuple builds it in the key''s order. Nothing here says a pair is meaningful: every consumer arrives already holding two ends from somewhere that does.'),
+  ('sql_constraint_hop', 'constraint-hop', 'jooq',
+   'One direction a foreign key can be travelled in: two rows per referential constraint, naming where a hop riding it departs and where it arrives.',
+   'For example film_actor''s foreign key to film draws a row departing film_actor and arriving at film, and a second departing film and arriving at film_actor.',
+   'A fact about the database rather than about any schema that names the key, which is why it is the catalog''s and not the graph''s: a constraint affords both hops whether or not an author ever writes a path through it. It is written down because the alternative is every reader deriving the direction again where it stands, which is what a chain resolution did inline and twice. The direction is in the grain rather than a column beside the constraint, because the two readings are two things a hop can be and not two attributes of one; a relation keyed on the constraint alone would have to carry both ends twice over to say the same thing. No instant and no sweep, being a view over the constraint relation, which carries both.'),
   ('sql_referential_constraint', 'table-constraint', 'jooq',
    'One foreign key''s reference to the constraint it resolves against.',
    'For example film_actor''s foreign key to film, referencing the film_pkey constraint of public.film.',

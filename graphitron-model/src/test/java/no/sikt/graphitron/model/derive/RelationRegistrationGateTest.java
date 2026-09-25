@@ -351,6 +351,9 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_mutation_payload_refusal_rule", Arm.DERIVED);
         registrations.put("graphitron_mutation_payload_column", Arm.DERIVED);
         registrations.put("graphitron_mutation_payload_column_rule", Arm.DERIVED);
+        registrations.put("sql_constraint_hop", Arm.DERIVED);
+        registrations.put("graphitron_field_chain_link_reading", Arm.DERIVED);
+        registrations.put("graphitron_field_table_link_rule", Arm.DERIVED);
         registrations.put("intent_mutation_matched_key", Arm.DERIVED);
         registrations.put("graphitron_mutation_payload_key_membership", Arm.DERIVED);
         registrations.put("graphitron_mutation_payload_key_membership_rule", Arm.DERIVED);
