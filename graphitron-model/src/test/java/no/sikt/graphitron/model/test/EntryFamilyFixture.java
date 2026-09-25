@@ -84,11 +84,9 @@ public final class EntryFamilyFixture {
      * Type-level vocabulary, the output-field vocabulary, and the enum ordering vocabulary.
      *
      * <p>Federation's {@code @link} and {@code @key} are declared here rather than assumed, the way
-     * a federated consumer's own schema declares them. {@code @link}'s import list carries both
-     * spellings the grammar admits, a bare name and an aliased object, so that
-     * {@code graphitron_link_import_entry.alias} holds a value somewhere rather than being NULL on
-     * every row. The coverage gate counts rows and would not notice, which is the point of saying
-     * it here.
+     * a federated consumer's own schema declares them. The import list carries both spellings the
+     * grammar admits, a bare name and an aliased object, which the AST entry for an import
+     * transcribes; the decode that held them beside it is reaped.
      */
     public static final String CORE = """
         scalar link__Import

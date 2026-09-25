@@ -251,13 +251,6 @@ class SupertypeSignatureGateTest {
                "graphitron_ast_input_value_condition_context_arg_entry",
                "graphitron_ast_service_context_arg_entry",
                "graphitron_field_condition_context_arg_entry",
-               "graphitron_service_context_arg_entry",
-               // A seventh member that is a name column and not a context argument. This gate reads
-               // a payload as the columns a relation carries beyond its key, so one VARCHAR called
-               // name reads the same whether it holds a parameter's name or an applied directive's,
-               // and the group is the signature rather than the subject. Recorded here rather than
-               // worked around: the coarseness is what makes the gate cheap enough to run over every
-               // relation, and a set nobody can discharge is better named than hidden.
                "graphql_ast_directive_application_entry"),
         Set.of("graphitron_argument_condition_entry", "graphitron_ast_field_condition_entry",
                "graphitron_ast_input_value_condition_entry", "graphitron_field_condition_entry"),
@@ -277,7 +270,7 @@ class SupertypeSignatureGateTest {
                "graphitron_ast_service_entry", "graphitron_external_field_entry",
                "graphitron_service_entry"),
         Set.of("graphitron_ast_default_order_field_entry", "graphitron_ast_order_field_entry",
-               "graphitron_default_order_field_entry", "graphitron_order_field_entry"),
+               "graphitron_default_order_field_entry"),
         Set.of("graphitron_argument_node_id_entry", "graphitron_ast_field_node_id_entry",
                "graphitron_ast_input_value_node_id_entry", "graphitron_field_node_id_entry"),
         Set.of("graphitron_argument_reference_for_entry",
@@ -306,19 +299,15 @@ class SupertypeSignatureGateTest {
         // anything. The enum-value site's own entry has since arrived and joined them, which is the
         // member that replaces the anchor when the migration dissolves the row.
         Set.of("graphitron_ast_enum_value_binding_entry", "graphitron_ast_field_binding_entry",
-               "graphitron_ast_input_value_binding_entry",
-               "graphitron_enum_value_binding_entry"),
+               "graphitron_ast_input_value_binding_entry"),
         Set.of("graphitron_ast_pivot_entry", "graphitron_pivot_entry"),
         // The enum-value site's two sorting pairs, on the terms every pair above is on: an
         // as-written relation beside the resolved one it will be derived into, both coming off this
         // roster together on the day that derivation lands.
-        Set.of("graphitron_ast_index_entry", "graphitron_index_entry"),
-        Set.of("graphitron_ast_order_entry", "graphitron_order_entry"),
         // And the schema site's, which pair on payload while differing on key in the way this whole
         // tranche does: the anchors are keyed by an ordinal the old writer assigned, the entries by
         // the position of the at sign the ordinal would sort by.
         Set.of("graphitron_ast_link_entry", "graphitron_link_entry"),
-        Set.of("graphitron_ast_link_import_entry", "graphitron_link_import_entry"),
         // Federation's key segments, which pair on the one column either of them carries beyond its
         // key. Only the segment does: the key entry keeps the field set as a string the anchor
         // holds beside a declaration site, and a selection row is key and nothing else, so neither
@@ -354,11 +343,6 @@ class SupertypeSignatureGateTest {
      * {@code view|member,member}. Each is a supertype this schema owes, and the shape is the same
      * in all of them: an argument-site relation unioned with its field-site twin, because the
      * author may write the same directive at either coordinate and no relation says so once.
-     *
-     * <p>The context-argument row's set has a third member the reconstruction deliberately does not
-     * union, {@code graphitron_service_context_arg_entry}: a condition parameter's roles are a different
-     * rule from a service parameter's. Its supertype therefore belongs at capture, keyed on the site
-     * a reader filters by, rather than as a union in a derived view.
      *
      * <p>{@code intent_reference_for_application} is the newest row and the one worth reading as an
      * improvement rather than as a regression. Its two arms were previously spelled inside one

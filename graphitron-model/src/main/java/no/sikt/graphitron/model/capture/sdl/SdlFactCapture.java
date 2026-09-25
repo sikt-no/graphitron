@@ -461,11 +461,7 @@ public final class SdlFactCapture {
 
     private void captureEnumValues(SiteRef site, List<EnumValueDefinition> values, ElementOrdinals ordinals) {
         for (EnumValueDefinition value : values) {
-            String name = value.getName();
-            if (!coordinates.claimEnumValue(site.typeName(), name)) {
-                continue;
-            }
-            captureEnumValueDirectives(site.typeName(), name, value.getDirectives());
+            coordinates.claimEnumValue(site.typeName(), value.getName());
         }
     }
 
@@ -586,23 +582,6 @@ public final class SdlFactCapture {
                 }
             }
             decode.captureArgumentDirective(typeName, fieldName, argumentName, directive, ordinal);
-        }
-    }
-
-    private void captureEnumValueDirectives(String typeName, String valueName, List<Directive> directives) {
-        var ordinals = new LinkedHashMap<String, Integer>();
-        for (Directive directive : directives) {
-            int ordinal = ordinals.merge(directive.getName(), 0, (old, ignored) -> old + 1);
-            if (!sink.claim(GRAPHQL_ENUM_VALUE_DIRECTIVE, typeName, valueName, directive.getName(), ordinal)) {
-                continue;
-            }
-            for (var argument : directive.getArguments()) {
-                if (!sink.claim(GRAPHQL_ENUM_VALUE_DIRECTIVE_ARG,
-                        typeName, valueName, directive.getName(), ordinal, argument.getName())) {
-                    continue;
-                }
-            }
-            decode.captureEnumValueDirective(typeName, valueName, directive, ordinal);
         }
     }
 

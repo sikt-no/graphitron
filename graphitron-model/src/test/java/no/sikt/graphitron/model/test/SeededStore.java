@@ -372,11 +372,6 @@ public final class SeededStore {
             INSERT INTO graphitron_method_reference_entry
               (graph_name, site, use_site, type_name, field_name, argument_name, ordinal,
                step_position, class_name, method, source_name, source_line, source_column)
-            SELECT graph_name, 'ENUM', type_name, type_name, NULL, NULL, NULL, NULL,
-                   class_name, method, source_name, source_line, source_column
-              FROM graphitron_enum_entry
-             WHERE class_name IS NOT NULL AND method IS NOT NULL
-            UNION ALL
             SELECT graph_name, 'SERVICE', type_name || '.' || field_name,
                    type_name, field_name, NULL, NULL, NULL,
                    class_name, method, source_name, source_line, source_column

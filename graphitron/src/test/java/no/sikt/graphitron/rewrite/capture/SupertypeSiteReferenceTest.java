@@ -145,8 +145,6 @@ class SupertypeSiteReferenceTest {
      * population assertion's alone.
      */
     private static final Map<String, String> METHOD_OWNERS = new LinkedHashMap<>(Map.of(
-        "ENUM",
-        "graphitron_enum_entry d WHERE d.graph_name = s.graph_name AND d.type_name = s.type_name",
         "SERVICE",
         "graphitron_service_entry d WHERE d.graph_name = s.graph_name AND d.type_name = s.type_name"
             + " AND d.field_name = s.field_name",
@@ -213,7 +211,7 @@ class SupertypeSiteReferenceTest {
                     "ARGUMENT_CONDITION", "FIELD_REFERENCE_STEP");
             assertThat(sites(store.dsl(), "graphitron_method_reference_entry"))
                 .as("method reference sites this fixture reaches")
-                .contains("ENUM", "SERVICE", "EXTERNAL_FIELD", "SOURCE_ROW", "FIELD_CONDITION",
+                .contains("SERVICE", "EXTERNAL_FIELD", "SOURCE_ROW", "FIELD_CONDITION",
                     "INPUT_FIELD_CONDITION", "ARGUMENT_CONDITION", "FIELD_REFERENCE_STEP");
         }
     }
