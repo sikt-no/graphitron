@@ -7,7 +7,7 @@ priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-08-14
-last-updated: 2026-09-23
+last-updated: 2026-09-25
 ---
 
 # Planners read facts, emitters read commands: dissolve the walk and the leaf zoo
@@ -1119,16 +1119,30 @@ written. The view's remaining two arms (a non-root `@service`, a root operation 
 batched delivery at all, which is the reader-side care this promotion needs. So the deliverable is
 an arm plus a projection, not a relation.
 
-**Five captured populations have no derivation over them at all.** This is the cross-cutting result,
-and it is a better statement of the gap than "four relation-shaped folds have no home in the store
-yet", which is what this item has been saying. Ordering (`graphitron_order_entry`, `graphitron_order_by_entry`,
-`graphitron_order_field_entry`, and the two default-order relations) is read by no view. So are the facets
-(`graphitron_facet_entry`) and the tenant column (`store_graph_tenant_column`). The connection registry
-(`graphitron_connection_entry`) is read by exactly one view, and only to exempt connection types from
-classification demand. `graphitron_pivot_entry` is read by one view, and only as a column-scope input,
-never resolved as a pivot. Each of these is captured, complete, and inert, and each is needed by
-more than one of the five remaining producers. They are the shared cost, and they are what makes
-projections and launchers a pair rather than two increments.
+**Captured populations with no derivation over them are the cross-cutting result**, and that is a
+better statement of the gap than "four relation-shaped folds have no home in the store yet", which
+is what this item has been saying. The population this paragraph counted has since moved and the
+count with it, so what follows is the current reading rather than the one the item was written on.
+
+Ordering is no longer inert. `graphitron_order_by_entry` is read by four views and
+`graphitron_default_order_entry` by two, but only one of the six readings is a rule a consumer
+reaches through, `graphitron_carrier_data_field_rule`; the others detect a defect, state an
+unlowerable-ordering verdict, or belong to the retiring `intent_` family. What is read by nothing is
+`graphitron_default_order_field_entry` and the transcribed `graphitron_ast_order_entry`,
+`graphitron_ast_order_field_entry` and `graphitron_ast_index_entry`, which replaced the decode
+relations this sentence used to name and are transcription, where having no view reader is the
+normal condition rather than a gap.
+
+The facets are no longer inert either: `graphitron_facet_binding` resolves what an `@asFacet`
+application binds, which is a derivation over `graphitron_facet_entry` and not a detection. The
+connection registry is read by four views now rather than the one this paragraph claimed. Of the
+five, the tenant column (`store_graph_tenant_column`) is the only one still read by nothing at all,
+and `graphitron_pivot_entry` is unchanged, read by one view and only as a column-scope input, never
+resolved as a pivot.
+
+So the shared-cost argument does not rest on five inert populations any more, and the recount is
+owed to whoever takes this item: what has to be re-derived is whether the readings that exist
+answer a consumer's question or merely touch the rows, because only the first kind closes the gap.
 
 **The fold count is eight, not four.** `GraphitronSchema` carries `arrivals`,
 `reachableSourceShapes`, `tenantScopes`, `tenantBindings`, `argumentReachableInputs`,

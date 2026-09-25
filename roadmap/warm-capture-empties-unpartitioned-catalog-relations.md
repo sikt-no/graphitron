@@ -7,7 +7,7 @@ priority: 2
 theme: tooling
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-09-09
+last-updated: 2026-09-25
 ---
 
 # The keys say what a source owns, and the gatherer decides how to refresh it
@@ -683,10 +683,15 @@ named `link` on a schema definition or extension, taking `source_name` from the 
 
 The class is bounded rather than open-ended, and the bound is why this is one relation and not an
 audit. `FederationLinkApplier` injects directive *definitions*, so its rows land on `graphql_directive`
-and its kin and never reach `captureSchemaDirective`; the convention roots write no decode at all; and
-`graphitron_link_import_entry` carries no `source_name` and hangs off the entry by
-`(graph_name, link_ordinal)`, so it follows its parent without being classified separately. The
-tag-link synthesis is the only path that reaches the decode side.
+and its kin and never reach `captureSchemaDirective`; the convention roots write no decode at all;
+and the import list no longer has a decode relation to classify, `graphitron_link_import_entry`
+having been reaped as unread. The tag-link synthesis is the only path that reaches the decode side.
+
+The import list moved rather than vanished, and it moved to the side this bound does not cover.
+`graphitron_ast_link_import_entry` transcribes it, keyed by the position it was written at and
+carrying a `NOT NULL` `source_name`, which is the opposite of the property the reaped relation was
+cited for. That strengthens the decode-side bound, the relation having left the decode side
+outright, and it lands the import list in the transcription population finding 9 raised below.
 
 **The fifth population is an injector that appends to a document's own elements, and the fix is the
 asymmetry that lets it produce a NULL.** `TagApplier` builds its `@tag` with
