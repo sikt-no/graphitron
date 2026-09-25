@@ -10,6 +10,7 @@ import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -81,6 +82,10 @@ class TenantDivinedRoutingExecutionTest {
                 tenant.execute("create table film_actor_note (actor_id int not null, film_id int not null,"
                     + " lang_code varchar(3) not null, note_txt varchar(255),"
                     + " primary key (actor_id, film_id, lang_code))");
+                tenant.execute("create table film_scene (film_id int not null, scene_no int not null,"
+                    + " parent_scene_no int, label varchar(100), primary key (film_id, scene_no),"
+                    + " constraint film_scene_parent_fk foreign key (film_id, parent_scene_no)"
+                    + " references film_scene (film_id, scene_no))");
                 TenantSessionFixture.installSessionObjects(tenant);
             }
         }
@@ -88,11 +93,13 @@ class TenantDivinedRoutingExecutionTest {
             t1.execute("insert into film values (1, 'Tenant One Film')");
             t1.execute("insert into inventory (film_id, store_id) values (1, 1), (1, 2)");
             t1.execute("insert into film_actor values (10, 1)");
+            t1.execute("insert into film_scene (film_id, scene_no) values (1, 1)");
         }
         try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
             t2.execute("insert into film values (2, 'Tenant Two Film')");
             t2.execute("insert into film_actor values (20, 2)");
             t2.execute("insert into film_actor_note values (20, 2, 'nob', 'Before')");
+            t2.execute("insert into film_scene (film_id, scene_no) values (2, 1), (2, 2), (2, 3)");
         }
 
         // Typed tenant key: Map<Integer, DataSource> compiles against the generated constructor
@@ -118,6 +125,15 @@ class TenantDivinedRoutingExecutionTest {
     void resetCounters() {
         TENANT_1_OPENED.set(0);
         TENANT_2_OPENED.set(0);
+    }
+
+    @AfterEach
+    void resetScenes() {
+        for (String db : List.of("tenant_1", "tenant_2")) {
+            try (var tenant = DSL.using(tenantUrl(db), jdbcUser, jdbcPassword)) {
+                tenant.execute("update film_scene set parent_scene_no = null, label = null");
+            }
+        }
     }
 
     private static ExecutionResult execute(String query) {
@@ -388,7 +404,82 @@ class TenantDivinedRoutingExecutionTest {
             .isZero();
     }
 
+    // ===== A self-FK reference whose key embeds the tenant: co-bound, agreement-checked =====
+
+    @Test
+    void updateSceneParent_sameTenantParent_repointsTheRowInItsOwnTenant() {
+        var result = execute("mutation { updateFilmSceneParent(in: { id: \""
+            + NodeIdEncoder.encodeFilmScene(2, 2) + "\", parent: \""
+            + NodeIdEncoder.encodeFilmScene(2, 1) + "\" }) }");
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        assertThat(TENANT_1_OPENED.get())
+            .as("id and parent agree on tenant 2; the other database is never opened")
+            .isZero();
+
+        assertThat(tenant2SceneParent(2)).isEqualTo(1);
+    }
+
+    @Test
+    void updateSceneParent_crossTenantParent_refusedBeforeAnyConnection() {
+        var result = execute("mutation { updateFilmSceneParent(in: { id: \""
+            + NodeIdEncoder.encodeFilmScene(2, 2) + "\", parent: \""
+            + NodeIdEncoder.encodeFilmScene(1, 1) + "\" }) }");
+        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(result.getErrors().toString())
+            .as("the tenant fold refuses it, not the per-tenant foreign key")
+            .contains("Tenant bindings disagree");
+        assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get())
+            .as("the parent's tenant co-binds, so the disagreement precedes acquisition")
+            .isZero();
+
+        assertThat(tenant2SceneParent(2)).isNull();
+    }
+
+    @Test
+    void updateSceneParent_omittedParent_routesOnTheIdAlone() {
+        var result = execute("mutation { updateFilmSceneParent(in: { id: \""
+            + NodeIdEncoder.encodeFilmScene(2, 2) + "\", label: \"x\" }) }");
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        assertThat(TENANT_1_OPENED.get()).isZero();
+
+        try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
+            assertThat(t2.fetchValue("select label from film_scene where film_id = 2 and scene_no = 2"))
+                .isEqualTo("x");
+        }
+    }
+
+    @Test
+    void bulkUpdateSceneParents_anyRowNamingAnotherTenant_refusesTheWholeCall() {
+        var result = execute("mutation { updateFilmSceneParents(in: ["
+            + "{ id: \"" + NodeIdEncoder.encodeFilmScene(2, 2) + "\", parent: \""
+            + NodeIdEncoder.encodeFilmScene(2, 1) + "\" },"
+            + "{ id: \"" + NodeIdEncoder.encodeFilmScene(2, 3) + "\", parent: \""
+            + NodeIdEncoder.encodeFilmScene(1, 1) + "\" }]) }");
+        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(result.getErrors().toString()).contains("Tenant bindings disagree");
+        assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get()).isZero();
+        assertThat(tenant2SceneParent(2)).as("neither row changed").isNull();
+        assertThat(tenant2SceneParent(3)).isNull();
+
+        var agreeing = execute("mutation { updateFilmSceneParents(in: ["
+            + "{ id: \"" + NodeIdEncoder.encodeFilmScene(2, 2) + "\", parent: \""
+            + NodeIdEncoder.encodeFilmScene(2, 1) + "\" },"
+            + "{ id: \"" + NodeIdEncoder.encodeFilmScene(2, 3) + "\", parent: \""
+            + NodeIdEncoder.encodeFilmScene(2, 1) + "\" }]) }");
+        assertThat(agreeing.getErrors()).as("errors: " + agreeing.getErrors()).isEmpty();
+        assertThat(TENANT_1_OPENED.get()).isZero();
+        assertThat(tenant2SceneParent(2)).isEqualTo(1);
+        assertThat(tenant2SceneParent(3)).isEqualTo(1);
+    }
+
     // ===== helpers =====
+
+    private static Object tenant2SceneParent(int sceneNo) {
+        try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
+            return t2.fetchValue(
+                "select parent_scene_no from film_scene where film_id = 2 and scene_no = " + sceneNo);
+        }
+    }
 
     private static String tenantUrl(String database) {
         return jdbcUrl.replaceFirst("(jdbc:postgresql://[^/]+/)[^?]*", "$1" + database);

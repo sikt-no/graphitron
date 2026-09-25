@@ -379,6 +379,30 @@ class UpdateRowsWalkerTest {
     }
 
     @Test
+    void isAgreementChecked_holdsForTheSelfFkSetColumnTheObligationNames() {
+        // The obligation joins back to exactly one SET column: inReplyTo's mailbox_id is checked
+        // equal to id's; its in_reply_to_no, and the plain subject write, are not.
+        var result = walker.walk(null, table("email"), List.of(
+            compositeColumnField("id", List.of(
+                col(PUBLIC, "email", "mailbox_id"),
+                col(PUBLIC, "email", "message_no"))),
+            selfReferenceField("inReplyTo", List.of(
+                col(PUBLIC, "email", "mailbox_id"),
+                col(PUBLIC, "email", "in_reply_to_no"))),
+            columnField("subject", col(PUBLIC, "email", "subject"))
+        ), PUBLIC, "input");
+
+        var carrier = ok(result);
+        assertThat(carrier.setColumns())
+            .filteredOn(carrier::isAgreementChecked)
+            .singleElement()
+            .satisfies(s -> {
+                assertThat(s.sdlFieldName()).isEqualTo("inReplyTo");
+                assertThat(s.targetColumn().sqlName()).isEqualTo("mailbox_id");
+            });
+    }
+
+    @Test
     void nullableCrossTableReference_notStraddling_isAdmitted() {
         // The nullability rule is scoped to the straddle. A nullable cross-table reference whose
         // columns all sit outside the matched key clears cleanly (the whole FK tuple is on the SET

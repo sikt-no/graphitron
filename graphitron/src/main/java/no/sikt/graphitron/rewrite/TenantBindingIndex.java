@@ -24,6 +24,7 @@ import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.OutputField;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
+import no.sikt.graphitron.rewrite.model.UpdateRows;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.model.jooq.TableRef;
@@ -818,15 +819,32 @@ public record TenantBindingIndex(
         }
 
         /**
-         * The WHERE surface of a DML statement. An UPDATE divines from its WHERE partition only:
-         * routing on a SET-side tenant column would send the statement to the destination tenant
-         * and update a row that is not there, and under database-per-tenant a row cannot change
-         * tenant by an UPDATE at all, since the destination row lives in another database.
+         * The WHERE surface of a DML statement. An UPDATE routes on its WHERE partition: routing
+         * on a SET-side tenant column would send the statement to the destination tenant and
+         * update a row that is not there, and under database-per-tenant a row cannot change tenant
+         * by an UPDATE at all, since the destination row lives in another database. A SET-side
+         * tenant column joins the agreement fold only where the walker has already forced it equal
+         * to a WHERE column ({@link UpdateRows#isAgreementChecked}), so a value naming another
+         * tenant is refused by the fold before any connection; every other SET-side tenant column
+         * declines. The WHERE slots are added first so one of them is the binding's primary.
          */
         private void collectFromWhereKeys(OperationMember.Write.Dml dml, SlotCollector collector) {
+            for (var key : dml.whereKeyColumns()) {
+                if (!matchesTenantColumn(key.targetColumn())) continue;
+                collector.add(key.sdlFieldName(), key.targetColumn(), accessOf(key.extraction(),
+                    new TenantBinding.SlotRead.NestedInput(dml.outerArgName(),
+                        List.of(key.sdlFieldName())),
+                    key.decodeSlot()));
+            }
             if (dml instanceof OperationMember.Write.Update update) {
                 for (var set : update.updateRows().setColumns()) {
-                    if (matchesTenantColumn(set.targetColumn())) {
+                    if (!matchesTenantColumn(set.targetColumn())) continue;
+                    if (update.updateRows().isAgreementChecked(set)) {
+                        collector.add(set.sdlFieldName(), set.targetColumn(), accessOf(set.extraction(),
+                            new TenantBinding.SlotRead.NestedInput(dml.outerArgName(),
+                                List.of(set.sdlFieldName())),
+                            set.decodeSlot()));
+                    } else {
                         collector.decline(
                             "input field '" + set.sdlFieldName() + "' writes tenant column '"
                                 + scopes.columnName() + "' in the UPDATE's SET clause. Under"
@@ -835,13 +853,6 @@ public record TenantBindingIndex(
                                 + " the field, or delete and re-insert the row.");
                     }
                 }
-            }
-            for (var key : dml.whereKeyColumns()) {
-                if (!matchesTenantColumn(key.targetColumn())) continue;
-                collector.add(key.sdlFieldName(), key.targetColumn(), accessOf(key.extraction(),
-                    new TenantBinding.SlotRead.NestedInput(dml.outerArgName(),
-                        List.of(key.sdlFieldName())),
-                    key.decodeSlot()));
             }
         }
 

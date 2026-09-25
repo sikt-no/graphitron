@@ -1719,6 +1719,21 @@ CREATE TABLE film_price (
     PRIMARY KEY (film_id, currency_code)
 );
 
+-- A film_id-keyed table whose composite self-FK repeats the tenant column: under the multi-tenant
+-- build's <tenantColumn>film_id</tenantColumn>, an UPDATE repointing parent_scene_no writes
+-- film_id in SET through the reference, a value the walker already checks equal to the row's own
+-- id. No seed rows; the tenant-routing execution test seeds the tenant databases itself.
+CREATE TABLE film_scene (
+    film_id         int NOT NULL REFERENCES film(film_id),
+    scene_no        int NOT NULL,
+    parent_scene_no int,
+    label           varchar(100),
+    PRIMARY KEY (film_id, scene_no),
+    CONSTRAINT film_scene_parent_fk
+        FOREIGN KEY (film_id, parent_scene_no)
+        REFERENCES film_scene (film_id, scene_no)
+);
+
 -- A @table host whose columns are named like the projection type's slots, so the same plain
 -- projection type is also reachable as an ordinary nested object (the dual-use coexistence case).
 CREATE TABLE pivot_nesting_host (

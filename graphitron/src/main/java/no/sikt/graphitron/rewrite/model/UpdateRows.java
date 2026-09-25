@@ -33,6 +33,19 @@ public sealed interface UpdateRows permits UpdateRows.Identified {
     List<AgreementObligation> agreementObligations();
 
     /**
+     * Whether the value {@code set} writes is already checked equal to a WHERE-side value: some
+     * {@link AgreementObligation} names {@code set}'s column and has {@code set} as its reference
+     * side. An obligation's key side is a matched-key column, so where this holds the WHERE
+     * partition carries a {@link KeyColumn} on the same column, and the SET write can only restate
+     * the value the row is identified by.
+     */
+    default boolean isAgreementChecked(SetColumn set) {
+        var side = new AgreementObligation.Side(set.sdlFieldName(), set.extraction(), set.decodeSlot());
+        return agreementObligations().stream().anyMatch(o ->
+            o.column().sqlName().equals(set.targetColumn().sqlName()) && o.referenceSide().equals(side));
+    }
+
+    /**
      * What an explicit {@code null} on each SET-contributing input field means, one row per such
      * carrier. Stated here rather than left to the emitters because the answer turns on the matched
      * key, which only the walker holds. See {@link CarrierNullRule}.

@@ -60,6 +60,14 @@ type FilmActorNote implements Node @table(name: "film_actor_note")
     noteTxt: String @field(name: "note_txt")
 }
 
+# A composite key (film_id, scene_no) whose self-FK film_scene_parent_fk repeats the tenant column:
+# a reference to a sibling scene carries a tenant of its own.
+type FilmScene implements Node @table(name: "film_scene") @node(keyColumns: ["film_id", "scene_no"]) {
+    id: ID! @nodeId
+    label: String @field(name: "label")
+    parentSceneNo: Int @field(name: "parent_scene_no")
+}
+
 # ArgumentBound mutation arm: the INSERT input's filmId maps to the tenant column and divines
 # the routing for the write (and its follow-up re-read, which reuses the pinned connection).
 input InventoryCreateInput {
@@ -128,6 +136,15 @@ input InventoryCreateByFilmRefInput {
     storeId: Int! @field(name: "store_id")
 }
 
+# The agreement-checked SET slot: parent writes film_id in SET through the self-FK, a value the
+# walker checks equal to id's, so it co-binds the tenant beside id and a parent naming another
+# tenant is refused before any connection. label keeps a SET field when parent is omitted.
+input UpdateFilmSceneParentInput {
+    id: ID! @nodeId(typeName: "FilmScene")
+    parent: ID @nodeId(typeName: "FilmScene") @reference(path: [{key: "film_scene_parent_fk"}])
+    label: String @field(name: "label")
+}
+
 type Mutation {
     createInventory(in: InventoryCreateInput!): Inventory @mutation(typeName: INSERT)
     createInventoryByFilmRef(in: InventoryCreateByFilmRefInput!): Inventory @mutation(typeName: INSERT, table: "inventory")
@@ -137,4 +154,6 @@ type Mutation {
     deleteFilmActorsByNodeId(in: [DeleteFilmActorByNodeIdInput!]!): [ID!]! @mutation(typeName: DELETE, table: "film_actor")
     updateFilmByNodeId(in: UpdateFilmByNodeIdInput!): Film @mutation(typeName: UPDATE, table: "film")
     updateFilmActorNoteByNodeId(in: UpdateFilmActorNoteByNodeIdInput!): ID @mutation(typeName: UPDATE, table: "film_actor_note")
+    updateFilmSceneParent(in: UpdateFilmSceneParentInput!): ID @mutation(typeName: UPDATE, table: "film_scene")
+    updateFilmSceneParents(in: [UpdateFilmSceneParentInput!]!): [ID!]! @mutation(typeName: UPDATE, table: "film_scene")
 }

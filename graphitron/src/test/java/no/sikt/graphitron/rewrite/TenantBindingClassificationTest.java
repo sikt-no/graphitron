@@ -522,6 +522,79 @@ class TenantBindingClassificationTest {
                 && r.detail().contains("SET clause"));
     }
 
+    private static final String FILM_SCENE_SDL = """
+        type FilmScene implements Node @table(name: "film_scene")
+                @node(keyColumns: ["film_id", "scene_no"]) {
+            id: ID! @nodeId
+            label: String @field(name: "label")
+        }
+        type Language @table(name: "language") { name: String }
+        type Query { languages: [Language!]! }
+        type Mutation {
+            updateFilmSceneParent(in: UpdateFilmSceneParentInput!): ID
+                @mutation(typeName: UPDATE, table: "film_scene")
+            updateFilmSceneParents(in: [UpdateFilmSceneParentInput!]!): [ID!]!
+                @mutation(typeName: UPDATE, table: "film_scene")
+        }
+        input UpdateFilmSceneParentInput {
+            id: ID! @nodeId(typeName: "FilmScene")
+            parent: ID @nodeId(typeName: "FilmScene") @reference(path: [{key: "film_scene_parent_fk"}])
+            label: String @field(name: "label")
+        }
+        """;
+
+    @Test
+    void selfFkReferenceSharingTheTenantColumnCoBindsAfterTheWhereSlot() {
+        // parent's self-FK (film_id, parent_scene_no) lands film_id in SET, but the walker has
+        // already checked it equal to id's film_id, so it names the same tenant: it co-binds
+        // rather than declining, and the agreement fold refuses a parent in another tenant.
+        var schema = build(FILM_SCENE_SDL);
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+
+        for (var field : List.of("updateFilmSceneParent", "updateFilmSceneParents")) {
+            var bound = (TenantBinding.ArgumentBound) schema.tenantBindingOf("Mutation", field);
+            assertThat(bound.bindings()).extracting(TenantBinding.BoundSlot::slotName)
+                .containsExactly("id", "parent");
+            for (var slot : bound.bindings()) {
+                assertThat(slot.column().sqlName()).isEqualTo("film_id");
+                assertThat(slot.read())
+                    .isEqualTo(new TenantBinding.SlotRead.NestedInput("in", List.of(slot.slotName())));
+                assertThat(slot.projection())
+                    .isInstanceOfSatisfying(TenantBinding.SlotProjection.DecodedKeySlot.class,
+                        decoded -> assertThat(decoded.slot()).isZero());
+            }
+        }
+    }
+
+    @Test
+    void decodedReferenceWritingAnOutOfKeyTenantColumnStillRejects() {
+        // inventory's key is inventory_id alone, so the Film reference lifts film_id into SET with
+        // nothing in WHERE to agree with: a real move between tenants. The rule is keyed on the
+        // walker's agreement obligation, not on the carrier decoding a node id.
+        var schema = build("""
+            type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+                id: ID! @nodeId
+            }
+            type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
+            type Language @table(name: "language") { name: String }
+            type Query { languages: [Language!]! }
+            type Mutation {
+                updateInventory(in: UpdateInventoryFilmRefInput!): Inventory
+                    @mutation(typeName: UPDATE, table: "inventory")
+            }
+            input UpdateInventoryFilmRefInput {
+                inventoryId: Int! @field(name: "inventory_id")
+                filmRef: ID! @nodeId(typeName: "Film")
+            }
+            """);
+
+        assertThat(schema.tenantBindingOf("Mutation", "updateInventory")).isNull();
+        assertThat(schema.tenantBindings().rejections())
+            .anyMatch(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding r
+                && r.coordinate().equals("Mutation.updateInventory")
+                && r.detail().contains("SET clause"));
+    }
+
     @Test
     void idReturningWriteToATenantScopedTableWithNoBindingRejects() {
         // A DML write returning an encoded id has no Record return target, so its reach comes
