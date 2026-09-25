@@ -34,7 +34,7 @@ type Mutation {
 
 `rateFilms` decodes the tenant from the `film` ids, refuses a batch naming two tenants before calling the service, calls `rateFilms` with that tenant's `DSLContext`, and `RateFilmsPayload.films` and `Film.inventories` below it inherit the tenant. Today `rateFilms` runs on the default database and `Film.inventories` is rejected.
 
-For Sikt's sis this gives the 23 `@service` methods whose parameters are jOOQ records a surface the build can read the tenant from (they route where their `@nodeId` key decodes or `@field` bindings land on the tenant column), and routes every connection-binding service nested under a tenant-bound parent. The other 40 sis service methods take the encoded node id as a plain `String`, which names no node type the build can read; they stay as they are here, and R978 (`service-undecoded-node-id-tenant`) owns them.
+For Sikt's sis this gives the 23 `@service` methods whose parameters are jOOQ records a surface the build can read the tenant from (they route where their `@nodeId` key decodes or `@field` bindings land on the tenant column), and routes every connection-binding service nested under a tenant-bound parent. The other 40 sis service methods take the encoded node id as a plain `String`, which names no node type the build can read. sis is migrating them to the node table's jOOQ record with `@nodeId(typeName:)` (a bean member, or a `List<XRecord>` parameter), which puts them on this item's decode path; R978 (`service-undecoded-node-id-tenant`) owns the build-time refusal for a service that still names no tenant.
 
 ## Observed (verified against the generator source, 2026-09-25)
 
@@ -87,7 +87,7 @@ A method call whose parameters receive a connection-bound value, a `DSLContext` 
 
 ### What an empty reach means, and the gap this item leaves
 
-A service's SQL is opaque to graphitron, so an empty reach is not evidence that it touches only global data. The rule this item applies is: route on a tenant whenever one is known (its own arguments, or its parent's context), and only otherwise fall to the default source. A root service that binds a connection and names no tenant therefore stays `Untenanted` and keeps running on the default source, as today. That is an accepted gap, not a verdict. It is exactly where sis's 40 undecoded-id services sit, and a service writing tenant data through it writes to the default database. R978 owns closing it; this item does not change its behaviour, so nothing that runs today starts failing here.
+A service's SQL is opaque to graphitron, so an empty reach is not evidence that it touches only global data. The rule this item applies is: route on a tenant whenever one is known (its own arguments, or its parent's context), and only otherwise fall to the default source. A root service that binds a connection and names no tenant therefore stays `Untenanted` and keeps running on the default source, as today. That is an accepted gap, not a verdict. It is where sis's 40 undecoded-id services sit until their migration to jOOQ-record parameters lands, and a service writing tenant data through it writes to the default database. R978 owns turning it into a build-time refusal; this item does not change its behaviour, so nothing that runs today starts failing here.
 
 ## Implementation
 
@@ -107,12 +107,12 @@ A service's SQL is opaque to graphitron, so an empty reach is not evidence that 
 
 ## Other solutions we've considered
 
-- **Decode every undecoded `ID` by its embedded type id at runtime**, as v9 did: `NodeIdEncoder.peekTypeId`, then the per-type key positions node dispatch already keeps (`nodePositions`). It would route the 40 sis services with no schema change. It was not chosen because the verdict would rest on evidence that arrives per request: the build would assert `ArgumentBound`, and every child's `Inherited` under it, on a slot it cannot prove names a tenant, and a service whose `ID` arguments name global or foreign ids would classify bound and fail at runtime. It would also splice the per-row node-dispatch family into `ArgumentBound`'s fixed-decode shape. R978 weighs it again, with the alternatives, as the question that item exists to settle.
+- **Decode every undecoded `ID` by its embedded type id at runtime**, as v9 did: `NodeIdEncoder.peekTypeId`, then the per-type key positions node dispatch already keeps (`nodePositions`). It would have routed the 40 sis services with no schema change. It was not chosen because the verdict would rest on evidence that arrives per request: the build would assert `ArgumentBound`, and every child's `Inherited` under it, on a slot it cannot prove names a tenant, and a service whose `ID` arguments name global or foreign ids would classify bound and fail at runtime. It would also splice the per-row node-dispatch family into `ArgumentBound`'s fixed-decode shape. sis chose to migrate those services to jOOQ-record parameters instead.
 - **A routing-only marker, or `@nodeId` on a `String` member that keeps handing over the encoded id.** Both are the "this is a node id" marker the principles name as a smell, and the second breaks the invariant `singleValuedMemberDeferral` enforces. Lifting that deferral would not help sis either: a tenant-scoped key that embeds the tenant is composite there, and a one-value slot refuses a composite key.
-- **Reject every connection-binding root service that names no tenant.** Honest about the gap, but it would break every service over global data with no way to declare it global. R978 decides this together with the undecoded-id question.
+- **Reject every connection-binding root service that names no tenant.** Honest about the gap, but it needs a way for a service over global data to declare itself global, which this item does not design. R978 owns it.
 
 ## Related
 
-- R978 (`service-undecoded-node-id-tenant`): the 40 sis services that take encoded ids as strings, and root services that name no tenant.
+- R978 (`service-undecoded-node-id-tenant`): the build-time refusal for a connection-binding root service that names no tenant, pointing at the jOOQ-record migration sis is making.
 - R975 (`tenant-routed-mount-authorization`): once a service divines, its `dslFor` acquisition inherits that item's authorization gap; closing it is R975's.
 - R977 (`update-set-self-fk-tenant-agreement`): independent, from the same sis port.

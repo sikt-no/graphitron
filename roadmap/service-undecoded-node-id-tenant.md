@@ -1,31 +1,33 @@
 ---
 id: R978
-title: "Services that take encoded node ids as strings name their tenant"
+title: "Refuse a connection-binding root service that names no tenant under database-per-tenant"
 status: Backlog
 bucket: bug
 priority: 2
 theme: runtime-connection
-depends-on: []
+depends-on: [service-tenant-binding]
 created: 2026-09-25
 last-updated: 2026-09-25
 ---
 
-# Services that take encoded node ids as strings name their tenant
+# Refuse a connection-binding root service that names no tenant under database-per-tenant
 
 ## Goal
 
-Under database-per-tenant routing (a `<tenantColumn>` build), a `@service` whose tenant arrives only inside an encoded node id handed to the service as a plain `String` (a bean member or a `List<String> ids` parameter, with no `@nodeId`) either runs on the tenant's connection and hands the tenant down, or is refused at build time with a message naming the fix. Today it silently runs on the default database, and every tenant-scoped field under it is rejected. This is the question left open when R976 (`service-tenant-binding`) routes the services whose ids arrive decoded; settling it is what lets Sikt's sis route its remaining 40 of 63 service methods (34 bean-taking, e.g. `FagpersonService.aktiverFagpersoner(List<AktiverFagpersonerRecord>)` with `id: ID! @field(name: "fagpersonVedLarestedID")` on a `String` member; 6 bare-id, e.g. `UndervisningsaktivitetService.godkjennForPublisering(List<String> ids)`).
+Under database-per-tenant routing (a `<tenantColumn>` build, where each tenant's data lives in its own database), a root `@service` field that receives a connection (a `DSLContext` or the `$session` handle) and whose arguments name no tenant is refused at build time with a message naming the fix, instead of silently running on the default database. Once R976 (`service-tenant-binding`) lands, such a service is `Untenanted` (routed to the default source) as an accepted gap: its SQL is opaque, so the build cannot tell a service over global data from one writing tenant data. This item closes that gap without breaking services that really are global.
 
-## Why the build cannot read these today
+## Consumer-side resolution (sis, decided 2026-09-25)
 
-- The `ID` value reaches the service through a `CallSiteExtraction.Direct` leaf, so no node type, key column or tenant column is attached to it.
-- `InputBeanResolver.singleValuedMemberDeferral` refuses `@nodeId` on a bean member that is not a jOOQ record, on the invariant that a consumer never receives the wire format. A tenant-scoped sis key embeds the tenant column beside others, so it is composite, and a one-value slot refuses a composite key in both `singleValuedMemberDeferral` and `ServiceCatalog.nodeIdSlotExtraction`.
-- R976 leaves a root service that binds a connection and names no tenant `Untenanted`, as an accepted gap. This item owns it.
+The 40 sis service methods that take an encoded node id as a plain `String` (34 bean members such as `AktiverFagpersonerRecord.fagpersonVedLarestedID`, 6 bare `List<String> ids` parameters such as `UndervisningsaktivitetService.godkjennForPublisering`) migrate to the node table's jOOQ record with `@nodeId(typeName:)` on the SDL field: a `FagpersonRecord` member, a `List<UndervisningsaktivitetRecord>` parameter. That is the `CallSiteExtraction.NodeIdDecodeRecord` path R976 reads, for a bean member through `InputBeanResolver` and for a parameter through `ServiceCatalog.nodeIdSlotExtraction` (whose `takesTheNodeTablesRecord` admits a `List<XRecord>` slot). No generator change is needed for them. The migration also removes the wire-format leak the principles name: the services stop decoding Relay ids themselves.
 
-## Options to weigh
+Runtime inference from the embedded type id, as v9 did, was weighed during R976's spec and not chosen: the classification verdict would rest on per-request evidence.
 
-- **Consumer migration, no new generator surface.** sis declares these members as the node table's jOOQ record with `@nodeId(typeName:)`, or takes `List<XRecord>` parameters. That is the `NodeIdDecodeRecord` path R976 reads. It costs a Java change in 40 sis services and gives up nothing on the principle side. This item would then document the migration and add the build-time refusal below.
-- **Runtime type-id dispatch, v9 parity.** Decode each `Direct` `ID` by its embedded type id (`NodeIdEncoder.peekTypeId`) against the per-type tenant positions node dispatch keeps. No schema change, but the classification verdict then rests on per-request evidence, and it merges the per-row node-dispatch family into `ArgumentBound`. The principles-architect review during R976's spec found this weaker than migration.
-- **Build-time refusal of the gap.** Reject a connection-binding root service under `<tenantColumn>` that names no tenant, with a message naming the migration. The open part is how a service over genuinely global data declares that it is global.
+## What the generator still owes
 
-A settled answer states which option ships, what the consumer writes, and what the rejection says.
+- **The refusal.** In `TenantBindingIndex.Fold.armOf`, a root `ServiceField` for which the "binds a connection" predicate R976 introduces holds, which divines nothing and has no tenant context, rejects instead of falling to `Untenanted`. The message names the tenant column and the fix: bind the tenant through a `@nodeId` on a jOOQ-record member or parameter, or a `@field` mapping to the tenant column. That the refusal would have fired on each of sis's 40 unmigrated methods is the proof that it is aimed right.
+- **The escape for global services.** A service over genuinely global data (reference data on the default source) must still build. This is the open design question. Candidates to weigh: a declaration on the field; reading it off the service's return (a global `@table` return is already evidence); or scoping the refusal to mutations first. Whichever wins, it must be build-time decidable and must not become a way to silence the refusal for a service that writes tenant data.
+- **Docs.** The user manual's tenant-scoping how-to shows the jOOQ-record `@nodeId` shape for services and states the refusal.
+
+## Related
+
+- R976 (`service-tenant-binding`): the decode path, the connection predicate, and the gap this item closes. This item depends on it.
