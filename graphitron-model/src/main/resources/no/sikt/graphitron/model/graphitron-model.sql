@@ -3766,6 +3766,7 @@ CREATE TABLE graphitron_service_entry (
   class_name    VARCHAR,
   method        VARCHAR,
   argmapping   VARCHAR,
+  touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
     ON DELETE CASCADE
@@ -3780,6 +3781,7 @@ COMMENT ON COLUMN graphitron_service_entry.source_column IS 'source column, 1-ba
 COMMENT ON COLUMN graphitron_service_entry.class_name IS 'the fully-qualified Java class name as written';
 COMMENT ON COLUMN graphitron_service_entry.method IS 'the Java method name as written';
 COMMENT ON COLUMN graphitron_service_entry.argmapping IS 'the argMapping string as written; the pair child is its decode';
+COMMENT ON COLUMN graphitron_service_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a coordinate that still stands; a coordinate the author removed takes its rows with it through the cascade on the reference below, so the two together are what makes this relation total without a pass emptying it first';
 
 CREATE TABLE graphitron_external_field_entry (
   graph_name    VARCHAR NOT NULL,
@@ -3791,6 +3793,7 @@ CREATE TABLE graphitron_external_field_entry (
   class_name    VARCHAR,
   method        VARCHAR,
   argmapping   VARCHAR,
+  touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
     ON DELETE CASCADE
@@ -3805,6 +3808,7 @@ COMMENT ON COLUMN graphitron_external_field_entry.source_column IS 'source colum
 COMMENT ON COLUMN graphitron_external_field_entry.class_name IS 'the fully-qualified Java class name as written';
 COMMENT ON COLUMN graphitron_external_field_entry.method IS 'the Java method name as written';
 COMMENT ON COLUMN graphitron_external_field_entry.argmapping IS 'the argMapping string as written; the pair child is its decode';
+COMMENT ON COLUMN graphitron_external_field_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a coordinate that still stands; a coordinate the author removed takes its rows with it through the cascade on the reference below, so the two together are what makes this relation total without a pass emptying it first';
 
 CREATE TABLE graphitron_connection_entry (
   graph_name          VARCHAR NOT NULL,

@@ -32,7 +32,11 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_EXTERNAL_FIELD_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PIVOT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_RECORD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_TYPE_ENTRY;
@@ -126,6 +130,8 @@ public final class GraphitronAnchor {
         connections(dsl, graph, touchedAt);
         pivots(dsl, graph, touchedAt);
         mutations(dsl, graph, touchedAt);
+        services(dsl, graph, touchedAt);
+        externalFields(dsl, graph, touchedAt);
         // The node before its key columns, which reference it.
         nodes(dsl, graph, touchedAt);
         nodeKeyColumns(dsl, graph, touchedAt);
@@ -303,6 +309,7 @@ public final class GraphitronAnchor {
         List.of(GRAPHITRON_DEPRECATED, GRAPHITRON_TABLE_ENTRY,
             GRAPHITRON_SCALAR_TYPE_ENTRY, GRAPHITRON_RECORD_ENTRY,
             GRAPHITRON_CONNECTION_ENTRY, GRAPHITRON_PIVOT_ENTRY, GRAPHITRON_MUTATION_ENTRY,
+            GRAPHITRON_SERVICE_ENTRY, GRAPHITRON_EXTERNAL_FIELD_ENTRY,
             GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY, GRAPHITRON_DEFAULT_ORDER_ENTRY,
             GRAPHITRON_NODE_KEYCOLUMN_ENTRY, GRAPHITRON_NODE_ENTRY,
             GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY, GRAPHITRON_ROUTINE_ENTRY,
@@ -1032,6 +1039,77 @@ public final class GraphitronAnchor {
             .set(t.TABLE_REF, excluded(t.TABLE_REF))
             .set(t.TABLE_REF_NAMESPACE_PART, excluded(t.TABLE_REF_NAMESPACE_PART))
             .set(t.TABLE_REF_NAME_PART, excluded(t.TABLE_REF_NAME_PART))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+    }
+
+    /**
+     * The Java call a field is served by. A left join, on {@code tables}' terms rather than
+     * {@code mutations}': the entry requires a class name and an application that named none
+     * writes no entry row, where the application is still the author saying this field is served
+     * elsewhere. So the application is the row and the decode is its payload.
+     *
+     * <p>The method reference and the argMapping entries this application also produces stay with
+     * the walk for now. They are rows of relations keyed by site and use site rather than by the
+     * coordinate, so they move when their own relations do and not when this one does.
+     */
+    private static void services(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var c = claimedOnField(dsl, graph, "service");
+        var e = GRAPHITRON_AST_SERVICE_ENTRY;
+        var t = GRAPHITRON_SERVICE_ENTRY;
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.SOURCE_NAME, t.SOURCE_LINE,
+                t.SOURCE_COLUMN, t.CLASS_NAME, t.METHOD, t.ARGMAPPING, t.TOUCHED_AT)
+            .select(dsl
+                .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME), c.field(FIELD_NAME),
+                    c.field(SITE_NAME), c.field(SITE_LINE), c.field(SITE_COLUMN),
+                    e.CLASS_NAME, e.METHOD, e.ARGMAPPING, val(touchedAt, t.TOUCHED_AT))
+                .from(c)
+                .leftJoin(e).on(onSite(e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN,
+                    graph, c))
+                .where(c.field(RANK).eq(1)))
+            .onDuplicateKeyUpdate()
+            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
+            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
+            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
+            .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
+            .set(t.METHOD, excluded(t.METHOD))
+            .set(t.ARGMAPPING, excluded(t.ARGMAPPING))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+    }
+
+    /**
+     * The Java call that produces a field the database does not hold, on {@code services}' terms
+     * and for its reasons: the application is the row, the decode is the payload, and a left join
+     * keeps a coordinate whose application named no class.
+     *
+     * <p>Single-site, unlike the bindings and the conditions beside it. {@code @externalField} is
+     * declared on {@code FIELD_DEFINITION} alone, so one entry relation answers for it and this
+     * needs no union.
+     */
+    private static void externalFields(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var c = claimedOnField(dsl, graph, "externalField");
+        var e = GRAPHITRON_AST_EXTERNAL_FIELD_ENTRY;
+        var t = GRAPHITRON_EXTERNAL_FIELD_ENTRY;
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.SOURCE_NAME, t.SOURCE_LINE,
+                t.SOURCE_COLUMN, t.CLASS_NAME, t.METHOD, t.ARGMAPPING, t.TOUCHED_AT)
+            .select(dsl
+                .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME), c.field(FIELD_NAME),
+                    c.field(SITE_NAME), c.field(SITE_LINE), c.field(SITE_COLUMN),
+                    e.CLASS_NAME, e.METHOD, e.ARGMAPPING, val(touchedAt, t.TOUCHED_AT))
+                .from(c)
+                .leftJoin(e).on(onSite(e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN,
+                    graph, c))
+                .where(c.field(RANK).eq(1)))
+            .onDuplicateKeyUpdate()
+            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
+            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
+            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
+            .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
+            .set(t.METHOD, excluded(t.METHOD))
+            .set(t.ARGMAPPING, excluded(t.ARGMAPPING))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
     }

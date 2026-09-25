@@ -1338,6 +1338,7 @@ public final class SeededStore {
             .set(GRAPHITRON_SERVICE_ENTRY.SOURCE_COLUMN, 3)
             .set(GRAPHITRON_SERVICE_ENTRY.CLASS_NAME, className)
             .set(GRAPHITRON_SERVICE_ENTRY.METHOD, method)
+            .set(GRAPHITRON_SERVICE_ENTRY.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 
@@ -1357,6 +1358,7 @@ public final class SeededStore {
             .set(GRAPHITRON_EXTERNAL_FIELD_ENTRY.SOURCE_COLUMN, 3)
             .set(GRAPHITRON_EXTERNAL_FIELD_ENTRY.CLASS_NAME, className)
             .set(GRAPHITRON_EXTERNAL_FIELD_ENTRY.METHOD, method)
+            .set(GRAPHITRON_EXTERNAL_FIELD_ENTRY.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 

@@ -53,7 +53,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_HANDLER_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY;
@@ -74,7 +73,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPLIT_QUERY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
@@ -388,16 +386,12 @@ public final class GraphitronFactCapture {
                 }
             }
             case "service" -> {
-                if (!sink.claim(GRAPHITRON_SERVICE_ENTRY, type, field)) return;
+                // The coordinate relation is the anchor's now, derived from the entry stratum and
+                // swept there. What is left here writes rows keyed by site and use site, which the
+                // anchor does not yet hold, and the claim dedupes those rather than the relation
+                // it used to reserve.
+                if (!sink.claim(GRAPHITRON_METHOD_REFERENCE_ENTRY, "SERVICE", type, field)) return;
                 var reference = codeReference(directive, "service");
-                var record = sink.dsl().newRecord(GRAPHITRON_SERVICE_ENTRY);
-                record.setTypeName(type);
-                record.setFieldName(field);
-                position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
-                record.setClassName(reference.className());
-                record.setMethod(reference.method());
-                record.setArgmapping(reference.argMapping());
-                sink.add(record);
                 methodReference("SERVICE", useSite(type, field, null, null, null),
                     type, field, null, null, null,
                     reference.className(), reference.method(), directive);
@@ -431,16 +425,10 @@ public final class GraphitronFactCapture {
                 }
             }
             case "externalField" -> {
-                if (!sink.claim(GRAPHITRON_EXTERNAL_FIELD_ENTRY, type, field)) return;
+                // The coordinate relation is the anchor's, as @service's is; the claim dedupes
+                // the method reference this still writes.
+                if (!sink.claim(GRAPHITRON_METHOD_REFERENCE_ENTRY, "EXTERNAL_FIELD", type, field)) return;
                 var reference = codeReference(directive, "reference");
-                var record = sink.dsl().newRecord(GRAPHITRON_EXTERNAL_FIELD_ENTRY);
-                record.setTypeName(type);
-                record.setFieldName(field);
-                position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
-                record.setClassName(reference.className());
-                record.setMethod(reference.method());
-                record.setArgmapping(reference.argMapping());
-                sink.add(record);
                 methodReference("EXTERNAL_FIELD", useSite(type, field, null, null, null),
                     type, field, null, null, null,
                     reference.className(), reference.method(), directive);
@@ -1082,7 +1070,6 @@ public final class GraphitronFactCapture {
         GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY,
         GRAPHITRON_ERROR_ENTRY,
         GRAPHITRON_ERROR_HANDLER_ENTRY,
-        GRAPHITRON_EXTERNAL_FIELD_ENTRY,
         GRAPHITRON_FEDERATION_KEY_ENTRY,
         GRAPHITRON_FEDERATION_KEY_FIELD_ENTRY,
         GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY,
@@ -1098,7 +1085,6 @@ public final class GraphitronFactCapture {
         GRAPHITRON_ORDER_BY_ENTRY,
         GRAPHITRON_REFERENCE_FOR_ENTRY,
         GRAPHITRON_REFERENCE_FOR_STEP_ENTRY,
-        GRAPHITRON_SERVICE_ENTRY,
         GRAPHITRON_SPELLED_REFERENCE_ENTRY,
         GRAPHITRON_SPLIT_QUERY_ENTRY,
         GRAPHITRON_TENANT_FAN_OUT_ENTRY,
