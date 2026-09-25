@@ -1,7 +1,7 @@
 ---
 id: R977
 title: "A self-FK reference writing the tenant column in an UPDATE SET is agreement-checked, not declined"
-status: Spec
+status: Ready
 bucket: bug
 priority: 3
 theme: runtime-connection

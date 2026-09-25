@@ -24,13 +24,13 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R942` | A rule that evaluates an unregistered view once per driving row fails the build, whoever writes the next one | Spec | 2026-09-09 | [plan](per-row-view-naming-fails-the-build.md) |
-| `R977` | A self-FK reference writing the tenant column in an UPDATE SET is agreement-checked, not declined | Spec | 2026-09-25 | [plan](update-set-self-fk-tenant-agreement.md) |
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Spec | 2026-09-22 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | Spec | 2026-09-25 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
+| `R977` | A self-FK reference writing the tenant column in an UPDATE SET is agreement-checked, not declined | Ready | 2026-09-25 | [plan](update-set-self-fk-tenant-agreement.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
@@ -577,7 +577,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R975` [**Routed tenant acquisition: authorize the key and hand it to the session mount**](tenant-routed-mount-authorization.md) — Spec, bug
 - `R978` [**Refuse a connection-binding root service that names no tenant under database-per-tenant**](service-undecoded-node-id-tenant.md) — Backlog, bug, blocked by [service-tenant-binding](service-tenant-binding.md)
 - `R664` [**A growth-proof staged builder over the generated ExecutionInput factory**](execution-input-staged-builder.md) — Backlog, dx
-- `R977` [**A self-FK reference writing the tenant column in an UPDATE SET is agreement-checked, not declined**](update-set-self-fk-tenant-agreement.md) — Spec, bug
+- `R977` [**A self-FK reference writing the tenant column in an UPDATE SET is agreement-checked, not declined**](update-set-self-fk-tenant-agreement.md) — Ready, bug
 - `R469` [**Enable @defer/incremental delivery on the owned-connection path**](defer-under-owned-connections.md) — Backlog, architecture
 - `R468` [**Oracle/RAS execution-tier coverage for session identity hooks**](oracle-ras-session-hook-execution-coverage.md) — Backlog, architecture
 - `R460` [**Targeted read-only enforcement for query paths graphitron does not control (@routine, @service)**](query-read-only-enforcement.md) — Backlog, architecture
