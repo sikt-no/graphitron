@@ -8000,8 +8000,24 @@ COMMENT ON COLUMN graphitron_connection_element_type.graph_name IS 'the owning g
 COMMENT ON COLUMN graphitron_connection_element_type.type_name IS 'the connection type itself, the wrapper a field returns; with the graph, the grain';
 COMMENT ON COLUMN graphitron_connection_element_type.element_type_name IS 'the type the connection paginates, read off the edge type''s node field''s named type with its wrappers already stripped by graphql_field. A name and not a binding: whether the element is bound to a table is graphitron_resolved_type_binding''s answer and deliberately not asked here';
 
-CREATE VIEW graphitron_entry_defect
-  (graph_name, source_name, source_line, source_column, code, detail) AS
+CREATE TABLE graphitron_entry_defect (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  code          VARCHAR NOT NULL,
+  type_name     VARCHAR,
+  field_name    VARCHAR,
+  detail        VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, code),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  -- The vocabulary, so a code nothing declares is unwritable rather than merely unexpected. The
+  -- rule view's arm joined this relation to reach a severity; here it is a constraint as well.
+  FOREIGN KEY (code) REFERENCES graphitron_defect_type (code)
+);
+
+CREATE VIEW graphitron_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, type_name, field_name, detail) AS
 -- The @routine that heads a chain: the last one written at a mutation-root field.
 WITH head (graph_name, type_name, field_name, source_name, source_line, source_column) AS (
   SELECT r.graph_name, r.type_name, r.field_name, r.source_name, r.source_line, r.source_column
@@ -8097,7 +8113,7 @@ broken (graph_name, type_name, field_name, target_source_name, target_schema, ta
 -- More than one write on one field. The row sits at the head, the individual applications
 -- being legal each on their own and the plurality being what has no emitter.
 SELECT h.graph_name, h.source_name, h.source_line, h.source_column,
-       'MULTIPLE_ROUTINE_NODES', NULL
+       'MULTIPLE_ROUTINE_NODES', h.type_name, h.field_name, NULL
   FROM head h
  WHERE 1 < (SELECT COUNT(*) FROM graphitron_routine_entry r2
              WHERE r2.graph_name = h.graph_name AND r2.type_name = h.type_name
@@ -8107,7 +8123,7 @@ UNION ALL
 -- the wrapper and the write are both seat-independent facts, and this relation ranks nothing,
 -- so a coordinate the seat would have answered about its carrier says this as well.
 SELECT h.graph_name, h.source_name, h.source_line, h.source_column,
-       'CONNECTION_RETURN', NULL
+       'CONNECTION_RETURN', h.type_name, h.field_name, NULL
   FROM head h
   JOIN graphitron_field cf
     ON cf.graph_name = h.graph_name AND cf.type_name = h.type_name
@@ -8117,21 +8133,21 @@ SELECT h.graph_name, h.source_name, h.source_line, h.source_column,
 UNION ALL
 -- A read surface written on a write. Three sites state one, and each row sits at its own.
 SELECT fc.graph_name, fc.source_name, fc.source_line, fc.source_column,
-       'READ_SURFACE_ON_WRITE', 'condition'
+       'READ_SURFACE_ON_WRITE', fc.type_name, fc.field_name, 'condition'
   FROM graphitron_field_condition_entry fc
   JOIN head h
     ON h.graph_name = fc.graph_name AND h.type_name = fc.type_name AND h.field_name = fc.field_name
  WHERE fc.source_name IS NOT NULL
 UNION ALL
 SELECT ac.graph_name, ac.source_name, ac.source_line, ac.source_column,
-       'READ_SURFACE_ON_WRITE', 'condition'
+       'READ_SURFACE_ON_WRITE', ac.type_name, ac.field_name, 'condition'
   FROM graphitron_argument_condition_entry ac
   JOIN head h
     ON h.graph_name = ac.graph_name AND h.type_name = ac.type_name AND h.field_name = ac.field_name
  WHERE ac.source_name IS NOT NULL
 UNION ALL
 SELECT ob.graph_name, ob.source_name, ob.source_line, ob.source_column,
-       'READ_SURFACE_ON_WRITE', 'orderBy'
+       'READ_SURFACE_ON_WRITE', ob.type_name, ob.field_name, 'orderBy'
   FROM graphitron_order_by_entry ob
   JOIN head h
     ON h.graph_name = ob.graph_name AND h.type_name = ob.type_name AND h.field_name = ob.field_name
@@ -8143,7 +8159,7 @@ UNION ALL
 -- competed is one join from this position to graphitron_field_chain_link_resolution, which is why
 -- the count is not in detail; it also varies per target, where this key does not.
 SELECT DISTINCT cl.graph_name, cl.source_name, cl.source_line, cl.source_column,
-       'ROUTE_AMBIGUOUS', CAST(NULL AS VARCHAR)
+       'ROUTE_AMBIGUOUS', cl.type_name, cl.field_name, CAST(NULL AS VARCHAR)
   FROM routes r
   JOIN graphitron_field_chain_link cl
     ON cl.graph_name = r.graph_name AND cl.type_name = r.type_name
@@ -8166,7 +8182,7 @@ SELECT DISTINCT cl.graph_name, cl.source_name, cl.source_line, cl.source_column,
                                 AND rd.position = b.break_position)
               THEN 'ELEMENT_UNRESOLVED'
             ELSE 'NO_ROUTE_FROM_DEPARTURE' END,
-       CAST(NULL AS VARCHAR)
+       cl.type_name, cl.field_name, CAST(NULL AS VARCHAR)
   FROM broken b
   JOIN graphitron_field_chain_link cl
     ON cl.graph_name = b.graph_name AND cl.type_name = b.type_name
@@ -8184,7 +8200,7 @@ UNION ALL
 -- resolved to nothing, which is a resolution failing rather than a schema saying nothing. That
 -- fault is real and is not this one; it is owed its own arm at the routine's own position.
 SELECT cl.graph_name, cl.source_name, cl.source_line, cl.source_column,
-       'CHAIN_WITHOUT_TARGET', CAST(NULL AS VARCHAR)
+       'CHAIN_WITHOUT_TARGET', cl.type_name, cl.field_name, CAST(NULL AS VARCHAR)
   FROM graphitron_field_chain_link cl
  WHERE cl.position = 0
    AND NOT EXISTS (SELECT 1 FROM graphitron_field_table ft
@@ -8194,13 +8210,24 @@ SELECT cl.graph_name, cl.source_name, cl.source_line, cl.source_column,
                     WHERE ca.graph_name = cl.graph_name AND ca.type_name = cl.type_name
                       AND ca.field_name = cl.field_name
                       AND ca.directive_name = 'routine');
-COMMENT ON VIEW graphitron_entry_defect IS 'A written graphitron directive the generator will not emit for, at the position it was written and under the rule that stopped it. For example a mutation field carrying @routine and an @orderBy draws one row at the @orderBy''s own line, reading READ_SURFACE_ON_WRITE.';
-COMMENT ON COLUMN graphitron_entry_defect.graph_name IS 'the owning graph''s partition, carried from the entry; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_entry_defect.source_name IS 'the file the offending directive was written in, the first of the three columns naming its position; with them a reference into graphql_ast_entry, which is the supertype that makes a @routine application and a path element the same kind of thing to point at';
+COMMENT ON VIEW graphitron_entry_defect_rule IS 'One row the entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
+COMMENT ON COLUMN graphitron_entry_defect_rule.graph_name IS 'the owning graph''s partition, carried from the entry; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_entry_defect_rule.source_name IS 'the file the offending directive was written in, the first of the three columns naming its position; with them a reference into graphql_ast_entry, which is the supertype that makes a @routine application and a path element the same kind of thing to point at';
+COMMENT ON COLUMN graphitron_entry_defect_rule.source_line IS 'the offending directive''s source line, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_entry_defect_rule.source_column IS 'the offending directive''s source column; with the two columns above, the entry this defect is about. The key is the entry and not the coordinate, because a coordinate is an aggregate over the sites that declare it and two offending applications at one coordinate are two things to fix';
+COMMENT ON COLUMN graphitron_entry_defect_rule.code IS 'which defect, a graphitron_defect_type key. With the entry the whole key: one entry may break two rules and then carries two rows, there being no ranking here and nothing to choose between them';
+COMMENT ON COLUMN graphitron_entry_defect_rule.type_name IS 'the type owning the coordinate the offending directive was written at. Payload and not key: an entry is written at one coordinate, so this is determined by the position beside it and adds no way to tell two rows apart. Carried because the read surface this feeds groups by coordinate, and a class of rows answering NULL there is an axis with a hole in it rather than an axis';
+COMMENT ON COLUMN graphitron_entry_defect_rule.field_name IS 'the field of that type, NULL where the defect sits at a type rather than a field. Every rule here is about a field today and the column is nullable anyway, the coordinate axis it feeds being nullable at the type grain by construction';
+COMMENT ON COLUMN graphitron_entry_defect_rule.detail IS 'the specific a rendered message quotes back, null where the code says everything. One column and never a payload: what a consumer needs beyond this is a join from the entry, and the columns that used to differ per defect were all message material';
+COMMENT ON TABLE graphitron_entry_defect IS 'A written graphitron directive the generator will not emit for, at the position it was written and under the rule that stopped it. For example a mutation field carrying @routine and an @orderBy draws one row at the @orderBy''s own line, reading READ_SURFACE_ON_WRITE.';
+COMMENT ON COLUMN graphitron_entry_defect.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_entry_defect.source_name IS 'the file the offending directive was written in, the first of the three columns naming its position';
 COMMENT ON COLUMN graphitron_entry_defect.source_line IS 'the offending directive''s source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_entry_defect.source_column IS 'the offending directive''s source column; with the two columns above, the entry this defect is about. The key is the entry and not the coordinate, because a coordinate is an aggregate over the sites that declare it and two offending applications at one coordinate are two things to fix';
-COMMENT ON COLUMN graphitron_entry_defect.code IS 'which defect, a graphitron_defect_type key. With the entry the whole key: one entry may break two rules and then carries two rows, there being no ranking here and nothing to choose between them';
-COMMENT ON COLUMN graphitron_entry_defect.detail IS 'the specific a rendered message quotes back, null where the code says everything. One column and never a payload: what a consumer needs beyond this is a join from the entry, and the columns that used to differ per defect were all message material';
+COMMENT ON COLUMN graphitron_entry_defect.code IS 'which defect, a graphitron_defect_type key and a foreign key into it. With the entry the whole key: one entry may break two rules and then carries two rows, there being no ranking here and nothing to choose between them';
+COMMENT ON COLUMN graphitron_entry_defect.type_name IS 'the type owning the coordinate the offending directive was written at. Payload and not key: an entry is written at one coordinate, so this is determined by the position beside it';
+COMMENT ON COLUMN graphitron_entry_defect.field_name IS 'the field of that type, NULL where the defect sits at a type rather than a field';
+COMMENT ON COLUMN graphitron_entry_defect.detail IS 'the specific a rendered message quotes back, null where the code says everything';
 
 CREATE VIEW intent_field_navigated_type
   (graph_name, type_name, field_name, basis, navigated_type_name) AS
@@ -14567,8 +14594,35 @@ SELECT j.graph_name, 'compile',
        CASE WHEN j.line_number = -1 THEN NULL ELSE CAST(j.line_number AS INT) END,
        CASE WHEN j.column_number = -1 THEN NULL ELSE CAST(j.column_number AS INT) END,
        j.message
-  FROM javac_diagnostic j;
-COMMENT ON VIEW diagnostic IS 'The diagnostics stratum''s one read surface: the union of all seven arms (the rejection residue, the store-native claim-conflict pilot, the unlowerable-ordering arm, the lint arm, the advisory arm, the SDL toolchain''s three reading stages, the compile oracle), which the MCP diagnostics tools read and no consumer bypasses. Prefix-less on purpose: a read-side union across vocabularies has no family, and no naming gate says so mechanically, so this comment does. Derived columns live here rather than in the base relations: actionable is the deferred-versus-rest CASE over kind (the same predicate the LSP severity projection documents, pinned by a one-row parity assertion); severity for compile rows mirrors CompileDiagnostic.severity() (ERROR to error, every other javac kind to warning, same parity discipline); coordinate is the rendering of the stored pair, and it is the one composite here because its atoms ride the same row (type_name is a dimension of its own, field_name beside it), so every question the parts answer stays answerable from the row; the compile arm''s sentinels ("(no source)", -1) normalise to the uniform NULL absent bucket by comparing against the sentinel values, never IS NULL. lsp_code carries the producing oracle''s stable machine code in both namespaces (the rejection sub-seals'' lspCode(), javac''s Diagnostic.getCode()), which cannot collide. Two axes are deliberately absent, both for the same reason and neither recoverable from a column that carried them: the claiming directives of a conflict, which are rows on the claim views and the residue''s own directive child under each arm''s key, so a consumer asks membership by joining rather than set equality against a joined string; and the directory of file, which is one segment of a path kept while the rest are discarded, so a consumer truncates the stored path at whatever depth its own question needs. Every dimension is single-valued at one row per diagnostic, so group counts sum to the row count.';
+  FROM javac_diagnostic j
+UNION ALL
+-- The entry arm: a written graphitron directive the generator will not emit for, at the position
+-- it was written. Its severity and its machine code are the defect type's, which is what that
+-- relation is for; a code the vocabulary does not declare cannot reach this surface, the join
+-- being an inner one.
+--
+-- actionable reads off fault rather than off kind, and the two mean the same thing under different
+-- names. A DEFERRED rejection is a shape the generator does not support yet, so an author works
+-- around it rather than fixing it; a GENERATOR defect is the same sentence about the same kind of
+-- row. kind stays NULL all the same, being RejectionKind's spelling and not a synonym for it.
+--
+-- The message is the defect type's statement with the entry's detail quoted after it where the
+-- code does not say everything on its own, which is that column's whole purpose.
+SELECT d.graph_name, 'schema', t.severity, t.fault = 'AUTHOR',
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), t.lsp_code,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR),
+       d.type_name, d.field_name,
+       CASE WHEN d.type_name IS NULL THEN NULL
+            WHEN d.field_name IS NULL THEN d.type_name
+            ELSE d.type_name || '.' || d.field_name END,
+       d.source_name,
+       d.source_line, d.source_column,
+       CASE WHEN d.detail IS NULL THEN t.statement
+            ELSE t.statement || ' (' || d.detail || ')' END
+  FROM graphitron_entry_defect d
+  JOIN graphitron_defect_type t ON t.code = d.code;
+COMMENT ON VIEW diagnostic IS 'The diagnostics stratum''s one read surface: the union of all eight arms (the rejection residue, the store-native claim-conflict pilot, the unlowerable-ordering arm, the lint arm, the advisory arm, the SDL toolchain''s three reading stages, the compile oracle, the written-entry arm), which the MCP diagnostics tools read and no consumer bypasses. Prefix-less on purpose: a read-side union across vocabularies has no family, and no naming gate says so mechanically, so this comment does. Derived columns live here rather than in the base relations: actionable is the deferred-versus-rest CASE over kind (the same predicate the LSP severity projection documents, pinned by a one-row parity assertion); severity for compile rows mirrors CompileDiagnostic.severity() (ERROR to error, every other javac kind to warning, same parity discipline); coordinate is the rendering of the stored pair, and it is the one composite here because its atoms ride the same row (type_name is a dimension of its own, field_name beside it), so every question the parts answer stays answerable from the row; the compile arm''s sentinels ("(no source)", -1) normalise to the uniform NULL absent bucket by comparing against the sentinel values, never IS NULL. lsp_code carries the producing oracle''s stable machine code in both namespaces (the rejection sub-seals'' lspCode(), javac''s Diagnostic.getCode()), which cannot collide. Two axes are deliberately absent, both for the same reason and neither recoverable from a column that carried them: the claiming directives of a conflict, which are rows on the claim views and the residue''s own directive child under each arm''s key, so a consumer asks membership by joining rather than set equality against a joined string; and the directory of file, which is one segment of a path kept while the rest are discarded, so a consumer truncates the stored path at whatever depth its own question needs. Every dimension is single-valued at one row per diagnostic, so group counts sum to the row count.';
 COMMENT ON COLUMN diagnostic.graph_name IS 'the owning graph''s partition, carried through from every arm; the MCP read site filters to the reading session''s graph';
 COMMENT ON COLUMN diagnostic.source IS 'the closed channel taxonomy the shipped tool already speaks: schema for the six validator-side arms, compile for the javac arm';
 COMMENT ON COLUMN diagnostic.severity IS 'error or warning, the wire''s closed pair: the rejection arms are error by the build''s own finality, lint and advisory rows warning by construction, compile rows javac''s verdict projected as the record''s severity() spells it';
@@ -15386,6 +15440,10 @@ INSERT INTO meta_relation VALUES
    'The class a type says it is backed by through @record, which is deprecated and read only to warn.',
    'For example type Film @record(record: {className: "com.example.FilmRecord"}) gives one row naming that class.',
    'Derived from the entry beside it by the same rank the table binding takes, and joined outwards for a reason that costs nothing to state: the class name is this relation''s only payload column and it is nullable, so an application whose literal named no class lands as the null row rather than as no row, which is what the walk this replaces wrote. The directive is deprecated and its own definition says the backing class is inferred, so the one consumer left compares this against what reflection found and warns where they differ; that is why the relation survives the directive being ignored.'),
+  ('graphitron_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a capture inserts this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_field_scope_table_rule''s terms and for its reasons. Stored at all because the read that matters is interactive: the editor asks for one file''s diagnostics, and the chain arms of this rule reach a relation whose two recursive walks run over every chain in the graph. A per-file predicate cannot push into a recursion behind a view boundary, so as a view the whole walk ran on every keystroke''s worth of diagnostics; the LSP''s scan-count fixture measured the surface at 1910 scans against a ceiling of 1050. The number is what caught it and is not the argument. The argument is that the walk already runs once per capture, FieldTableLinks resolving every chain and storing the links that survive, so a chain defect is that same resolution''s leftovers and computing them again per read is a second evaluation of a rule the capture has already performed. The write arms are cheap and are stored with the rest rather than split out, one relation being the name every consumer already spells and the split buying a second relation to keep in agreement with this one.'),
   ('graphitron_entry_defect', 'graphitron-entry-defect', 'graphitron',
    'A written graphitron directive the generator will not emit for, at the position it was written and under the rule that stopped it.',
    'For example a mutation field carrying @routine and an @orderBy draws one row at the @orderBy''s own line, reading READ_SURFACE_ON_WRITE.',

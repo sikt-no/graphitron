@@ -40,6 +40,8 @@ import static no.sikt.graphitron.model.test.FactWriters.compileFacts;
 import static no.sikt.graphitron.model.test.FactWriters.rejectionFacts;
 import static no.sikt.graphitron.model.Tables.BUILD_WARNING_NO_RULE;
 import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
 import static no.sikt.graphitron.model.Tables.JAVAC_DIAGNOSTIC;
 import static no.sikt.graphitron.model.Tables.LINT_FINDING;
 import static no.sikt.graphitron.model.Tables.LINT_FINDING_FIX;
@@ -413,6 +415,82 @@ class DiagnosticFactsTest {
      * ({@code UnlowerableOrderingRejectionPipelineTest}), whose fixture needs a catalog this one
      * has no arm for.
      */
+    @Test
+    @DisplayName("the entry arm carries the defect type's severity, code and statement to the surface")
+    void entryArmProjectsTheDefectType() throws IOException {
+        Path sdl = write(tmp, """
+            type Query { film: Film }
+            type Film { id: ID }
+            type Mutation {
+              insertFilms: [Film] @asConnection @routine(name: "one") @routine(name: "two")
+            }
+            """);
+        withStore(dsl -> {
+            CapturedStore.capture(dsl, graph(), CapturedStore.corpusOf(List.of(sdl), tmp), null);
+
+            var rows = dsl.selectFrom(DIAGNOSTIC)
+                .where(DIAGNOSTIC.GRAPH_NAME.eq(GRAPH), DIAGNOSTIC.SOURCE.eq("schema"))
+                .orderBy(DIAGNOSTIC.LSP_CODE)
+                .fetch();
+            assertThat(rows.map(r -> r.getLspCode()))
+                .as("both written-entry defects reach the surface, under the defect type's code")
+                .containsExactly("GRAPHITRON_CONNECTION_RETURN", "GRAPHITRON_MULTIPLE_ROUTINE_NODES");
+
+            var row = rows.get(0);
+            assertThat(row.getSeverity()).as("the defect type's own severity, already the wire's word")
+                .isEqualTo("error");
+            assertThat(row.getActionable())
+                .as("a GENERATOR fault is a shape the generator owes an emitter, which an author"
+                    + " works around rather than fixes, so it is not actionable")
+                .isFalse();
+            assertThat(row.getKind())
+                .as("RejectionKind's spelling, which this arm has no value in")
+                .isNull();
+            assertThat(row.getVariant()).isNull();
+            assertThat(row.getLintRule()).isNull();
+            assertThat(row.getCoordinate())
+                .as("the coordinate the entry was written at, rendered from the pair the view carries")
+                .isEqualTo("Mutation.insertFilms");
+            assertThat(row.getMessage())
+                .as("the defect type's statement, which is where a defect's prose lives")
+                .isEqualTo(dsl.select(GRAPHITRON_DEFECT_TYPE.STATEMENT)
+                    .from(GRAPHITRON_DEFECT_TYPE)
+                    .where(GRAPHITRON_DEFECT_TYPE.CODE.eq("CONNECTION_RETURN"))
+                    .fetchOne(GRAPHITRON_DEFECT_TYPE.STATEMENT));
+            assertThat(row.getFile()).isEqualTo(sdl.toString());
+            assertThat(row.getSourceLine()).isNotNull();
+        });
+    }
+
+    /**
+     * A code the vocabulary does not declare cannot reach the surface, the arm's join being an
+     * inner one. Asserted as the equality rather than by provoking an undeclared code, which the
+     * DDL makes unwritable: what is worth holding is that the arm loses nothing, since an inner
+     * join is also how a row would silently vanish if a code were ever added to the view without
+     * being added to the vocabulary.
+     */
+    @Test
+    @DisplayName("every entry defect reaches the surface, the vocabulary join dropping none")
+    void theVocabularyJoinDropsNothing() throws IOException {
+        Path sdl = write(tmp, """
+            type Query { film: Film }
+            type Film { id: ID }
+            type Mutation {
+              insertFilms: [Film] @asConnection @routine(name: "one") @routine(name: "two")
+            }
+            """);
+        withStore(dsl -> {
+            CapturedStore.capture(dsl, graph(), CapturedStore.corpusOf(List.of(sdl), tmp), null);
+            assertThat(dsl.fetchCount(GRAPHITRON_ENTRY_DEFECT,
+                    GRAPHITRON_ENTRY_DEFECT.GRAPH_NAME.eq(GRAPH)))
+                .as("the fixture reaches the arm, so the comparison below is not between two zeroes")
+                .isEqualTo(2);
+            assertThat(dsl.fetchCount(DIAGNOSTIC,
+                    DIAGNOSTIC.GRAPH_NAME.eq(GRAPH).and(DIAGNOSTIC.SOURCE.eq("schema"))))
+                .isEqualTo(2);
+        });
+    }
+
     @Test
     @DisplayName("no file column, and no projection of one, spells a file as a URI")
     void noFileColumnSpellsAUri() throws IOException {

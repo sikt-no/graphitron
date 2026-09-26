@@ -127,7 +127,8 @@ public final class DerivationStratum {
             step("MutationWriteDestinations", "graphitron_mutation_write_destination",
                 MutationWriteDestinations::derive),
             step("UnlowerableOrderingRejectionRows", "intent_field_unlowerable_ordering_rejection",
-                UnlowerableOrderingRejectionRows::derive));
+                UnlowerableOrderingRejectionRows::derive),
+            step("EntryDefects", "graphitron_entry_defect", EntryDefects::derive));
     }
 
     /**

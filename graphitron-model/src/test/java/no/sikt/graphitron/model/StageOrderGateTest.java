@@ -152,7 +152,9 @@ class StageOrderGateTest {
         new Step("MutationWriteDestinations", "graphitron_mutation_write_destination_rule",
             Set.of("graphitron_mutation_write_destination")),
         new Step("UnlowerableOrderingRejectionRows", null,
-            Set.of("intent_field_unlowerable_ordering_rejection")));
+            Set.of("intent_field_unlowerable_ordering_rejection")),
+        new Step("EntryDefects", "graphitron_entry_defect_rule",
+            Set.of("graphitron_entry_defect")));
 
     /**
      * The roster is the stratum, name for name and write set for write set, in order. Without this

@@ -67,7 +67,8 @@ class StageAnswerAgreementTest {
         new Stage("graphitron_mutation_payload_refusal", "graphitron_mutation_payload_refusal_rule"),
         new Stage("graphitron_mutation_payload_column", "graphitron_mutation_payload_column_rule"),
         new Stage("graphitron_mutation_payload_key_membership", "graphitron_mutation_payload_key_membership_rule"),
-        new Stage("graphitron_mutation_write_destination", "graphitron_mutation_write_destination_rule"));
+        new Stage("graphitron_mutation_write_destination", "graphitron_mutation_write_destination_rule"),
+        new Stage("graphitron_entry_defect", "graphitron_entry_defect_rule"));
 
     @Test
     @DisplayName("every stage-written table holds exactly its rule's rows, both directions")

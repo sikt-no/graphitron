@@ -14,6 +14,7 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.test.CapturedStore.withCapturedStore;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentCondition;
@@ -159,11 +160,16 @@ class EntryDefectTest {
     }
 
     /**
-     * The vocabulary is a relation and the code is a reference into it, so a code the view emits
+     * The vocabulary is a relation and the code is a reference into it, so a code the rule emits
      * that nothing declares is a fact the store can state rather than a string nobody checks.
+     *
+     * <p>Asserted against the rule rather than the target, where the target's own foreign key makes
+     * the same row unwritable. The two are not the same claim: the constraint stops a bad code
+     * reaching the store and this stops one being computed, and the stage between them would fail
+     * the capture rather than the case that could name the offending code.
      */
     @Test
-    @DisplayName("every code the relation emits is a declared defect type")
+    @DisplayName("every code the rule emits is a declared defect type")
     void everyCodeIsDeclared() {
         withSeededStore(GRAPH, dsl -> {
             seedRootOperation(dsl, GRAPH, "MUTATION", "Mutation");
@@ -174,11 +180,11 @@ class EntryDefectTest {
 
             assertThat(defects(dsl)).as("the fixture reaches two codes, so the anti-join is not vacuous")
                 .hasSize(2);
-            assertThat(dsl.selectDistinct(GRAPHITRON_ENTRY_DEFECT.CODE)
-                    .from(GRAPHITRON_ENTRY_DEFECT)
+            assertThat(dsl.selectDistinct(GRAPHITRON_ENTRY_DEFECT_RULE.CODE)
+                    .from(GRAPHITRON_ENTRY_DEFECT_RULE)
                     .whereNotExists(dsl.selectOne().from(GRAPHITRON_DEFECT_TYPE)
-                        .where(GRAPHITRON_DEFECT_TYPE.CODE.eq(GRAPHITRON_ENTRY_DEFECT.CODE)))
-                    .fetch(GRAPHITRON_ENTRY_DEFECT.CODE))
+                        .where(GRAPHITRON_DEFECT_TYPE.CODE.eq(GRAPHITRON_ENTRY_DEFECT_RULE.CODE)))
+                    .fetch(GRAPHITRON_ENTRY_DEFECT_RULE.CODE))
                 .isEmpty();
         });
     }
@@ -326,14 +332,19 @@ class EntryDefectTest {
             .fetch(GRAPHITRON_ENTRY_DEFECT.CODE);
     }
 
+    /**
+     * The rule and not the target, because a seeded store has run no capture and so no stage: the
+     * table is legitimately empty there, and what a seeded case is asserting is the rule anyway.
+     * The captured cases read the target through {@link #codes}, which is the other half of the
+     * claim; that the two agree is {@code StageAnswerAgreementTest}'s, over every stage at once.
+     */
     private static List<String> read(DSLContext dsl) {
-        return dsl.select(GRAPHITRON_ENTRY_DEFECT.SOURCE_LINE, GRAPHITRON_ENTRY_DEFECT.SOURCE_COLUMN,
-                GRAPHITRON_ENTRY_DEFECT.CODE, GRAPHITRON_ENTRY_DEFECT.DETAIL)
-            .from(GRAPHITRON_ENTRY_DEFECT)
-            .where(GRAPHITRON_ENTRY_DEFECT.GRAPH_NAME.eq(GRAPH))
-            .and(GRAPHITRON_ENTRY_DEFECT.SOURCE_NAME.eq(SOURCE))
-            .orderBy(GRAPHITRON_ENTRY_DEFECT.SOURCE_LINE, GRAPHITRON_ENTRY_DEFECT.SOURCE_COLUMN,
-                GRAPHITRON_ENTRY_DEFECT.CODE)
+        var d = GRAPHITRON_ENTRY_DEFECT_RULE;
+        return dsl.select(d.SOURCE_LINE, d.SOURCE_COLUMN, d.CODE, d.DETAIL)
+            .from(d)
+            .where(d.GRAPH_NAME.eq(GRAPH))
+            .and(d.SOURCE_NAME.eq(SOURCE))
+            .orderBy(d.SOURCE_LINE, d.SOURCE_COLUMN, d.CODE)
             .fetch(r -> r.value1() + ":" + r.value2() + " " + r.value3() + " " + r.value4());
     }
 }
