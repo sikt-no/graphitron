@@ -352,6 +352,17 @@ public final class DeclarationFacts {
          * The arms, for a caller assembling them into a select of its own. An arm the grain has no
          * question for is absent rather than present and empty: a type name binds no member, so the
          * field-grain arms would be reading a relation to be told what the grain already says.
+         *
+         * <p>Not the {@code table.fields()} this codebase otherwise writes out of its selects, and
+         * the difference is why this one stays. That spelling asks a relation for every column it
+         * happens to have and lets a reader guess which matter; this list <em>is</em> the
+         * projection, built here and varying by coordinate kind, so there is no static set of
+         * columns to name instead. {@link #read} pairs with it by field identity rather than by
+         * position, so reordering carries no hazard either.
+         *
+         * <p>What it does carry is a lockstep with {@link #read}: an arm added here and not there
+         * is read by nothing, and the reverse fails on a field the statement never selected.
+         * Nothing enforces the pairing.
          */
         public List<Field<?>> fields() {
             var fields = new ArrayList<Field<?>>();
