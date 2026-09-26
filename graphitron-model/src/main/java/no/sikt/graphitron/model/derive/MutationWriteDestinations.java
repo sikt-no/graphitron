@@ -33,7 +33,21 @@ public final class MutationWriteDestinations {
         dsl.deleteFrom(target).where(target.GRAPH_NAME.eq(graphName)).execute();
 
         dsl.insertInto(target)
-            .select(dsl.select(rule.fields()).from(rule).where(rule.GRAPH_NAME.eq(graphName)))
+            .columns(
+                target.GRAPH_NAME, target.TYPE_NAME, target.FIELD_NAME, target.OPERATION,
+                target.PATH, target.CONTAINER_TYPE_NAME, target.INPUT_FIELD_NAME, target.ROLE,
+                target.CARRIER_ROLE, target.POSITION, target.COLUMN_NAME, target.DESTINATION,
+                target.ON_EXPLICIT_NULL, target.WRITE_SOURCE_NAME, target.WRITE_SCHEMA,
+                target.WRITE_TABLE, target.SOURCE_NAME, target.SOURCE_LINE, target.SOURCE_COLUMN)
+            .select(dsl
+                .select(
+                    rule.GRAPH_NAME, rule.TYPE_NAME, rule.FIELD_NAME, rule.OPERATION, rule.PATH,
+                    rule.CONTAINER_TYPE_NAME, rule.INPUT_FIELD_NAME, rule.ROLE, rule.CARRIER_ROLE,
+                    rule.POSITION, rule.COLUMN_NAME, rule.DESTINATION, rule.ON_EXPLICIT_NULL,
+                    rule.WRITE_SOURCE_NAME, rule.WRITE_SCHEMA, rule.WRITE_TABLE, rule.SOURCE_NAME,
+                    rule.SOURCE_LINE, rule.SOURCE_COLUMN)
+                .from(rule)
+                .where(rule.GRAPH_NAME.eq(graphName)))
             .execute();
     }
 }

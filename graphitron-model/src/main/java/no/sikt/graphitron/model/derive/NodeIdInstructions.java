@@ -33,7 +33,19 @@ public final class NodeIdInstructions {
         dsl.deleteFrom(target).where(target.GRAPH_NAME.eq(graphName)).execute();
 
         dsl.insertInto(target)
-            .select(dsl.select(rule.fields()).from(rule).where(rule.GRAPH_NAME.eq(graphName)))
+            .columns(
+                target.GRAPH_NAME, target.SITE, target.TYPE_NAME, target.FIELD_NAME,
+                target.ARGUMENT_NAME, target.PATH, target.USE_SITE, target.BASIS,
+                target.RESOLVED_TYPE_NAME, target.RESOLVED_TYPE_KIND, target.CARRIES_REFERENCE_PATH,
+                target.SOURCE_NAME, target.SOURCE_LINE, target.SOURCE_COLUMN)
+            .select(dsl
+                .select(
+                    rule.GRAPH_NAME, rule.SITE, rule.TYPE_NAME, rule.FIELD_NAME, rule.ARGUMENT_NAME,
+                    rule.PATH, rule.USE_SITE, rule.BASIS, rule.RESOLVED_TYPE_NAME,
+                    rule.RESOLVED_TYPE_KIND, rule.CARRIES_REFERENCE_PATH, rule.SOURCE_NAME,
+                    rule.SOURCE_LINE, rule.SOURCE_COLUMN)
+                .from(rule)
+                .where(rule.GRAPH_NAME.eq(graphName)))
             .execute();
     }
 }

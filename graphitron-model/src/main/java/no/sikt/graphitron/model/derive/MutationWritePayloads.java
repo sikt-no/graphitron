@@ -32,7 +32,19 @@ public final class MutationWritePayloads {
         dsl.deleteFrom(target).where(target.GRAPH_NAME.eq(graphName)).execute();
 
         dsl.insertInto(target)
-            .select(dsl.select(rule.fields()).from(rule).where(rule.GRAPH_NAME.eq(graphName)))
+            .columns(
+                target.GRAPH_NAME, target.TYPE_NAME, target.FIELD_NAME, target.OPERATION,
+                target.MULTI_ROW, target.ARGUMENT_NAME, target.ARGUMENT_TYPE_NAME,
+                target.ARGUMENT_LIST, target.WRITE_SOURCE_NAME, target.WRITE_SCHEMA,
+                target.WRITE_TABLE, target.SOURCE_NAME, target.SOURCE_LINE, target.SOURCE_COLUMN)
+            .select(dsl
+                .select(
+                    rule.GRAPH_NAME, rule.TYPE_NAME, rule.FIELD_NAME, rule.OPERATION,
+                    rule.MULTI_ROW, rule.ARGUMENT_NAME, rule.ARGUMENT_TYPE_NAME, rule.ARGUMENT_LIST,
+                    rule.WRITE_SOURCE_NAME, rule.WRITE_SCHEMA, rule.WRITE_TABLE, rule.SOURCE_NAME,
+                    rule.SOURCE_LINE, rule.SOURCE_COLUMN)
+                .from(rule)
+                .where(rule.GRAPH_NAME.eq(graphName)))
             .execute();
     }
 }

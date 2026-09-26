@@ -33,7 +33,15 @@ public final class CarrierDataFields {
         dsl.deleteFrom(target).where(target.GRAPH_NAME.eq(graphName)).execute();
 
         dsl.insertInto(target)
-            .select(dsl.select(rule.fields()).from(rule).where(rule.GRAPH_NAME.eq(graphName)))
+            .columns(
+                target.GRAPH_NAME, target.TYPE_NAME, target.FIELD_NAME, target.FAMILY,
+                target.ELEMENT_KIND, target.DATA_FIELDS)
+            .select(dsl
+                .select(
+                    rule.GRAPH_NAME, rule.TYPE_NAME, rule.FIELD_NAME, rule.FAMILY,
+                    rule.ELEMENT_KIND, rule.DATA_FIELDS)
+                .from(rule)
+                .where(rule.GRAPH_NAME.eq(graphName)))
             .execute();
     }
 }

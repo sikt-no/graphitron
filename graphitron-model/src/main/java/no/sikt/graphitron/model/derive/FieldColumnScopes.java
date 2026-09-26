@@ -38,7 +38,15 @@ public final class FieldColumnScopes {
         dsl.deleteFrom(target).where(target.GRAPH_NAME.eq(graphName)).execute();
 
         dsl.insertInto(target)
-            .select(dsl.select(rule.fields()).from(rule).where(rule.GRAPH_NAME.eq(graphName)))
+            .columns(
+                target.GRAPH_NAME, target.TYPE_NAME, target.FIELD_NAME, target.BASIS,
+                target.TABLE_SOURCE_NAME, target.TABLE_SCHEMA, target.TABLE_NAME)
+            .select(dsl
+                .select(
+                    rule.GRAPH_NAME, rule.TYPE_NAME, rule.FIELD_NAME, rule.BASIS,
+                    rule.TABLE_SOURCE_NAME, rule.TABLE_SCHEMA, rule.TABLE_NAME)
+                .from(rule)
+                .where(rule.GRAPH_NAME.eq(graphName)))
             .execute();
     }
 }

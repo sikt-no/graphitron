@@ -33,7 +33,22 @@ public final class NodeIdDecodeHops {
         dsl.deleteFrom(target).where(target.GRAPH_NAME.eq(graphName)).execute();
 
         dsl.insertInto(target)
-            .select(dsl.select(rule.fields()).from(rule).where(rule.GRAPH_NAME.eq(graphName)))
+            .columns(
+                target.GRAPH_NAME, target.SITE, target.TYPE_NAME, target.FIELD_NAME,
+                target.ARGUMENT_NAME, target.PATH, target.USE_SITE, target.ORIGIN_SOURCE_NAME,
+                target.ORIGIN_SCHEMA, target.ORIGIN_TABLE, target.POSITION, target.VIA,
+                target.FROM_SOURCE_NAME, target.FROM_SCHEMA, target.FROM_TABLE,
+                target.TO_SOURCE_NAME, target.TO_SCHEMA, target.TO_TABLE, target.CONSTRAINT_NAME,
+                target.FK_ON_FROM, target.LAST_POSITION)
+            .select(dsl
+                .select(
+                    rule.GRAPH_NAME, rule.SITE, rule.TYPE_NAME, rule.FIELD_NAME, rule.ARGUMENT_NAME,
+                    rule.PATH, rule.USE_SITE, rule.ORIGIN_SOURCE_NAME, rule.ORIGIN_SCHEMA,
+                    rule.ORIGIN_TABLE, rule.POSITION, rule.VIA, rule.FROM_SOURCE_NAME,
+                    rule.FROM_SCHEMA, rule.FROM_TABLE, rule.TO_SOURCE_NAME, rule.TO_SCHEMA,
+                    rule.TO_TABLE, rule.CONSTRAINT_NAME, rule.FK_ON_FROM, rule.LAST_POSITION)
+                .from(rule)
+                .where(rule.GRAPH_NAME.eq(graphName)))
             .execute();
     }
 }

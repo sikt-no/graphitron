@@ -31,7 +31,18 @@ public final class InputFieldFilterRoles {
         dsl.deleteFrom(target).where(target.GRAPH_NAME.eq(graphName)).execute();
 
         dsl.insertInto(target)
-            .select(dsl.select(rule.fields()).from(rule).where(rule.GRAPH_NAME.eq(graphName)))
+            .columns(
+                target.GRAPH_NAME, target.TYPE_NAME, target.FIELD_NAME,
+                target.RESOLVING_SOURCE_NAME, target.RESOLVING_SCHEMA, target.RESOLVING_TABLE,
+                target.ROLE, target.AUTHORED_CONDITION, target.SOURCE_NAME, target.SOURCE_LINE,
+                target.SOURCE_COLUMN)
+            .select(dsl
+                .select(
+                    rule.GRAPH_NAME, rule.TYPE_NAME, rule.FIELD_NAME, rule.RESOLVING_SOURCE_NAME,
+                    rule.RESOLVING_SCHEMA, rule.RESOLVING_TABLE, rule.ROLE, rule.AUTHORED_CONDITION,
+                    rule.SOURCE_NAME, rule.SOURCE_LINE, rule.SOURCE_COLUMN)
+                .from(rule)
+                .where(rule.GRAPH_NAME.eq(graphName)))
             .execute();
     }
 }
