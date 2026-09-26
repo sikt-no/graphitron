@@ -223,6 +223,77 @@ class EntryDefectTest {
     }
 
     /**
+     * An element naming a constraint the catalog does not have. The chain stops there, and the
+     * element before it resolved on its own terms and is not reported: a chain resolves at every
+     * position or at none, so a broken one has a single break and the row sits at it.
+     */
+    @Test
+    @DisplayName("an element naming nothing the catalog has is unresolved, and only it is reported")
+    void anElementNamingNothingIsUnresolved(@TempDir Path tmp) {
+        withCatalogStore(tmp, """
+            type Query { actors: [Actor!]! }
+            type Actor @table(name: "actor") {
+              broken: [Language!]! @reference(path: [{key: "film_actor_actor_id_fkey"},
+                                                    {key: "no_such_constraint"}])
+            }
+            type Language @table(name: "language") { name: String }
+            """, dsl -> assertThat(codes(dsl)).containsExactly("ELEMENT_UNRESOLVED"));
+    }
+
+    /**
+     * An element that resolves and cannot be reached. {@code film_actor_actor_id_fkey} joins
+     * film_actor to actor, both directions of it are real routes, and neither departs the film the
+     * chain is standing on. Distinct from an unresolved element, which is what the break vocabulary
+     * exists to tell apart: what the author changes is a different thing.
+     */
+    @Test
+    @DisplayName("an element whose routes all depart elsewhere is unreachable, not unresolved")
+    void anElementDepartingElsewhereIsUnreachable(@TempDir Path tmp) {
+        withCatalogStore(tmp, """
+            type Query { films: [Film!]! }
+            type Film @table(name: "film") {
+              actors: [Actor!]! @reference(path: [{key: "film_actor_actor_id_fkey"}])
+            }
+            type Actor @table(name: "actor") { name: String }
+            """, dsl -> assertThat(codes(dsl)).containsExactly("NO_ROUTE_FROM_DEPARTURE"));
+    }
+
+    /**
+     * A chain that runs the whole way and lands somewhere else. The key departs film as the chain
+     * requires and arrives at film_actor, where the field's rows were said to come from language.
+     * The break is the last link rather than one past it: nothing downstream failed, the chain
+     * simply ended in the wrong place.
+     */
+    @Test
+    @DisplayName("a chain arriving somewhere other than its target breaks at its last link")
+    void aChainLandingElsewhereBreaksAtItsLastLink(@TempDir Path tmp) {
+        withCatalogStore(tmp, """
+            type Query { films: [Film!]! }
+            type Film @table(name: "film") {
+              wrong: [Language!]! @reference(path: [{key: "film_actor_film_id_fkey"}])
+            }
+            type Language @table(name: "language") { name: String }
+            """, dsl -> assertThat(codes(dsl)).containsExactly("NO_ROUTE_TO_TARGET"));
+    }
+
+    /**
+     * A field whose rows come from nowhere: the return type binds no table and no @routine names a
+     * result, so there is no chain to break. Reported once at the first element rather than per
+     * element, the whole chain being the one thing wrong.
+     */
+    @Test
+    @DisplayName("a chain on a field with no table target is reported once, at its first element")
+    void aChainWithNoTargetIsReportedOnce(@TempDir Path tmp) {
+        withCatalogStore(tmp, """
+            type Query { films: [Film!]! }
+            type Film @table(name: "film") {
+              loose: [Row!]! @reference(path: [{table: "film_actor"}, {table: "actor"}])
+            }
+            type Row { title: String }
+            """, dsl -> assertThat(codes(dsl)).containsExactly("CHAIN_WITHOUT_TARGET"));
+    }
+
+    /**
      * A capture against the jOOQ catalog, which the chain arms need and the write arms do not: a
      * route is ambiguous only against tables that declare more than one way between them.
      */

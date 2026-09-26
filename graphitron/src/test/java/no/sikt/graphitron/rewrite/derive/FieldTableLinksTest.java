@@ -60,6 +60,9 @@ class FieldTableLinksTest {
           films: [Film!]!
             @reference(path: [{key: "film_actor_actor_id_fkey"},
                               {key: "film_actor_film_id_fkey"}])
+          broken: [Language!]!
+            @reference(path: [{key: "film_actor_actor_id_fkey"},
+                              {key: "no_such_constraint"}])
         }
         type Rental @table(name: "rental") { rentalId: Int @field(name: "rental_id") }
         type Row { title: String }
@@ -119,6 +122,24 @@ class FieldTableLinksTest {
                     + " via film_actor.film_actor_actor_id_fkey, fk_on_from=false",
                 "[film] 1 KEY film_actor -> film"
                     + " via film_actor.film_actor_film_id_fkey, fk_on_from=true"));
+    }
+
+    /**
+     * A chain that breaks stores nothing, not the part of it that worked. The first element here
+     * resolves on its own terms, actor reaching film_actor by a key it names, and the second names
+     * a constraint the catalog does not have; the relation holds neither link.
+     *
+     * <p>That is a property of the resolution rather than a policy, and it is worth a case because
+     * the defect vocabulary above it is shaped by whether it holds. A link is kept where both walks
+     * reach it, and the two walks compose: a reading the tail reaches has a path to the target
+     * through the link after it, so the link after it is tail-reached too, and a reading the head
+     * reaches passes its arrival to the link after it as a departure. So a chain resolves at every
+     * position or at none, and a broken chain has one thing wrong with it rather than one per link.
+     */
+    @Test
+    @DisplayName("a chain that breaks at its second link stores neither link, not a prefix")
+    void aBrokenChainStoresNoPrefix() {
+        withCaptured(dsl -> assertThat(links(dsl, "Actor", "broken")).isEmpty());
     }
 
     /**

@@ -8039,6 +8039,60 @@ routes (graph_name, type_name, field_name, target_source_name, target_schema, ta
           HAVING COUNT(DISTINCT reach) = 2) resolved
    GROUP BY graph_name, type_name, field_name, target_source_name, target_schema, target_table,
             position
+),
+-- Each chain a field has, with the last position it was written to. One per target, a field with
+-- several resolving each on its own departure.
+chain (graph_name, type_name, field_name,
+       target_source_name, target_schema, target_table, last_position) AS (
+  SELECT ft.graph_name, ft.type_name, ft.field_name,
+         ft.to_source_name, ft.to_schema, ft.to_table, MAX(cl.position)
+    FROM graphitron_field_table ft
+    JOIN graphitron_field_chain_link cl
+      ON cl.graph_name = ft.graph_name AND cl.type_name = ft.type_name
+     AND cl.field_name = ft.field_name
+   GROUP BY ft.graph_name, ft.type_name, ft.field_name,
+            ft.to_source_name, ft.to_schema, ft.to_table
+),
+-- How far the head walk got, which is the half that says where a chain stopped. The tail says
+-- nothing about it: a suffix reaching the target is reachable from nowhere in particular.
+head_reach (graph_name, type_name, field_name,
+            target_source_name, target_schema, target_table, reached) AS (
+  SELECT graph_name, type_name, field_name,
+         target_source_name, target_schema, target_table, MAX(position)
+    FROM graphitron_field_chain_link_resolution
+   WHERE reach = 'HEAD'
+   GROUP BY graph_name, type_name, field_name,
+            target_source_name, target_schema, target_table
+),
+-- The chains that resolve nowhere, and the one position each of them broke at.
+--
+-- One position and not every hole, which is what keeps this from being noise. A chain resolves at
+-- every position or at none: a reading the tail reaches passes its departure back to the link
+-- before it, and one the head reaches passes its arrival forward, so one reading reached by both
+-- makes every position reached by both. A broken chain therefore has one thing wrong with it, and
+-- reporting the first position the head could not reach names the element an author edits rather
+-- than every element downstream of it.
+--
+-- Where the head reached the last position and nothing resolved, the chain ran the whole way and
+-- landed somewhere else, so the break is the last link rather than one past it.
+broken (graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+        break_position, overshot) AS (
+  SELECT c.graph_name, c.type_name, c.field_name,
+         c.target_source_name, c.target_schema, c.target_table,
+         CASE WHEN COALESCE(h.reached, -1) >= c.last_position THEN c.last_position
+              ELSE COALESCE(h.reached, -1) + 1 END,
+         CASE WHEN COALESCE(h.reached, -1) >= c.last_position THEN TRUE ELSE FALSE END
+    FROM chain c
+    LEFT JOIN head_reach h
+      ON h.graph_name = c.graph_name AND h.type_name = c.type_name
+     AND h.field_name = c.field_name AND h.target_source_name = c.target_source_name
+     AND h.target_schema = c.target_schema AND h.target_table = c.target_table
+   WHERE NOT EXISTS (SELECT 1 FROM routes rt
+                      WHERE rt.graph_name = c.graph_name AND rt.type_name = c.type_name
+                        AND rt.field_name = c.field_name
+                        AND rt.target_source_name = c.target_source_name
+                        AND rt.target_schema = c.target_schema
+                        AND rt.target_table = c.target_table)
 )
 -- More than one write on one field. The row sits at the head, the individual applications
 -- being legal each on their own and the plurality being what has no emitter.
@@ -8094,7 +8148,52 @@ SELECT DISTINCT cl.graph_name, cl.source_name, cl.source_line, cl.source_column,
   JOIN graphitron_field_chain_link cl
     ON cl.graph_name = r.graph_name AND cl.type_name = r.type_name
    AND cl.field_name = r.field_name AND cl.position = r.position
- WHERE r.routes > 1;
+ WHERE r.routes > 1
+UNION ALL
+-- Where a chain broke, in a vocabulary of three told apart by what is true at the break. The
+-- chain overshot its target, or the element there resolves to nothing at all, or it resolves and
+-- none of its routes departs where the chain is standing. Three codes and one row, the three
+-- being mutually exclusive by construction rather than by ranking.
+SELECT DISTINCT cl.graph_name, cl.source_name, cl.source_line, cl.source_column,
+       CASE WHEN b.overshot THEN 'NO_ROUTE_TO_TARGET'
+            WHEN NOT EXISTS (SELECT 1 FROM graphitron_field_chain_link_reading rd
+                              WHERE rd.graph_name = b.graph_name
+                                AND rd.type_name = b.type_name
+                                AND rd.field_name = b.field_name
+                                AND rd.target_source_name = b.target_source_name
+                                AND rd.target_schema = b.target_schema
+                                AND rd.target_table = b.target_table
+                                AND rd.position = b.break_position)
+              THEN 'ELEMENT_UNRESOLVED'
+            ELSE 'NO_ROUTE_FROM_DEPARTURE' END,
+       CAST(NULL AS VARCHAR)
+  FROM broken b
+  JOIN graphitron_field_chain_link cl
+    ON cl.graph_name = b.graph_name AND cl.type_name = b.type_name
+   AND cl.field_name = b.field_name AND cl.position = b.break_position
+UNION ALL
+-- A chain written at a field whose rows come from nowhere. Not a hole in a chain but the absence
+-- of one to have a hole in: nothing says where the rows arrive, so there is no target to walk
+-- toward and no element can be read against one. Reported at the first element, the whole chain
+-- being the one thing wrong.
+--
+-- @reference-only chains, which is what makes this a fact about the schema rather than about the
+-- catalog. Such a chain takes its target from the return type's binding and from nowhere else, so
+-- an unbound return is an error no catalog could repair. A chain carrying a @routine takes its
+-- target from the function result instead, and the same silence there means the routine name
+-- resolved to nothing, which is a resolution failing rather than a schema saying nothing. That
+-- fault is real and is not this one; it is owed its own arm at the routine's own position.
+SELECT cl.graph_name, cl.source_name, cl.source_line, cl.source_column,
+       'CHAIN_WITHOUT_TARGET', CAST(NULL AS VARCHAR)
+  FROM graphitron_field_chain_link cl
+ WHERE cl.position = 0
+   AND NOT EXISTS (SELECT 1 FROM graphitron_field_table ft
+                    WHERE ft.graph_name = cl.graph_name AND ft.type_name = cl.type_name
+                      AND ft.field_name = cl.field_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_field_chain_application ca
+                    WHERE ca.graph_name = cl.graph_name AND ca.type_name = cl.type_name
+                      AND ca.field_name = cl.field_name
+                      AND ca.directive_name = 'routine');
 COMMENT ON VIEW graphitron_entry_defect IS 'A written graphitron directive the generator will not emit for, at the position it was written and under the rule that stopped it. For example a mutation field carrying @routine and an @orderBy draws one row at the @orderBy''s own line, reading READ_SURFACE_ON_WRITE.';
 COMMENT ON COLUMN graphitron_entry_defect.graph_name IS 'the owning graph''s partition, carried from the entry; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_entry_defect.source_name IS 'the file the offending directive was written in, the first of the three columns naming its position; with them a reference into graphql_ast_entry, which is the supertype that makes a @routine application and a path element the same kind of thing to point at';
@@ -15119,7 +15218,15 @@ INSERT INTO graphitron_defect_type VALUES
   ('CONNECTION_RETURN', 'error', 'GENERATOR', 'GRAPHITRON_CONNECTION_RETURN',
    'A @routine write re-reads its committed row by the keys the write returned, which is not a page, so the generator emits nothing for a field @asConnection rewrote.'),
   ('ROUTE_AMBIGUOUS', 'error', 'AUTHOR', 'GRAPHITRON_ROUTE_AMBIGUOUS',
-   'A chain link reaches its destination by more than one route, so the generator has a join to emit and nothing to pick it by; naming the foreign key rather than the table settles it.');
+   'A chain link reaches its destination by more than one route, so the generator has a join to emit and nothing to pick it by; naming the foreign key rather than the table settles it.'),
+  ('ELEMENT_UNRESOLVED', 'error', 'AUTHOR', 'GRAPHITRON_ELEMENT_UNRESOLVED',
+   'A chain link names something the catalog and the classpath do not have, a foreign key, a table or a condition method, so the chain stops here and the generator emits no join at all.'),
+  ('NO_ROUTE_FROM_DEPARTURE', 'error', 'AUTHOR', 'GRAPHITRON_NO_ROUTE_FROM_DEPARTURE',
+   'A chain link resolves to a route and none of its routes departs the table the chain is standing on, so the link cannot follow the one before it.'),
+  ('NO_ROUTE_TO_TARGET', 'error', 'AUTHOR', 'GRAPHITRON_NO_ROUTE_TO_TARGET',
+   'A chain runs to its last link and arrives somewhere other than the table the field''s rows were said to come from.'),
+  ('CHAIN_WITHOUT_TARGET', 'error', 'AUTHOR', 'GRAPHITRON_CHAIN_WITHOUT_TARGET',
+   'A field whose chain is @reference alone returns a type bound to no table, so the path has nowhere to arrive and no catalog could make it resolve.');
 
 INSERT INTO meta_relation VALUES
   ('graphql_schema_problem', 'graph-schema-problem', 'graphql-assembly',
