@@ -17,8 +17,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_RULE;
  * {@code graphitron_field_chain_link_resolution}, whose two recursive walks run over every chain in
  * the graph, and a per-file predicate cannot push into a recursion behind a view boundary. As a
  * view the whole thing was re-walked on every read, and the read that matters is the editor's, one
- * file's diagnostics on the interactive path. Measured on the LSP's scan-count fixture that took
- * the surface from under its ceiling to 1910 scans against 1050.
+ * file's diagnostics on the interactive path. The LSP's scan-count gate is what caught it, and
+ * what it measured is recorded with the item's other measurements rather than here, a ceiling
+ * being a number that moves.
  *
  * <p>The deciding argument is not the number, though, and would hold at a smaller one: the walk
  * already runs once per capture. {@link FieldTableLinks} resolves every chain and stores the links

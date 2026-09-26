@@ -159,3 +159,19 @@ hold **25 rows of 251,807**, so dissolving the register changes the store's size
 measurable. That belongs to R762, and through it to R937, compaction on close costing 1.6 s per
 close on a store that size. Second, boot *count*: R768's roughly one thousand boots per build are
 unaffected by what a boot contains.
+
+## The chain-defect surface, 2026-09-26
+
+**Storing `graphitron_entry_defect` rather than reading it as a view: 1910 scans against a ceiling
+of 1050, on the LSP's scan-count fixture.** The relation's chain arms reach
+`graphitron_field_chain_link_resolution`, whose two recursive walks run over every chain in the
+graph. A per-file predicate cannot push into a recursion behind a view boundary, so as a view the
+whole walk ran for one file's diagnostics, on the interactive path.
+
+The figure is recorded here rather than in the store prose because the ceiling is a live literal in
+`SurfaceScanCountTest` and a rationale citing one goes stale the day somebody moves it. What the
+prose keeps is the argument, which does not depend on the number and would hold at a smaller one:
+the walk already runs once per capture, `FieldTableLinks` resolving every chain and storing the
+links that survive, so a chain defect is that same resolution's leftovers. Computing them again per
+read is a second evaluation of a rule the capture has already performed, which is the defect this
+item exists to remove rather than a cost to be weighed.
