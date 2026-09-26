@@ -1,13 +1,13 @@
 ---
 id: R975
 title: "Routed tenant acquisition: authorize the key and hand it to the session mount"
-status: In Review
+status: Ready
 bucket: bug
 priority: 1
 theme: runtime-connection
 depends-on: []
 created: 2026-09-25
-last-updated: 2026-09-25
+last-updated: 2026-09-26
 ---
 
 # Routed tenant acquisition: authorize the key and hand it to the session mount
@@ -142,3 +142,28 @@ Non-blocking:
 
 - The escape-hatch factory now carries the set in every `<tenantColumn>` build, but on that path nothing reads it: `TenantConnections.of(env)` throws before any routed or fanned field runs. Today's fan-out gate has the same property, so this is not new. One sentence saying the symmetry is deliberate would save the implementer the question.
 - Say what `beginExecuteOperation` does when the context holds no set (an `ExecutionInput` built without the generated factory). Failing closed there keeps "no unrestricted meaning" true beyond the factory. Today that is `fanOutDomain`'s `IllegalStateException`, raised at field time.
+
+### Round 2: In Review → Ready, rework requested (session_01RpTTM6R9M4iBUVbWvJwdHF, 2026-09-26)
+
+Question 1 passes. The delivery is the change the spec approved. `entryFor` checks membership before the timed-out quarantine and before the `computeIfAbsent` mint. The check is the only path to `runtime.acquireForTenant`: a grep of the generators finds one call site. The instrumentation decodes the set once, copies it into an immutable set and fails the operation when it is absent. `fanOutDomain` reads the carrier's set. The dispatcher skips a refused group through `permits` after `divinedTenant` and before `dslFor`. The `SessionTenant` arm, its two typed rejections, `SessionHooks.tenantSlot()`, the `Optional<K>` threading through `acquire`/`mount`, and the dev executor's `Set.of()` and `Optional.empty()` all match the plan. The deviations listed under Implementation notes (the `mountedTenant` name, where the carrier pins landed, the substrate test) are recorded in the body, not silent. The manual carries the first-client draft. The retirement sweep is clean: none of `FAN_OUT_TENANTS_KEY*`, `fanOutTenants`, `hasFanOutBinding` or "fan-out tenant collection" remains outside this file.
+
+Question 2 fails on one point, and it is an approval precondition of this gate: **the delivered tests add code-string assertions on generated method bodies.** `development-principles.adoc` ("Behaviour is pinned at the pipeline tier and above") bans these at every tier, and `testing.adoc` bans them in the pipeline and generator unit families. The Implementation notes admit the violation ("`testing.adoc` bans that style"). The reason given, that the surrounding tests already use this style, is not an exemption. The new body-string pins:
+
+- `TenantRuntimeKeyTypeTest.multiTenantCarrierChecksTheRequestTenantSetAheadOfTheEntryMapMint`: `if (key.isPresent() && !tenants.contains(key.get())) {`, the `throw new ...GraphitronClientException(...)` line, `return of(env).tenants.contains(tenantKey);`, and the `indexOf` ordering against `timedOutTenants.contains` and `entries.computeIfAbsent(`.
+- `TenantRuntimeKeyTypeTest.multiTenantAcquisitionHandsTheMountTheTenantItIsFor`: the runtime's `tenantSource.settings(), java.util.Optional.of(tenantKey), abortExecutor)` and `defaultSource.settings(), java.util.Optional.empty(), abortExecutor)`.
+- `TenantRuntimeKeyTypeTest`, the fan-out carrier pin: `java.util.Set<java.lang.Integer> requested = carrier.tenants;` and `doesNotContain("env.getGraphQlContext().get(TENANTS_KEY)")`.
+- `TenantRoutedFetcherPipelineTest`: `java.lang.Integer tenantKey = ...divinedTenant(tenantEntry.getKey());`, `dslFor(groupEnv, tenantKey)`, the `indexOf` ordering of `divinedTenant` / `permits` / `dslFor`, and the `permits ... { continue; }` subsequence.
+
+What would satisfy it: remove these body pins, or replace them with `TypeSpec`-structure assertions where a structural fact exists to assert. Candidates are the `tenants` field, the carrier constructor's parameter list, the `permits` signature, and the `Optional<K> mountedTenant` parameter on `acquire`/`mount`, preferably read off the `MethodSpec`/`FieldSpec` rather than off rendered text. Nothing is lost behaviourally, because every claim those pins make is already demonstrated where it runs:
+
+- Refusal before any `getConnection`, and refusal ahead of the hosting check: `TenantAuthorizationSubstrateTest`, plus `argumentRoutedTenantOutsideTheSet_isRefused_andItsDatabaseNeverOpened` and `unhostedTenantOutsideTheSet_getsTheSameRefusal_soHostingCannotBeProbed`.
+- The dispatcher skip: `node_idOfATenantOutsideTheSet_answersNull_likeAnUnknownId` and `nodes_batchSpanningTheSetsEdge_resolvesThePermittedTenant_andNullsTheOther`, with `TENANT_2_OPENED` at zero.
+- The mount's key: the substrate test and the two `mount_*` execution tests.
+
+Also amend the Tests section's pipeline bullet, which asks for the ordering pins in a form only body matching can express, so it names the behavioural proofs instead. Rewrite the "Code-string assertions" implementation note to match. The build is not the issue: `mvn install -Plocal-db` passes on `1644b31` (graphitron 4338 tests; `TenantDivinedRoutingExecutionTest` 26, `TenantAuthorizationSubstrateTest` 5, `SessionHookResolutionTest` 25, all green).
+
+Non-blocking:
+
+- The facade tests' `requireNonNull(tenants, "tenants")` and `b.put(...TENANTS_KEY, tenants)` pins are body strings too. They are renames of assertions that predate this item, so they are older debt, not this delivery's. Dropping them in the same pass would be welcome, but this gate does not demand it.
+- `TenantSlotDuplicated`/`TenantSlotMistyped` render the tenant type fully qualified (`Optional<java.lang.Integer>`), while the field is named `tenantTypeSimple`.
+- `SessionHookStub` has a mis-indented `// ===== Rejection shapes =====` header.
