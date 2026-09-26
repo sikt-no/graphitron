@@ -1,5 +1,8 @@
 package no.sikt.graphitron.model;
 
+import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.test.TestRunContext;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -7,6 +10,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
@@ -37,10 +41,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  * root. A case states the mask by seeding the identical arrangement on {@code Query}, which is the
  * only fixture that tells a mask from an empty one.
  *
- * <p>Nothing here is about the order of a field's chain. Where a chain departs from, and whether
- * consecutive links meet, is resolved by the assembly gatherer and stated on
- * {@code graphitron_field_table_link}, whose own links are the population a chain defect would be
- * read off by anti-join. Restating any of it here would be a second walk over a resolved fact.
+ * <p>Nothing here restates the order of a field's chain or walks it again. Where a chain departs
+ * from, and whether consecutive links meet, is resolved by the assembly gatherer; what a chain arm
+ * here reads is the resolution's own leftovers, which the rule that stores one row per link throws
+ * away. {@code graphitron_field_chain_link_resolution} carries both walks labelled by which reached
+ * a reading, so a chain arm is a count over rows that already exist rather than a second walk.
+ *
+ * <p>A chain arm needs a real catalog, an authored key being ambiguous only against tables that
+ * declare more than one way between them, so those cases capture against the jOOQ catalog where
+ * the write rules above capture SDL alone.
  */
 class EntryDefectTest {
 
@@ -172,6 +181,57 @@ class EntryDefectTest {
                     .fetch(GRAPHITRON_ENTRY_DEFECT.CODE))
                 .isEmpty();
         });
+    }
+
+    /**
+     * A path element naming a table two foreign keys reach. {@code film} declares both
+     * {@code film_language_id_fkey} and {@code film_original_language_id_fkey} against
+     * {@code language}, so the element resolves to one destination by two routes and the generator
+     * has a join to emit and nothing to pick it by.
+     *
+     * <p>The chain states this as a hole rather than as a choice: both readings lie on a chain that
+     * runs the whole way, so the resolution finds two and stores neither. That silence is what this
+     * arm turns into a row, at the element the author would edit.
+     */
+    @Test
+    @DisplayName("an element reaching its table by two foreign keys is an ambiguous route")
+    void anElementTwoKeysReachIsAmbiguous(@TempDir Path tmp) {
+        withCatalogStore(tmp, """
+            type Query { films: [Film!]! }
+            type Film @table(name: "film") {
+              language: Language @reference(path: [{table: "language"}])
+            }
+            type Language @table(name: "language") { name: String }
+            """, dsl -> assertThat(codes(dsl)).containsExactly("ROUTE_AMBIGUOUS"));
+    }
+
+    /**
+     * The same path with the key named rather than the table, which is the edit the defect asks
+     * for. One route, one link, no row: the case that tells the arm from a fixture reporting
+     * whatever it is handed.
+     */
+    @Test
+    @DisplayName("naming the key instead of the table resolves the ambiguity and draws nothing")
+    void namingTheKeyDrawsNothing(@TempDir Path tmp) {
+        withCatalogStore(tmp, """
+            type Query { films: [Film!]! }
+            type Film @table(name: "film") {
+              language: Language @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Language @table(name: "language") { name: String }
+            """, dsl -> assertThat(codes(dsl)).isEmpty());
+    }
+
+    /**
+     * A capture against the jOOQ catalog, which the chain arms need and the write arms do not: a
+     * route is ambiguous only against tables that declare more than one way between them.
+     */
+    private static void withCatalogStore(Path directory, String sdl, Consumer<DSLContext> body) {
+        var ctx = TestRunContext.of();
+        try (var store = CapturedStore.ownStoreOfCatalog(directory, sdl,
+                new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()))) {
+            body.accept(store.dsl());
+        }
     }
 
     /**
