@@ -89,7 +89,7 @@ class ConditionParamDecodeCaptureTest {
     /** Each row as "site useSite nodeType arity listValued". */
     private static List<String> decodes(DSLContext dsl) {
         var d = INTENT_CONDITION_PARAM_DECODE;
-        return dsl.select(d.fields())
+        return dsl.select(d.SITE, d.USE_SITE, d.NODE_TYPE_NAME, d.KEY_ARITY, d.LIST_VALUED)
             .from(d)
             .where(d.GRAPH_NAME.eq(CapturedStore.GRAPH))
             .and(d.CLASS_NAME.eq(COND))

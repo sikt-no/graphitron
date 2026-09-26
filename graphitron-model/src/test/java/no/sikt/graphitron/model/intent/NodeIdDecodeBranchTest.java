@@ -309,7 +309,14 @@ class NodeIdDecodeBranchTest {
                         + (r.value4() != null ? r.value4() : "(none)"));
     }
 
-    /** How many rows the relation holds beyond its own distinct content. */
+    /**
+     * How many rows the relation holds beyond its own distinct content.
+     *
+     * <p>The one projection here that is every column on purpose: the question is whether two rows
+     * are equal, so the whole row is what the assertion compares and naming a subset would ask a
+     * different question. The relation arrives as a parameter, so there is nothing to enumerate
+     * either.
+     */
     private static int duplicateRows(DSLContext dsl, org.jooq.Table<? extends Record> relation) {
         Result<Record> all = dsl.select(relation.fields()).from(relation).fetch();
         return all.size() - (int) all.stream().map(Record::valuesRow).distinct().count();

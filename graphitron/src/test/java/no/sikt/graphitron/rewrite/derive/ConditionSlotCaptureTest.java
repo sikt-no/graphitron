@@ -67,7 +67,7 @@ class ConditionSlotCaptureTest {
     /** Every slot the capture put in scope, rendered as its key plus the kind. */
     private static List<String> slots(DSLContext dsl) {
         var t = INTENT_CONDITION_SLOT;
-        return dsl.select(t.fields())
+        return dsl.select(t.SITE, t.USE_SITE, t.SLOT_NAME, t.SLOT_KIND)
             .from(t)
             .where(t.GRAPH_NAME.eq(CapturedStore.GRAPH))
             .orderBy(t.SITE, t.USE_SITE, t.SLOT_NAME)

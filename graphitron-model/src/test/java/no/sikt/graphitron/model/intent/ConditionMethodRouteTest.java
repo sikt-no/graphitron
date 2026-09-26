@@ -394,7 +394,7 @@ class ConditionMethodRouteTest {
     private static List<String> routes(DSLContext dsl, String graphName) {
         derive(dsl);
         var r = INTENT_CONDITION_METHOD_ROUTE;
-        return dsl.select(r.fields())
+        return dsl.select(r.METHOD, r.FROM_TABLE, r.TO_TABLE)
             .from(r)
             .where(r.GRAPH_NAME.eq(graphName))
             .orderBy(r.METHOD, r.FROM_TABLE, r.TO_TABLE)

@@ -207,7 +207,8 @@ class ReferenceDiscoveryTest {
      */
     private static List<String> discoveries(DSLContext dsl) {
         var d = INTENT_FIELD_REFERENCE_DISCOVERY;
-        return dsl.select(d.fields())
+        return dsl.select(d.TYPE_NAME, d.FIELD_NAME, d.FROM_TABLE, d.TO_TABLE, d.CONSTRAINT_NAME,
+            d.FK_ON_FROM, d.CANDIDATES)
             .from(d)
             .where(d.GRAPH_NAME.eq(GRAPH))
             .orderBy(d.TYPE_NAME, d.FIELD_NAME, d.CONSTRAINT_NAME)

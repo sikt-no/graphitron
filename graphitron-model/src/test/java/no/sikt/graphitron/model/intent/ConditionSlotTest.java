@@ -179,7 +179,7 @@ class ConditionSlotTest {
     private static List<String> slotsIn(DSLContext dsl, String graphName) {
         derive(dsl);
         var t = INTENT_CONDITION_SLOT;
-        return dsl.select(t.fields())
+        return dsl.select(t.SITE, t.USE_SITE, t.SLOT_NAME, t.SLOT_KIND)
             .from(t)
             .where(t.GRAPH_NAME.eq(graphName))
             .orderBy(t.SITE, t.USE_SITE, t.SLOT_NAME)
@@ -191,7 +191,7 @@ class ConditionSlotTest {
     private static List<String> types(DSLContext dsl) {
         derive(dsl);
         var t = INTENT_CONDITION_SLOT;
-        return dsl.select(t.fields())
+        return dsl.select(t.SLOT_NAME, t.NAMED_TYPE, t.IS_LIST)
             .from(t)
             .where(t.GRAPH_NAME.eq(GRAPH))
             .orderBy(t.SLOT_NAME)

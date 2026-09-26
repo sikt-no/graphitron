@@ -591,7 +591,8 @@ class PolymorphicNodeIdDecodeTest {
     private static List<String> assignable(DSLContext dsl) {
         derive(dsl);
         var a = INTENT_RECORD_SLOT_ASSIGNABLE;
-        return dsl.select(a.fields()).from(a).where(a.GRAPH_NAME.eq(GRAPH))
+        return dsl.select(a.NODE_TYPE_NAME, a.RECORD_CLASS, a.SLOT_TYPE_NAME)
+            .from(a).where(a.GRAPH_NAME.eq(GRAPH))
             .orderBy(a.NODE_TYPE_NAME, a.SLOT_TYPE_NAME)
             .fetch()
             .map(r -> r.get(a.NODE_TYPE_NAME) + " " + r.get(a.RECORD_CLASS) + " "
@@ -601,7 +602,8 @@ class PolymorphicNodeIdDecodeTest {
     private static List<String> members(DSLContext dsl) {
         derive(dsl);
         var m = INTENT_NODE_CONTAINER_MEMBER;
-        return dsl.select(m.fields()).from(m).where(m.GRAPH_NAME.eq(GRAPH))
+        return dsl.select(m.CONTAINER_NAME, m.CONTAINER_KIND, m.MEMBER_TYPE_NAME, m.IS_TABLE_BOUND,
+            m.IS_NODE_TYPE).from(m).where(m.GRAPH_NAME.eq(GRAPH))
             .orderBy(m.CONTAINER_NAME, m.MEMBER_TYPE_NAME)
             .fetch()
             .map(r -> r.get(m.CONTAINER_NAME) + " " + r.get(m.CONTAINER_KIND) + " "
@@ -613,7 +615,8 @@ class PolymorphicNodeIdDecodeTest {
     private static List<String> candidates(DSLContext dsl) {
         derive(dsl);
         var c = INTENT_NODE_ID_CANDIDATE_NODE_TYPE;
-        return dsl.select(c.fields()).from(c).where(c.GRAPH_NAME.eq(GRAPH))
+        return dsl.select(c.RESOLVED_TYPE_NAME, c.NODE_TYPE_NAME)
+            .from(c).where(c.GRAPH_NAME.eq(GRAPH))
             .orderBy(c.RESOLVED_TYPE_NAME, c.NODE_TYPE_NAME)
             .fetch()
             .map(r -> r.get(c.RESOLVED_TYPE_NAME) + " -> " + r.get(c.NODE_TYPE_NAME));
@@ -622,7 +625,8 @@ class PolymorphicNodeIdDecodeTest {
     private static List<String> instructions(DSLContext dsl) {
         derive(dsl);
         var i = GRAPHITRON_NODE_ID_INSTRUCTION;
-        return dsl.select(i.fields()).from(i).where(i.GRAPH_NAME.eq(GRAPH))
+        return dsl.select(i.SITE, i.USE_SITE, i.BASIS, i.RESOLVED_TYPE_NAME, i.RESOLVED_TYPE_KIND)
+            .from(i).where(i.GRAPH_NAME.eq(GRAPH))
             .orderBy(i.SITE, i.USE_SITE, i.BASIS, i.RESOLVED_TYPE_NAME)
             .fetch()
             .map(r -> r.get(i.SITE) + " " + r.get(i.USE_SITE) + " " + r.get(i.BASIS) + " "
@@ -632,7 +636,7 @@ class PolymorphicNodeIdDecodeTest {
     private static List<String> slotCandidateCounts(DSLContext dsl) {
         derive(dsl);
         var s = INTENT_NODE_ID_DECODE_SLOT;
-        return dsl.select(s.fields()).from(s).where(s.GRAPH_NAME.eq(GRAPH))
+        return dsl.select(s.USE_SITE, s.CANDIDATES).from(s).where(s.GRAPH_NAME.eq(GRAPH))
             .orderBy(s.USE_SITE, s.PARAM_NAME)
             .fetch()
             .map(r -> r.get(s.USE_SITE) + " " + r.get(s.CANDIDATES));
@@ -641,7 +645,8 @@ class PolymorphicNodeIdDecodeTest {
     private static List<String> destinations(DSLContext dsl) {
         derive(dsl);
         var d = INTENT_NODE_ID_DECODE;
-        return dsl.select(d.fields()).from(d).where(d.GRAPH_NAME.eq(GRAPH))
+        return dsl.select(d.USE_SITE, d.NODE_TYPE_NAME, d.DESTINATION, d.ARITY)
+            .from(d).where(d.GRAPH_NAME.eq(GRAPH))
             .orderBy(d.USE_SITE, d.NODE_TYPE_NAME)
             .fetch()
             .map(r -> r.get(d.USE_SITE) + " " + r.get(d.NODE_TYPE_NAME) + " "
@@ -651,7 +656,8 @@ class PolymorphicNodeIdDecodeTest {
     private static List<String> polymorphicDefects(DSLContext dsl) {
         derive(dsl);
         var v = INTENT_NODE_ID_POLYMORPHIC_DECODE_DEFECT;
-        return dsl.select(v.fields()).from(v).where(v.GRAPH_NAME.eq(GRAPH))
+        return dsl.select(v.MEMBER_TYPE_NAME, v.USE_SITE, v.CONTAINER_NAME, v.VERDICT)
+            .from(v).where(v.GRAPH_NAME.eq(GRAPH))
             .orderBy(v.USE_SITE, v.VERDICT, v.MEMBER_TYPE_NAME)
             .fetch()
             .map(PolymorphicNodeIdDecodeTest::renderDefect);
@@ -667,7 +673,7 @@ class PolymorphicNodeIdDecodeTest {
     private static List<String> incumbentDefects(DSLContext dsl) {
         derive(dsl);
         var v = INTENT_NODE_ID_DECODE_DEFECT;
-        return dsl.select(v.fields()).from(v).where(v.GRAPH_NAME.eq(GRAPH))
+        return dsl.select(v.USE_SITE, v.VERDICT).from(v).where(v.GRAPH_NAME.eq(GRAPH))
             .orderBy(v.USE_SITE, v.VERDICT)
             .fetch()
             .map(r -> r.get(v.USE_SITE) + " " + r.get(v.VERDICT));
@@ -676,7 +682,7 @@ class PolymorphicNodeIdDecodeTest {
     private static List<String> endpoints(DSLContext dsl) {
         derive(dsl);
         var e = INTENT_NODE_ID_DECODE_ENDPOINT;
-        return dsl.select(e.fields()).from(e).where(e.GRAPH_NAME.eq(GRAPH))
+        return dsl.select(e.USE_SITE, e.NODE_TYPE_NAME).from(e).where(e.GRAPH_NAME.eq(GRAPH))
             .orderBy(e.USE_SITE, e.NODE_TYPE_NAME)
             .fetch()
             .map(r -> r.get(e.USE_SITE) + " " + r.get(e.NODE_TYPE_NAME));
@@ -685,7 +691,7 @@ class PolymorphicNodeIdDecodeTest {
     private static List<String> encodes(DSLContext dsl) {
         derive(dsl);
         var e = INTENT_NODE_ID_ENCODE;
-        return dsl.select(e.fields()).from(e).where(e.GRAPH_NAME.eq(GRAPH))
+        return dsl.select(e.USE_SITE, e.NODE_TYPE_NAME).from(e).where(e.GRAPH_NAME.eq(GRAPH))
             .orderBy(e.USE_SITE)
             .fetch()
             .map(r -> r.get(e.USE_SITE) + " " + r.get(e.NODE_TYPE_NAME));
@@ -699,7 +705,7 @@ class PolymorphicNodeIdDecodeTest {
     private static List<String> inputFieldFilterRoles(DSLContext dsl) {
         derive(dsl);
         var r = GRAPHITRON_INPUT_FIELD_FILTER_ROLE;
-        return dsl.select(r.fields()).from(r)
+        return dsl.select(r.TYPE_NAME, r.FIELD_NAME, r.RESOLVING_TABLE, r.ROLE).from(r)
             .where(r.GRAPH_NAME.eq(GRAPH))
             .orderBy(r.TYPE_NAME, r.FIELD_NAME, r.RESOLVING_TABLE)
             .fetch()
@@ -710,7 +716,7 @@ class PolymorphicNodeIdDecodeTest {
     private static List<String> nodeIdFilterRoles(DSLContext dsl) {
         derive(dsl);
         var f = INTENT_ARGUMENT_FILTER_ROLE;
-        return dsl.select(f.fields()).from(f)
+        return dsl.select(f.TYPE_NAME, f.FIELD_NAME, f.ARGUMENT_NAME).from(f)
             .where(f.GRAPH_NAME.eq(GRAPH), f.ROLE.eq("NODE_ID"))
             .orderBy(f.TYPE_NAME, f.FIELD_NAME, f.ARGUMENT_NAME)
             .fetch()

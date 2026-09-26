@@ -608,7 +608,8 @@ class FieldColumnTableTest {
     /** The navigation row for a coordinate, at the same grain as the override above it. */
     private static Optional<Record> scopeRow(DSLContext dsl, String typeName, String fieldName) {
         derive(dsl);
-        var rows = dsl.select(GRAPHITRON_FIELD_COLUMN_SCOPE.fields())
+        var rows = dsl.select(GRAPHITRON_FIELD_COLUMN_SCOPE.TABLE_NAME,
+            GRAPHITRON_FIELD_COLUMN_SCOPE.BASIS)
             .from(GRAPHITRON_FIELD_COLUMN_SCOPE)
             .where(GRAPHITRON_FIELD_COLUMN_SCOPE.GRAPH_NAME.eq(GRAPH))
             .and(GRAPHITRON_FIELD_COLUMN_SCOPE.TYPE_NAME.eq(typeName))
@@ -629,7 +630,8 @@ class FieldColumnTableTest {
     private static Optional<Record> row(DSLContext dsl, String graphName, String typeName,
                                         String fieldName) {
         derive(dsl);
-        var rows = dsl.select(INTENT_FIELD_COLUMN_TABLE.fields())
+        var rows = dsl.select(INTENT_FIELD_COLUMN_TABLE.DISPOSITION,
+            INTENT_FIELD_COLUMN_TABLE.BASIS, INTENT_FIELD_COLUMN_TABLE.TABLE_NAME)
             .from(INTENT_FIELD_COLUMN_TABLE)
             .where(INTENT_FIELD_COLUMN_TABLE.GRAPH_NAME.eq(graphName))
             .and(INTENT_FIELD_COLUMN_TABLE.TYPE_NAME.eq(typeName))

@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.intent;
 
 import org.jooq.DSLContext;
 import org.jooq.Record;
+import org.jooq.Record12;
 import org.jooq.Result;
 import org.junit.jupiter.api.Test;
 
@@ -320,13 +321,26 @@ class ArgumentColumnMatchTest {
         seedField(dsl, GRAPH, "Query", "films", "Film", true);
     }
 
-    private static Result<Record> rows(DSLContext dsl) {
+    private static Result<Record12<String, String, String, String, String, String, String, String,
+            String, String, Integer, Integer>> rows(DSLContext dsl) {
         return rowsIn(dsl, GRAPH);
     }
 
-    private static Result<Record> rowsIn(DSLContext dsl, String graphName) {
+    private static Result<Record12<String, String, String, String, String, String, String, String,
+            String, String, Integer, Integer>> rowsIn(DSLContext dsl, String graphName) {
         derive(dsl);
-        return dsl.select(GRAPHITRON_ARGUMENT_COLUMN_MATCH.fields())
+        return dsl.select(GRAPHITRON_ARGUMENT_COLUMN_MATCH.TYPE_NAME,
+            GRAPHITRON_ARGUMENT_COLUMN_MATCH.FIELD_NAME,
+            GRAPHITRON_ARGUMENT_COLUMN_MATCH.ARGUMENT_NAME,
+            GRAPHITRON_ARGUMENT_COLUMN_MATCH.MATCHED_NAME,
+            GRAPHITRON_ARGUMENT_COLUMN_MATCH.MATCHED_BY,
+            GRAPHITRON_ARGUMENT_COLUMN_MATCH.TABLE_SOURCE_NAME,
+            GRAPHITRON_ARGUMENT_COLUMN_MATCH.TABLE_SCHEMA,
+            GRAPHITRON_ARGUMENT_COLUMN_MATCH.TABLE_NAME,
+            GRAPHITRON_ARGUMENT_COLUMN_MATCH.COLUMN_NAME,
+            GRAPHITRON_ARGUMENT_COLUMN_MATCH.SOURCE_NAME,
+            GRAPHITRON_ARGUMENT_COLUMN_MATCH.SOURCE_LINE,
+            GRAPHITRON_ARGUMENT_COLUMN_MATCH.SOURCE_COLUMN)
             .from(GRAPHITRON_ARGUMENT_COLUMN_MATCH)
             .where(GRAPHITRON_ARGUMENT_COLUMN_MATCH.GRAPH_NAME.eq(graphName))
             .orderBy(GRAPHITRON_ARGUMENT_COLUMN_MATCH.TYPE_NAME,

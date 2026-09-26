@@ -470,7 +470,7 @@ class CarrierDataFieldTest {
      */
     private static List<String> carriers(DSLContext dsl) {
         var c = GRAPHITRON_CARRIER_DATA_FIELD;
-        return dsl.select(c.fields())
+        return dsl.select(c.TYPE_NAME, c.FIELD_NAME, c.FAMILY, c.ELEMENT_KIND, c.DATA_FIELDS)
             .from(c)
             .where(c.GRAPH_NAME.eq(GRAPH))
             .orderBy(c.TYPE_NAME, c.FIELD_NAME, c.FAMILY)

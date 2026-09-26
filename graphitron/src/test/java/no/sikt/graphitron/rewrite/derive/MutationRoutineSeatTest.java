@@ -449,7 +449,7 @@ class MutationRoutineSeatTest {
      */
     private static List<String> seats(DSLContext dsl) {
         var s = INTENT_MUTATION_ROUTINE_SEAT;
-        return dsl.select(s.fields())
+        return dsl.select(s.TYPE_NAME, s.FIELD_NAME, s.SEAT, s.VERDICT, s.RETURN_TYPE_NAME)
             .from(s)
             .where(s.GRAPH_NAME.eq(GRAPH))
             .orderBy(s.TYPE_NAME, s.FIELD_NAME)

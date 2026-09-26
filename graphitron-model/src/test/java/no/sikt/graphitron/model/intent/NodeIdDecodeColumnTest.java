@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.intent;
 
 import org.jooq.DSLContext;
 import org.jooq.Record;
+import org.jooq.Record7;
 import org.jooq.Result;
 import org.junit.jupiter.api.Test;
 
@@ -383,13 +384,20 @@ class NodeIdDecodeColumnTest {
         return rows(dsl).map(NodeIdDecodeColumnTest::render);
     }
 
-    private static Result<Record> rows(DSLContext dsl) {
+    private static Result<Record7<String, String, String, String, String, Integer, String>>
+            rows(DSLContext dsl) {
         derive(dsl);
         return rowsIn(dsl, GRAPH);
     }
 
-    private static Result<Record> rowsIn(DSLContext dsl, String graphName) {
-        return dsl.select(GRAPHITRON_NODE_ID_DECODE_COLUMN.fields())
+    private static Result<Record7<String, String, String, String, String, Integer, String>>
+            rowsIn(DSLContext dsl, String graphName) {
+        return dsl.select(GRAPHITRON_NODE_ID_DECODE_COLUMN.PATH,
+            GRAPHITRON_NODE_ID_DECODE_COLUMN.TYPE_NAME, GRAPHITRON_NODE_ID_DECODE_COLUMN.FIELD_NAME,
+            GRAPHITRON_NODE_ID_DECODE_COLUMN.ARGUMENT_NAME,
+            GRAPHITRON_NODE_ID_DECODE_COLUMN.LOCAL_COLUMN_NAME,
+            GRAPHITRON_NODE_ID_DECODE_COLUMN.POSITION,
+            GRAPHITRON_NODE_ID_DECODE_COLUMN.KEY_COLUMN_NAME)
             .from(GRAPHITRON_NODE_ID_DECODE_COLUMN)
             .where(GRAPHITRON_NODE_ID_DECODE_COLUMN.GRAPH_NAME.eq(graphName))
             .orderBy(GRAPHITRON_NODE_ID_DECODE_COLUMN.SITE,

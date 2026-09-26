@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.intent;
 
 import org.jooq.DSLContext;
 import org.jooq.Record;
+import org.jooq.Record11;
 import org.jooq.Result;
 import org.junit.jupiter.api.Test;
 
@@ -574,9 +575,20 @@ class ArgumentReferenceStepTargetTest {
         }
     }
 
-    private static Result<Record> chain(DSLContext dsl, String graphName) {
+    private static Result<Record11<Integer, Boolean, String, Integer, Integer, String, String,
+            String, String, String, String>> chain(DSLContext dsl, String graphName) {
         derive(dsl);
-        return dsl.select(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.fields())
+        return dsl.select(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.POSITION,
+            GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.FK_ON_FROM,
+            GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.VIA,
+            GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.CANDIDATES,
+            GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.TARGETS,
+            GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.FROM_SCHEMA,
+            GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.CONSTRAINT_NAME,
+            GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.KEY_MATCHED_BY,
+            GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.ARGUMENT_NAME,
+            GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.FROM_TABLE,
+            GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.TO_TABLE)
             .from(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET)
             .where(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.GRAPH_NAME.eq(graphName))
             .orderBy(GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET.ARGUMENT_NAME,
@@ -593,7 +605,8 @@ class ArgumentReferenceStepTargetTest {
      */
     private static List<String> argumentSiteShape(DSLContext dsl) {
         var t = GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET;
-        return dsl.select(t.fields())
+        return dsl.select(t.POSITION, t.VIA, t.KEY_MATCHED_BY, t.FROM_TABLE, t.TO_TABLE,
+            t.CONSTRAINT_NAME, t.FK_ON_FROM, t.TARGETS, t.CANDIDATES)
             .from(t)
             .where(t.GRAPH_NAME.eq(GRAPH))
             .orderBy(t.POSITION, t.TO_SCHEMA, t.CONSTRAINT_NAME)
@@ -604,7 +617,8 @@ class ArgumentReferenceStepTargetTest {
 
     private static List<String> fieldSiteShape(DSLContext dsl) {
         var t = GRAPHITRON_FIELD_REFERENCE_STEP_TARGET;
-        return dsl.select(t.fields())
+        return dsl.select(t.POSITION, t.VIA, t.KEY_MATCHED_BY, t.FROM_TABLE, t.TO_TABLE,
+            t.CONSTRAINT_NAME, t.FK_ON_FROM, t.TARGETS, t.CANDIDATES)
             .from(t)
             .where(t.GRAPH_NAME.eq(GRAPH))
             .orderBy(t.POSITION, t.TO_SCHEMA, t.CONSTRAINT_NAME)

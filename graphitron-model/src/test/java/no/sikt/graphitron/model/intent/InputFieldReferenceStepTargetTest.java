@@ -3,6 +3,7 @@ package no.sikt.graphitron.model.intent;
 import no.sikt.graphitron.model.test.SeededStore.OccurrenceStep;
 import org.jooq.DSLContext;
 import org.jooq.Record;
+import org.jooq.Record7;
 import org.jooq.Result;
 import org.junit.jupiter.api.Test;
 
@@ -124,10 +125,12 @@ class InputFieldReferenceStepTargetTest {
             PKG, PUBLIC, referencedTable, referencedTable + "_pkey");
     }
 
-    private static Result<Record> rows(DSLContext dsl) {
+    private static Result<Record7<String, Integer, String, String, String, Integer, Integer>>
+            rows(DSLContext dsl) {
         derive(dsl);
         var t = GRAPHITRON_INPUT_FIELD_REFERENCE_STEP_TARGET;
-        return dsl.select(t.fields())
+        return dsl.select(t.RESOLVING_TABLE, t.POSITION, t.FROM_TABLE, t.TO_TABLE,
+            t.CONSTRAINT_NAME, t.TARGETS, t.CANDIDATES)
             .from(t)
             .where(t.GRAPH_NAME.eq(GRAPH))
             .orderBy(t.RESOLVING_TABLE, t.POSITION, t.CONSTRAINT_NAME)

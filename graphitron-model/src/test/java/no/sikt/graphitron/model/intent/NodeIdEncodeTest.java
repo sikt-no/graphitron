@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.intent;
 
 import org.jooq.DSLContext;
 import org.jooq.Record;
+import org.jooq.Record4;
 import org.jooq.Result;
 import org.junit.jupiter.api.Test;
 
@@ -254,13 +255,15 @@ class NodeIdEncodeTest {
         return rows(dsl).map(NodeIdEncodeTest::render);
     }
 
-    private static Result<Record> rows(DSLContext dsl) {
+    private static Result<Record4<String, String, String, Integer>> rows(DSLContext dsl) {
         derive(dsl);
         return rowsIn(dsl, GRAPH);
     }
 
-    private static Result<Record> rowsIn(DSLContext dsl, String graphName) {
-        return dsl.select(INTENT_NODE_ID_ENCODE.fields())
+    private static Result<Record4<String, String, String, Integer>>
+            rowsIn(DSLContext dsl, String graphName) {
+        return dsl.select(INTENT_NODE_ID_ENCODE.USE_SITE, INTENT_NODE_ID_ENCODE.SOURCE,
+            INTENT_NODE_ID_ENCODE.NODE_TYPE_NAME, INTENT_NODE_ID_ENCODE.ARITY)
             .from(INTENT_NODE_ID_ENCODE)
             .where(INTENT_NODE_ID_ENCODE.GRAPH_NAME.eq(graphName))
             .orderBy(INTENT_NODE_ID_ENCODE.USE_SITE, INTENT_NODE_ID_ENCODE.NODE_TYPE_NAME)

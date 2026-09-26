@@ -386,7 +386,7 @@ class ConditionContextParameterTest {
     private static List<String> sites(DSLContext dsl) {
         derive(dsl);
         var t = INTENT_CONDITION_CONTEXT_PARAMETER;
-        return dsl.select(t.fields())
+        return dsl.select(t.SITE, t.USE_SITE, t.POSITION)
             .from(t)
             .where(t.GRAPH_NAME.eq(GRAPH))
             .orderBy(t.SITE, t.USE_SITE, t.POSITION)
@@ -397,7 +397,7 @@ class ConditionContextParameterTest {
     private static List<String> withDescriptors(DSLContext dsl) {
         derive(dsl);
         var t = INTENT_CONDITION_CONTEXT_PARAMETER;
-        return dsl.select(t.fields())
+        return dsl.select(t.DESCRIPTOR, t.POSITION)
             .from(t)
             .where(t.GRAPH_NAME.eq(GRAPH))
             .orderBy(t.POSITION)

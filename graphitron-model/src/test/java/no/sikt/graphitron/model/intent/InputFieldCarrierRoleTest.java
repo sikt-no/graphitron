@@ -141,7 +141,10 @@ class InputFieldCarrierRoleTest {
 
     private static List<String> carriers(DSLContext dsl) {
         derive(dsl);
-        return dsl.select(GRAPHITRON_INPUT_FIELD_CARRIER_ROLE.fields())
+        return dsl.select(GRAPHITRON_INPUT_FIELD_CARRIER_ROLE.TYPE_NAME,
+            GRAPHITRON_INPUT_FIELD_CARRIER_ROLE.FIELD_NAME,
+            GRAPHITRON_INPUT_FIELD_CARRIER_ROLE.RESOLVING_TABLE,
+            GRAPHITRON_INPUT_FIELD_CARRIER_ROLE.CARRIER_ROLE)
             .from(GRAPHITRON_INPUT_FIELD_CARRIER_ROLE)
             .where(GRAPHITRON_INPUT_FIELD_CARRIER_ROLE.GRAPH_NAME.eq(GRAPH))
             .orderBy(GRAPHITRON_INPUT_FIELD_CARRIER_ROLE.TYPE_NAME,

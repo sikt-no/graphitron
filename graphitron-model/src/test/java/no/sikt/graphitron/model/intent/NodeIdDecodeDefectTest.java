@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.intent;
 
 import org.jooq.DSLContext;
 import org.jooq.Record;
+import org.jooq.Record7;
 import org.jooq.Result;
 import org.junit.jupiter.api.Test;
 
@@ -375,14 +376,17 @@ class NodeIdDecodeDefectTest {
         return rows(dsl).map(NodeIdDecodeDefectTest::render);
     }
 
-    private static Result<Record> rows(DSLContext dsl) {
+    private static Result<Record7<String, String, String, Integer, String, String, String>>
+            rows(DSLContext dsl) {
         derive(dsl);
         return rowsIn(dsl, GRAPH);
     }
 
-    private static Result<Record> rowsIn(DSLContext dsl, String graphName) {
+    private static Result<Record7<String, String, String, Integer, String, String, String>>
+            rowsIn(DSLContext dsl, String graphName) {
         var v = INTENT_NODE_ID_DECODE_DEFECT;
-        return dsl.select(v.fields())
+        return dsl.select(v.USE_SITE, v.NODE_TYPE_NAME, v.VERDICT, v.ARITY, v.KEY_COLUMN_NAME,
+            v.COLUMN_JAVA_TYPE, v.SLOT_JAVA_TYPE)
             .from(v)
             .where(v.GRAPH_NAME.eq(graphName))
             .orderBy(v.USE_SITE, v.NODE_TYPE_NAME)

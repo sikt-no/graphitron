@@ -2,6 +2,8 @@ package no.sikt.graphitron.model.intent;
 
 import org.jooq.DSLContext;
 import org.jooq.Record;
+import org.jooq.Record6;
+import org.jooq.Record10;
 import org.jooq.Result;
 import org.junit.jupiter.api.Test;
 
@@ -392,13 +394,18 @@ class NodeIdDecodeReachTest {
         return hopRows(dsl).map(NodeIdDecodeReachTest::renderHop);
     }
 
-    private static Result<Record> endpointRows(DSLContext dsl) {
+    private static Result<Record6<String, String, String, String, String, String>>
+            endpointRows(DSLContext dsl) {
         derive(dsl);
         return endpointRowsIn(dsl, GRAPH);
     }
 
-    private static Result<Record> endpointRowsIn(DSLContext dsl, String graphName) {
-        return dsl.select(INTENT_NODE_ID_DECODE_ENDPOINT.fields())
+    private static Result<Record6<String, String, String, String, String, String>>
+            endpointRowsIn(DSLContext dsl, String graphName) {
+        return dsl.select(INTENT_NODE_ID_DECODE_ENDPOINT.SITE,
+            INTENT_NODE_ID_DECODE_ENDPOINT.USE_SITE, INTENT_NODE_ID_DECODE_ENDPOINT.NODE_TYPE_NAME,
+            INTENT_NODE_ID_DECODE_ENDPOINT.NAVIGATION, INTENT_NODE_ID_DECODE_ENDPOINT.FROM_TABLE,
+            INTENT_NODE_ID_DECODE_ENDPOINT.TO_TABLE)
             .from(INTENT_NODE_ID_DECODE_ENDPOINT)
             .where(INTENT_NODE_ID_DECODE_ENDPOINT.GRAPH_NAME.eq(graphName))
             .orderBy(INTENT_NODE_ID_DECODE_ENDPOINT.SITE,
@@ -407,13 +414,19 @@ class NodeIdDecodeReachTest {
             .fetch();
     }
 
-    private static Result<Record> hopRows(DSLContext dsl) {
+    private static Result<Record10<Integer, String, String, String, String, Boolean, String, String,
+            String, String>> hopRows(DSLContext dsl) {
         derive(dsl);
         return hopRowsIn(dsl, GRAPH);
     }
 
-    private static Result<Record> hopRowsIn(DSLContext dsl, String graphName) {
-        return dsl.select(GRAPHITRON_NODE_ID_DECODE_HOP.fields())
+    private static Result<Record10<Integer, String, String, String, String, Boolean, String, String,
+            String, String>> hopRowsIn(DSLContext dsl, String graphName) {
+        return dsl.select(GRAPHITRON_NODE_ID_DECODE_HOP.POSITION, GRAPHITRON_NODE_ID_DECODE_HOP.VIA,
+            GRAPHITRON_NODE_ID_DECODE_HOP.FROM_TABLE, GRAPHITRON_NODE_ID_DECODE_HOP.TO_TABLE,
+            GRAPHITRON_NODE_ID_DECODE_HOP.CONSTRAINT_NAME, GRAPHITRON_NODE_ID_DECODE_HOP.FK_ON_FROM,
+            GRAPHITRON_NODE_ID_DECODE_HOP.PATH, GRAPHITRON_NODE_ID_DECODE_HOP.TYPE_NAME,
+            GRAPHITRON_NODE_ID_DECODE_HOP.FIELD_NAME, GRAPHITRON_NODE_ID_DECODE_HOP.ARGUMENT_NAME)
             .from(GRAPHITRON_NODE_ID_DECODE_HOP)
             .where(GRAPHITRON_NODE_ID_DECODE_HOP.GRAPH_NAME.eq(graphName))
             .orderBy(GRAPHITRON_NODE_ID_DECODE_HOP.SITE,

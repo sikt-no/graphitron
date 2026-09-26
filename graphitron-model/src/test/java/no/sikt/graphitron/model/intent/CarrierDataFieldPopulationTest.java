@@ -181,7 +181,7 @@ class CarrierDataFieldPopulationTest {
         derive(dsl);
         var c = GRAPHITRON_CARRIER_DATA_FIELD;
         var partition = c.GRAPH_NAME.eq(GRAPH);
-        return dsl.select(c.fields())
+        return dsl.select(c.TYPE_NAME, c.FIELD_NAME, c.FAMILY, c.ELEMENT_KIND, c.DATA_FIELDS)
             .from(c)
             .where(typeName == null ? partition : partition.and(c.TYPE_NAME.eq(typeName)))
             .orderBy(c.TYPE_NAME, c.FIELD_NAME, c.FAMILY)

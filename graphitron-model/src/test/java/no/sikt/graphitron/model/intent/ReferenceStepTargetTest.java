@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.intent;
 
 import org.jooq.DSLContext;
 import org.jooq.Record;
+import org.jooq.Record11;
 import org.jooq.Record2;
 import org.jooq.Result;
 import org.junit.jupiter.api.Test;
@@ -656,9 +657,20 @@ class ReferenceStepTargetTest {
         seedFieldReferenceStep(dsl, GRAPH, "Root", "hop", 0, 0, tableRef, keyRef);
     }
 
-    private static Result<Record> chain(DSLContext dsl, String graphName) {
+    private static Result<Record11<Integer, Boolean, String, Integer, String, String, Integer,
+            String, String, String, String>> chain(DSLContext dsl, String graphName) {
         derive(dsl);
-        return dsl.select(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.fields())
+        return dsl.select(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.POSITION,
+            GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.FK_ON_FROM,
+            GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.VIA,
+            GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.CANDIDATES,
+            GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.CONSTRAINT_NAME,
+            GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.KEY_MATCHED_BY,
+            GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TARGETS,
+            GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.FROM_SCHEMA,
+            GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TO_SCHEMA,
+            GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.FROM_TABLE,
+            GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TO_TABLE)
             .from(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET)
             .where(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.GRAPH_NAME.eq(graphName))
             .orderBy(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.FIELD_NAME,

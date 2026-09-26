@@ -3,6 +3,7 @@ package no.sikt.graphitron.model.intent;
 import no.sikt.graphitron.model.test.SeededStore.OccurrenceStep;
 import org.jooq.DSLContext;
 import org.jooq.Record;
+import org.jooq.Record5;
 import org.jooq.Result;
 import org.junit.jupiter.api.Test;
 
@@ -593,7 +594,12 @@ class InputFieldFilterRoleTest {
 
     private static List<String> rolesIn(DSLContext dsl, String graphName) {
         derive(dsl);
-        Result<Record> rows = dsl.select(GRAPHITRON_INPUT_FIELD_FILTER_ROLE.fields())
+        Result<Record5<String, String, String, String, Boolean>> rows =
+            dsl.select(GRAPHITRON_INPUT_FIELD_FILTER_ROLE.TYPE_NAME,
+            GRAPHITRON_INPUT_FIELD_FILTER_ROLE.FIELD_NAME,
+            GRAPHITRON_INPUT_FIELD_FILTER_ROLE.RESOLVING_TABLE,
+            GRAPHITRON_INPUT_FIELD_FILTER_ROLE.ROLE,
+            GRAPHITRON_INPUT_FIELD_FILTER_ROLE.AUTHORED_CONDITION)
             .from(GRAPHITRON_INPUT_FIELD_FILTER_ROLE)
             .where(GRAPHITRON_INPUT_FIELD_FILTER_ROLE.GRAPH_NAME.eq(graphName))
             .orderBy(GRAPHITRON_INPUT_FIELD_FILTER_ROLE.TYPE_NAME,

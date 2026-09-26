@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.intent;
 
 import org.jooq.DSLContext;
 import org.jooq.Record;
+import org.jooq.Record4;
 import org.jooq.Result;
 import org.junit.jupiter.api.Test;
 
@@ -435,7 +436,7 @@ class NodeIdInstructionTest {
             seedMultitableInterface(dsl);
             seedArgumentNodeId(dsl, GRAPH, "Query", "media", "someId", null);
 
-            var rows = rows(dsl);
+            var rows = everyColumn(dsl);
             assertThat(rows).hasSize(2);
             assertThat(rows.map(r -> r.get(GRAPHITRON_NODE_ID_INSTRUCTION.RESOLVED_TYPE_NAME)))
                 .containsExactly("Actor", "Film");
@@ -583,13 +584,32 @@ class NodeIdInstructionTest {
         seedField(dsl, GRAPH, inputTypeName, fieldName, "ID", false);
     }
 
-    private static Result<Record> rows(DSLContext dsl) {
+    /**
+     * The same rows with every column, for the one case whose subject is the whole row: it asserts
+     * that two rows at a multitable coordinate differ in the resolved type and in nothing else, so
+     * a column left out of the projection is a column the claim would not cover. Its own read
+     * rather than a widening of {@link #rows}, the cases above naming four columns because four is
+     * what they ask about.
+     */
+    private static Result<Record> everyColumn(DSLContext dsl) {
+        derive(dsl);
+        return dsl.select(GRAPHITRON_NODE_ID_INSTRUCTION.fields())
+            .from(GRAPHITRON_NODE_ID_INSTRUCTION)
+            .where(GRAPHITRON_NODE_ID_INSTRUCTION.GRAPH_NAME.eq(GRAPH))
+            .orderBy(GRAPHITRON_NODE_ID_INSTRUCTION.RESOLVED_TYPE_NAME)
+            .fetch();
+    }
+
+    private static Result<Record4<String, String, String, String>> rows(DSLContext dsl) {
         return rowsIn(dsl, GRAPH);
     }
 
-    private static Result<Record> rowsIn(DSLContext dsl, String graphName) {
+    private static Result<Record4<String, String, String, String>>
+            rowsIn(DSLContext dsl, String graphName) {
         derive(dsl);
-        return dsl.select(GRAPHITRON_NODE_ID_INSTRUCTION.fields())
+        return dsl.select(GRAPHITRON_NODE_ID_INSTRUCTION.RESOLVED_TYPE_NAME,
+            GRAPHITRON_NODE_ID_INSTRUCTION.SITE, GRAPHITRON_NODE_ID_INSTRUCTION.USE_SITE,
+            GRAPHITRON_NODE_ID_INSTRUCTION.BASIS)
             .from(GRAPHITRON_NODE_ID_INSTRUCTION)
             .where(GRAPHITRON_NODE_ID_INSTRUCTION.GRAPH_NAME.eq(graphName))
             .orderBy(GRAPHITRON_NODE_ID_INSTRUCTION.SITE,

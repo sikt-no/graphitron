@@ -521,7 +521,8 @@ class FactCaptureAgreementTest {
                 .as("the emitted field anchor against the transcription and the mint,"
                     + " a rewritten carrier counting once because its mint is at its own coordinate")
                 .containsExactlyInAnyOrderElementsOf(
-                    dsl.select(GRAPHQL_FIELD.TYPE_NAME, GRAPHQL_FIELD.FIELD_NAME).from(GRAPHQL_FIELD)
+                    dsl.select(GRAPHQL_FIELD.TYPE_NAME, GRAPHQL_FIELD.FIELD_NAME)
+                        .from(GRAPHQL_FIELD)
                         .unionAll(dsl.selectDistinct(GRAPHITRON_FIELD_MINTED.TYPE_NAME,
                                 GRAPHITRON_FIELD_MINTED.FIELD_NAME)
                             .from(GRAPHITRON_FIELD_MINTED)

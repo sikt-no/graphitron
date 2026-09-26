@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.intent;
 
 import org.jooq.DSLContext;
 import org.jooq.Record;
+import org.jooq.Record7;
 import org.jooq.Result;
 import org.junit.jupiter.api.Test;
 
@@ -442,14 +443,17 @@ class FieldUnlowerableOrderingTest {
         });
     }
 
-    private static Result<Record> rows(DSLContext dsl) {
+    private static Result<Record7<Integer, Integer, String, String, String, String, String>>
+            rows(DSLContext dsl) {
         return rows(dsl, GRAPH);
     }
 
-    private static Result<Record> rows(DSLContext dsl, String graphName) {
+    private static Result<Record7<Integer, Integer, String, String, String, String, String>>
+            rows(DSLContext dsl, String graphName) {
         derive(dsl);
         var v = INTENT_FIELD_UNLOWERABLE_ORDERING;
-        return dsl.select(v.fields())
+        return dsl.select(v.SOURCE_LINE, v.SOURCE_COLUMN, v.TYPE_NAME, v.FIELD_NAME, v.VERDICT,
+            v.AVAILABLE_VIA, v.ARGUMENT_NAME)
             .from(v)
             .where(v.GRAPH_NAME.eq(graphName))
             .orderBy(v.TYPE_NAME, v.FIELD_NAME, v.AVAILABLE_VIA, v.ARGUMENT_NAME)

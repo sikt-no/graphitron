@@ -244,7 +244,7 @@ class NameMatchedKeyPairTest {
      */
     private static List<String> pairs(DSLContext dsl, String fromTable, String toTable) {
         var p = SQL_NAME_MATCHED_KEY_COLUMN;
-        return dsl.select(p.fields())
+        return dsl.select(p.POSITION, p.TO_COLUMN, p.COLUMN_NAME)
             .from(p)
             .where(nameIs(p.TABLE_NAME, fromTable))
             .and(nameIs(p.TO_TABLE, toTable))
@@ -260,7 +260,7 @@ class NameMatchedKeyPairTest {
      */
     private static List<String> carrierHops(DSLContext dsl) {
         var h = INTENT_CARRIER_ROUTINE_HOP;
-        return dsl.select(h.fields())
+        return dsl.select(h.TYPE_NAME, h.FIELD_NAME, h.FROM_TABLE, h.TO_TABLE, h.CANDIDATES)
             .from(h)
             .where(h.GRAPH_NAME.eq(CapturedStore.GRAPH))
             .orderBy(h.TYPE_NAME, h.FIELD_NAME, h.FROM_TABLE)
@@ -273,7 +273,7 @@ class NameMatchedKeyPairTest {
     /** The authored view's name-matched rows, so a case can say which of the two relations answered. */
     private static List<String> authoredNameMatchedHops(DSLContext dsl) {
         var s = GRAPHITRON_FIELD_REFERENCE_STEP_HOP;
-        return dsl.select(s.fields())
+        return dsl.select(s.FROM_TABLE, s.TO_TABLE)
             .from(s)
             .where(s.GRAPH_NAME.eq(CapturedStore.GRAPH))
             .and(s.VIA.eq("NAME_MATCH"))

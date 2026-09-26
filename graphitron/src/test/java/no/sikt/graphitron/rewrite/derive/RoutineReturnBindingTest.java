@@ -5,6 +5,8 @@ import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.jooq.Record;
+import org.jooq.Record2;
+import org.jooq.Record3;
 import org.jooq.Result;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -283,7 +285,9 @@ class RoutineReturnBindingTest {
                          argMapping: "pActorId: actorId, pMinLength: minLength")
             }
             """, dsl -> {
-            var targets = dsl.select(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.fields())
+            var targets = dsl.select(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.VIA,
+                GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.FROM_TABLE,
+                GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TO_TABLE)
                 .from(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET)
                 .where(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.GRAPH_NAME.eq(CapturedStore.GRAPH))
                 .fetch();
@@ -319,8 +323,9 @@ class RoutineReturnBindingTest {
     }
 
     /** Every row the derivation writes for the fixture graph; unscoped, its population being small. */
-    private static Result<Record> derived(DSLContext dsl) {
-        return dsl.select(INTENT_ROUTINE_RETURN_BINDING.fields())
+    private static Result<Record3<String, String, Integer>> derived(DSLContext dsl) {
+        return dsl.select(INTENT_ROUTINE_RETURN_BINDING.TYPE_NAME,
+            INTENT_ROUTINE_RETURN_BINDING.TABLE_NAME, INTENT_ROUTINE_RETURN_BINDING.CANDIDATES)
             .from(INTENT_ROUTINE_RETURN_BINDING)
             .where(INTENT_ROUTINE_RETURN_BINDING.GRAPH_NAME.eq(CapturedStore.GRAPH))
             .orderBy(INTENT_ROUTINE_RETURN_BINDING.TYPE_NAME, INTENT_ROUTINE_RETURN_BINDING.TABLE_NAME)
@@ -331,8 +336,9 @@ class RoutineReturnBindingTest {
      * The reduction's rows for one type. Scoped, because the fixtures carry {@code @table} types the
      * cases are not about and the reduction holds every binding in the graph.
      */
-    private static Result<Record> resolvedFor(DSLContext dsl, String typeName) {
-        return dsl.select(GRAPHITRON_RESOLVED_TYPE_BINDING.fields())
+    private static Result<Record2<String, Integer>> resolvedFor(DSLContext dsl, String typeName) {
+        return dsl.select(GRAPHITRON_RESOLVED_TYPE_BINDING.TABLE_NAME,
+            GRAPHITRON_RESOLVED_TYPE_BINDING.CANDIDATES)
             .from(GRAPHITRON_RESOLVED_TYPE_BINDING)
             .where(GRAPHITRON_RESOLVED_TYPE_BINDING.GRAPH_NAME.eq(CapturedStore.GRAPH))
             .and(GRAPHITRON_RESOLVED_TYPE_BINDING.TYPE_NAME.eq(typeName))
@@ -341,16 +347,21 @@ class RoutineReturnBindingTest {
     }
 
     /** The {@code @table} arm's rows for one type, scoped for the same reason. */
-    private static Result<Record> directiveArmFor(DSLContext dsl, String typeName) {
-        return dsl.select(INTENT_BOUND_TABLE.fields())
+    private static Result<Record2<String, String>>
+            directiveArmFor(DSLContext dsl, String typeName) {
+        // The caller counts rather than reads, so this names what identifies a row: which type
+        // bound which table. Nothing else on the relation is part of the question.
+        return dsl.select(INTENT_BOUND_TABLE.TYPE_NAME, INTENT_BOUND_TABLE.TABLE_NAME)
             .from(INTENT_BOUND_TABLE)
             .where(INTENT_BOUND_TABLE.GRAPH_NAME.eq(CapturedStore.GRAPH))
             .and(INTENT_BOUND_TABLE.TYPE_NAME.eq(typeName))
             .fetch();
     }
 
-    private static Result<Record> columnScope(DSLContext dsl, String typeName, String fieldName) {
-        return dsl.select(GRAPHITRON_FIELD_COLUMN_SCOPE.fields())
+    private static Result<Record2<String, String>>
+            columnScope(DSLContext dsl, String typeName, String fieldName) {
+        return dsl.select(GRAPHITRON_FIELD_COLUMN_SCOPE.BASIS,
+            GRAPHITRON_FIELD_COLUMN_SCOPE.TABLE_NAME)
             .from(GRAPHITRON_FIELD_COLUMN_SCOPE)
             .where(GRAPHITRON_FIELD_COLUMN_SCOPE.GRAPH_NAME.eq(CapturedStore.GRAPH))
             .and(GRAPHITRON_FIELD_COLUMN_SCOPE.TYPE_NAME.eq(typeName))
@@ -358,7 +369,7 @@ class RoutineReturnBindingTest {
             .fetch();
     }
 
-    private static List<String> typesBoundBy(Result<Record> rows) {
+    private static List<String> typesBoundBy(Result<Record3<String, String, Integer>> rows) {
         return rows.map(r -> r.get(INTENT_ROUTINE_RETURN_BINDING.TYPE_NAME));
     }
 

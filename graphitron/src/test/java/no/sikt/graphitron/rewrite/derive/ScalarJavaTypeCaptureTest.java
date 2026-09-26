@@ -91,7 +91,7 @@ class ScalarJavaTypeCaptureTest {
     /** Every consumer scalar the store resolved, as "name javaType". */
     private static List<String> consumerScalars(DSLContext dsl) {
         var t = INTENT_SCALAR_JAVA_TYPE;
-        return dsl.select(t.fields())
+        return dsl.select(t.TYPE_NAME, t.JAVA_TYPE)
             .from(t)
             .where(t.GRAPH_NAME.eq(CapturedStore.GRAPH))
             .and(t.TYPE_NAME.like("%Money"))

@@ -130,7 +130,7 @@ class ConditionMembershipShadowTest {
     /** The fold's own keys for one graph, lower-cased so the two sides compare as values. */
     private static Set<String> admitted(DSLContext dsl, String graphName) {
         var m = INTENT_CONDITION_MEMBERSHIP;
-        return new LinkedHashSet<>(dsl.select(m.fields())
+        return new LinkedHashSet<>(dsl.select(m.TYPE_NAME, m.FIELD_NAME, m.TABLE_NAME)
             .from(m)
             .where(m.GRAPH_NAME.eq(graphName))
             .fetch(row -> key(row.get(m.TYPE_NAME), row.get(m.FIELD_NAME), row.get(m.TABLE_NAME))));

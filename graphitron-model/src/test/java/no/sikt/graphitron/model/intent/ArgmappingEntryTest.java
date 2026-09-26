@@ -330,7 +330,10 @@ class ArgmappingEntryTest {
     /** Every row of the graph under assertion. */
     private static List<Record> rows(DSLContext dsl) {
         derive(dsl);
-        return dsl.select(GRAPHITRON_ARGMAPPING_ENTRY.fields())
+        return dsl.select(GRAPHITRON_ARGMAPPING_ENTRY.SITE, GRAPHITRON_ARGMAPPING_ENTRY.USE_SITE,
+            GRAPHITRON_ARGMAPPING_ENTRY.ORDINAL, GRAPHITRON_ARGMAPPING_ENTRY.COORDINATE,
+            GRAPHITRON_ARGMAPPING_ENTRY.STEP_POSITION, GRAPHITRON_ARGMAPPING_ENTRY.PARAM_NAME,
+            GRAPHITRON_ARGMAPPING_ENTRY.WRITTEN_PATH, GRAPHITRON_ARGMAPPING_ENTRY.POSITION)
             .from(GRAPHITRON_ARGMAPPING_ENTRY)
             .where(GRAPHITRON_ARGMAPPING_ENTRY.GRAPH_NAME.eq(GRAPH))
             .fetch()

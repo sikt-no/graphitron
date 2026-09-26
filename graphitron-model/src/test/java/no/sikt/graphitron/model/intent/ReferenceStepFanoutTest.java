@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.intent;
 
 import org.jooq.DSLContext;
 import org.jooq.Record;
+import org.jooq.Record4;
 import org.jooq.Result;
 import org.junit.jupiter.api.Test;
 
@@ -354,13 +355,17 @@ class ReferenceStepFanoutTest {
         }
     }
 
-    private static Result<Record> fanout(DSLContext dsl) {
+    private static Result<Record4<String, Integer, String, String>> fanout(DSLContext dsl) {
         derive(dsl);
         return rowsOf(dsl, GRAPH);
     }
 
-    private static Result<Record> rowsOf(DSLContext dsl, String graphName) {
-        return dsl.select(INTENT_FIELD_REFERENCE_STEP_FANOUT.fields())
+    private static Result<Record4<String, Integer, String, String>>
+            rowsOf(DSLContext dsl, String graphName) {
+        return dsl.select(INTENT_FIELD_REFERENCE_STEP_FANOUT.COVERING_CONSTRAINT_NAME,
+            INTENT_FIELD_REFERENCE_STEP_FANOUT.POSITION,
+            INTENT_FIELD_REFERENCE_STEP_FANOUT.TABLE_NAME,
+            INTENT_FIELD_REFERENCE_STEP_FANOUT.VERDICT)
             .from(INTENT_FIELD_REFERENCE_STEP_FANOUT)
             .where(INTENT_FIELD_REFERENCE_STEP_FANOUT.GRAPH_NAME.eq(graphName))
             .orderBy(INTENT_FIELD_REFERENCE_STEP_FANOUT.TYPE_NAME,

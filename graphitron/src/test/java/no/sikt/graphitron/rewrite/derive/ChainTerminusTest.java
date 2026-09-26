@@ -5,6 +5,8 @@ import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.jooq.Record;
+import org.jooq.Record5;
+import org.jooq.Record6;
 import org.jooq.Result;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -313,8 +315,11 @@ class ChainTerminusTest {
             """.formatted(path);
     }
 
-    private static Result<Record> termini(DSLContext dsl) {
-        return dsl.select(INTENT_FIELD_CHAIN_TERMINUS.fields())
+    private static Result<Record6<String, String, Integer, Integer, Integer, String>>
+            termini(DSLContext dsl) {
+        return dsl.select(INTENT_FIELD_CHAIN_TERMINUS.VIA, INTENT_FIELD_CHAIN_TERMINUS.TABLE_TYPE,
+            INTENT_FIELD_CHAIN_TERMINUS.POSITION, INTENT_FIELD_CHAIN_TERMINUS.CANDIDATES,
+            INTENT_FIELD_CHAIN_TERMINUS.ORDINAL, INTENT_FIELD_CHAIN_TERMINUS.TABLE_NAME)
             .from(INTENT_FIELD_CHAIN_TERMINUS)
             .where(INTENT_FIELD_CHAIN_TERMINUS.GRAPH_NAME.eq(CapturedStore.GRAPH))
             .orderBy(INTENT_FIELD_CHAIN_TERMINUS.TYPE_NAME, INTENT_FIELD_CHAIN_TERMINUS.FIELD_NAME,
@@ -322,8 +327,13 @@ class ChainTerminusTest {
             .fetch();
     }
 
-    private static Result<Record> hops(DSLContext dsl, String via) {
-        return dsl.select(GRAPHITRON_FIELD_REFERENCE_STEP_HOP.fields())
+    private static Result<Record5<String, String, String, Boolean, String>>
+            hops(DSLContext dsl, String via) {
+        return dsl.select(GRAPHITRON_FIELD_REFERENCE_STEP_HOP.CONSTRAINT_NAME,
+            GRAPHITRON_FIELD_REFERENCE_STEP_HOP.FROM_TABLE,
+            GRAPHITRON_FIELD_REFERENCE_STEP_HOP.TO_TABLE,
+            GRAPHITRON_FIELD_REFERENCE_STEP_HOP.FK_ON_FROM,
+            GRAPHITRON_FIELD_REFERENCE_STEP_HOP.KEY_MATCHED_BY)
             .from(GRAPHITRON_FIELD_REFERENCE_STEP_HOP)
             .where(GRAPHITRON_FIELD_REFERENCE_STEP_HOP.GRAPH_NAME.eq(CapturedStore.GRAPH))
             .and(GRAPHITRON_FIELD_REFERENCE_STEP_HOP.VIA.eq(via))

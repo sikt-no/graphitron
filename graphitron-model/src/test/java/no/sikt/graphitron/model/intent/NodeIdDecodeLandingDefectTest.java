@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.intent;
 
 import org.jooq.DSLContext;
 import org.jooq.Record;
+import org.jooq.Record11;
 import org.jooq.Result;
 import org.junit.jupiter.api.Test;
 
@@ -546,14 +547,18 @@ class NodeIdDecodeLandingDefectTest {
         return rows(dsl).map(NodeIdDecodeLandingDefectTest::render);
     }
 
-    private static Result<Record> rows(DSLContext dsl) {
+    private static Result<Record11<String, String, String, String, String, String, Integer, String,
+            String, String, String>> rows(DSLContext dsl) {
         derive(dsl);
         return rowsIn(dsl, GRAPH);
     }
 
-    private static Result<Record> rowsIn(DSLContext dsl, String graphName) {
+    private static Result<Record11<String, String, String, String, String, String, Integer, String,
+            String, String, String>> rowsIn(DSLContext dsl, String graphName) {
         var v = INTENT_NODE_ID_DECODE_LANDING_DEFECT;
-        return dsl.select(v.fields())
+        return dsl.select(v.VERDICT, v.USE_SITE, v.ORIGIN_TABLE, v.NODE_TYPE_NAME, v.TERMINAL_TABLE,
+            v.TARGET_TABLE, v.POSITION, v.KEY_COLUMN_NAME, v.KEY_BINDING_TYPE, v.LOCAL_COLUMN_NAME,
+            v.LOCAL_BINDING_TYPE)
             .from(v)
             .where(v.GRAPH_NAME.eq(graphName))
             .orderBy(v.USE_SITE, v.ORIGIN_TABLE, v.VERDICT, v.POSITION)
@@ -579,7 +584,8 @@ class NodeIdDecodeLandingDefectTest {
     private static List<String> applications(DSLContext dsl) {
         derive(dsl);
         var a = INTENT_REFERENCE_FOR_APPLICATION;
-        return dsl.select(a.fields())
+        return dsl.select(a.SITE, a.TYPE_NAME, a.FIELD_NAME, a.ARGUMENT_NAME, a.ORDINAL,
+            a.CONSUMING_TYPE_NAME, a.CONSUMING_FIELD_NAME, a.PARTICIPANT_TYPE_NAME, a.TABLE_NAME)
             .from(a)
             .where(a.GRAPH_NAME.eq(GRAPH))
             .orderBy(a.SITE, a.TYPE_NAME, a.FIELD_NAME, a.ORDINAL,

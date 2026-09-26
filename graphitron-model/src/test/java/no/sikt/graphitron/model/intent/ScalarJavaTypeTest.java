@@ -156,7 +156,7 @@ class ScalarJavaTypeTest {
     private static List<String> typesIn(DSLContext dsl, String graphName) {
         derive(dsl);
         var t = INTENT_SCALAR_JAVA_TYPE;
-        return dsl.select(t.fields())
+        return dsl.select(t.TYPE_NAME, t.JAVA_TYPE)
             .from(t)
             .where(t.GRAPH_NAME.eq(graphName))
             .orderBy(t.TYPE_NAME)

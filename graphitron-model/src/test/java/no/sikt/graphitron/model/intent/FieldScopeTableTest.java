@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.intent;
 
 import org.jooq.DSLContext;
 import org.jooq.Record;
+import org.jooq.Record4;
 import org.jooq.Result;
 import org.junit.jupiter.api.Test;
 
@@ -369,13 +370,16 @@ class FieldScopeTableTest {
         }
     }
 
-    private static Result<Record> rows(DSLContext dsl) {
+    private static Result<Record4<String, String, String, String>> rows(DSLContext dsl) {
         return rowsIn(dsl, GRAPH);
     }
 
-    private static Result<Record> rowsIn(DSLContext dsl, String graphName) {
+    private static Result<Record4<String, String, String, String>>
+            rowsIn(DSLContext dsl, String graphName) {
         derive(dsl);
-        return dsl.select(GRAPHITRON_FIELD_SCOPE_TABLE.fields())
+        return dsl.select(GRAPHITRON_FIELD_SCOPE_TABLE.TYPE_NAME,
+            GRAPHITRON_FIELD_SCOPE_TABLE.FIELD_NAME, GRAPHITRON_FIELD_SCOPE_TABLE.BASIS,
+            GRAPHITRON_FIELD_SCOPE_TABLE.TABLE_NAME)
             .from(GRAPHITRON_FIELD_SCOPE_TABLE)
             .where(GRAPHITRON_FIELD_SCOPE_TABLE.GRAPH_NAME.eq(graphName))
             .orderBy(GRAPHITRON_FIELD_SCOPE_TABLE.TYPE_NAME,
@@ -387,7 +391,10 @@ class FieldScopeTableTest {
     /** The argument-grain fan-out, rendered the way its own test renders it. */
     private static List<String> argumentRows(DSLContext dsl) {
         derive(dsl);
-        return dsl.select(GRAPHITRON_ARGUMENT_SCOPE_TABLE.fields())
+        return dsl.select(GRAPHITRON_ARGUMENT_SCOPE_TABLE.TYPE_NAME,
+            GRAPHITRON_ARGUMENT_SCOPE_TABLE.FIELD_NAME,
+            GRAPHITRON_ARGUMENT_SCOPE_TABLE.ARGUMENT_NAME, GRAPHITRON_ARGUMENT_SCOPE_TABLE.BASIS,
+            GRAPHITRON_ARGUMENT_SCOPE_TABLE.TABLE_NAME)
             .from(GRAPHITRON_ARGUMENT_SCOPE_TABLE)
             .where(GRAPHITRON_ARGUMENT_SCOPE_TABLE.GRAPH_NAME.eq(GRAPH))
             .orderBy(GRAPHITRON_ARGUMENT_SCOPE_TABLE.TYPE_NAME,

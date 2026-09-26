@@ -521,7 +521,8 @@ class FactSchemaGateTest {
     @DisplayName("every directive application resolves to a captured definition")
     void everyApplicationResolvesToItsDefinition(@TempDir Path tmp) {
         try (var store = CapturedStore.ownStore(tmp, FIXTURE)) {
-            var defined = store.dsl().select(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME).from(GRAPHQL_DIRECTIVE);
+            var defined = store.dsl().select(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME)
+                .from(GRAPHQL_DIRECTIVE);
             assertThat(store.dsl().fetchCount(GRAPHQL_DIRECTIVE_APPLICATION,
                 GRAPHQL_DIRECTIVE_APPLICATION.DIRECTIVE_NAME.notIn(defined))).isZero();
         }

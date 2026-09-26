@@ -529,7 +529,10 @@ class NodeIdDecodeDestinationTest {
 
     private static List<String> slots(DSLContext dsl) {
         derive(dsl);
-        return dsl.select(INTENT_NODE_ID_DECODE_SLOT.fields())
+        return dsl.select(INTENT_NODE_ID_DECODE_SLOT.JAVA_TYPE, INTENT_NODE_ID_DECODE_SLOT.USE_SITE,
+            INTENT_NODE_ID_DECODE_SLOT.CARRIER, INTENT_NODE_ID_DECODE_SLOT.PARAM_NAME,
+            INTENT_NODE_ID_DECODE_SLOT.ROOT_TYPE_NAME, INTENT_NODE_ID_DECODE_SLOT.ROOT_FIELD_NAME,
+            INTENT_NODE_ID_DECODE_SLOT.ROOT_ARGUMENT_NAME, INTENT_NODE_ID_DECODE_SLOT.CANDIDATES)
             .from(INTENT_NODE_ID_DECODE_SLOT)
             .where(INTENT_NODE_ID_DECODE_SLOT.GRAPH_NAME.eq(GRAPH))
             .orderBy(INTENT_NODE_ID_DECODE_SLOT.USE_SITE, INTENT_NODE_ID_DECODE_SLOT.CARRIER,
@@ -540,7 +543,8 @@ class NodeIdDecodeDestinationTest {
 
     private static List<String> destinations(DSLContext dsl) {
         derive(dsl);
-        return dsl.select(INTENT_NODE_ID_DECODE.fields())
+        return dsl.select(INTENT_NODE_ID_DECODE.USE_SITE, INTENT_NODE_ID_DECODE.NODE_TYPE_NAME,
+            INTENT_NODE_ID_DECODE.DESTINATION, INTENT_NODE_ID_DECODE.ARITY)
             .from(INTENT_NODE_ID_DECODE)
             .where(INTENT_NODE_ID_DECODE.GRAPH_NAME.eq(GRAPH))
             .orderBy(INTENT_NODE_ID_DECODE.USE_SITE, INTENT_NODE_ID_DECODE.NODE_TYPE_NAME)

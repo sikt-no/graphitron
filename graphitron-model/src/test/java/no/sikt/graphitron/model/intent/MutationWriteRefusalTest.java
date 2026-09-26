@@ -172,7 +172,8 @@ class MutationWriteRefusalTest {
 
     private static List<String> refusals(DSLContext dsl) {
         derive(dsl);
-        return dsl.select(INTENT_MUTATION_WRITE_REFUSAL.fields())
+        return dsl.select(INTENT_MUTATION_WRITE_REFUSAL.CAUSE, INTENT_MUTATION_WRITE_REFUSAL.PATH,
+            INTENT_MUTATION_WRITE_REFUSAL.COLUMN_NAME)
             .from(INTENT_MUTATION_WRITE_REFUSAL)
             .where(INTENT_MUTATION_WRITE_REFUSAL.GRAPH_NAME.eq(GRAPH))
             .orderBy(INTENT_MUTATION_WRITE_REFUSAL.CAUSE,

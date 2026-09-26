@@ -3,6 +3,7 @@ package no.sikt.graphitron.model.intent;
 import no.sikt.graphitron.model.test.SeededStore.OccurrenceStep;
 import org.jooq.DSLContext;
 import org.jooq.Record;
+import org.jooq.Record5;
 import org.jooq.Result;
 import org.junit.jupiter.api.Test;
 
@@ -356,13 +357,17 @@ class InputFieldColumnScopeTest {
         }
     }
 
-    private static Result<Record> rows(DSLContext dsl) {
+    private static Result<Record5<String, String, String, String, String>> rows(DSLContext dsl) {
         return rowsIn(dsl, GRAPH);
     }
 
-    private static Result<Record> rowsIn(DSLContext dsl, String graphName) {
+    private static Result<Record5<String, String, String, String, String>>
+            rowsIn(DSLContext dsl, String graphName) {
         derive(dsl);
-        return dsl.select(INTENT_INPUT_FIELD_COLUMN_SCOPE.fields())
+        return dsl.select(INTENT_INPUT_FIELD_COLUMN_SCOPE.TYPE_NAME,
+            INTENT_INPUT_FIELD_COLUMN_SCOPE.FIELD_NAME,
+            INTENT_INPUT_FIELD_COLUMN_SCOPE.RESOLVING_TABLE, INTENT_INPUT_FIELD_COLUMN_SCOPE.BASIS,
+            INTENT_INPUT_FIELD_COLUMN_SCOPE.TABLE_NAME)
             .from(INTENT_INPUT_FIELD_COLUMN_SCOPE)
             .where(INTENT_INPUT_FIELD_COLUMN_SCOPE.GRAPH_NAME.eq(graphName))
             .orderBy(INTENT_INPUT_FIELD_COLUMN_SCOPE.TYPE_NAME,

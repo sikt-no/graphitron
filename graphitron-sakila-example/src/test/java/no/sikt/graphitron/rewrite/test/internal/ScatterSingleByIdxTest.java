@@ -74,7 +74,7 @@ class ScatterSingleByIdxTest {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static Result<Record> emptyResult() {
-        // newResult(Field, Field) returns Result<Record2<T1,T2>>; the scatter helper takes
+        // newResult(Field, Field) returns Result<Record2<T1, T2>>; the scatter helper takes
         // Result<Record>, which erases to the same runtime type — the cast is safe.
         return (Result) DSL_CTX.newResult(IDX_FIELD, VAL_FIELD);
     }

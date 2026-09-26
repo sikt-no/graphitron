@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.intent;
 
 import org.jooq.DSLContext;
 import org.jooq.Record;
+import org.jooq.Record5;
 import org.jooq.Result;
 import org.junit.jupiter.api.Test;
 
@@ -362,13 +363,17 @@ class ArgumentColumnScopeTest {
         }
     }
 
-    private static Result<Record> rows(DSLContext dsl) {
+    private static Result<Record5<String, String, String, String, String>> rows(DSLContext dsl) {
         return rowsIn(dsl, GRAPH);
     }
 
-    private static Result<Record> rowsIn(DSLContext dsl, String graphName) {
+    private static Result<Record5<String, String, String, String, String>>
+            rowsIn(DSLContext dsl, String graphName) {
         derive(dsl);
-        return dsl.select(GRAPHITRON_ARGUMENT_COLUMN_SCOPE.fields())
+        return dsl.select(GRAPHITRON_ARGUMENT_COLUMN_SCOPE.TYPE_NAME,
+            GRAPHITRON_ARGUMENT_COLUMN_SCOPE.FIELD_NAME,
+            GRAPHITRON_ARGUMENT_COLUMN_SCOPE.ARGUMENT_NAME, GRAPHITRON_ARGUMENT_COLUMN_SCOPE.BASIS,
+            GRAPHITRON_ARGUMENT_COLUMN_SCOPE.TABLE_NAME)
             .from(GRAPHITRON_ARGUMENT_COLUMN_SCOPE)
             .where(GRAPHITRON_ARGUMENT_COLUMN_SCOPE.GRAPH_NAME.eq(graphName))
             .orderBy(GRAPHITRON_ARGUMENT_COLUMN_SCOPE.TYPE_NAME,

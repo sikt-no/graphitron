@@ -481,7 +481,7 @@ class ErrorChannelRelationTest {
      */
     private static List<String> errorsFields(DSLContext dsl) {
         var e = INTENT_ERRORS_FIELD;
-        return dsl.select(e.fields())
+        return dsl.select(e.TYPE_NAME, e.FIELD_NAME, e.ORDINAL, e.CONTAINER_NAME, e.CONTAINER_KIND)
             .from(e)
             .where(e.GRAPH_NAME.eq(GRAPH))
             .orderBy(e.TYPE_NAME, e.FIELD_NAME)
@@ -494,7 +494,7 @@ class ErrorChannelRelationTest {
     /** Every mapped {@code @error} type, ordered as the relation orders them. */
     private static List<String> members(DSLContext dsl) {
         var m = INTENT_ERRORS_FIELD_MEMBER;
-        return dsl.select(m.fields())
+        return dsl.select(m.TYPE_NAME, m.FIELD_NAME, m.POSITION, m.ERROR_TYPE_NAME)
             .from(m)
             .where(m.GRAPH_NAME.eq(GRAPH))
             .orderBy(m.TYPE_NAME, m.FIELD_NAME, m.POSITION)
@@ -506,7 +506,7 @@ class ErrorChannelRelationTest {
     /** Every producing coordinate: family, the type its value arrives as, and where it sits. */
     private static List<String> producers(DSLContext dsl) {
         var p = INTENT_FIELD_PAYLOAD_PRODUCER;
-        return dsl.select(p.fields())
+        return dsl.select(p.TYPE_NAME, p.FIELD_NAME, p.FAMILY, p.PAYLOAD_TYPE_NAME, p.ROOT_OPERATION)
             .from(p)
             .where(p.GRAPH_NAME.eq(GRAPH))
             .orderBy(p.TYPE_NAME, p.FIELD_NAME, p.FAMILY)
@@ -523,7 +523,8 @@ class ErrorChannelRelationTest {
      */
     private static List<String> channels(DSLContext dsl) {
         var c = INTENT_FIELD_ERROR_CHANNEL;
-        return dsl.select(c.fields())
+        return dsl.select(c.TYPE_NAME, c.FIELD_NAME, c.TRANSPORT, c.FAMILY, c.PAYLOAD_TYPE_NAME,
+            c.ERRORS_FIELD_NAME, c.ERRORS_FIELD_ORDINAL, c.PAYLOAD_CLASS_NAME, c.PAYLOAD_CLASSES)
             .from(c)
             .where(c.GRAPH_NAME.eq(GRAPH))
             .orderBy(c.TYPE_NAME, c.FIELD_NAME, c.FAMILY)
