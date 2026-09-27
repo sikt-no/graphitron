@@ -141,13 +141,7 @@ public final class CodeRows {
         clazz(dsl, sourceName, className, readAt);
         String typeName = stated != null ? statedType(positions, stated)
             : resultTypeName(positions, descriptor);
-        dsl.insertInto(CODE_TYPE)
-            .set(CODE_TYPE.SOURCE_NAME, sourceName)
-            .set(CODE_TYPE.TYPE_NAME, typeName)
-            .set(CODE_TYPE.DISPLAY_NAME, withoutPackages(typeName))
-            .set(CODE_TYPE.TOUCHED_AT, readAt)
-            .onDuplicateKeyIgnore()
-            .execute();
+        type(dsl, sourceName, typeName, positions.get(""), readAt);
         String[] delivered = deliveredBy(positions);
         if (delivered != null) {
             dsl.insertInto(CODE_TYPE_ELEMENT)
@@ -277,7 +271,7 @@ public final class CodeRows {
                                  String role, LocalDateTime readAt) {
         String typeName = stated != null ? statedType(positions, stated)
             : resultTypeName(positions, "()Ljava/lang/Object;");
-        type(dsl, sourceName, typeName, readAt);
+        type(dsl, sourceName, typeName, positions.get(""), readAt);
         // What the position's own type delivers, on the terms a result type's is stated: a reader
         // peeling a parameter asks the same relation it asks of a return. After the type, which is
         // what it keys to.
@@ -325,13 +319,30 @@ public final class CodeRows {
             .execute();
     }
 
-    /** One type, idempotently, for a caller that is about to key to it. */
+    /**
+     * One type, idempotently, for a caller that is about to key to it.
+     *
+     * <p>The root is read off the spelling, which is what a caller holding only a name knows: a
+     * name carrying type arguments roots at the head, and a name that is a bare class roots at
+     * itself. A caller holding the positions states the root from those instead, the spelling not
+     * telling a primitive from a class and the positions doing.
+     */
     public static void type(DSLContext dsl, String sourceName, String typeName,
+                            LocalDateTime readAt) {
+        int arguments = typeName.indexOf('<');
+        String head = arguments < 0 ? typeName : typeName.substring(0, arguments);
+        type(dsl, sourceName, typeName, PACKAGED_NAME.matcher(head).matches() ? head : null,
+            readAt);
+    }
+
+    /** The same where the caller knows what the type names at its root, or that it names nothing. */
+    public static void type(DSLContext dsl, String sourceName, String typeName, String rootClass,
                             LocalDateTime readAt) {
         dsl.insertInto(CODE_TYPE)
             .set(CODE_TYPE.SOURCE_NAME, sourceName)
             .set(CODE_TYPE.TYPE_NAME, typeName)
             .set(CODE_TYPE.DISPLAY_NAME, withoutPackages(typeName))
+            .set(CODE_TYPE.ROOT_CLASS, rootClass)
             .set(CODE_TYPE.TOUCHED_AT, readAt)
             .onDuplicateKeyIgnore()
             .execute();

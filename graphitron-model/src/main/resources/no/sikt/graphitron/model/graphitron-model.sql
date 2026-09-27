@@ -6081,6 +6081,7 @@ CREATE TABLE code_type (
   source_name  VARCHAR NOT NULL,
   type_name    VARCHAR NOT NULL,
   display_name VARCHAR NOT NULL,
+  root_class   VARCHAR,
   touched_at   TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, type_name),
   FOREIGN KEY (source_name) REFERENCES store_source (source_name)
@@ -6156,6 +6157,7 @@ COMMENT ON COLUMN code_method_parameter.method_name IS 'the method, as on code_m
 COMMENT ON COLUMN code_method_parameter.descriptor IS 'the method''s descriptor, as on code_method; with the three columns above, the method this position belongs to, and the row is deleted with it';
 COMMENT ON COLUMN code_method_parameter.position IS 'the position in the parameter list, 0-based, completing the key. Position is the key and not the name, because a name is what a classfile may omit and a position is what it always carries';
 COMMENT ON COLUMN code_method_parameter.parameter_name IS 'the parameter''s name as the source declared it, or NULL where the class was compiled without -parameters and the classfile carries no MethodParameters attribute. What a GraphQL argument binds to and what an argMapping entry targets, so a run that finds it absent refuses the binding rather than guessing; a reader must not read NULL as an unnamed parameter';
+COMMENT ON COLUMN code_type.root_class IS 'the fully-qualified class the type names at its root position, type arguments dropped: java.util.List for a List<Film>, and the class itself where the type is one. NULL where the root names no class, which a primitive, a void, an array and a type variable are alike in, so a reader asking what a value has to be to be assigned here reads the absence as "not a class" and does not have to tell those four apart; type_name does tell them apart, for the reader that has to. What a position accepts, and deliberately not how many it accepts: a List<Film> accepts a list, and that it delivers films is code_type_element.delivery''s answer to a different question. The two are stated separately because they diverge exactly where it matters, a reader comparing against a jOOQ record class wanting the list and a reader asking whether one value can be handed over wanting the films';
 COMMENT ON COLUMN code_method_parameter.parameter_type IS 'the type bound at this position, by reference. A parameter is a binding rather than a description: what the type is and what it resolves to are the type''s own facts and are stated once however many positions carry it, which over this module''s main sources is thirteen hundred positions over two hundred types';
 COMMENT ON COLUMN code_method_parameter.role IS 'what the position is for as far as its type alone decides, in a closed vocabulary of four, and the four are exclusive because no type satisfies two of them. DSL_CONTEXT: the run''s own jOOQ context is passed here. TABLE_CONCRETE: the declaration names one generated table, and code_condition_method_parameter_table says which where the catalog holds it. TABLE_ANY: the declaration is org.jooq.Table itself, raw or wildcarded, or a type variable, so the position takes whatever table the site supplies. OTHER: everything else, whose role is the application''s to decide from the arguments and context keys in scope at the site. Decided here rather than by a reader because deciding it needs an assignability walk, which a reader either re-derives through a recursive closure or asks a loader for';
 COMMENT ON COLUMN code_method_parameter.extraction IS 'how a value bound to this position is coerced into it, decided by the declared type alone: ENUM_VALUE_OF where that type is an enum and DIRECT otherwise. The standing rule rather than the last word, a parameter bound to a slot carrying @nodeId receiving that slot''s decoded key instead, which intent_condition_param_decode states as the exception to this. Decided by loading the class, which is what makes it answerable for both populations at once: an author''s own enum and a generated one a column binds to, the second living in the package this reading excludes and so reachable no other way';
@@ -10996,21 +10998,19 @@ WITH hosted (graph_name, site, use_site, position, param_name, class_name, metho
       ON mr.graph_name = ap.graph_name AND mr.site = ap.site AND mr.use_site = ap.use_site
 ),
 resolved (graph_name, site, use_site, position, param_name, java_type, parameter_type) AS (
-  SELECT DISTINCT h.graph_name, h.site, h.use_site, h.position, h.param_name, tr.referenced_class,
-         mp.parameter_type
+  SELECT DISTINCT h.graph_name, h.site, h.use_site, h.position, h.param_name, ct.root_class,
+         ct.display_name
     FROM hosted h
     JOIN store_graph_source g ON g.graph_name = h.graph_name
-    JOIN jvm_method m
+    JOIN code_method m
       ON m.source_name = g.source_name AND m.class_name = h.class_name
      AND m.method_name = h.method
-    JOIN jvm_method_parameter mp
+    JOIN code_method_parameter mp
       ON mp.source_name = m.source_name AND mp.class_name = m.class_name
      AND mp.method_name = m.method_name AND mp.descriptor = m.descriptor
      AND mp.parameter_name = h.param_name
-    LEFT JOIN jvm_declared_type_ref tr
-      ON tr.source_name = mp.source_name AND tr.class_name = mp.class_name
-     AND tr.owner_name = mp.method_name AND tr.owner_descriptor = mp.descriptor
-     AND tr.owner_position = mp.position AND tr.type_path = '' AND tr.owner_kind = 'METHOD_PARAMETER'
+    JOIN code_type ct
+      ON ct.source_name = mp.source_name AND ct.type_name = mp.parameter_type
    UNION ALL
   SELECT DISTINCT ap.graph_name, ap.site, ap.use_site, ap.position, ap.param_name, rp.binding_type,
          CAST(NULL AS VARCHAR)
@@ -11035,9 +11035,9 @@ COMMENT ON COLUMN intent_argmapping_bound_parameter_type.site IS 'which SDL site
 COMMENT ON COLUMN intent_argmapping_bound_parameter_type.use_site IS 'the consuming coordinate, serialized as graphitron_argmapping_entry serializes it; carried rather than re-spelled, which is why the arms here join that relation instead of the eight owner relations directly';
 COMMENT ON COLUMN intent_argmapping_bound_parameter_type.position IS 'the pair''s 0-based position within its own argMapping list, completing the grain';
 COMMENT ON COLUMN intent_argmapping_bound_parameter_type.param_name IS 'the left side of the pair as the author wrote it, which is also the parameter name the match was made on';
-COMMENT ON COLUMN intent_argmapping_bound_parameter_type.java_type IS 'the parameter''s Java type, fully qualified: sql_routine_parameter.binding_type on the routine arm and jvm_declared_type_ref.referenced_class at the root type path on the other seven. Qualified on both by construction, which is the whole reason the classpath arm reads the decomposition rather than the parameter row beside it; the view''s own comment states that. The root of the declared type and so the raw head of a parameterised one, List rather than List<Film>: a comparison caring about the element type descends that relation''s own type_path rather than asking for a second column here';
+COMMENT ON COLUMN intent_argmapping_bound_parameter_type.java_type IS 'the parameter''s Java type, fully qualified: sql_routine_parameter.binding_type on the routine arm and code_type.root_class on the other seven. Qualified on both by construction, which is the whole reason the classpath arm reads the type rather than the parameter row beside it; the view''s own comment states that. The root of the declared type and so the raw head of a parameterised one, java.util.List rather than List<Film>: a comparison caring about what the type delivers instead reads code_type_element, which answers the other question and answers it for the same type key. NULL where the root names no class, which a primitive, a void, an array and a type variable are alike in; the reader that has to tell those apart reads the spelling beside it';
 COMMENT ON COLUMN intent_argmapping_bound_parameter_type.candidates IS 'how many distinct answers this pair resolved, this row''s being one of them; 1 on an unambiguous parameter. An answer is the pair of intent_argmapping_bound_parameter_type.java_type and intent_argmapping_bound_parameter_type.parameter_type, both being inside the arm''s own DISTINCT, so two untypeable overloads at one position (an int and a long) are two rows reporting 2 rather than one row claiming an unambiguous answer. 1 therefore says the resolution is unambiguous and no longer says a type resolved: intent_argmapping_bound_parameter_type.java_type is what says which of the two a row carries, and a reader needing a type tests that column rather than this one. Above one means an overload set or a doubly-declared class whose parameters of this name differ, which is a resolution nothing here picks between: a reader that must have one answer requires 1, on intent_bound_table.candidates'' terms';
-COMMENT ON COLUMN intent_argmapping_bound_parameter_type.parameter_type IS 'the erased source spelling of the parameter''s declared type, package dropped, from jvm_method_parameter.parameter_type; NULL on every routine-arm row, a database routine having no Java parameter row to read it from. Not a second spelling of intent_argmapping_bound_parameter_type.java_type and never compared with one: the two censuses spell a type differently and an equality across them would read as a genuine disagreement, which is the whole reason the classpath arm reaches jvm_declared_type_ref for the type at all. What this column is for is the one distinction that decomposition cannot make, a declared type that names no class being a primitive, an array or a type variable alike; a consumer refusing a primitive tests this against the eight primitive spellings, a closed vocabulary and the same spelling its message quotes. It rides here rather than being re-resolved downstream because the consumer already joins this relation on this grain, and re-spelling the classpath chain to reach one column would be a third spelling of one resolution';
+COMMENT ON COLUMN intent_argmapping_bound_parameter_type.parameter_type IS 'the source spelling of the parameter''s declared type with its packages dropped, from code_type.display_name; NULL on every routine-arm row, a database routine having no Java parameter row to read it from. The spelling a message shows a person, which is what the one reader does with it, naming the primitive an author declared where a boxed type was needed. It keeps its type arguments where the census spelling it replaced erased them, so two overloads taking a list of different elements are two answers at one position rather than one: that is a finer reading than before and the right one on this relation''s own terms, candidates existing to say that a position resolved more than one way rather than to collapse the ways. Not a second spelling of intent_argmapping_bound_parameter_type.java_type and never compared with one: the two spellings answer different questions and an equality across them would read as a genuine disagreement, which is the whole reason the classpath arm reaches code_type for the type at all. What this column is for is the one distinction that decomposition cannot make, a declared type that names no class being a primitive, an array or a type variable alike; a consumer refusing a primitive tests this against the eight primitive spellings, a closed vocabulary and the same spelling its message quotes. It rides here rather than being re-resolved downstream because the consumer already joins this relation on this grain, and re-spelling the classpath chain to reach one column would be a third spelling of one resolution';
 
 CREATE VIEW graphitron_argmapping_match
   (graph_name, site, use_site, type_name, field_name, position,
@@ -12137,20 +12137,18 @@ SELECT graph_name, site, type_name, field_name, argument_name, path, use_site,
                r.use_site, r.resolved_type_name, r.resolved_type_kind,
                r.root_type_name, r.root_field_name,
                r.root_argument_name, 'NAMED_PARAMETER',
-               mp.parameter_name, tr.referenced_class,
+               mp.parameter_name, ct.root_class,
                r.source_name, r.source_line, r.source_column
           FROM rooted r
           JOIN intent_field_producer_method pm
             ON pm.graph_name = r.graph_name AND pm.type_name = r.root_type_name
            AND pm.field_name = r.root_field_name
-          JOIN jvm_method_parameter mp
+          JOIN code_method_parameter mp
             ON mp.source_name = pm.source_name AND mp.class_name = pm.class_name
            AND mp.method_name = pm.method_name AND mp.descriptor = pm.descriptor
            AND mp.parameter_name = r.root_argument_name
-          LEFT JOIN jvm_declared_type_ref tr
-            ON tr.source_name = mp.source_name AND tr.class_name = mp.class_name
-           AND tr.owner_name = mp.method_name AND tr.owner_descriptor = mp.descriptor
-           AND tr.owner_position = mp.position AND tr.type_path = '' AND tr.owner_kind = 'METHOD_PARAMETER'
+          JOIN code_type ct
+            ON ct.source_name = mp.source_name AND ct.type_name = mp.parameter_type
          WHERE NOT EXISTS (SELECT 1 FROM graphitron_argmapping_entry x
                              JOIN graphql_element_field xf
                                ON xf.graph_name = x.graph_name

@@ -325,17 +325,18 @@ public final class CodeCapture {
      */
     private static void types(DSLContext dsl, List<Member> members,
                               Map<String, Container> containers, LocalDateTime touchedAt) {
-        record Written(String source, String typeName, String displayName, Delivery delivery) {}
+        record Written(String source, String typeName, String displayName, String rootClass,
+                       Delivery delivery) {}
         var byKey = new java.util.LinkedHashMap<String, Written>();
         for (Member member : members) {
             byKey.putIfAbsent(member.source() + '\u0000' + member.at().qualifiedReturnType(),
                 new Written(member.source(), member.at().qualifiedReturnType(),
-                    member.at().declaredReturnType(),
+                    member.at().declaredReturnType(), rootOf(member.at().returnTypeRefs()),
                     deliveryOf(member.at().returnTypeRefs(), containers)));
             for (ClassfileCensus.ParameterAt parameter : member.at().parameters()) {
                 byKey.putIfAbsent(member.source() + '\u0000' + parameter.qualifiedType(),
                     new Written(member.source(), parameter.qualifiedType(),
-                        parameter.declaredType(),
+                        parameter.declaredType(), rootOf(parameter.typeRefs()),
                         deliveryOf(parameter.typeRefs(), containers)));
             }
         }
@@ -349,13 +350,14 @@ public final class CodeCapture {
             }
             String element = written.delivery().elementClass();
             byKey.putIfAbsent(written.source() + '\u0000' + element,
-                new Written(written.source(), element, simpleName(element), null));
+                new Written(written.source(), element, simpleName(element), element, null));
         }
         if (byKey.isEmpty()) {
             return;
         }
         writeTypes(dsl, byKey.values().stream()
-            .map(row -> new Named(row.source(), row.typeName(), row.displayName()))
+            .map(row -> new Named(row.source(), row.typeName(), row.displayName(),
+                row.rootClass()))
             .toList(), touchedAt);
 
         var resolved = byKey.values().stream().filter(row -> row.delivery() != null).toList();
@@ -433,7 +435,7 @@ public final class CodeCapture {
         // found rather than by where the method behind it was.
         writeTypes(dsl, found.stream()
             .map(row -> new Named(row.source(), row.at().qualifiedReturnType(),
-                row.at().declaredReturnType()))
+                row.at().declaredReturnType(), rootOf(row.at().returnTypeRefs())))
             .toList(), touchedAt);
         var t = CODE_TYPE_SLOT;
         var rows = found.stream().collect(Rows.toRowList(
@@ -588,7 +590,7 @@ public final class CodeCapture {
         for (Made row : made) {
             named.putIfAbsent(row.at().source() + '\u0000' + row.at().className(),
                 new Named(row.at().source(), row.at().className(),
-                    simpleName(row.at().className())));
+                    simpleName(row.at().className()), row.at().className()));
             var carried = "POSITIONAL".equals(row.shape())
                 ? row.constructor().parameters()
                 : settersOf(row.at(), byName).stream()
@@ -597,7 +599,7 @@ public final class CodeCapture {
             for (ClassfileCensus.ParameterAt parameter : carried) {
                 named.putIfAbsent(row.at().source() + '\u0000' + parameter.qualifiedType(),
                     new Named(row.at().source(), parameter.qualifiedType(),
-                        parameter.declaredType()));
+                        parameter.declaredType(), rootOf(parameter.typeRefs())));
             }
         }
         writeTypes(dsl, List.copyOf(named.values()), touchedAt);
@@ -776,7 +778,8 @@ public final class CodeCapture {
     }
 
     /** One type as this gatherer names it: where it was read, its key, and how it renders. */
-    private record Named(String source, String typeName, String displayName) {}
+    private record Named(String source, String typeName, String displayName,
+                         String rootClass) {}
 
     /**
      * The type rows, idempotently.
@@ -795,13 +798,33 @@ public final class CodeCapture {
             row -> val(row.source(), t.SOURCE_NAME),
             row -> val(row.typeName(), t.TYPE_NAME),
             row -> val(row.displayName(), t.DISPLAY_NAME),
+            row -> val(row.rootClass(), t.ROOT_CLASS),
             row -> val(touchedAt, t.TOUCHED_AT)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.SOURCE_NAME, t.TYPE_NAME, t.DISPLAY_NAME, t.TOUCHED_AT)
+            dsl.insertInto(t, t.SOURCE_NAME, t.TYPE_NAME, t.DISPLAY_NAME, t.ROOT_CLASS,
+                    t.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.DISPLAY_NAME, excluded(t.DISPLAY_NAME))
+                .set(t.ROOT_CLASS, excluded(t.ROOT_CLASS))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+    }
+
+    /**
+     * The class a declared type names at its root, or null where it names none.
+     *
+     * <p>Not a step of the peel and not derivable from one: the peel descends and answers what the
+     * type delivers, and this stays where the declaration starts and answers what the type is. They
+     * agree only on a type that is a class already, which is exactly the population where the
+     * distinction does not arise.
+     */
+    private static String rootOf(List<ClassfileCensus.TypeRefAt> refs) {
+        for (ClassfileCensus.TypeRefAt ref : refs) {
+            if (ref.path().isEmpty()) {
+                return ref.referencedClass();
+            }
+        }
+        return null;
     }
 
     /** A binary class name as a surface renders it, which for a bare class is its last segment. */

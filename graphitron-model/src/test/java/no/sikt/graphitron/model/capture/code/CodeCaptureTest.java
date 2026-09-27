@@ -567,6 +567,50 @@ class CodeCaptureTest {
                 .isEqualTo("java.lang.String MANY"));
     }
 
+    /**
+     * What a type is, beside what it delivers. The two answer different questions and the cases
+     * that matter are the ones where they differ: a list of strings is a list, and delivers
+     * strings. A reader comparing a parameter against a class it must accept wants the first, and
+     * a reader asking whether one value can be handed over wants the second, so a model carrying
+     * only the peel would have made the first reader descend to an answer it does not want.
+     */
+    @Test
+    @DisplayName("a type names a class at its root, which is not what it delivers")
+    void theRootIsNotTheElement() {
+        withReactorCapture(dsl -> {
+            assertThat(rootOf(dsl, "manyStrings"))
+                .as("the list is what the position is, whatever it holds")
+                .isEqualTo("java.util.List");
+            assertThat(rootOf(dsl, "oneString"))
+                .as("and the two agree exactly where nothing was peeled")
+                .isEqualTo("java.lang.String");
+            assertThat(rootOf(dsl, "anythingAtAll"))
+                .as("an unbounded wildcard leaves the container as both")
+                .isEqualTo("java.util.List");
+            assertThat(rootOf(dsl, "deeplyNested"))
+                .as("and depth changes nothing here, the root being where a declaration starts")
+                .isEqualTo("java.util.concurrent.CompletableFuture");
+        });
+    }
+
+    /**
+     * A root that names no class is absent rather than spelled, on the terms the delivery beside
+     * it is. The spelling is still there to be read, which is what tells the silences apart for a
+     * reader that has to: this column does not, and says so by being null for both.
+     */
+    @Test
+    @DisplayName("a type naming no class at its root says so with a null")
+    void aTypeNamingNoClassHasNoRoot() {
+        withReactorCapture(dsl -> {
+            assertThat(rootOf(dsl, "aCount")).as("a primitive").isNull();
+            assertThat(rootOf(dsl, "nothingAtAll")).as("and a void").isNull();
+            assertThat(spellingOf(dsl, "aCount"))
+                .as("while the spelling still tells one from the other")
+                .isEqualTo("int");
+            assertThat(spellingOf(dsl, "nothingAtAll")).isEqualTo("void");
+        });
+    }
+
     /** A return that names no class delivers nothing, and absence is how that is said. */
     @Test
     @DisplayName("a return naming no class has no delivery at all")
@@ -829,6 +873,28 @@ class CodeCaptureTest {
             .where(m.CLASS_NAME.eq(SERVICES))
             .and(m.METHOD_NAME.eq(methodName))
             .fetchOne(row -> row.value1() + " " + row.value2());
+    }
+
+    /** The class one method's result type names at its root, or null where it names none. */
+    private static String rootOf(DSLContext dsl, String methodName) {
+        return resultType(dsl, methodName).get(CODE_TYPE.ROOT_CLASS);
+    }
+
+    /** The same result type's own spelling, which is what tells the rootless cases apart. */
+    private static String spellingOf(DSLContext dsl, String methodName) {
+        return resultType(dsl, methodName).get(CODE_TYPE.TYPE_NAME);
+    }
+
+    /** The type row one method results in. */
+    private static org.jooq.Record resultType(DSLContext dsl, String methodName) {
+        var m = CODE_METHOD;
+        return dsl.select(CODE_TYPE.TYPE_NAME, CODE_TYPE.ROOT_CLASS)
+            .from(m)
+            .join(CODE_TYPE).on(CODE_TYPE.SOURCE_NAME.eq(m.SOURCE_NAME),
+                CODE_TYPE.TYPE_NAME.eq(m.RESULT_TYPE))
+            .where(m.CLASS_NAME.eq(SERVICES))
+            .and(m.METHOD_NAME.eq(methodName))
+            .fetchSingle();
     }
 
     /** What one position's type resolves to, on {@link #deliveryOf}'s terms. */
