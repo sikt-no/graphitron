@@ -85,13 +85,44 @@ SDL → classified model → generated `TypeSpec`.
 
 *Where:* `graphitron/src/test/java/no/sikt/graphitron/rewrite/`.
 
+== What a test is built out of
+
+The tree keeps a *library of examples* and tests draw on it. Real service methods in
+`graphitron-sakila-service`, real tables and routines in `graphitron-sakila-db`, and SDL documents
+that use them. A test names an example and asserts what the store holds for it, so one test covers
+the reading and the model together: a derived relation asserted with no facts under it tests a view
+over rows somebody wrote, and a reading asserted with nothing consuming it tests a gatherer nobody
+reads. They are two sides of one subject and testing either alone is a missed opportunity.
+
+The library is the asset, and tests are not its only reader. A corpus document already renders into
+the published site, its prose carried as SDL descriptions and its operation handed to the
+documentation renderer, so the example a test asserts against is the example a reader is shown. The
+same holds for the Java and SQL halves: a page explaining what `@service` reaches can name a method
+that exists, compiles and is captured, rather than printing a plausible-looking snippet that nothing
+checks. One example, several readers, and they cannot drift apart because there is only one of it.
+
+So a shape a test needs and cannot find is a method to write in the service module or a table to add
+to the schema, and it then serves every later test and every page that cites it; a shape stated as
+rows serves one assertion and disappears with it.
+
+Two things that are not examples, and should not be built as though they were:
+
+* *Rows written straight into the store.* `SeededStore` exists because the gatherers once lived in
+  a module its tests could not run a capture from. That is no longer so, and it is being dissolved.
+  A seeded fixture writes both halves of a claim and nothing checks the halves against each other,
+  so it can state a shape no reading produces: several have, and they could not fail for the reason
+  they existed. Prefer a document naming a real example.
+* *Strange patterns nobody writes.* A rule that should hold across arbitrary shapes is a property
+  test generating them, not a fixture hand-building one of them. Building exotic input a row at a
+  time has a fixture's cost, a single point's coverage, and no guarantee the point is reachable.
+
 Two shapes:
 
 *Classification truth tables:* `GraphitronSchemaBuilderTest`.
 Each variant family is a `// ===== VariantName =====` section with an enum where each constant is one `(description, SDL, assertion)` triple; one parameterised test iterates the table.
 
-*The spec-by-example corpus:* `graphitron/src/test/resources/corpus/`, one GraphQL document per example, loaded by `CorpusDocuments`.
-This is the tree's only folder-of-documents fixture set, and the only fixture home a test reads from the source tree rather than the classpath, so what is asserted is exactly what an author edits.
+*The spec-by-example corpus:* `graphitron-model/src/test/resources/corpus/`, one GraphQL document per example, loaded by `CorpusDocuments`.
+It sits beside `facts/`, whose documents are about the shape of the store rather than about a classification verdict; both are read from the source tree rather than the classpath, so what is asserted is exactly what an author edits.
 A document carries its annotated fixture, its prose as SDL descriptions, and optionally a projection operation as its last definition; the loader splits the file at that line, hands the type-system half to classification and the operation to the documentation renderer.
 Every reader of the corpus goes through the loader (`ClassifiedDslTest`, `VariantCoverageTest`, the `derive/*ShadowTest` sweeps, the documentation fragment approval), and nothing else lists the directory.
 A document states what the fact store holds for it by applying `@expectEquals(relation:, rows:)` to the schema, once per asserted relation, its rows as CSV; `CorpusExpectationTest` captures the whole corpus into one store, one graph per document, and compares each block against its relation by anti-join in both directions, so a failure is a row.
