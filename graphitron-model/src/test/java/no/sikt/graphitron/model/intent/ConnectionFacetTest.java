@@ -41,116 +41,26 @@ class ConnectionFacetTest {
 
     // ===== What a carrier surfaces =====
 
-    /**
-     * The ordinary case, read column by column: the carrier's coordinate, the argument the facet's
-     * binding rides in, the application's own coordinate, and what it binds.
-     */
-    @Test
-    void theRowNamesTheCarrierTheArgumentAndTheApplication() {
-        withStore(dsl -> {
-            carrier(dsl, "films", "filter", "FilmFilter", 0);
-            facet(dsl, "FilmFilter", "rating", 0, "rating");
 
-            var row = rows(dsl).getFirst();
-            assertThat(row.get(GRAPHITRON_CONNECTION_FACET.TYPE_NAME)).isEqualTo("Query");
-            assertThat(row.get(GRAPHITRON_CONNECTION_FACET.FIELD_NAME)).isEqualTo("films");
-            assertThat(row.get(GRAPHITRON_CONNECTION_FACET.POSITION)).isEqualTo(1);
-            assertThat(row.get(GRAPHITRON_CONNECTION_FACET.FILTER_ARGUMENT_NAME)).isEqualTo("filter");
-            assertThat(row.get(GRAPHITRON_CONNECTION_FACET.FACET_TYPE_NAME)).isEqualTo("FilmFilter");
-            assertThat(row.get(GRAPHITRON_CONNECTION_FACET.FACET_FIELD_NAME)).isEqualTo("rating");
-            assertThat(row.get(GRAPHITRON_CONNECTION_FACET.COLUMN_NAME)).isEqualTo("rating");
-            assertThat(row.get(GRAPHITRON_CONNECTION_FACET.VALUE_TYPE_NAME)).isEqualTo("String");
-            assertThat(row.get(GRAPHITRON_CONNECTION_FACET.VALUE_NULLABLE)).isTrue();
-        });
-    }
 
-    /**
-     * The order is the carrier's arguments in declaration order, then each input type's facets in
-     * theirs, numbered densely from one. Both halves are needed to pin it: a fixture whose second
-     * argument carried the earlier-declared facet passes either way if only one is read.
-     */
-    @Test
-    void facetsSurfaceInArgumentThenApplicationOrder() {
-        withStore(dsl -> {
-            carrier(dsl, "films", "filter", "FilmFilter", 0);
-            argument(dsl, "films", "shape", "ShapeFilter", 1);
-            facet(dsl, "FilmFilter", "language", 1, "language");
-            facet(dsl, "FilmFilter", "rating", 0, "rating");
-            facet(dsl, "ShapeFilter", "length", 0, "length");
-
-            assertThat(rows(dsl).map(ConnectionFacetTest::render))
-                .containsExactly("1 filter.rating", "2 filter.language", "3 shape.length");
-        });
-    }
-
-    /** Two carriers over one filter input each surface its facets; the input type is not the grain. */
-    @Test
-    void twoCarriersOverOneFilterInputEachSurfaceItsFacets() {
-        withStore(dsl -> {
-            carrier(dsl, "films", "filter", "FilmFilter", 0);
-            carrier(dsl, "archivedFilms", "filter", "FilmFilter", 0);
-            facet(dsl, "FilmFilter", "rating", 0, "rating");
-
-            assertThat(rows(dsl).map(r -> r.get(GRAPHITRON_CONNECTION_FACET.FIELD_NAME)
-                    + ":" + render(r)))
-                .containsExactlyInAnyOrder("films:1 filter.rating",
-                                           "archivedFilms:1 filter.rating");
-        });
-    }
 
     // ===== Which carriers are carriers =====
 
-    /**
-     * The population is the expansion and not the directive. An {@code @asConnection} the macro
-     * declined to expand rewrote no type and mints no facets object, so it surfaces nothing, and
-     * neither does an ordinary field returning a Connection the author declared: that shape is the
-     * author's and the promoter appends no facets to it.
-     */
-    @Test
-    void onlyTheCarriersTheMacroExpandedSurfaceFacets() {
-        withStore(dsl -> {
-            seedType(dsl, GRAPH, "FilmConnection", "OBJECT");
-            seedField(dsl, GRAPH, "Query", "films", "FilmConnection", false);
-            seedArgument(dsl, GRAPH, "Query", "films", "filter", "FilmFilter", 0, 2);
-            seedConnection(dsl, GRAPH, "Query", "films");
-            seedField(dsl, GRAPH, "Query", "declared", "FilmConnection", false);
-            seedArgument(dsl, GRAPH, "Query", "declared", "filter", "FilmFilter", 0, 2);
-            facet(dsl, "FilmFilter", "rating", 0, "rating");
 
-            assertThat(rows(dsl)).isEmpty();
-        });
-    }
 
-    /**
-     * An input type no carrier names surfaces nothing, which is the dead-schema decline: the facets
-     * object such an application would fill has no field to hang off.
-     */
-    @Test
-    void anInputTypeNoCarrierNamesSurfacesNoFacets() {
-        withStore(dsl -> {
-            carrier(dsl, "films", "filter", "FilmFilter", 0);
-            facet(dsl, "OtherFilter", "rating", 0, "rating");
 
-            assertThat(rows(dsl)).isEmpty();
-        });
-    }
 
-    /**
-     * Reachability is one hop. A facet on a type nested inside the carrier's filter input is not
-     * this carrier's: the walk this relation transcribes reads the argument's own type's fields,
-     * and a transitive closure would surface facets no facets object has a field for.
-     */
-    @Test
-    void aFacetOnANestedInputTypeIsNotReached() {
-        withStore(dsl -> {
-            carrier(dsl, "films", "filter", "FilmFilter", 0);
-            seedType(dsl, GRAPH, "NestedFilter", "INPUT_OBJECT");
-            seedInputField(dsl, GRAPH, "FilmFilter", "nested", "NestedFilter", 0, false, false, null);
-            facet(dsl, "NestedFilter", "rating", 0, "rating");
-
-            assertThat(rows(dsl)).isEmpty();
-        });
-    }
+    // Seven cases moved to facts/connection-facet.graphqls, where a document writes the carriers
+    // and the expansion surfaces what it surfaces: the ordinary row, the argument-then-application
+    // order, two carriers over one filter input, and three declines, an unnamed input type, a facet
+    // a hop too far in, and a Connection the author declared rather than the expansion made. The
+    // graph partition went with them, the fact corpus holding every document's graph in one store
+    // and so checking it on every claim rather than in the one case that asked.
+    //
+    // What is left is the collapse, and it stays seeded because this file already says why: the
+    // duplicate a collapse resolves is itself a rejection, so on a schema that assembles it never
+    // fires. A document cannot state it without being refused, which makes these two cases a
+    // statement about a branch reached only from inside the store.
 
     // ===== The first-wins collapse =====
 
@@ -193,16 +103,6 @@ class ConnectionFacetTest {
         });
     }
 
-    /** The graph partition holds: a sibling graph's carriers surface none of these facets. */
-    @Test
-    void aSiblingGraphSurfacesNoneOfTheseFacets() {
-        withStore(dsl -> {
-            carrier(dsl, "films", "filter", "FilmFilter", 0);
-            facet(dsl, "FilmFilter", "rating", 0, "rating");
-
-            assertThat(rowsIn(dsl, "other")).isEmpty();
-        });
-    }
 
     // ===== Fixture =====
 

@@ -1,0 +1,55 @@
+"Which facets a connection carrier surfaces, and in which order. Two carriers share one filter input, so the input type is visibly not the grain; a second filter argument pins that the order is arguments first and then each input's own applications; and three declines sit beside them, each for a different reason: an application on an input type no carrier names, one a hop further in than the carrier's own argument, and a field returning a Connection the author declared, which the expansion never touched and appends nothing to."
+input NestedFilter {
+  "Not reached: reachability is one hop, and this sits behind the carrier's own argument."
+  deep: String @field(name: "deep") @asFacet
+}
+
+input OtherFilter {
+  "Not surfaced: no carrier names this input type, so there is no facets object to hang off."
+  unused: String @field(name: "unused") @asFacet
+}
+
+input ShapeFilter {
+  length: String @field(name: "length") @asFacet
+}
+
+input FilmFilter {
+  rating: String @field(name: "rating") @asFacet
+  language: String @field(name: "language") @asFacet
+  nested: NestedFilter
+}
+
+type Film @table(name: "film") { filmId: ID rating: String }
+
+type FilmEdge { cursor: String! node: Film! }
+
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+"An authored connection, which the expansion did not make and appends no facets to."
+type FilmConnection {
+  edges: [FilmEdge!]!
+  nodes: [Film!]!
+  pageInfo: PageInfo!
+}
+
+extend type Query {
+  films(filter: FilmFilter, shape: ShapeFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
+  archivedFilms(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
+  "Surfaces nothing: the author wrote this shape and the expansion never rewrote it."
+  declared(filter: FilmFilter): FilmConnection
+}
+
+# The whole population, so a decline that started surfacing arrives as a row nobody asked for.
+extend schema @expectEquals(relation: "graphitron_connection_facet", rows: """
+  type_name, field_name,    position, filter_argument_name, facet_type_name, facet_field_name, column_name
+  Query,     films,         1,        filter,               FilmFilter,      rating,           rating
+  Query,     films,         2,        filter,               FilmFilter,      language,         language
+  Query,     films,         3,        shape,                ShapeFilter,     length,           length
+  Query,     archivedFilms, 1,        filter,               FilmFilter,      rating,           rating
+  Query,     archivedFilms, 2,        filter,               FilmFilter,      language,         language
+  """)
