@@ -12395,19 +12395,23 @@ SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
     ON sh.graph_name = i.graph_name AND sh.container_name = i.container_name
  WHERE NOT EXISTS (SELECT 1 FROM intent_node_id_decode_slot s
                     WHERE s.graph_name = i.graph_name AND s.use_site = i.use_site)
-   -- And stand aside where the slot relation's silence is the classpath census's rather than the
-   -- schema's. intent_field_producer_method's own comment separates the two causes of its absence:
-   -- no jvm_class row under the graph's sources means the census never reached the class, while a
+   -- And stand aside where the slot relation's silence is the reading's rather than the schema's.
+   -- intent_field_producer_method's own comment separates the two causes of its absence: no
+   -- code_class row under the graph's sources means the reading never reached the class, while a
    -- class row with no method row means the class declares no method of that name. Only the second
    -- is an author error; the first is a graph captured without the entry the producer lives in, and
    -- a verdict fired on it would refuse a schema nobody could read the other half of. That is the
    -- silence this family exists to close rather than a second one to open, and it falls in one
-   -- direction: a coordinate whose producer class the census missed draws nothing here.
+   -- direction: a coordinate whose producer class the reading missed draws nothing here.
+   --
+   -- code_class is the whole reading and not the reactor, which is what lets this ask the question
+   -- it means: a producer declared in a jar was reached, and reading a reactor-scoped relation here
+   -- would call it missing and stand the verdict down on a schema that is in fact readable.
    AND NOT EXISTS (SELECT 1 FROM intent_field_producer_reference r
                     WHERE r.graph_name = i.graph_name AND r.type_name = i.root_type_name
                       AND r.field_name = i.root_field_name
                       AND NOT EXISTS (SELECT 1 FROM store_graph_source g
-                                        JOIN jvm_class c
+                                        JOIN code_class c
                                           ON c.source_name = g.source_name
                                          AND c.class_name = r.class_name
                                        WHERE g.graph_name = r.graph_name))

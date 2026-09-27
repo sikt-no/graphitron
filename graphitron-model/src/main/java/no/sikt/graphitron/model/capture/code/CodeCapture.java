@@ -137,6 +137,12 @@ public final class CodeCapture {
         // The entry rows are the corpus reader's, not this gatherer's: one reading of the
         // classpath records where its rows came from, and two writers of that would be two
         // answers to the same question.
+        // Every class read, ahead of everything that names one. Its own call rather than a step
+        // of the methods pass below, which is scoped to the reactor: whether the reading reached a
+        // class at all is a question about the classpath and not about which part of it a build
+        // compiled, and a reader telling "no such method on that class" from "no such class" is
+        // asking the first. Scoping it was inherited from the call site it used to sit in.
+        classes(dsl, census.classes(), touchedAt);
         scalarConstants(dsl, census.classes(), loader, touchedAt);
         var reactor = reactorClasses(census);
         var ancestry = new ClassAncestry(census.classes(), loader);
@@ -261,7 +267,6 @@ public final class CodeCapture {
      */
     private static void methods(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
                                 ClassAncestry ancestry, LocalDateTime touchedAt) {
-        classes(dsl, classes, touchedAt);
         record Declared(String source, String className, ClassfileCensus.MethodAt at) {}
         var found = new ArrayList<Declared>();
         for (ClassfileCensus.ClassAt at : classes) {
@@ -759,6 +764,11 @@ public final class CodeCapture {
      * an editor asking whether a name an author typed is on the classpath, a completion listing
      * what is there, and a route telling "no such method on that class" apart from "no such class",
      * which no relation of candidates can say by itself.
+     *
+     * <p>Every class, and not the reactor's: all three of those readers ask about the classpath
+     * rather than about what a build compiled, and a jOOQ interface on a declared jar is a class an
+     * author can name. The arms above this are scoped and this is not, which is the difference
+     * between asking what may carry a directive and asking what is there at all.
      */
     private static void classes(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
                                 LocalDateTime touchedAt) {

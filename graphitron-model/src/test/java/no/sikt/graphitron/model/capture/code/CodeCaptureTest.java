@@ -13,6 +13,7 @@ import java.util.function.Consumer;
 import org.jooq.DSLContext;
 
 import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD;
+import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_EXCEPTION;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
@@ -116,6 +117,38 @@ class CodeCaptureTest {
                     CODE_THROWABLE.CLASS_NAME.eq("graphql.AssertException")))
                 .as("and the throwables, on the same grounds")
                 .isZero();
+        });
+    }
+
+    /**
+     * The class anchor is the whole reading, where the arms above it are the reactor's. A jOOQ
+     * interface on a declared jar is a class an author can name, so whether the reading reached it
+     * is a fact about the classpath rather than about what this build compiled.
+     *
+     * <p>Both halves in one case, because either alone would pass for the wrong reason. The row
+     * being present says the anchor is not scoped; the method rows being absent beside it says the
+     * arms still are, so a scope that had leaked upward would be caught here rather than read as
+     * this rule working.
+     *
+     * <p>What the pair buys a reader is the difference between "no such method on that class" and
+     * "no such class", which is a distinction no relation of candidates can draw by itself and
+     * which a reader standing a verdict down on a half-captured store depends on.
+     */
+    @Test
+    @DisplayName("every class read is anchored, including the ones no arm may admit")
+    void theClassAnchorIsTheWholeReading() {
+        withReactorCapture(dsl -> {
+            assertThat(dsl.fetchCount(CODE_CLASS,
+                    CODE_CLASS.CLASS_NAME.eq("org.jooq.Condition")))
+                .as("a class on a declared jar is a class the reading reached")
+                .isEqualTo(1);
+            assertThat(dsl.fetchCount(CODE_METHOD,
+                    CODE_METHOD.CLASS_NAME.eq("org.jooq.Condition")))
+                .as("while what it declares stays the reactor's question, so nothing is admitted")
+                .isZero();
+            assertThat(dsl.fetchCount(CODE_CLASS, CODE_CLASS.CLASS_NAME.eq(SERVICES)))
+                .as("and the reactor's own classes are anchored on the same terms")
+                .isEqualTo(1);
         });
     }
 
