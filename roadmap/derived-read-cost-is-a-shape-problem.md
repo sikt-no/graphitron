@@ -153,6 +153,28 @@ this one, and the read-time relations neither of them has displaced yet.
 * **The assembly pass is inside the stage-order gate** `blocked`, on R969. `StageOrderGateTest` models
   the derivation stratum only, so the three chain stages run in a hand-kept order nothing checks.
 
+### A reference resolves where its directive is decoded
+
+Eleven `intent_` views join an authored directive to the classpath, which is a resolution rather than
+a derivation over either corpus alone, and `graphitron_` already does this against the catalog:
+`FieldReferenceStepHops` reads a spelled step entry and `sql_`, writes owned tables, and reaches
+`code_` only through one of these views.
+
+* **Four of the eleven reach a reader or go** `open`. `intent_condition_context_parameter`,
+  `intent_external_field_contract_defect`, `intent_producer_cardinality_conflict` and
+  `intent_scalar_java_type` are read by their own tests and by nothing else, so each is an unfinished
+  arm or a question that stopped mattering, and which one is a decision rather than a discovery.
+* **The condition route resolves in `graphitron_`** `open`, and is first because its reader already
+  writes that family against the catalog, so the move is a read changing target rather than a shape
+  being invented.
+* **The producer resolution resolves in `graphitron_`** `open`. `intent_field_producer_method` is the
+  resolution the other arms hang on, and four of the eleven read it.
+* **The type questions follow it** `blocked`, on the producer resolution, because a `graphitron_`
+  relation reading `intent_` is the same crossing pointed the other way.
+* **The defects are stored where the diagnostic reads them** `blocked`, on the producer resolution.
+  `graphitron_entry_defect` is the precedent, and the `intent_mutation_routine_seat` overlap under
+  the chain branch above is the same two-producers shape.
+
 ### A capture reads only what changed
 
 * A directory can be compared at all `done`
