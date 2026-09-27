@@ -132,14 +132,16 @@ import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
  * The harness for a test whose subject is what a relation this module declares returns given rows,
  * which is a view's joins, its outer edges, or a check constraint's boundary.
  *
- * <p>Seeding is the method here rather than an escape from one. This module declares the fact
- * schema and nothing else, so a case in it states its inputs as rows and asserts what the relation
- * makes of them, and reaching a state no crawler can produce is exactly what a view's edges want
- * exercised. That is the opposite obligation from the modules above: the generator, the language
- * server and the MCP server exist to turn real inputs into real rows, so a case up there fills its
- * store by running a real capture or a real build through that module's own harness, and one that
- * hand-seeds rows to skip the pipeline stops testing what the module does. The module boundary
- * carries the distinction, so neither side needs a naming convention to keep the two apart.
+ * <p><b>Dissolving.</b> Seeding was how a case reached derived rows while this module could not
+ * run the gatherers: it stated the rows a gatherer would have written. It can run them now, over
+ * the sakila fixtures and the SDL corpus, so a case states its facts as a document under
+ * {@code src/test/resources/facts} and capture produces the rows. Seeded rows test the fixture, so
+ * do not add a case here and convert one you touch;
+ * {@link no.sikt.graphitron.model.SeedingDissolutionGateTest} holds the count down.
+ *
+ * <p>What remains is a view's own algebra: a state no capture reaches, which is what a view's outer
+ * edges and a check constraint's boundary want exercised. That was always the narrow claim, and it
+ * is the only one left.
  *
  * <p>What a seeded case still owes its reader is a sentence, not a permission: a case standing in
  * for a state a real build reaches should say which one, and a case pinning a relation's own
@@ -151,10 +153,8 @@ import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
  * idempotent, so a case can seed two tables sharing a schema without tracking which call created
  * it; the rest insert once and let a duplicate fail loudly rather than passing silently.
  *
- * <p>Expect this set to grow. A case needing a shape no helper produces adds one here rather than
- * hand-rolling a private copy, which is the whole reason the helpers are in one file: two that turn
- * out to be the same are a mechanical afternoon to fold together, and a spread of private copies
- * that quietly disagree is not.
+ * <p>Expect this set to shrink. A helper whose last caller converts goes with it, which is the
+ * whole reason the helpers are in one file: what is left is countable.
  */
 public final class SeededStore {
 
