@@ -274,22 +274,47 @@ public final class CorpusExpectations {
         return List.copyOf(divergences);
     }
 
+    /**
+     * Whether {@code relation} carries the document's identity, which decides whether an
+     * expectation over it is scoped to the document that stated it.
+     *
+     * <p>A relation without one is not a loophole: the classpath and the catalog are read once for
+     * the store and carry no graph, so what a document says about them is a claim about the store
+     * every document shares. Stating such a claim is the point, a document naming a class being
+     * the only way to assert what a reading of that class found.
+     */
+    private static boolean partitioned(DSLContext dsl, String relation) {
+        return dsl.fetchCount(
+            DSL.table(id("INFORMATION_SCHEMA", "COLUMNS")),
+            DSL.field(id("TABLE_NAME"), String.class).equalIgnoreCase(relation)
+                .and(DSL.field(id("COLUMN_NAME"), String.class).equalIgnoreCase(GRAPH_COLUMN))) > 0;
+    }
+
     private static List<Divergence> compare(DSLContext dsl, String relation, List<String> columns,
                                             Mode mode, List<Block> blocks) {
+        // Whether the document's identity is a column of this relation at all. Every graphql_ and
+        // graphitron_ relation carries one; nothing read from the classpath or the catalog does,
+        // those corpora being the store's rather than any graph's. Asked of the catalog, because a
+        // list kept here would be a second answer to a question the schema already settles.
+        boolean partitioned = partitioned(dsl, relation);
         var graphs = new LinkedHashSet<String>();
         var expectedRows = new LinkedHashSet<List<String>>();
         for (Block block : blocks) {
             graphs.add(block.graph());
             for (List<String> row : block.rows()) {
                 var keyed = new ArrayList<String>(row.size() + 1);
-                keyed.add(block.graph());
+                if (partitioned) {
+                    keyed.add(block.graph());
+                }
                 keyed.addAll(row);
                 expectedRows.add(java.util.Collections.unmodifiableList(keyed));
             }
         }
 
         List<String> allColumns = new ArrayList<>();
-        allColumns.add(GRAPH_COLUMN);
+        if (partitioned) {
+            allColumns.add(GRAPH_COLUMN);
+        }
         allColumns.addAll(columns);
 
         Table<Record> produced = DSL.table(id(relation)).as("PRODUCED");

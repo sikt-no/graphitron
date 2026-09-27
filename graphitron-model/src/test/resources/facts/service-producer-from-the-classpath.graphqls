@@ -1,0 +1,28 @@
+"One @service application, asserted on both sides of the coin it is. The method is real Java in the classpath corpus, so the captured row is what a reading of the bytes found, and the resolution beside it is what the model makes of that reading. Stating only the resolution would test a view over rows a fixture wrote; stating only the capture would test a reading nothing consumes. A document states the application once and both answers follow from it."
+type City @table(name: "city") {
+    cityId: ID
+    uppercase: String
+        @service(service: {className: "no.sikt.graphitron.rewrite.test.services.CityService", method: "cityUppercase"})
+}
+
+extend type Query {
+    cities: [City!]!
+}
+
+# What reading the class file found: the method exists and the @service arm admits it.
+extend schema @assertContains(relation: "code_service_method", rows: """
+  class_name,                                                 method_name
+  no.sikt.graphitron.rewrite.test.services.CityService,        cityUppercase
+  """)
+
+# And what the class declares about itself, which no fixture gets to decide.
+extend schema @assertContains(relation: "code_class", rows: """
+  class_name
+  no.sikt.graphitron.rewrite.test.services.CityService
+  """)
+
+# The model's side of the same application: the coordinate reaches that method.
+extend schema @assertContains(relation: "intent_field_producer_reference", rows: """
+  type_name, field_name, class_name
+  City,      uppercase,  no.sikt.graphitron.rewrite.test.services.CityService
+  """)

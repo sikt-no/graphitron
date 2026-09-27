@@ -44,9 +44,19 @@ class FactExpectationTest {
         var ctx = TestRunContext.of();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         var documents = CorpusDocuments.documents(FACTS);
-        captured = CapturedStore.ofCatalog(tmp, documents.getFirst().id(), full(documents.getFirst()), jooq);
+        // The classpath corpus beside the catalog, so a document can state what a reading finds in
+        // Java as well as what it finds in SDL. The model and the capture are one subject: a
+        // document asserting a derived relation without the facts under it tests half of what it
+        // names, and the runner resolves a relation by name whether capture wrote it or a view
+        // derived it.
+        //
+        // Affordable because the classpath is read once for the store. It carries no graph, so the
+        // second document's reading of it is the first document's reading again.
+        var corpus = ClasspathCorpus.root();
+        captured = CapturedStore.ofCatalog(tmp, documents.getFirst().id(),
+            full(documents.getFirst()), jooq, List.of(), corpus);
         for (var document : documents.subList(1, documents.size())) {
-            captured.andCatalogGraph(document.id(), full(document), jooq);
+            captured.andCatalogGraph(document.id(), full(document), jooq, List.of(), corpus);
         }
         blocks = CorpusExpectations.blocks(captured.dsl());
     }
