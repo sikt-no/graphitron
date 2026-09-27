@@ -1,0 +1,39 @@
+"The Java type a value of a graph's scalar arrives as, from both populations that answer. The engine's own scalars are a closed list and carry the type their coercion produces. A consumer's scalar names a constant, and what that constant coerces to is a reading of the classpath rather than anything the name says, which is why the constant named here is one a consumer really names: sakila-example's schema spells this same one."
+scalar LocalDate @scalarType(scalar: "graphql.scalars.ExtendedScalars.Date")
+
+"Declined: a scalar the author declared and left unbound reaches no Java type at all."
+scalar Unbound
+
+"Declined: the spelling is not itself an answer, so a reference no constant matches resolves to nothing."
+scalar Missing @scalarType(scalar: "graphql.scalars.ExtendedScalars.NoSuchConstant")
+
+type Film @table(name: "film") {
+  filmId: ID
+  released: LocalDate
+  title: String
+}
+
+extend type Query {
+  films: [Film!]!
+}
+
+# What the reading found in the jar, which is the fact the resolution below stands on. Contains
+# rather than equals: the artifact declares a great many constants and this document is about one.
+extend schema @assertContains(relation: "code_scalar_constant", rows: """
+  class_name,                    field_name, input_type
+  graphql.scalars.ExtendedScalars, Date,     java.time.LocalDate
+  """)
+
+# And the model's side: the graph's own scalars resolved, engine and consumer alike. The five
+# spec built-ins answer whether or not the document uses them, the engine arm reading a closed
+# list rather than the schema; the two declines above add nothing, which is the point of
+# claiming the whole population rather than listing what was expected to appear.
+extend schema @expectEquals(relation: "intent_scalar_java_type", rows: """
+  type_name, java_type
+  Boolean,   java.lang.Boolean
+  Float,     java.lang.Double
+  ID,        java.lang.String
+  Int,       java.lang.Integer
+  LocalDate, java.time.LocalDate
+  String,    java.lang.String
+  """)

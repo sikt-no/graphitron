@@ -107,6 +107,17 @@
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
+        <!--
+          The other half of the classpath corpus, on graphitron's terms: a consumer names a scalar
+          constant by its fully qualified name, and the constants they actually name are a library's.
+          Carried at test scope so a document can state @scalarType(scalar:) against a constant that
+          exists and is captured; the runtime artifact stays the consumer's choice.
+        -->
+        <dependency>
+            <groupId>com.graphql-java</groupId>
+            <artifactId>graphql-java-extended-scalars</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

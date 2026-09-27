@@ -29,16 +29,6 @@ class ScalarJavaTypeTest {
 
     // ===== The engine's own scalars =====
 
-    /** The five spec built-ins carry the types graphql-java's coercion produces. */
-    @Test
-    void aSpecBuiltInCarriesTheTypeItsCoercionProduces() {
-        withGraph(dsl -> {
-            seedType(dsl, GRAPH, "Int", "SCALAR");
-            seedType(dsl, GRAPH, "ID", "SCALAR");
-
-            assertThat(types(dsl)).containsExactly("ID java.lang.String", "Int java.lang.Integer");
-        });
-    }
 
     /** A federation-namespace scalar deserialises to a string, and is a row for saying so. */
     @Test
@@ -60,18 +50,27 @@ class ScalarJavaTypeTest {
         });
     }
 
+
+    // Five cases moved to facts/scalar-java-type.graphqls, where a document states the scalars and
+    // the reading resolves them: the spec built-ins, a @scalarType reaching a real constant, a
+    // reference matching none, a scalar left unbound, and the graph partition, which the fact
+    // corpus checks structurally by holding every document's graph in one store.
+    //
+    // What is left is what a document cannot say yet, and each is a different reason:
+    //
+    //   - the federation-namespace scalar needs the federation link in the document, which is a
+    //     document to write rather than a limit;
+    //   - a type sharing a built-in's name but not its kind may be unwritable at all, graphql-java
+    //     refusing to redefine ID, in which case the arm defends against input no reading produces;
+    //   - a constant whose coercing could not be read needs a constant that behaves that way, and
+    //     the artifacts on the corpus classpath may not carry one;
+    //   - a constant outside the graph's sources needs a graph that claims fewer entries than its
+    //     neighbours, and the fact runner captures every document over the same roots.
+    //
+    // The last is the only one that is a gap in the corpus rather than in this file.
+
     // ===== The consumer's own scalars =====
 
-    /** A @scalarType resolves through the constant the census read. */
-    @Test
-    void aDeclaredScalarTakesTheConstantsInputType() {
-        withGraph(dsl -> {
-            seedScalarType(dsl, GRAPH, "DateTime", "com.example.Scalars.DATE_TIME");
-            seedCensusConstant(dsl, "com.example.Scalars", "DATE_TIME", "java.time.OffsetDateTime");
-
-            assertThat(types(dsl)).containsExactly("DateTime java.time.OffsetDateTime");
-        });
-    }
 
     /** A constant whose coercing the census could not read one off answers nothing, not null. */
     @Test
@@ -84,16 +83,6 @@ class ScalarJavaTypeTest {
         });
     }
 
-    /** A reference no constant matches is silence: the spelling is not itself an answer. */
-    @Test
-    void aReferenceMatchingNoConstantDrawsNothing() {
-        withGraph(dsl -> {
-            seedScalarType(dsl, GRAPH, "DateTime", "com.example.Scalars.MISSING");
-            seedCensusConstant(dsl, "com.example.Scalars", "DATE_TIME", "java.time.OffsetDateTime");
-
-            assertThat(types(dsl)).isEmpty();
-        });
-    }
 
     /** A constant on an entry this graph does not read is not this graph's to resolve against. */
     @Test
@@ -108,29 +97,9 @@ class ScalarJavaTypeTest {
         });
     }
 
-    /** A scalar the author declared and left unbound reaches no Java type at all. */
-    @Test
-    void aScalarWithNoDirectiveAndNoEngineNameDrawsNothing() {
-        withGraph(dsl -> {
-            seedType(dsl, GRAPH, "DateTime", "SCALAR");
-
-            assertThat(types(dsl)).isEmpty();
-        });
-    }
 
     // ===== The partition =====
 
-    /** One workspace store holds many graphs, and a constant resolves inside one of them. */
-    @Test
-    void anotherGraphSeesNothing() {
-        withGraph(dsl -> {
-            seedType(dsl, GRAPH, "Int", "SCALAR");
-            seedScalarType(dsl, GRAPH, "DateTime", "com.example.Scalars.DATE_TIME");
-            seedCensusConstant(dsl, "com.example.Scalars", "DATE_TIME", "java.time.OffsetDateTime");
-
-            assertThat(typesIn(dsl, "other")).isEmpty();
-        });
-    }
 
     // ===== Helpers =====
 

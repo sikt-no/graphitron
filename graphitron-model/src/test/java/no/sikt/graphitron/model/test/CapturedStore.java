@@ -287,8 +287,17 @@ public final class CapturedStore implements AutoCloseable {
     public static CapturedStore ofCatalog(Path directory, String graphName, String sdl, JooqCatalog jooq,
                                           List<CompletionData.ExternalReference> census,
                                           Path classRoot) {
+        return ofCatalog(directory, graphName, sdl, jooq, census, List.of(classRoot));
+    }
+
+    /** {@link #ofCatalog(Path, String, String, JooqCatalog, List, Path)} over several roots. */
+    public static CapturedStore ofCatalog(Path directory, String graphName, String sdl, JooqCatalog jooq,
+                                          List<CompletionData.ExternalReference> census,
+                                          List<Path> classRoots) {
         return openAndCapture(directory, graphName, sdl, Objects.requireNonNull(jooq, "jooq"), census,
-            List.of(new ClasspathEntry(classRoot, ClasspathEntry.Origin.PROJECT, null, null)));
+            classRoots.stream()
+                .map(root -> new ClasspathEntry(root, ClasspathEntry.Origin.PROJECT, null, null))
+                .toList());
     }
 
     /**
@@ -387,6 +396,22 @@ public final class CapturedStore implements AutoCloseable {
     public CapturedStore andCatalogGraph(String otherGraph, String sdl, JooqCatalog jooq,
                                          List<CompletionData.ExternalReference> census) {
         captureAnother(otherGraph, sdl, Objects.requireNonNull(jooq, "jooq"), census, false);
+        return this;
+    }
+
+    /**
+     * The same over several class roots, which is what a corpus in more than one artifact is: the
+     * code a consumer writes and the code a consumer names are different jars and both are read.
+     */
+    public CapturedStore andCatalogGraph(String otherGraph, String sdl, JooqCatalog jooq,
+                                         List<CompletionData.ExternalReference> census,
+                                         List<Path> classRoots) {
+        Path other = write(directory, otherGraph, sdl);
+        captureFile(store, other, directory, otherGraph,
+            SchemaLoader.load(List.of(SchemaSource.file(other))), jooq, census, false,
+            classRoots.stream()
+                .map(root -> new ClasspathEntry(root, ClasspathEntry.Origin.PROJECT, null, null))
+                .toList());
         return this;
     }
 
