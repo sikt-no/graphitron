@@ -23,7 +23,9 @@ Not shaped by the corpus. Mirroring the source feels neutral and is not.
 
 A family that describes its source accurately, and says nothing about what any of it is for, pushes
 the real work onto every consumer, which then derives the same thing again from the same rows on
-every question it asks. The `jvm_` family is that mistake and is being replaced.
+every question it asks. The `jvm_` family was that mistake. It has been replaced by `code_`, one question at a time, and
+the migration is worth knowing about: the hard part was never moving the readers, it was finding
+the facts the census had described around rather than stated.
 
 **The order that works:** start with a relation per use site, so the fact a consumer wants is a row
 rather than a predicate it has to re-derive. Then normalize, against the queries the generator, the

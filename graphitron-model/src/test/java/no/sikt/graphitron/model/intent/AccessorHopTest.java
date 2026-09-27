@@ -9,8 +9,8 @@ import java.util.Map;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT;
+import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_SLOT;
-import static no.sikt.graphitron.model.Tables.JVM_DECLARED_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.INTENT_DELIVERY_CONTAINER;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_ACCESSOR_HOP;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
@@ -31,9 +31,8 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The registered agreement anchor for the four relations an accessor hop is built from:
+ * The registered agreement anchor for the three relations an accessor hop is built from:
  * {@code intent_delivery_container}, the classes a declared type delivers through;
- * {@code jvm_declared_type_ref}, the census's declared types under one owner key;
  * {@code code_type_slot}, the member names a class offers and the accessor each is read by; and
  * {@code intent_field_accessor_hop}, where a field coordinate standing on a class lands.
  *
@@ -107,73 +106,35 @@ class AccessorHopTest {
                     "java.util.Collection", "org.jooq.Result"));
     }
 
-    // ===== A declared type, position by position, under its owner =====
+    // ===== A declared type under the method that declares it =====
 
     /**
-     * Every owner kind answers under one key. A record component, a method return and a method
-     * parameter decompose into the same path grammar, and a reader that holds an owner does not
-     * have to know which census relation stated it.
-     */
-    @Test
-    void everyOwnerKindNamesItsPositionsUnderOneKey() {
-        withCensus(dsl -> {
-            assertThat(positions(dsl, FILM, "actors", null))
-                .containsExactlyInAnyOrder(" java.util.List", "0 app.ActorRecord");
-            assertThat(positions(dsl, STORE, "getFilms", LIST))
-                .containsExactlyInAnyOrder(" java.util.List", "0 app.FilmRecord");
-            assertThat(parameterPositions(dsl, STORE, "search", SEARCH, 0))
-                .as("a parameter decomposes under the same grammar as a return")
-                .containsExactlyInAnyOrder(" java.util.List", "0 java.lang.String");
-        });
-    }
-
-    /**
-     * The ordinal is what tells one parameter from its neighbour, under a key they otherwise share
-     * entirely. Without it a reader joining the owner key would match every position of one
-     * parameter's type against every other's and answer with a cross product, which is what the
-     * third parameter is declared a container for: two parameters descending makes the cross
-     * product visible where one cannot.
-     */
-    @Test
-    void parametersAreToldApartByTheirOrdinal() {
-        withCensus(dsl -> {
-            assertThat(parameterPositions(dsl, STORE, "search", SEARCH, 1))
-                .containsExactly(" app.LanguageRecord");
-            assertThat(parameterPositions(dsl, STORE, "search", SEARCH, 2))
-                .containsExactlyInAnyOrder(" java.util.List", "0 app.LanguageRecord");
-            assertThat(positions(dsl, STORE, "search", SEARCH))
-                .as("and the return is still the return, unmixed with any of them")
-                .containsExactly(" app.FilmRecord");
-        });
-    }
-
-    /**
-     * The owner key holds an overload apart, which is the whole reason it carries a descriptor. Two
-     * methods of one name decompose into two owners rather than into one owner's confused positions.
+     * The descriptor holds an overload apart, which is the whole reason a method is keyed by one.
+     * Two methods of one name resolve to two types rather than to one method's confused answer, and
+     * a reader with only a name to go on would have had to pick.
      */
     @Test
     void overloadsAreToldApartByTheirDescriptor() {
         withCensus(dsl -> {
-            assertThat(positions(dsl, STORE, "getTitle", "()Ljava/lang/String;"))
-                .containsExactly(" java.lang.String");
-            assertThat(positions(dsl, STORE, "getTitle", SPOKEN_TITLE))
-                .containsExactly(" app.LanguageRecord");
+            assertThat(resultTypeOf(dsl, STORE, "getTitle", "()Ljava/lang/String;"))
+                .isEqualTo("java.lang.String");
+            assertThat(resultTypeOf(dsl, STORE, "getTitle", SPOKEN_TITLE))
+                .isEqualTo("app.LanguageRecord");
         });
     }
 
     // ===== A method that is no slot =====
 
     /**
-     * A method that offers no member slot is a census owner like any other. The census decomposes
-     * it, and the slot relation says nothing about it, which is the pair worth stating together:
-     * the two relations disagree about whether the method is interesting and agree about what it
-     * declares.
+     * A method that offers no member slot is read like any other and offers nothing. The pair is
+     * worth stating together: what it declares is on record, and the slot relation still says
+     * nothing about it, so the absence downstream is the slot rule's and not the reading's.
      */
     @Test
-    void aMethodThatIsNoSlotIsStillDecomposed() {
+    void aMethodThatIsNoSlotIsStillRead() {
         withCensus(dsl -> {
-            assertThat(positions(dsl, STORE, "getLookup", LOOKUP))
-                .containsExactly(" app.FilmRecord");
+            assertThat(resultTypeOf(dsl, STORE, "getLookup", LOOKUP))
+                .isEqualTo("app.FilmRecord");
             assertThat(delivered(dsl, STORE, "lookup"))
                 .as("and it is still no slot, so the member view says nothing about it")
                 .isEmpty();
@@ -274,17 +235,17 @@ class AccessorHopTest {
 
     /**
      * A slot whose declared type names no class at its root has no spine and so delivers nothing.
-     * No filter states that: the census omits the root position of a primitive and of an array
-     * alike, an array's component being the next step down and this walk never taking that step.
+     * No filter states that: the reading records no root for a primitive and for an array alike,
+     * an array's component being the next step down and the peel never taking that step.
      */
     @Test
     void aSlotNamingNoClassAtItsRootDeliversNothing() {
         withCensus(dsl -> {
             assertThat(delivered(dsl, STORE, "count")).isEmpty();
             assertThat(delivered(dsl, STORE, "tags")).isEmpty();
-            assertThat(positions(dsl, STORE, "getTags", "()[Ljava/lang/String;"))
-                .as("the array's component is still a position, so the absence is the root's")
-                .containsExactly("[] java.lang.String");
+            assertThat(resultTypeOf(dsl, STORE, "getTags", "()[Ljava/lang/String;"))
+                .as("while the spelling still names the component, so the absence is the root's")
+                .isEqualTo("java.lang.String[]");
         });
     }
 
@@ -623,39 +584,15 @@ class AccessorHopTest {
         seedField(dsl, GRAPH, "FilmInput", "films", "Film", true);
     }
 
-    /**
-     * Each position as its path and the class named there, so a case states the whole
-     * decomposition. A null descriptor names the record arm, where an owner has none and the relation spells that as the empty string.
-     */
-    private static List<String> positions(DSLContext dsl, String className, String ownerName,
-                                          String descriptor) {
-        var t = JVM_DECLARED_TYPE_REF;
-        return dsl.select(t.TYPE_PATH, t.REFERENCED_CLASS)
-            .from(t)
-            .where(t.CLASS_NAME.eq(className)
-                .and(t.OWNER_NAME.eq(ownerName))
-                .and(t.OWNER_POSITION.eq(-1))
-                .and(t.OWNER_DESCRIPTOR.eq(descriptor == null ? "" : descriptor)))
-            .fetch(r -> r.value1() + " " + r.value2());
-    }
-
-    /**
-     * One parameter's positions, addressed by its ordinal. {@link #positions} asks for the -1 the
-     * other two arms carry rather than naming an owner kind, which is the same selection said in
-     * the key's own terms: the arms it reads identify their owner without one.
-     */
-    private static List<String> parameterPositions(DSLContext dsl, String className,
-                                                   String methodName, String descriptor,
-                                                   int position) {
-        var t = JVM_DECLARED_TYPE_REF;
-        return dsl.select(t.TYPE_PATH, t.REFERENCED_CLASS)
-            .from(t)
-            .where(t.CLASS_NAME.eq(className)
-                .and(t.OWNER_KIND.eq("METHOD_PARAMETER"))
-                .and(t.OWNER_NAME.eq(methodName))
-                .and(t.OWNER_DESCRIPTOR.eq(descriptor))
-                .and(t.OWNER_POSITION.eq(position)))
-            .fetch(r -> r.value1() + " " + r.value2());
+    /** What one method's result type resolves to, which is where a declared type now lives. */
+    private static String resultTypeOf(DSLContext dsl, String className, String methodName,
+                                       String descriptor) {
+        return dsl.select(CODE_METHOD.RESULT_TYPE)
+            .from(CODE_METHOD)
+            .where(CODE_METHOD.CLASS_NAME.eq(className)
+                .and(CODE_METHOD.METHOD_NAME.eq(methodName))
+                .and(CODE_METHOD.DESCRIPTOR.eq(descriptor)))
+            .fetchOne(0, String.class);
     }
 
     /**

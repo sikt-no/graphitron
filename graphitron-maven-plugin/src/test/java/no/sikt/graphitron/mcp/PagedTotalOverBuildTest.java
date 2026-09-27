@@ -70,7 +70,7 @@ class PagedTotalOverBuildTest {
 
     @Test
     void everyPagedToolLeadsWithTheUnpagedTotal(@TempDir Path tmp) throws Exception {
-        // The classpath root is the census half of the fixture: the code tool answers from jvm_class,
+        // The classpath root is the census half of the fixture: the code tool answers from code_class,
         // and a build with no classpath roots captures no classes at all. What the root has to hold
         // is more than one class the code tool's population admits, or a limit=1 call cannot tell an
         // unpaged total from a page size; PagedCensusFirst and PagedCensusSecond are those two.

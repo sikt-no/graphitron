@@ -222,7 +222,7 @@ public final class TestSchemaHelper {
     }
 
     /**
-     * The classpath census capture reads the {@code jvm_} families from, scanned off the test
+     * The classpath census capture reads the {@code code_} family from, scanned off the test
      * classes' own root: what a rule reading a class's declared form states is only worth
      * something when the classes it read are real ones.
      */

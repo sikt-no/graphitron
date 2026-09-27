@@ -120,7 +120,7 @@ public final class SourceDeclarations {
      * Doc comments for one method name keyed by the arity the source declares, in (file,
      * declaration) order. Arity is what the two populations can be joined on: a parse reads
      * unqualified parameter types as written where the classfile carries erased ones, so
-     * {@code java_method_declaration} counts parameters and {@code jvm_method} spells a descriptor,
+     * {@code java_method_declaration} counts parameters and {@code code_method} spells a descriptor,
      * and the count is their only common ground. Two same-arity overloads therefore share one
      * comment, the first in that order.
      */

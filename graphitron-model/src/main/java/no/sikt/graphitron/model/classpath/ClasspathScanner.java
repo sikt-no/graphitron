@@ -17,11 +17,11 @@ import java.util.Optional;
  * name.
  *
  * <p>It reads no bytes. {@link ClassfileCensus} is the reader, and this is a projection of what it
- * found into the shape these surfaces and the {@code jvm_} relations were written against. The two
+ * found into the shape these surfaces were written against. The two
  * were separate readings of the same classfiles for a while, with their own scope rules and their
  * own spelling of the signature walk, which is a duplication that can only be paid for by staying
  * identical. Now there is one reading. This layer is scaffolding with a stated end: it keeps the
- * {@code jvm_} census answering while the {@code code_} family grows into what reads it, and it
+ * surfaces answering while the {@code code_} family grows into what reads them, and it
  * goes when that census does.
  *
  * <p>Directories and jars alike, but declared jars only. The scan used to skip anything that was
@@ -44,7 +44,7 @@ import java.util.Optional;
  * or reflection-only through the {@code <sessionState>} {@code <mount>} /
  * {@code <unmount>} method references (resolved at build time with no census
  * row needed), never through {@code @service}. Admitting the routine surface
- * would grow the {@code jvm_} fact relations for no present consumer.
+ * would grow the transcription for no present consumer.
  *
  * <p>Method and record-component type information arrives in both forms: the erasure the JVM
  * descriptor carries, and the declared form the {@code Signature} attribute carries where the
@@ -177,7 +177,7 @@ public final class ClasspathScanner {
      *
      * <p>The whole of what this layer is: the bytes are read once, by
      * {@link ClassfileCensus}, and rendered here into the shape the editor's surfaces and the
-     * {@code jvm_} relations were written against. Two renderings differ and neither is a loss.
+     * surfaces were written against. Two renderings differ and neither is a loss.
      * The census names erased types fully qualified, because the arms over it compare them against
      * {@code org.jooq.Condition} and a package-less name cannot be compared for identity; this
      * vocabulary drops the package, because what reads it renders a signature for a person. The
@@ -185,7 +185,7 @@ public final class ClasspathScanner {
      * and the qualified names a caller does need are in the type references, which pass through
      * unchanged.
      *
-     * <p>Scaffolding with a stated end. It exists to keep the {@code jvm_} census answering while
+     * <p>Scaffolding with a stated end. It exists to keep these surfaces answering while
      * the {@code code_} family grows into what reads it, and it goes when that census does.
      */
     private static CompletionData.ExternalReference reference(ClassfileCensus.ClassAt at) {

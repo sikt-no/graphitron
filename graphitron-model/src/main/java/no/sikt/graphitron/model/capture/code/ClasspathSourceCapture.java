@@ -24,10 +24,11 @@ import static org.jooq.impl.DSL.val;
 /**
  * The gatherer that reads the classpath, once, and owns the store's record of what was read.
  *
- * <p>{@link CodeCapture} and {@link JvmCapture} both write from the classpath and are handed this
- * reading rather than opening every entry for themselves. They own no provenance either: the
- * source row, its stamp and this graph's claim are written here, so where a row came from has one
- * answer.
+ * <p>{@link CodeCapture} writes from the classpath and is handed this reading rather than opening
+ * every entry for itself. It owns no provenance either: the source row, its stamp and this graph's
+ * claim are written here, so where a row came from has one answer. Two gatherers were handed this
+ * reading while the census stood beside the arms, and the arrangement outlived the second one:
+ * what a corpus reader owns is not a function of how many gatherers read it.
  *
  * <p>The stamp is on the claim as well as the source, because {@code store_source} is store-global
  * and cannot say whether <em>this</em> graph holds rows derived from those bytes. Two graphs on

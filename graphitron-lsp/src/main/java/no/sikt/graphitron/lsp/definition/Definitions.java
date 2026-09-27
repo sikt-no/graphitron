@@ -64,7 +64,7 @@ import java.util.Optional;
  * positioned declaration) is a non-jump decided by the type, not a sentinel.
  *
  * <p>Two populations meet here, on two cadences, and both are the store's now. Whether a name is a
- * reference at all is the census's answer, read from the {@code jvm_} and {@code sql_} families and
+ * reference at all is the census's answer, read from the {@code code_} and {@code sql_} families and
  * guarded on here; where its declaration sits is the {@code .java} parse's, which the same store
  * holds on its own cadence and {@link SourceDeclarations} reads. The guard is what keeps an unknown
  * name an empty answer rather than a {@code SourceAbsent} one.

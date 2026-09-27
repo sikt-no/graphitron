@@ -140,7 +140,7 @@ final class StoreFixture implements AutoCloseable {
         return of(directory, GRAPH, sdl, List.of());
     }
 
-    /** Captures {@code sdl} plus a classpath census: the shape for the {@code jvm_} arms. */
+    /** Captures {@code sdl} plus a classpath census: the shape for the {@code code_} arms. */
     static StoreFixture of(Path directory, String sdl, List<CompletionData.ExternalReference> classpath) {
         return of(directory, GRAPH, sdl, classpath);
     }

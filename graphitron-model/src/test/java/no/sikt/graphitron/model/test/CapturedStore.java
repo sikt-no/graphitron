@@ -6,7 +6,6 @@ import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.capture.code.ClasspathSourceCapture;
 import no.sikt.graphitron.model.capture.code.CodeCapture;
-import no.sikt.graphitron.model.capture.code.JvmCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLSchemaProblems;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.run.GraphIdentity;
@@ -215,7 +214,7 @@ public final class CapturedStore implements AutoCloseable {
     }
 
     /**
-     * The same plus a classpath census, for the arms that read the {@code jvm_} families. The census
+     * The same plus a classpath census, for the arms that read the {@code code_} family. The census
      * is the caller's own scan rather than a shape of this handle: what a rule reading a class's
      * declared form is worth depends on the classes being real ones.
      */
@@ -496,11 +495,9 @@ public final class CapturedStore implements AutoCloseable {
             // classpath gatherer to scan, so this is where those rows come from.
             ClasspathSourceCapture.stated(dsl, graphName,
                 census.stream().map(CompletionData.ExternalReference::sourceName).toList(), readAt);
-            JvmCapture.captureStated(dsl, census, readAt);
-            // And the same statement as the reading would have written it. Both families, because a
-            // census is a statement about a classpath and a run reads that classpath once into each:
-            // a fixture that stated only the walk's transcription would leave every rule that moved
-            // to the reading answering nothing, which is a fixture's silence and not a rule's.
+            // The statement as the reading would have written it. One family now, the census that
+            // used to stand beside it having gone: a fixture states a classpath once and the
+            // reading is what holds it.
             CodeRows.writeStated(dsl, census, readAt);
         }
         // The pass, and the whole of the capture: it writes the graph row, the catalog, the

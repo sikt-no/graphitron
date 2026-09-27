@@ -27,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * coordinate but is deprecated and ignored, so its className slot is
  * carved out and offers no completion.
  *
- * <p>The candidates are {@code jvm_class} rows captured from a classpath census, one graph's own, so
+ * <p>The candidates are {@code code_class} rows captured from a classpath census, one graph's own, so
  * these cases also stand on the scoping: a class this graph's walk never met is not a candidate
  * however much store it shares.
  */

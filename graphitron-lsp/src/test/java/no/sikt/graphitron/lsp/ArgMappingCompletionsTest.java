@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * argMapping completion: the left side offers the named method's parameter names out of
- * {@code jvm_method_parameter}, the right side offers the enclosing field's GraphQL argument names
+ * {@code code_method_parameter}, the right side offers the enclosing field's GraphQL argument names
  * read off the buffer, and dot-paths defer. All single-line / ASCII, so the LSP character column
  * equals the tree-sitter byte column.
  */

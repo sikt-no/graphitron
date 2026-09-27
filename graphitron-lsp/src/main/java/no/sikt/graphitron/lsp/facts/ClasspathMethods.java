@@ -11,7 +11,7 @@ import static no.sikt.graphitron.model.Tables.CODE_TYPE;
 
 /**
  * The methods a class declares, as the classpath census holds them: one query over
- * {@code jvm_method} and {@code jvm_method_parameter}, folded into one value per method with its
+ * {@code code_method} and {@code code_method_parameter}, folded into one value per method with its
  * parameters in declaration order.
  *
  * <p>Shared because two surfaces ask the same question of the same two relations. Completion offers

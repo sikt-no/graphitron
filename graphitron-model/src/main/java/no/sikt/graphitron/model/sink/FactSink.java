@@ -174,8 +174,9 @@ public final class FactSink {
                 .columns(fields)
                 .values(new Object[fields.length]);
             // The source-keyed families are shared between graphs, so two builds crawling the
-            // same new jar concurrently both land: the second writer's identical rows merge away
-            // instead of violating the key. Graph-keyed families stay plain inserts, where a
+            // same new catalog concurrently both land: the second writer's identical rows merge
+            // away instead of violating the key. One family reaches here now; the classpath
+            // reading writes its own statements and settles its own conflicts. Graph-keyed families stay plain inserts, where a
             // duplicate is a capture bug the constraint must surface. A relation with a written
             // statement states its own conflict rule there instead of inheriting this one.
             var batch = sharedFamily(table)
@@ -217,7 +218,7 @@ public final class FactSink {
 
     private static boolean sharedFamily(Table<?> table) {
         String name = table.getName().toLowerCase(java.util.Locale.ROOT);
-        return name.startsWith("jvm_") || name.startsWith("sql_");
+        return name.startsWith("sql_");
     }
 
     /**

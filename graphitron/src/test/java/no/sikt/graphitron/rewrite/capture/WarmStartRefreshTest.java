@@ -31,6 +31,7 @@ import java.lang.classfile.ClassFile;
 import java.lang.constant.ClassDesc;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
@@ -45,7 +46,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
-import static no.sikt.graphitron.model.Tables.JVM_CLASS;
+import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_ROUTINE;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
@@ -81,6 +82,9 @@ import no.sikt.graphitron.model.run.SubjectConfig;
  */
 @PipelineTier
 class WarmStartRefreshTest {
+
+    /** An instant no reading would choose, which is what makes a surviving row visible. */
+    private static final LocalDateTime TAMPERED = LocalDateTime.of(1999, 12, 31, 23, 59, 58);
 
     private static final String SDL = """
         type Query { films: [Film!]! }
@@ -279,24 +283,20 @@ class WarmStartRefreshTest {
         String first = stampOf(directory, jar);
         assertThat(first).as("a jar the scan read is a jar it stamped").isNotNull();
 
-        // The census is identical whether the partition was retained or re-walked, so the witness
-        // has to be something only a rewrite would put back. Marking the row with a value the
-        // classfile does not carry is that: it survives a run that left the partition alone and
-        // does not survive one that walked it again.
+        // The reading is identical whether the partition was retained or re-walked, so the witness
+        // has to be something only a rewrite would put back. Stamping the row at an instant no
+        // reading would choose is that: it survives a run that left the partition alone and does
+        // not survive one that walked it again, the stamp being what a rewrite overwrites.
         try (var tampered = GraphitronModelStore.openAt(directory)) {
-            tampered.dsl().update(JVM_CLASS).set(JVM_CLASS.CLASS_KIND, "INTERFACE")
-                .where(JVM_CLASS.CLASS_NAME.eq("com.example.lib.LibraryClass")).execute();
+            tampered.dsl().update(CODE_CLASS).set(CODE_CLASS.TOUCHED_AT, TAMPERED)
+                .where(CODE_CLASS.CLASS_NAME.eq("com.example.lib.LibraryClass")).execute();
         }
         capture(directory, tmp, jar);
 
         assertThat(stampOf(directory, jar)).isEqualTo(first);
-        try (var store = GraphitronModelStore.openAt(directory)) {
-            assertThat(store.dsl().select(JVM_CLASS.CLASS_KIND).from(JVM_CLASS)
-                .where(JVM_CLASS.CLASS_NAME.eq("com.example.lib.LibraryClass"))
-                .fetchOne(0, String.class))
-                .as("the retained partition is the one the first run wrote, untouched")
-                .isEqualTo("INTERFACE");
-        }
+        assertThat(stampedAt(directory, "com.example.lib.LibraryClass"))
+            .as("the retained partition is the one the first run wrote, untouched")
+            .isEqualTo(TAMPERED);
     }
 
     /**
@@ -363,16 +363,16 @@ class WarmStartRefreshTest {
         capture(directory, tmp, jar);
         String first = stampOf(directory, jar);
 
-        // A value the classfile does not carry, so it survives a retained partition and does not
+        // An instant no reading would choose, so it survives a retained partition and does not
         // survive a re-walked one.
         try (var tampered = GraphitronModelStore.openAt(directory)) {
-            tampered.dsl().update(JVM_CLASS).set(JVM_CLASS.CLASS_KIND, "INTERFACE")
-                .where(JVM_CLASS.CLASS_NAME.eq("com.example.lib.LibraryClass")).execute();
+            tampered.dsl().update(CODE_CLASS).set(CODE_CLASS.TOUCHED_AT, TAMPERED)
+                .where(CODE_CLASS.CLASS_NAME.eq("com.example.lib.LibraryClass")).execute();
         }
         capture(directory, tmp, jar);
-        assertThat(kindOf(directory, "com.example.lib.LibraryClass"))
+        assertThat(stampedAt(directory, "com.example.lib.LibraryClass"))
             .as("the bytes had not moved, so the partition was left alone")
-            .isEqualTo("INTERFACE");
+            .isEqualTo(TAMPERED);
         assertThat(stampOf(directory, jar))
             .as("and the stamp is the one the rows still standing were read under")
             .isEqualTo(first);
@@ -380,9 +380,9 @@ class WarmStartRefreshTest {
         Files.delete(jar);
         jarWith(tmp, "com.example.lib.LibraryClass", "com.example.lib.Added");
         capture(directory, tmp, jar);
-        assertThat(kindOf(directory, "com.example.lib.LibraryClass"))
+        assertThat(stampedAt(directory, "com.example.lib.LibraryClass"))
             .as("the bytes moved, so the partition was re-walked and the tampering is gone")
-            .isEqualTo("CLASS");
+            .isNotEqualTo(TAMPERED);
         String second = stampOf(directory, jar);
         assertThat(second)
             .as("the stamp moved with the rows rather than lagging a reading behind them")
@@ -394,11 +394,11 @@ class WarmStartRefreshTest {
             .isEqualTo(second);
     }
 
-    /** One class's recorded kind, which is what a retained partition keeps and a re-walk resets. */
-    private static String kindOf(Path directory, String className) {
+    /** One class's stamp, which is what a retained partition keeps and a re-walk resets. */
+    private static LocalDateTime stampedAt(Path directory, String className) {
         try (var store = GraphitronModelStore.openAt(directory)) {
-            return store.dsl().select(JVM_CLASS.CLASS_KIND).from(JVM_CLASS)
-                .where(JVM_CLASS.CLASS_NAME.eq(className)).fetchOne(0, String.class);
+            return store.dsl().select(CODE_CLASS.TOUCHED_AT).from(CODE_CLASS)
+                .where(CODE_CLASS.CLASS_NAME.eq(className)).fetchOne(0, LocalDateTime.class);
         }
     }
 
@@ -415,7 +415,7 @@ class WarmStartRefreshTest {
         capture(directory, tmp, jar);
 
         try (var store = GraphitronModelStore.openAt(directory)) {
-            var classes = store.dsl().select(JVM_CLASS.CLASS_NAME).from(JVM_CLASS).fetch(0, String.class);
+            var classes = store.dsl().select(CODE_CLASS.CLASS_NAME).from(CODE_CLASS).fetch(0, String.class);
             assertThat(classes).contains("com.example.lib.After").doesNotContain("com.example.lib.Before");
         }
         assertThat(stampOf(directory, jar)).isNotEqualTo(before);
@@ -431,7 +431,7 @@ class WarmStartRefreshTest {
         capture(directory, tmp);
 
         try (var store = GraphitronModelStore.openAt(directory)) {
-            assertThat(store.dsl().select(JVM_CLASS.CLASS_NAME).from(JVM_CLASS).fetch(0, String.class))
+            assertThat(store.dsl().select(CODE_CLASS.CLASS_NAME).from(CODE_CLASS).fetch(0, String.class))
                 .as("a source this run did not name is never examined and never deleted; "
                     + "it may be another graph's live dependency, and it stays until eviction")
                 .containsExactly("com.example.lib.LibraryClass");

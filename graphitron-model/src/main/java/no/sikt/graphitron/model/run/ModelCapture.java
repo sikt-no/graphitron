@@ -8,7 +8,6 @@ import no.sikt.graphitron.model.sink.FactSink;
 import no.sikt.graphitron.model.capture.sdl.SdlFactCapture;
 import no.sikt.graphitron.model.capture.code.ClasspathSourceCapture;
 import no.sikt.graphitron.model.capture.code.CodeCapture;
-import no.sikt.graphitron.model.capture.code.JvmCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLAssemblyCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
@@ -109,10 +108,6 @@ public final class ModelCapture {
         var classes = ClasspathSourceCapture.capture(dsl, graph.name(), classpath,
             config.jooqPackage().orElse(null), readAt);
         CodeCapture.capture(dsl, classes, jooq == null ? null : jooq.codegenLoader(), readAt);
-        // After the arms above, which is what keeps the dependency one-way: a code_ arm cannot read
-        // a jvm_ row because none is written yet when it runs. The general reading is here at all
-        // because the arms cannot yet answer everything asked of them, and it leaves when they can.
-        JvmCapture.capture(dsl, classes, readAt);
         // Last, and the ordering is a dependency rather than a preference: these stages resolve
         // what the author wrote against the catalog and the classpath, so they read every family
         // above them and would resolve against whichever of those a pass had reached so far.

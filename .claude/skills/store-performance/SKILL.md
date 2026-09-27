@@ -106,7 +106,7 @@ multiplies through it. Two specific ways this bites:
 
 - **The classpath census is part of the population.** `CapturedStore.ofCatalog` takes the census as
   an argument and every arm defaults it to empty, so a probe written the obvious way has no
-  `jvm_` rows and no `store_graph_source` rows beyond the trivial. A consumer with many classpath
+  `code_` rows and no `store_graph_source` rows beyond the trivial. A consumer with many classpath
   entries has a large source membership, and a join that fans out across it is invisible in a probe
   that has one. If your reproduction does not reproduce, suspect this first.
 - **A seeded store of a dozen rows will tell you nothing about cost**, because every shape on the

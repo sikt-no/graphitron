@@ -20,7 +20,6 @@ import static org.jooq.impl.DSL.excluded;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
-import static no.sikt.graphitron.model.Tables.JVM_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_ENUM_BINDING;
@@ -95,43 +94,7 @@ final class FactWrites {
         writers.put(SQL_COLUMN, FactWrites::sqlColumn);
         writers.put(SQL_ENUM_BINDING, FactWrites::sqlEnumBinding);
         writers.put(GRAPHITRON_SPELLED_REFERENCE_ENTRY, FactWrites::graphitronSpelledReference);
-        writers.put(JVM_METHOD, FactWrites::jvmMethod);
         return writers;
-    }
-
-    /**
-     * Here rather than on the sink's generic arm because the relation gained a computed column, and
-     * an insert that so much as names one is rejected. Ignores a duplicate key, which is the census
-     * disposition rather than a choice made for this relation: the classpath is crawled per source
-     * and two crawls of one jar both land.
-     *
-     * <p>No production writer reaches this any more. The classpath is captured by the gatherer
-     * that reads it, in statements of its own, and this survives only because the computed column
-     * makes the generic arm unusable and the coverage gate writes every such relation to prove it
-     * can be written. It goes with the sink.
-     */
-    private static void jvmMethod(DSLContext dsl, List<TableRecord<?>> rows) {
-        var t = JVM_METHOD;
-        var batch = dsl.batch((dsl.insertInto(t)
-                .columns(t.SOURCE_NAME,
-                         t.CLASS_NAME,
-                         t.METHOD_NAME,
-                         t.DESCRIPTOR,
-                         t.RETURN_TYPE,
-                         t.DECLARED_RETURN_TYPE,
-                         t.TOUCHED_AT)
-                .values(markers(7)))
-                .onDuplicateKeyIgnore());
-        for (TableRecord<?> row : rows) {
-            batch = batch.bind(row.get(t.SOURCE_NAME),
-                               row.get(t.CLASS_NAME),
-                               row.get(t.METHOD_NAME),
-                               row.get(t.DESCRIPTOR),
-                               row.get(t.RETURN_TYPE),
-                               row.get(t.DECLARED_RETURN_TYPE),
-                               row.get(t.TOUCHED_AT));
-        }
-        batch.execute();
     }
 
     private static void graphitronSpelledReference(DSLContext dsl, List<TableRecord<?>> rows) {

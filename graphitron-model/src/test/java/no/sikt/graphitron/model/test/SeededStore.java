@@ -40,10 +40,13 @@ import org.jooq.Record3;
 import java.time.LocalDateTime;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD;
+import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTION;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
+import static no.sikt.graphitron.model.Tables.CODE_WRITE_SLOT;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD_PARAMETER_TABLE;
 import static no.sikt.graphitron.model.Tables.CODE_EXTERNAL_FIELD_METHOD;
@@ -105,12 +108,6 @@ import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH;
 import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CLASS;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
-import static no.sikt.graphitron.model.Tables.JVM_CLASS;
-import static no.sikt.graphitron.model.Tables.JVM_CLASS_SUPERTYPE;
-import static no.sikt.graphitron.model.Tables.JVM_METHOD;
-import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
-import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT;
-import static no.sikt.graphitron.model.Tables.JVM_DECLARED_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
@@ -2704,31 +2701,15 @@ public final class SeededStore {
      *        {@code ANNOTATION}
      */
     public static void seedClass(DSLContext dsl, String sourceName, String className, String classKind) {
-        dsl.insertInto(JVM_CLASS)
-            .set(JVM_CLASS.SOURCE_NAME, sourceName)
-            .set(JVM_CLASS.CLASS_NAME, className)
-            .set(JVM_CLASS.CLASS_KIND, classKind)
-            .set(JVM_CLASS.TOUCHED_AT, SEEDED_READING)
-            .execute();
         CodeRows.clazz(dsl, sourceName, className, SEEDED_READING);
-    }
-
-    /**
-     * One declared supertype edge. The subtype has to be a census class already; the supertype
-     * deliberately does not, a chain ending at a name no entry declares being the ordinary case
-     * rather than a broken fixture.
-     *
-     * @param declaredVia {@code EXTENDS} or {@code IMPLEMENTS}
-     */
-    public static void seedSupertype(DSLContext dsl, String sourceName, String className,
-                                     String supertypeName, String declaredVia) {
-        dsl.insertInto(JVM_CLASS_SUPERTYPE)
-            .set(JVM_CLASS_SUPERTYPE.SOURCE_NAME, sourceName)
-            .set(JVM_CLASS_SUPERTYPE.CLASS_NAME, className)
-            .set(JVM_CLASS_SUPERTYPE.SUPERTYPE_NAME, supertypeName)
-            .set(JVM_CLASS_SUPERTYPE.DECLARED_VIA, declaredVia)
-            .set(JVM_CLASS_SUPERTYPE.TOUCHED_AT, SEEDED_READING)
-            .execute();
+        // A record is a class made in one positional call, which is what the reading records about
+        // it and the only thing anything above here asked its kind for. Stated at the class and not
+        // at the first component, so a case seeding an accessor before the component it belongs to
+        // still has the class's shape on record when the accessor arrives.
+        if ("RECORD".equals(classKind)) {
+            CodeRows.construction(dsl, sourceName, className, "POSITIONAL", "<canonical>",
+                SEEDED_READING);
+        }
     }
 
     /**
@@ -2754,28 +2735,6 @@ public final class SeededStore {
     public static void seedMethod(DSLContext dsl, String sourceName, String className,
                                   String methodName, String descriptor,
                                   Map<String, String> declaredReturn) {
-        dsl.insertInto(JVM_METHOD)
-            .set(JVM_METHOD.SOURCE_NAME, sourceName)
-            .set(JVM_METHOD.CLASS_NAME, className)
-            .set(JVM_METHOD.METHOD_NAME, methodName)
-            .set(JVM_METHOD.DESCRIPTOR, descriptor)
-            .set(JVM_METHOD.RETURN_TYPE, "Object")
-            .set(JVM_METHOD.DECLARED_RETURN_TYPE, "Object")
-            .set(JVM_METHOD.TOUCHED_AT, SEEDED_READING)
-            .execute();
-        declaredReturn.forEach((typePath, referencedClass) ->
-            dsl.insertInto(JVM_DECLARED_TYPE_REF)
-                .set(JVM_DECLARED_TYPE_REF.SOURCE_NAME, sourceName)
-                .set(JVM_DECLARED_TYPE_REF.CLASS_NAME, className)
-                .set(JVM_DECLARED_TYPE_REF.OWNER_KIND, "METHOD_RETURN")
-                .set(JVM_DECLARED_TYPE_REF.OWNER_POSITION, -1)
-                .set(JVM_DECLARED_TYPE_REF.OWNER_NAME, methodName)
-                .set(JVM_DECLARED_TYPE_REF.OWNER_DESCRIPTOR, descriptor)
-                .set(JVM_DECLARED_TYPE_REF.TYPE_PATH, typePath)
-                .set(JVM_DECLARED_TYPE_REF.REFERENCED_CLASS, referencedClass)
-                .set(JVM_DECLARED_TYPE_REF.VARIANCE, "NONE")
-                .set(JVM_DECLARED_TYPE_REF.TOUCHED_AT, SEEDED_READING)
-                .execute());
         seedCodeSignature(dsl, sourceName, className, methodName, descriptor, declaredReturn);
     }
 
@@ -2794,6 +2753,26 @@ public final class SeededStore {
         CodeRows.write(dsl, sourceName, className, methodName, descriptor, declaredReturn,
             SEEDED_READING);
         seedSlot(dsl, sourceName, className, methodName, descriptor);
+    }
+
+    /** Whether the class is made in one positional call, which is what a record is here. */
+    private static boolean isPositional(DSLContext dsl, String sourceName, String className) {
+        return dsl.fetchExists(CODE_CONSTRUCTION,
+            CODE_CONSTRUCTION.SOURCE_NAME.eq(sourceName)
+                .and(CODE_CONSTRUCTION.TYPE_NAME.eq(className))
+                .and(CODE_CONSTRUCTION.SHAPE.eq("POSITIONAL")));
+    }
+
+    /** Where the named component sits in the record header, or empty where it is no component. */
+    private static Optional<Integer> componentPosition(DSLContext dsl, String sourceName,
+                                                       String className, String componentName) {
+        return dsl.select(CODE_WRITE_SLOT.POSITION)
+            .from(CODE_WRITE_SLOT)
+            .where(CODE_WRITE_SLOT.SOURCE_NAME.eq(sourceName)
+                .and(CODE_WRITE_SLOT.TYPE_NAME.eq(className))
+                .and(CODE_WRITE_SLOT.DESCRIPTOR.eq("<canonical>"))
+                .and(CODE_WRITE_SLOT.SLOT_NAME.eq(componentName)))
+            .fetchOptional(0, Integer.class);
     }
 
     /** What the seeded accessor hands back, which the signature pass wrote down a moment ago. */
@@ -2825,105 +2804,19 @@ public final class SeededStore {
         if (!descriptor.startsWith("()")) {
             return;
         }
-        String kind = dsl.select(JVM_CLASS.CLASS_KIND)
-            .from(JVM_CLASS)
-            .where(JVM_CLASS.SOURCE_NAME.eq(sourceName).and(JVM_CLASS.CLASS_NAME.eq(className)))
-            .fetchOne(0, String.class);
-        if ("RECORD".equals(kind)) {
-            Integer position = dsl.select(JVM_RECORD_COMPONENT.POSITION)
-                .from(JVM_RECORD_COMPONENT)
-                .where(JVM_RECORD_COMPONENT.SOURCE_NAME.eq(sourceName)
-                    .and(JVM_RECORD_COMPONENT.CLASS_NAME.eq(className))
-                    .and(JVM_RECORD_COMPONENT.COMPONENT_NAME.eq(methodName)))
-                .fetchOne(0, Integer.class);
-            if (position == null) {
+        if (isPositional(dsl, sourceName, className)) {
+            if (!componentPosition(dsl, sourceName, className, methodName).isPresent()) {
                 return;
             }
             CodeRows.slot(dsl, sourceName, className, methodName, descriptor, methodName,
                 resultTypeOf(dsl, sourceName, className, methodName, descriptor),
                 "RECORD_COMPONENT", SEEDED_READING);
-            // A record's component is read off one and passed to make one, so stating it states
-            // both sides. What it is filled with is what its accessor hands back, those being the
-            // same declaration seen from either end.
-            String filled = resultTypeOf(dsl, sourceName, className, methodName, descriptor);
-            CodeRows.construction(dsl, sourceName, className, "POSITIONAL", "<canonical>",
-                SEEDED_READING);
-            CodeRows.writeSlot(dsl, sourceName, className, "<init>", "<canonical>", position,
-                methodName, filled, SEEDED_READING);
             return;
         }
         CodeRows.slot(dsl, sourceName, className, methodName, descriptor,
             CodeRows.beanProperty(methodName),
             resultTypeOf(dsl, sourceName, className, methodName, descriptor),
             "BEAN_ACCESSOR", SEEDED_READING);
-    }
-
-    /**
-     * How a method's return type renders, for a case whose subject is what a reader displays rather
-     * than which classes the type names. Both {@code seedMethod} overloads leave the two columns at
-     * {@code Object}, which is coherent and says nothing; this states them, the method having been
-     * seeded already.
-     *
-     * <p>Both forms are arguments because a classfile carries them separately: the erasure is what a
-     * descriptor spells, and the declared form is what the source wrote, equal to the erasure
-     * wherever erasure loses nothing. A helper deriving one from the other would be deciding a
-     * compiler's question, and the pair is exactly what a case comparing the two is about.
-     *
-     * @param erased what {@code return_type} carries, the descriptor's own form with the package
-     *        dropped ({@code List})
-     * @param declared what {@code declared_return_type} carries, the source's form with the type
-     *        arguments kept ({@code List<String>})
-     */
-    public static void seedReturnForm(DSLContext dsl, String sourceName, String className,
-                                      String methodName, String descriptor,
-                                      String erased, String declared) {
-        dsl.update(JVM_METHOD)
-            .set(JVM_METHOD.RETURN_TYPE, erased)
-            .set(JVM_METHOD.DECLARED_RETURN_TYPE, declared)
-            .where(JVM_METHOD.SOURCE_NAME.eq(sourceName))
-            .and(JVM_METHOD.CLASS_NAME.eq(className))
-            .and(JVM_METHOD.METHOD_NAME.eq(methodName))
-            .and(JVM_METHOD.DESCRIPTOR.eq(descriptor))
-            .execute();
-    }
-
-    /**
-     * The same for a record component, on {@link #seedReturnForm}'s terms: {@code display_type} is
-     * the erasure and {@code declared_type} the source's form.
-     */
-    public static void seedComponentForm(DSLContext dsl, String sourceName, String className,
-                                         String componentName, String erased, String declared) {
-        dsl.update(JVM_RECORD_COMPONENT)
-            .set(JVM_RECORD_COMPONENT.DISPLAY_TYPE, erased)
-            .set(JVM_RECORD_COMPONENT.DECLARED_TYPE, declared)
-            .where(JVM_RECORD_COMPONENT.SOURCE_NAME.eq(sourceName))
-            .and(JVM_RECORD_COMPONENT.CLASS_NAME.eq(className))
-            .and(JVM_RECORD_COMPONENT.COMPONENT_NAME.eq(componentName))
-            .execute();
-    }
-
-    /**
-     * One position of a declared return type at a variance the map form cannot state, the method
-     * and its remaining positions having been seeded by {@link #seedMethod}. A case about variance
-     * states this row for the position it is about and leaves the rest invariant.
-     *
-     * @param variance {@code NONE}, {@code EXTENDS} or {@code SUPER}
-     */
-    public static void seedReturnTypeRef(DSLContext dsl, String sourceName, String className,
-                                         String methodName, String descriptor, String typePath,
-                                         String referencedClass, String variance) {
-        dsl.insertInto(JVM_DECLARED_TYPE_REF)
-            .set(JVM_DECLARED_TYPE_REF.SOURCE_NAME, sourceName)
-            .set(JVM_DECLARED_TYPE_REF.CLASS_NAME, className)
-            .set(JVM_DECLARED_TYPE_REF.OWNER_KIND, "METHOD_RETURN")
-                .set(JVM_DECLARED_TYPE_REF.OWNER_POSITION, -1)
-                .set(JVM_DECLARED_TYPE_REF.OWNER_NAME, methodName)
-            .set(JVM_DECLARED_TYPE_REF.OWNER_DESCRIPTOR, descriptor)
-            .set(JVM_DECLARED_TYPE_REF.TYPE_PATH, typePath)
-            .set(JVM_DECLARED_TYPE_REF.REFERENCED_CLASS, referencedClass)
-            .set(JVM_DECLARED_TYPE_REF.VARIANCE, variance)
-            .set(JVM_DECLARED_TYPE_REF.TOUCHED_AT, SEEDED_READING)
-            .execute();
     }
 
     /**
@@ -2970,32 +2863,6 @@ public final class SeededStore {
                                            String methodName, String descriptor, int position,
                                            String parameterName, Map<String, String> declaredType,
                                            String role) {
-        dsl.insertInto(JVM_METHOD_PARAMETER)
-            .set(JVM_METHOD_PARAMETER.SOURCE_NAME, sourceName)
-            .set(JVM_METHOD_PARAMETER.CLASS_NAME, className)
-            .set(JVM_METHOD_PARAMETER.METHOD_NAME, methodName)
-            .set(JVM_METHOD_PARAMETER.DESCRIPTOR, descriptor)
-            .set(JVM_METHOD_PARAMETER.POSITION, position)
-            .set(JVM_METHOD_PARAMETER.PARAMETER_NAME, parameterName)
-            .set(JVM_METHOD_PARAMETER.PARAMETER_TYPE, "Object")
-            .set(JVM_METHOD_PARAMETER.DECLARED_PARAMETER_TYPE, "Object")
-            .set(JVM_METHOD_PARAMETER.TOUCHED_AT, SEEDED_READING)
-            .onDuplicateKeyIgnore()
-            .execute();
-        declaredType.forEach((typePath, referencedClass) ->
-            dsl.insertInto(JVM_DECLARED_TYPE_REF)
-                .set(JVM_DECLARED_TYPE_REF.SOURCE_NAME, sourceName)
-                .set(JVM_DECLARED_TYPE_REF.CLASS_NAME, className)
-                .set(JVM_DECLARED_TYPE_REF.OWNER_KIND, "METHOD_PARAMETER")
-                .set(JVM_DECLARED_TYPE_REF.OWNER_NAME, methodName)
-                .set(JVM_DECLARED_TYPE_REF.OWNER_DESCRIPTOR, descriptor)
-                .set(JVM_DECLARED_TYPE_REF.OWNER_POSITION, position)
-                .set(JVM_DECLARED_TYPE_REF.TYPE_PATH, typePath)
-                .set(JVM_DECLARED_TYPE_REF.REFERENCED_CLASS, referencedClass)
-                .set(JVM_DECLARED_TYPE_REF.VARIANCE, "NONE")
-                .set(JVM_DECLARED_TYPE_REF.TOUCHED_AT, SEEDED_READING)
-                .onDuplicateKeyIgnore()
-                .execute());
         CodeRows.parameter(dsl, sourceName, className, methodName, descriptor, position,
             parameterName, declaredType, role, SEEDED_READING);
     }
@@ -3027,13 +2894,7 @@ public final class SeededStore {
      */
     public static void seedConditionMethod(DSLContext dsl, String sourceName, String className,
                                            String methodName, String... parameterClasses) {
-        dsl.insertInto(JVM_CLASS)
-            .set(JVM_CLASS.SOURCE_NAME, sourceName)
-            .set(JVM_CLASS.CLASS_NAME, className)
-            .set(JVM_CLASS.CLASS_KIND, "CLASS")
-            .set(JVM_CLASS.TOUCHED_AT, SEEDED_READING)
-            .onDuplicateKeyIgnore()
-            .execute();
+        CodeRows.clazz(dsl, sourceName, className, SEEDED_READING);
         var descriptor = new StringBuilder("(");
         for (String parameterClass : parameterClasses) {
             descriptor.append(parameterClass == null ? "I"
@@ -3176,37 +3037,21 @@ public final class SeededStore {
      */
     public static void seedRecordComponent(DSLContext dsl, String sourceName, String className,
                                            String componentName, Map<String, String> declaredType) {
-        dsl.insertInto(JVM_RECORD_COMPONENT)
-            .set(JVM_RECORD_COMPONENT.SOURCE_NAME, sourceName)
-            .set(JVM_RECORD_COMPONENT.CLASS_NAME, className)
-            .set(JVM_RECORD_COMPONENT.COMPONENT_NAME, componentName)
-            .set(JVM_RECORD_COMPONENT.POSITION, dsl.fetchCount(JVM_RECORD_COMPONENT,
-                JVM_RECORD_COMPONENT.SOURCE_NAME.eq(sourceName)
-                    .and(JVM_RECORD_COMPONENT.CLASS_NAME.eq(className))))
-            .set(JVM_RECORD_COMPONENT.DISPLAY_TYPE, "Object")
-            .set(JVM_RECORD_COMPONENT.DECLARED_TYPE, "Object")
-            .set(JVM_RECORD_COMPONENT.TOUCHED_AT, SEEDED_READING)
-            .execute();
-        declaredType.forEach((typePath, referencedClass) ->
-            dsl.insertInto(JVM_DECLARED_TYPE_REF)
-                .set(JVM_DECLARED_TYPE_REF.SOURCE_NAME, sourceName)
-                .set(JVM_DECLARED_TYPE_REF.CLASS_NAME, className)
-                .set(JVM_DECLARED_TYPE_REF.OWNER_KIND, "RECORD_COMPONENT")
-                .set(JVM_DECLARED_TYPE_REF.OWNER_DESCRIPTOR, "")
-                .set(JVM_DECLARED_TYPE_REF.OWNER_POSITION, -1)
-                .set(JVM_DECLARED_TYPE_REF.OWNER_NAME, componentName)
-                .set(JVM_DECLARED_TYPE_REF.TYPE_PATH, typePath)
-                .set(JVM_DECLARED_TYPE_REF.REFERENCED_CLASS, referencedClass)
-                .set(JVM_DECLARED_TYPE_REF.VARIANCE, "NONE")
-                .set(JVM_DECLARED_TYPE_REF.TOUCHED_AT, SEEDED_READING)
-                .execute());
+        // A record is made in one call, so a component is a position of that call before it is
+        // anything a reader accesses. The write side is stated here, where the header order is
+        // known; the read side waits for the accessor, which may not have been seeded yet.
+        CodeRows.component(dsl, sourceName, className,
+            dsl.fetchCount(CODE_WRITE_SLOT, CODE_WRITE_SLOT.SOURCE_NAME.eq(sourceName)
+                .and(CODE_WRITE_SLOT.TYPE_NAME.eq(className))
+                .and(CODE_WRITE_SLOT.DESCRIPTOR.eq("<canonical>"))),
+            componentName, declaredType, SEEDED_READING);
         // The accessor may have been seeded before this component or after it, and the slot needs
         // both halves, so each half offers the slot and whichever arrives second writes it.
-        dsl.select(JVM_METHOD.DESCRIPTOR)
-            .from(JVM_METHOD)
-            .where(JVM_METHOD.SOURCE_NAME.eq(sourceName)
-                .and(JVM_METHOD.CLASS_NAME.eq(className))
-                .and(JVM_METHOD.METHOD_NAME.eq(componentName)))
+        dsl.select(CODE_METHOD.DESCRIPTOR)
+            .from(CODE_METHOD)
+            .where(CODE_METHOD.SOURCE_NAME.eq(sourceName)
+                .and(CODE_METHOD.CLASS_NAME.eq(className))
+                .and(CODE_METHOD.METHOD_NAME.eq(componentName)))
             .fetch(0, String.class)
             .forEach(descriptor ->
                 seedSlot(dsl, sourceName, className, componentName, descriptor));

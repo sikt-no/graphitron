@@ -649,7 +649,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
     // ---- code tool ----
 
     /**
-     * {@code code}: the consumer Java the schema binds to, read off the {@code jvm_} classpath census
+     * {@code code}: the consumer Java the schema binds to, read off the {@code code_} classpath reading
      * and the {@code java_} declaration family. One tool over one census with a {@code kind} selector,
      * where three tools once shared one argument schema and differed by a predicate each.
      *

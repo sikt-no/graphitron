@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Every value arm reads the fact store, so the fixtures are captures rather than hand-built
  * projections: the {@code sql_} arms read the fixture module's real generated jOOQ model, the
- * {@code jvm_} arms a real class list, the {@code @node} arm a real capture of SDL that declares one.
+ * {@code code_} arms a real class list, the {@code @node} arm a real capture of SDL that declares one.
  * Four stores cover the whole matrix and are captured once, since what separates the cases is which
  * census is populated rather than what is in it. A case whose subject is the resolution of a site in
  * the document under validation captures that document instead; see {@link #computeCaptured}.

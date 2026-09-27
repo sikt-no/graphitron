@@ -6,7 +6,7 @@ import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 
 /**
  * Whether the classpath census holds a class under the FQN an author wrote: one read of
- * {@code jvm_class}, which is the guard every arm resolving a consumer's class name stands behind.
+ * {@code code_class}, which is the guard every arm resolving a consumer's class name stands behind.
  *
  * <p>The census's scope is the consumer's module, its reactor siblings, and the dependencies the
  * module declares itself; a class reachable only through a transitive dependency has no row here

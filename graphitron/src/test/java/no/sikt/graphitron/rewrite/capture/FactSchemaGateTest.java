@@ -678,7 +678,7 @@ class FactSchemaGateTest {
      * The graph partition dimension, in exemption polarity: every base relation leads its primary
      * key with {@code graph_name} unless its family is deliberately graph-free, so a new family is
      * covered by default and its exemption has to be argued in. Four prefixes are exempt, each
-     * for a stated reason. {@code sql_}, {@code jvm_} and {@code code_} partition by <em>source</em>
+     * for a stated reason. {@code sql_} and {@code code_} partition by <em>source</em>
      * rather than by graph (a jar or a generated package is shared between graphs, and which
      * sources make up a graph is a membership question deferred with its first consumer), so the
      * same gate holds them to leading with {@code source_name} instead: the exemption is not
@@ -721,7 +721,7 @@ class FactSchemaGateTest {
                     }
                     continue;
                 }
-                if (table.startsWith("sql_") || table.startsWith("jvm_")
+                if (table.startsWith("sql_")
                     || table.startsWith("code_")) {
                     expected = "source_name";
                 } else if (table.startsWith("java_")) {

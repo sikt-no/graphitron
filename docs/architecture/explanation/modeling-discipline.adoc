@@ -26,10 +26,10 @@ a **family model designed to support the questions we expect to ask against that
 
 This is the part that is easy to get wrong, because mirroring the corpus feels neutral and is not.
 
-The worked example is the classpath, and it is a model we are still replacing.
+The worked example is the classpath, and it is a model we have now finished replacing.
 
-The `jvm_` family describes the classpath: classes, their supertypes, methods, parameters, record
-components, declared type references. It is an accurate description and it makes **no affordance
+The `jvm_` family described the classpath: classes, their supertypes, methods, parameters, record
+components, declared type references. It was an accurate description and it made **no affordance
 toward what any of it is for.** Nothing in it says whether a method may be named in `@service`, or
 whether it can serve as a condition. So every consumer that needed to know worked it out at query
 time, and worked out the same thing again, from the same rows, on every question it asked.
@@ -60,10 +60,14 @@ and `code_external_field_method` are the same shape for the other two sites.
 So a family carries **both the base facts and the aggregated and derived facts we know we need**.
 `code_type`, `code_method` and `code_method_parameter` are read off the classfiles; `code_type_element`
 peels a generic signature down to what it delivers, `code_throwable_supertype` closes a hierarchy
-transitively, and the three arms answer the use-site question that nothing in `jvm_` would answer.
+transitively, and the three arms answer the use-site question the census would never have answered.
 One family, both kinds, because the questions are what the family is for.
 
-The `jvm_` family is being eaten away as this proceeds, from thirteen relations to six so far.
+The `jvm_` family was eaten away as this proceeded, from thirteen relations to six and then to
+none. What finished it was not the last reader moving but the last *fact* moving: each migration
+asked what a reader actually wanted, and twice the answer was a fact the census had never stated
+outright. A description you replace question by question ends when the questions run out, not when
+you decide it is time.
 
 Normalizing is mostly mechanical once you know which facts you
 are holding: extract the supertype, lift out what does not vary, key it. Deciding **which facts the

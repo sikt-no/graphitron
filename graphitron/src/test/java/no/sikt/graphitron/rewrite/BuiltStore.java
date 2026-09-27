@@ -96,7 +96,7 @@ public final class BuiltStore implements AutoCloseable {
 
     /**
      * The full arity. {@code lintConfig} is what a case whose subject is a suppression needs;
-     * {@code classpathRoots} is what a case reading the {@code jvm_} census needs, a run with no
+     * {@code classpathRoots} is what a case reading the {@code code_} family needs, a run with no
      * roots capturing no classes at all because the walk's fallback is a {@code target/classes} a
      * temporary directory does not have.
      */

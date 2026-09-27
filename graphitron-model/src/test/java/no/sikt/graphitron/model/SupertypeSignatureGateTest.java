@@ -81,7 +81,7 @@ class SupertypeSignatureGateTest {
 
     /** The families a capture walk writes. A derived relation is not a candidate to be one of these. */
     private static final List<String> CAPTURE_FAMILIES =
-        List.of("graphql_", "graphitron_", "sql_", "jvm_");
+        List.of("graphql_", "graphitron_", "sql_", "code_");
 
     /**
      * Every group of capture tables sharing a payload, by the members of the group. A set here is

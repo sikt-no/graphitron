@@ -10,7 +10,7 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_METHOD;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_REFERENCE;
-import static no.sikt.graphitron.model.Tables.JVM_CLASS;
+import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 import static no.sikt.graphitron.model.test.SeededStore.seedClass;
 import static no.sikt.graphitron.model.test.SeededStore.seedExternalField;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
@@ -107,7 +107,8 @@ class FieldProducerMethodTest {
     }
 
     /**
-     * The first cause of absence: the class is in the census and declares no method of that name.
+     * The first cause of absence: the reading reached the class and it declares no method of that
+     * name.
      * The join that tells this apart from the second cause is the assertion, absence alone saying
      * only that the reference did not resolve.
      */
@@ -115,7 +116,7 @@ class FieldProducerMethodTest {
     void aNameTheClassDoesNotDeclareResolvesToNothing() {
         withProducers(dsl -> {
             assertThat(rowsAt(dsl, "Query", "missing")).isEmpty();
-            assertThat(dsl.fetchCount(JVM_CLASS, JVM_CLASS.CLASS_NAME.eq("app.FilmService")))
+            assertThat(dsl.fetchCount(CODE_CLASS, CODE_CLASS.CLASS_NAME.eq("app.FilmService")))
                 .as("the class is present, so the absent row is about the method name")
                 .isOne();
         });
@@ -126,7 +127,7 @@ class FieldProducerMethodTest {
     void aClassOutsideTheCensusResolvesToNothing() {
         withProducers(dsl -> {
             assertThat(rowsAt(dsl, "Query", "unscanned")).isEmpty();
-            assertThat(dsl.fetchCount(JVM_CLASS, JVM_CLASS.CLASS_NAME.eq("app.NotScanned")))
+            assertThat(dsl.fetchCount(CODE_CLASS, CODE_CLASS.CLASS_NAME.eq("app.NotScanned")))
                 .isZero();
         });
     }

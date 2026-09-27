@@ -29,7 +29,7 @@ import no.sikt.graphitron.model.sources.SourceWalker;
  * The {@code java_} family's anchors: the rows are the parse reduced the same way the walk's own
  * product is, and one file is the unit both halves of the refresh work at.
  *
- * <p>The content anchor is the {@code jvm_} census's shape, one parse reduced two ways, and it is
+ * <p>The content anchor is the classpath reading's shape, one parse reduced two ways, and it is
  * non-vacuous for the same reason: the writer and the assertion reach the declarations by
  * different routes, so a writer that dropped, duplicated or mis-keyed a declaration disagrees.
  * The lifecycle anchor is partitioned by source file where the oracle families' are partitioned by

@@ -98,9 +98,6 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static no.sikt.graphitron.model.Tables.STORE_STAMP;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
-import static no.sikt.graphitron.model.Tables.JVM_CLASS_SUPERTYPE;
-import static no.sikt.graphitron.model.Tables.JVM_METHOD;
-import static no.sikt.graphitron.model.Tables.JVM_DECLARED_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.val;
@@ -290,8 +287,8 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
  *       apart (a name matching no catalog object, one matching a stored table rather than a
  *       callable, and a callable the generated model exposes no call surface for);
  *       {@code no.sikt.graphitron.model.intent.AccessorHopTest} binds the four relations an
- *       accessor hop is built from ({@code intent_delivery_container}, {@code jvm_declared_type_ref},
- *       {@code code_type_slot} and {@code intent_field_accessor_hop}) to a census stated as rows in
+ *       accessor hop is built from ({@code intent_delivery_container}, {@code code_type_slot}
+ *       and {@code intent_field_accessor_hop}) to a census stated as rows in
  *       the module whose DDL declares them, one accessor per delivery shape beside the arrangements
  *       no scan of compiled fixtures offers side by side (one class name declared on two classpath
  *       entries, one slot name offered by two classes), with the two directions in which the hop
@@ -1240,7 +1237,7 @@ class FactCaptureAgreementTest {
      * The generated class names, each at its own grain. The table class and the record class are
      * both per table; the {@code Keys} class is per schema, which is why it sits on
      * {@code sql_schema} instead of repeating down every table row. All three are join keys that
-     * reach generated sources, and {@code jvm_class} cannot supply any of them, since that family
+     * reach generated sources, and {@code code_class} cannot supply any of them, since the reading
      * excludes the generated jOOQ package by design.
      *
      * <p>The table class and the record class are pinned as two maps rather than one, because the
@@ -1568,210 +1565,6 @@ class FactCaptureAgreementTest {
         }
     }
 
-    /**
-     * The method census against the scan, descriptor and all. The comparison used to erase the
-     * descriptor because the scan's projection dropped it and capture rebuilt one from the erased
-     * display types, which two methods taking same-named types from different packages share; the
-     * fold hid a collision the store resolved by dropping a row. The scan carries the real
-     * descriptor now, so the census compares as a mirror.
-     */
-    @Test
-    @DisplayName("the JVM method census equals the scanner's, descriptor included")
-    void jvmMethodCensusEqualsTheScanner(@TempDir Path tmp) {
-        var ctx = testContext();
-        List<CompletionData.ExternalReference> extensions = CatalogBuilder.buildExternalReferences(ctx);
-        try (var store = GraphitronModelStore.open()) {
-            captureClasspath(store, ctx, graph(tmp), SubjectConfig.none());
-
-            var captured = new LinkedHashSet<String>();
-            store.dsl().select(JVM_METHOD.CLASS_NAME, JVM_METHOD.METHOD_NAME, JVM_METHOD.DESCRIPTOR)
-                .from(JVM_METHOD).fetch()
-                .forEach(row -> captured.add(row.value1() + "#" + row.value2() + row.value3()));
-
-            var expected = new LinkedHashSet<String>();
-            extensions.forEach(reference -> reference.methods()
-                .forEach(method -> expected.add(
-                    reference.className() + "#" + method.name() + method.descriptor())));
-            assertThat(captured).isEqualTo(expected);
-        }
-    }
-
-    /**
-     * The supertype census against the scan, clause included. Compared as a mirror rather than by
-     * containment: the relation is the closure's only input, so a hop capture dropped is a
-     * hierarchy the store reads as ending early, which is indistinguishable from a class that
-     * genuinely declares nothing above it.
-     *
-     * <p>The reactor's own classes are the fixture, so this also pins the two things the projection
-     * decides rather than copies: that {@code java.lang.Object} is nowhere in the census (every
-     * plain class declares it and none should have a row), and that a supertype outside the census
-     * is recorded anyway (the JDK interfaces the reactor implements are exactly those names).
-     */
-    @Test
-    @DisplayName("the JVM supertype census equals the scanner's, declaring clause included")
-    void jvmSupertypeCensusEqualsTheScanner(@TempDir Path tmp) {
-        var ctx = testContext();
-        List<CompletionData.ExternalReference> extensions = CatalogBuilder.buildExternalReferences(ctx);
-        try (var store = GraphitronModelStore.open()) {
-            captureClasspath(store, ctx, graph(tmp), SubjectConfig.none());
-
-            var captured = new LinkedHashSet<String>();
-            store.dsl().select(JVM_CLASS_SUPERTYPE.CLASS_NAME, JVM_CLASS_SUPERTYPE.DECLARED_VIA,
-                    JVM_CLASS_SUPERTYPE.SUPERTYPE_NAME)
-                .from(JVM_CLASS_SUPERTYPE).fetch()
-                .forEach(row -> captured.add(row.value1() + " " + row.value2() + " " + row.value3()));
-
-            var expected = new LinkedHashSet<String>();
-            extensions.forEach(reference -> reference.supertypes()
-                .forEach(supertype -> expected.add(reference.className() + " "
-                    + supertype.declaredVia() + " " + supertype.className())));
-            assertThat(expected).as("the reactor declares hierarchies, so this pins something")
-                .isNotEmpty();
-            assertThat(captured).isEqualTo(expected);
-            assertThat(captured).noneMatch(row -> row.endsWith(" java.lang.Object"));
-            assertThat(captured)
-                .as("a supertype the scan never reached is still a row; that is what the closure"
-                    + " joins on")
-                .anyMatch(row -> row.contains(" java.") || row.contains(" org.jooq."));
-        }
-    }
-
-    /**
-     * The three type-reference relations against the scan. One test because they are one rule
-     * applied at three coordinates, and a mirror rather than containment for the reason the
-     * supertype census is one: a walk reads a dropped position as a type that names nothing there,
-     * which is indistinguishable from a position that genuinely names no class.
-     *
-     * <p>The reactor's own classes are the fixture, which lets this pin what the decomposition
-     * decides rather than copies. Every name is qualified, that being the entire reason the
-     * relations exist beside the display columns. Some row sits at a non-root path, so a generic
-     * type is descended into rather than recorded as its outer class alone. And a root row's class
-     * agrees with the erased display column once the package is dropped, which is what says the
-     * qualification names the same class the census already reported rather than some other one.
-     */
-    @Test
-    @DisplayName("the JVM type-reference census equals the scanner's, at every position")
-    void jvmTypeReferenceCensusEqualsTheScanner(@TempDir Path tmp) {
-        var ctx = testContext();
-        List<CompletionData.ExternalReference> extensions = CatalogBuilder.buildExternalReferences(ctx);
-        try (var store = GraphitronModelStore.open()) {
-            captureClasspath(store, ctx, graph(tmp), SubjectConfig.none());
-
-            var expectedReturns = new LinkedHashSet<String>();
-            var expectedParameters = new LinkedHashSet<String>();
-            var expectedComponents = new LinkedHashSet<String>();
-            for (var reference : extensions) {
-                for (var method : reference.methods()) {
-                    String owner = reference.className() + " " + method.name() + method.descriptor();
-                    method.returnTypeRefs().forEach(ref -> expectedReturns.add(render(owner, ref)));
-                    int position = 0;
-                    for (var parameter : method.parameters()) {
-                        String at = owner + " #" + position++;
-                        parameter.typeRefs().forEach(ref -> expectedParameters.add(render(at, ref)));
-                    }
-                }
-                for (var component : reference.recordComponents()) {
-                    String owner = reference.className() + " " + component.name();
-                    component.typeRefs().forEach(ref -> expectedComponents.add(render(owner, ref)));
-                }
-            }
-
-            var capturedReturns = new LinkedHashSet<String>();
-            store.dsl().selectFrom(JVM_DECLARED_TYPE_REF)
-                .where(JVM_DECLARED_TYPE_REF.OWNER_KIND.eq("METHOD_RETURN")).fetch().forEach(row -> capturedReturns.add(
-                    render(row.getClassName() + " " + row.getOwnerName() + row.getOwnerDescriptor(),
-                        row.getTypePath(), row.getReferencedClass(), row.getVariance())));
-            var capturedParameters = new LinkedHashSet<String>();
-            store.dsl().selectFrom(JVM_DECLARED_TYPE_REF)
-                .where(JVM_DECLARED_TYPE_REF.OWNER_KIND.eq("METHOD_PARAMETER")).fetch().forEach(row -> capturedParameters.add(
-                    render(row.getClassName() + " " + row.getOwnerName() + row.getOwnerDescriptor()
-                            + " #" + row.getOwnerPosition(),
-                        row.getTypePath(), row.getReferencedClass(), row.getVariance())));
-            var capturedComponents = new LinkedHashSet<String>();
-            store.dsl().selectFrom(JVM_DECLARED_TYPE_REF)
-                .where(JVM_DECLARED_TYPE_REF.OWNER_KIND.eq("RECORD_COMPONENT")).fetch().forEach(row -> capturedComponents.add(
-                    render(row.getClassName() + " " + row.getOwnerName(),
-                        row.getTypePath(), row.getReferencedClass(), row.getVariance())));
-
-            assertThat(expectedReturns).as("the reactor declares return types, so this pins something")
-                .isNotEmpty();
-            assertThat(expectedParameters).as("and parameters").isNotEmpty();
-            assertThat(expectedComponents).as("and record components").isNotEmpty();
-            assertThat(capturedReturns).isEqualTo(expectedReturns);
-            assertThat(capturedParameters).isEqualTo(expectedParameters);
-            assertThat(capturedComponents).isEqualTo(expectedComponents);
-
-            // The reference this relation gave up when it absorbed the three per-owner relations.
-            // Each had a foreign key into the owner holding its rows, and a foreign key cannot span
-            // three parents chosen by a column; the arrangement that would have kept two of them
-            // costs the primary key, which on a census is worth more, a duplicate row being the
-            // plausible fault here and a dangling one visible the moment anything reads it. So the
-            // edges are checked, over the reactor's own classpath, where the population is large
-            // enough for a writer bug to show.
-            record Arm(String kind, String owner) {}
-            for (Arm arm : List.of(
-                    new Arm("METHOD_RETURN",
-                        "jvm_method d WHERE d.source_name = s.source_name"
-                            + " AND d.class_name = s.class_name AND d.method_name = s.owner_name"
-                            + " AND d.descriptor = s.owner_descriptor"),
-                    new Arm("METHOD_PARAMETER",
-                        "jvm_method_parameter d WHERE d.source_name = s.source_name"
-                            + " AND d.class_name = s.class_name AND d.method_name = s.owner_name"
-                            + " AND d.descriptor = s.owner_descriptor"
-                            + " AND d.position = s.owner_position"),
-                    new Arm("RECORD_COMPONENT",
-                        "jvm_record_component d WHERE d.source_name = s.source_name"
-                            + " AND d.class_name = s.class_name"
-                            + " AND d.component_name = s.owner_name"))) {
-                assertThat(store.dsl().fetchOne(
-                        "SELECT COUNT(*) FROM jvm_declared_type_ref s WHERE s.owner_kind = ?"
-                            + " AND NOT EXISTS (SELECT 1 FROM " + arm.owner() + ")",
-                        arm.kind()).into(int.class))
-                    .as("%s positions with no census owner", arm.kind())
-                    .isZero();
-                assertThat(store.dsl().fetchOne(
-                        "SELECT COUNT(*) FROM jvm_declared_type_ref WHERE owner_kind = ?",
-                        arm.kind()).into(int.class))
-                    .as("the scan reaches the %s arm, so the check above saw something", arm.kind())
-                    .isPositive();
-            }
-
-            var everyClass = store.dsl()
-                .select(JVM_DECLARED_TYPE_REF.REFERENCED_CLASS).from(JVM_DECLARED_TYPE_REF)
-                .fetch(0, String.class);
-            assertThat(everyClass)
-                .as("a package-less name is what the display columns already carry; this relation"
-                    + " exists to resolve one")
-                .allMatch(name -> name.contains("."));
-
-            assertThat(capturedReturns.stream().anyMatch(row -> !row.contains(" @= ")))
-                .as("a generic return type is descended into, not recorded as its outer class alone")
-                .isTrue();
-
-            var rootDisagreements = store.dsl()
-                .select(JVM_METHOD.CLASS_NAME, JVM_METHOD.METHOD_NAME, JVM_METHOD.RETURN_TYPE,
-                    JVM_DECLARED_TYPE_REF.REFERENCED_CLASS)
-                .from(JVM_DECLARED_TYPE_REF)
-                .join(JVM_METHOD)
-                .on(JVM_METHOD.SOURCE_NAME.eq(JVM_DECLARED_TYPE_REF.SOURCE_NAME))
-                .and(JVM_METHOD.CLASS_NAME.eq(JVM_DECLARED_TYPE_REF.CLASS_NAME))
-                .and(JVM_METHOD.METHOD_NAME.eq(JVM_DECLARED_TYPE_REF.OWNER_NAME))
-                .and(JVM_METHOD.DESCRIPTOR.eq(JVM_DECLARED_TYPE_REF.OWNER_DESCRIPTOR))
-                .where(JVM_DECLARED_TYPE_REF.OWNER_KIND.eq("METHOD_RETURN"))
-                .and(JVM_DECLARED_TYPE_REF.TYPE_PATH.eq(""))
-                .fetch()
-                .stream()
-                .filter(row -> !row.value4().substring(row.value4().lastIndexOf('.') + 1)
-                    .equals(row.value3()))
-                .map(row -> row.value1() + "." + row.value2() + ": " + row.value3()
-                    + " vs " + row.value4())
-                .toList();
-            assertThat(rootDisagreements)
-                .as("the qualified root names the class the erased display column already reported")
-                .isEmpty();
-        }
-    }
-
     /** One type reference as a comparable line; the root path renders as {@code @=}. */
     private static String render(String owner, CompletionData.TypeRef ref) {
         return render(owner, ref.path(), ref.referencedClass(), ref.variance());
@@ -1955,7 +1748,7 @@ class FactCaptureAgreementTest {
     /**
      * The classpath capture, which the walk does not perform.
      *
-     * <p>The jvm_ family is the classpath gatherer's, and the classpath gatherer runs in
+     * <p>The code_ family is the classpath gatherer's, and the classpath gatherer runs in
      * ModelCapture, so a fixture wanting those rows runs that pass rather than expecting the walk
      * to have written them. The roots are the ones the census beside it was read from, two
      * different answers to what the classpath is being the one way to make the comparison

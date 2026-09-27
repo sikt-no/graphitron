@@ -18,7 +18,7 @@ import static org.jooq.impl.DSL.selectOne;
  *
  * <p>Scoping through the pair makes the constraint structural instead of a rule each query site
  * remembers. The graph-keyed families lead with {@code graph_name} and can be filtered directly;
- * the source-keyed ones ({@code sql_}, {@code jvm_}) join to {@code store_graph_source} to reach
+ * the source-keyed ones ({@code sql_}, {@code code_}) join to {@code store_graph_source} to reach
  * the graph, which is why {@link SourceGraph} resolves in this direction too.
  *
  * <p>One type for every consumer, not one per module. A second copy of this record, however
@@ -46,7 +46,7 @@ public record StoreHandle(DSLContext dsl, String graphName) {
      *
      * <p>Handing the predicate out from the handle is what makes the scoping structural for the
      * families that carry no {@code graph_name} of their own. A query over {@code sql_} or
-     * {@code jvm_} that forgets it does not fail; it answers with a sibling module's tables and
+     * {@code code_} that forgets it does not fail; it answers with a sibling module's tables and
      * classes folded in, which reads as a workspace-wide census and is the failure a shared store
      * makes possible. Graph-keyed relations need none of this and filter on their own column.
      *

@@ -71,7 +71,7 @@ final class StoreBackedBuild implements AutoCloseable {
     }
 
     /**
-     * The classpath-roots overload, for a case whose subject includes the {@code jvm_} class census. A
+     * The classpath-roots overload, for a case whose subject includes the {@code code_} class anchor. A
      * run with no roots captures no classes at all, the walk's fallback being a
      * {@code <basedir>/target/classes} that a temporary directory does not have, so a case reading the
      * census has to name the entry it means.

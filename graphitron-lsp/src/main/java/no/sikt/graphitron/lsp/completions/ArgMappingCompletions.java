@@ -29,7 +29,7 @@ import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
  *
  * <ul>
  *   <li><b>Left</b> (Java parameter): the parameter names of the method the sibling
- *       {@code className} / {@code method} values name, from {@code jvm_method_parameter}.
+ *       {@code className} / {@code method} values name, from {@code code_method_parameter}.
  *       Suppressed when the names are absent (the consumer compiled without
  *       {@code -parameters}); an existing diagnostic nudges toward the fix.</li>
  *   <li><b>Right</b> (GraphQL argument): the enclosing field's GraphQL argument

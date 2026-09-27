@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
 
-import static no.sikt.graphitron.model.Tables.JVM_CLASS;
+import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.sink.FactSink;
@@ -58,14 +58,14 @@ class GathererHandoffTest {
 
                 // And its own write resolves against that row, the foreign key being satisfied by
                 // the earlier flush rather than by both rows sharing one.
-                var declared = dsl.newRecord(JVM_CLASS);
+                var declared = dsl.newRecord(CODE_CLASS);
                 declared.setSourceName(SOURCE);
                 declared.setClassName("com.example.Thing");
-                declared.setClassKind("CLASS");
+                declared.setTouchedAt(PROBE_INSTANT);
                 sink.add(declared);
                 sink.flush();
 
-                assertThat(dsl.fetchCount(JVM_CLASS, JVM_CLASS.SOURCE_NAME.eq(SOURCE))).isEqualTo(1);
+                assertThat(dsl.fetchCount(CODE_CLASS, CODE_CLASS.SOURCE_NAME.eq(SOURCE))).isEqualTo(1);
             });
         }
     }

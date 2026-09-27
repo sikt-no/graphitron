@@ -68,11 +68,10 @@ class GathererIsolationTest {
         // Two readings of one corpus: the arms say what an author may write at each
         // directive, and the general reading says what is there. The second leaves when
         // the first can answer everything asked of it.
-        // Three gatherers, on the document package's shape: the corpus reader opens each
-        // classpath entry once and owns the store's record of what was read, and the two
-        // that write from it are handed the reading rather than the configuration.
-        roll.put("capture/code",
-            Set.of("ClasspathSourceCapture", "CodeCapture", "JvmCapture"));
+        // Two gatherers, on the document package's shape: the corpus reader opens each classpath
+        // entry once and owns the store's record of what was read, and the one that writes from it
+        // is handed the reading rather than the configuration.
+        roll.put("capture/code", Set.of("ClasspathSourceCapture", "CodeCapture"));
         roll.put("capture/sdl", Set.of("SdlFactCapture"));
         // Four gatherers in this package, one per stage of reading the corpus: the corpus reader
         // owns the store's record of what was read and hands the documents on, the two

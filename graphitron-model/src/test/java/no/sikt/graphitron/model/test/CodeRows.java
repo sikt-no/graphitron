@@ -166,6 +166,25 @@ public final class CodeRows {
     }
 
     /**
+     * One record component: the type it names, what that type delivers, and the position of the
+     * canonical call it fills.
+     *
+     * <p>The write side only. A component is also read, through the accessor the language
+     * guarantees, and that slot is written where the accessor is: the two halves of a component
+     * arrive in whichever order a case states them, and each writes the half it knows.
+     */
+    public static void component(DSLContext dsl, String sourceName, String className, int position,
+                                 String componentName, Map<String, String> positions,
+                                 LocalDateTime readAt) {
+        String typeName = resultTypeName(positions, "()Ljava/lang/Object;");
+        type(dsl, sourceName, typeName, positions.get(""), readAt);
+        element(dsl, sourceName, typeName, positions, readAt);
+        construction(dsl, sourceName, className, "POSITIONAL", "<canonical>", readAt);
+        writeSlot(dsl, sourceName, className, "<init>", "<canonical>", position, componentName,
+            typeName, readAt);
+    }
+
+    /**
      * One member slot, where the name is one; a null name is a method offering none.
      *
      * <p>The declaring class is the offering class here, a stated census having no inheritance to

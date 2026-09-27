@@ -17,7 +17,7 @@ it learns goes into tables in an embedded H2 database.
 
 Each table holds exactly one kind of statement. `graphql_field` holds "this type declares this
 field"; one row per field, keyed by the field's own coordinates. `sql_table` holds "the consumer's
-database declares this table". `jvm_class` holds "this class exists on the declared classpath".
+database declares this table". `code_class` holds "this class exists on the declared classpath".
 A table is a stack of filled-in copies of its one sentence, and the sentence itself is written on
 the table as a SQL comment, so the store describes itself: connect to it, read
 `INFORMATION_SCHEMA`, and every table and column tells you what it means. The generated

@@ -274,7 +274,7 @@ public final class Hovers {
 
     /**
      * The class the cursor names, if this graph's classpath census holds it, with the Javadoc its
-     * source declaration carries. One query answers both: presence is a {@code jvm_class} row inside
+     * source declaration carries. One query answers both: presence is a {@code code_class} row inside
      * the graph's read set, and the description is a correlated select into the {@code java_} family
      * by name, the only join that reaches a doc comment at all. Absence falls through to the SDL
      * docstring on the coordinate, which is what the author sees for a class nothing has compiled.

@@ -115,8 +115,6 @@ class RelationRegistrationGateTest {
             "sql_primary_key", "sql_referential_constraint", "sql_index",
             "sql_index_column", "sql_routine", "sql_routine_parameter",
             "sql_node_metadata", "sql_node_key_column", "sql_table_record_supertype",
-            "jvm_class", "jvm_class_supertype", "jvm_method",
-            "jvm_method_parameter", "jvm_record_component", "jvm_declared_type_ref",
             "store_source", "store_stamp",
             "store_graph", "store_graph_schema_input", "store_graph_schema_extension",
             "store_graph_supergraph", "store_graph_output", "store_graph_tenant_column",

@@ -44,7 +44,7 @@ public final class TableCompletions {
             return List.of();
         }
         // The generated table class's Javadoc, on the .java cadence, joined by the FQN capture
-        // recorded for exactly this purpose: jvm_class excludes the generated package, so nothing
+        // recorded for exactly this purpose: the classpath reading excludes the generated package, so nothing
         // else reaches these classes.
         Field<String> javadoc = SourceDeclarations.classJavadocOf(SQL_TABLE.CLASS_FQN);
         var rows = store.dsl()
