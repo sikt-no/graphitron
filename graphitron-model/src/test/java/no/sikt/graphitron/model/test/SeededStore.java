@@ -64,7 +64,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FACET_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_ENTRY;
@@ -2099,24 +2098,6 @@ public final class SeededStore {
             .execute();
     }
 
-    /**
-     * An {@code @asFacet} application on an input field: presence and a position, which is the whole
-     * of what the directive states. What the facet binds is elsewhere, on the field's own row and on
-     * its {@code @field} application, which is why a case about a facet seeds three rows and not
-     * one.
-     */
-    public static void seedFacet(DSLContext dsl, String graphName, String typeName,
-                                 String fieldName) {
-        dsl.insertInto(GRAPHITRON_FACET_ENTRY)
-            .set(GRAPHITRON_FACET_ENTRY.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_FACET_ENTRY.TYPE_NAME, typeName)
-            .set(GRAPHITRON_FACET_ENTRY.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_FACET_ENTRY.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_FACET_ENTRY.SOURCE_LINE, 2)
-            .set(GRAPHITRON_FACET_ENTRY.SOURCE_COLUMN, 3)
-            .set(GRAPHITRON_FACET_ENTRY.TOUCHED_AT, SEEDED_READING)
-            .execute();
-    }
 
     /**
      * The raw application itself: that a directive of this name was written on a field, with none of
