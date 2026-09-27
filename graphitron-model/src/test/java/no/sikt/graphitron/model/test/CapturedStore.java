@@ -391,6 +391,21 @@ public final class CapturedStore implements AutoCloseable {
     }
 
     /**
+     * The same with a class root, which is what a store holding several graphs over one reactor is:
+     * the classpath does not vary by graph, and the families read out of it carry no graph at all,
+     * so the second graph's reading of it is the first graph's reading again.
+     */
+    public CapturedStore andCatalogGraph(String otherGraph, String sdl, JooqCatalog jooq,
+                                         List<CompletionData.ExternalReference> census,
+                                         Path classRoot) {
+        Path other = write(directory, otherGraph, sdl);
+        captureFile(store, other, directory, otherGraph,
+            SchemaLoader.load(List.of(SchemaSource.file(other))), jooq, census, false,
+            List.of(new ClasspathEntry(classRoot, ClasspathEntry.Origin.PROJECT, null, null)));
+        return this;
+    }
+
+    /**
      * Captures a second graph over the <em>same</em> schema file this fixture already captured, which
      * is the shared-file case: one document, two memberships, both true. Keying the filename on the
      * graph name is what leaves this expressible; a directory per graph would make the file's

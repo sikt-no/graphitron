@@ -14,6 +14,8 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.LinkedHashSet;
+import java.util.stream.Stream;
+import java.util.Collection;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
@@ -132,7 +134,15 @@ public final class ClasspathSourceCapture {
         }
 
         release(dsl, graph, List.copyOf(claimed));
-        claim(dsl, graph, reading.census().entries(), readAt);
+        // Every entry this graph reads, which is the ones opened and the ones left alone alike. An
+        // entry left alone is still this graph's to see: the claim is how a graph-scoped view
+        // reaches a source-keyed fact, and a reading that declined to open a file did not stop
+        // reading it. Read entries and unchanged ones only, never the whole declared list: an entry
+        // nothing has ever opened has no source row for the claim to hang on.
+        var read = new LinkedHashSet<String>();
+        reading.census().entries().forEach(at -> read.add(at.source()));
+        read.addAll(unchanged);
+        claim(dsl, graph, List.copyOf(read), readAt);
         // After the claims this graph has let go, and never before them: the claim is what refuses
         // the delete, so an entry still claimed here is one this reading would fail on rather than
         // one it would keep. Every entry the configuration named counts as read, an entry left
@@ -149,20 +159,27 @@ public final class ClasspathSourceCapture {
     }
 
     /**
-     * What each of this graph's classpath entries was last transcribed from, by entry.
+     * What each classpath entry the store holds rows for was last read from, by entry.
      *
-     * <p>The graph's own answer and not the store's. Two graphs may read one jar, and the stamp on
-     * {@code store_source} says what it hashed to for whichever of them read it last, which is not
-     * a statement about whether this graph holds rows derived from those bytes.
+     * <p>The store's answer and not the graph's, which is a correction. The question a skip asks is
+     * whether the rows a reading would write are already there and already derived from these bytes,
+     * and for this corpus that is not a per-graph question: no relation the classpath feeds carries
+     * a graph at all, so the rows are the store's and a second graph reading one jar would write the
+     * rows the first graph wrote. Asking the graph's own claim instead made every graph after the
+     * first re-read a classpath nothing had changed, which on this module's output is sixteen
+     * thousand rows re-derived per graph.
+     *
+     * <p>What stays per graph is the claim, not the reading. A graph must still say it reads an
+     * entry, because that membership is how a graph-scoped view reaches a source-keyed fact; the
+     * skip above leaves that write alone and declines only the reading behind it.
      */
     private static java.util.Map<String, String> heldStamps(DSLContext dsl, String graph) {
-        var m = STORE_GRAPH_SOURCE;
         var t = STORE_SOURCE;
-        return dsl.select(m.SOURCE_NAME, m.STAMP)
-            .from(m).join(t).on(t.SOURCE_NAME.eq(m.SOURCE_NAME))
-            .where(m.GRAPH_NAME.eq(graph))
-            .and(t.SOURCE_KIND.in("JAR", "DIRECTORY"))
-            .fetchMap(m.SOURCE_NAME, m.STAMP);
+        return dsl.select(t.SOURCE_NAME, t.STAMP)
+            .from(t)
+            .where(t.SOURCE_KIND.in("JAR", "DIRECTORY"))
+            .and(t.STAMP.isNotNull())
+            .fetchMap(t.SOURCE_NAME, t.STAMP);
     }
 
     /**
@@ -324,17 +341,17 @@ public final class ClasspathSourceCapture {
      * were and the instant says when this graph last transcribed them, and a stamp that could not
      * date itself would license a skip against an answer of unknown age.
      */
-    private static void claim(DSLContext dsl, String graph, List<ClassfileCensus.EntryAt> entries,
+    private static void claim(DSLContext dsl, String graph, List<String> entries,
                               LocalDateTime readAt) {
         if (entries.isEmpty()) {
             return;
         }
         var m = STORE_GRAPH_SOURCE;
         var rows = entries.stream().collect(Rows.toRowList(
-            at -> val(graph, m.GRAPH_NAME),
-            at -> val(at.source(), m.SOURCE_NAME),
-            at -> val(stampOf(at.source()), m.STAMP),
-            at -> val(readAt, m.READ_AT)));
+            source -> val(graph, m.GRAPH_NAME),
+            source -> val(source, m.SOURCE_NAME),
+            source -> val(stampOf(source), m.STAMP),
+            source -> val(readAt, m.READ_AT)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(m, m.GRAPH_NAME, m.SOURCE_NAME, m.STAMP, m.READ_AT)
                 .values(markers)
@@ -366,14 +383,48 @@ public final class ClasspathSourceCapture {
     }
 
     /**
-     * What the entry's bytes hash to, or null where it is a directory.
+     * What the entry is, as something a later reading can compare: a jar by its bytes, a directory
+     * by a walk of what it holds.
      *
-     * <p>A directory is deliberately unstamped. It changes on every compile, so hashing it would
-     * buy an invalidation that always fires and pay a full walk to decide that.
+     * <p>A directory used to be left unstamped, on the reasoning that it changes on every compile
+     * and so would buy an invalidation that always fires while paying a full walk to decide it. The
+     * first half is true and the second does not survive measurement. Over this module's own output,
+     * 1904 files, the walk costs 66 to 82 milliseconds warm, against the roughly nine seconds the
+     * read it can skip costs. That is under one percent to decide, which is worth paying on the
+     * compile where it fires and worth a great deal on the readings where it does not: a store
+     * capturing several graphs reads one classpath once rather than once each.
+     *
+     * <p>Size and modification time rather than content, and only for the directory. A jar is one
+     * file, so hashing it is exact and costs one read; a directory is many, and reading all of them
+     * to decide whether to read all of them answers the question by doing the work. What the stat
+     * pair misses is a rewrite that keeps both, which for build output means a compiler writing
+     * identical length at the same millisecond. The path is in the digest too, so a file added or
+     * removed moves it even where every surviving file is untouched.
      */
     private static String stampOf(String sourceName) {
         Path path = Path.of(sourceName);
-        return Files.isDirectory(path) ? null : SourceStamp.ofFile(path);
+        return Files.isDirectory(path) ? directoryStamp(path) : SourceStamp.ofFile(path);
+    }
+
+    /**
+     * The walk behind a directory's stamp: every file under it by path, length and modification
+     * time, in an order the filesystem does not get to choose. Null where the walk fails, which
+     * reads as changed, an entry nothing can look at having nothing to compare.
+     */
+    private static String directoryStamp(Path directory) {
+        try (Stream<Path> files = Files.walk(directory)) {
+            var lines = new java.util.ArrayList<String>();
+            for (Path file : files.filter(Files::isRegularFile).toList()) {
+                lines.add(directory.relativize(file)
+                    + "\u0001" + Files.size(file)
+                    + "\u0001" + Files.getLastModifiedTime(file).toMillis());
+            }
+            java.util.Collections.sort(lines);
+            return SourceStamp.of(String.join("\n", lines)
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
     }
 
     /** When the entry was last written, or null where it cannot be read. */

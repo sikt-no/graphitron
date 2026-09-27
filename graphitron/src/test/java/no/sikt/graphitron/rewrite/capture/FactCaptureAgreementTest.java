@@ -1629,9 +1629,10 @@ class FactCaptureAgreementTest {
                 .fetch(STORE_SOURCE.SOURCE_NAME);
             assertThat(unstamped).as("a jar the scan read is a jar it can hash").isEmpty();
 
-            var stamped = store.dsl().fetchCount(STORE_SOURCE,
-                STORE_SOURCE.SOURCE_KIND.eq("DIRECTORY").and(STORE_SOURCE.STAMP.isNotNull()));
-            assertThat(stamped).as("a directory changes on every compile, so it is never stamped")
+            var unstampedDirectories = store.dsl().fetchCount(STORE_SOURCE,
+                STORE_SOURCE.SOURCE_KIND.eq("DIRECTORY").and(STORE_SOURCE.STAMP.isNull()));
+            assertThat(unstampedDirectories)
+                .as("a directory is walked for a stamp, which is what lets an unchanged one be skipped")
                 .isZero();
         }
     }
