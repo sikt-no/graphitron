@@ -244,7 +244,7 @@ public final class ClasspathCensus {
                     } else {
                         counters.filesRead++;
                         fresh = new CachedFile(size, modified,
-                            ClasspathScanner.readClassFile(file, jooqPackage, source)
+                            ClasspathScanner.readClassFile(root, file, jooqPackage, source)
                                 .map(List::of)
                                 .orElseGet(List::of));
                     }

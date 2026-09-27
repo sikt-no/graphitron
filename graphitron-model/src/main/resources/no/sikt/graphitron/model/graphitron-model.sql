@@ -246,6 +246,37 @@ CREATE TABLE store_source (
                                       'TRANSITIVE')),
   CHECK (origin <> 'PROJECT' OR coordinate IS NULL)
 );
+-- One class file under a classpath entry, which is the unit the reading opens and therefore the
+-- unit it can decline to open again. The entry above it is too coarse to invalidate on: in a
+-- reactor every entry is a target/classes directory, so an entry-grained answer says "changed" on
+-- every build and the families below are re-read whole.
+--
+-- Keyed by where the file sits, not by what it declares. What a file declares is read out of it,
+-- and a file may declare more than one class; the tie between a class and the file it came from is
+-- the reading's to state and lives in code_class beside the rest of what the reading found.
+--
+-- The size and the time are carried rather than hashed into one opaque value, on store_source's
+-- terms, which holds its own mtime beside its stamp. A reader can then see why a file counted as
+-- changed, and the comparison is two columns rather than a digest nobody can take apart. For build
+-- output that is also the cheap answer: reading every file to decide whether to read every file
+-- answers the question by doing the work, and ClasspathCensus already reuses a file on exactly this
+-- pair.
+CREATE TABLE store_class_file (
+  source_name VARCHAR NOT NULL,
+  file_path   VARCHAR NOT NULL,
+  byte_size   BIGINT,
+  mtime       TIMESTAMP,
+  touched_at  TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, file_path),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE store_class_file IS 'One class file the classpath reading found, at the entry it was found under and the path it sits at: the unit a reading opens, and therefore the unit it can decline to open again. For example no/sikt/example/FilmService.class under a consumer''s target/classes is one row, and a file a later compile removed is no row at all.';
+COMMENT ON COLUMN store_class_file.source_name IS 'the classpath entry the file was found under; the key''s leading dimension and what it is swept with, an entry that leaves taking its files by cascade';
+COMMENT ON COLUMN store_class_file.file_path IS 'where the file sits under that entry, forward-slashed on every platform so a store written on one machine and compared on another does not disagree about files neither has changed. With the entry above, the grain. Not the class name with dots for slashes: what a file declares is what reading it said, which code_class states';
+COMMENT ON COLUMN store_class_file.byte_size IS 'the file''s length when it was last read; half of what a later reading compares to decide whether to open it again. Null where it could not be established, which reads as changed';
+COMMENT ON COLUMN store_class_file.mtime IS 'when the file was last written, as the filesystem reports it; the other half of the comparison. Trustworthy here because this is build output and a compiler wrote it, which is not a claim to make about a file a person edits';
+COMMENT ON COLUMN store_class_file.touched_at IS 'the reading that last found this file; what the sweep compares against, so a file the reading no longer finds is deleted and takes what was read out of it with it';
+
 CREATE TABLE store_graph_source (
   graph_name  VARCHAR NOT NULL,
   source_name VARCHAR NOT NULL,
@@ -5927,11 +5958,14 @@ COMMENT ON COLUMN graphitron_field_table_link.touched_at IS 'when the reading th
 CREATE TABLE code_class (
   source_name VARCHAR NOT NULL,
   class_name  VARCHAR NOT NULL,
+  file_path   VARCHAR NOT NULL,
   touched_at  TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, class_name),
-  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+  FOREIGN KEY (source_name, file_path)
+    REFERENCES store_class_file (source_name, file_path) ON DELETE CASCADE
 );
-COMMENT ON TABLE code_class IS 'One class the reading read, under the entry it was read from. For example a consumer''s FilmService on the reactor''s own output, beside a jOOQ interface on a declared jar.';
+COMMENT ON TABLE code_class IS 'One class the reading read, and the file under the entry it was read out of. For example a consumer''s FilmService on the reactor''s own output, beside a jOOQ interface on a declared jar.';
+COMMENT ON COLUMN code_class.file_path IS 'the file it was read out of, under that entry. Not part of the key, a file being free to declare more than one class; the foreign key is what lets a file the next reading does not find take its classes, and their members, with it';
 COMMENT ON COLUMN code_class.source_name IS 'the classpath entry the class was read from; the key''s leading dimension, and the reason one name declared by two entries is two classes. A graph reaches it through store_graph_source like any source-keyed fact';
 COMMENT ON COLUMN code_class.class_name IS 'the fully-qualified binary name as the classfile spells it';
 COMMENT ON COLUMN code_class.touched_at IS 'when the reading that produced this row ran; swept with the entry it was read from';
@@ -5983,7 +6017,7 @@ CREATE TABLE code_method (
   FOREIGN KEY (source_name, result_type) REFERENCES code_type (source_name, type_name)
 );
 COMMENT ON TABLE code_method IS 'One public method of a class the reactor built, which is the population every directive naming Java draws its candidates from. For example filmsByRating(DSLContext, String) on a consumer''s FilmService.';
-COMMENT ON COLUMN code_method.source_name IS 'the classpath entry the declaring class was read from; the key''s leading dimension, so a method is a fact about one entry and is swept with it';
+COMMENT ON COLUMN code_method.source_name IS 'the classpath entry the declaring class was read from; the key''s leading dimension. With the class beside it this row hangs on code_class, so a class a compile removed takes its methods with it rather than leaving them until the whole entry goes';
 COMMENT ON COLUMN code_method.class_name IS 'the declaring class''s binary name, the left part of what an author writes at a directive';
 COMMENT ON COLUMN code_method.method_name IS 'the method''s own name, the right part of it. Not a key on its own: a name an author writes may denote several declarations, and the count of rows sharing one is what says so';
 COMMENT ON COLUMN code_method.descriptor IS 'the JVM method descriptor, completing the key. What tells two overloads apart, which no rendering of the erased types can: two methods taking same-named types from different packages render alike';
@@ -6602,7 +6636,8 @@ CREATE TABLE code_scalar_constant (
   input_type  VARCHAR,
   touched_at  TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, class_name, field_name),
-  FOREIGN KEY (source_name) REFERENCES store_source (source_name) ON DELETE CASCADE
+  FOREIGN KEY (source_name, class_name)
+    REFERENCES code_class (source_name, class_name) ON DELETE CASCADE
 );
 COMMENT ON TABLE code_scalar_constant IS 'One constant an author may name in @scalarType(scalar:), and the Java type its scalar coerces to. For example a DATE_TIME field coercing to java.time.OffsetDateTime.';
 COMMENT ON COLUMN code_scalar_constant.source_name IS 'the classpath entry the owning class was read from, anchored by store_source; the key''s leading dimension, and what a reader joins through to scope by origin or by the graph''s own source set';
@@ -15015,6 +15050,9 @@ INSERT INTO meta_grain VALUES
   ('classpath-class',
    'one class of one classpath entry',
    'source_name, class_name', 'classpath'),
+  ('class-file',
+   'one class file under one classpath entry',
+   'source_name, file_path', 'classpath'),
   ('class-ancestor',
    'one type one class is, the class itself excluded',
    'source_name, class_name, supertype_name', 'classpath'),
@@ -15900,6 +15938,10 @@ INSERT INTO meta_relation VALUES
    'One constant an author may name in @scalarType(scalar:), and the Java type its scalar coerces to.',
    'For example a DATE_TIME field coercing to java.time.OffsetDateTime.',
    'The first arm of a family whose shape is one gatherer per thing an author writes, rather than one index of every class on the classpath. An index answers what the classpath holds and leaves every reader to re-filter it; this answers what may be written at one directive, and the filter is the arm''s own admission rule. The admission is a classfile fact, a public static field whose declared type is exactly GraphQLScalarType, so the candidate set is read from bytes. The input type is not, and the column says so: it is reached by loading the class, the coercing being a live object rather than a signature. Not reactor-limited, alone among the arms but for the throwables, because the constants an author names are a library''s and the premise that consumer vocabulary lives in reactor source was falsified outright by @scalarType(scalar: "graphql.scalars.ExtendedScalars.Date").'),
+  ('store_class_file', 'class-file', 'classpath-source',
+   'One class file the classpath reading found, at the entry it was found under and the path it sits at: the unit a reading opens, and therefore the unit it can decline to open again.',
+   'For example no/sikt/example/FilmService.class under a consumer''s target/classes is one row, and a file a later compile removed is no row at all.',
+   'The entry above it cannot carry this. In a reactor every classpath entry is a target/classes directory, which has no stamp of its own, so an entry-grained invalidation reads as changed on every build and the families below are re-read whole. The file is the grain the reading actually works at, and it is already the grain those families key themselves by, so what hangs off a class file can hang off this row and go when it goes. Store-wide rather than per graph, on the families'' own terms: nothing read out of a class file varies by which graph asked, so a second graph reading the same entry finds the work done.'),
   ('code_method', 'class-method', 'code',
    'One public method of a class the reactor built, which is the population every directive naming Java draws its candidates from.',
    'For example filmsByRating(DSLContext, String) on a consumer''s FilmService.',
@@ -15909,9 +15951,9 @@ INSERT INTO meta_relation VALUES
    'For example position 0 of filmTitleContains, named film and playing the TABLE_CONCRETE role.',
    'A method''s parameters are the method''s own fact, so they are held once and the arms read them. Written rather than derived because a descriptor states types and nothing else: the name a binding targets is in the MethodParameters attribute, and the role is an assignability question the descriptor cannot answer. The role vocabulary is four values and they are exclusive because no type satisfies two; it is one column rather than one per arm because a position typed as a jOOQ table is typed that way whether the method is reached at @condition or anywhere else, and the arm''s reading of what that means is the arm''s. Keyed on position and not on name, since the name is exactly the part a classfile may omit.'),
   ('code_class', 'classpath-class', 'code',
-   'One class the reading read, under the entry it was read from.',
+   'One class the reading read, and the file under the entry it was read out of.',
    'For example a consumer''s FilmService on the reactor''s own output, beside a jOOQ interface on a declared jar.',
-   'The anchor the rest of the family keys a class to. Three readers wanted it independently and none of them wants anything else about a class: an editor asking whether a name an author typed is one the classpath has, a completion listing what there is, and a condition route telling "this class declares no such method" apart from "this class is not here at all", which a relation of candidates cannot say by itself. Carries no kind and no rendering, because a class''s declared form is already the decision code_type_slot.origin records and no reader has wanted the evidence behind it. Distinct from code_type on population rather than on subject: a type is what a signature names, so it holds java.util.List<Film> which is no class, and a class the reading read that no signature mentions is here and not there.'),
+   'The anchor the rest of the family keys a class to. Three readers wanted it independently and none of them wants anything else about a class: an editor asking whether a name an author typed is one the classpath has, a completion listing what there is, and a condition route telling "this class declares no such method" apart from "this class is not here at all", which a relation of candidates cannot say by itself. Carries no kind and no rendering, because a class''s declared form is already the decision code_type_slot.origin records and no reader has wanted the evidence behind it. Distinct from code_type on population rather than on subject: a type is what a signature names, so it holds java.util.List<Film> which is no class, and a class the reading read that no signature mentions is here and not there. It carries the file the class came out of because that tie is established by reading rather than implied by the path, which is also why the file is keyed by path and not by class name.'),
   ('code_type', 'declared-type', 'code',
    'One type the signatures of an entry''s methods mention, as the source wrote it.',
    'For example java.util.List<no.sikt.example.Film>, beside the plain java.lang.String and the int that other positions carry.',

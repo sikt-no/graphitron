@@ -12,6 +12,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static no.sikt.graphitron.model.Tables.CODE_CLASS;
+import static no.sikt.graphitron.model.Tables.STORE_CLASS_FILE;
 import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTION;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
@@ -153,6 +154,7 @@ public final class CodeRows {
                 .onDuplicateKeyIgnore()
                 .execute();
         }
+        clazz(dsl, sourceName, className, readAt);
         dsl.insertInto(CODE_METHOD)
             .set(CODE_METHOD.SOURCE_NAME, sourceName)
             .set(CODE_METHOD.CLASS_NAME, className)
@@ -327,12 +329,25 @@ public final class CodeRows {
             .execute();
     }
 
-    /** One class the reading read, idempotently; the anchor everything class-keyed points at. */
+    /**
+     * One class the reading read, idempotently, with the class file it hangs on.
+     *
+     * <p>The path is synthesised from the name. A real reading takes it from where it looked: a
+     * file is under no obligation to declare the class its path suggests.
+     */
     public static void clazz(DSLContext dsl, String sourceName, String className,
                              LocalDateTime readAt) {
+        String filePath = className.replace('.', '/') + ".class";
+        dsl.insertInto(STORE_CLASS_FILE)
+            .set(STORE_CLASS_FILE.SOURCE_NAME, sourceName)
+            .set(STORE_CLASS_FILE.FILE_PATH, filePath)
+            .set(STORE_CLASS_FILE.TOUCHED_AT, readAt)
+            .onDuplicateKeyIgnore()
+            .execute();
         dsl.insertInto(CODE_CLASS)
             .set(CODE_CLASS.SOURCE_NAME, sourceName)
             .set(CODE_CLASS.CLASS_NAME, className)
+            .set(CODE_CLASS.FILE_PATH, filePath)
             .set(CODE_CLASS.TOUCHED_AT, readAt)
             .onDuplicateKeyIgnore()
             .execute();

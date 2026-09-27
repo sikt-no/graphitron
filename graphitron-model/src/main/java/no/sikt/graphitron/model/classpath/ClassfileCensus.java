@@ -47,11 +47,14 @@ public final class ClassfileCensus {
     /** A classpath entry this reading read, and which kind of container it is. */
     public record EntryAt(String source, String kind, String origin, String coordinate) {}
 
-    /** One class, and everything public it declares. */
-    public record ClassAt(String source, String className, String kind, List<SupertypeAt> supertypes,
-                          List<MethodAt> methods,
-                          List<MethodAt> constructors, boolean isAbstract, List<ComponentAt> components,
-                          List<FieldAt> fields) {}
+    /**
+     * One class, and everything public it declares. {@code filePath} is not the class name spelled
+     * differently: a file is not obliged to declare the class its path suggests.
+     */
+    public record ClassAt(String source, String filePath, long byteSize, long mtimeMillis,
+                          String className, String kind, List<SupertypeAt> supertypes,
+                          List<MethodAt> methods, List<MethodAt> constructors, boolean isAbstract,
+                          List<ComponentAt> components, List<FieldAt> fields) {}
 
     /** A name written above a class, and the clause it was written in. */
     public record SupertypeAt(String name, String declaredVia) {}
@@ -171,8 +174,36 @@ public final class ClassfileCensus {
      * One classfile's class, or nothing where it is not one this reading carries. What a caller
      * re-reads for the files a compile rewrote, keeping the rest of the entry.
      */
-    public static Optional<ClassAt> readFile(Path file, String source, String skipPrefix) {
-        return read(bytes(file), file.getFileName().toString(), source, excludedPackage(skipPrefix));
+    public static Optional<ClassAt> readFile(Path entry, Path file, String source, String skipPrefix) {
+        return read(bytes(file), pathOf(entry, file), sizeOf(file), modifiedOf(file),
+            file.getFileName().toString(), source, excludedPackage(skipPrefix));
+    }
+
+    /** What the file was, as the reading found it; -1 where the filesystem would not say. */
+    private static long sizeOf(Path file) {
+        try {
+            return Files.size(file);
+        } catch (IOException e) {
+            return -1;
+        }
+    }
+
+    /** When it was last written, as the filesystem reports it; -1 where it would not say. */
+    private static long modifiedOf(Path file) {
+        try {
+            return Files.getLastModifiedTime(file).toMillis();
+        } catch (IOException e) {
+            return -1;
+        }
+    }
+
+    /**
+     * Where a file sits under its entry, spelled the way a jar spells it so the two entry kinds
+     * key alike. The separator is forward slash on every platform, a store read on one machine and
+     * compared on another otherwise disagreeing about files neither has changed.
+     */
+    private static String pathOf(Path entry, Path file) {
+        return entry.relativize(file).toString().replace(java.io.File.separatorChar, '/');
     }
 
     /**
@@ -199,7 +230,8 @@ public final class ClassfileCensus {
             var classes = new ArrayList<ClassAt>();
             files.filter(Files::isRegularFile)
                 .filter(file -> file.getFileName().toString().endsWith(".class"))
-                .forEach(file -> read(bytes(file), file.getFileName().toString(), source, excluded)
+                .forEach(file -> read(bytes(file), pathOf(directory, file), sizeOf(file),
+                        modifiedOf(file), file.getFileName().toString(), source, excluded)
                     .ifPresent(classes::add));
             return classes;
         } catch (IOException e) {
@@ -220,7 +252,8 @@ public final class ClassfileCensus {
                 }
                 String fileName = zipped.getName()
                     .substring(zipped.getName().lastIndexOf('/') + 1);
-                read(bytes, fileName, source, excluded).ifPresent(classes::add);
+                read(bytes, zipped.getName(), zipped.getSize(), zipped.getTime(), fileName,
+                    source, excluded).ifPresent(classes::add);
             }
             return classes;
         } catch (IOException e) {
@@ -232,8 +265,9 @@ public final class ClassfileCensus {
      * One classfile, or nothing where it is not a class this census carries: a name the reader
      * skips, a file that will not parse, a non-public class, or one under the excluded package.
      */
-    private static Optional<ClassAt> read(byte[] bytes, String fileName, String source,
-                                                    String excluded) {
+    private static Optional<ClassAt> read(byte[] bytes, String filePath, long byteSize,
+                                                    long mtimeMillis, String fileName,
+                                                    String source, String excluded) {
         if (skipOnName(fileName)) {
             return Optional.empty();
         }
@@ -252,9 +286,9 @@ public final class ClassfileCensus {
         if (excluded != null && className.startsWith(excluded)) {
             return Optional.empty();
         }
-        return Optional.of(new ClassAt(source, className, kindOf(classfile),
-            supertypesOf(classfile), methodsOf(classfile), constructorsOf(classfile),
-            classfile.flags().has(AccessFlag.ABSTRACT),
+        return Optional.of(new ClassAt(source, filePath, byteSize, mtimeMillis, className,
+            kindOf(classfile), supertypesOf(classfile), methodsOf(classfile),
+            constructorsOf(classfile), classfile.flags().has(AccessFlag.ABSTRACT),
             componentsOf(classfile), fieldsOf(classfile)));
     }
 

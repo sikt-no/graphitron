@@ -730,7 +730,7 @@ class FactSchemaGateTest {
                     expected = switch (table) {
                         case "store_graph", "store_graph_schema_input", "store_graph_schema_extension"
                             -> "graph_name";
-                        case "store_source" -> "source_name";
+                        case "store_source", "store_class_file" -> "source_name";
                         case "store_stamp" -> "singleton";
                         default -> "graph_name";
                     };

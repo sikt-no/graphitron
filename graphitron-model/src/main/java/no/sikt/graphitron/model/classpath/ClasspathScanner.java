@@ -139,8 +139,9 @@ public final class ClasspathScanner {
      * keeps the rest.
      */
     public static Optional<CompletionData.ExternalReference> readClassFile(
-            Path file, String jooqPackage, String source) {
-        return ClassfileCensus.readFile(file, source, jooqPackage).map(ClasspathScanner::reference);
+            Path entry, Path file, String jooqPackage, String source) {
+        return ClassfileCensus.readFile(entry, file, source, jooqPackage)
+            .map(ClasspathScanner::reference);
     }
 
     /**

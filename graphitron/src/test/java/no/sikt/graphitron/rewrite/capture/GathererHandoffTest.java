@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.time.LocalDateTime;
 
 import static no.sikt.graphitron.model.Tables.CODE_CLASS;
+import static no.sikt.graphitron.model.Tables.STORE_CLASS_FILE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.sink.FactSink;
@@ -19,8 +20,8 @@ import no.sikt.graphitron.model.sink.FactSink;
  * <p>A capture flushes per gatherer rather than once at the end, which is what lets a gatherer read
  * what ran before it through the store instead of through a parameter its caller threaded. That
  * only works if a flush is not a commit, and if a second flush can write a row whose parent the
- * first flush already wrote. Both are asserted here on the sink itself, at the two relations whose
- * foreign key makes the second observable, rather than through a capture, because no gatherer
+ * first flush already wrote. Both are asserted here on the sink itself, at the relations whose
+ * foreign keys make the second observable, rather than through a capture, because no gatherer
  * exercises the read yet and a test of the mechanism should fail for the mechanism's own reasons.
  */
 // Acknowledges FactSink's deprecation. This case's subject is the handoff between gatherers
@@ -34,6 +35,7 @@ class GathererHandoffTest {
     private static final LocalDateTime PROBE_INSTANT = LocalDateTime.of(2020, 1, 1, 0, 0);
 
     private static final String SOURCE = "example.jar";
+    private static final String FILE = "com/example/Thing.class";
 
     @Test
     @DisplayName("a flushed row is readable by the next gatherer, and a later flush resolves against it")
@@ -48,6 +50,11 @@ class GathererHandoffTest {
                 source.setSourceKind("JAR");
                 source.setLastSeen(LocalDateTime.now());
                 sink.add(source);
+                var file = dsl.newRecord(STORE_CLASS_FILE);
+                file.setSourceName(SOURCE);
+                file.setFilePath(FILE);
+                file.setTouchedAt(PROBE_INSTANT);
+                sink.add(file);
                 sink.flush();
 
                 // What the next gatherer sees: the row, through the store, inside the transaction
@@ -61,6 +68,7 @@ class GathererHandoffTest {
                 var declared = dsl.newRecord(CODE_CLASS);
                 declared.setSourceName(SOURCE);
                 declared.setClassName("com.example.Thing");
+                declared.setFilePath(FILE);
                 declared.setTouchedAt(PROBE_INSTANT);
                 sink.add(declared);
                 sink.flush();

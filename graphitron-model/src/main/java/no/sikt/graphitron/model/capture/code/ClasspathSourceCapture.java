@@ -19,6 +19,7 @@ import java.util.Collection;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
+import static no.sikt.graphitron.model.Tables.STORE_CLASS_FILE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
@@ -215,6 +216,11 @@ public final class ClasspathSourceCapture {
         var read = new LinkedHashSet<String>();
         census.entries().forEach(at -> read.add(at.source()));
         writeSources(dsl, census.entries(), readAt);
+        // The files under those entries, which is the grain the families below key themselves by
+        // and therefore the grain a deletion has to be noticed at. Marked here and swept below, so
+        // a class a compile removed takes its rows with it rather than outliving them.
+        writeClassFiles(dsl, census.classes(), readAt);
+        sweepClassFiles(dsl, read, readAt);
 
         var byEntry = census.classes().stream()
             .collect(java.util.stream.Collectors.groupingBy(ClassfileCensus.ClassAt::source));
@@ -436,5 +442,55 @@ public final class ClasspathSourceCapture {
         } catch (IOException | RuntimeException e) {
             return null;
         }
+    }
+
+    /**
+     * One row per class <em>file</em> the reading found, which is not one row per class: a file may
+     * declare more than one, and several classes naming one path are one file that was opened once.
+     *
+     * <p>What is written is what the reading saw of the file, its length and when it was last
+     * written, so a later reading can compare without opening it. Which class came out of it is
+     * code_class's to say.
+     */
+    private static void writeClassFiles(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
+                                        LocalDateTime readAt) {
+        record FileAt(String source, String path, long size, long mtime) {}
+        var files = new java.util.LinkedHashMap<String, FileAt>();
+        for (var at : classes) {
+            files.putIfAbsent(at.source() + "\u0000" + at.filePath(),
+                new FileAt(at.source(), at.filePath(), at.byteSize(), at.mtimeMillis()));
+        }
+        var t = STORE_CLASS_FILE;
+        var rows = files.values().stream().collect(Rows.toRowList(
+            at -> val(at.source(), t.SOURCE_NAME),
+            at -> val(at.path(), t.FILE_PATH),
+            at -> val(at.size() < 0 ? null : at.size(), t.BYTE_SIZE),
+            at -> val(at.mtime() < 0 ? null : LocalDateTime.ofInstant(
+                java.time.Instant.ofEpochMilli(at.mtime()), java.time.ZoneId.systemDefault()), t.MTIME),
+            at -> val(readAt, t.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.SOURCE_NAME, t.FILE_PATH, t.BYTE_SIZE, t.MTIME, t.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(t.BYTE_SIZE, excluded(t.BYTE_SIZE))
+                .set(t.MTIME, excluded(t.MTIME))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+    }
+
+    /**
+     * The files this reading did not find under the entries it opened, which are the classes a
+     * compile removed. Scoped to those entries: an entry nobody read this time says nothing about
+     * its files, and sweeping it would delete a reading somebody else still holds.
+     */
+    private static void sweepClassFiles(DSLContext dsl, Collection<String> readEntries,
+                                        LocalDateTime readAt) {
+        if (readEntries.isEmpty()) {
+            return;
+        }
+        var t = STORE_CLASS_FILE;
+        dsl.deleteFrom(t)
+            .where(t.SOURCE_NAME.in(readEntries))
+            .and(t.TOUCHED_AT.ne(readAt))
+            .execute();
     }
 }

@@ -21,6 +21,7 @@ import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD_PARAMETER_TABLE;
 import static no.sikt.graphitron.model.Tables.CODE_EXTERNAL_FIELD_METHOD;
+import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_EXCEPTION;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
@@ -137,11 +138,6 @@ public final class CodeCapture {
         // The entry rows are the corpus reader's, not this gatherer's: one reading of the
         // classpath records where its rows came from, and two writers of that would be two
         // answers to the same question.
-        // Every class read, ahead of everything that names one. Its own call rather than a step
-        // of the methods pass below, which is scoped to the reactor: whether the reading reached a
-        // class at all is a question about the classpath and not about which part of it a build
-        // compiled, and a reader telling "no such method on that class" from "no such class" is
-        // asking the first. Scoping it was inherited from the call site it used to sit in.
         classes(dsl, census.classes(), touchedAt);
         scalarConstants(dsl, census.classes(), loader, touchedAt);
         var reactor = reactorClasses(census);
@@ -757,18 +753,10 @@ public final class CodeCapture {
     }
 
     /**
-     * Every class the reading read, which is the anchor the rest of the family keys a class to.
+     * Every class the reading read, which is the row everything class-keyed below references.
      *
-     * <p>First, because everything below names a class and now says which one. Its own relation
-     * rather than a column somewhere, because three readers want the bare fact and nothing else:
-     * an editor asking whether a name an author typed is on the classpath, a completion listing
-     * what is there, and a route telling "no such method on that class" apart from "no such class",
-     * which no relation of candidates can say by itself.
-     *
-     * <p>Every class, and not the reactor's: all three of those readers ask about the classpath
-     * rather than about what a build compiled, and a jOOQ interface on a declared jar is a class an
-     * author can name. The arms above this are scoped and this is not, which is the difference
-     * between asking what may carry a directive and asking what is there at all.
+     * <p>Not reactor-scoped the way the arms above it are: a class an author can name may come
+     * from any entry, a jOOQ interface on a declared jar included.
      */
     private static void classes(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
                                 LocalDateTime touchedAt) {
@@ -779,11 +767,13 @@ public final class CodeCapture {
         var rows = classes.stream().collect(Rows.toRowList(
             at -> val(at.source(), c.SOURCE_NAME),
             at -> val(at.className(), c.CLASS_NAME),
+            at -> val(at.filePath(), c.FILE_PATH),
             at -> val(touchedAt, c.TOUCHED_AT)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(c, c.SOURCE_NAME, c.CLASS_NAME, c.TOUCHED_AT)
+            dsl.insertInto(c, c.SOURCE_NAME, c.CLASS_NAME, c.FILE_PATH, c.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
+                .set(c.FILE_PATH, excluded(c.FILE_PATH))
                 .set(c.TOUCHED_AT, excluded(c.TOUCHED_AT)));
     }
 

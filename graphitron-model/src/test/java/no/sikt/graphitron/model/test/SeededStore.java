@@ -44,6 +44,7 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD;
+import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTION;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_WRITE_SLOT;
@@ -122,6 +123,7 @@ import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE_RECORD_SUPERTYPE;
+import static no.sikt.graphitron.model.Tables.STORE_CLASS_FILE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
@@ -912,10 +914,11 @@ public final class SeededStore {
      * One {@code public static GraphQLScalarType} constant the reading reached, and the Java type
      * it coerces a value to. A null {@code inputType} is the reading's own answer for a constant it
      * could not read one off, which the resolution treats as no answer at all. The owning class
-     * needs no census row: the arm keys on the entry it read the class from, nothing more.
+     * file is stated with it, the constant being a fact read out of that file.
      */
     public static void seedScalarConstant(DSLContext dsl, String sourceName, String className,
                                           String fieldName, String inputType) {
+        CodeRows.clazz(dsl, sourceName, className, SEEDED_READING);
         dsl.insertInto(CODE_SCALAR_CONSTANT)
             .set(CODE_SCALAR_CONSTANT.SOURCE_NAME, sourceName)
             .set(CODE_SCALAR_CONSTANT.CLASS_NAME, className)
@@ -938,6 +941,7 @@ public final class SeededStore {
         // method seeds the types it names first. A condition's own return is fixed by the arm's
         // admission and is the one type a case never has to state.
         seedType(dsl, sourceName, JOOQ_CONDITION);
+        CodeRows.clazz(dsl, sourceName, className, SEEDED_READING);
         dsl.insertInto(CODE_METHOD)
             .set(CODE_METHOD.SOURCE_NAME, sourceName)
             .set(CODE_METHOD.CLASS_NAME, className)
@@ -2922,6 +2926,7 @@ public final class SeededStore {
         // method seeds the types it names first. A condition's own return is fixed by the arm's
         // admission and is the one type a case never has to state.
         seedType(dsl, sourceName, JOOQ_CONDITION);
+        CodeRows.clazz(dsl, sourceName, className, SEEDED_READING);
         dsl.insertInto(CODE_METHOD)
             .set(CODE_METHOD.SOURCE_NAME, sourceName)
             .set(CODE_METHOD.CLASS_NAME, className)
