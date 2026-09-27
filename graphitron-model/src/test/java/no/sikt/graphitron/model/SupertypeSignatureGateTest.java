@@ -122,13 +122,13 @@ class SupertypeSignatureGateTest {
      * <p>The category of one fact written twice is empty, and it emptied by subtraction rather
      * than by anybody writing a supertype, which is what the rows in it always said would happen.
      * Three went. The verdict pair went when {@code graphql_schema_error} was retired for the
-     * relation recording all three stages. The class census pair went with {@code jvm_classfile},
-     * which was the successor rather than the incumbent: written and never read, and a successor
+     * relation recording all three stages. The class census pair went with the census's classfile
+     * relation, which was the successor rather than the incumbent: written and never read, and a successor
      * nothing reads is not stood up beside anything, so it was dropped rather than finished.
      *
      * <p>The arm that replaced the scalar-constant census never became a fourth row either, and the
      * reason is worth keeping now that its incumbent is gone too. {@code code_scalar_constant} was
-     * stood up beside {@code jvm_scalar_type_field} for one change, and this gate refused to see
+     * stood up beside the census's scalar-field relation for one change, and this gate refused to see
      * them as one payload under two keys, which is the difference between a census re-read and an
      * arm: the arm admits what a directive may name where the incumbent recorded what a walk
      * resolved. Two populations that are not the same fact counted twice do not become one by
