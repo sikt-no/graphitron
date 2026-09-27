@@ -10,7 +10,6 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_SLOT;
-import static no.sikt.graphitron.model.Tables.INTENT_DECLARED_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.JVM_DECLARED_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.INTENT_DELIVERY_CONTAINER;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_ACCESSOR_HOP;
@@ -26,31 +25,30 @@ import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedMethod;
 import static no.sikt.graphitron.model.test.SeededStore.seedMethodParameter;
 import static no.sikt.graphitron.model.test.SeededStore.seedRecordComponent;
-import static no.sikt.graphitron.model.test.SeededStore.seedReturnTypeRef;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedType;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The registered agreement anchor for the five relations an accessor hop is built from:
+ * The registered agreement anchor for the four relations an accessor hop is built from:
  * {@code intent_delivery_container}, the classes a declared type delivers through;
  * {@code jvm_declared_type_ref}, the census's declared types under one owner key;
- * {@code intent_declared_type_element}, the class a declared type delivers once the containers are
- * peeled; {@code code_type_slot}, the member names a class offers and the accessor each is read by;
- * and {@code intent_field_accessor_hop}, where a field coordinate standing on a class lands.
+ * {@code code_type_slot}, the member names a class offers and the accessor each is read by; and
+ * {@code intent_field_accessor_hop}, where a field coordinate standing on a class lands.
  *
- * <p>Two peels are pinned here rather than one, and they are not the same rule. The view peels a
- * census type reference at its owner, unrolled to a fixed depth because SQL has no loop. The
- * reading peels the same declaration as it reads it, keyed by the type and bounded by nothing, and
- * a slot reaches it through the accessor's own result. The deep cases below are where the two part,
- * and each is asserted against the relation it belongs to.
+ * <p>One peel now, where there were two. The reading peels a declaration as it reads it, keyed by
+ * the type and bounded by nothing, and a slot reaches it through the accessor's own result; the
+ * view that peeled the same declaration at its owner, unrolled to a fixed depth because SQL has no
+ * loop, is gone rather than kept beside it. What that peel does is pinned where the reading is, in
+ * {@code no.sikt.graphitron.model.capture.code.CodeCaptureTest}, against compiled bytes rather
+ * than against stated positions.
  *
  * <p>Every input is stated as rows. A census position is a name, a path and a variance, which is
  * all these rules read of one, and the arrangements they have to get right are ones no compiled
  * fixture offers side by side: a two-level container, a map, a raw container, a generic class that
- * is not a container at all, an accessor overloaded with a parameterised twin, one slot name
- * offered by two classes, and a nesting one step deeper than the descent goes. The scan's own
+ * is not a container at all, an accessor overloaded with a parameterised twin, and one slot name
+ * offered by two classes. The scan's own
  * production of these rows is pinned beside the scan, in
  * {@code no.sikt.graphitron.rewrite.catalog.ClasspathScannerTest}.
  *
@@ -109,35 +107,6 @@ class AccessorHopTest {
                     "java.util.Collection", "org.jooq.Result"));
     }
 
-    /**
-     * How many a declared type delivers, read off the descent rather than off the class it landed
-     * on. The four cases are the ones that differ: a collection multiplies, a wrapper around one
-     * does not, a wrapper around a collection does, and a map follows its value.
-     */
-    @Test
-    void theDescentSaysHowManyTheTypeDelivers() {
-        withCensus(dsl -> {
-            assertThat(deliversMany(dsl, STORE, "getFilms", LIST)).isTrue();
-            assertThat(deliversMany(dsl, STORE, "getPending", FUTURE))
-                .as("a wrapper around a collection still delivers many")
-                .isTrue();
-            assertThat(deliversMany(dsl, STORE, "getByKey", MAP))
-                .as("a map to one value delivers one")
-                .isFalse();
-            assertThat(deliversMany(dsl, STORE, "getTitle", "()Ljava/lang/String;")).isFalse();
-        });
-    }
-
-    /**
-     * A raw container delivers itself and delivers one of it. The descent never happened, so there
-     * is nothing to multiply, which is the reading the reflective walk reaches by requiring a
-     * parameterised type before it looks at all.
-     */
-    @Test
-    void aRawContainerDeliversOne() {
-        withCensus(dsl -> assertThat(deliversMany(dsl, STORE, "getRaw", LIST)).isFalse());
-    }
-
     // ===== A declared type, position by position, under its owner =====
 
     /**
@@ -152,25 +121,26 @@ class AccessorHopTest {
                 .containsExactlyInAnyOrder(" java.util.List", "0 app.ActorRecord");
             assertThat(positions(dsl, STORE, "getFilms", LIST))
                 .containsExactlyInAnyOrder(" java.util.List", "0 app.FilmRecord");
-            assertThat(parameterDelivers(dsl, STORE, "search", SEARCH, 0))
-                .as("a parameter is peeled by the same rule as a return")
-                .containsExactly("java.lang.String at 0");
+            assertThat(parameterPositions(dsl, STORE, "search", SEARCH, 0))
+                .as("a parameter decomposes under the same grammar as a return")
+                .containsExactlyInAnyOrder(" java.util.List", "0 java.lang.String");
         });
     }
 
     /**
      * The ordinal is what tells one parameter from its neighbour, under a key they otherwise share
-     * entirely. Without it the peel would join every position of one parameter's type against every
-     * other's and answer with a cross product, which is what the third parameter is declared a
-     * container for: two parameters descending makes the cross product visible where one cannot.
+     * entirely. Without it a reader joining the owner key would match every position of one
+     * parameter's type against every other's and answer with a cross product, which is what the
+     * third parameter is declared a container for: two parameters descending makes the cross
+     * product visible where one cannot.
      */
     @Test
     void parametersAreToldApartByTheirOrdinal() {
         withCensus(dsl -> {
-            assertThat(parameterDelivers(dsl, STORE, "search", SEARCH, 1))
-                .containsExactly("app.LanguageRecord at ");
-            assertThat(parameterDelivers(dsl, STORE, "search", SEARCH, 2))
-                .containsExactly("app.LanguageRecord at 0");
+            assertThat(parameterPositions(dsl, STORE, "search", SEARCH, 1))
+                .containsExactly(" app.LanguageRecord");
+            assertThat(parameterPositions(dsl, STORE, "search", SEARCH, 2))
+                .containsExactlyInAnyOrder(" java.util.List", "0 app.LanguageRecord");
             assertThat(positions(dsl, STORE, "search", SEARCH))
                 .as("and the return is still the return, unmixed with any of them")
                 .containsExactly(" app.FilmRecord");
@@ -191,42 +161,22 @@ class AccessorHopTest {
         });
     }
 
-    // ===== What a declared type delivers =====
+    // ===== A method that is no slot =====
 
     /**
-     * The peel is keyed on the declared type's owner and not on any reader's subject, so a method
-     * that is no member slot at all is peeled on the same terms. This is the case that moved the
-     * rule down a level: a producer method's return is the second reader, and it arrives under a
-     * key no slot relation can hold.
+     * A method that offers no member slot is a census owner like any other. The census decomposes
+     * it, and the slot relation says nothing about it, which is the pair worth stating together:
+     * the two relations disagree about whether the method is interesting and agree about what it
+     * declares.
      */
     @Test
-    void aMethodThatIsNoSlotIsPeeledOnTheSameTerms() {
+    void aMethodThatIsNoSlotIsStillDecomposed() {
         withCensus(dsl -> {
-            assertThat(deliveredBy(dsl, STORE, "getLookup", LOOKUP))
-                .containsExactly("app.FilmRecord at ");
+            assertThat(positions(dsl, STORE, "getLookup", LOOKUP))
+                .containsExactly(" app.FilmRecord");
             assertThat(delivered(dsl, STORE, "lookup"))
                 .as("and it is still no slot, so the member view says nothing about it")
                 .isEmpty();
-        });
-    }
-
-    /**
-     * The descent is four steps and stops, which is the bound the view spells out rather than a
-     * recursion, and the depth the walk it replaces also descends. A type nested one step deeper
-     * delivers the container the fourth step reached, so the reader sees a container where it
-     * expected a class and can say so, rather than being handed a wrong class it cannot detect.
-     */
-    @Test
-    void theDescentIsFourStepsDeepAndSaysWhereItStopped() {
-        withCensus(dsl -> {
-            assertThat(deliveredBy(dsl, STORE, "getDeep", FUTURE))
-                .containsExactly("app.FilmRecord at 0.0.1.0");
-            assertThat(deliversMany(dsl, STORE, "getDeep", FUTURE))
-                .as("and the list crossed at the fourth step is what made it many")
-                .isTrue();
-            assertThat(deliveredBy(dsl, STORE, "getDeeper", FUTURE))
-                .as("one position deeper than the descent goes is the container itself")
-                .containsExactly("java.util.List at 0.0.1.0");
         });
     }
 
@@ -320,31 +270,6 @@ class AccessorHopTest {
             assertThat(delivered(dsl, STORE, "boxed"))
                 .containsExactly("app.Box");
         });
-    }
-
-    /**
-     * The peel lands on a position, so it lands on that position's variance too. A list of
-     * something extending Film delivers Film, and a reader that needs to know which direction the
-     * values flow can still tell.
-     *
-     * <p>Asked of the view and not of the slot, which is where the two peels differ and not an
-     * oversight in the other. The reading records what a type delivers and not the position it was
-     * read at, so a variance has nowhere to sit there; no reader has wanted one at a slot, and the
-     * relation that does carry it is the one keyed by the position it belongs to.
-     */
-    @Test
-    void varianceSurvivesThePeel() {
-        withCensus(dsl ->
-            assertThat(dsl.select(INTENT_DECLARED_TYPE_ELEMENT.ELEMENT_CLASS,
-                    INTENT_DECLARED_TYPE_ELEMENT.VARIANCE)
-                .from(INTENT_DECLARED_TYPE_ELEMENT)
-                .where(INTENT_DECLARED_TYPE_ELEMENT.CLASS_NAME.eq(STORE)
-                    .and(INTENT_DECLARED_TYPE_ELEMENT.OWNER_NAME.eq("getSubset"))
-                    .and(INTENT_DECLARED_TYPE_ELEMENT.OWNER_DESCRIPTOR.eq(LIST))
-                    .and(INTENT_DECLARED_TYPE_ELEMENT.OWNER_POSITION.eq(-1)))
-                .fetch())
-                .extracting(r -> r.value1() + " " + r.value2())
-                .containsExactly("app.FilmRecord EXTENDS"));
     }
 
     /**
@@ -618,9 +543,10 @@ class AccessorHopTest {
 
     /**
      * One accessor per delivery shape, plus the overloaded pair and the parameterised accessor the
-     * divergence cases stand on, plus the two nestings the descent's own bound turns on. Three of
-     * them share the one list descriptor, which is what an owner key reduced to a name and a
-     * descriptor would confuse.
+     * divergence cases stand on. The shapes are still one each because a hop lands on what the
+     * accessor's result delivers, so a collection, a wrapper, a map and a raw container are four
+     * different landings. Three of them share the one list descriptor, which is what an owner key
+     * reduced to a name and a descriptor would confuse.
      */
     private static void seedStoreClass(DSLContext dsl) {
         seedClass(dsl, APP, STORE, "CLASS");
@@ -631,21 +557,9 @@ class AccessorHopTest {
             Map.of("", "java.util.Map", "0", "java.lang.String", "1", FILM));
         seedMethod(dsl, APP, STORE, "getRaw", LIST, Map.of("", "java.util.List"));
         seedMethod(dsl, APP, STORE, "getBoxed", "()Lapp/Box;", Map.of("", "app.Box", "0", FILM));
-        seedMethod(dsl, APP, STORE, "getSubset", LIST, Map.of("", "java.util.List"));
-        seedReturnTypeRef(dsl, APP, STORE, "getSubset", LIST, "0", FILM, "EXTENDS");
         seedMethod(dsl, APP, STORE, "getCount", "()I");
         seedMethod(dsl, APP, STORE, "getTags", "()[Ljava/lang/String;",
             Map.of("[]", "java.lang.String"));
-
-        // A future of an optional of a map to a list of films, and the same one position deeper.
-        seedMethod(dsl, APP, STORE, "getDeep", FUTURE,
-            Map.of("", "java.util.concurrent.CompletableFuture", "0", "java.util.Optional",
-                "0.0", "java.util.Map", "0.0.0", "java.lang.String", "0.0.1", "java.util.List",
-                "0.0.1.0", FILM));
-        seedMethod(dsl, APP, STORE, "getDeeper", FUTURE,
-            Map.of("", "java.util.concurrent.CompletableFuture", "0", "java.util.Optional",
-                "0.0", "java.util.Map", "0.0.0", "java.lang.String", "0.0.1", "java.util.List",
-                "0.0.1.0", "java.util.List", "0.0.1.0.0", FILM));
 
         seedMethod(dsl, APP, STORE, "getTitle", "()Ljava/lang/String;",
             Map.of("", "java.lang.String"));
@@ -725,49 +639,23 @@ class AccessorHopTest {
             .fetch(r -> r.value1() + " " + r.value2());
     }
 
-    /** How many the named owner's declared type delivers. */
-    private static boolean deliversMany(DSLContext dsl, String className, String ownerName,
-                                        String descriptor) {
-        var e = INTENT_DECLARED_TYPE_ELEMENT;
-        return dsl.select(e.DELIVERS_MANY)
-            .from(e)
-            .where(e.CLASS_NAME.eq(className)
-                .and(e.OWNER_NAME.eq(ownerName))
-                .and(e.OWNER_POSITION.eq(-1))
-                .and(e.OWNER_DESCRIPTOR.eq(descriptor)))
-            .fetchSingle(0, Boolean.class);
-    }
-
-    /** The delivered class of an owner named directly, for the readers that hold no slot. */
-    private static List<String> deliveredBy(DSLContext dsl, String className, String ownerName,
-                                            String descriptor) {
-        var e = INTENT_DECLARED_TYPE_ELEMENT;
-        return dsl.select(e.ELEMENT_CLASS, e.ELEMENT_PATH)
-            .from(e)
-            .where(e.CLASS_NAME.eq(className)
-                .and(e.OWNER_NAME.eq(ownerName))
-                .and(e.OWNER_POSITION.eq(-1))
-                .and(e.OWNER_DESCRIPTOR.eq(descriptor)))
-            .fetch(r -> r.value1() + " at " + r.value2());
-    }
-
     /**
-     * One parameter's delivered class, addressed by its ordinal. The three owner-keyed helpers
-     * above ask for a null ordinal rather than naming an owner kind, which is the same selection
-     * said in the key's own terms: the two arms they read identify their owner without one.
+     * One parameter's positions, addressed by its ordinal. {@link #positions} asks for the -1 the
+     * other two arms carry rather than naming an owner kind, which is the same selection said in
+     * the key's own terms: the arms it reads identify their owner without one.
      */
-    private static List<String> parameterDelivers(DSLContext dsl, String className,
-                                                  String methodName, String descriptor,
-                                                  int position) {
-        var e = INTENT_DECLARED_TYPE_ELEMENT;
-        return dsl.select(e.ELEMENT_CLASS, e.ELEMENT_PATH)
-            .from(e)
-            .where(e.CLASS_NAME.eq(className)
-                .and(e.OWNER_KIND.eq("METHOD_PARAMETER"))
-                .and(e.OWNER_NAME.eq(methodName))
-                .and(e.OWNER_DESCRIPTOR.eq(descriptor))
-                .and(e.OWNER_POSITION.eq(position)))
-            .fetch(r -> r.value1() + " at " + r.value2());
+    private static List<String> parameterPositions(DSLContext dsl, String className,
+                                                   String methodName, String descriptor,
+                                                   int position) {
+        var t = JVM_DECLARED_TYPE_REF;
+        return dsl.select(t.TYPE_PATH, t.REFERENCED_CLASS)
+            .from(t)
+            .where(t.CLASS_NAME.eq(className)
+                .and(t.OWNER_KIND.eq("METHOD_PARAMETER"))
+                .and(t.OWNER_NAME.eq(methodName))
+                .and(t.OWNER_DESCRIPTOR.eq(descriptor))
+                .and(t.OWNER_POSITION.eq(position)))
+            .fetch(r -> r.value1() + " " + r.value2());
     }
 
     /**

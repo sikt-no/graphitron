@@ -6105,7 +6105,7 @@ CREATE TABLE code_type_element (
 COMMENT ON TABLE code_type_element IS 'What a type resolves to once its delivery containers are peeled off, for the types that resolve to a class at all. For example java.util.List<no.sikt.example.Film> resolving to Film, many of them.';
 COMMENT ON COLUMN code_type_element.source_name IS 'the entry whose signatures mention the type, as on code_type; the key''s leading dimension';
 COMMENT ON COLUMN code_type_element.type_name IS 'the type, as on code_type, completing the key; the row is deleted with it';
-COMMENT ON COLUMN code_type_element.element_class IS 'the binary name of the class the type arrives at once every container is peeled off it. Presence is the fact this relation states, which is why the columns are not on the type: a void, a primitive, an array and a type variable name no class, and a placeholder would make four different silences look like one answer';
+COMMENT ON COLUMN code_type_element.element_class IS 'the binary name of the class the type arrives at once every container is peeled off it. Presence is the fact this relation states, which is why the columns are not on the type: a void, a primitive, an array and a type variable name no class, and a placeholder would make four different silences look like one answer. Not a foreign key: a type delivering a class no classpath entry declares is the ordinary case at the end of a declared type, so a reader learns the name here and learns nothing further about it';
 COMMENT ON COLUMN code_type_element.delivery IS 'how a caller receives what the type hands over: DIRECT where the type is the class and nothing was peeled, WRAPPED where containers were peeled and none of them multiplies, MANY where at least one does. A List, a Set, a Collection or a jOOQ Result multiplies; an Optional, a CompletableFuture or a Map does not, those being one value in a wrapper. The decision rather than the containers behind it, which is what lets a reader ask its own question without knowing the vocabulary: whether one value may be handed to a position is DIRECT, and whether a field backed by this type is a list is MANY. Stating it as the container''s own name would make both questions a test against a class name, and a rule that turns on java.util.List not happening to equal java.lang.Integer is a coincidence doing load-bearing work';
 COMMENT ON COLUMN code_type_element.touched_at IS 'when the reading that produced this row ran; swept with the type it hangs on';
 
@@ -6984,14 +6984,14 @@ COMMENT ON COLUMN javac_diagnostic.message IS 'javac''s own rendered text (root 
 --
 -- The stratum's fourth resident group is the class-backing chain, which answers which Java class
 -- a type is backed by and is a chain rather than a relation because that question decomposes.
--- jvm_declared_type_ref names the census's declared types under one owner key and
--- intent_declared_type_element peels a declared type down to the class it delivers; those two are
--- about classes alone and carry the census's key. intent_field_producer_method resolves an
+-- The class-side half of it is no longer resident here: code_type_element peels a type down to
+-- the class it delivers and the reading writes that down, so the chain starts from a captured fact
+-- rather than from a derivation over the census. intent_field_producer_method resolves an
 -- authored Java reference to a census method, and intent_field_accessor_hop states one edge of the
 -- binding walk: for a coordinate and a class its parent might stand on, where the hop lands. The
 -- hop reads its member names and its landing class off code_type_slot and code_type_element, the
--- reading having written both down, so the two relations that used to sit between it and the
--- census are gone rather than moved. intent_type_backing_class is the closure over those edges from the producer-grounded
+-- reading having written both down, so the relations that used to sit between it and the census
+-- are gone rather than moved. intent_type_backing_class is the closure over those edges from the producer-grounded
 -- seeds, materialized because the SDL type graph is cyclic, with intent_type_backing_conflict
 -- naming the types the closure answers more than one way. The decomposition is the point: the walk
 -- being replaced carried the grounding, the peel, the hop, the cardinality reading and a table
@@ -6999,13 +6999,15 @@ COMMENT ON COLUMN javac_diagnostic.message IS 'javac''s own rendered text (root 
 -- anchor here.
 --
 -- A resolution is keyed by whatever its own question is about, which is why not every resident
--- leads with graph_name. intent_declared_type_element asks what a declared type delivers, a rule
--- over the classpath census with no graph in it, so it carries the census's key and a graph
--- reaches it through store_graph_source like any other source-keyed fact. Keying it by graph
--- would have made one copy of the answer per graph that reads the class, which is a claim about
--- the graph the rule never makes. Which stratum a row belongs to is decided by what its value is
--- a function of, and never by which key it happens to carry: a row recomputable from captured
--- facts alone is a derived fact, whatever produced it. That is what puts this resident here.
+-- leads with graph_name. What a declared type delivers is the case that established it: a rule
+-- over the classpath with no graph in it, carrying the source's key, reached by a graph through
+-- store_graph_source like any other source-keyed fact. Keying it by graph would have made one copy
+-- of the answer per graph that reads the class, which is a claim about the graph the rule never
+-- makes. That keying is also what let the fact leave this stratum without being restated: a row
+-- keyed by its own question rather than by its reader is one the gatherer owning the corpus can
+-- write, and code_type_element writes it there now. Which stratum a row belongs to is decided by
+-- what its value is a function of, and never by which key it happens to carry: a row recomputable
+-- from captured facts alone is a derived fact, whatever produced it.
 --
 -- sql_name_matched_key_column is the same shape one family over, and it shows what the keying buys
 -- besides economy. Whether a table-valued function's result can be keyed to a table at all is a
@@ -9000,61 +9002,6 @@ COMMENT ON COLUMN intent_delivery_container.container_class IS 'the fully-qualif
 COMMENT ON COLUMN intent_delivery_container.element_index IS 'the 0-based type-argument position the delivered element sits at, as a type_path step: 0 for the single-argument containers, 1 for a map, whose key is not what it delivers';
 COMMENT ON COLUMN intent_delivery_container.multiplies IS 'whether passing through this container makes the delivery many rather than one. A collection multiplies and a wrapper does not, which is why the two live in one relation rather than two: both are stepped through by the same descent, and only what the step means to cardinality differs. A map is the case worth stating, and it is FALSE: a map from a key to one value delivers one, and a map from a key to a list delivers many because of the list, so the map itself is transparent and the descent through it decides nothing.';
 
-CREATE VIEW intent_declared_type_element
-  (source_name, class_name, owner_kind, owner_name, owner_descriptor, owner_position,
-   element_path, element_class, variance, delivers_many) AS
-SELECT r0.source_name, r0.class_name, r0.owner_kind, r0.owner_name, r0.owner_descriptor,
-       r0.owner_position,
-       COALESCE(r4.type_path, r3.type_path, r2.type_path, r1.type_path, r0.type_path),
-       COALESCE(r4.referenced_class, r3.referenced_class, r2.referenced_class,
-                r1.referenced_class, r0.referenced_class),
-       COALESCE(r4.variance, r3.variance, r2.variance, r1.variance, r0.variance),
-       COALESCE(r1.type_path IS NOT NULL AND c1.multiplies, FALSE)
-         OR COALESCE(r2.type_path IS NOT NULL AND c2.multiplies, FALSE)
-         OR COALESCE(r3.type_path IS NOT NULL AND c3.multiplies, FALSE)
-         OR COALESCE(r4.type_path IS NOT NULL AND c4.multiplies, FALSE)
-  FROM jvm_declared_type_ref r0
-  LEFT JOIN intent_delivery_container c1 ON c1.container_class = r0.referenced_class
-  LEFT JOIN jvm_declared_type_ref r1
-    ON r1.source_name = r0.source_name AND r1.class_name = r0.class_name
-     AND r1.owner_kind = r0.owner_kind AND r1.owner_name = r0.owner_name
-     AND r1.owner_descriptor = r0.owner_descriptor
-     AND r1.owner_position = r0.owner_position
-     AND r1.type_path = c1.element_index
-  LEFT JOIN intent_delivery_container c2 ON c2.container_class = r1.referenced_class
-  LEFT JOIN jvm_declared_type_ref r2
-    ON r2.source_name = r0.source_name AND r2.class_name = r0.class_name
-     AND r2.owner_kind = r0.owner_kind AND r2.owner_name = r0.owner_name
-     AND r2.owner_descriptor = r0.owner_descriptor
-     AND r2.owner_position = r0.owner_position
-     AND r2.type_path = r1.type_path || '.' || c2.element_index
-  LEFT JOIN intent_delivery_container c3 ON c3.container_class = r2.referenced_class
-  LEFT JOIN jvm_declared_type_ref r3
-    ON r3.source_name = r0.source_name AND r3.class_name = r0.class_name
-     AND r3.owner_kind = r0.owner_kind AND r3.owner_name = r0.owner_name
-     AND r3.owner_descriptor = r0.owner_descriptor
-     AND r3.owner_position = r0.owner_position
-     AND r3.type_path = r2.type_path || '.' || c3.element_index
-  LEFT JOIN intent_delivery_container c4 ON c4.container_class = r3.referenced_class
-  LEFT JOIN jvm_declared_type_ref r4
-    ON r4.source_name = r0.source_name AND r4.class_name = r0.class_name
-     AND r4.owner_kind = r0.owner_kind AND r4.owner_name = r0.owner_name
-     AND r4.owner_descriptor = r0.owner_descriptor
-     AND r4.owner_position = r0.owner_position
-     AND r4.type_path = r3.type_path || '.' || c4.element_index
- WHERE r0.type_path = '';
-COMMENT ON VIEW intent_declared_type_element IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. The class a declared type delivers: the type with its delivery wrappers peeled off, one row per owner. A member declared as a List of Film delivers Film, and so do a CompletableFuture of a List of Film and a Map from a key to Film, which is the rule that lets an SDL field naming one object stand on a member, or on a producer method, that hands back many. Keyed by the declared type''s own owner rather than by any reader''s subject, which is the correction a second reader forced: the rule was first stated over member slots, and a producer method''s return is the same declared form under a key no slot relation can hold, so a peel keyed at either reader would have been spelled twice and drifted. A third reader arrived for the parameter arm and needed nothing changed here but the key, which is the shape paying for itself. The peel descends from the root position: at a position naming a container it steps to that container''s element argument, and it stops at the first position naming no container, or naming one whose element argument names no class. That stopping position is the row, and the descent is four outer joins deep rather than a recursion. The bound is deliberate and was measured into existence. A recursive form terminates on its own, a declared type being a finite tree, so termination was never the question; the cost was. H2 re-evaluates a recursive view once per outer row of whatever joins it, and the readers here join it without a class predicate on purpose, the accessor hop being total over standing classes, so at sixteen thousand census methods the hop took six minutes to return nothing where reading the peel by itself took a third of a second. Four is what the reflective walk this replaces also descends, so the bound costs no agreement with it, and a nesting deeper than four delivers the last container reached rather than silently delivering the wrong class: element_path shows the depth and element_class names a container, which is a shape a reader can detect and a detection can be built on. The containers are intent_delivery_container''s rows, joined once per level, which is why they are a relation rather than a list inlined in this one. The recursion is not the one the SDL type graph needs a guard for. A declared type is a finite tree, so the descent terminates on its own, and the depth is the type''s rather than a bound the rule picks. Two populations fall away with no filter, because the census already omits them: a primitive-typed owner and an array-typed owner name no class at their root and so have no spine at all, an array''s component being the next step down and this walk never taking that step. What this view does not do is judge the class it lands on. A raw List with no type argument delivers java.util.List and says so, and an owner delivering java.lang.String is a row like any other; which landing classes are worth binding an SDL type to is a filter a reader applies rather than a fact this relation withholds.';
-COMMENT ON COLUMN intent_declared_type_element.source_name IS 'the owning class''s classpath entry, carried from jvm_declared_type_ref; the partition a graph reaches through store_graph_source';
-COMMENT ON COLUMN intent_declared_type_element.class_name IS 'the fully-qualified binary name of the class declaring the owner';
-COMMENT ON COLUMN intent_declared_type_element.owner_kind IS 'METHOD_RETURN or RECORD_COMPONENT, as on jvm_declared_type_ref';
-COMMENT ON COLUMN intent_declared_type_element.owner_name IS 'the owner''s own name, as on jvm_declared_type_ref';
-COMMENT ON COLUMN intent_declared_type_element.owner_descriptor IS 'the owning method''s raw JVM descriptor, the empty string exactly on the record arm, as on jvm_declared_type_ref, whose comment says why not-applicable is spelled as a value here; the column a reader carries back to the census method it resolved';
-COMMENT ON COLUMN intent_declared_type_element.owner_position IS 'the parameter''s 0-based position, -1 exactly on the other two arms, as on jvm_declared_type_ref; what tells one parameter''s peel from its neighbour''s under a key they otherwise share. A reader joining the whole owner key joins it with plain equality, which is what the total key bought: this relation''s descent used to compare these two columns null-safely at every step of a four-step chain';
-COMMENT ON COLUMN intent_declared_type_element.element_path IS 'the position the peel stopped at, the empty string where the declared type names its own delivery. The evidence for the answer rather than decoration: a reader can see whether a row came off the root or off three descents, and a test can pin which without asserting on the class that happened to be there';
-COMMENT ON COLUMN intent_declared_type_element.element_class IS 'the fully-qualified binary name of the class the owner delivers. Not a foreign key, on jvm_declared_type_ref.referenced_class''s terms, so an owner delivering a class no classpath entry declares is an ordinary row and a reader learns nothing further about it';
-COMMENT ON COLUMN intent_declared_type_element.variance IS 'NONE, EXTENDS or SUPER at the position landed on: a type declared as a List of ? extends Film delivers Film under EXTENDS. Carried because the three declare different things about which direction values flow and the class name alone cannot tell them apart';
-COMMENT ON COLUMN intent_declared_type_element.delivers_many IS 'whether the declared type delivers many of the element rather than one: TRUE where the descent crossed a container that multiplies, FALSE where it crossed only wrappers or did not descend at all. Carried rather than left to the reader because element_path says how deep the descent went and not what it went through, so recovering this would mean re-reading the positions and the container vocabulary that this view already read. A raw container is FALSE and delivers itself, the descent never having happened, which is the same reading the reflective walk reaches by requiring a parameterised type before it looks at all.';
-
 CREATE VIEW intent_field_accessor_hop
   (graph_name, type_name, field_name, source_name, from_class_name,
    slot_name, accessor_method_name, to_class_name) AS
@@ -9105,17 +9052,18 @@ CREATE VIEW intent_producer_cardinality_conflict
    method_name, descriptor, field_is_list, producer_delivers_many) AS
 SELECT p.graph_name, p.type_name, p.field_name, p.declared_via,
        p.source_name, p.class_name, p.method_name, p.descriptor,
-       f.is_list, e.delivers_many
+       f.is_list, e.delivery = 'MANY'
   FROM intent_field_producer_method p
   JOIN graphql_field f
     ON f.graph_name = p.graph_name AND f.type_name = p.type_name
    AND f.field_name = p.field_name
-  JOIN intent_declared_type_element e
-    ON e.source_name = p.source_name AND e.class_name = p.class_name
-   AND e.owner_kind = 'METHOD_RETURN' AND e.owner_name = p.method_name
-   AND e.owner_descriptor = p.descriptor
- WHERE f.is_list <> e.delivers_many;
-COMMENT ON VIEW intent_producer_cardinality_conflict IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Where a field and the method producing its value disagree about how many: one row per producing coordinate whose SDL type is a list whose producer delivers one, or whose SDL type is single where the producer delivers many. A detection the store did not have, and the reason it did not is worth stating, because it is the argument for decomposing a walk into facts at all. The walk this derivation replaces reads the same two cardinalities and uses the comparison as a clause: where they disagree it declines to bind, reading the field as a carrier whose collection feeds an inner list field. So the reading existed and its result was a silence, which is exactly the shape a defect hides in. Stated as its own relation the comparison is observable, and whether a given row is a carrier or an author error is a question a reader can now ask rather than one the walk answered by moving on. Nothing gates on these rows yet. A coordinate whose reference matches several overloads contributes a row per overload that disagrees, on intent_field_producer_method''s terms, since which method the reference means is that relation''s open question and not this one''s to settle. A producer whose declared return names no class at its root has no row here at all rather than a row asserting agreement: the peel it would be compared against does not exist, and a primitive or an array return is a different complaint from a cardinality one.';
+  JOIN code_method cm
+    ON cm.source_name = p.source_name AND cm.class_name = p.class_name
+   AND cm.method_name = p.method_name AND cm.descriptor = p.descriptor
+  JOIN code_type_element e
+    ON e.source_name = cm.source_name AND e.type_name = cm.result_type
+ WHERE f.is_list <> (e.delivery = 'MANY');
+COMMENT ON VIEW intent_producer_cardinality_conflict IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Where a field and the method producing its value disagree about how many: one row per producing coordinate whose SDL type is a list whose producer delivers one, or whose SDL type is single where the producer delivers many. A detection the store did not have, and the reason it did not is worth stating, because it is the argument for decomposing a walk into facts at all. The walk this derivation replaces reads the same two cardinalities and uses the comparison as a clause: where they disagree it declines to bind, reading the field as a carrier whose collection feeds an inner list field. So the reading existed and its result was a silence, which is exactly the shape a defect hides in. Stated as its own relation the comparison is observable, and whether a given row is a carrier or an author error is a question a reader can now ask rather than one the walk answered by moving on. Nothing gates on these rows yet. A coordinate whose reference matches several overloads contributes a row per overload that disagrees, on intent_field_producer_method''s terms, since which method the reference means is that relation''s open question and not this one''s to settle. A producer whose declared return names no class at its root has no row here at all rather than a row asserting agreement: code_type_element states presence rather than carrying a placeholder, so there is no peel row to compare against, and a primitive, void or array return is a different complaint from a cardinality one.';
 COMMENT ON COLUMN intent_producer_cardinality_conflict.graph_name IS 'the owning graph''s partition, carried from intent_field_producer_method';
 COMMENT ON COLUMN intent_producer_cardinality_conflict.type_name IS 'the disagreeing coordinate''s owning type';
 COMMENT ON COLUMN intent_producer_cardinality_conflict.field_name IS 'the disagreeing coordinate''s field name';
@@ -9125,7 +9073,7 @@ COMMENT ON COLUMN intent_producer_cardinality_conflict.class_name IS 'the class 
 COMMENT ON COLUMN intent_producer_cardinality_conflict.method_name IS 'the producing method''s name';
 COMMENT ON COLUMN intent_producer_cardinality_conflict.descriptor IS 'the producing method''s raw JVM descriptor, which tells two overloads of one reference apart';
 COMMENT ON COLUMN intent_producer_cardinality_conflict.field_is_list IS 'what the SDL says, carried from graphql_field.is_list; always the negation of the column beside it, and carried anyway so a reader learns which way the disagreement runs without joining back';
-COMMENT ON COLUMN intent_producer_cardinality_conflict.producer_delivers_many IS 'what the declared return says, carried from intent_declared_type_element.delivers_many; the other half of the disagreement this row reports';
+COMMENT ON COLUMN intent_producer_cardinality_conflict.producer_delivers_many IS 'what the declared return says: whether code_type_element calls the return type''s delivery MANY. The other half of the disagreement this row reports. Read as a three-way delivery and compared as a boolean, which is the reading this column has always wanted: WRAPPED and DIRECT both deliver one, and a field is a list or it is not';
 
 CREATE VIEW intent_external_field_contract_defect
   (graph_name, type_name, field_name, source_name, class_name, method_name, descriptor) AS
@@ -9210,7 +9158,7 @@ CREATE TABLE intent_type_backing_class (
 COMMENT ON TABLE intent_type_backing_class IS 'A graph''s type is backed by a class: the reachability of intent_field_accessor_hop''s edges from the classes the graph''s producer methods deliver. For example a type whose only producer method returns a FilmRecord draws one row naming that record class.';
 COMMENT ON COLUMN intent_type_backing_class.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN intent_type_backing_class.type_name IS 'the SDL type the class backs; an object or an input object, and a captured type, which is what makes the type FK structural';
-COMMENT ON COLUMN intent_type_backing_class.class_name IS 'the fully-qualified binary name of the class backing the type, spelled as the jvm_ census spells a class name so the two join without normalising. Not a foreign key, on intent_declared_type_element.element_class''s terms: a class the census never reached is the ordinary case at the end of a declared type, and what a producer delivers is a fact whether or not an entry declared it. Not unique per type either, ambiguity being rows here';
+COMMENT ON COLUMN intent_type_backing_class.class_name IS 'the fully-qualified binary name of the class backing the type, spelled as the jvm_ census spells a class name so the two join without normalising. Not a foreign key, on code_type_element.element_class''s terms: a class the census never reached is the ordinary case at the end of a declared type, and what a producer delivers is a fact whether or not an entry declared it. Not unique per type either, ambiguity being rows here';
 
 CREATE VIEW intent_type_backing (graph_name, type_name, class_name, declared_via) AS
 SELECT b.graph_name, b.type_name, t.record_class_fqn, 'BOUND_TABLE'

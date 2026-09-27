@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_DECLARED_TYPE_ELEMENT;
+import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.INTENT_PRODUCER_CARDINALITY_CONFLICT;
 import static no.sikt.graphitron.model.test.SeededStore.seedClass;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
@@ -32,10 +32,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * which way each disagreement runs.
  *
  * <p>Both sides of the comparison are stated as rows: a field's cardinality is one column, and a
- * producer's is the peel over the classes its declared return names, which is a handful of paths.
+ * producer's is what code_type_element says its return type delivers, which is a handful of paths.
  * Neither needs a compiler or a schema loader to arrive at, and stating them directly is what lets
  * one fixture hold every delivery shape the peel distinguishes, including the raw container and the
  * primitive return that the two edges of the rule turn on.
+ *
+ * <p>The producer side is reached through the return type rather than through the method: the peel
+ * is keyed by type, so two producers returning the same declared form share one row, and a case
+ * states a delivery shape once however many methods read it.
  */
 class ProducerCardinalityTest {
 
@@ -99,9 +103,9 @@ class ProducerCardinalityTest {
     void aProducerNamingNoClassHasNoRowEitherWay() {
         withProducers(dsl -> {
             assertThat(conflict(dsl, "counted")).isEmpty();
-            assertThat(dsl.fetchCount(INTENT_DECLARED_TYPE_ELEMENT,
-                INTENT_DECLARED_TYPE_ELEMENT.CLASS_NAME.eq(SERVICE)
-                    .and(INTENT_DECLARED_TYPE_ELEMENT.OWNER_NAME.eq("count"))))
+            assertThat(dsl.fetchCount(CODE_TYPE_ELEMENT,
+                CODE_TYPE_ELEMENT.SOURCE_NAME.eq(APP)
+                    .and(CODE_TYPE_ELEMENT.TYPE_NAME.eq("int"))))
                 .as("and the absence is the peel's, not this relation's")
                 .isZero();
         });

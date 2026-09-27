@@ -289,15 +289,13 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
  *       are names, so a fixture states both sides and half its cases pin the three causes of absence
  *       apart (a name matching no catalog object, one matching a stored table rather than a
  *       callable, and a callable the generated model exposes no call surface for);
- *       {@code no.sikt.graphitron.model.intent.AccessorHopTest} binds the five relations an
+ *       {@code no.sikt.graphitron.model.intent.AccessorHopTest} binds the four relations an
  *       accessor hop is built from ({@code intent_delivery_container}, {@code jvm_declared_type_ref},
- *       {@code intent_declared_type_element}, {@code code_type_slot} and
- *       {@code intent_field_accessor_hop}) to a census stated as rows in the module whose DDL
- *       declares them, one accessor per delivery shape beside the arrangements no scan of compiled
- *       fixtures offers side by side (one class name declared on two classpath entries, one slot
- *       name offered by two classes, a nesting one position deeper than the descent goes), with the
- *       two directions in which the hop differs from the reflective walk pinned as pins rather than
- *       expectations;
+ *       {@code code_type_slot} and {@code intent_field_accessor_hop}) to a census stated as rows in
+ *       the module whose DDL declares them, one accessor per delivery shape beside the arrangements
+ *       no scan of compiled fixtures offers side by side (one class name declared on two classpath
+ *       entries, one slot name offered by two classes), with the two directions in which the hop
+ *       differs from the reflective walk pinned as pins rather than expectations;
  *       {@code no.sikt.graphitron.rewrite.derive.TypeBackingClassTest} binds
  *       {@code intent_type_backing_class}, the closure over those hops, to captured SDL over a
  *       hand-built census, which is the only way its rows can be read at all: the closure runs over
