@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.test;
 
 import graphql.scalars.ExtendedScalars;
+import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.rewrite.test.services.CityService;
 
 import java.nio.file.Files;
@@ -32,9 +33,30 @@ public final class ClasspathCorpus {
      * {@code @scalarType(scalar:)} reaching a library constant by its fully qualified name far more
      * often than one of their own. A corpus holding only the first could not state that case at all.
      */
+    public static List<ClasspathEntry> entries() {
+        return List.of(
+            // A reactor module this one declares a dependency on, which is what it is: the
+            // consumer's own code as far as the reactor-limited arms are concerned, and nameable
+            // as a declared artifact is. PROJECT would be this module's own output, which it is not.
+            new ClasspathEntry(rootOf(CityService.class, "the service corpus"),
+                ClasspathEntry.Origin.REACTOR, SERVICE_CORPUS, null),
+            // A library, which is a different thing and admitted by different arms. Declaring it is
+            // what makes naming its constants legitimate, and marking it as the consumer's own code
+            // would make its methods nameable at @service, which they are not.
+            new ClasspathEntry(rootOf(ExtendedScalars.class, "the scalar-constant corpus"),
+                ClasspathEntry.Origin.DECLARED, EXTENDED_SCALARS, null));
+    }
+
+    /** What the service corpus is, which is the half of its identity a path does not carry. */
+    private static final String SERVICE_CORPUS = "no.sikt:graphitron-sakila-service";
+
+    /** The same for the scalar corpus. */
+    private static final String EXTENDED_SCALARS =
+        "com.graphql-java:graphql-java-extended-scalars";
+
+    /** Where the two halves sit, for a caller that wants paths rather than entries. */
     public static List<Path> roots() {
-        return List.of(rootOf(CityService.class, "the service corpus"),
-                       rootOf(ExtendedScalars.class, "the scalar-constant corpus"));
+        return entries().stream().map(ClasspathEntry::path).toList();
     }
 
     /** The service half alone, for a reading that has no business with scalar constants. */

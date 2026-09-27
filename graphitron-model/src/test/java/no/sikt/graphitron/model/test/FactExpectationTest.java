@@ -52,11 +52,11 @@ class FactExpectationTest {
         //
         // Affordable because the classpath is read once for the store. It carries no graph, so the
         // second document's reading of it is the first document's reading again.
-        var corpus = ClasspathCorpus.roots();
-        captured = CapturedStore.ofCatalog(tmp, documents.getFirst().id(),
+        var corpus = ClasspathCorpus.entries();
+        captured = CapturedStore.ofCatalogWith(tmp, documents.getFirst().id(),
             full(documents.getFirst()), jooq, List.of(), corpus);
         for (var document : documents.subList(1, documents.size())) {
-            captured.andCatalogGraph(document.id(), full(document), jooq, List.of(), corpus);
+            captured.andCatalogGraphWith(document.id(), full(document), jooq, List.of(), corpus);
         }
         blocks = CorpusExpectations.blocks(captured.dsl());
     }

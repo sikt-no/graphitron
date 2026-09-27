@@ -290,14 +290,27 @@ public final class CapturedStore implements AutoCloseable {
         return ofCatalog(directory, graphName, sdl, jooq, census, List.of(classRoot));
     }
 
-    /** {@link #ofCatalog(Path, String, String, JooqCatalog, List, Path)} over several roots. */
+    /**
+     * {@link #ofCatalog(Path, String, String, JooqCatalog, List, Path)} over a classpath the caller
+     * describes. Entries rather than paths, because what an entry <em>is</em> decides what the
+     * reading admits from it: the reactor-limited arms take the consumer's own code and not a
+     * library's, and a path alone cannot say which it is.
+     */
+    public static CapturedStore ofCatalogWith(Path directory, String graphName, String sdl,
+                                              JooqCatalog jooq,
+                                              List<CompletionData.ExternalReference> census,
+                                              List<ClasspathEntry> classpath) {
+        return openAndCapture(directory, graphName, sdl, Objects.requireNonNull(jooq, "jooq"),
+            census, classpath);
+    }
+
+    /** {@link #ofCatalogWith} for a caller with paths and no opinion, which reads them as its own. */
     public static CapturedStore ofCatalog(Path directory, String graphName, String sdl, JooqCatalog jooq,
                                           List<CompletionData.ExternalReference> census,
                                           List<Path> classRoots) {
-        return openAndCapture(directory, graphName, sdl, Objects.requireNonNull(jooq, "jooq"), census,
-            classRoots.stream()
-                .map(root -> new ClasspathEntry(root, ClasspathEntry.Origin.PROJECT, null, null))
-                .toList());
+        return ofCatalogWith(directory, graphName, sdl, jooq, census, classRoots.stream()
+            .map(root -> new ClasspathEntry(root, ClasspathEntry.Origin.PROJECT, null, null))
+            .toList());
     }
 
     /**
@@ -403,16 +416,22 @@ public final class CapturedStore implements AutoCloseable {
      * The same over several class roots, which is what a corpus in more than one artifact is: the
      * code a consumer writes and the code a consumer names are different jars and both are read.
      */
+    public CapturedStore andCatalogGraphWith(String otherGraph, String sdl, JooqCatalog jooq,
+                                            List<CompletionData.ExternalReference> census,
+                                            List<ClasspathEntry> classpath) {
+        Path other = write(directory, otherGraph, sdl);
+        captureFile(store, other, directory, otherGraph,
+            SchemaLoader.load(List.of(SchemaSource.file(other))), jooq, census, false, classpath);
+        return this;
+    }
+
+    /** {@link #andCatalogGraphWith} for a caller with paths and no opinion. */
     public CapturedStore andCatalogGraph(String otherGraph, String sdl, JooqCatalog jooq,
                                          List<CompletionData.ExternalReference> census,
                                          List<Path> classRoots) {
-        Path other = write(directory, otherGraph, sdl);
-        captureFile(store, other, directory, otherGraph,
-            SchemaLoader.load(List.of(SchemaSource.file(other))), jooq, census, false,
-            classRoots.stream()
-                .map(root -> new ClasspathEntry(root, ClasspathEntry.Origin.PROJECT, null, null))
-                .toList());
-        return this;
+        return andCatalogGraphWith(otherGraph, sdl, jooq, census, classRoots.stream()
+            .map(root -> new ClasspathEntry(root, ClasspathEntry.Origin.PROJECT, null, null))
+            .toList());
     }
 
     /**
