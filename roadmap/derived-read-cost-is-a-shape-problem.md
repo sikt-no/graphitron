@@ -400,16 +400,29 @@ shape the root condemns, still in the tree. Evidence in
   could have deleted its own coverage without saying so.
 * The count only falls `done`. `SeedingDissolutionGateTest` holds it at 110, because a seeded case
   is written by copying one and the file it copies never gets opened.
-* **The SDL half converts** `open`. Around 43 classes still seed what a document could state.
-* **The code half converts** `open`. A seeded `code_method` row is a claim about a method; a method
-  in `graphitron-sakila-service` is one.
+* **The code half converts** `open`, and is the larger half: 54 classes and 717 tests against the
+  SDL half's 50 and 354. Taken first because the prerequisites are here. A seeded `code_method` row
+  is a claim about a method; a method in `graphitron-sakila-service` is one.
+* **The library carries the shapes a conversion needs** `open`. Found by trying rather than by
+  reasoning: the four shapes `intent_field_producer_method` is made of include an overload, and one
+  public method is overloaded across the service module's ninety-seven classes, on a fixture rather
+  than a service. Growing the library is adding a method to a module that already compiles; knowing
+  which shape is missing takes a conversion attempt.
+* **The SDL half converts** `open`. 50 classes, 354 tests.
+* **Which cases do not convert is not known** `open`, and it decides the node below. A case pinning
+  a view's own algebra is not convertible and should not be: `CarrierDataFieldPopulationTest` exists
+  because one condition is stated twice inside a view body, and it is what fails when the two
+  statements diverge. Eight classes say so in their javadoc and ninety-six say nothing either way,
+  so no search separates them and a conversion attempt is what classifies one.
 * **A fresh store per test stops being the only shape** `open`, and it is not tidiness: every
   `sql_` and `code_` relation is store-wide, so one store holds many graphs against one reading of
   the catalog and the classpath, and varying which SDL loads into a warm store is the only thing
   that exercises refresh at all. A fresh store means every refresh runs against an empty one, which
   is the case where sweeping, re-anchoring and invalidation are all trivially correct.
-* **`SeededStore` is deleted** `blocked`, on the three above. The subtractive commit is what makes
-  this branch done, and until it lands the root is not done either.
+* **`SeededStore` is deleted, or shrinks to the residue** `blocked`, on the four above, and which
+  of the two is not yet decidable. The subtractive commit is what makes this branch done, and until
+  it lands the root is not done either; whether the fixture dies outright or survives as a
+  view-algebra harness waits on a residue nobody has measured.
 
 ## Tests
 
