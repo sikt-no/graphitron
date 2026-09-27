@@ -385,6 +385,32 @@ Reading a jar is safe for a release and dangerous for a snapshot, and Maven sett
   today.
 * **A stale snapshot is detectable** `open`, waits on both above.
 
+### Seeding dissolves, and the fixture goes with it
+
+Seeding is the fallout of the module boundary this item already moved, and the fixtures are the
+shape the root condemns, still in the tree. Evidence in
+`roadmap/audits/2026-09-27-seeding-dissolution.md`.
+
+* The corpora are reachable `done`. All three strata have one and two are modules the tests already
+  depend on: the fact documents, `graphitron-sakila-db`, `graphitron-sakila-service`.
+* A document states what a fixture stated `done`. Seven documents replaced four test classes, at
+  forty fewer `@Test` methods and no lost coverage.
+* Deleting coverage cannot be silent `done`. `theDocumentsDeclareBlocks` fails if the folder stops
+  resolving, a glob stops matching, or a block declares no rows, which was the one way this arc
+  could have deleted its own coverage without saying so.
+* The count only falls `done`. `SeedingDissolutionGateTest` holds it at 110, because a seeded case
+  is written by copying one and the file it copies never gets opened.
+* **The SDL half converts** `open`. Around 43 classes still seed what a document could state.
+* **The code half converts** `open`. A seeded `code_method` row is a claim about a method; a method
+  in `graphitron-sakila-service` is one.
+* **A fresh store per test stops being the only shape** `open`, and it is not tidiness: every
+  `sql_` and `code_` relation is store-wide, so one store holds many graphs against one reading of
+  the catalog and the classpath, and varying which SDL loads into a warm store is the only thing
+  that exercises refresh at all. A fresh store means every refresh runs against an empty one, which
+  is the case where sweeping, re-anchoring and invalidation are all trivially correct.
+* **`SeededStore` is deleted** `blocked`, on the three above. The subtractive commit is what makes
+  this branch done, and until it lands the root is not done either.
+
 ## Tests
 
 The obligation this section carried is discharged and not by being measured. It asked the Done gate
@@ -495,45 +521,6 @@ rather than left in a transcript.
   names, and it labels every finding with the `src/main/resources` path. On an incremental build that
   pair means it reports against a stale copy while pointing at a source file that is already fixed.
 
-* **Seeding is the fallout of a module boundary this item already moved.** `SeededStore` exists
-  because the gatherers lived in `graphitron`, where a test had no way to run a capture: writing
-  rows was the only way to put facts in front of a rule. The gatherers are in `graphitron-model`
-  now and the corpus and its `@expectEquals` runner moved with them, so a test can state SDL and
-  read the relations back. What is left is the fallout: a seeding helper of a few thousand lines and
-  most of the test classes in the module reaching for it, because seeding was once the only option.
-
-  The cost is measurable now that the alternative exists. Converting the macro expansion to a
-  derivation broke six seeded fixtures, and each was asserting over a state capture cannot reach:
-  five seeded a carrier whose *authored* field was already the connection type, which no
-  transcription holds because the rewrite is derived, and one expected a carrier's row without the
-  `nodes` and `node` its expansion mints. A seventh counted `graphql_field` to assert a per-field
-  invariant a relation states over the emitted population. None of them could fail before, because
-  seeding writes both halves of a claim and nothing checks the halves against each other.
-
-* **The classpath half has its corpus already; it is the seeding that has no excuse.** `SeededStore`
-  seeds `code_` too, and that arrived on 2026-09-20 with the commits introducing the family, so it is
-  not even old fallout. What makes it worse than the SDL half is not that a corpus is missing: the
-  three strata all have one, and two of them are modules the tests already depend on. The SDL corpus
-  is the fact documents; the catalog corpus is `graphitron-sakila-db`, a real jOOQ-generated catalog;
-  the classpath corpus is `graphitron-sakila-service`, ninety-six real Java classes. Extending any of
-  them is adding a class, a table or a converter to a module that already compiles, not designing
-  anything. A seeded `code_method` row is a claim about a method; a method in `sakila-service` is
-  one. The failure mode is the worst available, generated code calling a method that does not exist,
-  failing in a consumer's build rather than ours, and it is self-confirming: a fixture seeds a method
-  name and asserts the emitted text contains it, so the test cannot fail for the reason it exists.
-  `graphitron-model` depends on `graphitron-sakila-db` only, so the conversion owes it one test
-  dependency on a module that is already in the reactor.
-
-* **The fixtures are static, which is what makes a warm store possible.** No `sql_`, `jvm_` or
-  `code_` relation carries `graph_name`: the catalog and the classpath are store-wide by
-  construction, while every `graphql_` and `graphitron_` relation is partitioned by graph. So one
-  store can hold many graphs against one shared reading of the catalog and the classpath, and the
-  reading that costs the most happens once rather than per document. The second half is the part
-  that is not an optimisation: varying which SDL loads into a warm store is the only thing that
-  exercises refresh at all. A fresh store per test means every refresh runs against an empty store,
-  which is the one case where sweeping, re-anchoring and incremental invalidation are all trivially
-  correct, so the cheap path and the untested path are currently the same path.
-
 ## What a reviewer should press on
 
 * **Slice 1's classification is measured at eight relations and asserted at the other 48.** A
@@ -557,6 +544,9 @@ this. What moved:
 
 * Measurements to `roadmap/audits/2026-08-28-derived-read-cost-premise.md` and
   `roadmap/audits/2026-09-22-capture-dissolution-measurements.md`.
+* The seeding dissolution's evidence, and the classpath-skip figures, to
+  `roadmap/audits/2026-09-27-seeding-dissolution.md`. Added when the arc became a
+  branch of the graph rather than an entry in "Owed, not done here".
 * Narrative and retired approaches to the September 2026 chapter of
   `docs/history/road-to-the-relational-core.adoc`.
 * The discipline itself to `docs/architecture/explanation/modeling-discipline.adoc`, with the procedure in
