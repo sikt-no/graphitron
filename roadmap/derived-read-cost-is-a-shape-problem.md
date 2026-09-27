@@ -47,6 +47,13 @@ application keyed five ways by site, a classpath family that described and affor
 resolution written as a loop no rule parser reaches, a classpath re-read once per graph. The graph
 below is rooted at the thesis for that reason, with ownership as its first branch.
 
+**A shape is not fixed while the old one still stands.** Each of those arcs replaces a relation, and
+a replacement that leaves its predecessor in the schema has added a second producer of one fact
+rather than removed the first. Retiring what a new shape supersedes is therefore part of reaching
+this goal and not tidying afterwards: the read stays expensive for every consumer still on the old
+relation, and two producers of one fact can disagree with nothing comparing them, which is the
+defect this item is named for. A branch is done when what it replaced is gone.
+
 ## The plan, as a Mikado graph
 
 This item is the trial of R979, which proposes that a spec be a graph the work grows rather than a
@@ -118,6 +125,33 @@ are gone.
   one with several resolves ambiguously, and neither was a fact anybody could read.
 * The defects reach the surface `done`, and are stored, because the read that matters is the editor's
   and a per-file predicate cannot push into a recursion behind a view boundary.
+
+### The chain replaces the walk it was built to retire
+
+The field grain resolves where it was written and says why when it cannot, which is the node above.
+What remains is the other two grains, a second resolution of the same elements still standing beside
+this one, and the read-time relations neither of them has displaced yet.
+
+* **A routine resolving to nothing says so** `open`. `CHAIN_WITHOUT_TARGET` declines that case on
+  purpose, a `@reference`-only chain taking its target from the return binding where a routine chain
+  takes it from the catalog, so the same silence means two different faults and only one has an arm.
+* **The seat keeps its predicate and loses its vocabulary** `open`, waits on the arm above. Every
+  production reader filters to `ADMITTED`, three sites in `RoutineWriteFacts` and one arm of
+  `intent_field_unlowerable_ordering`, so the thirteen refusals have no consumer and one moved to
+  `graphitron_entry_defect` gains a reader rather than changing one; its `MutationRoutineSeatTest`
+  case travels with it, being the only cover those thirteen have.
+* **The chain is stated at the argument and input-field grains** `open`. `@reference` is written at
+  three coordinates and only the field grain has a chain relation.
+* **One resolution of an authored element stands, not two** `blocked`, on the two grains above.
+  `graphitron_field_reference_step_hop` resolves the same elements as
+  `graphitron_field_chain_link_reading` from a decode its own comment calls deprecated; measured on a
+  fixture reaching every arm the two agree exactly, so what is left is choosing which survives.
+* **The read-time chain relations are gone** `blocked`, on the node above. `intent_field_chain_start`,
+  `_node` and `_terminus` retire as one and `graphitron_field_chain_application` falls out with them,
+  its only reader being `_node`; `intent_condition_method_route` wants a home rather than a grave,
+  a `graphitron_` stage being among its readers.
+* **The assembly pass is inside the stage-order gate** `blocked`, on R969. `StageOrderGateTest` models
+  the derivation stratum only, so the three chain stages run in a hand-kept order nothing checks.
 
 ### A capture reads only what changed
 
@@ -239,12 +273,6 @@ rather than left in a transcript.
   alone where that name is unique per table, and omitting the endpoints entirely, which are all
   that tells apart the two arms carrying no constraint. It was found by reading and fixed by
   reading, which is the part that does not scale.
-* **`graphitron_entry_defect` states what `intent_mutation_routine_seat` still answers.** The
-  relation reaches consumers now, an eighth arm of the `diagnostic` view carrying it to the MCP
-  tools and the LSP, so the half of this that said nothing read it is closed. What stands is the
-  other half: `RoutineWriteFacts` still reads the seat, and only some of the seat's refusals are
-  arms, so two producers state overlapping facts with nothing comparing them. That is the shape
-  this item exists to remove, and the remaining arms are what finish it.
 * **`graphitron_field_navigation` is a stored derivation with no rule view.** Its grain is
   `graphitron_field`'s, unchanged, and it is stored so a reader meets an indexed column. That is a
   real reason, but the rule is stated once in jOOQ with nothing to diff it against, where
