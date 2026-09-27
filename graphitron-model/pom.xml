@@ -95,6 +95,18 @@
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
+        <!--
+          The classpath corpus, on graphitron-sakila-db's terms: real compiled Java for the code_
+          gatherer to read, so a test about what a reading finds states a class rather than the rows
+          a reading would have written for one. Depends only on sakila-db, so it builds before this
+          module and adds no cycle.
+        -->
+        <dependency>
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron-sakila-service</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
