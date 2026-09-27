@@ -2955,6 +2955,21 @@ public final class SeededStore {
     public static void seedMethodParameter(DSLContext dsl, String sourceName, String className,
                                            String methodName, String descriptor, int position,
                                            String parameterName, Map<String, String> declaredType) {
+        seedMethodParameter(dsl, sourceName, className, methodName, descriptor, position,
+            parameterName, declaredType, "OTHER");
+    }
+
+    /**
+     * The same at a stated role, which is how a case about a directive says what a position is for.
+     *
+     * <p>The role travels in rather than being written over afterwards, because this is the one
+     * statement of the parameter in the code_ family. Two writers for one row disagree eventually,
+     * and reconciling them on duplicate key is what hides the disagreement rather than settling it.
+     */
+    public static void seedMethodParameter(DSLContext dsl, String sourceName, String className,
+                                           String methodName, String descriptor, int position,
+                                           String parameterName, Map<String, String> declaredType,
+                                           String role) {
         dsl.insertInto(JVM_METHOD_PARAMETER)
             .set(JVM_METHOD_PARAMETER.SOURCE_NAME, sourceName)
             .set(JVM_METHOD_PARAMETER.CLASS_NAME, className)
@@ -2965,6 +2980,7 @@ public final class SeededStore {
             .set(JVM_METHOD_PARAMETER.PARAMETER_TYPE, "Object")
             .set(JVM_METHOD_PARAMETER.DECLARED_PARAMETER_TYPE, "Object")
             .set(JVM_METHOD_PARAMETER.TOUCHED_AT, SEEDED_READING)
+            .onDuplicateKeyIgnore()
             .execute();
         declaredType.forEach((typePath, referencedClass) ->
             dsl.insertInto(JVM_DECLARED_TYPE_REF)
@@ -2978,7 +2994,10 @@ public final class SeededStore {
                 .set(JVM_DECLARED_TYPE_REF.REFERENCED_CLASS, referencedClass)
                 .set(JVM_DECLARED_TYPE_REF.VARIANCE, "NONE")
                 .set(JVM_DECLARED_TYPE_REF.TOUCHED_AT, SEEDED_READING)
+                .onDuplicateKeyIgnore()
                 .execute());
+        CodeRows.parameter(dsl, sourceName, className, methodName, descriptor, position,
+            parameterName, declaredType, role, SEEDED_READING);
     }
 
     /**
@@ -3023,11 +3042,6 @@ public final class SeededStore {
         descriptor.append(")Lorg/jooq/Condition;");
         seedMethod(dsl, sourceName, className, methodName, descriptor.toString());
         for (int position = 0; position < parameterClasses.length; position++) {
-            String parameterClass = parameterClasses[position];
-            seedMethodParameter(dsl, sourceName, className, methodName, descriptor.toString(),
-                position, parameterClass == null ? Map.of() : Map.of("", parameterClass));
-        }
-        for (int position = 0; position < parameterClasses.length; position++) {
             seedConditionParameter(dsl, sourceName, className, methodName, descriptor.toString(),
                 position, null, parameterClasses[position]);
         }
@@ -3069,25 +3083,21 @@ public final class SeededStore {
         // rather than an absence; int is what the descriptor's I is.
         String erased = parameterClass == null ? "int" : parameterClass;
         seedType(dsl, sourceName, erased);
-        var table = parameterClass == null ? null : seededTable(dsl, parameterClass);
-        String role = table != null ? "TABLE_CONCRETE"
-            : JOOQ_TABLE.equals(parameterClass) ? "TABLE_ANY" : "OTHER";
-        dsl.insertInto(CODE_METHOD_PARAMETER)
-            .set(CODE_METHOD_PARAMETER.SOURCE_NAME, sourceName)
-            .set(CODE_METHOD_PARAMETER.CLASS_NAME, className)
-            .set(CODE_METHOD_PARAMETER.METHOD_NAME, methodName)
-            .set(CODE_METHOD_PARAMETER.DESCRIPTOR, descriptor)
-            .set(CODE_METHOD_PARAMETER.POSITION, position)
-            .set(CODE_METHOD_PARAMETER.PARAMETER_NAME, parameterName)
-            .set(CODE_METHOD_PARAMETER.PARAMETER_TYPE, erased)
-            .set(CODE_METHOD_PARAMETER.ROLE, role)
-            // DIRECT throughout: a fixture names classes rather than compiling them, so it cannot
-            // ask whether one is an enum. The case that turns on the answer is CodeCaptureTest's,
-            // over classes that exist.
-            .set(CODE_METHOD_PARAMETER.EXTRACTION, "DIRECT")
-            .set(CODE_METHOD_PARAMETER.TOUCHED_AT, SEEDED_READING)
-            .onDuplicateKeyIgnore()
+        // The row itself is the signature seeder's; what this arm owns is what the position is
+        // for. Stated as an update of that one column rather than as a second insert of the row,
+        // so a case may state the parameter and then say what the directive makes of it without
+        // two writers ever disagreeing about the rest of it.
+        seedMethodParameter(dsl, sourceName, className, methodName, descriptor, position,
+            parameterName, parameterClass == null ? Map.of() : Map.of("", parameterClass));
+        dsl.update(CODE_METHOD_PARAMETER)
+            .set(CODE_METHOD_PARAMETER.ROLE, conditionRole(dsl, parameterClass))
+            .where(CODE_METHOD_PARAMETER.SOURCE_NAME.eq(sourceName))
+            .and(CODE_METHOD_PARAMETER.CLASS_NAME.eq(className))
+            .and(CODE_METHOD_PARAMETER.METHOD_NAME.eq(methodName))
+            .and(CODE_METHOD_PARAMETER.DESCRIPTOR.eq(descriptor))
+            .and(CODE_METHOD_PARAMETER.POSITION.eq(position))
             .execute();
+        var table = parameterClass == null ? null : seededTable(dsl, parameterClass);
         if (table != null) {
             dsl.insertInto(CODE_CONDITION_METHOD_PARAMETER_TABLE)
                 .set(CODE_CONDITION_METHOD_PARAMETER_TABLE.SOURCE_NAME, sourceName)
@@ -3102,6 +3112,19 @@ public final class SeededStore {
                 .onDuplicateKeyIgnore()
                 .execute();
         }
+    }
+
+    /**
+     * What a condition method's position is for, decided the way the arm decides it: a position
+     * naming a table this store holds is that table's, one naming the bare interface is any
+     * table's, and anything else is ordinary.
+     */
+    private static String conditionRole(DSLContext dsl, String parameterClass) {
+        if (parameterClass == null) {
+            return "OTHER";
+        }
+        return seededTable(dsl, parameterClass) != null ? "TABLE_CONCRETE"
+            : JOOQ_TABLE.equals(parameterClass) ? "TABLE_ANY" : "OTHER";
     }
 
     /** The bare jOOQ table interface, which is how a wildcard table parameter is spelled here. */

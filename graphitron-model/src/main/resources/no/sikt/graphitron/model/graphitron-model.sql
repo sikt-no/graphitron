@@ -9160,16 +9160,15 @@ SELECT p.graph_name, f.named_type, e.element_class
     ON t.graph_name = p.graph_name
    AND t.type_name = f.named_type
    AND t.kind IN ('OBJECT', 'INPUT_OBJECT')
-  JOIN intent_declared_type_element e
-    ON e.source_name = p.source_name
-   AND e.class_name = p.class_name
-   AND e.owner_kind = 'METHOD_RETURN'
-   AND e.owner_name = p.method_name
-   AND e.owner_descriptor = p.descriptor
+  JOIN code_method cm
+    ON cm.source_name = p.source_name AND cm.class_name = p.class_name
+   AND cm.method_name = p.method_name AND cm.descriptor = p.descriptor
+  JOIN code_type_element e
+    ON e.source_name = cm.source_name AND e.type_name = cm.result_type
 UNION
 SELECT p.graph_name, a.named_type, e.element_class
   FROM intent_field_producer_method p
-  JOIN jvm_method_parameter mp
+  JOIN code_method_parameter mp
     ON mp.source_name = p.source_name
    AND mp.class_name = p.class_name
    AND mp.method_name = p.method_name
@@ -9191,15 +9190,10 @@ SELECT p.graph_name, a.named_type, e.element_class
     ON t.graph_name = p.graph_name
    AND t.type_name = a.named_type
    AND t.kind IN ('OBJECT', 'INPUT_OBJECT')
-  JOIN intent_declared_type_element e
-    ON e.source_name = p.source_name
-   AND e.class_name = p.class_name
-   AND e.owner_kind = 'METHOD_PARAMETER'
-   AND e.owner_name = p.method_name
-   AND e.owner_descriptor = p.descriptor
-   AND e.owner_position = mp.position
+  JOIN code_type_element e
+    ON e.source_name = mp.source_name AND e.type_name = mp.parameter_type
  WHERE mp.parameter_name IS NOT NULL;
-COMMENT ON VIEW intent_type_backing_seed IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. A graph''s type is backed by this class by a producer of its own, rather than by being read off some other type''s class. Two arms, one per axis, and they are the seeds intent_type_backing_class closes over: a field with an authored Java reference backs the type it returns with the class the resolved method delivers, and a producer''s parameter backs the type of the argument it is fed from with the class that parameter delivers. Which argument feeds a parameter is the parameter''s own name unless an argMapping entry redirects it, in which case it is the first name of the written path, which that relation carries as a generated column. Objects and input objects only, as in the closure, and a parameter the consumer compiled without -parameters feeds nothing. This relation resolves its producers against the census where the closure''s skip condition reads the directive entries, and the split is the two questions they answer: which class a producer delivers is knowable only from the census method the reference matched, while whether a coordinate is read off its parent is settled by the author having applied the directive at all. So a producer naming a class no entry declared seeds nothing here and still stops the hop there, and the type it names is unbacked rather than backed by whatever member of the parent''s class shares the field''s name. Every row here is a row of intent_type_backing_class too, this relation being where that one starts; what it adds is which of that relation''s rows a producer grounded. Not a column on the closure, for the reason that relation gives for having no route column: a class reached both by a seed and by a hop is one backing and one row there, and a route column would multiply every reader''s rows by however many routes converged. Kept as its own relation, grounding is a join and the closure keeps its grain. Why a reader would want it: the classification walk this family shadows settles a type''s groundings before it propagates anything, and then declines to read an already-grounded type off a parent''s member, because a hop reads the parent''s member type without checking it against the child''s own grounding and can therefore land on a class that is simply wrong. A reader reproducing that precedence takes a type''s rows from here when it has any and from the closure otherwise. The precedence is the reader''s and not this relation''s, which states only where a backing came from.';
+COMMENT ON VIEW intent_type_backing_seed IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. A graph''s type is backed by this class by a producer of its own, rather than by being read off some other type''s class. Two arms, one per axis, and they are the seeds intent_type_backing_class closes over: a field with an authored Java reference backs the type it returns with the class the resolved method delivers, and a producer''s parameter backs the type of the argument it is fed from with the class that parameter delivers. Which argument feeds a parameter is the parameter''s own name unless an argMapping entry redirects it, in which case it is the first name of the written path, which that relation carries as a generated column. Objects and input objects only, as in the closure, and a parameter the consumer compiled without -parameters feeds nothing. This relation resolves its producers against the reading where the closure''s skip condition reads the directive entries, and the split is the two questions they answer: which class a producer delivers is knowable only from the method the reference matched, while whether a coordinate is read off its parent is settled by the author having applied the directive at all. So a producer naming a class no entry declared seeds nothing here and still stops the hop there, and the type it names is unbacked rather than backed by whatever member of the parent''s class shares the field''s name. Every row here is a row of intent_type_backing_class too, this relation being where that one starts; what it adds is which of that relation''s rows a producer grounded. Not a column on the closure, for the reason that relation gives for having no route column: a class reached both by a seed and by a hop is one backing and one row there, and a route column would multiply every reader''s rows by however many routes converged. Kept as its own relation, grounding is a join and the closure keeps its grain. Why a reader would want it: the classification walk this family shadows settles a type''s groundings before it propagates anything, and then declines to read an already-grounded type off a parent''s member, because a hop reads the parent''s member type without checking it against the child''s own grounding and can therefore land on a class that is simply wrong. A reader reproducing that precedence takes a type''s rows from here when it has any and from the closure otherwise. The precedence is the reader''s and not this relation''s, which states only where a backing came from.';
 COMMENT ON COLUMN intent_type_backing_seed.graph_name IS 'the owning graph''s partition, carried from intent_field_producer_method';
 COMMENT ON COLUMN intent_type_backing_seed.type_name IS 'the SDL type the producer grounds; the field''s named type on the return arm, the argument''s named type on the parameter arm';
 COMMENT ON COLUMN intent_type_backing_seed.class_name IS 'the fully-qualified binary name of the class the producer delivers at that position, once the containers come off; spelled as the jvm_ census spells a class name, on intent_type_backing_class.class_name''s terms';

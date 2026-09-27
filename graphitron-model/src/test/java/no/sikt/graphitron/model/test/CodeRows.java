@@ -76,7 +76,7 @@ public final class CodeRows {
                 for (CompletionData.Parameter taken : method.parameters()) {
                     parameter(dsl, at.sourceName(), at.className(), method.name(),
                         method.descriptor(), ordinal++, taken.name(),
-                        positionsOf(taken.typeRefs()), taken.declaredType(), readAt);
+                        positionsOf(taken.typeRefs()), taken.declaredType(), "OTHER", readAt);
                 }
                 if (isRecord) {
                     continue;
@@ -258,17 +258,30 @@ public final class CodeRows {
                                  String parameterName, Map<String, String> positions,
                                  LocalDateTime readAt) {
         parameter(dsl, sourceName, className, methodName, descriptor, position, parameterName,
-            positions, null, readAt);
+            positions, null, "OTHER", readAt);
+    }
+
+    /** The same at a stated role. */
+    public static void parameter(DSLContext dsl, String sourceName, String className,
+                                 String methodName, String descriptor, int position,
+                                 String parameterName, Map<String, String> positions, String role,
+                                 LocalDateTime readAt) {
+        parameter(dsl, sourceName, className, methodName, descriptor, position, parameterName,
+            positions, null, role, readAt);
     }
 
     /** The same over a census that states its types as names rather than as resolved positions. */
     public static void parameter(DSLContext dsl, String sourceName, String className,
                                  String methodName, String descriptor, int position,
                                  String parameterName, Map<String, String> positions, String stated,
-                                 LocalDateTime readAt) {
+                                 String role, LocalDateTime readAt) {
         String typeName = stated != null ? statedType(positions, stated)
             : resultTypeName(positions, "()Ljava/lang/Object;");
         type(dsl, sourceName, typeName, readAt);
+        // What the position's own type delivers, on the terms a result type's is stated: a reader
+        // peeling a parameter asks the same relation it asks of a return. After the type, which is
+        // what it keys to.
+        element(dsl, sourceName, typeName, positions, readAt);
         dsl.insertInto(CODE_METHOD_PARAMETER)
             .set(CODE_METHOD_PARAMETER.SOURCE_NAME, sourceName)
             .set(CODE_METHOD_PARAMETER.CLASS_NAME, className)
@@ -277,9 +290,26 @@ public final class CodeRows {
             .set(CODE_METHOD_PARAMETER.POSITION, position)
             .set(CODE_METHOD_PARAMETER.PARAMETER_NAME, parameterName)
             .set(CODE_METHOD_PARAMETER.PARAMETER_TYPE, typeName)
-            .set(CODE_METHOD_PARAMETER.ROLE, "OTHER")
+            .set(CODE_METHOD_PARAMETER.ROLE, role)
             .set(CODE_METHOD_PARAMETER.EXTRACTION, "DIRECT")
             .set(CODE_METHOD_PARAMETER.TOUCHED_AT, readAt)
+            .onDuplicateKeyIgnore()
+            .execute();
+    }
+
+    /** What one type delivers, where it delivers a class at all. */
+    private static void element(DSLContext dsl, String sourceName, String typeName,
+                                Map<String, String> positions, LocalDateTime readAt) {
+        String[] delivered = deliveredBy(positions);
+        if (delivered == null) {
+            return;
+        }
+        dsl.insertInto(CODE_TYPE_ELEMENT)
+            .set(CODE_TYPE_ELEMENT.SOURCE_NAME, sourceName)
+            .set(CODE_TYPE_ELEMENT.TYPE_NAME, typeName)
+            .set(CODE_TYPE_ELEMENT.ELEMENT_CLASS, delivered[0])
+            .set(CODE_TYPE_ELEMENT.DELIVERY, delivered[1])
+            .set(CODE_TYPE_ELEMENT.TOUCHED_AT, readAt)
             .onDuplicateKeyIgnore()
             .execute();
     }
