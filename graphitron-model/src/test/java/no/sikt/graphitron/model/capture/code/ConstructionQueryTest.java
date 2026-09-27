@@ -103,7 +103,7 @@ class ConstructionQueryTest {
     void aMemberDescendsIntoWhatFillsIt() {
         withReactorCapture(dsl ->
             assertThat(dsl.select(CODE_WRITE_SLOT.SLOT_NAME, CODE_TYPE.DISPLAY_NAME,
-                    CODE_TYPE_ELEMENT.ELEMENT_CLASS, CODE_TYPE_ELEMENT.IS_MANY)
+                    CODE_TYPE_ELEMENT.ELEMENT_CLASS, CODE_TYPE_ELEMENT.DELIVERY)
                 .from(CODE_WRITE_SLOT)
                 .join(CODE_TYPE).on(CODE_TYPE.SOURCE_NAME.eq(CODE_WRITE_SLOT.SOURCE_NAME),
                     CODE_TYPE.TYPE_NAME.eq(CODE_WRITE_SLOT.SLOT_TYPE))
@@ -113,11 +113,11 @@ class ConstructionQueryTest {
                 .where(CODE_WRITE_SLOT.TYPE_NAME.eq(FIXTURES + "SlotRecord"))
                 .orderBy(CODE_WRITE_SLOT.POSITION.asc())
                 .fetch(r -> r.value1() + " " + r.value2() + " -> " + r.value3()
-                    + (r.value4() ? " many" : " one")))
-                .as("the list member delivers its element and says so; the plain one delivers itself")
+                    + " " + r.value4()))
+                .as("the list member delivers its element and says it multiplies; the plain one is handed over directly")
                 .containsExactly(
-                    "title String -> java.lang.String one",
-                    "tags List<String> -> java.lang.String many"));
+                    "title String -> java.lang.String DIRECT",
+                    "tags List<String> -> java.lang.String MANY"));
     }
 
     /**

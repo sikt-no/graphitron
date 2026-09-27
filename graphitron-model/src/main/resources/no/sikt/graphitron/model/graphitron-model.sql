@@ -6095,17 +6095,18 @@ CREATE TABLE code_type_element (
   source_name   VARCHAR NOT NULL,
   type_name     VARCHAR NOT NULL,
   element_class VARCHAR NOT NULL,
-  is_many       BOOLEAN NOT NULL,
+  delivery      VARCHAR NOT NULL,
   touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, type_name),
   FOREIGN KEY (source_name, type_name)
-    REFERENCES code_type (source_name, type_name) ON DELETE CASCADE
+    REFERENCES code_type (source_name, type_name) ON DELETE CASCADE,
+  CHECK (delivery IN ('DIRECT', 'WRAPPED', 'MANY'))
 );
 COMMENT ON TABLE code_type_element IS 'What a type resolves to once its delivery containers are peeled off, for the types that resolve to a class at all. For example java.util.List<no.sikt.example.Film> resolving to Film, many of them.';
 COMMENT ON COLUMN code_type_element.source_name IS 'the entry whose signatures mention the type, as on code_type; the key''s leading dimension';
 COMMENT ON COLUMN code_type_element.type_name IS 'the type, as on code_type, completing the key; the row is deleted with it';
 COMMENT ON COLUMN code_type_element.element_class IS 'the binary name of the class the type arrives at once every container is peeled off it. Presence is the fact this relation states, which is why the columns are not on the type: a void, a primitive, an array and a type variable name no class, and a placeholder would make four different silences look like one answer';
-COMMENT ON COLUMN code_type_element.is_many IS 'whether any container peeled on the way multiplies, which is what says a field backed by this type is a list rather than one value. A List or a Set or a jOOQ Result multiplies; an Optional or a CompletableFuture or a Map does not, those being one value in a wrapper';
+COMMENT ON COLUMN code_type_element.delivery IS 'how a caller receives what the type hands over: DIRECT where the type is the class and nothing was peeled, WRAPPED where containers were peeled and none of them multiplies, MANY where at least one does. A List, a Set, a Collection or a jOOQ Result multiplies; an Optional, a CompletableFuture or a Map does not, those being one value in a wrapper. The decision rather than the containers behind it, which is what lets a reader ask its own question without knowing the vocabulary: whether one value may be handed to a position is DIRECT, and whether a field backed by this type is a list is MANY. Stating it as the container''s own name would make both questions a test against a class name, and a rule that turns on java.util.List not happening to equal java.lang.Integer is a coincidence doing load-bearing work';
 COMMENT ON COLUMN code_type_element.touched_at IS 'when the reading that produced this row ran; swept with the type it hangs on';
 
 CREATE TABLE code_method (

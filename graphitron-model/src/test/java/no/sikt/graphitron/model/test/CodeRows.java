@@ -154,7 +154,7 @@ public final class CodeRows {
                 .set(CODE_TYPE_ELEMENT.SOURCE_NAME, sourceName)
                 .set(CODE_TYPE_ELEMENT.TYPE_NAME, typeName)
                 .set(CODE_TYPE_ELEMENT.ELEMENT_CLASS, delivered[0])
-                .set(CODE_TYPE_ELEMENT.IS_MANY, Boolean.parseBoolean(delivered[1]))
+                .set(CODE_TYPE_ELEMENT.DELIVERY, delivered[1])
                 .set(CODE_TYPE_ELEMENT.TOUCHED_AT, readAt)
                 .onDuplicateKeyIgnore()
                 .execute();
@@ -327,6 +327,7 @@ public final class CodeRows {
      */
     private static String[] deliveredBy(Map<String, String> positions) {
         String path = "";
+        boolean descended = false;
         boolean many = false;
         while (true) {
             String named = positions.get(path);
@@ -335,15 +336,21 @@ public final class CodeRows {
             }
             Integer elementIndex = CONTAINERS.get(named);
             if (elementIndex == null) {
-                return new String[] {named, String.valueOf(many)};
+                return new String[] {named, delivery(descended, many)};
             }
             String next = path.isEmpty() ? String.valueOf(elementIndex) : path + "." + elementIndex;
             if (!positions.containsKey(next)) {
-                return new String[] {named, String.valueOf(many)};
+                return new String[] {named, delivery(descended, many)};
             }
+            descended = true;
             many = many || MULTIPLIES.contains(named);
             path = next;
         }
+    }
+
+    /** The reading's own three-way decision, stated the same way a stated census states it. */
+    private static String delivery(boolean descended, boolean many) {
+        return many ? "MANY" : descended ? "WRAPPED" : "DIRECT";
     }
 
     /**

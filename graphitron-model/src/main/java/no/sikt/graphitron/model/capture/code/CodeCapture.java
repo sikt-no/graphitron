@@ -367,14 +367,14 @@ public final class CodeCapture {
             row -> val(row.source(), e.SOURCE_NAME),
             row -> val(row.typeName(), e.TYPE_NAME),
             row -> val(row.delivery().elementClass(), e.ELEMENT_CLASS),
-            row -> val(row.delivery().deliversMany(), e.IS_MANY),
+            row -> val(row.delivery().delivery(), e.DELIVERY),
             row -> val(touchedAt, e.TOUCHED_AT)));
         BindBatch.execute(dsl, elementRows, markers ->
-            dsl.insertInto(e, e.SOURCE_NAME, e.TYPE_NAME, e.ELEMENT_CLASS, e.IS_MANY, e.TOUCHED_AT)
+            dsl.insertInto(e, e.SOURCE_NAME, e.TYPE_NAME, e.ELEMENT_CLASS, e.DELIVERY, e.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(e.ELEMENT_CLASS, excluded(e.ELEMENT_CLASS))
-                .set(e.IS_MANY, excluded(e.IS_MANY))
+                .set(e.DELIVERY, excluded(e.DELIVERY))
                 .set(e.TOUCHED_AT, excluded(e.TOUCHED_AT)));
     }
 
@@ -1053,8 +1053,15 @@ public final class CodeCapture {
 
 
 
-    /** What a declared type finally hands back, and whether it hands back many. */
-    private record Delivery(String elementClass, boolean deliversMany) {}
+    /**
+     * What a declared type hands over, and how a caller receives it.
+     *
+     * <p>{@code delivery} is the decision rather than the containers behind it: DIRECT where the
+     * type is the class and nothing was peeled, WRAPPED where something was and none of it
+     * multiplies, MANY where something does. A reader asking whether one value can be handed to a
+     * position asks for DIRECT and never has to know that java.util.List is a container.
+     */
+    private record Delivery(String elementClass, String delivery) {}
 
     /** One container the delivery walk peels: which position carries the payload, and whether
      *  arriving through it means many rather than one. */
@@ -1096,6 +1103,7 @@ public final class CodeCapture {
             return null;
         }
         String path = "";
+        boolean descended = false;
         boolean many = false;
         var walked = new HashSet<String>();
         while (walked.add(path)) {
@@ -1109,11 +1117,12 @@ public final class CodeCapture {
             if (at == null) {
                 break;
             }
+            descended = true;
             many |= container.multiplies();
             path = next;
             element = at;
         }
-        return new Delivery(element, many);
+        return new Delivery(element, many ? "MANY" : descended ? "WRAPPED" : "DIRECT");
     }
 
     /**

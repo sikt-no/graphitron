@@ -534,19 +534,21 @@ class CodeCaptureTest {
         withReactorCapture(dsl -> {
             assertThat(deliveryOf(dsl, "manyStrings"))
                 .as("a list delivers its element, many of them")
-                .isEqualTo("java.lang.String many");
+                .isEqualTo("java.lang.String MANY");
             assertThat(deliveryOf(dsl, "maybeAString"))
-                .as("an optional delivers its element, one of it")
-                .isEqualTo("java.lang.String one");
+                .as("an optional delivers one of its element, and says it was wrapped: the"
+                    + " value cannot be handed over as it stands, which DIRECT would have claimed")
+                .isEqualTo("java.lang.String WRAPPED");
             assertThat(deliveryOf(dsl, "stringsByKey"))
-                .as("a map delivers its value and not its key")
-                .isEqualTo("java.lang.String one");
+                .as("a map delivers its value and not its key, wrapped on the same terms")
+                .isEqualTo("java.lang.String WRAPPED");
             assertThat(deliveryOf(dsl, "oneString"))
-                .as("a type that is no container delivers itself")
-                .isEqualTo("java.lang.String one");
+                .as("a type that is no container is handed over as it stands")
+                .isEqualTo("java.lang.String DIRECT");
             assertThat(deliveryOf(dsl, "anythingAtAll"))
-                .as("an unbounded wildcard names nothing, so the walk stops at the container")
-                .isEqualTo("java.util.List one");
+                .as("an unbounded wildcard names nothing, so the walk stops at the container and"
+                    + " hands that over directly, having peeled nothing")
+                .isEqualTo("java.util.List DIRECT");
         });
     }
 
@@ -562,7 +564,7 @@ class CodeCaptureTest {
         withReactorCapture(dsl ->
             assertThat(deliveryOf(dsl, "deeplyNested"))
                 .as("five containers peeled, where an unrolled form reports the fifth")
-                .isEqualTo("java.lang.String many"));
+                .isEqualTo("java.lang.String MANY"));
     }
 
     /** A return that names no class delivers nothing, and absence is how that is said. */
@@ -595,7 +597,7 @@ class CodeCaptureTest {
                 .containsExactly("DSL_CONTEXT", "OTHER");
             assertThat(parameterDeliveryOf(dsl, "fromManyInputs", 1))
                 .as("and the position typed as a list of them delivers the element")
-                .isEqualTo("java.lang.String many");
+                .isEqualTo("java.lang.String MANY");
         });
     }
 
@@ -821,25 +823,25 @@ class CodeCaptureTest {
     private static String deliveryOf(DSLContext dsl, String methodName) {
         var e = CODE_TYPE_ELEMENT;
         var m = CODE_METHOD;
-        return dsl.select(e.ELEMENT_CLASS, e.IS_MANY)
+        return dsl.select(e.ELEMENT_CLASS, e.DELIVERY)
             .from(m)
             .join(e).on(e.SOURCE_NAME.eq(m.SOURCE_NAME), e.TYPE_NAME.eq(m.RESULT_TYPE))
             .where(m.CLASS_NAME.eq(SERVICES))
             .and(m.METHOD_NAME.eq(methodName))
-            .fetchOne(row -> row.value1() + (row.value2() ? " many" : " one"));
+            .fetchOne(row -> row.value1() + " " + row.value2());
     }
 
     /** What one position's type resolves to, on {@link #deliveryOf}'s terms. */
     private static String parameterDeliveryOf(DSLContext dsl, String methodName, int position) {
         var e = CODE_TYPE_ELEMENT;
         var p = CODE_METHOD_PARAMETER;
-        return dsl.select(e.ELEMENT_CLASS, e.IS_MANY)
+        return dsl.select(e.ELEMENT_CLASS, e.DELIVERY)
             .from(p)
             .join(e).on(e.SOURCE_NAME.eq(p.SOURCE_NAME), e.TYPE_NAME.eq(p.PARAMETER_TYPE))
             .where(p.CLASS_NAME.eq(SERVICES))
             .and(p.METHOD_NAME.eq(methodName))
             .and(p.POSITION.eq(position))
-            .fetchOne(row -> row.value1() + (row.value2() ? " many" : " one"));
+            .fetchOne(row -> row.value1() + " " + row.value2());
     }
 
     /** The slot names one class offers. */
