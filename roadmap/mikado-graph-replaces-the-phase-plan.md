@@ -77,6 +77,24 @@ before the next. That is what makes a session safe to run unattended and safe to
 * **A leaf `blocked` across more than one harvest** without being re-checked. A stale `blocked` is how
   a graph starts lying, which is exactly what the scratch file's banner records.
 
+## First evidence from the trial
+
+Two sessions added a sibling branch to R876's graph on the day it was converted, and harvesting both
+at once is the first thing this proposal has been tested by.
+
+The structural claim held and the prose one did not. Both branches were genuinely independent work,
+and the merge conflict was a pure insertion collision, two `###` sections landing at one anchor,
+which is the cheapest kind to resolve. What the merge produced that neither commit contained was a
+dangling cross-reference: one branch pointed at a bullet under `++##++ Owed, not done here`, and the
+other had moved that bullet into a node of its own. Each commit was correct alone and the pair was
+not.
+
+So leaves are orthogonal by construction, but prose references between branches are a coupling the
+structure does not capture, and only the merge shows it. That is an argument for a node naming
+another node rather than naming a section, and for the harvest reading cross-references after a
+multi-branch merge. It is not an argument against the shape: under a phase list the same two authors
+would have edited one numbered list and conflicted over its ordering as well as its text.
+
 ## Open question this item must settle
 
 Two state systems. The board has `Backlog -> Spec -> Ready -> In Progress -> In Review -> Done` with
