@@ -1,0 +1,26 @@
+"A graph that links, but to nothing that federates it. The opt-in is a prefix over a link's url, so a link naming another spec does not match it and a link whose url the author omitted is a null that matches no prefix at all; the null guard falls out of the join rather than being a condition spelled twice. Stated over the composition for the reason the unlinked document gives: a synthesized row would arrive here without an ordinal, and neither link brings one."
+type Film @table(name: "film") @node @key(fields: "title") {
+  id: ID
+  title: String
+}
+
+extend schema @link(url: "https://specs.apollo.dev/tag/v0.3")
+
+# A url the author omitted, which reaches the predicate as a null rather than as a non-match.
+extend schema @link(import: ["@key"])
+
+# Keyless and a node, which is the shape the federation link would give a key to.
+type Language @table(name: "language") @node {
+  id: ID
+  name: String
+}
+
+extend type Query {
+  films: [Film!]!
+  languages: [Language!]!
+}
+
+extend schema @expectEquals(relation: "intent_federation_key", rows: """
+  type_name, ordinal, fields_sdl
+  Film,      0,       title
+  """)

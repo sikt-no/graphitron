@@ -1,0 +1,95 @@
+"A node type in a federation-linked graph with no key of its own is given one. The link is the opt-in, the node directive is the subject, and an authored key whose decode is exactly the single path id is the one thing that stands the rule down. Every other key an author can write is an alternative or a misuse and leaves the rule firing, which is the asymmetry worth stating: declining on a malformed fields argument would suppress the entity declaration on the strength of a parse failure and leave the misuse undetected."
+# Keyless and a node: gets the synthesized key.
+type Film @table(name: "film") @node {
+  id: ID
+  title: String
+}
+
+# The opt-in, which is a property of the graph rather than of any type in it. Three links, two of them
+# federation's: the rule reads the spec a link names rather than counting links.
+extend schema @link(url: "https://specs.apollo.dev/link/v1.0")
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+# A second federation link does not double the rows: the condition is existence and the
+# membership key is the type, so a type gets one row however many links name the spec.
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.3")
+
+# Not a node: gets nothing, the rule's subject being the node declaration.
+type Language @table(name: "language") {
+  id: ID
+  name: String
+}
+
+# Stands down: an authored key whose decode is exactly the single path id is the contract itself.
+type Actor @table(name: "actor") @node @key(fields: "id") {
+  id: ID
+  firstName: String
+}
+
+# An alternative rather than the contract: the key names another field, so the rule still fires.
+type Category @table(name: "category") @node @key(fields: "name") {
+  id: ID
+  name: String
+}
+
+# An alternative: a compound key is not the single path id.
+type City @table(name: "city") @node @key(fields: "id cityName") {
+  id: ID
+  cityName: String
+}
+
+# A misuse, and deliberately not a stand-down: a fields argument decoding to no field at all would
+# otherwise suppress the entity declaration on the strength of a parse failure.
+type Country @table(name: "country") @node @key(fields: "") {
+  id: ID
+  countryName: String
+}
+
+# An alternative: a nested path is one selection of two segments, not the single path id.
+type Address @table(name: "address") @node @key(fields: "city { id }") {
+  id: ID
+  city: City
+}
+
+# Stands down at a later ordinal: the condition is that no authored key states the contract, not
+# that the first one does.
+type Staff @table(name: "staff") @node @key(fields: "firstName") @key(fields: "id") {
+  id: ID
+  firstName: String
+}
+
+# Stands down, and the two applications stay two rows: the reduction owes its readers the authored
+# relation's arity, so it unions all rather than deduplicating an application away.
+type Store @table(name: "store") @node @key(fields: "id") @key(fields: "id") {
+  id: ID
+}
+
+extend type Query {
+  films: [Film!]!
+  languages: [Language!]!
+  actors: [Actor!]!
+  categories: [Category!]!
+  cities: [City!]!
+  countries: [Country!]!
+  addresses: [Address!]!
+  staff: [Staff!]!
+  stores: [Store!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_synthesized_federation_key", rows: """
+  type_name, fields_sdl, resolvable
+  Address,   id,         TRUE
+  Category,  id,         TRUE
+  City,      id,         TRUE
+  Country,   id,         TRUE
+  Film,      id,         TRUE
+  """)
+
+# Stated as containment rather than equality, this graph's whole composition being wider than
+# the point: a derived row carries no ordinal, a derivation having no position in a document,
+# and the two authored id keys on Store stay two rows rather than folding into one.
+extend schema @assertContains(relation: "intent_federation_key", rows: """
+  type_name, ordinal, fields_sdl
+  Film,      ,        id
+  Store,     0,       id
+  Store,     1,       id
+  """)
