@@ -1,0 +1,39 @@
+"What one @asFacet application binds, stated as SDL rather than as the rows a reading would have written for it. Every admitted field sits beside a declined one in the same input type, so the rule is pinned by what it refuses as much as by what it admits: a relation that admitted everything would satisfy a document listing only its admissions. The declines are the interesting half and each names a different reason."
+enum Rating { G PG R }
+
+input NestedFilter { note: String }
+
+input FilmFilter {
+  "Admitted: the column is the name @field wrote, not the field's own, and the key is the leaf."
+  rating: String @field(name: "mpaa_rating") @asFacet
+  "Admitted: a list takes its key nullability from the element, which is non-null here."
+  ratings: [String!] @field(name: "rating") @asFacet
+  "Admitted: and nullable here, which is the same rule reading the other way."
+  languages: [String] @field(name: "language") @asFacet
+  "Admitted: an enum leaf binds as ordinarily as a scalar one."
+  ratingEnum: Rating @field(name: "rating_enum") @asFacet
+  "Declined: an application binding no column has nothing to group by."
+  noColumn: String @asFacet
+  "Declined: a non-null filter field is always active, so its counts are the whole population."
+  alwaysActive: String! @field(name: "always") @asFacet
+  "Declined: an ID reaches the node machinery rather than a column."
+  identifier: ID @field(name: "film_id") @asFacet
+  "Declined: an input object leaf is not a value a count can key on."
+  nested: NestedFilter @field(name: "nested") @asFacet
+}
+
+type Film @table(name: "film") { filmId: ID rating: String }
+
+extend type Query {
+  films(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
+}
+
+# The whole population for this document, so a decline that started being admitted shows up here as
+# a row nobody asked for rather than as silence.
+extend schema @expectEquals(relation: "graphitron_facet_binding", rows: """
+  type_name,  field_name,  ordinal, column_name, value_type_name, value_nullable
+  FilmFilter, rating,      0,       mpaa_rating, String,          TRUE
+  FilmFilter, ratings,     1,       rating,      String,          FALSE
+  FilmFilter, languages,   2,       language,    String,          TRUE
+  FilmFilter, ratingEnum,  3,       rating_enum, Rating,          TRUE
+  """)
