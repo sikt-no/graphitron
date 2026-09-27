@@ -65,6 +65,26 @@ Worth recording because it widens the reader set the same way the third occurren
 picking rows outside every reader's window does not protect that writer's own reads, and a fan-out
 case reads through several datasources at once, so the window it is exposed to is every one of them.
 
+**A doubt about the evidence in this item, raised by a session that caught itself making the
+mistake.** "Passed alone, passed on a rerun" does not discriminate a flake from a stale artifact,
+because both of those rebuild the thing that was stale. It reads as nondeterminism and is equally
+consistent with a tree that was simply wrong, and the execution tier is where that bites hardest: it
+runs generated code out of `graphitron-sakila-example/target`, which a plain `install` leaves in
+place and a rebuild silently corrects.
+
+That lands on this item's own record. The first and third occurrences were both observed on
+`mvn install -Plocal-db`, with no `clean`, so staleness is not excluded for either. The fourth was
+observed on a full `mvn clean install`, and the log shows `clean:3.5.0:clean` running on
+`graphitron-sakila-example` in that same build, so the generated code it executed was produced by
+the build that failed; a full reactor also resolves its inter-module dependencies from its own
+outputs rather than from installed jars, which is the other way staleness enters and only bites a
+`-pl` build. So the fourth stands and the other two want re-reading.
+
+What follows is that the flake reading now rests on one occurrence rather than three, and that this
+item may be two items: a nondeterministic writer, and a build-hygiene trap that has been producing
+phantom failures nobody could reproduce. Whoever takes the Spec should settle which before designing
+a fix, because the two want different answers.
+
 Adjacent to R823, which records a different execution-tier test reading a mutating table; whether
 the two want one answer (a convention about which rows an execution test may write) or two is for
 the Spec to decide.
