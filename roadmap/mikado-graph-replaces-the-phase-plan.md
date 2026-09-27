@@ -57,6 +57,44 @@ the graph readable at a hundred leaves. The 1105-line scratch file is what a nod
 becomes. Evidence goes where evidence already goes, measurements to `roadmap/audits/` and the story to
 `changelog.md` at Done; the node carries the claim and a pointer.
 
+## The method forces add, flip, subtract, and the subtraction is the one that gets skipped
+
+Small reversible steps are not a style. They are the only way to change a shape while every
+intermediate state still builds, and the shape of that is always the same three moves: **add** the
+new relation beside the old, **flip** its readers over one at a time, **subtract** the old one. Each
+move is green on its own, which is what makes the work safe to run unattended and safe to harvest.
+
+What buys that safety is a middle state where both shapes exist. That is the method's cost, paid
+deliberately, and it is also precisely where the danger is, because the three moves do not feel
+alike. Adding is satisfying and demonstrable. Flipping is visible progress with a number attached.
+Subtracting produces no new capability, breaks things when it is wrong, and reads as tidying. So it
+is the one that gets deferred, and a deferred subtraction does not sit still.
+
+It leaves two producers of one fact with nothing comparing them, which is the defect R876 is named
+for. It leaves the read expensive for every consumer still on the old relation, so the work bought
+nothing for them. And it makes every reader choose between two relations that answer the same
+question, which is a cost the addition was supposed to remove and has instead doubled. Three
+unsubtracted flips, one leaf each, and a contributor can no longer tell which relation is the
+current answer.
+
+The tree already shows both ends of this. `intent_` is eighty relations and its own family header
+opens by calling the family nobody's; that is what additions without subtractions look like after
+long enough. Against it, the classpath census went from thirteen relations to none, and the commit
+that finished it was pure removal with no new capability in it at all.
+
+**So the graph carries subtraction as a node and never as cleanup.** A branch is done when what it
+replaced is gone, which is the rule R876 now states at its root. A branch whose additive and flip
+leaves are all green and whose subtraction leaf is open is not a finished branch; it is the most
+dangerous state the method has, because it looks finished. Two live instances are in R876 right
+now: `RoutineWriteFacts` still reads `intent_mutation_routine_seat` while `graphitron_entry_defect`
+states the same refusals, and `graphitron_field_reference_step_hop` still resolves the elements
+`graphitron_field_chain_link_reading` resolves, measured to agree exactly on a fixture reaching
+every arm. Both are flips that landed and subtractions that did not.
+
+This is why the QC triggers below are not optional bookkeeping. A subtraction node open across more
+than one harvest is worse than a stale `blocked`: the stale one makes the graph lie, and this one
+degrades the code while the graph tells the truth.
+
 ## Why this is what lets several agents work one item
 
 A phase list orders work that may not be ordered. A graph states the dependencies that are real and
@@ -76,6 +114,12 @@ before the next. That is what makes a session safe to run unattended and safe to
 * **A graph growing sideways under the root** is a prompt to ask whether the item has two goals in it.
 * **A leaf `blocked` across more than one harvest** without being re-checked. A stale `blocked` is how
   a graph starts lying, which is exactly what the scratch file's banner records.
+* **A subtraction node open across more than one harvest**, which is the one above with teeth. The
+  graph is telling the truth here and the code is getting worse anyway, so nothing surfaces it but
+  the trigger.
+* **A branch marked `done` with an open leaf under it** is checkable rather than a matter of
+  judgment, and it is the shape a skipped subtraction takes when somebody closes the branch on the
+  strength of its additive leaves.
 
 ## First evidence from the trial
 
