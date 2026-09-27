@@ -6,7 +6,7 @@ bucket: cleanup
 priority: 2
 depends-on: []
 created: 2026-08-24
-last-updated: 2026-09-22
+last-updated: 2026-09-27
 ---
 
 # A mutation test seeds film_actor rows a query test asserts the absence of
@@ -51,6 +51,19 @@ an unconstrained read being a superset of a constrained one by construction. Obs
 the inventory the paragraph above asks for is not only `seedFilmActor`: it is every row the writer
 class touches, `film` included, and the reader set is every execution case that compares two reads
 of one table rather than only the per-parent film assertions.
+
+A fourth occurrence, 2026-09-27, and this one lands on a writer this item had cleared. The text
+above reasons that `TenantFanOutExecutionTest` and its sibling are safe because they use film ids in
+the hundreds, clear of every seeded read. That reasoning is about what they write. This failure is a
+read: `downedTenant_byTimeout_classifiesTenantFanOutTimedOut` expected three films and got
+`[null, null]`, so the tenant-1 fan-out arm returned nulls and the appended element for the timed-out
+tenant never arrived. Observed on a full `mvn clean install`; the class on its own passes on the same
+tree. The harvest carrying it touched no file in `graphitron-sakila-example` and nothing tenant-side,
+which is what makes it this item's rather than that work's.
+
+Worth recording because it widens the reader set the same way the third occurrence did. A writer
+picking rows outside every reader's window does not protect that writer's own reads, and a fan-out
+case reads through several datasources at once, so the window it is exposed to is every one of them.
 
 Adjacent to R823, which records a different execution-tier test reading a mutating table; whether
 the two want one answer (a convention about which rows an execution test may write) or two is for

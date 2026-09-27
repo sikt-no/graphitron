@@ -14,9 +14,14 @@ last-updated: 2026-09-27
 
 ## Goal
 
-**Every rule gets an owner, and `meta_materialize` dissolves.** A registration is not a thing to be
-justified or retired one at a time; it is what a rule with no owner gets given, so that something
-somewhere refreshes it. Give every rule an owner and there is nothing left for a register to
+**An expensive derived read is a modelling defect, so fix the shape and the cost goes with it.**
+A read is dear because a fact is keyed by where it was written rather than by what it is, or because
+a family describes its corpus and affords nothing, or because a rule lives somewhere no instrument
+can see it. Reach for the shape first and the cost is not a thing to be managed.
+
+**The first consequence, and the one this item was filed for, was ownership.** A registration is not
+a thing to be justified or retired one at a time; it is what a rule with no owner gets given, so that
+something somewhere refreshes it. Give every rule an owner and there is nothing left for a register to
 schedule. A rule reading one family's facts moves into that family. A rule crossing families has an
 owner too, the gatherer that runs last, and that gatherer's refresh plan is not a register; it is
 what every other gatherer already holds for its own family.
@@ -30,111 +35,118 @@ its subject rather than its justification.
 When this lands, a contributor adding a derived relation picks a family and an owner, and there is no
 register to add a row to.
 
-**Status against the thesis: confirmed, and the scope reservation was wrong.** This item said
-emptying the register outright was not reachable. R955 reached it. `meta_materialize` is gone, no
+**That consequence is delivered, and the thesis outlived it.** This item said emptying the register
+outright was not reachable. R955 reached it. `meta_materialize` is gone, no
 registration is left and no `_live` view is left, so the thesis holds in full rather than in shape
 only. The claim about which lever to reach for first also has a direct measurement behind it: the
 workload's worst reader was fixed by restating its rule, register untouched, every relation
 returning identical rows.
 
-## The plan
+What kept going under this number afterwards is the same thesis applied elsewhere: a directive
+application keyed five ways by site, a classpath family that described and afforded nothing, a chain
+resolution written as a loop no rule parser reaches, a classpath re-read once per graph. The graph
+below is rooted at the thesis for that reason, with ownership as its first branch.
 
-Ten slices. Seven have landed; what they moved is in `roadmap/changelog.md` and in the September 2026
-chapter of `docs/history/road-to-the-relational-core.adoc`.
+## The plan, as a Mikado graph
 
-1. The entry migration. Landed 2026-09-07.
-2. The two hierarchies, one mechanism at two grains. Landed from 2026-09-08.
-3. The macro arc's consumer, the first this arc retired.
-4. The route family.
-5. The reference decode on the field sites.
-6. The argument and input-field sides.
+This item is the trial of R979, which proposes that a spec be a graph the work grows rather than a
+phase list written before any of it is tried. The conversion is deliberate and R979 is still Backlog.
 
-**7. The declaration pass.** A relation with no `meta_relation` row has not been made anybody's, and
-writing one forces a grain to be named, after which the existing gate checks the primary key against
-it. Ordered after the dissolutions above: `intent_` is the largest share of the undeclared roster and
-most of those are views the slices above delete, so declaring them first would be writing rationales
-for relations about to go. The mechanism is R877's. Two corrections from running it. Declaring is a
-precondition on every move rather than a pass that waits its turn, because a relation whose owner is
-not declared is cleared by whatever clear still stands and, once its old writer is gone, is not
-written back. And the declaration is a build-time gate, not a runtime mechanism: nothing that runs
-reads `meta_relation`, and what the gate buys is that a new relation cannot arrive without an owner.
+The goal is the root. A child is a prerequisite discovered by trying. A leaf is doable now; a branch
+waits on its children. Each node is `done`, `blocked` or `open`, and a blocked node names what holds
+it. A node is a claim and at most a sentence of why: evidence lives in `roadmap/audits/`, the story
+in `changelog.md` at Done.
 
-**8. The register. Done, by R955.** Not retired row by row and not shrunk to a defensible core: the
-gatherer it compensated for stopped existing and the mechanism was left with no work, which is the
-shape this item argued for. `meta_materialize`, every registration and every `_live` view are gone.
-The credit is R955's; what this item contributed is the argument that the register had no subject
-once ownership was computed.
+**What the conversion found on its first pass, recorded because it is the point of trying.** The root
+this item states, every rule gets an owner and the register dissolves, is `done` and has been since
+R955. Five arcs have landed under this number since, and none of them serves that root. They serve
+the thesis in the title, which the phase list never made the root: a read is expensive because the
+shape is wrong, so fix the shape. The graph is written that way below, with the register dissolution
+as the first branch rather than the whole of it. A phase list could hold a finished goal and a
+growing plan without the contradiction showing.
 
-**9. The materialization targets. Moot.** The subject was the registered targets, which were the
-relations carrying no primary key. Six stored `intent_` tables remain and every one of them is keyed,
-so there is nothing left to key and no vacuous grain check to fix. Slice 8 took the rest with it,
-which is what this slice being deliberately last was betting on.
+**Root: an expensive derived read is a modelling defect, so fix the shape rather than the cost.**
 
-**10. The directive applications collapse onto the coordinate. Landed.** Ten relations became two,
-and the two key into `graphql_element`, which is a table.
+### Every rule has an owner, and the register has no subject `done`
 
-The five `graphql_*_directive` relations stated one fact, a directive applied at a site, and keyed it
-five different ways because each decomposed its own site: `(graph_name, directive_name, ordinal)` at
-the schema, seven columns at a field argument. The five `graphql_*_directive_arg` relations repeated
-the split one level down. They did not key differently because the fact differed. They keyed
-differently because each carried its site's decomposed key rather than the site's coordinate.
-`graphql_directive_application` carries the coordinate and keys into `graphql_element`;
-`graphql_directive_application_arg` takes the same key plus `directive_argument_name`.
+A rule with no owner is what a registration compensates for, so ownership leaves the register with
+nothing to schedule. Reached by R955: `meta_materialize`, every registration and every `_live` view
+are gone.
 
-Two rulings it rested on, both the architect's. A supertype is a table carrying a primary key its
-subtypes reference, because a foreign key cannot name a view. And the schema block gets the
-coordinate `$schema`: the specification has no such coordinate, but we own ours, and `$` is illegal
-in a GraphQL name so it can never collide with a type an author writes. That is what let the schema
-arm stop being the exception.
+* The entry migration `done`
+* The two hierarchies, one mechanism at two grains `done`
+* The macro arc's consumer, the first this arc retired `done`
+* The route family `done`
+* The reference decode on the field sites `done`
+* The argument and input-field sides `done`
+* The register itself `done`, by R955, because the gatherer it compensated for stopped existing
+* The materialization targets `done` by being moot: the subject was the unkeyed relations, and the
+  six stored `intent_` tables that remain are all keyed
+* **The declaration pass** `open`. A relation with no `meta_relation` row has been made nobody's, and
+  writing one forces a grain to be named. Not a pass that waits its turn but a precondition on every
+  move, because a relation whose owner is undeclared is cleared by whatever clear still stands and,
+  once its old writer is gone, is not written back. The mechanism is R877's. The declaration is a
+  build-time gate and not a runtime one: nothing that runs reads `meta_relation`, and what the gate
+  buys is that a new relation cannot arrive without an owner.
 
-Four things the work found that the design did not have.
+### A fact is keyed by what it is, not by where it was written `done`
 
-The coordinate needed no per-site join at all. `graphql_ast_directive_application_entry` was already
-the supertype over all five application entry kinds and `graphql_ast_element_entry` already mapped a
-written position to its coordinate, so the five arms were one join. What the five arms did not share
-was the *ordering*: a repeat is numbered in the merge order of the type declaration it sits inside,
-one to three parent hops up depending on the site, and the schema block sits inside none. That is
-`graphql_ast_element_declaration`, a third relation and a recursive walk up the parent chain the
-entry supertype already carries. It is stated once rather than climbed at each consumer, and the
-schema block is a stop alongside the type declaration so the fallback to file age is the same ORDER
-BY rather than an arm of its own.
+* Directive applications collapse onto the coordinate `done`. Ten relations became two; the five
+  sites keyed one fact five ways because each carried its own decomposed key and none carried the
+  coordinate.
+* `graphql_element` is a table a foreign key can name `done`. A supertype is a table carrying a
+  primary key its subtypes reference; a union standing in for one buys the vocabulary and none of the
+  integrity.
+* The schema block has a coordinate `done`. `$schema` is ours rather than the specification's, and a
+  dollar sign is illegal in a GraphQL name, so it cannot collide with a type an author declares.
+* The enclosing declaration is a fact `done`. `graphql_ast_element_declaration` walks the parent chain
+  once, where the ordering it supplies was about to be a join per site.
 
-`graphql_type_directive` was not only the same fact keyed differently. It carried
-`declaration_line`, `declaration_column` and a second foreign key into `graphql_type_declaration`.
-Nothing read those columns; only the seeding harness wrote them. They went, and the cascade they
-provided is covered by mark and sweep, a directive on a removed `extend type` not being rewritten
-and so being swept.
+### The classpath family affords what its readers ask `done`
 
-The collapse gained a site. A formal argument of a directive definition is a coordinate the
-specification spells and `graphql_element` already anchored, but no relation was shaped to hold an
-application on one, so those reached nothing: graphitron's own `@deprecated` on
-`@asConnection(connectionName:)` was captured nowhere. The old javadoc said minting a spelling for
-it would put a coordinate in the store that the specification does not have, which was simply wrong.
-Both producers now write it.
+* `code_` reads the classpath it is allowed to read `done`
+* `code_` holds every fact a reader of the census read `done`
+* The census is gone `done`. Six relations, their gatherer, their roster rows and their fixtures, and
+  with them the gatherer ordering constraint that existed only to keep a `code_` arm from reading a
+  `jvm_` row.
 
-`graphitron_field_chain_application` was the one relation keying into the ten by foreign key. It
-carries the coordinate now beside the type and field that are its own grain, and the cascade on that
-reference is still its sweep.
+### A resolution keeps what a diagnostic needs `done`
 
-What it touched, as it turned out: four views, the family headline, `FieldChainApplications`,
-`SdlFactCapture`'s claims, and eight tests. Ten rows left the undeclared roster and three
-declarations arrived, which is the discipline's own trade.
+* The chain resolution is a walk in the catalog `done`, where it was a loop in Java invisible to every
+  instrument that parses a rule body.
+* The resolution keeps its losers `done`. A link with no reading is a chain that does not resolve and
+  one with several resolves ambiguously, and neither was a fact anybody could read.
+* The defects reach the surface `done`, and are stored, because the read that matters is the editor's
+  and a per-file predicate cannot push into a recursion behind a view boundary.
 
-**The rule that keeps the default from coming back is that an owner is computed, not chosen.** A
-relation's owner is the latest, in gatherer dependency order, of the owners of the relations it
-reads. That is a function of the schema, so a gate can check it, and it makes the default impossible
-to take: a rule reading only `jvm_` facts cannot be owned by a gatherer that runs after `catalog`.
-The same rule is what says the derivation gatherer is unearned, so the gate and the collapse are one
-check rather than two changes.
+### A capture reads only what changed
 
-**Two prerequisites, neither this item's.** R877's declarations, because computed ownership cannot be
-checked over undeclared relations. And per-gatherer transaction control, which the fact model names
-and the store does not have: `FactCapture` runs every gatherer in one transaction, so no gatherer can
-commit its family and then refresh against statistics reflecting what it just wrote. The collapse
-makes this easier rather than harder, one boundary instead of two.
+* A directory can be compared at all `done`
+* The skip asks the store rather than the graph `done`, because no relation the classpath feeds
+  carries a graph, so the rows are the store's.
+* The file is the grain `done`. `store_class_file` is keyed by path under an entry, and `code_class`
+  holds which class a reading found in which file.
+* **A single changed class re-reads only itself** `blocked`, on `code_type` being re-grained to
+  `(source_name, class_name, type_name)`. `CodeCapture.sweep` scopes by entry, so skipping one class
+  would sweep its rows. Re-checked after the census dissolution went past the relation without
+  changing its grain. Until then `store_class_file.byte_size` and `.mtime` are written and read by
+  nobody, which is an arm waiting for its reader.
 
-No count is stated in this section. Every figure the item carried about the register and the roster
-went stale during the arc, one of them twice inside a working day.
+### The store knows whether an artifact can go stale
+
+Reading a jar is safe for a release and dangerous for a snapshot, and Maven settles which.
+
+* An entry says what it is `done`. Both halves of the classpath corpus were handed to capture as this
+  module's own output, which was false twice, and the lie was load-bearing: it removed the reactor
+  limit the `@service` arm leans on.
+* The store records which repository answered `done`, by consequence.
+* **The version is carried** `open`, and the whole of what remains. `store_source.coordinate` is
+  `groupId:artifactId` by design, for naming a module in a refusal, and stops one field short of the
+  identity question.
+* **Three kinds get three treatments** `open`, waits on the version. A release jar needs no content
+  stamp, a snapshot jar does, and only a directory needs the stat walk; all three share one path
+  today.
+* **A stale snapshot is detectable** `open`, waits on both above.
 
 ## Tests
 
