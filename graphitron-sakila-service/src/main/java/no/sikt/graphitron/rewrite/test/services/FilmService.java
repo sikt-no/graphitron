@@ -154,6 +154,30 @@ public final class FilmService {
         return result;
     }
 
+    /**
+     * One half of the library's overloaded {@code @service} name, taking a count.
+     *
+     * <p>The pair exists so a test can reach a reference that resolves to more than one method.
+     * A resolution over an overloaded name is every match and an arity, never a pick, and nothing
+     * else in this module declares two public methods under one name, so a case wanting that shape
+     * had to seed it. Two parameter types that share no assignability, {@code int} and
+     * {@code String}, so neither call site is ambiguous to javac.
+     */
+    public static List<FilmRecord> topRated(int limit, DSLContext dsl) {
+        return dsl.selectFrom(Film.FILM)
+            .orderBy(Film.FILM.RENTAL_RATE.desc(), Film.FILM.FILM_ID)
+            .limit(limit)
+            .fetch();
+    }
+
+    /** The other half, taking a certificate. See {@link #topRated(int, DSLContext)}. */
+    public static List<FilmRecord> topRated(String rating, DSLContext dsl) {
+        return dsl.selectFrom(Film.FILM)
+            .where(Film.FILM.TEXT_RATING.eq(rating))
+            .orderBy(Film.FILM.RENTAL_RATE.desc(), Film.FILM.FILM_ID)
+            .fetch();
+    }
+
     private static String toTitleCase(String s) {
         StringBuilder out = new StringBuilder(s.length());
         boolean nextUpper = true;

@@ -1,0 +1,60 @@
+"What an @service reference resolves to, over real Java rather than seeded rows. Four shapes make up the answer and three of them are absences, which is why they are stated as one population: an overloaded name is every match and an arity rather than a pick, a name the class does not declare resolves to nothing, and so does a class the reading never reached. Telling the last two apart is the point of the claim on code_class beside it, absence alone saying only that the reference did not resolve."
+type Film @table(name: "film") {
+    filmId: ID
+    title: String
+}
+
+extend type Query {
+    "The overload. One name, two methods, and the resolution refuses to choose between them."
+    topRated: [Film!]!
+        @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "topRated"})
+
+    "The ordinary case: one name, one method."
+    uppercased: [Film!]!
+        @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+
+    "A name the class does not declare. The class is read, so the absence is about the method."
+    absent: [Film!]!
+        @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "noSuchMethod"})
+
+    "A class nothing on the classpath declares, which is the other cause of the same absence."
+    unread: [Film!]!
+        @service(service: {className: "no.sikt.graphitron.rewrite.test.services.NotOnTheClasspath", method: "get"})
+
+    "A service naming no method resolves to nothing, the fallback being the external field's alone."
+    unnamed: [Film!]!
+        @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService"})
+}
+
+extend type Film {
+    "The other arm, and the fallback: no method argument, so the field's own name is the method."
+    titleUppercase: String
+        @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.services.FilmService"})
+}
+
+# The whole resolved population of this graph. Two rows for one field is the overload; the two
+# fields that resolve to nothing are absent from it, which is the assertion about them.
+extend schema @expectEquals(relation: "intent_field_producer_method", rows: """
+  type_name, field_name,  declared_via, method_name,    candidates
+  Query,     topRated,    SERVICE,      topRated,       2
+  Query,     topRated,    SERVICE,      topRated,       2
+  Query,     uppercased,  SERVICE,      titleUppercase, 1
+  Film,      titleUppercase, EXTERNAL_FIELD, titleUppercase, 1
+  """)
+
+# Which of the two absences is which. The class behind `absent` was read; the one behind `unread`
+# does not exist, so a reader can tell a missing method from a missing class.
+extend schema @assertContains(relation: "code_class", rows: """
+  class_name
+  no.sikt.graphitron.rewrite.test.services.FilmService
+  """)
+
+# The reference survives whether or not it resolves: all four are references, two are methods.
+extend schema @expectEquals(relation: "intent_field_producer_reference", rows: """
+  type_name, field_name, method_name
+  Query,     topRated,   topRated
+  Query,     uppercased, titleUppercase
+  Query,     absent,     noSuchMethod
+  Query,     unread,     get
+  Film,      titleUppercase, titleUppercase
+  """)
