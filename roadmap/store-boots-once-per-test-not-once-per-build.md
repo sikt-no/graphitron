@@ -1,7 +1,7 @@
 ---
 id: R768
-title: "The build boots the fact schema 1051 times, and a reset costs a fraction of a boot"
-status: Backlog
+title: "Capture the classification corpus once per test JVM, and stop graphitron-lsp booting a store per fixture"
+status: Spec
 bucket: dx
 priority: 1
 theme: tooling
@@ -10,309 +10,239 @@ created: 2026-08-20
 last-updated: 2026-09-28
 ---
 
-# The build boots the fact schema 1051 times, and a reset costs a fraction of a boot
+# Capture the classification corpus once per test JVM, and stop graphitron-lsp booting a store per fixture
 
-A full `mvn install -Plocal-db` executes the fact schema's 1894 DDL statements **1051 times** and
-spends **395.8 seconds** inside them. The build's sequential wall clock is 339 seconds, so the boots
-outweigh the build: they are about **45% of all test-class CPU** in the four store-heavy modules, and
-roughly **80 seconds of wall clock**, a quarter of the build. Nothing else measured in this reactor is
-close. The lever is that almost none of those boots need to be boots: emptying every clearable table
-costs **0.85 ms**, and a full reset including re-materialization costs **9.3 ms**, against a **138 ms**
-boot.
+## Goal
 
-This is the count question, deliberately scoped out of R759, which cut the per-boot cost instead. R759
-is already banked here: these figures were taken after its alias removal, on a tree whose DDL no longer
-compiles Java at boot.
+A contributor's full build spends most of `graphitron`'s test time re-deriving the same facts. Seven
+test classes each sweep the whole classification corpus: they capture it (the 61 SDL documents under
+`graphitron-model/src/test/resources/corpus`, each one worked example of a classification verdict)
+into a private fact store, and those seven classes alone account for 4618 s of the module's 15427 s
+of test-class time. Six of them only read what they captured. When this item lands, those six read
+one copy of the corpus captured once per test JVM into a shared read-only store, and
+`graphitron-lsp`, the one module whose fixtures still boot (open and lay out the schema of) a fresh
+store per case, boots one store per test thread the way `graphitron-model` and `graphitron-mcp`
+already do. The outcome a contributor sees is a shorter
+`mvn install`, measured per module against the figures below; the tests themselves assert exactly
+what they assert today.
 
-**One of the four modules has since shipped.** R769 took `graphitron-model`, 420 boots and 133.0 s of
-the totals above, and landed it as one store per test thread cleared between cases. Every count and
-every table in this item is the four-module measurement as taken on 2026-08-20 and is left that way
-deliberately, a dated measurement rather than a sighting to refresh; the live remaining scope is the
-other three modules, **631 boots and 262.8 s**. What that slice settled, and the one place it does not
-generalise, are folded into the bullets under "What a Spec pass has to settle" rather than restated
-here.
+## What the tree looks like now
 
-## A third pass: the boot is now the smaller part of what a case pays
+Three terms first. A *boot* is opening a fact store: connecting to a fresh in-memory H2 database and
+executing the fact schema's DDL. A *capture* is filling a booted store from inputs: `ModelCapture`
+reads SDL, a jOOQ catalog and a classpath census into fact rows and ends by running the *derivation
+stratum*, the ordered list of SQL steps in `DerivationStratum` that computes derived relations from
+those rows. A *population* is what one capture produces; two captures with the same inputs produce
+the same population, since the stratum is deterministic over the rows it reads.
 
-Taken 2026-09-28 at `837069757`. The workstation has 14 cores, and the build was a full reactor
-install with modules overlapping. The figures are read from that build's surefire reports, plus two
-isolated runs in the same checkout. This pass counts *captures*, not boots, because each case that
-reaches a store through `CapturedStore` or a `StoreFixture` factory pays three steps in sequence:
-it boots, it captures, and it runs the derivation stratum. The count comes from the stratum's own
-`derivation stratum done in` line in each class's `-output.txt`, so it counts what ran.
+**The boot count has mostly been solved already, by the shared harness.** R769 landed
+`ThreadConfinedStore` in `graphitron-model`'s test sources: one store per test thread, booted once,
+emptied between cases by `TRUNCATE` and verified empty by a whole-base-table census
+(`ThreadConfinedStore.verifyCleared`). `CapturedStore`'s ordinary factories (`of`, `ofCatalog`,
+`ofFiles`, `ofRefusedSchema`) borrow that store rather than booting one, and `CapturedStore` is what
+`graphitron` and `graphitron-mcp` reach the store through. So both of those modules already boot once
+per test thread. Only the `ownStore*` factories boot per call, and they are meant for cases that
+issue DDL or otherwise cannot share.
 
-| Module | Test cases | Captures | Derivation stratum, summed | Test-class time, summed | Module wall clock |
-|---|---|---|---|---|---|
-| `graphitron` | 4338 | 1327 | 3649 s | 14468 s | about 20 min |
-| `graphitron-lsp` | 642 | 211 | 964 s | 2581 s | about 7 min |
-| `graphitron-mcp` | 132 | 60 | 137 s | 627 s | 7 min 10 s |
+**`graphitron-lsp` is the exception.** Its `StoreFixture` builds every arm on `CapturedStore.ownStore`,
+`ownStoreOfCatalog` or `ownStoreOfFiles`, so each of its roughly 146 `StoreFixture.of*` call sites
+boots a dedicated store. Its only borrowing arm is `ofRefusedSchema`. The module runs under
+`graphitron-model`'s `junit-platform.properties`, which it inherits through the test-jar (classes
+concurrent, `fixed.parallelism=4`), so the thread-store mechanism applies to it unchanged.
 
-In each module, the cases over one second account for almost all of the time. In `graphitron`, 736
-cases hold 14262 s of the 14468 s. The rest of each module is cheap.
+**In `graphitron`, the cost is one population captured seven times.** Each of these classes has a
+sweep that captures every `CorpusDocuments.documents()` entry as its own graph into one store, then
+compares a derived relation against the legacy producer:
 
-**Price of one step, measured in isolation.** One JVM ran `FactStores.inMemory()` eight times in a
-row. The first boot took 7.4 s and the warm ones 1.0 to 2.4 s. The DDL is now about 4400
-statements: 263 tables, 136 views, 17 indexes and 3937 `COMMENT ON`. Executing it alone in a warm
-JVM costs 0.53 s, of which comments are 102 ms, tables 148 ms and views 110 ms. `CatalogCorpusTest`
-run alone takes 31 s for six captures. Each capture spends about 3 s before the stratum starts and
-about 1 s inside it. The same class took 68 s inside the reactor build, so contention roughly doubles
-every figure in the table.
-
-**What this changes for the plan.** A per-thread store cleared between cases removes the boot, which
-is about a third of a case's cost. Capture and derivation remain, and in `graphitron` the stratum
-alone sums to a quarter of all test-class time. So the open question in the last bullet under "What
-a Spec pass has to settle" is now the main question for all three remaining modules, not only for
-`graphitron`: which cases can share one captured population rather than producing their own. The
-obvious candidates are the cases that capture the same fixture and only read it:
-`StoreFixture.ofCatalog` has 57 call sites in `graphitron-lsp` and 21 in `graphitron-mcp`, and
-`CapturedStore.ofCatalog` has 75 in `graphitron`. Neither `graphitron-lsp` nor `graphitron-mcp` uses
-`FactStores.perClass()` anywhere.
-
-The `ONNX`-backed classes in `graphitron-mcp` are a separate cost and are not counted as captures
-here. `CatalogSearchOnnxTest` runs one case for 48 s. It already carries `@Tag("slow")`, so a fast
-inner loop can leave it out with `-DexcludedGroups=slow`.
-
-## A fresh pass has re-priced this item, and it is worth more than it says below
-
-Taken 2026-09-08 at `7a3fae6e` on one 4 vCPU, 15 GB sandbox: two full green sequential
-`mvn install -Plocal-db` runs at 1110 s and 1054 s. The boot *counts* below are the 2026-08-20
-measurement and are left exactly as they stand. What has changed is the price of a boot, which is
-what those counts multiply against.
-
-**A boot costs three times what this item priced it at.** Decomposed by timing the store's own
-steps directly rather than by inference:
-
-| Step | Now | At filing |
+| Class | Class time | How it captures |
 |---|---|---|
-| connect | 2.1 ms | |
-| `create`, the DDL | 283.5 ms mean, 193.8 best | about 125 ms |
-| `stamp` | 10.8 ms | |
-| `deriveDependencies` | 139.7 ms mean, 95.5 best | 8.41 ms |
-| **total** | **436.1 ms** | **138.0 ms** |
+| `ConditionMembershipShadowTest` | 882 s | `ofCatalog` then `andCatalogGraph`, passing `census()` and `testClassRoot()` |
+| `InputOccurrenceShadowTest` | 814 s | `ofCatalog` then `andCatalogGraph`, bare `jooq` |
+| `DemandShadowTest` | 654 s | `ofCatalog` then `andCatalogGraph`, bare `jooq` |
+| `CorpusExpectationTest` | 635 s | the same, held in a `static CapturedStore` from `@BeforeAll` |
+| `ColumnMatchShadowTest` | 552 s | `ofCatalog` then `andCatalogGraph`, bare `jooq` |
+| `WriteRefusalShadowTest` | 550 s | `ofCatalog` then `andCatalogGraph`, bare `jooq` |
+| `RoutineSpentInputShadowTest` | 531 s | `ofCatalog` then `andCatalogGraph`, bare `jooq` |
 
-The DDL executes 3111 statements against the 1894 this item was filed on. Per-statement cost is
-essentially unchanged (0.066 ms then, 0.062 ms best now), so this is schema growth and not a slower
-machine. `deriveDependencies` is the outlier at 16.6x, and it is now 32% of every boot where it was
-6%.
+The class times include each class's other, small single-SDL cases and the legacy-producer half of
+each comparison (the producer run per document through `TestSchemaHelper`), so 4618 s is an upper bound on what
+sharing the capture can remove, not a projection. The capture tuples differ in two ways. The prelude
+is applied in three spellings: `fullSdl` (ConditionMembership, ColumnMatch, WriteRefusal) and `full`
+(`CorpusExpectationTest`) read `CorpusDocuments.prelude() + "\n" + sdl`, and `preluded` (Demand,
+InputOccurrence, RoutineSpentInput) does the same and also appends `interface Node` when the text
+lacks one, which is a no-op for corpus documents because `_prelude.graphqls` already declares
+`Node`. And `ConditionMembershipShadowTest` is asymmetric: its first graph is captured with
+`census()` and `testClassRoot()`, so a real classpath is scanned and `captureFiles` skips its stated
+census, while graphs 2 to 61 get `census()` and no class root. `CorpusFragmentTest` (695 s) and `OutcomeBlockRendererTest` (233 s) are a second, different
+shape over the same corpus: `OutcomeBlockRenderer.render` captures one document at a time and then
+runs a generator over it through `GraphitronStore.captured`, so it is a per-document population and
+it builds output, not only facts.
 
-**Spec this against a post-R876 boot of roughly 296 ms, not against 436 ms and not against 138 ms.**
-`deriveDependencies` walks outward from `meta_materialize`, so when R876 dissolves the register the
-step has no roots, parses nothing, and goes to zero. The DDL half does not go, and R876's own remedy
-pushes it the other way: it replaces registrations with stored keys and indexes, and while that item
-has been in progress the schema has gone from 0 to 22 `CREATE INDEX` and from 148 to 190 tables.
+**`graphitron-mcp` has little left to take.** Its `StoreFixture` already uses only borrowing arms, and
+its classes that capture sum to about 35 s. Its expensive classes (`GraphitronMcpServerTest` 305 s,
+`CatalogSearchIndexTest` 76 s, the ONNX classes) are not store-bound as far as this item can tell, and
+the ONNX ones already carry `@Tag("slow")`.
 
-**The lever is cheaper than this item assumed, and a second lever exists for the cases the first
-cannot serve.** Measured in one JVM with the arms alternated:
+**Where these figures come from, and one that must not be used.** All class times are the surefire
+XML reports of one full reactor install on 2026-09-28 (after `837069757`, 14 cores, modules
+overlapping), so every figure carries in-reactor contention; `CatalogCorpusTest` ran 31 s alone and
+68 s in that build, which is the size of the effect. The same build's `-output.txt` files are **not**
+a usable capture count. Classes run four at a time, and a log line lands in the redirect of whichever
+class the writing thread is attributed to: `ConditionMembershipShadowTest` performs 61 captures and
+its file shows one `derivation stratum done in` line. The earlier count of 1327 captures in
+`graphitron` was taken that way and is withdrawn; the counter under Implementation replaces it.
 
-| Per-test store setup | Cost |
-|---|---|
-| in-memory DDL boot, the status quo | 380 ms |
-| copy a 635 KB prebuilt template and `openAt` it | 171 ms |
-| the same, counting its close | 264 ms |
-| reuse one store and `TRUNCATE` all 178 tables | **7.0 ms mean, 4.1 best** |
+Prices measured in isolation, which stand: a warm DDL boot is about 0.5 s (4400 statements); an
+emptying reset of a booted store is about 7 ms; one small capture spends about 3 s before the stratum
+and about 1 s inside it.
 
-Reuse wins by roughly 25x over a template and 55x over the status quo, which confirms the direction
-this item already takes. The template earns its place only where reuse cannot go: a test whose
-subject *is* the file lifecycle cannot share a store, because warm start, stamping and reopening are
-what it asserts on. `PersistentStoreTest` (23 open sites, 198 s in the reactor) and
-`WarmStartRefreshTest` (18 sites, 162 s) are exactly that, they are the 5th and 8th most expensive
-classes in the build, and this item's mechanism does not reach them. A template would take each of
-their opens from a 380 ms cold boot to about 171 ms.
+## Implementation
 
-Two things a template pass has to know. **It floors at 171 ms and cannot get near the 3 ms copy
-cost**, because H2 rebuilds its catalog at every open: the same template with its 120 views dropped
-opens in 25.7 to 31.3 ms against 91.7 to 129.6 ms with them, arms alternated over two rounds. A
-template skips executing the DDL and skips `deriveDependencies`, but not the catalog. And **a
-throwaway copy must not compact on close**, which currently costs 39 to 93 ms of pure waste because
-the copy is file-backed. Invalidation needs no new mechanism: `ddlHash()` already exists and the
-store already uses it as the stamp directory segment.
+### A capture counter, before anything else
 
-## The measurement
+`FactStores.boots()` counts boots; nothing counts captures, and the log-based count is broken. Add a
+monotonic counter beside it in `graphitron-model`'s test sources, incremented where every
+`CapturedStore` capture passes: the private `captureFiles` tail of the factories and `and*Graph`/
+`recapture*` methods, and the public `CapturedStore.capture` primitive that `PipelineCapturedStore`
+uses. It does not see captures made through `GraphitronStore.captured` (the generator's own path,
+used by `BuiltStore` and `OutcomeBlockRenderer`); name that gap in the baseline rather than widening
+the counter into production code. Add a JUnit extension,
+registered for the three modules (autodetected through `META-INF/services`, switched on in
+`graphitron`'s own `junit-platform.properties` and in `graphitron-model`'s, which `graphitron-lsp`
+and `graphitron-mcp` inherit through the test-jar), that records captures and
+boots per test class by differencing the counters around the class. It writes one line per class to
+a file named by an environment variable and does nothing when the variable is unset, so it costs
+nothing in an ordinary build. With classes concurrent, attribute by thread (the counter keeps a
+per-thread tally alongside the global one) rather than by wall-clock interval. That attribution is
+close, not exact, because the pool can lend a blocked thread to another class's task; the module
+totals are exact.
 
-One 4 vCPU, 15 GB sandbox, warm local repository. The counter is an env-guarded `AtomicLong` pair
-around `GraphitronModelStore.create`, incremented per completed schema application and dumped by a
-shutdown hook, so it counts what actually ran rather than what a call site suggests. Each module was
-run alone with `mvn test -pl :<module> -Plocal-db`, so these are per-module totals under that module's
-own test parallelism.
+Take the baseline with it, per module and alone (`mvn test -pl :<module>`), before either change
+below, and record it in this item. The saving is judged against that baseline, not against the
+in-reactor class times above.
 
-| Module | Boots | Time in DDL | Per boot | Module wall clock | Module class-time sum |
-|---|---|---|---|---|---|
-| `graphitron` | 348 | 146.5 s | 421 ms | 78 s | 380.2 s |
-| `graphitron-model` | 420 | 133.0 s | 317 ms | 46.8 s | 182.3 s |
-| `graphitron-lsp` | 188 | 90.5 s | 482 ms | 35.6 s | 231.4 s |
-| `graphitron-mcp` | 74 | 18.8 s | 254 ms | 26.9 s | 82.1 s |
-| `graphitron-sakila-example` | 16 | 4.9 s | 303 ms | 88 s | 38.8 s |
-| `graphitron-maven-plugin` | 5 | 2.1 s | 423 ms | 32.7 s | 15.5 s |
-| **total** | **1051** | **395.8 s** | | | |
+### The shared corpus store in `graphitron`
 
-Two readings of that table matter.
+A new public harness in `graphitron-model`'s test sources beside `CorpusDocuments`, `CorpusStore`:
+one in-memory store per test JVM, booted and filled on first use with every corpus document captured
+as its own graph (graph name = `Document.id()`, SDL = `CorpusDocuments.prelude() + "\n" + sdl`,
+against the generated jOOQ catalog), and never closed. The shape is already in the tree: `graphitron-lsp`'s
+`BundledVocabulary` is a lazily captured, JVM-lifetime, never-closed fixture, and this is the same
+lifetime with the capture moved to the harness level. It is built on `CapturedStore`'s existing
+arms, not beside them: the borrowing `ofCatalog`/`andCatalogGraph` would put the corpus on the
+thread's store and the next borrow would empty it, so it starts from `ownStoreOfCatalog` and adds
+graphs with `andCatalogGraph` on that owned handle.
 
-**The cost is concentrated in four modules and it is most of what they do.** Boots are 389 s of the
-876 s of test-class time those four spend, 44%. `graphitron-lsp` is the extreme: 90.5 s of DDL in a
-module whose entire class-time sum is 231.4 s.
+What the implementer pins, in this order:
 
-**The per-boot figures are higher than a boot costs alone**, 254 to 482 ms against 138 ms measured
-solo, because those modules run four test threads on four cores and a boot under contention takes
-longer. That is not an artifact to correct for. It is the cost as actually paid.
+* **The population key.** Converge the three prelude spellings on one; the difference is a no-op for
+  corpus documents, as above. The class-root asymmetry is load-bearing and is settled by reading
+  `ConditionMembershipShadowTest`'s assertion: either show the other five sweeps' assertions hold
+  over the population whose first graph scanned `testClassRoot()` and use that one, or keep two
+  populations behind the same harness keyed by that difference. For the second arm, add the missing
+  `ownStoreOfCatalog(..., census, classRoot)` overload beside the existing ones rather than writing
+  the capture by hand.
+* **Reads go through a reader, never through the capturing connection.** Classes run four wide, so
+  the harness never hands out the `CapturedStore` or its `dsl()`. It hands out only a `StoreReader`
+  per call: `GraphitronModelStore.reader(ReadBudget)` connects to the same named in-memory database
+  (`jdbc:h2:mem:graphitron-model-<uuid>;DB_CLOSE_DELAY=-1`), so a second connection sees the capture.
+  Initialization completes, capture and stratum included, before the first reader is issued, under
+  the holder-class idiom or an equivalent that makes the happens-before explicit.
+* **The store is read-only, and each way it could stop being so has an enforcer.** The primary one is
+  already in the tree: `StoreReader.read` runs its query in a transaction and always rolls it back,
+  so a row written through a handed-out reader never lands. Two things get past a rollback, and the
+  guard aims at those: DDL, which H2 commits implicitly (taking any earlier DML in the transaction
+  with it), and a `DSLContext` smuggled out of `read()`, which then runs on autocommit. The harness
+  records the set of base tables and the whole-base-table row census (the single `UNION ALL`
+  statement `ThreadConfinedStore` memoizes) when the capture finishes, and re-checks both at every
+  handout, failing with the relation names that changed. Comparing the table *set* matters: a census
+  keyed by the boot-time tables sees a dropped table but not a created one. Equal counts do not prove
+  equal content on a populated store, so an `UPDATE` through a leaked context is not caught; that
+  residue is accepted and named in the harness's javadoc, since it needs a context deliberately
+  kept past `read()` and the rollback covers every ordinary use.
+* **`CorpusExpectationTest` stays off `CorpusStore` and moves to an owned store.** It builds a
+  `CREATE LOCAL TEMPORARY TABLE` and fills it in `@BeforeAll`, then reads it across its cases; on a
+  reader the table would survive but its rows would be rolled back at the end of the `read()`. It
+  also has a latent defect today: it captures with the borrowing `ofCatalog` and caches
+  `captured.dsl()` in a static, which skips `CapturedStore.mine()`, so another class's borrow on the
+  same thread would empty its store without an error. Move it to `ownStoreOfCatalog`. The saving
+  from sharing is therefore six sweeps, not seven.
+* **Migrate the six sweeps.** Each corpus sweep reads `CorpusStore` instead of capturing; its other,
+  single-SDL cases keep `CapturedStore` untouched.
+* **`StoreFixtureGuardTest`'s `HOMES` gains `CorpusStore`**, since it stands a store up by design.
 
-The two low rows are the counter-evidence that keeps this honest: `graphitron-sakila-example` performs
-16 boots for five `graphitron:generate` executions and a handful of tests, and
-`graphitron-maven-plugin` 5. Consumer-facing generator runs are already frugal with boots. This is a
-test-fixture problem, not a product one.
+### `graphitron-lsp`'s `StoreFixture` borrows the thread's store
 
-## What a reset costs instead
+Move each `StoreFixture` arm from the `ownStore*` factories to the borrowing ones, which is the whole
+of what R769 did for `graphitron-model`, with the three kinds of exception named and kept on
+`ownStore*`:
 
-Measured against a booted in-memory store, 20 rounds, warm JVM:
+* cases that execute DDL: `StoreFixture.makeRunaway`, used by `StoreOutOfBudgetTest`, installs a
+  non-terminating relation, and a case on the thread's store must not execute DDL because the clear
+  list is derived once at boot;
+* every fixture that outlives its case: each `@BeforeAll`-held or static `StoreFixture`, and
+  `BundledVocabulary`, which holds one for the JVM. A borrow clears the thread's store, and the
+  generation check in `CapturedStore.mine()` fires only on a call that goes back through the
+  fixture's `dsl()` or `reader()`. A `StoreReader` already minted, the three readers
+  `StoreFixture.access` mints into a `StoreAccess`, and a cached `DSLContext` do not re-check, so a
+  long-lived fixture on the thread's store would read an emptied or refilled store without an error.
+  The rule is therefore by lifetime, not by audit of call-backs: only fixtures opened and closed
+  inside one case move to borrowing arms, which is the try-with-resources shape (`TypeReferencesTest`,
+  `ValidatorDiagnosticsTest`, `ReferenceCompletionsTest`, `LintQuickFixTest`, `TableCompletionsTest`
+  and others). A `StoreFixture` factory that serves both lifetimes needs the choice made at the call
+  site, not inside the factory;
+* anything whose subject is the store's lifecycle. None was found in `graphitron-lsp`; its direct
+  `FactStores.inMemory()` uses (`RejectionSeverityCoverageTest`, `SdlDeprecations`) host a writer and
+  can move to the thread store or stay, at the implementer's judgment.
 
-| Operation | Cost |
-|---|---|
-| `GraphitronModelStore.open()`: connect, 1894 DDL statements, stamp, derive | **138.0 ms** |
-| `TRUNCATE` across all 143 clearable tables, referential integrity toggled off and back | **0.85 ms** |
-| `MaterializeDependencies.populate` after the clear | **8.41 ms** |
-| reset total, clear plus re-materialize | **9.26 ms** |
+The criterion R769 used holds: whether the boot or the schema's shape is the test's *subject*
+rather than its setup. Derive the exception list from that at pickup rather than from this paragraph.
 
-So a reset is **15x** cheaper than a boot on the conservative reading, and **163x** cheaper if the
-re-materialization turns out to be unnecessary. **That question is settled, in the direction that
-makes this item cheaper**, and the open-questions section below carries the argument:
-`MaterializeDependencies.populate` reads the registry and the catalog's stored view definitions and
-no fact relation, so nothing a test writes and nothing a clear removes can invalidate
-`meta_materialize_dependency`. A reset is the 0.85 ms clear alone. Every saving figure in this item
-was computed on the conservative reading and is therefore a floor. A booted store holds zero rows
-outside `meta_` and `store_stamp`, which is what makes `TRUNCATE` on everything else the right shape.
+### Deliberately out of scope
 
-R769 has since landed the mechanism in `graphitron-model`, which is this item's first slice, so the
-remaining three modules adopt a proven mechanism rather than a proposed one. Measured there: 31
-boots where there were 420, module test-class time 191.1 s to 65.2 s, test execution wall clock
-30.9 s to 11.6 s. The delivered mechanism is the reference rather than that item's plan body, which
-was deleted at its Done gate: `ThreadConfinedStore` in `graphitron-model`'s test sources carries the
-reset's shape and why DDL is out of bounds for a case on the funnel, its `verifyCleared` carries the
-leak guard's scope and the argument for asserting over every base table rather than over the clear's
-own list, and its `BOOT_BUDGET` carries the two-part counter. Read those before scoping a second
-module, and note that `FactStores` deliberately counts boots without holding any module to a budget,
-because the three modules here still boot per case in the hundreds by design.
+`CorpusFragmentTest` and `OutcomeBlockRendererTest` capture one document and run a generator over
+it. Whether the render can read its facts from `CorpusStore` instead of recapturing is a question
+about `GraphitronStore.captured` taking a store it did not fill, and that is a change to production
+code for a test's benefit. Measure its share with the counter; if it is large, file it as its own
+item. `graphitron-mcp` gets the counter and its baseline and nothing else unless the baseline shows
+a population worth sharing.
 
-## What it would save, and what that estimate rests on
+## Tests
 
-Removing the boots from those four modules' class time and holding their observed parallelism:
+* **Captures per build, pinned.** The counter's per-module totals become an assertion in the style of
+  `ThreadConfinedStore.BOOT_BUDGET`: in `graphitron`, the corpus is captured exactly once per
+  population per test JVM, pinned as an equality between `CorpusStore` initializations and the
+  number of populations it keys rather than against a literal.
+* **Boots in `graphitron-lsp`, pinned.** Boots equal distinct booting threads plus the named
+  `ownStore*` exceptions, as R769 pinned it for `graphitron-model`. A literal of 4 is the wrong
+  expectation: the fixed pool adds compensation threads when a task blocks.
+* **The shared store is unwritten.** `CorpusStore`'s handout check is always on, as `verifyCleared`
+  is, and a test in `graphitron-model` shows each arm fires with a write that gets past the reader's
+  rollback: create a table through a handed-out reader and assert the next handout fails naming it,
+  and insert a row through a `DSLContext` kept past `read()` and assert the next handout fails naming
+  that relation. A third case pins the primary enforcer: an insert inside `read()` leaves the census
+  unchanged.
+* **`CorpusExpectationTest` owns its store.** It captures through `ownStoreOfCatalog`, so no borrow
+  by another class can empty it.
+* **Nothing the tests assert has changed.** Every migrated class passes unchanged in its assertions;
+  the diff to each is its store acquisition only.
+* **The saving, measured.** Each module run alone before and after, with the counter on, recorded in
+  this item at In Review: captures, boots, test-class time and wall clock. The Done gate reads these,
+  not the in-reactor figures above.
 
-| Module | Class time now | Minus boots | Wall clock now | Projected | Saved |
-|---|---|---|---|---|---|
-| `graphitron` | 380.2 s | 233.7 s | 78 s | about 48 s | 30 s |
-| `graphitron-model` | 182.3 s | 49.3 s | 46.8 s | about 14 s | 33 s |
-| `graphitron-lsp` | 231.4 s | 140.9 s | 35.6 s | about 22 s | 14 s |
-| `graphitron-mcp` | 82.1 s | 63.3 s | 26.9 s | about 21 s | 6 s |
+## Other solutions we've considered
 
-About **80 seconds of a 339-second build**, and the estimate's weakness should be stated rather than
-buried: it assumes the surviving work parallelises as well as the current mix does, and boots may be
-the *most* parallel part of that mix (146 independent H2 databases contend on nothing but CPU). If so
-the real figure is lower. It also assumes nearly every boot is replaceable, which the next section
-says it is not. Treat 80 seconds as an upper bound with a floor well above every other candidate:
-even at half, it beats the next-largest item.
+* **`FactStores.perClass()`.** A store per class, shared by its cases. It reaches the wrong grain:
+  the repeated population is shared across seven classes, and each sweep is one case, so a per-class
+  store saves nothing for them.
+* **A prebuilt template store on disk, copied and opened per class.** It skips the DDL and the stratum
+  but floors at the catalog rebuild H2 does on every open, 171 ms measured for an empty template and
+  more for one holding the corpus's rows, and it would still copy seven times what can be read once.
+  It remains the right lever for the lifecycle-subject classes (`PersistentStoreTest`,
+  `WarmStartRefreshTest`), which neither change here reaches; that is a separate item if their cost
+  justifies one.
+* **Capturing the corpus's graphs in parallel into separate stores.** It shortens the first class's
+  wait but multiplies memory by the width and does not reduce the work; revisit only if the one
+  shared capture turns out to sit on the module's critical path.
 
-For ordering against the alternatives, all measured on the same tree and hardware: R763 is 23 s
-(making `graphitron-sakila-example`'s tests concurrent), R767 is up to 18.6 s
-(`graphitron-maven-plugin`'s duplicate descriptor and sequential integration projects), R766 is 16.7 s
-(the module's five sequential generate executions), and R759 was 42.7 s and is already spent.
-
-## What a Spec pass has to settle
-
-* **Which boots must stay boots.** Some tests have the boot as their subject: `PersistentStoreTest`,
-  `WarmStartRefreshTest`, `FactCaptureAgreementTest`, and anything asserting on the DDL-hash directory
-  segment or the `store_stamp` integrity check. Those keep booting, and naming them is the first task
-  because the saving is computed net of them. **R769 supplies the criterion to name them by, and the
-  warning not to pin the list.** The rule that did the work there is whether the boot or the schema's
-  shape is the test's *subject* rather than its setup, which is what settles a class without arguing
-  about it. The list itself drifted twice inside that item's own review, once when a new class landed
-  on trunk mid-review and once in the recount it forced, so derive the set from the criterion at
-  pickup rather than trusting a count written here.
-* **The scope of a shared store, which is per thread and not per JVM.** These modules run four test
-  classes at once. One store shared across four threads would need every fixture write serialized,
-  which trades the boot cost for a lock. A store per test thread is the shape that keeps the tests
-  independent: a boot per test thread rather than 420. **Both halves are now answered by R769 and one
-  of them corrects this bullet.** A `ThreadLocal` does survive the worker pool, so the mechanism works;
-  but "4 boots per module JVM" is the wrong expectation and asserting it would have failed. At
-  `fixed.parallelism=4` that module booted **eight** stores on eight distinct threads, because
-  `fixed` sizes a `ForkJoinPool` and the pool adds compensation threads when a task blocks, so the
-  number of threads that ever run a test class is not the configured parallelism. Budget for a boot
-  per booting thread, some multiple of the configured width, and pin the invariant as an equality
-  between boots and distinct booting threads rather than against a literal.
-* ~~**How a reset is proved complete, because the failure mode is silent.**~~ **Settled by R769, and
-  reuse its answer rather than re-deriving it**, because the first two shapes tried there both failed
-  review. The guard is always on rather than opt-in: the probe is a single `UNION ALL` census in one
-  round trip, which costs a few milliseconds against the 133 s of boots it protects, and a
-  nightly-only guard lets a bad case land for a working day, which is an invariant that has stopped
-  failing when it breaks. It asserts the **whole base-table set** and not the clear's own list: after a
-  `TRUNCATE` over exactly those tables "those tables are empty" is entailed, so a guard scoped to the
-  clear's exclusion pattern cannot see that pattern being wrong, and the leak worth catching is a row
-  surviving in a table the clear does not reach. And it is positive, asserting each table's boot row
-  count rather than emptiness, so the tables a boot legitimately fills are covered too. The
-  `INFORMATION_SCHEMA` requirement in this bullet held up, with a consequence worth carrying: because
-  the partition is derived once when the thread boots, **a case on the funnel must not execute DDL**,
-  or the clear names a relation the schema has since turned into something else. Budget for finding
-  the DDL-executing cases in each remaining module before routing that module's funnel.
-* ~~**Whether `MaterializeDependencies.populate` belongs in a reset.**~~ **Settled: it does not**, so a
-  reset is 0.85 ms rather than 9.3 ms and the ratio against a boot is about 160x rather than 15x.
-  `populate` derives its edges from `Materializations.registrations` and from the stored view
-  definitions it reads out of `INFORMATION_SCHEMA`, and reads no fact relation, so no row a test
-  writes can invalidate `meta_materialize_dependency` and clearing rows cannot either. Established by
-  reading `populate` and by observing the relation byte-identical across a clear. Note the other
-  derivation is a different thing and already per-case: `Materializations.refreshAll` does depend on
-  fact rows, and every seeded case already calls it. Every saving figure in this item was computed on
-  the conservative reading and is therefore a floor rather than a projection.
-* ~~**Whether `StoreRefresh` is the seam or a new one is.**~~ **Answered for `graphitron-model`: a new
-  one, and the parallel mechanism is deliberate.** `StoreRefresh` is package-private in `graphitron`,
-  which depends on `graphitron-model` and its test-jar, so a call from that module's fixture would
-  invert the module dependency, and its clear is a different question anyway: `prepare` takes a
-  `FactSink`, a `ClasspathSources` and a class census and deletes what one capture run owns, scoped by
-  `graph_name` and by crawled source. `StoreRefresh` answers "what does this run own" and
-  `ThreadConfinedStore` answers "make this store look freshly booted". Note the reachability half of
-  that answer is module-scoped and does not carry: `StoreRefresh` lives in `graphitron`, so for that
-  module it *is* reachable and the question is live again there, on the contract rather than on the
-  dependency direction.
-* **Whether the fixture helpers can carry this without every test changing.**
-  `SeededStore.withSeededStore` in `graphitron-model` is one funnel for 420 boots; if `graphitron`'s
-  382 test classes reach the store through a comparable helper, the change is small, and if they each
-  call `open()` directly it is not. That count decides whether this is one item or a staged one.
-  **Answered for `graphitron-model` and shipped: R769 took that module**, where 159 call sites across
-  30 classes funnel through the one helper and five classes boot directly because the boot is their
-  subject. 420 boots became 31, no test class changed, and this item keeps the other three modules,
-  631 boots and 262.8 s.
-
-* **New, and it is the thing to settle first: `graphitron`'s harnesses are populated by a pipeline, so
-  R769's mechanism does not carry over unchanged.** That module is this item's biggest row, 348 boots
-  and 146.5 s, and its store fixtures are not a funnel of the `withSeededStore` shape.
-  `StoreFixtureGuardTest` enumerates them: `CapturedStore` fills a store by driving `FactCapture` over
-  SDL fixtures, `BuiltStore` by running a whole `buildOutput()`, and thirteen further test classes
-  reach `FactStores` directly. The premise R769 rested on was that a body seeds its own rows cheaply,
-  so handing it an emptied store is as good as handing it a booted one. These two harnesses instead
-  hold content that, in their own javadoc's words, cannot be arranged but only produced, and clearing
-  to booted-empty throws away the expensive part rather than the cheap one. So the arithmetic to
-  measure here is not the one in this item's reset table: it is whether a captured or built store can
-  be re-populated more cheaply than re-booted, and if it cannot, the lever for those classes is a
-  store shared across the cases that want the *same* population rather than a clear between them.
-  `FactStores.perClass()`, which landed separately, is that shape for a class whose cases share one
-  fixture, and its boots are already counted. Settle this before scoping `graphitron`, because a plan
-  that assumes one funnel per module is a plan for `graphitron-lsp` and `graphitron-mcp` and not for
-  the module holding most of the cost.
-
-## How to re-measure
-
-The counter is the durable part of this pass and it is six lines. Add to
-`GraphitronModelStore.create` an `AtomicLong` pair, incremented and accumulated around the statement
-loop, plus a static shutdown hook that appends `<count> <millis>` to the file named by an environment
-variable and does nothing when that variable is unset. Then per module:
-
-```bash
-mvn install -pl :graphitron-model -Plocal-db -Pquick     # install the instrumented model
-GRAPHITRON_BOOT_COUNT_FILE=/tmp/boots.txt \
-  mvn test -pl :graphitron -Plocal-db
-awk '{c+=$1; t+=$2} END {print c" boots, "t" ms"}' /tmp/boots.txt
-```
-
-One boot per forked JVM writes one line, so the `awk` sum is the module's total. Revert the
-instrumentation and reinstall before trusting any other measurement on the tree.
-
-For the reset comparison, open one store through the public `GraphitronModelStore.open()`, list
-`INFORMATION_SCHEMA.TABLES` for `BASE TABLE` in `PUBLIC` excluding `META\_%` and `STORE_STAMP`, and
-time `TRUNCATE` over that list with `SET REFERENTIAL_INTEGRITY FALSE` around it, then
-`MaterializeDependencies.populate` separately so the two halves stay attributable.
+## Reviewer findings
