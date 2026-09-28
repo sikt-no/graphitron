@@ -324,7 +324,8 @@ public class DataFetcherHelper extends AbstractFetcher {
                 .getDataLoaderRegistry()
                 .<K, V1>computeIfAbsent(loaderName, name ->
                         DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<K, V0>) (keys, loaderEnvironment) ->
-                                CompletableFuture.completedFuture(dbFunction.callDBMethod(dslContext, keys, new SelectionSet(getSelectionSetsFromEnvironment(loaderEnvironment))))
+                                CompletableFuture.completedFuture(dbFunction.callDBMethod(dslContext, keys, new SelectionSet(getSelectionSetsFromEnvironment(loaderEnvironment)))),
+                                dataLoaderOptions
                         )
                 )
                 .load(key, env);

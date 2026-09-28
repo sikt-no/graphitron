@@ -6,6 +6,7 @@ import no.sikt.graphql.GraphitronContext;
 import no.sikt.graphql.helpers.selection.ConnectionSelectionSet;
 import no.sikt.graphql.helpers.selection.SelectionSet;
 import org.dataloader.BatchLoaderEnvironment;
+import org.dataloader.DataLoaderOptions;
 import org.jooq.DSLContext;
 import org.jooq.Row;
 
@@ -24,6 +25,7 @@ public class EnvironmentHandler {
     protected final ArgumentPresence argumentPresence;
     protected final Map<String, Map<String, Row>> nextKeys;
     protected final String dataloaderName;
+    protected final DataLoaderOptions dataLoaderOptions;
 
     public EnvironmentHandler(DataFetchingEnvironment env) {
         this.env = env;
@@ -34,6 +36,7 @@ public class EnvironmentHandler {
 
         dslContext = graphitronContext.getDslContext(env);
         dataloaderName = graphitronContext.getDataLoaderName(env);
+        dataLoaderOptions = buildDataLoaderOptions(graphitronContext.getDataLoaderMaxBatchSize(env));
 
         arguments = flattenArgumentKeys(env.getArguments());
         argumentPresence = ArgumentPresence.build(env.getArguments());
@@ -69,6 +72,13 @@ public class EnvironmentHandler {
         return ((List<DataFetchingEnvironment>) (List<?>) loaderEnvironment.getKeyContextsList()).stream()
                 .map(DataFetchingEnvironment::getSelectionSet)
                 .toList();
+    }
+
+    protected static DataLoaderOptions buildDataLoaderOptions(int maxBatchSize) {
+        if (maxBatchSize < 1) {
+            return DataLoaderOptions.newDefaultOptions();
+        }
+        return DataLoaderOptions.newOptions().setMaxBatchSize(maxBatchSize).build();
     }
 
     private static DataFetchingFieldSelectionSet getSelectionSetsFromEnvironment(DataFetchingEnvironment env) {

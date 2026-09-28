@@ -106,6 +106,13 @@ The framework intelligently routes exceptions to either schema-based (ad hoc) er
 #### 4. TopLevelErrorHandler
 - **Purpose**: Handles top-level errors for unrecognized exceptions
 - **Function**: Logs with unique IDs and creates standard GraphQL errors
+- **Logging once per exception**: When a DataLoader batch fails, every field in the batch receives the same exception
+  object. That object gets one id, shared by all the fields it failed, and is logged at ERROR level only once.
+  Repeat occurrences are logged at DEBUG level with the path of the field.
+- **No SQL in the ERROR log**: For a jOOQ `DataAccessException`, the ERROR line contains the SQL state, vendor code and
+  the driver's own message (on one line, truncated to 1000 characters), but not the SQL. The full exception, including
+  the SQL, is logged at DEBUG level. Override `describeDataAccessException` to restrict this further, for example to
+  keep personal data that some database messages contain out of the log.
 
 ### Generated Components
 
@@ -232,6 +239,19 @@ GraphQL graphQL = GraphQL.newGraphQL(schema)
 ```
 
 You can provide your own implementation of `DataAccessExceptionMapper` to customize how database exceptions are mapped to user-friendly messages. You can use the `ErrorMessageFormatter` class provided in this module to convert SQL error codes into readable messages.
+
+### Limiting DataLoader batch sizes
+
+By default, a DataLoader sends every key it has collected to the database in a single query. For large result sets
+this can produce very long SQL, many bind variables (Oracle allows at most 65,535) and slow queries, and one failing
+query fails every field in the batch. Set a maximum batch size to split larger batches into several queries:
+
+```java
+var graphitronContext = new DefaultGraphitronContext(dslContext, 1000);
+```
+
+If you implement `GraphitronContext` yourself, override `getDataLoaderMaxBatchSize(DataFetchingEnvironment env)`.
+A value less than 1 means no limit, which is the default.
 
 ### Database Error Formatting
 

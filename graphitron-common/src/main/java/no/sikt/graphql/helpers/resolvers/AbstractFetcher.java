@@ -41,7 +41,8 @@ public abstract class AbstractFetcher extends EnvironmentHandler {
     protected <K, V> DataLoader<KeyWithPath<K>, V> getLoader(DataLoaderMapper<KeyWithPath<K>, V> mapFunction) {
         return env.getDataLoaderRegistry().computeIfAbsent(dataloaderName, name ->
                 DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<KeyWithPath<K>, V>) (keys, batchEnvLoader) ->
-                        mapFunction.map(keys, new SelectionSet(getSelectionSetsFromEnvironment(batchEnvLoader)))
+                        mapFunction.map(keys, new SelectionSet(getSelectionSetsFromEnvironment(batchEnvLoader))),
+                        dataLoaderOptions
                 )
         );
     }
@@ -49,7 +50,8 @@ public abstract class AbstractFetcher extends EnvironmentHandler {
     protected <K, V> DataLoader<KeyWithPath<K>, V> getConnectionLoader(DataLoaderMapper<KeyWithPath<K>, V> mapFunction) {
         return env.getDataLoaderRegistry().computeIfAbsent(dataloaderName, name ->
                 DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<KeyWithPath<K>, V>) (keys, batchEnvLoader) ->
-                        mapFunction.map(keys, new ConnectionSelectionSet(getSelectionSetsFromEnvironment(batchEnvLoader)))
+                        mapFunction.map(keys, new ConnectionSelectionSet(getSelectionSetsFromEnvironment(batchEnvLoader))),
+                        dataLoaderOptions
                 )
         );
     }

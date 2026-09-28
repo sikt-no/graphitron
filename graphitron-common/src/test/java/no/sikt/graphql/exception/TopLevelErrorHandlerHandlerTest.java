@@ -12,7 +12,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.sql.SQLSyntaxErrorException;
 import java.util.List;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -86,6 +88,77 @@ class TopLevelErrorHandlerHandlerTest {
         String actualErrorMessage = result.getErrors().get(0).getMessage();
         assertThat(actualErrorMessage).startsWith("An exception occurred. The error has been logged with id ");
         assertThat(actualErrorMessage).doesNotContain(exceptionMsg);
+    }
+
+    @Test
+    public void shouldReuseIdForTheSameExceptionObject() {
+        setupDataFetchingEnvironmentMock();
+        var handler = new TopLevelErrorHandler(dataAccessExceptionMapper);
+
+        // A failed DataLoader batch delivers the same exception object to every field in the batch.
+        var batchException = new DataAccessException("Database exception");
+        when(mockHandlerParameters.getException()).thenReturn(batchException);
+        var firstId = extractId(handler.handleException(mockHandlerParameters).join());
+        var secondId = extractId(handler.handleException(mockHandlerParameters).join());
+
+        when(mockHandlerParameters.getException()).thenReturn(new DataAccessException("Database exception"));
+        var otherId = extractId(handler.handleException(mockHandlerParameters).join());
+
+        assertThat(secondId).isEqualTo(firstId);
+        assertThat(otherId).isNotEqualTo(firstId);
+    }
+
+    @Test
+    public void shouldReuseIdForTheSameUnrecognizedExceptionObject() {
+        setupDataFetchingEnvironmentMock();
+        var handler = new TopLevelErrorHandler(dataAccessExceptionMapper);
+
+        when(mockHandlerParameters.getException()).thenReturn(new RuntimeException("Failure"));
+        var firstId = extractId(handler.handleException(mockHandlerParameters).join());
+        var secondId = extractId(handler.handleException(mockHandlerParameters).join());
+
+        assertThat(secondId).isEqualTo(firstId);
+    }
+
+    @Test
+    public void shouldDescribeDataAccessExceptionWithoutSql() {
+        var sql = "select secret_column from secret_table where id in (?, ?, ?)";
+        var driverCause = new RuntimeException("Error : 942, Position : 14, SQL = " + sql + ", Original SQL = " + sql);
+        var sqlException = new SQLSyntaxErrorException("ORA-00942: table or view does not exist", "42000", 942, driverCause);
+        var exception = new DataAccessException("SQL [" + sql + "]; ORA-00942: table or view does not exist", sqlException);
+
+        var description = new TopLevelErrorHandler(dataAccessExceptionMapper).describeDataAccessException(exception);
+
+        assertThat(description)
+                .isEqualTo("org.jooq.exception.DataAccessException [SQL state: 42000, vendor code: 942] " +
+                        "java.sql.SQLSyntaxErrorException: ORA-00942: table or view does not exist")
+                .doesNotContain("secret");
+    }
+
+    @Test
+    public void shouldTruncateLongDriverMessages() {
+        var longMessage = "x".repeat(TopLevelErrorHandler.MAX_LOGGED_MESSAGE_LENGTH + 500);
+        var exception = new DataAccessException("SQL [select 1]; " + longMessage, new SQLSyntaxErrorException(longMessage, "42000", 1));
+
+        var description = new TopLevelErrorHandler(dataAccessExceptionMapper).describeDataAccessException(exception);
+
+        assertThat(description)
+                .endsWith("x... (truncated, " + longMessage.length() + " characters)")
+                .hasSizeLessThan(TopLevelErrorHandler.MAX_LOGGED_MESSAGE_LENGTH + 200);
+    }
+
+    @Test
+    public void shouldDescribeDataAccessExceptionWithoutDriverException() {
+        var description = new TopLevelErrorHandler(dataAccessExceptionMapper)
+                .describeDataAccessException(new DataAccessException("No JDBC\nConnection configured"));
+
+        assertThat(description).isEqualTo("org.jooq.exception.DataAccessException: No JDBC Connection configured");
+    }
+
+    private static String extractId(DataFetcherExceptionHandlerResult result) {
+        var matcher = Pattern.compile("logged with id ([0-9a-f-]{36})").matcher(result.getErrors().get(0).getMessage());
+        assertThat(matcher.find()).isTrue();
+        return matcher.group(1);
     }
 
     private void setupDataFetchingEnvironmentMock() {
