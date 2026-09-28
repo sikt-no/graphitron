@@ -415,21 +415,27 @@ shape the root condemns, still in the tree. Evidence in
   Java case rather than a seeded one: capture takes the classpath as an argument, so the case hands
   in two and runs the same gatherers, and the class now seeds nothing. Not being expressible as a
   document and needing a fixture are two different claims, and only the second is residue.
-* **What the residue actually is** `open`. One kind is known and it is narrow: a case pinning a
-  view's own algebra at a state no capture reaches, which `CarrierDataFieldPopulationTest` is,
-  existing because a condition is stated twice inside a view body. Eight classes declare themselves
-  that and ninety-six say nothing either way, so no search separates them and each is classified by
-  an attempt.
+* **Conversion goes by subject, not by class** `open`. A hundred and nine classes converted one
+  at a time is not a plan, and the relation is the wrong unit to batch by: they assert on 178
+  relations and 57 of those have one class each. The subject is the unit that compresses, because
+  one document writes rows into every relation its schema touches at once. Node ids are nine classes
+  and 131 tests, fields nine and 108, mutations eight and 100, nodes six and 77, input fields six
+  and 71: five schema families carry 38 classes and 487 tests. What a subject owes up front is its
+  corpus gaps, enumerated once, rather than one missing shape found per class.
+* **There is no residue, and no partial conversion** `open`. A class converts whole or it has not
+  converted, which is what the caller count measures and why it is the right count. A case that
+  fabricates a state no capture reaches is not a case the fixture has to be kept for: it is either
+  a property test, which is the tool for a pattern nobody writes on purpose, or it is a test of a
+  strange shape nobody cares about and it goes. `CarrierDataFieldPopulationTest` is the clearest
+  instance and is not an exception to plan around.
 * **A fresh store per test stops being the only shape** `open`, and it is not tidiness: every
   `sql_` and `code_` relation is store-wide, so one store holds many graphs against one reading of
   the catalog and the classpath, and varying which SDL loads into a warm store is the only thing
   that exercises refresh at all. A fresh store means every refresh runs against an empty one, which
   is the case where sweeping, re-anchoring and invalidation are all trivially correct.
-* **`SeededStore` is deleted** `blocked`, on the five above. The first conversion took a class to
-  zero seeds rather than leaving a remainder, so nothing yet argues the fixture has to survive; a
-  case that needs real Java and a case that needs a fabricated row are not the same case. The
-  subtractive commit is what makes this branch done, and until it lands the root is not done
-  either.
+* **`SeededStore` is deleted** `blocked`, on the five above. Not shrunk and not kept for a
+  remainder: the fixture goes. The subtractive commit is what makes this branch done, and until it
+  lands the root is not done either.
 
 ## Tests
 

@@ -139,13 +139,13 @@ import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
  * do not add a case here and convert one you touch;
  * {@link no.sikt.graphitron.model.SeedingDissolutionGateTest} holds the count down.
  *
- * <p>What remains is a view's own algebra: a state no capture reaches, which is what a view's outer
- * edges and a check constraint's boundary want exercised. That was always the narrow claim, and it
- * is the only one left.
+ * <p>Nothing remains. A case that wants a state no capture reaches is not a case this file is kept
+ * for: a pattern nobody writes on purpose is a property test's subject, and a shape nobody cares
+ * about is not a subject at all. There is no partial conversion either, so a class that still names
+ * this one has not converted.
  *
- * <p>What a seeded case still owes its reader is a sentence, not a permission: a case standing in
- * for a state a real build reaches should say which one, and a case pinning a relation's own
- * algebra should say plainly that it is doing that. Javadoc habit, nothing this harness enforces.
+ * <p>Until a case converts it should still say which state it stands in for, so the next reader
+ * can tell what its conversion has to reach. Javadoc habit, nothing this harness enforces.
  *
  * <p>Helpers are stateless and take the {@link DSLContext} first, so a case static-imports the ones
  * it uses and reads as a list of rows. Ordering follows the foreign keys: anchor the graph and the
