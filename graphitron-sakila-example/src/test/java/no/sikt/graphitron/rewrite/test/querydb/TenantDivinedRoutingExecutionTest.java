@@ -235,6 +235,33 @@ class TenantDivinedRoutingExecutionTest {
     }
 
     @Test
+    void service_bindingNoConnection_stillHandsTheTenantDown() {
+        var result = execute("mutation { rateFilmsOffline(in: [{ film: \""
+            + NodeIdEncoder.encodeFilm(1) + "\" }]) { films { inventories { inventoryId } } } }");
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        var payload = (Map<String, Object>) ((Map<String, Object>) result.getData()).get("rateFilmsOffline");
+        assertThat((List<Map<String, Object>>) payload.get("films"))
+            .singleElement()
+            .satisfies(film -> assertThat((List<?>) film.get("inventories"))
+                .as("the child reads tenant 1 through the stamped tenant").hasSize(2));
+        assertThat(TENANT_2_OPENED.get()).isZero();
+    }
+
+    @Test
+    void service_onTheErrorChannel_routesAndHandsTheTenantDown() {
+        var result = execute("mutation { rateFilmsChecked(in: [{ film: \""
+            + NodeIdEncoder.encodeFilm(2) + "\" }]) { ranOn films { inventories { inventoryId } } errors { __typename } } }");
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        var payload = (Map<String, Object>) ((Map<String, Object>) result.getData()).get("rateFilmsChecked");
+        assertThat(payload.get("ranOn")).isEqualTo("tenant_2");
+        assertThat((List<Map<String, Object>>) payload.get("films"))
+            .singleElement()
+            .satisfies(film -> assertThat((List<?>) film.get("inventories"))
+                .as("tenant 2 holds no inventory, so an empty list is tenant 2's answer").isEmpty());
+        assertThat(TENANT_1_OPENED.get()).as("nothing reads tenant 1's inventory").isZero();
+    }
+
+    @Test
     void service_jooqRecordParameter_routesOnTheCompositeKeysTenantSlot() {
         var result = execute("mutation { rateFilmActors(in: [{ id: \""
             + NodeIdEncoder.encodeFilmActor(20, 2) + "\" }]) { ranOn films { title } } }");

@@ -98,69 +98,31 @@ class TenantRoutedFetcherPipelineTest {
         return "@service(service: {className: \"" + TENANT_SERVICE + "\", method: \"" + method + "\"})";
     }
 
-    private static final String DIVINED =
-        "java.lang.Integer _divinedTenant = fake.code.generated.schema.TenantConnections.divinedTenant(";
-
+    /**
+     * Every divining service root shape declares the decode helper its tenant read goes through:
+     * the plain and error-channel returns, with and without a {@code DSLContext} parameter, and
+     * the table-returning root whose re-selection the divined tenant routes. That the tenant is
+     * divined before the call, routes it and rides down as {@code localContext} is behaviour, and
+     * {@code TenantDivinedRoutingExecutionTest} pins it against the multi-tenant fixture.
+     */
     @Test
-    void divingServiceDeclaresTheTenantBeforeTheCallAndRoutesItsDsl() {
-        var schema = multiTenant(SERVICE_TYPES + """
-            type Mutation { rateFilm(in: RateFilmInput!): RateFilmsPayload %s }
-            """.formatted(service("rateFilmWithDsl")));
-
-        var rateFilm = render(schema, "MutationFetchers", "rateFilm");
-        assertThat(rateFilm)
-            .contains(DIVINED)
-            .contains("fake.code.generated.schema.TenantConnections.tenantSlot(env.getArgument(\"in\"), \"film\")")
-            .contains(".localContext(_divinedTenant)")
-            .doesNotContain("dslDefault")
-            .doesNotContain("getDslContext(env)");
-        String dslDecl = "org.jooq.DSLContext dsl = fake.code.generated.schema.TenantConnections.dslFor(env, _divinedTenant)";
-        assertThat(rateFilm.split(java.util.regex.Pattern.quote("org.jooq.DSLContext dsl ="), -1))
-            .as("dsl is declared exactly once").hasSize(2);
-        assertThat(rateFilm.indexOf(DIVINED)).as("the tenant is divined before dsl and the call")
-            .isLessThan(rateFilm.indexOf(dslDecl))
-            .isLessThan(rateFilm.indexOf("TenantServiceStub.rateFilmWithDsl("));
-    }
-
-    @Test
-    void divingServiceOnTheErrorChannelStampsTheWrappedReturn() {
-        var schema = multiTenant(SERVICE_TYPES + """
-            type DbErr @error(handlers: [{handler: DATABASE}]) { path: [String!]! message: String! }
-            union RateError = DbErr
-            type SakPayload { data: String errors: [RateError] }
-            type Mutation { rateFilm(in: RateFilmInput!): SakPayload %s }
-            """.formatted(service("rateFilmOutcome")));
-
-        var rateFilm = render(schema, "MutationFetchers", "rateFilm");
-        assertThat(rateFilm)
-            .contains(DIVINED)
-            .contains("org.jooq.DSLContext dsl = fake.code.generated.schema.TenantConnections.dslFor(env, _divinedTenant)")
-            .containsPattern("\\.data\\(new [\\w.]+Outcome\\.Success<>\\(result\\)\\)\\.localContext\\(_divinedTenant\\)");
-    }
-
-    @Test
-    void divingServiceBindingNoDslStillDivinesAndStamps() {
-        var schema = multiTenant(SERVICE_TYPES + """
-            type Mutation { rateFilm(in: RateFilmInput!): RateFilmsPayload %s }
-            """.formatted(service("rateFilm")));
-
-        assertThat(render(schema, "MutationFetchers", "rateFilm"))
-            .contains(DIVINED)
-            .contains(".localContext(_divinedTenant)")
-            .doesNotContain("DSLContext dsl");
-    }
-
-    @Test
-    void divingTableReturningServiceRoutesTheReselectionOnTheDivinedTenant() {
-        // The service binds no DSLContext, so the lift declares the dsl the key container needs.
-        var schema = multiTenant(SERVICE_TYPES + """
-            type Mutation { pickFilm(in: RateFilmInput!): Film %s }
-            """.formatted(service("pickFilm")));
-
-        assertThat(render(schema, "MutationFetchers", "pickFilm"))
-            .contains(DIVINED)
-            .contains("org.jooq.DSLContext dsl = fake.code.generated.schema.TenantConnections.dslFor(env, _divinedTenant)")
-            .contains(".localContext(_divinedTenant)");
+    void divingServiceRootsDeclareTheTenantSlotHelperOnTheirFetcherClass() {
+        var shapes = java.util.Map.of(
+            "rateFilm", "rateFilm(in: RateFilmInput!): RateFilmsPayload " + service("rateFilm"),
+            "rateFilmWithDsl", "rateFilmWithDsl(in: RateFilmInput!): RateFilmsPayload " + service("rateFilmWithDsl"),
+            "rateFilmOutcome", "rateFilmOutcome(in: RateFilmInput!): SakPayload " + service("rateFilmOutcome"),
+            "pickFilm", "pickFilm(in: RateFilmInput!): Film " + service("pickFilm"));
+        shapes.forEach((name, field) -> {
+            var schema = multiTenant(SERVICE_TYPES + """
+                type DbErr @error(handlers: [{handler: DATABASE}]) { path: [String!]! message: String! }
+                union RateError = DbErr
+                type SakPayload { data: String errors: [RateError] }
+                type Mutation { %s }
+                """.formatted(field));
+            assertThat(schema.tenantBindingOf("Mutation", name)).as(name)
+                .isInstanceOf(no.sikt.graphitron.rewrite.model.TenantBinding.ArgumentBound.class);
+            assertIsTenantSlotHelper(method(schema, "MutationFetchers", "decodeFilmTenantSlot0OrThrow"));
+        });
     }
 
     @Test

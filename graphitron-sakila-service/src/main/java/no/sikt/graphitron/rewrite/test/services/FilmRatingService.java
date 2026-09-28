@@ -29,6 +29,20 @@ public final class FilmRatingService {
         return payload(dsl, ratings.stream().map(r -> r.film().getFilmId()).toList());
     }
 
+    /**
+     * Binds no connection: hands back the decoded records themselves, keyed but otherwise empty.
+     * The tenant still rides down to them, so their tenant-scoped children route.
+     */
+    public static RateFilmsPayload rateFilmsOffline(List<FilmRating> ratings) {
+        return new RateFilmsPayload(null, ratings.stream().map(FilmRating::film).toList());
+    }
+
+    /** {@link #rateFilms} on the error channel. */
+    public static RateFilmsCheckedPayload rateFilmsChecked(DSLContext dsl, List<FilmRating> ratings) {
+        var payload = rateFilms(dsl, ratings);
+        return new RateFilmsCheckedPayload(payload.ranOn(), payload.films(), List.of());
+    }
+
     /** The same over a jOOQ record parameter whose composite key carries the tenant at position 1. */
     public static RateFilmsPayload rateFilmActors(DSLContext dsl, List<FilmActorRecord> actors) {
         return payload(dsl, actors.stream().map(FilmActorRecord::getFilmId).toList());

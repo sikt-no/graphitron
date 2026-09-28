@@ -172,12 +172,34 @@ type RateFilmsPayload {
     films: [Film!]!
 }
 
+# The same wrapper on the error channel: the stamped return is the Outcome-wrapped payload.
+type RateFilmsCheckedPayload {
+    ranOn: String
+    films: [Film!]
+    errors: [RateFilmsError]
+}
+
+type RateFilmsDbError @error(handlers: [{handler: DATABASE}]) {
+    path: [String!]!
+    message: String!
+}
+
+union RateFilmsError = RateFilmsDbError
+
 type Mutation {
     # ArgumentBound @service arms: the tenant is divined from the batch's ids before the service
     # is called, so a batch naming two tenants is refused without running it.
     rateFilms(in: [FilmRatingInput!]!): RateFilmsPayload @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
         method: "rateFilms", argMapping: "ratings: in"})
+    # Binds no DSLContext, so the call needs no connection, yet the divined tenant still rides
+    # down to the returned rows.
+    rateFilmsOffline(in: [FilmRatingInput!]!): RateFilmsPayload @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
+        method: "rateFilmsOffline", argMapping: "ratings: in"})
+    rateFilmsChecked(in: [FilmRatingInput!]!): RateFilmsCheckedPayload @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
+        method: "rateFilmsChecked", argMapping: "ratings: in"})
     rateFilmActors(in: [FilmActorRatingInput!]!): RateFilmsPayload @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
         method: "rateFilmActors", argMapping: "actors: in"})
