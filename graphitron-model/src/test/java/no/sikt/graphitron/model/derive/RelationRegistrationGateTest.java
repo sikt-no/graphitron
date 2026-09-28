@@ -354,6 +354,10 @@ class RelationRegistrationGateTest {
         registrations.put("graphql_ast_element_declaration", Arm.DERIVED);
         registrations.put("graphitron_field_chain_link_reading", Arm.DERIVED);
         registrations.put("graphitron_field_chain_link_resolution", Arm.DERIVED);
+        registrations.put("graphitron_field_chain_link_resolution_rule", Arm.DERIVED);
+        registrations.put("graphitron_field_chain_link_resolution_keyed", Arm.DERIVED);
+        registrations.put("graphitron_field_chain_link_resolution_keyless", Arm.DERIVED);
+        registrations.put("graphitron_field_chain_link_resolution_open", Arm.DERIVED);
         registrations.put("graphitron_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_field_table_link_rule", Arm.DERIVED);
         registrations.put("intent_mutation_matched_key", Arm.DERIVED);

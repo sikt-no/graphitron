@@ -7,7 +7,7 @@ priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-09-27
+last-updated: 2026-09-28
 ---
 
 # Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject
@@ -123,8 +123,20 @@ are gone.
   instrument that parses a rule body.
 * The resolution keeps its losers `done`. A link with no reading is a chain that does not resolve and
   one with several resolves ambiguously, and neither was a fact anybody could read.
-* The defects reach the surface `done`, and are stored, because the read that matters is the editor's
-  and a per-file predicate cannot push into a recursion behind a view boundary.
+* **The defects reach the surface** `open`, waits on the second child below. They are stored, because
+  the read that matters is the editor's and a per-file predicate cannot push into a recursion behind
+  a view boundary. Storing them did not reach the goal: the resolution they read was a view, so the
+  stage re-walked every chain once per chain it drove and on a consumer-size schema did not finish.
+  Evidence in `roadmap/audits/2026-09-28-chain-resolution-storage.md`.
+  * **The resolution is stored once, at the reading grain** `done`. Three arm tables by key shape
+    under the existing name, filled from one walk, with which walks reached a reading as payload so
+    neither reader regroups. The arm tables are the hop relations' shape, which is this branch's
+    vote in the survivor question below.
+  * **The rule is examined, not only its storage** `open`. `broken` drives a correlated `NOT EXISTS`
+    over `routes`; restate it as an anti-join and record the figure beside the storage ones.
+  * **The reading's KEY arm is an equi-join** `open`. A three-way `OR` against `sql_constraint` is
+    most of the reading's cost; a `UNION ALL` of two equi-joins matched it by `EXCEPT` on a schema
+    that never exercised the jOOQ-name branch.
 
 ### The chain replaces the walk it was built to retire
 
@@ -145,7 +157,9 @@ this one, and the read-time relations neither of them has displaced yet.
 * **One resolution of an authored element stands, not two** `blocked`, on the two grains above.
   `graphitron_field_reference_step_hop` resolves the same elements as
   `graphitron_field_chain_link_reading` from a decode its own comment calls deprecated; measured on a
-  fixture reaching every arm the two agree exactly, so what is left is choosing which survives.
+  fixture reaching every arm the two agree exactly, so what is left is choosing which survives. The
+  stored resolution is keyed in the hop's own arm shapes and adds the routine arm and the target
+  grain the hop lacks, which is a vote for retiring the hop.
 * **The read-time chain relations are gone** `blocked`, on the node above. `intent_field_chain_start`,
   `_node` and `_terminus` retire as one and `graphitron_field_chain_application` falls out with them,
   its only reader being `_node`; `intent_condition_method_route` wants a home rather than a grave,
@@ -274,7 +288,10 @@ not go stale. Two index names followed: `graphitron_spelled_reference_name_ix`,
 `candidate_path`, `type_name`, `field_name`, `argument_name`, and `argument_path` (now
 `written_path`); `graphitron_argmapping_candidate.element_name` (now `name`), `type_name`,
 `field_name`; `intent_resolved_node_key_projection.trailing_segment_name` (now `trailing_name`).
-Values `AUTHORED_EXPRESSION` and `TRAILING_SEGMENTS_BEYOND_ONE`. Added rather than retired, and
+Values `AUTHORED_EXPRESSION` and `TRAILING_SEGMENTS_BEYOND_ONE`.
+`graphitron_field_chain_link_resolution.reach` and its values `TAIL` and `HEAD` as a stored column
+(now the payload flags `reached_by_tail` and `reached_by_head`), and `reach` in the
+`field-chain-link-reach` grain's key shape. Added rather than retired, and
 listed because the grain is the point: `store_graph_source.stamp` and `store_graph_source.read_at`.
 
 **Java.** `MacroCapture.expandConnections` (now `expand`); the `Expansions` record, the five

@@ -22,10 +22,12 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_RULE;
  * being a number that moves.
  *
  * <p>The deciding argument is not the number, though, and would hold at a smaller one: the walk
- * already runs once per capture. {@link FieldTableLinks} resolves every chain and stores the links
- * that survive; a chain defect is the same resolution's leftovers. Computing them again per read
- * is a second evaluation of a rule the capture has already run, which is the shape this whole arc
- * exists to remove rather than a cost to be weighed.
+ * already runs once per capture. {@link FieldChainLinkResolutions} stores every reading either walk
+ * reaches, {@link FieldTableLinks} keeps the ones that survive, and a chain defect is the rest.
+ * Computing them again per read is a second evaluation of a rule the capture has already run, which
+ * is the shape this whole arc exists to remove rather than a cost to be weighed. The same holds
+ * inside this stage: the chain arms read the stored walk rather than walking, because a walk named
+ * from a correlated subquery here is walked once per chain it drives.
  */
 public final class EntryDefects {
 

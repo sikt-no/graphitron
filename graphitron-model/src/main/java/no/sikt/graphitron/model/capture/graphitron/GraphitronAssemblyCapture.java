@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.capture.graphitron;
 
 import no.sikt.graphitron.model.derive.FieldChainApplications;
+import no.sikt.graphitron.model.derive.FieldChainLinkResolutions;
 import no.sikt.graphitron.model.derive.FieldEndpoints;
 import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
 import no.sikt.graphitron.model.derive.FieldReferenceStepTargets;
@@ -82,9 +83,12 @@ public final class GraphitronAssemblyCapture {
         FieldEndpoints.derive(dsl, graph, readAt);
         // After it, the applications being keyed by the chain the line above establishes.
         FieldRoutines.derive(dsl, graph, readAt);
-        // Last of all, resolving the links of each chain in order against the two stages above it:
-        // a link's departure is the previous link's arrival, and a routine link's arrival is what
-        // the line above resolved.
+        // Then walking the links of each chain against the two stages above it: a link's departure
+        // is the previous link's arrival, and a routine link's arrival is what the line above
+        // resolved. Stored rather than left a view because two readers walk it, the line below and
+        // the entry defects at the tail of the derivation stratum.
+        FieldChainLinkResolutions.derive(dsl, graph, readAt);
+        // Last of all, keeping the one reading per link that both walks reach.
         FieldTableLinks.derive(dsl, graph, readAt);
     }
 
