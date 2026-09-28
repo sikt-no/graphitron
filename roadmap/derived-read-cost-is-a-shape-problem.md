@@ -409,25 +409,27 @@ shape the root condemns, still in the tree. Evidence in
   added to a module that already compiles; what is not knowable in advance is which shape the next
   attempt wants.
 * **The SDL half converts** `open`. 50 classes, 354 tests.
-* **The residue is cases, not classes** `open`, and it decides the node below. The first code-half
-  conversion measured it: nine of `FieldProducerMethodTest`'s ten cases are now a document, and the
-  tenth wants two graphs whose classpath entries differ, which one shared corpus cannot give. So the
-  class survives holding one case, and a count of classes does not fall. Two kinds of case resist,
-  and both were found by trying: one needing a corpus shape a document cannot vary, and one pinning
-  a view's own algebra, which `CarrierDataFieldPopulationTest` is, existing because a condition is
-  stated twice inside a view body. Eight classes declare themselves the second kind and ninety-six
-  say nothing either way, so no search separates them.
+* **A case that resists a document may still not need seeding** `open`, and the difference decides
+  the node below. Nine of `FieldProducerMethodTest`'s ten cases are a document now; the tenth wants
+  two graphs whose classpath entries differ, which one shared corpus cannot give. That makes it a
+  Java case rather than a seeded one: capture takes the classpath as an argument, so the case hands
+  in two and runs the same gatherers, and the class now seeds nothing. Not being expressible as a
+  document and needing a fixture are two different claims, and only the second is residue.
+* **What the residue actually is** `open`. One kind is known and it is narrow: a case pinning a
+  view's own algebra at a state no capture reaches, which `CarrierDataFieldPopulationTest` is,
+  existing because a condition is stated twice inside a view body. Eight classes declare themselves
+  that and ninety-six say nothing either way, so no search separates them and each is classified by
+  an attempt.
 * **A fresh store per test stops being the only shape** `open`, and it is not tidiness: every
   `sql_` and `code_` relation is store-wide, so one store holds many graphs against one reading of
   the catalog and the classpath, and varying which SDL loads into a warm store is the only thing
   that exercises refresh at all. A fresh store means every refresh runs against an empty one, which
   is the case where sweeping, re-anchoring and invalidation are all trivially correct.
-* **`SeededStore` shrinks to the residue, and is deleted only if the residue empties** `blocked`,
-  on the four above. The first measurement moved this off "deleted": a residue of single cases
-  spread across surviving classes is not a fixture that can be deleted, only one that can be cut
-  down to what those cases need. The subtractive commit is still what makes this branch done, and
-  until it lands the root is not done either; what it subtracts is now a question with evidence
-  rather than an assumption.
+* **`SeededStore` is deleted** `blocked`, on the five above. The first conversion took a class to
+  zero seeds rather than leaving a remainder, so nothing yet argues the fixture has to survive; a
+  case that needs real Java and a case that needs a fabricated row are not the same case. The
+  subtractive commit is what makes this branch done, and until it lands the root is not done
+  either.
 
 ## Tests
 
