@@ -286,14 +286,26 @@ public final class CodeCapture {
             d -> val(d.at().descriptor(), m.DESCRIPTOR),
             d -> val(d.at().isStatic(), m.IS_STATIC),
             d -> val(d.at().qualifiedReturnType(), m.RESULT_TYPE),
+            // The parse, at the position that wrote it. The same three values go into the type
+            // dictionary beside this, keyed by the spelling; they are a fact about this position
+            // and the dictionary is what cannot be swept per class.
+            d -> val(rootOf(d.at().returnTypeRefs()), m.RESULT_ERASED_CLASS),
+            d -> val(elementOf(deliveryOf(d.at().returnTypeRefs(), containers)),
+                m.RESULT_ELEMENT_CLASS),
+            d -> val(deliveryNameOf(deliveryOf(d.at().returnTypeRefs(), containers)),
+                m.RESULT_DELIVERY),
             d -> val(touchedAt, m.TOUCHED_AT)));
         BindBatch.execute(dsl, methodRows, markers ->
             dsl.insertInto(m, m.SOURCE_NAME, m.CLASS_NAME, m.METHOD_NAME, m.DESCRIPTOR, m.IS_STATIC,
-                    m.RESULT_TYPE, m.TOUCHED_AT)
+                    m.RESULT_TYPE, m.RESULT_ERASED_CLASS, m.RESULT_ELEMENT_CLASS, m.RESULT_DELIVERY,
+                    m.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(m.IS_STATIC, excluded(m.IS_STATIC))
                 .set(m.RESULT_TYPE, excluded(m.RESULT_TYPE))
+                .set(m.RESULT_ERASED_CLASS, excluded(m.RESULT_ERASED_CLASS))
+                .set(m.RESULT_ELEMENT_CLASS, excluded(m.RESULT_ELEMENT_CLASS))
+                .set(m.RESULT_DELIVERY, excluded(m.RESULT_DELIVERY))
                 .set(m.TOUCHED_AT, excluded(m.TOUCHED_AT)));
         exceptions(dsl, found.stream()
             .map(d -> new Member(d.source(), d.className(), d.at()))
@@ -963,16 +975,24 @@ public final class CodeCapture {
             row -> val(row.at().position(), p.POSITION),
             row -> val(row.at().name(), p.PARAMETER_NAME),
             row -> val(row.at().qualifiedType(), p.PARAMETER_TYPE),
+            // The parse, at the position, on code_method's result terms.
+            row -> val(rootOf(row.at().typeRefs()), p.ERASED_CLASS),
+            row -> val(elementOf(deliveryOf(row.at().typeRefs(), containers)), p.ELEMENT_CLASS),
+            row -> val(deliveryNameOf(deliveryOf(row.at().typeRefs(), containers)), p.DELIVERY),
             row -> val(row.role(), p.ROLE),
             row -> val(row.extraction(), p.EXTRACTION),
             row -> val(touchedAt, p.TOUCHED_AT)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(p, p.SOURCE_NAME, p.CLASS_NAME, p.METHOD_NAME, p.DESCRIPTOR, p.POSITION,
-                    p.PARAMETER_NAME, p.PARAMETER_TYPE, p.ROLE, p.EXTRACTION, p.TOUCHED_AT)
+                    p.PARAMETER_NAME, p.PARAMETER_TYPE, p.ERASED_CLASS, p.ELEMENT_CLASS, p.DELIVERY,
+                    p.ROLE, p.EXTRACTION, p.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(p.PARAMETER_NAME, excluded(p.PARAMETER_NAME))
                 .set(p.PARAMETER_TYPE, excluded(p.PARAMETER_TYPE))
+                .set(p.ERASED_CLASS, excluded(p.ERASED_CLASS))
+                .set(p.ELEMENT_CLASS, excluded(p.ELEMENT_CLASS))
+                .set(p.DELIVERY, excluded(p.DELIVERY))
                 .set(p.ROLE, excluded(p.ROLE))
                 .set(p.EXTRACTION, excluded(p.EXTRACTION))
                 .set(p.TOUCHED_AT, excluded(p.TOUCHED_AT)));
@@ -1085,6 +1105,16 @@ public final class CodeCapture {
      * position asks for DIRECT and never has to know that java.util.List is a container.
      */
     private record Delivery(String elementClass, String delivery) {}
+
+    /** The delivered class, or null where the type peels to none; the two columns are null together. */
+    private static String elementOf(Delivery delivery) {
+        return delivery == null ? null : delivery.elementClass();
+    }
+
+    /** How it delivers, on the same terms. */
+    private static String deliveryNameOf(Delivery delivery) {
+        return delivery == null ? null : delivery.delivery();
+    }
 
     /** One container the delivery walk peels: which position carries the payload, and whether
      *  arriving through it means many rather than one. */

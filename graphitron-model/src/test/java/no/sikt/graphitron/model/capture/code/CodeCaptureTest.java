@@ -887,6 +887,71 @@ class CodeCaptureTest {
             + "the test classpath; this arm has nothing to read without it");
     }
 
+    /**
+     * Every position's own parse says what the dictionary says for the spelling it carries.
+     *
+     * <p>The oracle the siting rests on, and it is runnable only while both exist, which is why the
+     * columns went in beside {@code code_type} rather than instead of it. What the dictionary holds
+     * is a parse of a spelling; what a position holds is the parse of its own type. They are the
+     * same computation over the same input, so a disagreement is the siting having changed an
+     * answer rather than moved one.
+     *
+     * <p>Both directions, because they fail differently: a position the dictionary has no row for
+     * is a spelling the reading did not record, and a dictionary row no position agrees with is a
+     * parse that drifted.
+     */
+    @Test
+    @DisplayName("a position's parse and the dictionary's agree, both directions")
+    void theSitedParseAgreesWithTheDictionary() {
+        withReactorCapture(dsl -> {
+            var m = CODE_METHOD;
+            var p = CODE_METHOD_PARAMETER;
+            var t = CODE_TYPE;
+            var e = CODE_TYPE_ELEMENT;
+
+            assertThat(dsl.select(m.CLASS_NAME, m.METHOD_NAME, m.RESULT_TYPE)
+                    .from(m)
+                    .join(t).on(t.SOURCE_NAME.eq(m.SOURCE_NAME), t.TYPE_NAME.eq(m.RESULT_TYPE))
+                    .where(m.RESULT_ERASED_CLASS.isDistinctFrom(t.ROOT_CLASS))
+                    .fetch())
+                .as("a result whose erasure differs from the dictionary's for the same spelling")
+                .isEmpty();
+
+            assertThat(dsl.select(p.CLASS_NAME, p.METHOD_NAME, p.POSITION, p.PARAMETER_TYPE)
+                    .from(p)
+                    .join(t).on(t.SOURCE_NAME.eq(p.SOURCE_NAME), t.TYPE_NAME.eq(p.PARAMETER_TYPE))
+                    .where(p.ERASED_CLASS.isDistinctFrom(t.ROOT_CLASS))
+                    .fetch())
+                .as("a parameter whose erasure differs from the dictionary's")
+                .isEmpty();
+
+            assertThat(dsl.select(m.CLASS_NAME, m.METHOD_NAME, m.RESULT_TYPE)
+                    .from(m)
+                    .leftJoin(e).on(e.SOURCE_NAME.eq(m.SOURCE_NAME), e.TYPE_NAME.eq(m.RESULT_TYPE))
+                    .where(m.RESULT_ELEMENT_CLASS.isDistinctFrom(e.ELEMENT_CLASS)
+                        .or(m.RESULT_DELIVERY.isDistinctFrom(e.DELIVERY)))
+                    .fetch())
+                .as("a result whose peel differs from the dictionary's, in either column")
+                .isEmpty();
+
+            assertThat(dsl.select(p.CLASS_NAME, p.METHOD_NAME, p.POSITION)
+                    .from(p)
+                    .leftJoin(e).on(e.SOURCE_NAME.eq(p.SOURCE_NAME), e.TYPE_NAME.eq(p.PARAMETER_TYPE))
+                    .where(p.ELEMENT_CLASS.isDistinctFrom(e.ELEMENT_CLASS)
+                        .or(p.DELIVERY.isDistinctFrom(e.DELIVERY)))
+                    .fetch())
+                .as("a parameter whose peel differs from the dictionary's")
+                .isEmpty();
+
+            assertThat(dsl.fetchCount(m, m.RESULT_ELEMENT_CLASS.isNotNull()))
+                .as("the fixture reaches resolved results, so the comparison is not over nothing")
+                .isPositive();
+            assertThat(dsl.fetchCount(m, m.RESULT_DELIVERY.eq("MANY")))
+                .as("and reaches a delivering container, which is the arm the peel exists for")
+                .isPositive();
+        });
+    }
+
     /** Captures the reactor fixture beside jOOQ, which is the scope rule's own case. */
     private static void withReactorCapture(Consumer<DSLContext> body) {
         try (var store = GraphitronStore.inMemory()) {

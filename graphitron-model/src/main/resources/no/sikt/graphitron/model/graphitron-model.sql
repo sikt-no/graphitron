@@ -6034,16 +6034,25 @@ CREATE TABLE code_method (
   descriptor  VARCHAR NOT NULL,
   is_static   BOOLEAN NOT NULL,
   result_type VARCHAR NOT NULL,
+  result_erased_class  VARCHAR,
+  result_element_class VARCHAR,
+  result_delivery      VARCHAR,
   touched_at  TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, class_name, method_name, descriptor),
   FOREIGN KEY (source_name, class_name)
     REFERENCES code_class (source_name, class_name) ON DELETE CASCADE,
-  FOREIGN KEY (source_name, result_type) REFERENCES code_type (source_name, type_name)
+  FOREIGN KEY (source_name, result_type) REFERENCES code_type (source_name, type_name),
+  CHECK (result_delivery IS NULL OR result_delivery IN ('DIRECT', 'WRAPPED', 'MANY')),
+  -- A peel lands on a class or it does not land, so the two say the same silence together.
+  CHECK ((result_element_class IS NULL) = (result_delivery IS NULL))
 );
 COMMENT ON TABLE code_method IS 'One public method of a class the reactor built, which is the population every directive naming Java draws its candidates from. For example filmsByRating(DSLContext, String) on a consumer''s FilmService.';
 COMMENT ON COLUMN code_method.source_name IS 'the classpath entry the declaring class was read from; the key''s leading dimension. With the class beside it this row hangs on code_class, so a class a compile removed takes its methods with it rather than leaving them until the whole entry goes';
 COMMENT ON COLUMN code_method.class_name IS 'the declaring class''s binary name, the left part of what an author writes at a directive';
 COMMENT ON COLUMN code_method.method_name IS 'the method''s own name, the right part of it. Not a key on its own: a name an author writes may denote several declarations, and the count of rows sharing one is what says so';
+COMMENT ON COLUMN code_method.result_erased_class IS 'the class the result type erases to, type arguments dropped: java.util.List for a List<Film> and the class itself where the type is one. NULL where it erases to no class, which a primitive, a void, an array and a type variable are alike in. Here rather than on a shared row because a parse is a fact about the position that wrote it: the dictionary that held it was keyed by the spelling, so it was shared by every class mentioning it and no per-class reading could decide its fate';
+COMMENT ON COLUMN code_method.result_element_class IS 'the class the result delivers once its containers are peeled off, which is the question its readers ask: which class backs the GraphQL type this method produces. NULL where the type resolves to no class at all';
+COMMENT ON COLUMN code_method.result_delivery IS 'how the result delivers that class, DIRECT where the type is one, WRAPPED inside an Optional and MANY inside a collection. What a field declared a list is checked against, a single-delivering method behind a list field being an author error. NULL with the element beside it';
 COMMENT ON COLUMN code_method.descriptor IS 'the JVM method descriptor, completing the key. What tells two overloads apart, which no rendering of the erased types can: two methods taking same-named types from different packages render alike';
 COMMENT ON COLUMN code_method.is_static IS 'whether the method is static. A property of the declaration rather than of any directive, though it is what @service reads to decide whether a holder is needed and what @condition folds on before admitting a set of overloads as one target';
 COMMENT ON COLUMN code_method.result_type IS 'the type the method results in, by reference. Not a relation of its own beside the parameters, because a result is the one thing a method has exactly one of and it carries neither a name nor an ordinal to be bound at: a parameter binds a type to a named position, and a result is the type';
@@ -6057,6 +6066,9 @@ CREATE TABLE code_method_parameter (
   position       INT NOT NULL,
   parameter_name VARCHAR,
   parameter_type VARCHAR NOT NULL,
+  erased_class   VARCHAR,
+  element_class  VARCHAR,
+  delivery       VARCHAR,
   role           VARCHAR NOT NULL,
   extraction     VARCHAR NOT NULL,
   touched_at     TIMESTAMP NOT NULL,
@@ -6065,9 +6077,14 @@ CREATE TABLE code_method_parameter (
     REFERENCES code_method (source_name, class_name, method_name, descriptor) ON DELETE CASCADE,
   FOREIGN KEY (source_name, parameter_type) REFERENCES code_type (source_name, type_name),
   CHECK (role IN ('DSL_CONTEXT', 'TABLE_CONCRETE', 'TABLE_ANY', 'OTHER')),
-  CHECK (extraction IN ('DIRECT', 'ENUM_VALUE_OF'))
+  CHECK (extraction IN ('DIRECT', 'ENUM_VALUE_OF')),
+  CHECK (delivery IS NULL OR delivery IN ('DIRECT', 'WRAPPED', 'MANY')),
+  CHECK ((element_class IS NULL) = (delivery IS NULL))
 );
 COMMENT ON TABLE code_method_parameter IS 'One position in a method''s parameter list: the type bound there, the name it is bound under, and what the type alone says the position is for. For example position 0 of filmTitleContains, named film and playing the TABLE_CONCRETE role.';
+COMMENT ON COLUMN code_method_parameter.erased_class IS 'the class the parameter type erases to, on code_method.result_erased_class'' terms; what a binding compares against when it asks whether an argument can be passed here';
+COMMENT ON COLUMN code_method_parameter.element_class IS 'the class the parameter delivers once its containers are peeled off, on code_method.result_element_class'' terms';
+COMMENT ON COLUMN code_method_parameter.delivery IS 'how the parameter delivers that class, on code_method.result_delivery'' terms; NULL with the element beside it';
 COMMENT ON COLUMN code_method_parameter.source_name IS 'the entry the declaring class was read from, as on code_method; the key''s leading dimension';
 COMMENT ON COLUMN code_method_parameter.class_name IS 'the declaring class, as on code_method';
 COMMENT ON COLUMN code_method_parameter.method_name IS 'the method, as on code_method';
