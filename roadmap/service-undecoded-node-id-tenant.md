@@ -5,7 +5,7 @@ status: Backlog
 bucket: bug
 priority: 2
 theme: runtime-connection
-depends-on: [service-tenant-binding]
+depends-on: []
 created: 2026-09-25
 last-updated: 2026-09-25
 ---
@@ -30,4 +30,4 @@ Runtime inference from the embedded type id, as v9 did, was weighed during R976'
 
 ## Related
 
-- R976 (`service-tenant-binding`): the decode path, the connection predicate, and the gap this item closes. This item depends on it.
+- R976 (`service-tenant-binding`): the decode path, the connection predicate, and the gap this item closes. Shipped; see `roadmap/changelog.md`.
