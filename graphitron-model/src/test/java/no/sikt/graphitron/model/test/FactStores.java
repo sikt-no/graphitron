@@ -42,6 +42,14 @@ public final class FactStores {
 
     private static final AtomicLong BOOTS = new AtomicLong();
 
+    private static final AtomicLong CAPTURES = new AtomicLong();
+
+    /**
+     * The same two counts per thread, {@code [boots, captures]}, for {@link StoreCostExtension}'s
+     * attribution. Only the owning thread writes its own array, so the pair needs no lock.
+     */
+    private static final ThreadLocal<long[]> ON_THIS_THREAD = ThreadLocal.withInitial(() -> new long[2]);
+
     private FactStores() {}
 
     /**
@@ -50,7 +58,7 @@ public final class FactStores {
      * the handle closes.
      */
     public static GraphitronModelStore inMemory() {
-        BOOTS.incrementAndGet();
+        countBoot();
         return GraphitronModelStore.open();
     }
 
@@ -65,7 +73,7 @@ public final class FactStores {
      * case's rows into the next one's assertions.
      */
     public static GraphitronModelStore fileBacked(Path home) {
-        BOOTS.incrementAndGet();
+        countBoot();
         return GraphitronModelStore.openAt(home);
     }
 
@@ -100,6 +108,41 @@ public final class FactStores {
      */
     public static long boots() {
         return BOOTS.get();
+    }
+
+    /**
+     * How many captures {@link CapturedStore} has run so far in this JVM, across every thread and
+     * every arm: each one is a {@link no.sikt.graphitron.model.run.ModelCapture} pass, derivation
+     * stratum included, and is the price a boot is small beside. Monotonic, like {@link #boots()}.
+     *
+     * <p>What it cannot see is a capture that does not pass through {@link CapturedStore}: the
+     * generator's own {@code GraphitronStore.captured} path, which a built store and a rendered
+     * outcome block run, is production code and counts nothing. A module reading this as its
+     * capture total reads a floor over those.
+     */
+    public static long captures() {
+        return CAPTURES.get();
+    }
+
+    /** {@link #boots()} restricted to the calling thread. */
+    static long bootsOnThisThread() {
+        return ON_THIS_THREAD.get()[0];
+    }
+
+    /** {@link #captures()} restricted to the calling thread. */
+    static long capturesOnThisThread() {
+        return ON_THIS_THREAD.get()[1];
+    }
+
+    /** Called by {@link CapturedStore} where every capture it runs passes. */
+    static void countCapture() {
+        CAPTURES.incrementAndGet();
+        ON_THIS_THREAD.get()[1]++;
+    }
+
+    private static void countBoot() {
+        BOOTS.incrementAndGet();
+        ON_THIS_THREAD.get()[0]++;
     }
 
     /**

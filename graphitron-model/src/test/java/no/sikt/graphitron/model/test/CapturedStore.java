@@ -544,6 +544,7 @@ public final class CapturedStore implements AutoCloseable {
                                      String graphName, TypeDefinitionRegistry registry, JooqCatalog jooq,
                                      List<CompletionData.ExternalReference> census, boolean warm,
                                      List<ClasspathEntry> classpath) {
+        FactStores.countCapture();
         var readAt = LocalDateTime.now();
         // The graph's own row, before anything that keys into it. The pass writes it first thing,
         // but the stated census below runs ahead of the pass and claims sources against it.
@@ -606,6 +607,7 @@ public final class CapturedStore implements AutoCloseable {
     /** {@link #capture(DSLContext, GraphIdentity, SubjectConfig, JooqCatalog)} with a classpath. */
     public static void capture(DSLContext dsl, GraphIdentity graph, SubjectConfig corpus,
                                JooqCatalog jooq, List<ClasspathEntry> classpath) {
+        FactStores.countCapture();
         ModelCapture.capture(dsl, graph, corpus, classpath, jooq,
             LocalDateTime.now().truncatedTo(ChronoUnit.MICROS));
     }
