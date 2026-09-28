@@ -42,7 +42,7 @@ class ClassNameCompletionsTest {
 
     @BeforeAll
     static void capture() {
-        store = StoreFixture.ofClasspath(tmp, List.of(
+        store = StoreFixture.held().ofClasspath(tmp, List.of(
             StoreFixture.jarClass("com.example.FilmService", List.of()),
             StoreFixture.jarClass("com.example.CategoryConditions", List.of())));
     }

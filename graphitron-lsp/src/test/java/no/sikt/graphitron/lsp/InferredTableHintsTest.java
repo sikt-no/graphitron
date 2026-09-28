@@ -74,7 +74,7 @@ class InferredTableHintsTest {
 
     @BeforeAll
     static void capture() {
-        store = StoreFixture.ofCatalog(tmp, SDL);
+        store = StoreFixture.held().ofCatalog(tmp, SDL);
     }
 
     @AfterAll

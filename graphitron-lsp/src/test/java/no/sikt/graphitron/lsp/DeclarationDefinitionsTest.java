@@ -107,8 +107,8 @@ class DeclarationDefinitionsTest {
 
     @BeforeAll
     static void parseSources() {
-        store = StoreFixture.ofCatalog(sourceRoot, CAPTURED_SDL, census());
-        bare = StoreFixture.ofCatalog(bareRoot, CAPTURED_SDL, census());
+        store = StoreFixture.held().ofCatalog(sourceRoot, CAPTURED_SDL, census());
+        bare = StoreFixture.held().ofCatalog(bareRoot, CAPTURED_SDL, census());
         filmFqn = store.tableClassFqn("film");
         // The column constant is the census's own spelling of it, which is what the class declares
         // and what the resolution keys the position lookup by.

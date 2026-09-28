@@ -37,7 +37,7 @@ class ScalarTypeCompletionsTest {
     // library's extended-scalars class and a consumer's own, each carrying scalar constants.
     @BeforeAll
     static void capture() {
-        store = StoreFixture.ofClasspath(tmp, List.of())
+        store = StoreFixture.held().ofClasspath(tmp, List.of())
             .withScalarConstants(
                 StoreFixture.scalarHolder("graphql.scalars.ExtendedScalars",
                     "GraphQLBigDecimal", "DateTime", "UUID"),

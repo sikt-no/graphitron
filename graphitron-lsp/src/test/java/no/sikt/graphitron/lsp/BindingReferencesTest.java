@@ -68,7 +68,7 @@ class BindingReferencesTest {
 
     @BeforeAll
     static void capture() {
-        store = StoreFixture.ofCatalog(sourceRoot, CAPTURED, census());
+        store = StoreFixture.held().ofCatalog(sourceRoot, CAPTURED, census());
     }
 
     @AfterAll

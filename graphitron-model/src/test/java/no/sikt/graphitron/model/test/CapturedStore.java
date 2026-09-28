@@ -31,6 +31,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 
@@ -108,6 +109,24 @@ public final class CapturedStore implements AutoCloseable {
         this.registry = registry;
     }
 
+    /** How many stores the {@code ownStore*} arms have booted; see {@link #ownedStores()}. */
+    private static final AtomicLong OWNED = new AtomicLong();
+
+    /**
+     * How many stores the {@code ownStore*} arms have booted in this JVM. Every other arm borrows
+     * the thread's store, so a module that reaches the store only through this handle and the
+     * thread's funnel accounts for every boot as one of these or one per booting thread, which is
+     * what a module pinning its boot count states.
+     */
+    public static long ownedStores() {
+        return OWNED.get();
+    }
+
+    private static GraphitronModelStore ownedStore() {
+        OWNED.incrementAndGet();
+        return FactStores.inMemory();
+    }
+
     // ---------------------------------------------------------------------------------------
     // The closure form: hand it SDL, get a DSLContext, assert.
     // ---------------------------------------------------------------------------------------
@@ -146,7 +165,7 @@ public final class CapturedStore implements AutoCloseable {
     public static CapturedStore ownStore(Path directory, String graphName, String sdl) {
         Path file = write(directory, graphName, sdl);
         var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
-        var store = FactStores.inMemory();
+        var store = ownedStore();
         captureFiles(store.dsl(), List.of(file), directory, graphName, registry, null, List.of(), false);
         return new CapturedStore(store, graphName, directory, file, registry, true);
     }
@@ -159,7 +178,7 @@ public final class CapturedStore implements AutoCloseable {
     public static CapturedStore ownStoreOfCatalog(Path directory, String sdl, JooqCatalog jooq) {
         Path file = write(directory, GRAPH, sdl);
         var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
-        var store = FactStores.inMemory();
+        var store = ownedStore();
         captureFiles(store.dsl(), List.of(file), directory, GRAPH, registry, jooq, List.of(), false);
         return new CapturedStore(store, GRAPH, directory, file, registry, true);
     }
@@ -170,8 +189,25 @@ public final class CapturedStore implements AutoCloseable {
                                                   List<CompletionData.ExternalReference> census) {
         Path file = write(directory, graphName, sdl);
         var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
-        var store = FactStores.inMemory();
+        var store = ownedStore();
         captureFiles(store.dsl(), List.of(file), directory, graphName, registry, jooq, census, false);
+        return new CapturedStore(store, graphName, directory, file, registry, true);
+    }
+
+    /**
+     * {@link #ofCatalog(Path, String, String, JooqCatalog, List, Path)} on a store of its own, for a
+     * fixture that outlives the case that opened it and reads a relation the code family feeds.
+     */
+    public static CapturedStore ownStoreOfCatalog(Path directory, String graphName, String sdl,
+                                                  JooqCatalog jooq,
+                                                  List<CompletionData.ExternalReference> census,
+                                                  Path classRoot) {
+        Path file = write(directory, graphName, sdl);
+        var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
+        var store = ownedStore();
+        captureFiles(store.dsl(), List.of(file), directory, graphName, registry,
+            Objects.requireNonNull(jooq, "jooq"), census, false,
+            List.of(new ClasspathEntry(classRoot, ClasspathEntry.Origin.PROJECT, null, null)));
         return new CapturedStore(store, graphName, directory, file, registry, true);
     }
 
@@ -193,7 +229,7 @@ public final class CapturedStore implements AutoCloseable {
         List<Path> files = List.of(write(directory, firstName, firstSdl),
             write(directory, secondName, secondSdl));
         var registry = SchemaLoader.load(files.stream().map(SchemaSource::file).toList());
-        var store = FactStores.inMemory();
+        var store = ownedStore();
         captureFiles(store.dsl(), files, directory, GRAPH, registry, null, List.of(), false);
         return new CapturedStore(store, GRAPH, directory, files.getFirst(), registry, true);
     }

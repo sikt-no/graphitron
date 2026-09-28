@@ -45,6 +45,10 @@ import static no.sikt.graphitron.model.Tables.SQL_TABLE;
  * <p>Captures only. The arm that ran a real generator pass moved above this module with the one test
  * that read it, because a build is the generator's and this module does not depend on it.
  *
+ * <p>The arms here borrow the test thread's store, so a case pays for a truncate rather than a boot;
+ * a fixture held longer than one case opens through {@link #held()} and owns its store. The choice
+ * is made where the fixture is opened, and {@code Lifetime} carries why.
+ *
  * <p>{@link #handle} is over the store's own connection rather than a reader's: what a provider
  * needs is a scoped query surface, and the reader's transaction and graph resolution are
  * {@code StoreAccess}'s own business, tested through {@link #reader()}.
@@ -80,9 +84,11 @@ final class StoreFixture implements AutoCloseable {
     private final String graphName;
     private final Path file;
     private final Path directory;
+    private final Lifetime lifetime;
 
-    private StoreFixture(CapturedStore captured, Path directory) {
+    private StoreFixture(CapturedStore captured, Path directory, Lifetime lifetime) {
         this.captured = captured;
+        this.lifetime = lifetime;
         this.graphName = captured.graphName();
         this.file = captured.file();
         this.directory = directory;
@@ -135,6 +141,108 @@ final class StoreFixture implements AutoCloseable {
         return captured.dsl();
     }
 
+    /**
+     * How long a fixture lives, which decides whether it may borrow the thread's store.
+     *
+     * <p>A borrow is what saves the boot: {@link CapturedStore}'s ordinary arms capture into the
+     * store {@code ThreadConfinedStore} keeps per test thread and clear between borrows, so a case
+     * pays for a truncate instead of the fact schema. The cost is that the next borrow on the
+     * thread empties it. {@link CapturedStore} catches that on a later {@code dsl()} or
+     * {@code reader()}, but not on a reader, a {@link StoreAccess} or a {@link StoreHandle} this
+     * fixture already minted, so a fixture that lives across cases would read an emptied or
+     * refilled store without an error. The rule is therefore by lifetime rather than by audit of
+     * what a case calls back through: a fixture opened and closed inside one case, the
+     * try-with-resources shape, borrows; anything held longer owns its store, through
+     * {@link #held()}. The choice is the call site's, because only the call site knows which one it
+     * is.
+     */
+    private enum Lifetime {
+        /** Opened and closed inside one case, on the case's own thread. */
+        CASE,
+        /** Held across cases: a {@code @BeforeAll} or static fixture, or one that issues DDL. */
+        HELD;
+
+        CapturedStore of(Path directory, String graphName, String sdl,
+                         List<CompletionData.ExternalReference> classpath) {
+            return this == CASE
+                ? CapturedStore.of(directory, graphName, sdl, classpath)
+                : CapturedStore.ownStore(directory, graphName, sdl, classpath);
+        }
+
+        CapturedStore ofCatalog(Path directory, String graphName, String sdl, JooqCatalog jooq,
+                                List<CompletionData.ExternalReference> classpath) {
+            return this == CASE
+                ? CapturedStore.ofCatalog(directory, graphName, sdl, jooq, classpath)
+                : CapturedStore.ownStoreOfCatalog(directory, graphName, sdl, jooq, classpath);
+        }
+
+        CapturedStore ofFiles(Path directory, String firstName, String firstSdl,
+                              String secondName, String secondSdl) {
+            return this == CASE
+                ? CapturedStore.ofFiles(directory, firstName, firstSdl, secondName, secondSdl)
+                : CapturedStore.ownStoreOfFiles(directory, firstName, firstSdl, secondName, secondSdl);
+        }
+    }
+
+    /**
+     * The same arms for a fixture that outlives the case that opened it, each on a store of its
+     * own: a {@code @BeforeAll} or static fixture, {@link BundledVocabulary}, and a case that
+     * issues DDL through {@link #makeRunaway}. Such a fixture pays for a boot, which is the honest
+     * price of a store nobody else may clear.
+     */
+    static Held held() {
+        return Held.INSTANCE;
+    }
+
+    /** The owning arms behind {@link #held()}; see {@link Lifetime}. */
+    static final class Held {
+
+        private static final Held INSTANCE = new Held();
+
+        private Held() {}
+
+        StoreFixture of(Path directory, String sdl) {
+            return open(Lifetime.HELD, directory, GRAPH, sdl, List.of());
+        }
+
+        StoreFixture of(Path directory, String sdl, List<CompletionData.ExternalReference> classpath) {
+            return open(Lifetime.HELD, directory, GRAPH, sdl, classpath);
+        }
+
+        StoreFixture of(Path directory, String graphName, String sdl,
+                        List<CompletionData.ExternalReference> classpath) {
+            return open(Lifetime.HELD, directory, graphName, sdl, classpath);
+        }
+
+        StoreFixture ofClasspath(Path directory, List<CompletionData.ExternalReference> classpath) {
+            return open(Lifetime.HELD, directory, GRAPH, PLACEHOLDER_SDL, classpath);
+        }
+
+        StoreFixture ofCatalog(Path directory, String sdl) {
+            return ofJooqPackage(Lifetime.HELD, directory, GRAPH, sdl, List.of(), JOOQ_PACKAGE);
+        }
+
+        StoreFixture ofCatalog(Path directory, String sdl,
+                               List<CompletionData.ExternalReference> classpath) {
+            return ofJooqPackage(Lifetime.HELD, directory, GRAPH, sdl, classpath, JOOQ_PACKAGE);
+        }
+
+        StoreFixture ofCatalog(Path directory, String graphName, String sdl) {
+            return ofJooqPackage(Lifetime.HELD, directory, graphName, sdl, List.of(), JOOQ_PACKAGE);
+        }
+
+        StoreFixture ofMultiSchemaCatalog(Path directory, String sdl) {
+            return ofJooqPackage(Lifetime.HELD, directory, GRAPH, sdl, List.of(),
+                MULTI_SCHEMA_JOOQ_PACKAGE);
+        }
+
+        StoreFixture ofFiles(Path directory, String firstName, String firstSdl,
+                             String secondName, String secondSdl) {
+            return new StoreFixture(Lifetime.HELD.ofFiles(directory, firstName, firstSdl, secondName,
+                secondSdl), directory, Lifetime.HELD);
+        }
+    }
+
     /** Captures {@code sdl} alone: the shape for arms answered by SDL-derived facts. */
     static StoreFixture of(Path directory, String sdl) {
         return of(directory, GRAPH, sdl, List.of());
@@ -163,7 +271,7 @@ final class StoreFixture implements AutoCloseable {
     /** The catalog shape plus a classpath census, for a test whose arms span both. */
     static StoreFixture ofCatalog(Path directory, String sdl,
                                   List<CompletionData.ExternalReference> classpath) {
-        return ofJooqPackage(directory, sdl, classpath, JOOQ_PACKAGE);
+        return ofJooqPackage(Lifetime.CASE, directory, GRAPH, sdl, classpath, JOOQ_PACKAGE);
     }
 
     /**
@@ -171,8 +279,7 @@ final class StoreFixture implements AutoCloseable {
      * temp directory: the graph name is what keeps their stores apart.
      */
     static StoreFixture ofCatalog(Path directory, String graphName, String sdl) {
-        return new StoreFixture(CapturedStore.ownStoreOfCatalog(directory, graphName, sdl,
-            new JooqCatalog(JOOQ_PACKAGE)), directory);
+        return ofJooqPackage(Lifetime.CASE, directory, graphName, sdl, List.of(), JOOQ_PACKAGE);
     }
 
     /**
@@ -180,15 +287,16 @@ final class StoreFixture implements AutoCloseable {
      * a name being ambiguous across schemas rather than on any one table's contents.
      */
     static StoreFixture ofMultiSchemaCatalog(Path directory, String sdl) {
-        return ofJooqPackage(directory, sdl, List.of(), MULTI_SCHEMA_JOOQ_PACKAGE);
+        return ofJooqPackage(Lifetime.CASE, directory, GRAPH, sdl, List.of(), MULTI_SCHEMA_JOOQ_PACKAGE);
     }
 
     /** The catalog axis in this module's terms: the name of a generated package. */
-    private static StoreFixture ofJooqPackage(Path directory, String sdl,
+    private static StoreFixture ofJooqPackage(Lifetime lifetime, Path directory, String graphName,
+                                              String sdl,
                                               List<CompletionData.ExternalReference> classpath,
                                               String jooqPackage) {
-        return new StoreFixture(CapturedStore.ownStoreOfCatalog(directory, GRAPH, sdl,
-            new JooqCatalog(jooqPackage), classpath), directory);
+        return new StoreFixture(lifetime.ofCatalog(directory, graphName, sdl,
+            new JooqCatalog(jooqPackage), classpath), directory, lifetime);
     }
 
     /**
@@ -199,12 +307,18 @@ final class StoreFixture implements AutoCloseable {
     static StoreFixture ofFiles(Path directory, String firstName, String firstSdl,
                                 String secondName, String secondSdl) {
         return new StoreFixture(
-            CapturedStore.ownStoreOfFiles(directory, firstName, firstSdl, secondName, secondSdl), directory);
+            Lifetime.CASE.ofFiles(directory, firstName, firstSdl, secondName, secondSdl), directory,
+            Lifetime.CASE);
     }
 
     static StoreFixture of(Path directory, String graphName, String sdl,
                            List<CompletionData.ExternalReference> classpath) {
-        return new StoreFixture(CapturedStore.ownStore(directory, graphName, sdl, classpath), directory);
+        return open(Lifetime.CASE, directory, graphName, sdl, classpath);
+    }
+
+    private static StoreFixture open(Lifetime lifetime, Path directory, String graphName, String sdl,
+                                     List<CompletionData.ExternalReference> classpath) {
+        return new StoreFixture(lifetime.of(directory, graphName, sdl, classpath), directory, lifetime);
     }
 
     /**
@@ -237,7 +351,8 @@ final class StoreFixture implements AutoCloseable {
      * cases about what a build said, where the document not reading clean is the subject.
      */
     static StoreFixture ofRefusedSchema(Path directory, String sdl) {
-        return new StoreFixture(CapturedStore.ofRefusedSchema(directory, sdl), directory);
+        return new StoreFixture(CapturedStore.ofRefusedSchema(directory, sdl), directory,
+            Lifetime.CASE);
     }
 
     /**
@@ -413,9 +528,14 @@ final class StoreFixture implements AutoCloseable {
     /**
      * Makes every read of {@code relation} non-terminating, so a bounded reader touching it runs out
      * of budget through the real query rather than through a threshold a case picked.
-     * {@link RunawayRelation} carries the reasoning.
+     * {@link RunawayRelation} carries the reasoning. DDL, so only on a {@link #held()} fixture.
      */
     void makeRunaway(String relation) {
+        if (lifetime != Lifetime.HELD) {
+            throw new IllegalStateException("makeRunaway installs a relation, and DDL on the thread's"
+                + " store would change the schema every later case on this thread borrows; open this"
+                + " fixture through StoreFixture.held()");
+        }
         RunawayRelation.install(dsl(), relation);
     }
 

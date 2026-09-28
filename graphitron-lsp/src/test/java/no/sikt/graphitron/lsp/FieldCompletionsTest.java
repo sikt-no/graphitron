@@ -45,7 +45,7 @@ class FieldCompletionsTest {
 
     @BeforeAll
     static void captureTheCatalog() {
-        STORE = StoreFixture.ofCatalog(sharedDirectory, "type Query { placeholder: Int }\n",
+        STORE = StoreFixture.held().ofCatalog(sharedDirectory, "type Query { placeholder: Int }\n",
             StoreFixture.backingClasses());
     }
 

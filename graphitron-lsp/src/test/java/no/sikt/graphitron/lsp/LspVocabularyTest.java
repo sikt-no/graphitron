@@ -58,7 +58,7 @@ class LspVocabularyTest {
 
     @BeforeAll
     static void capture() {
-        store = StoreFixture.of(tmp, FIXTURE_SDL);
+        store = StoreFixture.held().of(tmp, FIXTURE_SDL);
     }
 
     @AfterAll

@@ -10,6 +10,7 @@ import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.model.test.CorpusDocuments;
+import no.sikt.graphitron.model.test.CorpusStore;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedDsl;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -78,20 +79,21 @@ class InputOccurrenceShadowTest {
      */
     @Test
     void occurrencePathsAgreeWithTheStructuralEnumerationOverTheCorpus() {
-        int comparedPaths = 0;
-        int cascadeVerdicts = 0;
-        try (var store = captureCorpus()) {
+        record Tally(int comparedPaths, int cascadeVerdicts) {}
+        var tally = CorpusStore.bare().read(dsl -> {
+            int comparedPaths = 0;
+            int cascadeVerdicts = 0;
             for (CorpusDocuments.Document example : CorpusDocuments.documents()) {
                 var bundle = TestSchemaHelper.buildBundle(preluded(example));
                 var expected = enumerate(bundle.assembled());
 
-                var derived = fetchPaths(store.dsl(), example.id());
+                var derived = fetchPaths(dsl, example.id());
                 assertThat(derived)
                     .as("derived occurrence paths vs the structural enumeration (%s)", example.id())
                     .containsExactlyInAnyOrderElementsOf(expected.keySet());
                 comparedPaths += derived.size();
 
-                var overridden = fetchOverriddenPaths(store.dsl(), example.id());
+                var overridden = fetchOverriddenPaths(dsl, example.id());
                 var expectedOverridden = expected.entrySet().stream()
                     .filter(Map.Entry::getValue).map(Map.Entry::getKey).collect(java.util.stream.Collectors.toSet());
                 assertThat(overridden)
@@ -110,11 +112,12 @@ class InputOccurrenceShadowTest {
                         .doesNotContain(path);
                 }
             }
-        }
-        assertThat(comparedPaths)
+            return new Tally(comparedPaths, cascadeVerdicts);
+        });
+        assertThat(tally.comparedPaths())
             .as("the corpus exercises a non-trivial occurrence surface")
             .isGreaterThan(10);
-        assertThat(cascadeVerdicts).as("corpus examples are accepted schemas; the rejected-cascade "
+        assertThat(tally.cascadeVerdicts()).as("corpus examples are accepted schemas; the rejected-cascade "
             + "population is pinned non-empty by the targeted fixtures instead").isNotNegative();
     }
 
@@ -332,22 +335,6 @@ class InputOccurrenceShadowTest {
             .from(INTENT_INPUT_OCCURRENCE_OVERRIDE)
             .where(INTENT_INPUT_OCCURRENCE_OVERRIDE.GRAPH_NAME.eq(graphName))
             .fetch(org.jooq.Record1::value1));
-    }
-
-    /**
-     * Every corpus example captured as its own graph into one store, which is what lets the sweep
-     * read the partition as part of what it asserts. The catalog carries node inference with it,
-     * production's arrangement.
-     */
-    private CapturedStore captureCorpus() {
-        var jooq = jooq();
-        CapturedStore store = null;
-        for (CorpusDocuments.Document example : CorpusDocuments.documents()) {
-            store = store == null
-                ? CapturedStore.ofCatalog(tmp, example.id(), preluded(example), jooq)
-                : store.andCatalogGraph(example.id(), preluded(example), jooq);
-        }
-        return store;
     }
 
     /**

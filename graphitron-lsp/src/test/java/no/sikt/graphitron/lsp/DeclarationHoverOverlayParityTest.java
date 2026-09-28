@@ -1,5 +1,6 @@
 package no.sikt.graphitron.lsp;
 
+import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.lsp.definition.DeclarationDefinitions;
 import no.sikt.graphitron.lsp.facts.DeclarationFacts;
 import no.sikt.graphitron.lsp.hover.DeclarationHovers;
@@ -279,7 +280,7 @@ class DeclarationHoverOverlayParityTest {
         @TempDir Path parsed, @TempDir Path unparsed
     ) {
         try (var store = parityStore(parsed);
-             var bare = parityStore(unparsed)) {
+             var bare = secondParityStore(unparsed)) {
             writeSources(store, parsed);
 
             // A field declaration with a doc comment is the one variant no coordinate reaches: a column
@@ -461,7 +462,19 @@ class DeclarationHoverOverlayParityTest {
      * parameter, whose count is the arity a method-backed field resolves at.
      */
     private static StoreFixture parityStore(Path root) {
-        return StoreFixture.ofCatalog(root, SDL, Stream.concat(
+        return StoreFixture.ofCatalog(root, SDL, parityCensus());
+    }
+
+    /**
+     * {@link #parityStore} on a store of its own, for the second of two fixtures one case holds at
+     * once: both borrowing would have the second clear the first's rows.
+     */
+    private static StoreFixture secondParityStore(Path root) {
+        return StoreFixture.held().ofCatalog(root, SDL, parityCensus());
+    }
+
+    private static List<CompletionData.ExternalReference> parityCensus() {
+        return Stream.concat(
             StoreFixture.backingClasses().stream(),
             Stream.of(
                 StoreFixture.jarClass(SERVICE_CLASS, List.of(
@@ -475,6 +488,6 @@ class DeclarationHoverOverlayParityTest {
                 StoreFixture.jarRecord(RECORD_CLASS,
                     StoreFixture.component("firstName", "String")),
                 StoreFixture.jarClass(POJO_CLASS, List.of(
-                    StoreFixture.method("getFirstName", "String"))))).toList());
+                    StoreFixture.method("getFirstName", "String"))))).toList();
     }
 }

@@ -7,6 +7,7 @@ import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedHarness;
 import no.sikt.graphitron.model.test.CorpusDocuments;
+import no.sikt.graphitron.model.test.CorpusStore;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.RoutineRef;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -68,10 +69,10 @@ class RoutineSpentInputShadowTest {
      */
     @Test
     void spentCoordinatesAgreeWithBoundPathOverTheCorpus() {
-        int compared = 0;
-        try (var store = captureCorpus()) {
+        int compared = CorpusStore.bare().read(dsl -> {
+            int landings = 0;
             for (CorpusDocuments.Document example : CorpusDocuments.documents()) {
-                var derived = storeLandings(store.dsl(), example.id());
+                var derived = storeLandings(dsl, example.id());
                 if (derived.isEmpty()) {
                     continue;
                 }
@@ -79,9 +80,10 @@ class RoutineSpentInputShadowTest {
                 assertThat(walked)
                     .as("walk-side spent coordinates vs bound_path (%s)", example.id())
                     .containsAllEntriesOf(derived);
-                compared += derived.size();
+                landings += derived.size();
             }
-        }
+            return landings;
+        });
         assertThat(compared)
             .as("the corpus exercises a non-trivial routine argMapping population")
             .isGreaterThan(2);
@@ -244,24 +246,6 @@ class RoutineSpentInputShadowTest {
     }
 
     // ===== Store plumbing =====
-
-    /** Every corpus example captured as its own graph into one store. */
-    private CapturedStore captureCorpus() {
-        var jooq = jooq();
-        CapturedStore store = null;
-        for (CorpusDocuments.Document example : CorpusDocuments.documents()) {
-            store = store == null
-                ? CapturedStore.ofCatalog(tmp, example.id(), preluded(example.sdl()), jooq)
-                : store.andCatalogGraph(example.id(), preluded(example.sdl()), jooq);
-        }
-        return store;
-    }
-
-    /** SDL as the walk sees it: the corpus prelude plus the Node interface the helper injects. */
-    private static String preluded(String sdl) {
-        String full = CorpusDocuments.prelude() + "\n" + sdl;
-        return full.contains("interface Node") ? full : full + "\ninterface Node { id: ID! }\n";
-    }
 
     private static JooqCatalog jooq() {
         var ctx = testContext();

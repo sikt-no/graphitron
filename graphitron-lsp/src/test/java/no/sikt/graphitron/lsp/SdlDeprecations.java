@@ -20,6 +20,7 @@ import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED;
 
@@ -50,9 +51,22 @@ final class SdlDeprecations {
 
     private static final String GRAPH = "shipped-deprecations";
 
+    /** How many stores {@link #shipped()} has booted; see {@link #stores()}. */
+    private static final AtomicInteger STORES = new AtomicInteger();
+
+    /**
+     * How many stores {@link #shipped()} has booted in this JVM. A store of its own rather than the
+     * thread's, because it can be asked from inside a case holding a borrowed fixture, and a borrow
+     * here would clear that fixture's rows; so it is one of the boots the module's pin names.
+     */
+    static int stores() {
+        return STORES.get();
+    }
+
     /** The shipped deprecation markers, as coordinates. */
     static Set<SchemaCoordinate> shipped() {
         Path directory = temporaryDirectory();
+        STORES.incrementAndGet();
         try (var store = FactStores.inMemory()) {
             SeededStore.seedGraph(store.dsl(), GRAPH);
             var graph = new GraphIdentity(GRAPH, directory);

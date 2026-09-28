@@ -55,7 +55,7 @@ class ArgNameCompletionsTest {
 
     @BeforeAll
     static void capture() {
-        store = StoreFixture.of(tmp, SDL);
+        store = StoreFixture.held().of(tmp, SDL);
     }
 
     @AfterAll

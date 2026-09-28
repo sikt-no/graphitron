@@ -7,6 +7,7 @@ import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.model.classpath.ClasspathScanner;
 import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.model.test.CorpusDocuments;
+import no.sikt.graphitron.model.test.CorpusStore;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
@@ -74,23 +75,20 @@ class ConditionMembershipShadowTest {
      */
     @Test
     void membershipAgreesWithTheProducerOverTheCorpus() {
-        var ctx = testContext();
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         var examples = CorpusDocuments.documents();
-        int comparedKeys = 0;
-        try (var captured = CapturedStore.ofCatalog(tmp, examples.getFirst().id(),
-                fullSdl(examples.getFirst()), jooq, census(), testClassRoot())) {
-            for (CorpusDocuments.Document example : examples.subList(1, examples.size())) {
-                captured.andCatalogGraph(example.id(), fullSdl(example), jooq, census());
-            }
+        // The class root on the first graph and the census scanned from it on every graph, as a
+        // condition hop routes off what @condition may name: CorpusStore.over's population.
+        int comparedKeys = CorpusStore.over(testClassRoot()).read(dsl -> {
+            int compared = 0;
             for (CorpusDocuments.Document example : examples) {
                 var produced = produced(fullSdl(example));
-                assertThat(admitted(captured.dsl(), example.id()))
+                assertThat(admitted(dsl, example.id()))
                     .as("the fold's keys against the producer's (%s)", example.id())
                     .containsExactlyInAnyOrderElementsOf(produced);
-                comparedKeys += produced.size();
+                compared += produced.size();
             }
-        }
+            return compared;
+        });
         assertThat(comparedKeys)
             .as("the corpus reaches the condition producer, so the sweep pinned something")
             .isGreaterThan(2);

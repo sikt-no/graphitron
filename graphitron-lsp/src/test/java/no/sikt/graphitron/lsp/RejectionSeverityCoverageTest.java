@@ -7,7 +7,7 @@ import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.model.read.SourceUri;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.model.test.FactStores;
+import no.sikt.graphitron.model.test.SeededStore;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.diagnostics.Rejection;
 import org.eclipse.lsp4j.Diagnostic;
@@ -64,8 +64,8 @@ class RejectionSeverityCoverageTest {
         var file = WorkspaceFileTestSupport.snapshot("type Foo { x: Int }\n");
 
         var unmapped = new ArrayList<String>();
-        try (var store = FactStores.inMemory()) {
-            var facts = rejectionFacts(store.dsl(), GRAPH, tmp);
+        SeededStore.withSeededStore(dsl -> {
+            var facts = rejectionFacts(dsl, GRAPH, tmp);
             for (var permit : permits) {
                 var sample = sampleFor(permit);
                 if (sample == null) {
@@ -75,7 +75,7 @@ class RejectionSeverityCoverageTest {
                 List<Diagnostic> diags;
                 try {
                     facts.write(List.of(new ValidationError("Coord", sample, loc)));
-                    diags = replay(store.dsl(), uri, file);
+                    diags = replay(dsl, uri, file);
                 } catch (RuntimeException e) {
                     unmapped.add(permit.getName() + " (replay threw: " + e + ")");
                     continue;
@@ -84,7 +84,7 @@ class RejectionSeverityCoverageTest {
                     unmapped.add(permit.getName() + " (unmapped severity)");
                 }
             }
-        }
+        });
         assertThat(unmapped)
             .as("every Rejection permit must replay as one diagnostic carrying a severity")
             .isEmpty();
@@ -125,13 +125,13 @@ class RejectionSeverityCoverageTest {
             .as("the hierarchy declares codes, so this pins something")
             .isTrue();
 
-        try (var store = FactStores.inMemory()) {
-            var facts = rejectionFacts(store.dsl(), GRAPH, tmp);
+        SeededStore.withSeededStore(dsl -> {
+            var facts = rejectionFacts(dsl, GRAPH, tmp);
             for (var sample : samples) {
                 String declared = declaredLspCode(sample);
                 facts.write(List.of(new ValidationError("Coord", sample, loc)));
 
-                var storeCode = store.dsl()
+                var storeCode = dsl
                     .selectFrom(no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR)
                     .fetchOne(r -> Optional.ofNullable(r.getLspCode()));
                 assertThat(storeCode).isNotNull();
@@ -139,7 +139,7 @@ class RejectionSeverityCoverageTest {
                     .as("the residue lsp_code for %s", sample.getClass().getName())
                     .isEqualTo(declared);
 
-                var diags = replay(store.dsl(), uri, file);
+                var diags = replay(dsl, uri, file);
                 String onTheWire = diags.size() == 1 && diags.get(0).getCode() != null
                     ? diags.get(0).getCode().getLeft()
                     : null;
@@ -147,7 +147,7 @@ class RejectionSeverityCoverageTest {
                     .as("the replayed code for %s", sample.getClass().getName())
                     .isEqualTo(declared);
             }
-        }
+        });
     }
 
     /** The leaf's own declaration: its public no-arg {@code lspCode()}, or null where none. */

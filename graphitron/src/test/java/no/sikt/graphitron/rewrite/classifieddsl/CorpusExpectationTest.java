@@ -4,6 +4,7 @@ import no.sikt.graphitron.model.test.CorpusExpectations;
 import no.sikt.graphitron.model.test.CorpusDocuments;
 import no.sikt.graphitron.model.catalog.StoreCatalog;
 import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.test.SeededStore;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.test.CorpusExpectations.Block;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -27,6 +28,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -116,7 +118,11 @@ class CorpusExpectationTest {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         var documents = CorpusDocuments.documents();
-        captured = CapturedStore.ofCatalog(tmp, documents.getFirst().id(), full(documents.getFirst()), jooq);
+        // A store of its own rather than the thread's, and not the shared corpus: the class holds
+        // the store and its context across every case, which a borrow would let the next case on
+        // this thread empty, and it lands a temporary table whose rows a reader would roll back.
+        captured = CapturedStore.ownStoreOfCatalog(tmp, documents.getFirst().id(),
+            full(documents.getFirst()), jooq);
         for (var document : documents.subList(1, documents.size())) {
             captured.andCatalogGraph(document.id(), full(document), jooq);
         }
@@ -198,6 +204,18 @@ class CorpusExpectationTest {
                 + "rows are present and undeclared; paste a NOT_DECLARED row into the document's "
                 + "block to declare it.%s", missingValueDiagnosis(divergences))
             .isEmpty();
+    }
+
+    /**
+     * The class's store is its own. It is held across every case, so a borrow of the thread's
+     * store by another case on this thread, which clears what it borrows, must not reach it.
+     */
+    @Test
+    void aBorrowOfTheThreadStoreLeavesThisClassStoreAlone() {
+        SeededStore.withSeededStore(borrowed -> {});
+        assertThat(dsl.fetchCount(STORE_GRAPH))
+            .as("one graph per corpus document, still there after a borrow on this thread")
+            .isEqualTo(CorpusDocuments.documents().size());
     }
 
     @Test

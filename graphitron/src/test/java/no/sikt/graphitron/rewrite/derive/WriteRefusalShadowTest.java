@@ -1,23 +1,19 @@
 package no.sikt.graphitron.rewrite.derive;
 
-import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.model.test.CorpusDocuments;
+import no.sikt.graphitron.model.test.CorpusStore;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.model.diagnostics.UpdateRowsError;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
-import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.INTENT_MUTATION_WRITE_REFUSAL;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -57,9 +53,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class WriteRefusalShadowTest {
 
-    @TempDir
-    Path tmp;
-
     /**
      * The four causes this relation carries, keyed by the walker arm that produces each. An arm
      * outside this map is one another relation answers for, and is skipped rather than expected
@@ -79,43 +72,35 @@ class WriteRefusalShadowTest {
 
     @Test
     void writeRefusalsAgreeWithTheUpdateWalkerOverTheCorpus() {
-        var ctx = testContext();
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         var examples = CorpusDocuments.documents();
         int comparedCoordinates = 0;
-        try (var captured = CapturedStore.ofCatalog(tmp, examples.getFirst().id(),
-                fullSdl(examples.getFirst()), jooq)) {
-            for (CorpusDocuments.Document example : examples.subList(1, examples.size())) {
-                captured.andCatalogGraph(example.id(), fullSdl(example), jooq);
-            }
-            var refusedByGraph = refusalsByGraph(captured.dsl());
-            for (CorpusDocuments.Document example : examples) {
-                var schema = TestSchemaHelper.buildSchema(fullSdl(example));
+        var refusedByGraph = CorpusStore.bare().read(WriteRefusalShadowTest::refusalsByGraph);
+        for (CorpusDocuments.Document example : examples) {
+            var schema = TestSchemaHelper.buildSchema(fullSdl(example));
 
-                // The walk's side: every coordinate whose rejection is one of this relation's four
-                // causes, with the cause the classifier kept.
-                var walked = new LinkedHashMap<String, String>();
-                schema.fields().forEach((coordinate, field) -> {
-                    if (!(field instanceof UnclassifiedField u)
-                            || !(u.rejection() instanceof UpdateRowsError error)) {
-                        return;
-                    }
-                    String cause = causeOf(error);
-                    if (cause != null) {
-                        walked.put(coordinate.getTypeName() + "." + coordinate.getFieldName(), cause);
-                    }
-                });
+            // The walk's side: every coordinate whose rejection is one of this relation's four
+            // causes, with the cause the classifier kept.
+            var walked = new LinkedHashMap<String, String>();
+            schema.fields().forEach((coordinate, field) -> {
+                if (!(field instanceof UnclassifiedField u)
+                        || !(u.rejection() instanceof UpdateRowsError error)) {
+                    return;
+                }
+                String cause = causeOf(error);
+                if (cause != null) {
+                    walked.put(coordinate.getTypeName() + "." + coordinate.getFieldName(), cause);
+                }
+            });
 
-                var derived = refusedByGraph.getOrDefault(example.id(), Map.of());
-                assertThat(derived.keySet())
-                    .as("write-refusal coordinates vs the UPDATE walker's (%s)", example.id())
-                    .containsExactlyInAnyOrderElementsOf(walked.keySet());
-                walked.forEach((coordinate, cause) -> assertThat(derived.get(coordinate))
-                    .as("the walker's reported cause at %s is among the relation's (%s)",
-                        coordinate, example.id())
-                    .contains(cause));
-                comparedCoordinates += walked.size();
-            }
+            var derived = refusedByGraph.getOrDefault(example.id(), Map.of());
+            assertThat(derived.keySet())
+                .as("write-refusal coordinates vs the UPDATE walker's (%s)", example.id())
+                .containsExactlyInAnyOrderElementsOf(walked.keySet());
+            walked.forEach((coordinate, cause) -> assertThat(derived.get(coordinate))
+                .as("the walker's reported cause at %s is among the relation's (%s)",
+                    coordinate, example.id())
+                .contains(cause));
+            comparedCoordinates += walked.size();
         }
         assertThat(comparedCoordinates)
             .as("the corpus reaches this refusal at all, so the sweep pinned something rather than "

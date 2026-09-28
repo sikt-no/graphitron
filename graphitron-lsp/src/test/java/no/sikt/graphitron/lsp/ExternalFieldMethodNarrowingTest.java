@@ -70,7 +70,7 @@ class ExternalFieldMethodNarrowingTest {
         var holder = StoreFixture.lifterHolder(classes, FIELDS_CLASS, LIFTERS);
         var declared = new java.util.ArrayList<>(LIFTERS);
         declared.addAll(NON_LIFTERS);
-        store = StoreFixture.ofClasspath(tmp, List.of(
+        store = StoreFixture.held().ofClasspath(tmp, List.of(
                 holder.asClass(declared),
                 StoreFixture.jarClass("com.example.NoLifters", List.of(
                     StoreFixture.method("plain", "String")))))

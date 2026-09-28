@@ -84,7 +84,7 @@ class DiagnosticsStatementCountTest {
 
     @BeforeAll
     static void capture() {
-        store = StoreFixture.ofCatalog(tmp, GRAPH_SDL, StoreFixture.backingClasses());
+        store = StoreFixture.held().ofCatalog(tmp, GRAPH_SDL, StoreFixture.backingClasses());
     }
 
     @AfterAll

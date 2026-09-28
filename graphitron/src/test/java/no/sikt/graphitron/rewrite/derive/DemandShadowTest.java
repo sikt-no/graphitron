@@ -5,6 +5,7 @@ import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.model.test.CorpusDocuments;
+import no.sikt.graphitron.model.test.CorpusStore;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedDsl;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -91,10 +92,10 @@ class DemandShadowTest {
      */
     @Test
     void demandShadowAgreesWithTheWalkedRegistriesOverTheCorpus() {
-        int comparedFields = 0;
         var seenVerdicts = new LinkedHashSet<String>();
         var seenRules = new LinkedHashSet<String>();
-        try (var store = captureCorpus()) {
+        int comparedFields = CorpusStore.bare().read(dsl -> {
+            int compared = 0;
             for (CorpusDocuments.Document example : CorpusDocuments.documents()) {
                 var bundle = TestSchemaHelper.buildBundle(preluded(example));
                 var legacy = ClaimDomain.of(bundle.model());
@@ -102,7 +103,7 @@ class DemandShadowTest {
 
                 // 1. The field grain: one resolved row per coordinate, covering the domain.
                 var resolved = new LinkedHashMap<String, String>();
-                store.dsl().selectFrom(INTENT_RESOLVED_FIELD_DEMAND)
+                dsl.selectFrom(INTENT_RESOLVED_FIELD_DEMAND)
                     .where(INTENT_RESOLVED_FIELD_DEMAND.GRAPH_NAME.eq(example.id()))
                     .forEach(row -> {
                         var previous = resolved.put(key(row.getTypeName(), row.getFieldName()),
@@ -116,7 +117,7 @@ class DemandShadowTest {
                     });
                 assertThat(resolved)
                     .as("the coverage gate: every domain coordinate resolves (%s)", example.id())
-                    .hasSize(domainFieldCoordinateCount(store.dsl(), example.id()));
+                    .hasSize(domainFieldCoordinateCount(dsl, example.id()));
 
                 // 2. The two disagreement directions, each pinned to its store-derived population.
                 var demanded = new LinkedHashSet<String>();
@@ -127,7 +128,7 @@ class DemandShadowTest {
                 legacy.fieldCoordinates().forEach(c ->
                     registered.add(key(c.getTypeName(), c.getFieldName())));
 
-                var excessParents = pinnedExcessParents(store.dsl(), example.id());
+                var excessParents = pinnedExcessParents(dsl, example.id());
                 for (String coordinate : demanded) {
                     if (!registered.contains(coordinate)) {
                         assertThat(excessParents)
@@ -144,12 +145,12 @@ class DemandShadowTest {
                             .contains(parentOf(coordinate));
                     }
                 }
-                comparedFields += registered.size();
+                compared += registered.size();
 
                 // 3. The type grain, same discipline; machinery and leaf populations are data.
                 var demandedTypes = new LinkedHashSet<String>();
                 var exemptTypes = new LinkedHashSet<String>();
-                store.dsl().selectFrom(INTENT_RESOLVED_TYPE_DEMAND)
+                dsl.selectFrom(INTENT_RESOLVED_TYPE_DEMAND)
                     .where(INTENT_RESOLVED_TYPE_DEMAND.GRAPH_NAME.eq(example.id()))
                     .forEach(row -> {
                         ("DEMANDED".equals(row.getVerdict()) ? demandedTypes : exemptTypes)
@@ -185,7 +186,8 @@ class DemandShadowTest {
                         .isTrue();
                 }
             }
-        }
+            return compared;
+        });
         assertThat(comparedFields)
             .as("the corpus registers coordinates, so the sweep pinned something")
             .isGreaterThan(100);
@@ -352,23 +354,6 @@ class DemandShadowTest {
 
     private static String parentOf(String coordinate) {
         return coordinate.substring(0, coordinate.indexOf('.'));
-    }
-
-    /**
-     * Every corpus example captured as its own graph into one store, which is what lets the sweep
-     * read the partition dimension as part of what it asserts. The catalog carries node inference
-     * with it, production's arrangement and the one whose over-approximation the domain equality
-     * above is the enforcer for.
-     */
-    private CapturedStore captureCorpus() {
-        var jooq = jooq();
-        CapturedStore store = null;
-        for (CorpusDocuments.Document example : CorpusDocuments.documents()) {
-            store = store == null
-                ? CapturedStore.ofCatalog(tmp, example.id(), preluded(example), jooq)
-                : store.andCatalogGraph(example.id(), preluded(example), jooq);
-        }
-        return store;
     }
 
     /**

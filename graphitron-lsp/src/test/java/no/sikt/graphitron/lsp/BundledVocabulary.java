@@ -43,7 +43,7 @@ public final class BundledVocabulary {
     /** The shipped vocabulary, capturing it on first use. */
     public static synchronized LspVocabulary get() {
         if (vocabulary == null) {
-            fixture = StoreFixture.of(temporaryDirectory(), PLACEHOLDER_SDL);
+            fixture = StoreFixture.held().of(temporaryDirectory(), PLACEHOLDER_SDL);
             vocabulary = fixture.vocabulary();
         }
         return vocabulary;

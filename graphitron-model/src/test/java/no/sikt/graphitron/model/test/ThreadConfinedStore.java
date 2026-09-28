@@ -376,14 +376,17 @@ final class ThreadConfinedStore {
     }
 
     /** Every base table in the store's schema, upper-cased as the catalog spells them. */
-    private static List<String> baseTables(DSLContext dsl) {
+    static List<String> baseTables(DSLContext dsl) {
         return dsl.fetch("SELECT table_name FROM information_schema.tables "
                 + "WHERE table_schema = 'PUBLIC' AND table_type = 'BASE TABLE' ORDER BY table_name")
             .getValues(0, String.class);
     }
 
-    /** One statement returning a row count per base table, in one round trip. */
-    private static String census(List<String> baseTables) {
+    /**
+     * One statement returning a row count per base table, in one round trip. {@link CorpusStore}
+     * reads the same census as its unwritten-store check.
+     */
+    static String census(List<String> baseTables) {
         List<String> terms = new ArrayList<>(baseTables.size());
         for (String relation : baseTables) {
             terms.add("SELECT '%s' AS relation, count(*) AS row_count FROM \"%s\""
@@ -392,7 +395,7 @@ final class ThreadConfinedStore {
         return String.join(" UNION ALL ", terms);
     }
 
-    private static Map<String, Integer> counts(DSLContext dsl, String census) {
+    static Map<String, Integer> counts(DSLContext dsl, String census) {
         Map<String, Integer> counts = new LinkedHashMap<>();
         for (Record row : dsl.fetch(census)) {
             counts.put(row.get(0, String.class).toUpperCase(Locale.ROOT), row.get(1, Integer.class));

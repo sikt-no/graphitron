@@ -56,7 +56,7 @@ class FixtureCatalogTest {
 
     @BeforeAll
     static void capture() {
-        store = StoreFixture.ofCatalog(storeRoot, CAPTURED_SDL);
+        store = StoreFixture.held().ofCatalog(storeRoot, CAPTURED_SDL);
     }
 
     @AfterAll

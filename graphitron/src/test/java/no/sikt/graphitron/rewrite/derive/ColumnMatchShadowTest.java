@@ -5,6 +5,7 @@ import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.model.test.CorpusDocuments;
+import no.sikt.graphitron.model.test.CorpusStore;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedDsl;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField;
@@ -73,54 +74,46 @@ class ColumnMatchShadowTest {
      */
     @Test
     void maskedClaimsAgreeWithTheColumnMatchArmOverTheCorpus() {
-        var ctx = testContext();
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         var examples = CorpusDocuments.documents();
         int comparedCoordinates = 0;
-        try (var captured = CapturedStore.ofCatalog(tmp, examples.getFirst().id(),
-                fullSdl(examples.getFirst()), jooq)) {
-            for (CorpusDocuments.Document example : examples.subList(1, examples.size())) {
-                captured.andCatalogGraph(example.id(), fullSdl(example), jooq);
-            }
-            var maskedByGraph = maskedClaimsByGraph(captured.dsl());
-            for (CorpusDocuments.Document example : examples) {
-                var schema = TestSchemaHelper.buildSchema(fullSdl(example));
+        var maskedByGraph = CorpusStore.bare().read(ColumnMatchShadowTest::maskedClaimsByGraph);
+        for (CorpusDocuments.Document example : examples) {
+            var schema = TestSchemaHelper.buildSchema(fullSdl(example));
 
-                // The walk's side: the column-match arm's product, keyed "Type.field", valued by
-                // the resolved witness (table, column), lower-cased for the case-loose compare.
-                var expected = new LinkedHashMap<String, String>();
-                schema.fields().forEach((coordinate, field) -> {
-                    if (field instanceof ColumnBackedField cbf
-                            && cbf.compaction() instanceof CallSiteCompaction.Direct) {
-                        var parent = schema.types().get(coordinate.getTypeName());
-                        assertThat(parent)
-                            .as("a Direct column carrier's parent is table-backed (%s)", coordinate)
-                            .isInstanceOf(TableBackedType.class);
-                        expected.put(key(coordinate.getTypeName(), coordinate.getFieldName()),
-                            witness(((TableBackedType) parent).table().tableName(),
-                                cbf.columns().getFirst().sqlName()));
-                    }
-                });
-
-                var masked = new LinkedHashMap<String, String>();
-                for (MaskedClaim claim : maskedByGraph.getOrDefault(example.id(), List.of())) {
-                    var previous = masked.put(key(claim.typeName(), claim.fieldName()),
-                        witness(claim.tableName(), claim.columnName()));
-                    assertThat(previous)
-                        .as("one claim per coordinate (%s.%s in %s)", claim.typeName(),
-                            claim.fieldName(), example.id())
-                        .isNull();
+            // The walk's side: the column-match arm's product, keyed "Type.field", valued by
+            // the resolved witness (table, column), lower-cased for the case-loose compare.
+            var expected = new LinkedHashMap<String, String>();
+            schema.fields().forEach((coordinate, field) -> {
+                if (field instanceof ColumnBackedField cbf
+                        && cbf.compaction() instanceof CallSiteCompaction.Direct) {
+                    var parent = schema.types().get(coordinate.getTypeName());
+                    assertThat(parent)
+                        .as("a Direct column carrier's parent is table-backed (%s)", coordinate)
+                        .isInstanceOf(TableBackedType.class);
+                    expected.put(key(coordinate.getTypeName(), coordinate.getFieldName()),
+                        witness(((TableBackedType) parent).table().tableName(),
+                            cbf.columns().getFirst().sqlName()));
                 }
-                // Soundness compares inside the walked domain; a claim outside it (an interface or
-                // input parent's field, an unreached type) is the demand question, not this arm's
-                // disagreement.
-                masked.keySet().removeIf(coordinate -> !expected.containsKey(coordinate)
-                    && !schema.fields().containsKey(coordinatesOf(coordinate)));
-                assertThat(masked)
-                    .as("masked column-match claims vs the walk's column-match arm (%s)", example.id())
-                    .containsExactlyInAnyOrderEntriesOf(expected);
-                comparedCoordinates += expected.size();
+            });
+
+            var masked = new LinkedHashMap<String, String>();
+            for (MaskedClaim claim : maskedByGraph.getOrDefault(example.id(), List.of())) {
+                var previous = masked.put(key(claim.typeName(), claim.fieldName()),
+                    witness(claim.tableName(), claim.columnName()));
+                assertThat(previous)
+                    .as("one claim per coordinate (%s.%s in %s)", claim.typeName(),
+                        claim.fieldName(), example.id())
+                    .isNull();
             }
+            // Soundness compares inside the walked domain; a claim outside it (an interface or
+            // input parent's field, an unreached type) is the demand question, not this arm's
+            // disagreement.
+            masked.keySet().removeIf(coordinate -> !expected.containsKey(coordinate)
+                && !schema.fields().containsKey(coordinatesOf(coordinate)));
+            assertThat(masked)
+                .as("masked column-match claims vs the walk's column-match arm (%s)", example.id())
+                .containsExactlyInAnyOrderEntriesOf(expected);
+            comparedCoordinates += expected.size();
         }
         assertThat(comparedCoordinates)
             .as("the corpus reaches the column-match arm, so the sweep pinned something")

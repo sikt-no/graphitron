@@ -82,8 +82,8 @@ class DefinitionsTest {
 
     @BeforeAll
     static void parseSources() {
-        store = StoreFixture.ofCatalog(sourceRoot, CAPTURED_SDL, census());
-        bare = StoreFixture.ofCatalog(bareRoot, CAPTURED_SDL, census());
+        store = StoreFixture.held().ofCatalog(sourceRoot, CAPTURED_SDL, census());
+        bare = StoreFixture.held().ofCatalog(bareRoot, CAPTURED_SDL, census());
         // The generated classes the census points at, standing in for the real generated sources: the
         // join between the two populations is by name across two cadences, so a source that agrees on
         // the name is all it takes, and the column constants are the census's own spelling of them.

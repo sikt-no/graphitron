@@ -93,20 +93,20 @@ class DiagnosticsTest {
 
     @BeforeAll
     static void capture() {
-        catalogOnly = StoreFixture.ofCatalog(catalogRoot, TABLE_SDL);
-        multiSchema = StoreFixture.ofMultiSchemaCatalog(multiSchemaRoot, PLACEHOLDER_SDL);
-        withClasses = StoreFixture.ofCatalog(classesRoot, PLACEHOLDER_SDL, classCensus())
+        catalogOnly = StoreFixture.held().ofCatalog(catalogRoot, TABLE_SDL);
+        multiSchema = StoreFixture.held().ofMultiSchemaCatalog(multiSchemaRoot, PLACEHOLDER_SDL);
+        withClasses = StoreFixture.held().ofCatalog(classesRoot, PLACEHOLDER_SDL, classCensus())
             .withScalarConstants(SCALARS);
-        withBackingClasses = StoreFixture.ofCatalog(backingRoot, BACKED_SDL,
+        withBackingClasses = StoreFixture.held().ofCatalog(backingRoot, BACKED_SDL,
             StoreFixture.backingClasses());
-        withNodes = StoreFixture.of(nodesRoot, """
+        withNodes = StoreFixture.held().of(nodesRoot, """
             type Query { x: Int }
             type Film @node(typeId: "Film") { id: ID }
             """);
         // Captured with the fixture catalog: the membership relation reads a member's resolved table
         // binding rather than its directive, so a container is a legal typeName: value only where the
         // catalog holds the table its member is a node over.
-        containers = StoreFixture.ofCatalog(containersRoot, """
+        containers = StoreFixture.held().ofCatalog(containersRoot, """
             type Query { x: Int }
             type Customer @table(name: "customer") @node(keyColumns: ["customer_id"]) { id: ID }
             type Staff @table(name: "staff") @node(keyColumns: ["staff_id"]) { id: ID }

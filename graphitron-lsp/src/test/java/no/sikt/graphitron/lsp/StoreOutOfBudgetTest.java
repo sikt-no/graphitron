@@ -85,7 +85,7 @@ class StoreOutOfBudgetTest {
     @Test
     @Timeout(value = 60, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     void aDrainThatRunsOutOfBudgetLeavesThePreviousPublishStanding() {
-        try (var fixture = StoreFixture.of(tmp, SDL);
+        try (var fixture = StoreFixture.held().of(tmp, SDL);
              var access = fixture.access(INTERACTIVE, SESSION_WIDE)) {
             String uri = Path.of(fixture.sourceName()).toUri().toString();
             var workspace = new Workspace();
@@ -126,7 +126,7 @@ class StoreOutOfBudgetTest {
     @Test
     @Timeout(value = 60, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     void aVocabularyReloadThatRunsOutOfBudgetKeepsTheLastGoodOne() {
-        try (var fixture = StoreFixture.of(tmp, SDL);
+        try (var fixture = StoreFixture.held().of(tmp, SDL);
              var access = fixture.access(INTERACTIVE, SESSION_WIDE)) {
             var workspace = new Workspace();
             workspace.setStore(access);
@@ -158,7 +158,7 @@ class StoreOutOfBudgetTest {
     @Test
     @Timeout(value = 60, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     void theWarningNamesTheReadAndTheStatementDropsToDebug() {
-        try (var fixture = StoreFixture.of(tmp, SDL);
+        try (var fixture = StoreFixture.held().of(tmp, SDL);
              var access = fixture.access(INTERACTIVE, SESSION_WIDE)) {
             fixture.makeRunaway("store_graph_source");
 
@@ -218,7 +218,7 @@ class StoreOutOfBudgetTest {
     @Test
     @Timeout(value = 60, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     void theInlayRequestIsRoutedThroughTheAnnotationDoor() throws Exception {
-        try (var fixture = StoreFixture.of(tmp, SDL);
+        try (var fixture = StoreFixture.held().of(tmp, SDL);
              var access = fixture.access(INTERACTIVE, ANNOTATION, SESSION_WIDE)) {
             String uri = Path.of(fixture.sourceName()).toUri().toString();
             var workspace = new Workspace();

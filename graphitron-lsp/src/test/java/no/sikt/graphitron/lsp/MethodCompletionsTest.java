@@ -34,7 +34,7 @@ class MethodCompletionsTest {
 
     @BeforeAll
     static void capture() {
-        store = StoreFixture.ofClasspath(tmp, List.of(
+        store = StoreFixture.held().ofClasspath(tmp, List.of(
             StoreFixture.jarClass("com.example.FilmService", List.of(
                 StoreFixture.method("list", "List", StoreFixture.parameter("limit", "int")),
                 StoreFixture.method("get", "Film", StoreFixture.parameter("id", "int"))))));

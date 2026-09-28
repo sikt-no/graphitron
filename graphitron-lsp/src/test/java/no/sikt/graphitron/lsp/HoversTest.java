@@ -69,7 +69,7 @@ class HoversTest {
         // The hand-built references stand in for a consumer's jar; the scanned ones are the
         // backing-class fixtures, whose member slots the store's own rule reads off a real
         // classfile's declared form rather than off a list a fixture wrote.
-        store = StoreFixture.ofCatalog(tmp, SDL, Stream.concat(
+        store = StoreFixture.held().ofCatalog(tmp, SDL, Stream.concat(
             Stream.of(
                 StoreFixture.jarClass(SERVICE, List.of(
                     StoreFixture.genericMethod("list", "List", "List<Film>", StoreFixture.parameter("limit", "int")),

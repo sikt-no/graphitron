@@ -50,7 +50,7 @@ class SdlDescriptionsTest {
 
     @BeforeAll
     static void capture() {
-        store = StoreFixture.of(tmp, SDL);
+        store = StoreFixture.held().of(tmp, SDL);
         store.andGraph(tmp, "elsewhere", OTHER_SDL, List.of());
     }
 

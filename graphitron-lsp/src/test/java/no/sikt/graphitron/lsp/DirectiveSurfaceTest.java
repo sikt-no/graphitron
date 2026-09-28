@@ -50,7 +50,7 @@ class DirectiveSurfaceTest {
 
     @BeforeAll
     static void capture() {
-        store = StoreFixture.of(tmp, SDL);
+        store = StoreFixture.held().of(tmp, SDL);
         surface = DirectiveSurface.load(store.handle());
     }
 

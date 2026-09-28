@@ -78,7 +78,7 @@ class InferredFieldHintsTest {
 
     @BeforeAll
     static void capture() {
-        store = StoreFixture.ofCatalog(tmp, SDL, StoreFixture.backingClasses());
+        store = StoreFixture.held().ofCatalog(tmp, SDL, StoreFixture.backingClasses());
     }
 
     @AfterAll

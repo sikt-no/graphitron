@@ -458,6 +458,23 @@ public final class SeededStore {
      */
     public static final LocalDateTime SEEDED_READING = LocalDateTime.of(2000, 1, 1, 0, 0);
 
+    /**
+     * How many stores the thread funnel under this harness has booted in this JVM, one per thread
+     * that ran a body or a borrow through it. For a module pinning its boot count from outside this
+     * package; see {@link #threadStoreBootingThreads()}.
+     */
+    public static long threadStoreBoots() {
+        return ThreadConfinedStore.boots();
+    }
+
+    /**
+     * How many distinct threads have booted a funnel store. Equal to {@link #threadStoreBoots()}
+     * exactly while no thread has booted twice, which is the funnel's confinement claim.
+     */
+    public static int threadStoreBootingThreads() {
+        return ThreadConfinedStore.bootingThreads();
+    }
+
     /** The graph row every graph-keyed family hangs off. */
     public static void seedGraph(DSLContext dsl, String graphName) {
         dsl.insertInto(STORE_GRAPH)

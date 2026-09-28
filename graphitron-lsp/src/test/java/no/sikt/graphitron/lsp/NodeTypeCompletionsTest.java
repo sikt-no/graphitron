@@ -47,19 +47,19 @@ class NodeTypeCompletionsTest {
     static void capture() {
         // One @node with both arguments filled in and one with neither: both are candidates, which is
         // what the relation says by keying on the type alone.
-        nodes = StoreFixture.of(tmp, """
+        nodes = StoreFixture.held().of(tmp, """
             type Query { x: Int }
             type Film @node(typeId: "Film", keyColumns: ["film_id"]) { id: ID }
             type Actor @node { id: ID }
             """);
-        noNodes = StoreFixture.of(tmp, "unnoded", "type Query { x: Int }\n", List.of());
+        noNodes = StoreFixture.held().of(tmp, "unnoded", "type Query { x: Int }\n", List.of());
         // A union whose two members are node types over tables of their own, plus one whose members
         // are neither: the first is a legal typeName: value and the second is not, which is what the
         // two flags on the membership relation decide.
         // Captured with the fixture catalog, because the membership relation reads a member's
         // resolved table binding rather than the directive: a container is a legal typeName: value
         // when at least one member is a node type over a table the catalog holds.
-        containers = StoreFixture.ofCatalog(tmp, "containers", """
+        containers = StoreFixture.held().ofCatalog(tmp, "containers", """
             type Query { x: Int }
             type Customer @table(name: "customer") @node(keyColumns: ["customer_id"]) { id: ID }
             type Staff @table(name: "staff") @node(keyColumns: ["staff_id"]) { id: ID }
