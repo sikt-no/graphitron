@@ -302,7 +302,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_field_reference_step_hop_keyless", Arm.DERIVED);
         registrations.put("sql_name_matched_key_column", Arm.DERIVED);
         registrations.put("sql_table_reference", Arm.DERIVED);
-        registrations.put("intent_condition_method_route", Arm.DERIVED);
+        registrations.put("graphitron_condition_method_route", Arm.DERIVED);
         registrations.put("intent_condition_param_decode", Arm.DERIVED);
         registrations.put("intent_condition_slot", Arm.DERIVED);
         registrations.put("intent_scalar_java_type", Arm.DERIVED);

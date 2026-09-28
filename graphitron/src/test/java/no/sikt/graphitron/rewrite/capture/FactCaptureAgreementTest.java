@@ -199,7 +199,7 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
  *       the shared columns come back equal, which is what keeps a change to one from silently
  *       leaving the other behind;
  *       {@code no.sikt.graphitron.model.intent.ConditionMethodRouteTest} binds
- *       {@code intent_condition_method_route}, the rung both hop views join for an element that
+ *       {@code graphitron_condition_method_route}, the rung both hop views join for an element that
  *       names a condition and neither a key nor a table, against a seeded census and catalog: the
  *       shapes are the ones a signature can take rather than ones a real classpath offers side by
  *       side, and the asymmetry between the two parameters is asserted from both sides, an

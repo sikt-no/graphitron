@@ -124,7 +124,7 @@ class DetectionReadReachGateTest {
 
         // Twelve relations until graphitron_node_id_decode_hop was registered, and six of them were
         // reached only through it: the two argument-site reference-target relations, the
-        // input-field one, intent_condition_method_route and sql_name_matched_key_column. The
+        // input-field one, graphitron_condition_method_route and sql_name_matched_key_column. The
         // walk stops at the target table now, so this reader evaluates none of their bodies. That
         // is the lever this gate was written for landing, and the delta is the diff a reviewer
         // reads the outcome off.

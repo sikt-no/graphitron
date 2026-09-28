@@ -11,7 +11,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_EN
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_HOP_KEYED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_HOP_KEYLESS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_TABLE;
-import static no.sikt.graphitron.model.Tables.INTENT_CONDITION_METHOD_ROUTE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONDITION_METHOD_ROUTE;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_NAME_MATCHED_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
@@ -231,7 +231,7 @@ public final class FieldReferenceStepHops {
      */
     private static Select<? extends Record> conditionRouted(DSLContext dsl, String graphName) {
         var s = GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY;
-        var r = INTENT_CONDITION_METHOD_ROUTE;
+        var r = GRAPHITRON_CONDITION_METHOD_ROUTE;
 
         return dsl
             .select(s.GRAPH_NAME, s.TYPE_NAME, s.FIELD_NAME, s.ORDINAL, s.POSITION,

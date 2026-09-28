@@ -162,8 +162,8 @@ this one, and the read-time relations neither of them has displaced yet.
   grain the hop lacks, which is a vote for retiring the hop.
 * **The read-time chain relations are gone** `blocked`, on the node above. `intent_field_chain_start`,
   `_node` and `_terminus` retire as one and `graphitron_field_chain_application` falls out with them,
-  its only reader being `_node`; `intent_condition_method_route` wants a home rather than a grave,
-  a `graphitron_` stage being among its readers.
+  its only reader being `_node`; `graphitron_condition_method_route` is not among
+  them, having been rehomed rather than retired.
 * **The assembly pass is inside the stage-order gate** `blocked`, on R969. `StageOrderGateTest` models
   the derivation stratum only, so the three chain stages run in a hand-kept order nothing checks.
 
@@ -178,9 +178,9 @@ a derivation over either corpus alone, and `graphitron_` already does this again
   `intent_external_field_contract_defect`, `intent_producer_cardinality_conflict` and
   `intent_scalar_java_type` are read by their own tests and by nothing else, so each is an unfinished
   arm or a question that stopped mattering, and which one is a decision rather than a discovery.
-* **The condition route resolves in `graphitron_`** `open`, and is first because its reader already
-  writes that family against the catalog, so the move is a read changing target rather than a shape
-  being invented.
+* **The condition route resolves in `graphitron_`** `done`. `graphitron_condition_method_route`,
+  renamed and declared to the gatherer that already read it; declaring it is what cost anything,
+  the comment being reduced to its grain and example with the argument moved into the declaration.
 * **The producer resolution resolves in `graphitron_`** `open`. `intent_field_producer_method` is the
   resolution the other arms hang on, and four of the eleven read it.
 * **The type questions follow it** `blocked`, on the producer resolution, because a `graphitron_`

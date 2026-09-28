@@ -248,7 +248,7 @@ class ArgumentReferenceStepTargetTest {
     /**
      * An element carrying a condition and naming neither a key nor a table is a hop, routed by the
      * method's own signature: parameter 0 the departure and parameter 1 the arrival, read through
-     * {@code intent_condition_method_route}. The element joins on an authored predicate rather than
+     * {@code graphitron_condition_method_route}. The element joins on an authored predicate rather than
      * on a foreign key, so it names no constraint and carries no direction.
      */
     @Test

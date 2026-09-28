@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_CONDITION_METHOD_ROUTE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONDITION_METHOD_ROUTE;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentReference;
@@ -28,7 +28,7 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@code intent_condition_method_route} returns: the hop a condition method's own signature
+ * What {@code graphitron_condition_method_route} returns: the hop a condition method's own signature
  * declares, read off the condition arm of the code family and resolved against the catalog.
  *
  * <p>Every case here seeds census and catalog rows directly. A real capture would have walked a
@@ -393,7 +393,7 @@ class ConditionMethodRouteTest {
     /** Each route as "method from->to", the three columns every case here is about. */
     private static List<String> routes(DSLContext dsl, String graphName) {
         derive(dsl);
-        var r = INTENT_CONDITION_METHOD_ROUTE;
+        var r = GRAPHITRON_CONDITION_METHOD_ROUTE;
         return dsl.select(r.METHOD, r.FROM_TABLE, r.TO_TABLE)
             .from(r)
             .where(r.GRAPH_NAME.eq(graphName))

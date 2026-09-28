@@ -322,7 +322,7 @@ class ReferenceStepTargetTest {
 
     /**
      * An element carrying a condition and naming neither a key nor a table is a hop, routed by the
-     * method's own signature through {@code intent_condition_method_route}: parameter 0 the
+     * method's own signature through {@code graphitron_condition_method_route}: parameter 0 the
      * departure, parameter 1 the arrival. The hop joins on an authored predicate, so it names no
      * constraint and has no foreign-key direction.
      */

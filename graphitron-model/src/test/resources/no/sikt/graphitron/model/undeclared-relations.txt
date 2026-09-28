@@ -70,7 +70,6 @@ intent_bound_table
 intent_carrier_routine_hop
 intent_column_match_claim
 intent_condition_membership
-intent_condition_method_route
 intent_condition_param_decode
 intent_delivery_container
 intent_errors_field
