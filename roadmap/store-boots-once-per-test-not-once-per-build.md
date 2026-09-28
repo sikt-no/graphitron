@@ -1,7 +1,7 @@
 ---
 id: R768
 title: "Capture the classification corpus once per test JVM, and stop graphitron-lsp booting a store per fixture"
-status: In Progress
+status: In Review
 bucket: dx
 priority: 1
 theme: tooling
@@ -244,6 +244,91 @@ a population worth sharing.
 * **Capturing the corpus's graphs in parallel into separate stores.** It shortens the first class's
   wait but multiplies memory by the width and does not reduce the work; revisit only if the one
   shared capture turns out to sit on the module's critical path.
+
+## Implementation record
+
+### What landed
+
+* **The counter.** `FactStores.captures()` beside `FactStores.boots()`, both also kept per thread,
+  incremented in `CapturedStore`'s `captureFiles` tail and its public `capture` primitive.
+  `StoreCostExtension` (graphitron-model test sources, registered under `META-INF/services`,
+  autodetection switched on in graphitron-model's `junit-platform.properties`, whose comment now
+  says graphitron-lsp and graphitron-mcp run under it) appends one line per top-level test class to
+  the file `GRAPHITRON_STORE_COST_REPORT` names, and a per-JVM total at exit. It reaches
+  graphitron-maven-plugin too, which also carries the model test-jar.
+* **The population key: two populations.** `CorpusStore.bare()` for Demand, InputOccurrence,
+  RoutineSpentInput, ColumnMatch and WriteRefusal; `CorpusStore.over(classRoot)` for
+  ConditionMembership, whose first graph reads the class root and whose every graph states the census
+  scanned from it. Keeping both means no sweep reads a population it did not read before; the cost
+  is one extra corpus capture per JVM. The prelude spellings converged on `CorpusStore.sdl`
+  (prelude, newline, document). The missing `ownStoreOfCatalog(..., census, classRoot)` overload was
+  added.
+* **Reads.** `CorpusStore.reader()` mints a `StoreReader`; `read`/`run` wrap one. Initialization runs
+  under the instance lock before the first reader. Every handout compares the base-table set and the
+  `UNION ALL` census (`ThreadConfinedStore`'s helpers, now package-visible) against the capture's.
+* **`CorpusExpectationTest`** captures through `ownStoreOfCatalog`, with a case showing a thread-store
+  borrow on its thread leaves its rows in place.
+* **graphitron-lsp.** `StoreFixture`'s factories now borrow; `StoreFixture.held()` carries the owning
+  arms, chosen at the call site. The exception list, derived by lifetime: all 36 `@BeforeAll`/static
+  fixtures, `BundledVocabulary`, the four `StoreOutOfBudgetTest` cases that call `makeRunaway` (which
+  now refuses a borrowed fixture) on `@Timeout(SEPARATE_THREAD)` threads, and the second of the two
+  fixtures `DeclarationHoverOverlayParityTest`'s drift guard holds at once (the first run caught it
+  through `CapturedStore.mine()`). `RejectionSeverityCoverageTest` moved onto the thread store;
+  `SdlDeprecations` stays on its own store, since it can be asked from inside a case holding a
+  borrowed fixture, and counts its boots. graphitron-maven-plugin's `FixtureCatalogTest` is a
+  `@BeforeAll` user of the same fixture and moved to `held()`.
+* **Pins.** `CorpusStoreTest` (graphitron-model): the rollback, DDL through a reader, a write through a
+  context kept past `read()`, each on a private store. `CorpusCapturedOnceTest` (graphitron,
+  `@Isolated`): initializations equal populations. `StoreBootCountTest` (graphitron-lsp, `@Isolated`):
+  thread-store boots equal booting threads, and `FactStores.boots()` equals thread-store boots plus
+  `CapturedStore.ownedStores()` plus `SdlDeprecations.stores()`. `@Isolated` because JUnit runs
+  isolated classes after every concurrent one, so the counts are read at rest.
+* **Deviation: no `HOMES` entry.** `CorpusStore` never names `GraphitronModelStore`, so an entry would
+  fail `everyDeclaredEntryStillDescribesSomething`, as the Round 1 note predicted.
+
+### The saving, measured
+
+Each module run alone with `mvn test -pl :<module> -Plocal-db`, the two arms alternating back to back
+on an otherwise idle 4-core web sandbox, 2026-09-28; baseline is the tree with only the counter
+commit, after is the tree above. Captures and boots are the extension's exact per-JVM totals;
+class-time is the sum of per-class windows, which overlap four wide.
+
+| Module | Arm | Captures | Boots | Test classes (sum) | Wall clock |
+|---|---|---|---|---|---|
+| graphitron | before | 1128 | 269 | 9050 s | 731 s |
+| graphitron | after | 888 | 276 | 8640 s | 623 s |
+| graphitron-lsp | before | 211 | 207 | 840 s | 110 s |
+| graphitron-lsp | after | 212 | 54 | 892 s | 118 s |
+| graphitron-mcp | before | 54 | 10 | 120 s | 53 s |
+| graphitron-mcp | after | 54 | 10 | 117 s | 53 s |
+
+The seven classes in the graphitron runs, class window before and after: ConditionMembership 313 s →
+258 s, InputOccurrence 358 → 299, Demand 503 → 384, CorpusExpectation 424 → 372, ColumnMatch 352 →
+270, WriteRefusal 265 → 170, RoutineSpentInput 352 → 293. graphitron's captures fell by 240: six
+sweeps' 360 gone, two populations' 120 added. Its boots rose by 7: the two JVM-lifetime corpus
+stores, `CorpusExpectationTest`'s own store, and the rest most likely thread stores on compensation
+threads, which the pool adds while classes block on a population's capture. Well under the budget.
+
+**What the numbers say, including what they do not.**
+
+* graphitron: 108 s off a 731 s module, about 15 %. The sweep classes keep most of their time, as the
+  Goal warned: the legacy producer run per document is their bulk, and Demand and InputOccurrence
+  still pay `TestSchemaHelper.buildBundle`'s memoised `ownStore` capture per document (their 56 to 70
+  remaining captures), which `CorpusStore` does not touch.
+* graphitron-lsp: boots fell from 207 to 54 and wall clock did not move (110 s → 118 s, inside the
+  run-to-run spread). A scratch measurement explains it: after a catalog capture, a borrow costs
+  about 200 ms against a 272 ms boot, and 192 ms of that is `StoreStatistics.reset` issuing one
+  `ALTER` per drifted column (670 of them after one small capture); truncate and census together are
+  about 6 ms. The "emptying reset of a booted store is about 7 ms" figure above holds for a store no
+  capture analysed, which is not what an lsp case leaves behind. Filed as R981 rather than widened
+  here, since the reset's contract is its own subject.
+* graphitron-mcp: nothing to share, as predicted; it got the counter and nothing else.
+* **Out of scope, surfaced by the counter.** `EmittedRegistryAgreementTest` is another corpus sweep
+  (60 captures, the largest class window in graphitron at 566 s → 447 s), over a different population:
+  one store per document, graph `fixture`, prelude without the newline, a census. It could read a
+  third `CorpusStore` population keyed that way; not done here. `CorpusFragmentTest` (34 counted,
+  its `GraphitronStore.captured` renders uncounted) and `OutcomeBlockRendererTest` (9) stay out of
+  scope as planned; the counter cannot see their render captures, so their share stays unmeasured.
 
 ## Reviewer findings
 
