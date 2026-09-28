@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
@@ -30,7 +31,7 @@ class CorpusStoreTest {
     void aRowWrittenInsideAReadIsRolledBack() {
         var store = store();
         try {
-            store.run(dsl -> SeededStore.seedGraph(dsl, "rolled-back"));
+            store.run(dsl -> writeARow(dsl, "rolled-back"));
             int graphs = store.read(dsl -> dsl.fetchCount(STORE_GRAPH));
             assertThat(graphs)
                 .as("the handout check passed and the row never landed")
@@ -63,7 +64,7 @@ class CorpusStoreTest {
                     leaked.set(dsl);
                     return null;
                 });
-                SeededStore.seedGraph(leaked.get(), "leaked");
+                writeARow(leaked.get(), "leaked");
             }
             assertThatThrownBy(store::reader)
                 .isInstanceOf(IllegalStateException.class)
@@ -71,5 +72,17 @@ class CorpusStoreTest {
         } finally {
             store.close();
         }
+    }
+
+    /**
+     * One row in {@code store_graph}, the relation a write most plainly lands in. What it says is
+     * beside the point: the subject is whether a write reaches the store at all.
+     */
+    private static void writeARow(DSLContext dsl, String graphName) {
+        dsl.insertInto(STORE_GRAPH)
+            .set(STORE_GRAPH.GRAPH_NAME, graphName)
+            .set(STORE_GRAPH.BASE_DIR, "/written")
+            .set(STORE_GRAPH.LAST_CAPTURED, LocalDateTime.now())
+            .execute();
     }
 }
