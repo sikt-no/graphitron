@@ -2,9 +2,11 @@ package no.sikt.graphitron.model;
 
 import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
+import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,7 +22,6 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 
-import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -45,7 +46,7 @@ class GraphQLSourceCaptureTest {
     @Test
     @DisplayName("the documents come back oldest file first")
     void theListIsSortedOldestFirst() {
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             write("newest.graphqls", "type Newest { a: String }", Instant.parse("2020-03-01T00:00:00Z"));
             write("oldest.graphqls", "type Oldest { a: String }", Instant.parse("2020-01-01T00:00:00Z"));
             write("middle.graphqls", "type Middle { a: String }", Instant.parse("2020-02-01T00:00:00Z"));
@@ -63,7 +64,7 @@ class GraphQLSourceCaptureTest {
     @Test
     @DisplayName("a source that would not parse holds its place in the order")
     void anUnparsedSourceKeepsItsPlace() {
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             write("a-first.graphqls", "type First { a: String }", Instant.parse("2020-01-01T00:00:00Z"));
             write("b-broken.graphqls", "type Broken { ", Instant.parse("2020-02-01T00:00:00Z"));
             write("c-last.graphqls", "type Last { a: String }", Instant.parse("2020-03-01T00:00:00Z"));
@@ -89,7 +90,7 @@ class GraphQLSourceCaptureTest {
     @Test
     @DisplayName("the reduce keeps the older declaration and records the younger as a refusal")
     void theOlderDeclarationWins() {
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             write("old.graphqls", "type Clash { fromTheOlder: String }",
                 Instant.parse("2020-01-01T00:00:00Z"));
             write("new.graphqls", "type Clash { fromTheYounger: String }",
@@ -119,7 +120,7 @@ class GraphQLSourceCaptureTest {
     @Test
     @DisplayName("a document with one refused declaration still contributes its others")
     void oneRefusalDoesNotCostTheWholeDocument() {
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             write("old.graphqls", "type Clash { a: String }", Instant.parse("2020-01-01T00:00:00Z"));
             write("new.graphqls", "type Clash { b: String } type Innocent { c: String }",
                 Instant.parse("2020-06-01T00:00:00Z"));
@@ -136,10 +137,13 @@ class GraphQLSourceCaptureTest {
     }
 
     private List<GraphQLSourceCapture.SourceDocument> capture(DSLContext dsl) {
-        return GraphQLSourceCapture.capture(dsl, new GraphIdentity(GRAPH, tmp),
+        var graph = new GraphIdentity(GRAPH, tmp);
+        var readAt = LocalDateTime.now();
+        ModelCapture.writeGraph(dsl, graph, readAt);
+        return GraphQLSourceCapture.capture(dsl, graph,
             SubjectConfig.of(new SchemaRecipe(tmp.resolve("pom.xml"),
                 List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls"))),
-            LocalDateTime.now());
+            readAt);
     }
 
     /** The authored sources by file name, the bundled directive vocabulary being nobody's file. */

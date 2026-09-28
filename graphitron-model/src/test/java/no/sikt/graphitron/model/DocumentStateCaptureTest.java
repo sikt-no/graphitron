@@ -4,8 +4,10 @@ import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
 import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
+import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -21,7 +23,6 @@ import java.util.List;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
-import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -59,7 +60,7 @@ class DocumentStateCaptureTest {
     @Test
     @DisplayName("a document whose bytes have not moved keeps the rows it already had")
     void anUnchangedDocumentIsLeftAlone() {
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             Path directory = temporaryDirectory();
             write(directory, "widget.graphqls", WIDGET);
             read(dsl, directory, FIRST);
@@ -87,7 +88,7 @@ class DocumentStateCaptureTest {
     @Test
     @DisplayName("a document whose bytes moved is transcribed again")
     void aChangedDocumentIsRewritten() {
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             Path directory = temporaryDirectory();
             write(directory, "widget.graphqls", WIDGET);
             read(dsl, directory, FIRST);
@@ -112,7 +113,7 @@ class DocumentStateCaptureTest {
     @Test
     @DisplayName("a document that stopped parsing loses the rows of its last good reading")
     void anUnparsableDocumentLosesItsRows() {
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             Path directory = temporaryDirectory();
             write(directory, "widget.graphqls", WIDGET);
             write(directory, "query.graphqls", QUERY);
@@ -141,7 +142,7 @@ class DocumentStateCaptureTest {
     @Test
     @DisplayName("a document the author deleted loses its rows and its source row")
     void aDeletedDocumentLosesItsRows() {
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             Path directory = temporaryDirectory();
             write(directory, "widget.graphqls", WIDGET);
             write(directory, "query.graphqls", QUERY);
@@ -172,7 +173,7 @@ class DocumentStateCaptureTest {
     @Test
     @DisplayName("a document the configuration dropped loses its rows and keeps its source row")
     void aDeconfiguredDocumentLosesItsRows() {
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             Path directory = temporaryDirectory();
             write(directory, "widget.graphqls", WIDGET);
             write(directory, "query.graphqls", QUERY);
@@ -206,6 +207,7 @@ class DocumentStateCaptureTest {
 
     private static void read(DSLContext dsl, Path baseDir, LocalDateTime readAt, String pattern) {
         var graph = new GraphIdentity(GRAPH, baseDir);
+        ModelCapture.writeGraph(dsl, graph, readAt);
         var documents = GraphQLSourceCapture.capture(dsl, graph, corpus(baseDir, pattern), readAt);
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);

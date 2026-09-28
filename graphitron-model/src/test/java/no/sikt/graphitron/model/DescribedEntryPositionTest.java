@@ -5,8 +5,10 @@ import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
 import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
+import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -21,7 +23,6 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
-import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -57,7 +58,7 @@ class DescribedEntryPositionTest {
     @Test
     @DisplayName("a described declaration is positioned at its description, a bare one at its name")
     void theDescriptionCarriesThePosition() {
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, fixture());
 
             var t = GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
@@ -99,6 +100,7 @@ class DescribedEntryPositionTest {
         var config = SubjectConfig.of(new SchemaRecipe(baseDir.resolve("pom.xml"),
             List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls")));
         var readAt = LocalDateTime.now();
+        ModelCapture.writeGraph(dsl, graph, readAt);
         var documents = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);

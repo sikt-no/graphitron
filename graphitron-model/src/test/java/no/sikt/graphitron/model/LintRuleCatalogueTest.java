@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model;
 
 import no.sikt.graphitron.model.lint.LintRule;
+import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -11,7 +12,6 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.model.Tables.LINT_RULE;
-import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -77,6 +77,6 @@ class LintRuleCatalogueTest {
      * booted.
      */
     private static void withStore(java.util.function.Consumer<DSLContext> body) {
-        withSeededStore(dsl -> body.accept(dsl));
+        ThreadConfinedStore.run(dsl -> body.accept(dsl));
     }
 }

@@ -5,8 +5,10 @@ import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
 import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
+import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -31,7 +33,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
-import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static no.sikt.graphitron.model.test.ElementOrder.writtenAt;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
@@ -62,7 +63,7 @@ class GraphitronFieldEntriesTest {
             }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var decode = GRAPHITRON_AST_FIELD_CONDITION_ENTRY;
             var applied = GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
@@ -113,7 +114,7 @@ class GraphitronFieldEntriesTest {
             }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
 
             // Restricted to this case's own document, the bundled directive vocabulary being read
@@ -149,7 +150,7 @@ class GraphitronFieldEntriesTest {
             }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var table = GRAPHITRON_AST_FIELD_REFERENCE_TABLE_STEP_ENTRY;
             var key = GRAPHITRON_AST_FIELD_REFERENCE_KEY_STEP_ENTRY;
@@ -189,7 +190,7 @@ class GraphitronFieldEntriesTest {
             }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var table = GRAPHITRON_AST_FIELD_REFERENCE_TABLE_STEP_ENTRY;
             var key = GRAPHITRON_AST_FIELD_REFERENCE_KEY_STEP_ENTRY;
@@ -229,7 +230,7 @@ class GraphitronFieldEntriesTest {
             }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
 
             assertThat(dsl.select(GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY.NAME)
@@ -263,7 +264,7 @@ class GraphitronFieldEntriesTest {
             }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var arg = GRAPHITRON_AST_SERVICE_CONTEXT_ARG_ENTRY;
             assertThat(dsl.select(writtenAt(arg), arg.NAME).from(arg).fetch())
@@ -318,6 +319,7 @@ class GraphitronFieldEntriesTest {
         var config = SubjectConfig.of(new SchemaRecipe(baseDir.resolve("pom.xml"),
             List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls")));
         var readAt = LocalDateTime.now();
+        ModelCapture.writeGraph(dsl, graph, readAt);
         var documents = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);

@@ -5,8 +5,10 @@ import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
 import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
+import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -22,7 +24,6 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_LINK_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_LINK_IMPORT_ENTRY;
-import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static no.sikt.graphitron.model.test.ElementOrder.writtenAt;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
@@ -64,7 +65,7 @@ class GraphitronSchemaEntriesTest {
             )
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var t = GRAPHITRON_AST_LINK_IMPORT_ENTRY;
 
@@ -96,7 +97,7 @@ class GraphitronSchemaEntriesTest {
             extend schema @link(url: "https://example.com/other/v1.0", import: ["@other"])
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var t = GRAPHITRON_AST_LINK_ENTRY;
 
@@ -123,7 +124,7 @@ class GraphitronSchemaEntriesTest {
             extend schema @link(url: "https://specs.apollo.dev/federation/v2.10")
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
 
             assertThat(dsl.fetchCount(GRAPHITRON_AST_LINK_ENTRY))
@@ -147,7 +148,7 @@ class GraphitronSchemaEntriesTest {
             )
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var t = GRAPHITRON_AST_LINK_IMPORT_ENTRY;
 
@@ -164,6 +165,7 @@ class GraphitronSchemaEntriesTest {
         var config = SubjectConfig.of(new SchemaRecipe(baseDir.resolve("pom.xml"),
             List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls")));
         var readAt = LocalDateTime.now();
+        ModelCapture.writeGraph(dsl, graph, readAt);
         var documents = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);

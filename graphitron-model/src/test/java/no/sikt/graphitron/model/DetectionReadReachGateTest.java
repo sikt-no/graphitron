@@ -2,6 +2,7 @@ package no.sikt.graphitron.model;
 
 import no.sikt.graphitron.model.derive.ViewReferences;
 import no.sikt.graphitron.model.derive.StoreDetections;
+import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import org.jooq.DSLContext;
 import org.jooq.Table;
 import org.junit.jupiter.api.DisplayName;
@@ -14,7 +15,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
-import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -208,7 +208,7 @@ class DetectionReadReachGateTest {
     @Test
     @DisplayName("every component of the pass evaluates exactly the view bodies pinned for it")
     void everyComponentEvaluatesExactlyThePinnedViewBodies() {
-        withSeededStore(dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             var observed = observedReach(dsl);
             // The floor against a vacuous pass: a walk that answered nothing for every component
             // would satisfy an equality against sets nobody had filled in.
@@ -244,7 +244,7 @@ class DetectionReadReachGateTest {
     @Test
     @DisplayName("the walk stops at tables and passes table roots through")
     void theWalkStopsAtTablesAndPassesTableRootsThrough() {
-        withSeededStore(dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             // A base table as a root yields nothing rather than failing, which is what lets a
             // component hand the walk every relation its statements name without curating them.
             assertThat(ViewReferences.viewsEvaluatedBy(dsl, List.of("intent_type_domain")))

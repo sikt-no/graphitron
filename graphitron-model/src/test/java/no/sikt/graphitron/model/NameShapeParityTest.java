@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model;
 
+import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -10,7 +11,6 @@ import no.sikt.graphitron.model.lint.LintFindings;
 
 import java.util.regex.Pattern;
 
-import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.jooq.impl.DSL.condition;
 import static org.jooq.impl.DSL.inline;
@@ -86,7 +86,7 @@ class NameShapeParityTest {
      * what a reader needs to see.
      */
     private static void assertAgreement(String shape) {
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             var java = Pattern.compile(shape);
             var disagreements = new ArrayList<String>();
             for (String name : NAMES) {

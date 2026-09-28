@@ -398,8 +398,14 @@ shape the root condemns, still in the tree. Evidence in
 * Deleting coverage cannot be silent `done`. `theDocumentsDeclareBlocks` fails if the folder stops
   resolving, a glob stops matching, or a block declares no rows, which was the one way this arc
   could have deleted its own coverage without saying so.
-* The count only falls `done`. `SeedingDissolutionGateTest` holds it at 110, because a seeded case
+* The count only falls `done`. `SeedingDissolutionGateTest` holds it at 83, because a seeded case
   is written by copying one and the file it copies never gets opened.
+* The count counts seeding `done`. A quarter of it did not: 26 of 109 callers wrote no fabricated
+  row, 22 of them borrowing the fixture as a store factory and four naming it in prose. The only
+  row any of them planted was `store_graph`, a second spelling of `ModelCapture.writeGraph`, whose
+  own javadoc asks a fixture to call it instead. They open `ThreadConfinedStore` and anchor their
+  graph through capture now, so what the gate counts is cases that fabricate facts, plus
+  `CodeRows`, which is the fixture's own machinery and goes with it.
 * **The code half converts** `open`, and is the larger half: 54 classes and 717 tests against the
   SDL half's 50 and 354. Taken first because the prerequisites are here. A seeded `code_method` row
   is a claim about a method; a method in `graphitron-sakila-service` is one.

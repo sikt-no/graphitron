@@ -5,8 +5,10 @@ import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
 import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
+import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -35,7 +37,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.test.ElementOrder.writtenAt;
-import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static no.sikt.graphitron.model.test.ElementOrder.writtenAt;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
@@ -62,7 +63,7 @@ class GraphitronTypeEntriesTest {
     void theDecodeIsCoKeyedToTheApplication(@TempDir Path tmp) {
         write(tmp, "film.graphqls", "type Film @table(name: \"sakila.film\") { title: String }\n");
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var decode = GRAPHITRON_AST_TABLE_ENTRY;
             var applied = GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
@@ -101,7 +102,7 @@ class GraphitronTypeEntriesTest {
         write(tmp, "first.graphqls", "type Film @table(name: \"film\") { a: String }\n");
         write(tmp, "second.graphqls", "type Film @table(name: \"film_reissue\") { b: String }\n");
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
 
             assertThat(dsl.select(GRAPHITRON_AST_TABLE_ENTRY.TABLE_REF)
@@ -123,7 +124,7 @@ class GraphitronTypeEntriesTest {
     void aBareApplicationAssertsTheDeduction(@TempDir Path tmp) {
         write(tmp, "bare.graphqls", "type Film @table { title: String }\n");
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
 
             assertThat(dsl.select(GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY.NAME)
@@ -154,7 +155,7 @@ class GraphitronTypeEntriesTest {
             ]) { message: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var database = GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY;
             var validation = GRAPHITRON_AST_ERROR_VALIDATION_HANDLER_ENTRY;
@@ -190,7 +191,7 @@ class GraphitronTypeEntriesTest {
         write(tmp, "errors.graphqls",
             "type Failed @error(handlers: [{handler: DATABASE, className: \"X\"}]) { m: String }\n");
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
 
             assertThat(dsl.fetchCount(GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY))
@@ -215,7 +216,7 @@ class GraphitronTypeEntriesTest {
     void aDecodeWhoseApplicationWentIsGone(@TempDir Path tmp) {
         write(tmp, "film.graphqls", "type Film @table(name: \"film\") { title: String }\n");
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             assertThat(dsl.fetchCount(GRAPHITRON_AST_TABLE_ENTRY)).as("before the edit").isEqualTo(1);
 
@@ -237,7 +238,7 @@ class GraphitronTypeEntriesTest {
     void aDecodeReplacedInPlaceIsSwept(@TempDir Path tmp) {
         write(tmp, "film.graphqls", "type Film @table(name: \"film\") { title: String }\n");
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
 
             write(tmp, "film.graphqls", "type Film @error(handlers: []) { title: String }\n");
@@ -265,7 +266,7 @@ class GraphitronTypeEntriesTest {
             type Actor @node { name: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var t = GRAPHITRON_AST_NODE_ENTRY;
 
@@ -289,7 +290,7 @@ class GraphitronTypeEntriesTest {
             type Actor @node(typeId: "A") { name: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var t = GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
 
@@ -321,7 +322,7 @@ class GraphitronTypeEntriesTest {
             type Film implements Media @discriminator(value: "FILM") { title: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
 
             assertThat(dsl.fetch(GRAPHITRON_AST_DISCRIMINATE_ENTRY))
@@ -350,7 +351,7 @@ class GraphitronTypeEntriesTest {
             type Book implements Media @discriminator(value: "1") { title: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
 
             assertThat(dsl.fetch(GRAPHITRON_AST_DISCRIMINATOR_ENTRY))
@@ -376,7 +377,7 @@ class GraphitronTypeEntriesTest {
               @discriminator(value: "PAPER") { title: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var d = GRAPHITRON_AST_DISCRIMINATOR_ENTRY;
 
@@ -404,7 +405,7 @@ class GraphitronTypeEntriesTest {
             type Film @key(fields: "id reviews { id }") { title: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
 
             assertThat(dsl.fetch(GRAPHITRON_AST_FEDERATION_KEY_ENTRY))
@@ -441,7 +442,7 @@ class GraphitronTypeEntriesTest {
             type Film @key(fields: "id reviews {") { title: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
 
             assertThat(dsl.fetch(GRAPHITRON_AST_FEDERATION_KEY_ENTRY))
@@ -470,7 +471,7 @@ class GraphitronTypeEntriesTest {
               @key(fields: "isbn") { title: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var t = GRAPHITRON_AST_FEDERATION_KEY_ENTRY;
 
@@ -500,7 +501,7 @@ class GraphitronTypeEntriesTest {
             type Actor @key(fields: "id", resolvable: false) { name: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var t = GRAPHITRON_AST_FEDERATION_KEY_ENTRY;
 
@@ -516,6 +517,7 @@ class GraphitronTypeEntriesTest {
         var config = SubjectConfig.of(new SchemaRecipe(baseDir.resolve("pom.xml"),
             List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls")));
         var readAt = LocalDateTime.now();
+        ModelCapture.writeGraph(dsl, graph, readAt);
         var documents = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);

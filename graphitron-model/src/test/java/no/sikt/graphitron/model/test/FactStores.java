@@ -21,9 +21,9 @@ import java.util.concurrent.atomic.AtomicLong;
  * than as the choice it is.
  *
  * <p>What this level does <em>not</em> do is put rows in the store. That is deliberate, and it is
- * what lets every level above stand on this one: a seeded case fills the store through
- * {@link SeededStore}, and above this module a case whose subject is the generator fills it by
- * running a real capture or a real build through that module's own harness. A store handle that
+ * what lets every level above stand on this one: a case fills the store by running a capture,
+ * through {@link CapturedStore} or the gatherers themselves, and above this module a case whose
+ * subject is the generator fills it by running a real build through that module's own harness. A store handle that
  * arrived with rows already in it would serve none of them.
  *
  * <p>This harness owns no lifetime. Every entry point hands back a {@link GraphitronModelStore}
@@ -166,7 +166,7 @@ public final class FactStores {
      * }</pre>
      *
      * <p>Not the per-thread funnel, and the reason is the surface rather than the lifetime:
-     * {@link SeededStore#withSeededStore(java.util.function.Consumer)} hands a body a
+     * {@link ThreadConfinedStore#run(java.util.function.Consumer)} hands a body a
      * {@link org.jooq.DSLContext}, deliberately, and a case that needs the store <em>handle</em>
      * (the connection, or something the handle mints) has nothing to ask it for. Widening the funnel
      * to hand out the handle would give every case on it the ability to close the thread's store.

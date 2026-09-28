@@ -5,8 +5,10 @@ import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
 import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
+import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import org.jooq.DSLContext;
 import org.jooq.Record;
 import org.junit.jupiter.api.DisplayName;
@@ -27,7 +29,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DEFAULT_ORDER_FIELD
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PIVOT_ENTRY;
-import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static no.sikt.graphitron.model.test.ElementOrder.writtenAt;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -76,7 +77,7 @@ class GraphitronFieldAnchorsTest {
             type Film { title: String, released: String, rating: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var e = GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY;
             assertThat(dsl.select(writtenAt(e), e.NAME_REF).from(e).where(e.GRAPH_NAME.eq(GRAPH))
@@ -111,7 +112,7 @@ class GraphitronFieldAnchorsTest {
             type Film { title: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var t = GRAPHITRON_PIVOT_ENTRY;
             assertThat(dsl.select(t.FIELD_NAME, t.ON_COLUMN, t.VALUE_COLUMN).from(t)
@@ -140,7 +141,7 @@ class GraphitronFieldAnchorsTest {
             type Film { title: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var t = GRAPHITRON_CONNECTION_ENTRY;
             assertThat(dsl.select(t.FIELD_NAME, t.DEFAULT_FIRST_VALUE).from(t)
@@ -169,7 +170,7 @@ class GraphitronFieldAnchorsTest {
             type Film { title: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var e = GRAPHITRON_AST_CONNECTION_ENTRY;
             assertThat(dsl.select(e.DEFAULT_FIRST_VALUE).from(e).where(e.GRAPH_NAME.eq(GRAPH))
@@ -196,6 +197,7 @@ class GraphitronFieldAnchorsTest {
         var config = SubjectConfig.of(new SchemaRecipe(baseDir.resolve("pom.xml"),
             List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls")));
         var readAt = LocalDateTime.now();
+        ModelCapture.writeGraph(dsl, graph, readAt);
         var documents = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);

@@ -33,7 +33,7 @@ class SeedingDissolutionGateTest {
         List.of("SeededStore.java", "SeedingDissolutionGateTest.java");
 
     /** Callers on 2026-09-28. Lower it when you convert one. */
-    private static final int CEILING = 109;
+    private static final int CEILING = 83;
 
     @Test
     @DisplayName("no case starts seeding rows it could state as a document")

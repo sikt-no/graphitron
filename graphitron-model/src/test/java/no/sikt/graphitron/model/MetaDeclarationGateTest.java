@@ -3,6 +3,7 @@ package no.sikt.graphitron.model;
 import no.sikt.graphitron.model.catalog.GrainSentence;
 import no.sikt.graphitron.model.derive.ViewReferences;
 import no.sikt.graphitron.model.test.FactStores;
+import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -28,7 +29,6 @@ import static no.sikt.graphitron.model.Tables.META_GRAIN;
 import static no.sikt.graphitron.model.Tables.META_RELATION;
 import static no.sikt.graphitron.model.Tables.META_RELATION_FAMILY;
 import static no.sikt.graphitron.model.Tables.META_STATED_RELATION;
-import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.name;
@@ -342,7 +342,7 @@ class MetaDeclarationGateTest {
 
     /** The thread's store, which every case here reads and none but one writes. */
     private static void withStore(Consumer<DSLContext> body) {
-        withSeededStore(body);
+        ThreadConfinedStore.run(body);
     }
 
     /**

@@ -5,8 +5,10 @@ import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
 import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
+import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -33,7 +35,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
-import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static no.sikt.graphitron.model.test.ElementOrder.writtenAt;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
@@ -72,7 +73,7 @@ class GraphitronInputValueEntriesTest {
             input FilmFilter { category: String @field(name: "category") }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var decode = GRAPHITRON_AST_INPUT_VALUE_BINDING_ENTRY;
             var applied = GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
@@ -139,7 +140,7 @@ class GraphitronInputValueEntriesTest {
             input FilmFilter { title: String @asFacet }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
 
             assertThat(dsl.select(GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY.NAME)
@@ -179,7 +180,7 @@ class GraphitronInputValueEntriesTest {
             type Film { title: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var t = GRAPHITRON_AST_INPUT_VALUE_REFERENCE_FOR_ENTRY;
 
@@ -219,7 +220,7 @@ class GraphitronInputValueEntriesTest {
             type Film { title: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var tables = GRAPHITRON_AST_INPUT_VALUE_REFERENCE_TABLE_STEP_ENTRY;
             var keys = GRAPHITRON_AST_INPUT_VALUE_REFERENCE_KEY_STEP_ENTRY;
@@ -261,7 +262,7 @@ class GraphitronInputValueEntriesTest {
             type Film { title: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
 
             assertThat(dsl.select(GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY.NAME)
@@ -301,7 +302,7 @@ class GraphitronInputValueEntriesTest {
             type Film { title: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var t = GRAPHITRON_AST_INPUT_VALUE_CONDITION_ENTRY;
 
@@ -340,7 +341,7 @@ class GraphitronInputValueEntriesTest {
             type Film { title: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             assertThat(dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY))
                 .as("before the edit").isEqualTo(2);
@@ -377,7 +378,7 @@ class GraphitronInputValueEntriesTest {
             type Film { title: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             assertThat(dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY))
                 .as("before the edit").isEqualTo(1);
@@ -407,6 +408,7 @@ class GraphitronInputValueEntriesTest {
         var config = SubjectConfig.of(new SchemaRecipe(baseDir.resolve("pom.xml"),
             List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls")));
         var readAt = LocalDateTime.now();
+        ModelCapture.writeGraph(dsl, graph, readAt);
         var documents = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);

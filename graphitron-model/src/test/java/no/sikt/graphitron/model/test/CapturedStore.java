@@ -44,9 +44,10 @@ import no.sikt.graphitron.model.jooq.JooqCatalog;
  * produces. That is the property to want when the subject is capture itself, the gatherers and the
  * writers, or agreement between a store-native relation and a reader above.
  *
- * <p>When the subject is instead what a relation <em>returns given rows</em>, a view's
- * joins or a check constraint's boundary, {@link SeededStore} beside this one states the inputs as
- * rows with no pipeline in the way. Seeding skips the step capture exists to perform, so a fixture
+ * <p>It is also the property to want when the subject is what a relation <em>returns given
+ * rows</em>, a view's joins or a check constraint's boundary: the inputs are stated as SDL, a
+ * catalog and a classpath, and capture writes them. A state no capture reaches is not a case to
+ * hand-insert rows for; it is a property test's subject, or a shape nobody writes. So a fixture
  * here that hand-inserts rows owes a reason at the call site.
  *
  * <p>Lives here rather than in the generator's tests because every arm on it is a capture, and
@@ -141,7 +142,7 @@ public final class CapturedStore implements AutoCloseable {
                                          Consumer<DSLContext> body) {
         Path file = write(directory, graphName, sdl);
         var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
-        SeededStore.withSeededStore(dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             captureFiles(dsl, List.of(file), directory, graphName, registry, null, List.of(), false);
             body.accept(dsl);
         });

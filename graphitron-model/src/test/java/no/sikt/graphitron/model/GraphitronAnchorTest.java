@@ -5,8 +5,10 @@ import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
 import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
+import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -22,7 +24,6 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
-import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
@@ -56,7 +57,7 @@ class GraphitronAnchorTest {
             type Query { a: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var t = GRAPHITRON_DEPRECATED;
 
@@ -86,7 +87,7 @@ class GraphitronAnchorTest {
             type Query { a: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             assertThat(marked(dsl, "keep"))
                 .as("the token has to stand on its own to mark anything").isFalse();
@@ -112,7 +113,7 @@ class GraphitronAnchorTest {
             type Query { a: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var t = GRAPHITRON_DEPRECATED;
 
@@ -142,7 +143,7 @@ class GraphitronAnchorTest {
             type Query { a: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             assertThat(marked(dsl, "old")).as("before").isTrue();
             assertThat(markedArgument(dsl, "old", "legacy")).as("before").isTrue();
@@ -175,7 +176,7 @@ class GraphitronAnchorTest {
     void theBundledVocabularyIsCaptured(@TempDir Path tmp) {
         write(tmp, "schema.graphqls", "type Query { a: String }\n");
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var t = GRAPHITRON_DEPRECATED;
 
@@ -202,7 +203,7 @@ class GraphitronAnchorTest {
             type Film @table(name: "film") { title: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             assertThat(bound(dsl, "Film")).as("before").isTrue();
 
@@ -232,7 +233,7 @@ class GraphitronAnchorTest {
             type Film @table(name: "film") { title: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             assertThat(bound(dsl, "Film")).as("before").isTrue();
 
@@ -272,6 +273,7 @@ class GraphitronAnchorTest {
         var config = SubjectConfig.of(new SchemaRecipe(baseDir.resolve("pom.xml"),
             List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls")));
         var readAt = LocalDateTime.now();
+        ModelCapture.writeGraph(dsl, graph, readAt);
         var documents = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);

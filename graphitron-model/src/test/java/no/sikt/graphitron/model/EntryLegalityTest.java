@@ -5,8 +5,10 @@ import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
 import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
+import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -27,7 +29,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
-import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -55,7 +56,7 @@ class EntryLegalityTest {
     @Test
     @DisplayName("an order element missing the required name withdraws the whole application")
     void anElementMissingItsRequiredNameWithdrawsTheApplication(@TempDir Path tmp) {
-        withSeededStore("missing-name", dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, corpus(tmp, "missing-name", """
                 type Query { films: [Film!] @defaultOrder(fields: [{collate: "xdanish_ai"}]) }
                 type Film { title: String }
@@ -78,7 +79,7 @@ class EntryLegalityTest {
     @Test
     @DisplayName("an order element of the wrong shape withdraws the whole application")
     void anElementOfTheWrongShapeWithdrawsTheApplication(@TempDir Path tmp) {
-        withSeededStore("wrong-shape", dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, corpus(tmp, "wrong-shape", """
                 type Query { films: [Film!] @defaultOrder(fields: ["title"]) }
                 type Film { title: String }
@@ -95,7 +96,7 @@ class EntryLegalityTest {
     @Test
     @DisplayName("an undeclared argument withdraws the application")
     void anUndeclaredArgumentWithdrawsTheApplication(@TempDir Path tmp) {
-        withSeededStore("unknown-arg", dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, corpus(tmp, "unknown-arg", """
                 type Query { films: [Film!] @defaultOrder(bogus: 1) }
                 type Film { title: String }
@@ -115,7 +116,7 @@ class EntryLegalityTest {
     @Test
     @DisplayName("a scalar argument of the wrong literal type withdraws the application")
     void aScalarOfTheWrongTypeWithdrawsTheApplication(@TempDir Path tmp) {
-        withSeededStore("wrong-scalar", dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, corpus(tmp, "wrong-scalar", """
                 type Query { films: [Film!] @defaultOrder(index: 7) }
                 type Film { title: String }
@@ -136,7 +137,7 @@ class EntryLegalityTest {
     @Test
     @DisplayName("a directive applied where its definition does not admit it writes no entry")
     void aDirectiveAtAnIllegalSiteWritesNoEntry(@TempDir Path tmp) {
-        withSeededStore("wrong-site", dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, corpus(tmp, "wrong-site", """
                 type Query { films: [Film!] }
                 type Film @table(name: "film") @defaultOrder(fields: [{name: "title"}]) {
@@ -166,7 +167,7 @@ class EntryLegalityTest {
     @Test
     @DisplayName("every legal spelling is transcribed, including the ones a tight rule would refuse")
     void legalSpellingsAreAllTranscribed(@TempDir Path tmp) {
-        withSeededStore("legal", dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, corpus(tmp, "legal", """
                 type Query {
                   byList: [Film!] @defaultOrder(fields: [{name: "title", direction: DESC}])
@@ -202,7 +203,7 @@ class EntryLegalityTest {
     @Test
     @DisplayName("an enum-value binding with no name written withdraws the application")
     void aBareBindingOnAnEnumValueWithdrawsTheApplication(@TempDir Path tmp) {
-        withSeededStore("bare-enum-binding", dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, corpus(tmp, "bare-enum-binding", """
                 type Query { films(order: FilmOrder): [Film!] }
                 type Film { title: String }
@@ -263,6 +264,7 @@ class EntryLegalityTest {
         var config = SubjectConfig.of(new SchemaRecipe(directory.resolve("pom.xml"),
             List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls")));
         var readAt = LocalDateTime.now();
+        ModelCapture.writeGraph(dsl, graph, readAt);
         var documents = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);

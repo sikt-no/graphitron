@@ -5,8 +5,10 @@ import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
 import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
+import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import org.jooq.DSLContext;
 import org.jooq.Record;
 import org.junit.jupiter.api.DisplayName;
@@ -26,7 +28,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_RECORD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_TYPE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
-import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -64,7 +65,7 @@ class GraphitronTypeAnchorsTest {
             type Query { films: [Film!] }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var e = GRAPHITRON_AST_TABLE_ENTRY;
             assertThat(dsl.select(e.TABLE_REF).from(e).where(e.GRAPH_NAME.eq(GRAPH))
@@ -95,7 +96,7 @@ class GraphitronTypeAnchorsTest {
             type Query { films: [Film!], actors: [Actor!] }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var t = GRAPHITRON_TABLE_ENTRY;
             assertThat(dsl.select(t.TYPE_NAME, t.TABLE_REF).from(t).where(t.GRAPH_NAME.eq(GRAPH))
@@ -120,7 +121,7 @@ class GraphitronTypeAnchorsTest {
             type Query { price: Money, weight: Weight }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var t = GRAPHITRON_SCALAR_TYPE_ENTRY;
             assertThat(dsl.select(t.TYPE_NAME, t.SCALAR_REF_CLASS_PART, t.SCALAR_REF_FIELD_PART)
@@ -145,7 +146,7 @@ class GraphitronTypeAnchorsTest {
             type Query { films: [Film!], actors: [Actor!] }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var t = GRAPHITRON_RECORD_ENTRY;
             assertThat(dsl.select(t.TYPE_NAME, t.CLASS_NAME).from(t).where(t.GRAPH_NAME.eq(GRAPH))
@@ -169,7 +170,7 @@ class GraphitronTypeAnchorsTest {
             type Query { films: [Film!] }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             assertThat(tableRefs(dsl, "Film")).as("before").containsExactly("film");
 
@@ -202,6 +203,7 @@ class GraphitronTypeAnchorsTest {
         var config = SubjectConfig.of(new SchemaRecipe(baseDir.resolve("pom.xml"),
             List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls")));
         var readAt = LocalDateTime.now();
+        ModelCapture.writeGraph(dsl, graph, readAt);
         var documents = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);

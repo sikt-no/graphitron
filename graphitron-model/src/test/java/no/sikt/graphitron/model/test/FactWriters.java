@@ -21,9 +21,8 @@ import java.util.List;
  * partition, which is a different fact about the store from what a capture walk writes. So this
  * level is a sibling of {@link CapturedStore} rather than something under it: a writer test has no
  * capture to run, and a fixture that captured first would have put rows in front of the assertion
- * that the writer did not write. It is the sibling of
- * {@link no.sikt.graphitron.model.test.SeededStore} one module up, in the same sense: that one puts
- * rows in a store by stating them, this one by running the code that ships.
+ * that the writer did not write. Rows arrive here the way they arrive in {@link CapturedStore}, by
+ * running the code that ships rather than by stating them.
  *
  * <p><b>Over a {@link DSLContext}, owning nothing.</b> The store comes from
  * {@link no.sikt.graphitron.model.test.FactStores}, whichever of its two shapes the case wants, and

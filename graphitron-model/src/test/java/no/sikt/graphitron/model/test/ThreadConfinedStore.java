@@ -19,8 +19,8 @@ import static no.sikt.graphitron.model.Tables.META_STATED_RELATION;
 
 /**
  * One store per test thread, kept for the thread's lifetime, with its rows cleared between bodies.
- * What {@link SeededStore#withSeededStore(Consumer)} runs on, and the reason a case in this module
- * no longer pays for a schema boot.
+ * {@link #run(Consumer)} is how a case in this module gets a store, and the reason it no longer pays
+ * for a schema boot.
  *
  * <p>The trade this makes is a boot for a clear. Applying the fact schema costs a few hundred
  * milliseconds under this module's four-way parallelism, and truncating every table a case can
@@ -51,10 +51,10 @@ import static no.sikt.graphitron.model.Tables.META_STATED_RELATION;
  * from {@link FactStores} and close it, {@link RunawayRelation} in particular. It is a trap rather
  * than a hole: the clear names a relation the DDL has turned into something else, and H2 refuses.
  *
- * <p>{@link SeededStore#derive} is the one derivation a case owes, and it depends on fact rows, which
- * is why a case still calls it per case; that is not a clear's concern.
+ * <p>A case's derivations depend on its fact rows, which is why they run per case rather than per
+ * thread; that is not a clear's concern.
  */
-final class ThreadConfinedStore {
+public final class ThreadConfinedStore {
 
     /**
      * A thread's store, booted on first use. Deliberately never removed: removing it is the one
@@ -137,14 +137,14 @@ final class ThreadConfinedStore {
      * @throws IllegalStateException if called from inside another body on the same thread, or if a
      *         row survived the clear
      */
-    static void run(Consumer<DSLContext> body) {
+    public static void run(Consumer<DSLContext> body) {
         ThreadConfinedStore held = HOLDER.get();
         if (held.inUse) {
-            throw new IllegalStateException("a seeded-store body is already running on this thread,"
+            throw new IllegalStateException("a funnel body is already running on this thread,"
                 + " and the inner call would clear the outer body's rows out from under it while"
                 + " handing back the same store; a case wanting a second store should reach"
-                + " FactStores directly, and one wanting a second graph should seed it with"
-                + " SeededStore.seedGraph inside the body it already has");
+                + " FactStores directly, and one wanting a second graph should anchor it with"
+                + " ModelCapture.writeGraph inside the body it already has");
         }
         verifyBootBudget();
         held.inUse = true;
@@ -182,10 +182,11 @@ final class ThreadConfinedStore {
     static GraphitronModelStore borrow() {
         ThreadConfinedStore held = HOLDER.get();
         if (held.inUse) {
-            throw new IllegalStateException("a seeded-store body is running on this thread, and a"
+            throw new IllegalStateException("a funnel body is running on this thread, and a"
                 + " borrow taken inside it would clear that body's rows out from under it; a case"
                 + " wanting a second store should reach FactStores directly, and one wanting a"
-                + " second graph should seed it with SeededStore.seedGraph inside the body it has");
+                + " second graph should anchor it with ModelCapture.writeGraph inside the body it"
+                + " has");
         }
         verifyBootBudget();
         held.clear();
@@ -242,7 +243,7 @@ final class ThreadConfinedStore {
         if (boots > BOOT_BUDGET) {
             throw new IllegalStateException(("this module has opened %d stores in one JVM, past its"
                 + " budget of %d. Almost every case is meant to run on the store its thread booted"
-                + " once, through SeededStore.withSeededStore, so a count this high means either a"
+                + " once, through ThreadConfinedStore.run, so a count this high means either a"
                 + " new path opens a store per case or a class that boots per case has grown. Route"
                 + " it through the funnel, or raise ThreadConfinedStore.BOOT_BUDGET deliberately"
                 + " once the recount says the boots are ones the module means to pay for.")
