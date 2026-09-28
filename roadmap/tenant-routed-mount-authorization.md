@@ -1,13 +1,13 @@
 ---
 id: R975
 title: "Routed tenant acquisition: authorize the key and hand it to the session mount"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 1
 theme: runtime-connection
 depends-on: []
 created: 2026-09-25
-last-updated: 2026-09-26
+last-updated: 2026-09-28
 ---
 
 # Routed tenant acquisition: authorize the key and hand it to the session mount
