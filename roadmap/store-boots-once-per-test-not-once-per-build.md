@@ -1,7 +1,7 @@
 ---
 id: R768
 title: "Capture the classification corpus once per test JVM, and stop graphitron-lsp booting a store per fixture"
-status: Ready
+status: In Progress
 bucket: dx
 priority: 1
 theme: tooling
