@@ -1,7 +1,7 @@
 ---
 id: R768
 title: "Capture the classification corpus once per test JVM, and stop graphitron-lsp booting a store per fixture"
-status: Spec
+status: Ready
 bucket: dx
 priority: 1
 theme: tooling
@@ -15,7 +15,7 @@ last-updated: 2026-09-28
 ## Goal
 
 A contributor's full build spends most of `graphitron`'s test time re-deriving the same facts. Seven
-test classes each sweep the whole classification corpus: they capture it (the 61 SDL documents under
+test classes each sweep the whole classification corpus: they capture it (the 60 SDL documents under
 `graphitron-model/src/test/resources/corpus`, each one worked example of a classification verdict)
 into a private fact store, and those seven classes alone account for 4618 s of the module's 15427 s
 of test-class time. Six of them only read what they captured. When this item lands, those six read
@@ -45,7 +45,7 @@ per test thread. Only the `ownStore*` factories boot per call, and they are mean
 issue DDL or otherwise cannot share.
 
 **`graphitron-lsp` is the exception.** Its `StoreFixture` builds every arm on `CapturedStore.ownStore`,
-`ownStoreOfCatalog` or `ownStoreOfFiles`, so each of its roughly 146 `StoreFixture.of*` call sites
+`ownStoreOfCatalog` or `ownStoreOfFiles`, so each of its 135 `StoreFixture.of*` call sites
 boots a dedicated store. Its only borrowing arm is `ofRefusedSchema`. The module runs under
 `graphitron-model`'s `junit-platform.properties`, which it inherits through the test-jar (classes
 concurrent, `fixed.parallelism=4`), so the thread-store mechanism applies to it unchanged.
@@ -73,7 +73,7 @@ InputOccurrence, RoutineSpentInput) does the same and also appends `interface No
 lacks one, which is a no-op for corpus documents because `_prelude.graphqls` already declares
 `Node`. And `ConditionMembershipShadowTest` is asymmetric: its first graph is captured with
 `census()` and `testClassRoot()`, so a real classpath is scanned and `captureFiles` skips its stated
-census, while graphs 2 to 61 get `census()` and no class root. `CorpusFragmentTest` (695 s) and `OutcomeBlockRendererTest` (233 s) are a second, different
+census, while graphs 2 to 60 get `census()` and no class root. `CorpusFragmentTest` (695 s) and `OutcomeBlockRendererTest` (233 s) are a second, different
 shape over the same corpus: `OutcomeBlockRenderer.render` captures one document at a time and then
 runs a generator over it through `GraphitronStore.captured`, so it is a per-document population and
 it builds output, not only facts.
@@ -88,7 +88,7 @@ XML reports of one full reactor install on 2026-09-28 (after `837069757`, 14 cor
 overlapping), so every figure carries in-reactor contention; `CatalogCorpusTest` ran 31 s alone and
 68 s in that build, which is the size of the effect. The same build's `-output.txt` files are **not**
 a usable capture count. Classes run four at a time, and a log line lands in the redirect of whichever
-class the writing thread is attributed to: `ConditionMembershipShadowTest` performs 61 captures and
+class the writing thread is attributed to: `ConditionMembershipShadowTest` performs 60 captures and
 its file shows one `derivation stratum done in` line. The earlier count of 1327 captures in
 `graphitron` was taken that way and is withdrawn; the counter under Implementation replaces it.
 
@@ -246,3 +246,13 @@ a population worth sharing.
   shared capture turns out to sit on the module's critical path.
 
 ## Reviewer findings
+
+### Round 1 (Spec → Ready): signed off
+
+Both gate questions pass. Goal: a contributor's `mvn install` gets shorter because six corpus sweeps in `graphitron` read one JVM-lifetime capture instead of each capturing the corpus, and `graphitron-lsp`'s per-case fixtures stop booting a store each; no assertion changes. Fit: it extends `ThreadConfinedStore`/`CapturedStore`'s owned and borrowed arms, `BundledVocabulary`'s lifetime and `StoreReader`'s rollback rather than standing beside them. Corrected in passing: the corpus holds 60 documents (61 counted `_prelude.graphqls`), and `graphitron-lsp` has 135 `StoreFixture.of*` call sites.
+
+Non-blocking, for the implementer:
+
+* `StoreFixtureScanner` recognises a harness by the identifier `GraphitronModelStore` in code. A `CorpusStore` built only on `CapturedStore.ownStoreOfCatalog` and `reader()` may never spell it, and then its `HOMES` entry fails `everyDeclaredEntryStillDescribesSomething` as stale. Add the entry only if the file names the type.
+* `TestSchemaHelper.buildBundle`, which `DemandShadowTest` and `InputOccurrenceShadowTest` call per document, also captures: an `ownStore` capture per distinct text, memoised JVM-wide in `EMITTED`. The counter will count those 60, and `CorpusStore` does not remove them. Say so when reading the baseline.
+* Switching autodetection on in `graphitron-model`'s `junit-platform.properties` goes against that file's comment, which declines to set it. The same comment says `graphitron-lsp` and `graphitron-mcp` do not carry the file, but they do, through the test-jar. Rewrite the comment in the same change.
