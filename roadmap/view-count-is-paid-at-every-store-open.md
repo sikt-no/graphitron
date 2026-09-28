@@ -7,7 +7,7 @@ priority: 2
 theme: model-cleanup
 depends-on: []
 created: 2026-09-08
-last-updated: 2026-09-08
+last-updated: 2026-09-28
 ---
 
 # The view count is paid at every store open, before any read happens
@@ -44,6 +44,15 @@ Parsing all 120 definitions (324,789 characters) costs 78 ms warm, and the step 
 
 **Three: reads inline them multiplicatively.** H2 inlines a view at every naming and eliminates no
 common subexpression. That is the read-side cost R876 owns and this item does not.
+
+**A fourth cost, not about views: comments.** Measured 2026-09-28 at `837069757` by executing the
+DDL one statement at a time into a fresh in-memory H2 database. The DDL is now about 4400
+statements, and 3937 of them are `COMMENT ON`. In a warm JVM the comments cost 102 ms of 529 ms
+(19%). The first execution in a cold JVM costs 624 ms of 2891 ms (22%). This is paid only when the
+DDL is executed, which means every in-memory boot, including every test case that boots its own
+store. It does not follow that it is paid when a template file is opened. A Spec pass that looks at
+open cost should decide whether comments belong in its scope; this pass did not measure what they
+cost when a file is opened.
 
 ## Why this is its own item
 

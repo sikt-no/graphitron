@@ -7,7 +7,7 @@ priority: 1
 theme: tooling
 depends-on: []
 created: 2026-08-20
-last-updated: 2026-09-08
+last-updated: 2026-09-28
 ---
 
 # The build boots the fact schema 1051 times, and a reset costs a fraction of a boot
@@ -31,6 +31,46 @@ deliberately, a dated measurement rather than a sighting to refresh; the live re
 other three modules, **631 boots and 262.8 s**. What that slice settled, and the one place it does not
 generalise, are folded into the bullets under "What a Spec pass has to settle" rather than restated
 here.
+
+## A third pass: the boot is now the smaller part of what a case pays
+
+Taken 2026-09-28 at `837069757`. The workstation has 14 cores, and the build was a full reactor
+install with modules overlapping. The figures are read from that build's surefire reports, plus two
+isolated runs in the same checkout. This pass counts *captures*, not boots, because each case that
+reaches a store through `CapturedStore` or a `StoreFixture` factory pays three steps in sequence:
+it boots, it captures, and it runs the derivation stratum. The count comes from the stratum's own
+`derivation stratum done in` line in each class's `-output.txt`, so it counts what ran.
+
+| Module | Test cases | Captures | Derivation stratum, summed | Test-class time, summed | Module wall clock |
+|---|---|---|---|---|---|
+| `graphitron` | 4338 | 1327 | 3649 s | 14468 s | about 20 min |
+| `graphitron-lsp` | 642 | 211 | 964 s | 2581 s | about 7 min |
+| `graphitron-mcp` | 132 | 60 | 137 s | 627 s | 7 min 10 s |
+
+In each module, the cases over one second account for almost all of the time. In `graphitron`, 736
+cases hold 14262 s of the 14468 s. The rest of each module is cheap.
+
+**Price of one step, measured in isolation.** One JVM ran `FactStores.inMemory()` eight times in a
+row. The first boot took 7.4 s and the warm ones 1.0 to 2.4 s. The DDL is now about 4400
+statements: 263 tables, 136 views, 17 indexes and 3937 `COMMENT ON`. Executing it alone in a warm
+JVM costs 0.53 s, of which comments are 102 ms, tables 148 ms and views 110 ms. `CatalogCorpusTest`
+run alone takes 31 s for six captures. Each capture spends about 3 s before the stratum starts and
+about 1 s inside it. The same class took 68 s inside the reactor build, so contention roughly doubles
+every figure in the table.
+
+**What this changes for the plan.** A per-thread store cleared between cases removes the boot, which
+is about a third of a case's cost. Capture and derivation remain, and in `graphitron` the stratum
+alone sums to a quarter of all test-class time. So the open question in the last bullet under "What
+a Spec pass has to settle" is now the main question for all three remaining modules, not only for
+`graphitron`: which cases can share one captured population rather than producing their own. The
+obvious candidates are the cases that capture the same fixture and only read it:
+`StoreFixture.ofCatalog` has 57 call sites in `graphitron-lsp` and 21 in `graphitron-mcp`, and
+`CapturedStore.ofCatalog` has 75 in `graphitron`. Neither `graphitron-lsp` nor `graphitron-mcp` uses
+`FactStores.perClass()` anywhere.
+
+The `ONNX`-backed classes in `graphitron-mcp` are a separate cost and are not counted as captures
+here. `CatalogSearchOnnxTest` runs one case for 48 s. It already carries `@Tag("slow")`, so a fast
+inner loop can leave it out with `-DexcludedGroups=slow`.
 
 ## A fresh pass has re-priced this item, and it is worth more than it says below
 
