@@ -6128,38 +6128,39 @@ COMMENT ON INDEX code_type_slot_name_ix IS 'The slot name is a join key rather t
 
 CREATE TABLE code_construction (
   source_name VARCHAR NOT NULL,
-  type_name   VARCHAR NOT NULL,
+  class_name  VARCHAR NOT NULL,
   shape       VARCHAR NOT NULL,
   descriptor  VARCHAR NOT NULL,
   touched_at  TIMESTAMP NOT NULL,
-  PRIMARY KEY (source_name, type_name),
-  FOREIGN KEY (source_name, type_name) REFERENCES code_type (source_name, type_name) ON DELETE CASCADE,
+  PRIMARY KEY (source_name, class_name),
+  FOREIGN KEY (source_name, class_name)
+    REFERENCES code_class (source_name, class_name) ON DELETE CASCADE,
   CHECK (shape IN ('POSITIONAL', 'SETTERS'))
 );
 COMMENT ON TABLE code_construction IS 'How a value of one class is made, for the classes a generator has to make one of. For example a FilmInput record, made by calling its canonical constructor with every component at once.';
-COMMENT ON COLUMN code_construction.source_name IS 'the entry the class was read from, as on code_type; the key''s leading dimension';
-COMMENT ON COLUMN code_construction.type_name IS 'the class being made, as on code_type. A class is a type with no arguments, which is why this keys into the type relation rather than beside it: what a parameter names is a type, and the thing eventually constructed is what that type delivers';
+COMMENT ON COLUMN code_construction.source_name IS 'the entry the class was read from, as on code_class; the key''s leading dimension';
+COMMENT ON COLUMN code_construction.class_name IS 'the class being made, keyed into code_class because how a value is made is a fact about a class: a parameter names a type, but what is eventually constructed is the class that type delivers, and it is that class a compile can change. So a class the next reading does not find takes its construction and its write slots with it';
 COMMENT ON COLUMN code_construction.shape IS 'POSITIONAL or SETTERS: whether the members go in through the constructor all at once or one at a time afterwards. A record is the first, everything else with a usable no-argument constructor is the second, and a jOOQ record is the second like any other, being made empty and then filled. Carried because two emitters fork on it and it is the decision rather than the evidence for it: reading it off the class''s declared form would put the rule in the readers';
 COMMENT ON COLUMN code_construction.descriptor IS 'the constructor to call. At POSITIONAL that is the canonical one, whose parameters are the components in header order; at SETTERS it is ()V. Named by descriptor rather than by presence because a class may declare several and only one of them is the one this shape means';
-COMMENT ON COLUMN code_construction.touched_at IS 'when the reading that produced this row ran; swept with the type it hangs on';
+COMMENT ON COLUMN code_construction.touched_at IS 'when the reading that produced this row ran; swept with the class it hangs on';
 
 CREATE TABLE code_write_slot (
   source_name VARCHAR NOT NULL,
-  type_name   VARCHAR NOT NULL,
+  class_name  VARCHAR NOT NULL,
   method_name VARCHAR NOT NULL,
   descriptor  VARCHAR NOT NULL,
   position    INT NOT NULL,
   slot_name   VARCHAR NOT NULL,
   slot_type   VARCHAR NOT NULL,
   touched_at  TIMESTAMP NOT NULL,
-  PRIMARY KEY (source_name, type_name, method_name, descriptor, position),
-  FOREIGN KEY (source_name, type_name)
-    REFERENCES code_construction (source_name, type_name) ON DELETE CASCADE,
+  PRIMARY KEY (source_name, class_name, method_name, descriptor, position),
+  FOREIGN KEY (source_name, class_name)
+    REFERENCES code_construction (source_name, class_name) ON DELETE CASCADE,
   FOREIGN KEY (source_name, slot_type) REFERENCES code_type (source_name, type_name)
 );
 COMMENT ON TABLE code_write_slot IS 'One member an author can fill when a value of the class is made, and the call that fills it. For example a FilmInput''s title, filled at argument zero of its canonical constructor.';
 COMMENT ON COLUMN code_write_slot.source_name IS 'the entry the class was read from, as on code_construction';
-COMMENT ON COLUMN code_write_slot.type_name IS 'the class being made, as on code_construction; the row is deleted with it';
+COMMENT ON COLUMN code_write_slot.class_name IS 'the class being made, as on code_construction; the row is deleted with it';
 COMMENT ON COLUMN code_write_slot.method_name IS 'the call that fills the member: the constructor at POSITIONAL, where every slot names the same one, and the setter at SETTERS, where each names its own';
 COMMENT ON COLUMN code_write_slot.descriptor IS 'that call''s descriptor, completing its key';
 COMMENT ON COLUMN code_write_slot.position IS 'which argument of the call carries the member, counted from zero. At POSITIONAL it is the component''s place in the record header, which is what makes the call emittable in one go; at SETTERS it is zero, a setter taking one argument. Part of the key because one call carries many members at POSITIONAL and the argument is what tells them apart';
@@ -9192,7 +9193,7 @@ SELECT f.graph_name, f.type_name, f.field_name, s.source_name, s.class_name,
                       AND owner.type_name = f.type_name
                       AND owner.kind = 'INPUT_OBJECT')
 UNION ALL
-SELECT f.graph_name, f.type_name, f.field_name, w.source_name, w.type_name,
+SELECT f.graph_name, f.type_name, f.field_name, w.source_name, w.class_name,
        w.slot_name, w.method_name, e.element_class
   FROM graphitron_field f
   JOIN graphitron_type owner
@@ -15347,7 +15348,7 @@ INSERT INTO meta_grain VALUES
    'source_name, class_name, method_name, descriptor', 'classpath'),
   ('construction-argument',
    'one argument of one call that fills a member when a value of one class is made',
-   'source_name, type_name, method_name, descriptor, position', 'classpath'),
+   'source_name, class_name, method_name, descriptor, position', 'classpath'),
   ('declared-type',
    'one type as a source declared it, within one classpath entry',
    'source_name, type_name', 'classpath'),
@@ -16276,7 +16277,7 @@ INSERT INTO meta_relation VALUES
    'One member name a class offers an author, the method that reads it and what reading it yields.',
    'For example a Film record offering title through its title() accessor, or a FilmDto offering it through getTitle().',
    'What @field(name:) resolves against on a type whose backing is a class rather than a table. Two arms and the discriminator is on the class rather than the member: a record answers with its components and anything else with its getters, which is decided where the class''s declared form is known and stored as the answer. Keyed by the accessor because the accessor is what is unique; the name an author writes is not, a class spelling one property two ways offering it twice. It names what reading the member yields rather than reaching it through the accessor''s own row, which is the shape the write side settled first and for two reasons that hold here too: every reader of a slot wants the type and none of them wants anything else the method has, and an inherited accessor has no row under the class offering it, so a slot typed only through one could not exist. What a class offers includes what it inherits, the emitter reaching an inherited accessor through the subclass without caring which file it came from, and the declaring class is carried so a jump to the member''s source lands in the file that has it. A record''s accessors are ordinary public methods and so is everything else a record generates, so the components the Record attribute names are what tells an accessor from a toString.'),
-  ('code_construction', 'declared-type', 'code',
+  ('code_construction', 'classpath-class', 'code',
    'How a value of one class is made, for the classes a generator has to make one of.',
    'For example a FilmInput record, made by calling its canonical constructor with every component at once.',
    'Reading a value and writing one are different questions and this family answers them separately, because the direction a type is reached from decides which it owes. A type at a result position is only ever read, so what it owes is accessors, which code_type_slot holds. A type at a parameter position has to be made before it can be passed, so what it owes is a constructor and the members that go in through it. The two are not mirrors: a read is per member and a construction is per object, which is why the arms sit here rather than on the members. Captured rather than reflected because the generator reflects for it today, at six sites, to decide a fork it then emits code for.'),

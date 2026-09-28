@@ -52,8 +52,8 @@ class ConstructionQueryTest {
                 .from(CODE_CONSTRUCTION)
                 .join(CODE_WRITE_SLOT)
                 .on(CODE_WRITE_SLOT.SOURCE_NAME.eq(CODE_CONSTRUCTION.SOURCE_NAME),
-                    CODE_WRITE_SLOT.TYPE_NAME.eq(CODE_CONSTRUCTION.TYPE_NAME))
-                .where(CODE_CONSTRUCTION.TYPE_NAME.eq(FIXTURES + "SlotRecord"))
+                    CODE_WRITE_SLOT.CLASS_NAME.eq(CODE_CONSTRUCTION.CLASS_NAME))
+                .where(CODE_CONSTRUCTION.CLASS_NAME.eq(FIXTURES + "SlotRecord"))
                 .orderBy(CODE_WRITE_SLOT.POSITION.asc())
                 .fetch(r -> r.value1() + " " + r.value2() + " " + r.value3() + " " + r.value4()))
                 .containsExactly(
@@ -83,8 +83,8 @@ class ConstructionQueryTest {
                 .from(CODE_CONSTRUCTION)
                 .join(CODE_WRITE_SLOT)
                 .on(CODE_WRITE_SLOT.SOURCE_NAME.eq(CODE_CONSTRUCTION.SOURCE_NAME),
-                    CODE_WRITE_SLOT.TYPE_NAME.eq(CODE_CONSTRUCTION.TYPE_NAME))
-                .where(CODE_CONSTRUCTION.TYPE_NAME.eq(FIXTURES + "BeanChild"))
+                    CODE_WRITE_SLOT.CLASS_NAME.eq(CODE_CONSTRUCTION.CLASS_NAME))
+                .where(CODE_CONSTRUCTION.CLASS_NAME.eq(FIXTURES + "BeanChild"))
                 .orderBy(CODE_WRITE_SLOT.SLOT_NAME.asc())
                 .fetch(r -> r.value1() + " " + r.value2() + " " + r.value3()))
                 .containsExactly(
@@ -110,7 +110,7 @@ class ConstructionQueryTest {
                 .join(CODE_TYPE_ELEMENT)
                 .on(CODE_TYPE_ELEMENT.SOURCE_NAME.eq(CODE_TYPE.SOURCE_NAME),
                     CODE_TYPE_ELEMENT.TYPE_NAME.eq(CODE_TYPE.TYPE_NAME))
-                .where(CODE_WRITE_SLOT.TYPE_NAME.eq(FIXTURES + "SlotRecord"))
+                .where(CODE_WRITE_SLOT.CLASS_NAME.eq(FIXTURES + "SlotRecord"))
                 .orderBy(CODE_WRITE_SLOT.POSITION.asc())
                 .fetch(r -> r.value1() + " " + r.value2() + " -> " + r.value3()
                     + " " + r.value4()))
@@ -152,7 +152,7 @@ class ConstructionQueryTest {
                 .where(CODE_TYPE_SLOT.CLASS_NAME.eq(FIXTURES + "SlotBean"))
                 .and(notExists(selectOne().from(CODE_WRITE_SLOT)
                     .where(CODE_WRITE_SLOT.SOURCE_NAME.eq(CODE_TYPE_SLOT.SOURCE_NAME),
-                        CODE_WRITE_SLOT.TYPE_NAME.eq(CODE_TYPE_SLOT.CLASS_NAME),
+                        CODE_WRITE_SLOT.CLASS_NAME.eq(CODE_TYPE_SLOT.CLASS_NAME),
                         CODE_WRITE_SLOT.SLOT_NAME.eq(CODE_TYPE_SLOT.SLOT_NAME))))
                 .orderBy(CODE_TYPE_SLOT.SLOT_NAME.asc())
                 .fetch(CODE_TYPE_SLOT.SLOT_NAME))
@@ -203,7 +203,7 @@ class ConstructionQueryTest {
                 .containsExactly("getTitle");
             assertThat(dsl.select(CODE_WRITE_SLOT.METHOD_NAME)
                 .from(CODE_WRITE_SLOT)
-                .where(CODE_WRITE_SLOT.TYPE_NAME.eq(FIXTURES + "BeanChild"))
+                .where(CODE_WRITE_SLOT.CLASS_NAME.eq(FIXTURES + "BeanChild"))
                 .and(CODE_WRITE_SLOT.SLOT_NAME.eq("title"))
                 .fetch(CODE_WRITE_SLOT.METHOD_NAME))
                 .containsExactly("setTitle");
@@ -219,7 +219,7 @@ class ConstructionQueryTest {
     void whatCannotBeMade() {
         withReactorCapture(dsl ->
             assertThat(dsl.fetchCount(CODE_CONSTRUCTION,
-                CODE_CONSTRUCTION.TYPE_NAME.eq(FIXTURES + "AbstractHolder")))
+                CODE_CONSTRUCTION.CLASS_NAME.eq(FIXTURES + "AbstractHolder")))
                 .isZero());
     }
 
@@ -238,9 +238,9 @@ class ConstructionQueryTest {
             .from(CODE_WRITE_SLOT)
             .join(CODE_CONSTRUCTION)
             .on(CODE_CONSTRUCTION.SOURCE_NAME.eq(CODE_WRITE_SLOT.SOURCE_NAME),
-                CODE_CONSTRUCTION.TYPE_NAME.eq(CODE_WRITE_SLOT.TYPE_NAME),
+                CODE_CONSTRUCTION.CLASS_NAME.eq(CODE_WRITE_SLOT.CLASS_NAME),
                 CODE_CONSTRUCTION.SHAPE.eq("POSITIONAL"))
-            .where(CODE_WRITE_SLOT.TYPE_NAME.eq(className))
+            .where(CODE_WRITE_SLOT.CLASS_NAME.eq(className))
             .orderBy(CODE_WRITE_SLOT.SLOT_NAME.asc())
             .fetch(CODE_WRITE_SLOT.SLOT_NAME);
     }

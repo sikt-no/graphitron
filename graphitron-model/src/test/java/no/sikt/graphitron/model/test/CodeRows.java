@@ -232,10 +232,10 @@ public final class CodeRows {
     /** That a value of the class can be made, and how. Idempotent; the first statement wins. */
     public static void construction(DSLContext dsl, String sourceName, String className,
                                     String shape, String descriptor, LocalDateTime readAt) {
-        type(dsl, sourceName, className, readAt);
+        clazz(dsl, sourceName, className, readAt);
         dsl.insertInto(CODE_CONSTRUCTION)
             .set(CODE_CONSTRUCTION.SOURCE_NAME, sourceName)
-            .set(CODE_CONSTRUCTION.TYPE_NAME, className)
+            .set(CODE_CONSTRUCTION.CLASS_NAME, className)
             .set(CODE_CONSTRUCTION.SHAPE, shape)
             .set(CODE_CONSTRUCTION.DESCRIPTOR, descriptor)
             .set(CODE_CONSTRUCTION.TOUCHED_AT, readAt)
@@ -250,7 +250,7 @@ public final class CodeRows {
         type(dsl, sourceName, slotType, readAt);
         dsl.insertInto(CODE_WRITE_SLOT)
             .set(CODE_WRITE_SLOT.SOURCE_NAME, sourceName)
-            .set(CODE_WRITE_SLOT.TYPE_NAME, className)
+            .set(CODE_WRITE_SLOT.CLASS_NAME, className)
             .set(CODE_WRITE_SLOT.METHOD_NAME, methodName)
             .set(CODE_WRITE_SLOT.DESCRIPTOR, descriptor)
             .set(CODE_WRITE_SLOT.POSITION, position)

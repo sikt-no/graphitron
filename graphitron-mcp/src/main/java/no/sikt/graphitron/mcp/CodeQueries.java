@@ -350,7 +350,7 @@ final class CodeQueries {
                 .join(declared).on(declared.SOURCE_NAME.eq(CODE_WRITE_SLOT.SOURCE_NAME)
                     .and(declared.TYPE_NAME.eq(CODE_WRITE_SLOT.SLOT_TYPE)))
                 .where(CODE_WRITE_SLOT.SOURCE_NAME.eq(source))
-                .and(CODE_WRITE_SLOT.TYPE_NAME.eq(className))
+                .and(CODE_WRITE_SLOT.CLASS_NAME.eq(className))
                 .orderBy(CODE_WRITE_SLOT.POSITION.asc(), CODE_WRITE_SLOT.SLOT_NAME.asc()))
             .convertFrom(r -> r.map(Records.mapping(ComponentEntry::new)));
     }

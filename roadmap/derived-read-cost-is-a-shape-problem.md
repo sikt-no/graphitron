@@ -317,9 +317,11 @@ result_delivery      -- DIRECT | WRAPPED | MANY, NULL with element_class
 * **`code_type_slot` reads its type through the accessor** `open`. Its `slot_type` is the accessor's
   result, which `code_method` already holds for the same method, so the slot keys into that rather
   than carrying the four columns a second time.
-* **`code_construction` keys on the class it is about** `open`. It states how a value of one class is
-  made and is keyed by a type spelling, which is a class fact filed under a type key.
-* **`code_type` and `code_type_element` are gone** `blocked`, on the three above.
+* **`code_construction` keys on the class it is about** `done`. It states how a value of one class is
+  made and was keyed by a type spelling, a class fact filed under a type key. It keys into
+  `code_class` now and `code_write_slot` follows it, so a class the next reading does not find takes
+  its construction and its write slots with it.
+* **`code_type` and `code_type_element` are gone** `blocked`, on the two above.
 
 **Two facts recorded so their absence is not read as an oversight.** The rendering is not stored:
 `display_name` is a formatting of the spelling, both its readers are Java, and a store should not

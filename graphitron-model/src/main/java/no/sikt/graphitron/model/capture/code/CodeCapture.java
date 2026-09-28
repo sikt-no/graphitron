@@ -596,14 +596,12 @@ public final class CodeCapture {
         if (made.isEmpty()) {
             return;
         }
-        // The types this pass is about to key to, before it keys to them. The classes it reached
-        // through a constructor are ones no method walk named, so the signature pass cannot have
-        // written them.
+        // The types the write slots are about to key to, before they key to them. A member filled
+        // through a constructor is a position no method walk named, so the signature pass cannot
+        // have written its type. The class being made needs none: it keys into code_class, which
+        // the reading wrote before any of this ran.
         var named = new java.util.LinkedHashMap<String, Named>();
         for (Made row : made) {
-            named.putIfAbsent(row.at().source() + '\u0000' + row.at().className(),
-                new Named(row.at().source(), row.at().className(),
-                    simpleName(row.at().className()), row.at().className()));
             var carried = "POSITIONAL".equals(row.shape())
                 ? row.constructor().parameters()
                 : settersOf(row.at(), byName).stream()
@@ -620,12 +618,12 @@ public final class CodeCapture {
         var c = CODE_CONSTRUCTION;
         var constructionRows = made.stream().collect(Rows.toRowList(
             row -> val(row.at().source(), c.SOURCE_NAME),
-            row -> val(row.at().className(), c.TYPE_NAME),
+            row -> val(row.at().className(), c.CLASS_NAME),
             row -> val(row.shape(), c.SHAPE),
             row -> val(row.constructor().descriptor(), c.DESCRIPTOR),
             row -> val(touchedAt, c.TOUCHED_AT)));
         BindBatch.execute(dsl, constructionRows, markers ->
-            dsl.insertInto(c, c.SOURCE_NAME, c.TYPE_NAME, c.SHAPE, c.DESCRIPTOR, c.TOUCHED_AT)
+            dsl.insertInto(c, c.SOURCE_NAME, c.CLASS_NAME, c.SHAPE, c.DESCRIPTOR, c.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(c.SHAPE, excluded(c.SHAPE))
@@ -658,7 +656,7 @@ public final class CodeCapture {
         var w = CODE_WRITE_SLOT;
         var slotRows = slots.stream().collect(Rows.toRowList(
             row -> val(row.source(), w.SOURCE_NAME),
-            row -> val(row.className(), w.TYPE_NAME),
+            row -> val(row.className(), w.CLASS_NAME),
             row -> val(row.methodName(), w.METHOD_NAME),
             row -> val(row.descriptor(), w.DESCRIPTOR),
             row -> val(row.position(), w.POSITION),
@@ -666,7 +664,7 @@ public final class CodeCapture {
             row -> val(row.slotType(), w.SLOT_TYPE),
             row -> val(touchedAt, w.TOUCHED_AT)));
         BindBatch.execute(dsl, slotRows, markers ->
-            dsl.insertInto(w, w.SOURCE_NAME, w.TYPE_NAME, w.METHOD_NAME, w.DESCRIPTOR, w.POSITION,
+            dsl.insertInto(w, w.SOURCE_NAME, w.CLASS_NAME, w.METHOD_NAME, w.DESCRIPTOR, w.POSITION,
                     w.SLOT_NAME, w.SLOT_TYPE, w.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()

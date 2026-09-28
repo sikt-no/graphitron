@@ -2761,7 +2761,7 @@ public final class SeededStore {
     private static boolean isPositional(DSLContext dsl, String sourceName, String className) {
         return dsl.fetchExists(CODE_CONSTRUCTION,
             CODE_CONSTRUCTION.SOURCE_NAME.eq(sourceName)
-                .and(CODE_CONSTRUCTION.TYPE_NAME.eq(className))
+                .and(CODE_CONSTRUCTION.CLASS_NAME.eq(className))
                 .and(CODE_CONSTRUCTION.SHAPE.eq("POSITIONAL")));
     }
 
@@ -2771,7 +2771,7 @@ public final class SeededStore {
         return dsl.select(CODE_WRITE_SLOT.POSITION)
             .from(CODE_WRITE_SLOT)
             .where(CODE_WRITE_SLOT.SOURCE_NAME.eq(sourceName)
-                .and(CODE_WRITE_SLOT.TYPE_NAME.eq(className))
+                .and(CODE_WRITE_SLOT.CLASS_NAME.eq(className))
                 .and(CODE_WRITE_SLOT.DESCRIPTOR.eq("<canonical>"))
                 .and(CODE_WRITE_SLOT.SLOT_NAME.eq(componentName)))
             .fetchOptional(0, Integer.class);
@@ -3045,7 +3045,7 @@ public final class SeededStore {
         // known; the read side waits for the accessor, which may not have been seeded yet.
         CodeRows.component(dsl, sourceName, className,
             dsl.fetchCount(CODE_WRITE_SLOT, CODE_WRITE_SLOT.SOURCE_NAME.eq(sourceName)
-                .and(CODE_WRITE_SLOT.TYPE_NAME.eq(className))
+                .and(CODE_WRITE_SLOT.CLASS_NAME.eq(className))
                 .and(CODE_WRITE_SLOT.DESCRIPTOR.eq("<canonical>"))),
             componentName, declaredType, SEEDED_READING);
         // The accessor may have been seeded before this component or after it, and the slot needs
