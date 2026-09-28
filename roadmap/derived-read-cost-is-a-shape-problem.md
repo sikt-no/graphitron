@@ -175,6 +175,32 @@ a derivation over either corpus alone, and `graphitron_` already does this again
   `graphitron_entry_defect` is the precedent, and the `intent_mutation_routine_seat` overlap under
   the chain branch above is the same two-producers shape.
 
+### The graphitron family completes its flip and subtract
+
+The additive half of this family's migration ran and almost nothing came off. Replacements were
+built, readers were left where they were, and the predecessors still stand, so the store maintains
+both shapes and every consumer is still on the old one. This is the branch that draws that down, and
+it is where the root's rule bites hardest: a branch is done when what it replaced is gone.
+
+More branches will hang here than the one below. It is the first because it is the one with a rule
+that decides every case without a judgment call.
+
+#### No `graphitron_*_entry` survives, an entry being the transcription's alone
+
+An entry is what a document wrote, at the position it was written, and the graphitron-ast family
+holds those. A relation outside it carrying the name is the old decode under the transcription's
+word, and renaming would not fix it: what the name is wrong about is which stratum the row belongs
+to. Counted in `roadmap/audits/2026-09-28-graphitron-entry-census.md`.
+
+* **The per-site triples collapse onto a coordinate** `open`, and first, because one collapse
+  retires several relations where a flip retires one. `graphql_directive_application` is the
+  precedent and the same defect is untreated here.
+* **The twinned ones flip and subtract** `open`. Their replacement is written on every capture and
+  read by nobody, which is the state this item calls the most dangerous one.
+* **The untwinned ones get an ast entry first** `open`, and are the longer half.
+* **The supertype roster becomes shrink-only** `open`. It already records the duplication and only
+  ever gains rows, so making it a ratchet turns the record into the gate rather than adding one.
+
 ### A capture reads only what changed
 
 * A directory can be compared at all `done`
