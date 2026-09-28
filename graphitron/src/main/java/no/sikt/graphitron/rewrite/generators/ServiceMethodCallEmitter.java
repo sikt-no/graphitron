@@ -87,7 +87,7 @@ public final class ServiceMethodCallEmitter {
 
     /**
      * Canonical form carrying the {@code dsl} local's source expression, resolved per the
-     * field's tenant binding by {@code TenantDslEmitter.dslExpression} (which yields the
+     * field's tenant binding by {@code TenantDslEmitter.serviceDslExpression} (which yields the
      * {@code graphitronContext(env).getDslContext(env)} form in single-tenant builds, the shape
      * every other overload defaults to), plus the emitting field's coordinate
      * ({@code Type.field}), which the {@code $session} guard bakes into its failure message; a

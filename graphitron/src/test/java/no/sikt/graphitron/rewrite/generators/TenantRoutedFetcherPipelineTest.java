@@ -79,6 +79,90 @@ class TenantRoutedFetcherPipelineTest {
             .contains("divinedTenant(env.<Object>getArgument(\"filmId\"), env.<Object>getArgument(\"altFilm\"))");
     }
 
+    // ===== @service roots: divine before the call, route the call, stamp the return =====
+
+    private static final String TENANT_SERVICE = "no.sikt.graphitron.rewrite.TenantServiceStub";
+
+    private static final String SERVICE_TYPES = """
+        interface Node { id: ID! }
+        type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+            id: ID! @nodeId
+            title: String
+        }
+        type RateFilmsPayload { films: [Film!]! }
+        input RateFilmInput { film: ID! @nodeId(typeName: "Film") }
+        type Query { x: String }
+        """;
+
+    private static String service(String method) {
+        return "@service(service: {className: \"" + TENANT_SERVICE + "\", method: \"" + method + "\"})";
+    }
+
+    private static final String DIVINED =
+        "java.lang.Integer _divinedTenant = fake.code.generated.schema.TenantConnections.divinedTenant(";
+
+    @Test
+    void divingServiceDeclaresTheTenantBeforeTheCallAndRoutesItsDsl() {
+        var schema = multiTenant(SERVICE_TYPES + """
+            type Mutation { rateFilm(in: RateFilmInput!): RateFilmsPayload %s }
+            """.formatted(service("rateFilmWithDsl")));
+
+        var rateFilm = render(schema, "MutationFetchers", "rateFilm");
+        assertThat(rateFilm)
+            .contains(DIVINED)
+            .contains("fake.code.generated.schema.TenantConnections.tenantSlot(env.getArgument(\"in\"), \"film\")")
+            .contains(".localContext(_divinedTenant)")
+            .doesNotContain("dslDefault")
+            .doesNotContain("getDslContext(env)");
+        String dslDecl = "org.jooq.DSLContext dsl = fake.code.generated.schema.TenantConnections.dslFor(env, _divinedTenant)";
+        assertThat(rateFilm.split(java.util.regex.Pattern.quote("org.jooq.DSLContext dsl ="), -1))
+            .as("dsl is declared exactly once").hasSize(2);
+        assertThat(rateFilm.indexOf(DIVINED)).as("the tenant is divined before dsl and the call")
+            .isLessThan(rateFilm.indexOf(dslDecl))
+            .isLessThan(rateFilm.indexOf("TenantServiceStub.rateFilmWithDsl("));
+    }
+
+    @Test
+    void divingServiceOnTheErrorChannelStampsTheWrappedReturn() {
+        var schema = multiTenant(SERVICE_TYPES + """
+            type DbErr @error(handlers: [{handler: DATABASE}]) { path: [String!]! message: String! }
+            union RateError = DbErr
+            type SakPayload { data: String errors: [RateError] }
+            type Mutation { rateFilm(in: RateFilmInput!): SakPayload %s }
+            """.formatted(service("rateFilmOutcome")));
+
+        var rateFilm = render(schema, "MutationFetchers", "rateFilm");
+        assertThat(rateFilm)
+            .contains(DIVINED)
+            .contains("org.jooq.DSLContext dsl = fake.code.generated.schema.TenantConnections.dslFor(env, _divinedTenant)")
+            .containsPattern("\\.data\\(new [\\w.]+Outcome\\.Success<>\\(result\\)\\)\\.localContext\\(_divinedTenant\\)");
+    }
+
+    @Test
+    void divingServiceBindingNoDslStillDivinesAndStamps() {
+        var schema = multiTenant(SERVICE_TYPES + """
+            type Mutation { rateFilm(in: RateFilmInput!): RateFilmsPayload %s }
+            """.formatted(service("rateFilm")));
+
+        assertThat(render(schema, "MutationFetchers", "rateFilm"))
+            .contains(DIVINED)
+            .contains(".localContext(_divinedTenant)")
+            .doesNotContain("DSLContext dsl");
+    }
+
+    @Test
+    void divingTableReturningServiceRoutesTheReselectionOnTheDivinedTenant() {
+        // The service binds no DSLContext, so the lift declares the dsl the key container needs.
+        var schema = multiTenant(SERVICE_TYPES + """
+            type Mutation { pickFilm(in: RateFilmInput!): Film %s }
+            """.formatted(service("pickFilm")));
+
+        assertThat(render(schema, "MutationFetchers", "pickFilm"))
+            .contains(DIVINED)
+            .contains("org.jooq.DSLContext dsl = fake.code.generated.schema.TenantConnections.dslFor(env, _divinedTenant)")
+            .contains(".localContext(_divinedTenant)");
+    }
+
     @Test
     void untenantedRootAcquiresTheDefaultSourceAndHandsNothingDown() {
         var schema = multiTenant("""

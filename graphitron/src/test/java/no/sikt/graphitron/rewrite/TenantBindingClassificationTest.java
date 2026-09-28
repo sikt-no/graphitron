@@ -1001,6 +1001,323 @@ class TenantBindingClassificationTest {
         }
     }
 
+    // ===== @service: a root divines from its arguments, a connection-binding child inherits =====
+
+    private static final String TENANT_SERVICE = "no.sikt.graphitron.rewrite.TenantServiceStub";
+    private static final String TENANT_HOLDER = "no.sikt.graphitron.rewrite.TenantHolderServiceStub";
+
+    /** Film keyed on the tenant column alone, a tenant-scoped child, and a non-table wrapper. */
+    private static final String SERVICE_TYPES = """
+        interface Node { id: ID! }
+        type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+            id: ID! @nodeId
+            title: String
+            inventories: [Inventory!]!
+        }
+        type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
+        type RateFilmsPayload { films: [Film!]! }
+        input RateFilmInput { film: ID! @nodeId(typeName: "Film") }
+        type Query { x: String }
+        """;
+
+    private static String service(String method) {
+        return "@service(service: {className: \"" + TENANT_SERVICE + "\", method: \"" + method + "\"})";
+    }
+
+    private static TenantBinding.ArgumentBound argumentBound(GraphitronSchema schema, String type, String field) {
+        var binding = schema.tenantBindingOf(type, field);
+        assertThat(binding).as(type + "." + field).isInstanceOf(TenantBinding.ArgumentBound.class);
+        return (TenantBinding.ArgumentBound) binding;
+    }
+
+    private static void assertDecodedSlot(TenantBinding.BoundSlot slot, String name,
+                                          TenantBinding.SlotRead read, int position) {
+        assertThat(slot.slotName()).isEqualTo(name);
+        assertThat(slot.read()).isEqualTo(read);
+        assertThat(slot.column().sqlName()).isEqualTo("film_id");
+        assertThat(slot.projection()).isInstanceOfSatisfying(
+            TenantBinding.SlotProjection.DecodedKeySlot.class,
+            decoded -> assertThat(decoded.slot()).isEqualTo(position));
+    }
+
+    private static void assertRejects(GraphitronSchema schema, String coordinate, String detail) {
+        assertThat(schema.tenantBindings().rejections())
+            .anyMatch(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding r
+                && r.coordinate().equals(coordinate)
+                && r.detail().contains(detail));
+    }
+
+    @Test
+    void wrapperServiceWithANodeIdRecordMemberDivinesAndItsChildrenInherit() {
+        var schema = build(SERVICE_TYPES + """
+            type Mutation { rateFilm(in: RateFilmInput!): RateFilmsPayload %s }
+            """.formatted(service("rateFilm")));
+
+        var bound = argumentBound(schema, "Mutation", "rateFilm");
+        assertThat(bound.bindings()).hasSize(1);
+        assertDecodedSlot(bound.primary(), "in.film",
+            new TenantBinding.SlotRead.NestedInput("in", List.of("film")), 0);
+        assertThat(schema.tenantBindingOf("RateFilmsPayload", "films"))
+            .isEqualTo(new TenantBinding.Inherited("RateFilmsPayload"));
+        assertThat(schema.tenantBindingOf("Film", "inventories"))
+            .isEqualTo(new TenantBinding.Inherited("Film"));
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aBatchOfBeansReadsTheSamePathOffEveryElement() {
+        var schema = build(SERVICE_TYPES + """
+            type Mutation { rateFilms(ratings: [RateFilmInput!]!): RateFilmsPayload %s }
+            """.formatted(service("rateFilms")));
+
+        assertDecodedSlot(argumentBound(schema, "Mutation", "rateFilms").primary(), "ratings.film",
+            new TenantBinding.SlotRead.NestedInput("ratings", List.of("film")), 0);
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aJooqRecordParameterBindingTheTenantColumnDivinesRaw() {
+        var schema = build(SERVICE_TYPES + """
+            input ModifyFilmInput {
+                filmId: Int! @field(name: "film_id")
+                title: String @field(name: "title")
+            }
+            type Mutation { modifyFilms(in: [ModifyFilmInput!]!): RateFilmsPayload %s }
+            """.formatted(service("modifyFilms")));
+
+        var slot = argumentBound(schema, "Mutation", "modifyFilms").primary();
+        assertThat(slot.slotName()).isEqualTo("in.filmId");
+        assertThat(slot.read()).isEqualTo(new TenantBinding.SlotRead.NestedInput("in", List.of("filmId")));
+        assertThat(slot.projection()).isEqualTo(TenantBinding.SlotProjection.Raw.INSTANCE);
+        assertThat(schema.tenantBindingOf("RateFilmsPayload", "films"))
+            .isInstanceOf(TenantBinding.Inherited.class);
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aJooqRecordParameterDecodingACompositeKeyReadsTheTenantPosition() {
+        var schema = build(SERVICE_TYPES + """
+            type FilmActor implements Node @table(name: "film_actor")
+                    @node(keyColumns: ["actor_id", "film_id"]) {
+                id: ID! @nodeId
+            }
+            input ModifyFilmActorInput { id: ID! @nodeId(typeName: "FilmActor") }
+            type Mutation { modifyFilmActor(in: ModifyFilmActorInput!): RateFilmsPayload %s }
+            """.formatted(service("modifyFilmActor")));
+
+        assertDecodedSlot(argumentBound(schema, "Mutation", "modifyFilmActor").primary(), "in.id",
+            new TenantBinding.SlotRead.NestedInput("in", List.of("id")), 1);
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aTopLevelNodeIdArgumentReadsTheArgument() {
+        var schema = build(SERVICE_TYPES + """
+            type Mutation { rateById(film: ID! @nodeId(typeName: "Film")): RateFilmsPayload %s }
+            """.formatted(service("rateById")));
+
+        assertDecodedSlot(argumentBound(schema, "Mutation", "rateById").primary(), "film",
+            TenantBinding.SlotRead.TopLevelArg.INSTANCE, 0);
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void twoTenantBearingIdsOfDifferentNodeTypesMintTwoSlots() {
+        // Each decodes through its own node type's helper; the agreement fold then refuses a row
+        // whose two ids name different tenants and skips the optional one when it is absent.
+        var schema = build(SERVICE_TYPES + """
+            type FilmFed implements Node @table(name: "film") @node(typeId: "FF", keyColumns: ["film_id"]) {
+                id: ID! @nodeId
+            }
+            input RatePairInput {
+                film: ID! @nodeId(typeName: "Film")
+                alsoFilm: ID @nodeId(typeName: "FilmFed")
+            }
+            type Mutation { ratePair(in: RatePairInput!): RateFilmsPayload %s }
+            """.formatted(service("ratePair")));
+
+        var bound = argumentBound(schema, "Mutation", "ratePair");
+        assertThat(bound.bindings()).extracting(TenantBinding.BoundSlot::slotName)
+            .containsExactly("in.film", "in.alsoFilm");
+        assertThat(bound.bindings()).extracting(slot ->
+                ((TenantBinding.SlotProjection.DecodedKeySlot) slot.projection()).decode().methodName())
+            .containsExactly("decodeFilm", "decodeFilmFed");
+    }
+
+    @Test
+    void twoIdsWithOneNameAtDifferentPathsMintTwoSlots() {
+        var schema = build(SERVICE_TYPES + """
+            type Mutation { rateTwo(first: RateFilmInput!, second: RateFilmInput!): RateFilmsPayload %s }
+            """.formatted(service("rateTwo")));
+
+        assertThat(argumentBound(schema, "Mutation", "rateTwo").bindings())
+            .extracting(TenantBinding.BoundSlot::slotName)
+            .containsExactly("first.film", "second.film");
+    }
+
+    @Test
+    void anUndecodedIdNamesNoTenantSoTheWrappersChildStillRejects() {
+        // The accepted gap: a String parameter holding the encoded id carries no node type the
+        // build can read, so the root stays on the default source and nothing below inherits.
+        var schema = build(SERVICE_TYPES + """
+            type Mutation { rateByRawId(film: ID!): RateFilmsPayload %s }
+            """.formatted(service("rateByRawId")));
+
+        assertThat(schema.tenantBindingOf("Mutation", "rateByRawId"))
+            .isEqualTo(TenantBinding.Untenanted.INSTANCE);
+        assertRejects(schema, "RateFilmsPayload.films", "no ancestor established a tenant context");
+    }
+
+    @Test
+    void aTableReturningServiceRootOverATenantTableDivines() {
+        var schema = build(SERVICE_TYPES + """
+            type Mutation { pickFilm(in: RateFilmInput!): Film %s }
+            """.formatted(service("pickFilm")));
+
+        assertDecodedSlot(argumentBound(schema, "Mutation", "pickFilm").primary(), "in.film",
+            new TenantBinding.SlotRead.NestedInput("in", List.of("film")), 0);
+        assertThat(schema.tenantBindings().rejections())
+            .noneMatch(e -> e.coordinate().equals("Mutation.pickFilm"));
+    }
+
+    /** A union over two tenant-scoped node types whose keys hold the tenant at different positions. */
+    private static final String FILM_THING = """
+        type FilmActor implements Node @table(name: "film_actor")
+                @node(keyColumns: ["actor_id", "film_id"]) {
+            id: ID! @nodeId
+        }
+        union FilmThing = Film | FilmActor
+        """;
+
+    @Test
+    void aPolymorphicRecordIdAtATableReturningRootRejectsWithItsOwnText() {
+        var schema = build(SERVICE_TYPES + FILM_THING + """
+            input ThingInput { occupant: ID! @nodeId(typeName: "FilmThing") }
+            type Mutation { pickFilmForThing(in: ThingInput!): Film %s }
+            """.formatted(service("pickFilmForThing")));
+
+        assertThat(schema.tenantBindingOf("Mutation", "pickFilmForThing")).isNull();
+        assertRejects(schema, "Mutation.pickFilmForThing",
+            "no single decode to route the service call on");
+        assertThat(schema.tenantBindings().rejections())
+            .noneMatch(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding r
+                && r.coordinate().equals("Mutation.pickFilmForThing")
+                && r.detail().contains("no argument or input field maps to tenant column"));
+    }
+
+    @Test
+    void aPolymorphicRecordIdBesideADivingSiblingStopsTheFieldDivining() {
+        // Left unchecked, the union's id could name another tenant's record while the sibling
+        // routes the call, so the service would act on it in the wrong database.
+        var schema = build(SERVICE_TYPES + FILM_THING + """
+            input FilmAndThingInput {
+                film: ID! @nodeId(typeName: "Film")
+                thing: ID! @nodeId(typeName: "FilmThing")
+            }
+            type Mutation { rateFilmAndThing(in: FilmAndThingInput!): RateFilmsPayload %s }
+            """.formatted(service("rateFilmAndThing")));
+
+        assertThat(schema.tenantBindingOf("Mutation", "rateFilmAndThing"))
+            .isNotInstanceOf(TenantBinding.ArgumentBound.class);
+        assertRejects(schema, "RateFilmsPayload.films", "no ancestor established a tenant context");
+    }
+
+    @Test
+    void aPolymorphicRecordIdOverGlobalMembersNamesNoTenantAndLeavesTheSiblingDivining() {
+        // Neither customer nor staff carries the tenant column, so the id names no tenant at all.
+        var schema = build(SERVICE_TYPES + """
+            type Customer implements Node @table(name: "customer") @node(keyColumns: ["customer_id"]) {
+                id: ID! @nodeId
+            }
+            type Staff implements Node @table(name: "staff") @node(keyColumns: ["staff_id"]) {
+                id: ID! @nodeId
+            }
+            union AddressOccupant = Customer | Staff
+            input FilmAndThingInput {
+                film: ID! @nodeId(typeName: "Film")
+                thing: ID! @nodeId(typeName: "AddressOccupant")
+            }
+            type Mutation { rateFilmAndThing(in: FilmAndThingInput!): RateFilmsPayload %s }
+            """.formatted(service("rateFilmAndThing")));
+
+        assertThat(argumentBound(schema, "Mutation", "rateFilmAndThing").bindings())
+            .extracting(TenantBinding.BoundSlot::slotName)
+            .containsExactly("in.film");
+        assertThat(schema.tenantBindingOf("RateFilmsPayload", "films"))
+            .isInstanceOf(TenantBinding.Inherited.class);
+    }
+
+    /** A tenant-bound Film root the child services below hang off. */
+    private static String boundFilmWith(String childFields) {
+        return """
+            type Film @table(name: "film") {
+                title: String
+                %s
+            }
+            type Language @table(name: "language") { name: String }
+            type Query { films(filmId: Int @field(name: "film_id")): [Film!]! }
+            """.formatted(childFields);
+    }
+
+    @Test
+    void aChildServiceTakingADslContextInheritsTheParentsTenant() {
+        var schema = build(boundFilmWith("rating: String " + service("ratingWithDsl")));
+
+        assertThat(schema.tenantBindingOf("Film", "rating"))
+            .isEqualTo(new TenantBinding.Inherited("Film"));
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aChildServiceOnAHolderConstructedWithTheDslContextInheritsToo() {
+        var schema = build(boundFilmWith(
+            "rating: String @service(service: {className: \"" + TENANT_HOLDER + "\", method: \"rating\"})"));
+
+        assertThat(schema.tenantBindingOf("Film", "rating"))
+            .isEqualTo(new TenantBinding.Inherited("Film"));
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aChildServiceBindingNoConnectionStaysUntenanted() {
+        var schema = build(boundFilmWith("rating: String " + service("ratingPlain")));
+
+        assertThat(schema.tenantBindingOf("Film", "rating"))
+            .isEqualTo(TenantBinding.Untenanted.INSTANCE);
+    }
+
+    @Test
+    void aRootServiceReturningAGlobalTableKeepsTheDefaultSourceAndEstablishesNoContext() {
+        // Graphitron re-reads the returned language rows on the service's connection, and global
+        // tables live on the default source, so the tenant the FilmRecord names routes nothing.
+        var schema = build(SERVICE_TYPES + """
+            type Language @table(name: "language") {
+                name: String
+                films: [Film!]! @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Mutation { languageOfFilm(in: RateFilmInput!): Language %s }
+            """.formatted(service("languageOfFilm")));
+
+        assertThat(schema.tenantBindingOf("Mutation", "languageOfFilm"))
+            .isEqualTo(TenantBinding.Untenanted.INSTANCE);
+        assertRejects(schema, "Language.films", "no ancestor established a tenant context");
+    }
+
+    @Test
+    void aChildServiceReturningAGlobalTableStaysOnTheDefaultSource() {
+        var schema = build(boundFilmWith("""
+            language: Language %s
+            sessionLanguage: Language @service(service: {className: "%s",
+                method: "languageForSession", argMapping: "identity: $session"})
+            """.formatted(service("languageWithDsl"), TENANT_SERVICE)));
+
+        assertThat(schema.tenantBindingOf("Film", "language"))
+            .isEqualTo(TenantBinding.Untenanted.INSTANCE);
+        assertThat(schema.tenantBindingOf("Film", "sessionLanguage"))
+            .isEqualTo(TenantBinding.Untenanted.INSTANCE);
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
     @Test
     void noTenantColumnMeansNoAxis() {
         var schema = TestSchemaHelper.buildSchema("""

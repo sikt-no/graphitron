@@ -679,12 +679,12 @@ public class TypeFetcherGenerator {
                 case QueryField.QueryServiceRecordField f     -> builder.addMethod(buildQueryServiceRecordFetcher(ctx, f, outputPackage));
                 case QueryField.QueryServicePolymorphicField f ->
                     MultiTablePolymorphicEmitter
-                        .emitServiceMethods(ctx, f.name(), f.serviceMethodCall(), f.participants(),
+                        .emitServiceMethods(ctx, f, f.serviceMethodCall(), f.participants(),
                             f.returnType().wrapper().isList(), outputPackage)
                         .forEach(builder::addMethod);
                 case QueryField.QueryServiceTableInterfaceField f ->
                     MultiTablePolymorphicEmitter
-                        .emitServiceTableInterfaceMethods(ctx, f.name(), f.serviceMethodCall(), f.returnType(),
+                        .emitServiceTableInterfaceMethods(ctx, f, f.serviceMethodCall(), f.returnType(),
                             f.discriminatorColumn(), f.knownDiscriminatorValues(), f.participants(),
                             f.returnType().wrapper().isList(), outputPackage)
                         .forEach(builder::addMethod);
@@ -745,12 +745,12 @@ public class TypeFetcherGenerator {
                 case MutationField.MutationServiceRecordField f -> builder.addMethod(buildMutationServiceRecordFetcher(ctx, f, outputPackage));
                 case MutationField.MutationServicePolymorphicField f ->
                     MultiTablePolymorphicEmitter
-                        .emitServiceMethods(ctx, f.name(), f.serviceMethodCall(), f.participants(),
+                        .emitServiceMethods(ctx, f, f.serviceMethodCall(), f.participants(),
                             f.returnType().wrapper().isList(), outputPackage)
                         .forEach(builder::addMethod);
                 case MutationField.MutationServiceTableInterfaceField f ->
                     MultiTablePolymorphicEmitter
-                        .emitServiceTableInterfaceMethods(ctx, f.name(), f.serviceMethodCall(), f.returnType(),
+                        .emitServiceTableInterfaceMethods(ctx, f, f.serviceMethodCall(), f.returnType(),
                             f.discriminatorColumn(), f.knownDiscriminatorValues(), f.participants(),
                             f.returnType().wrapper().isList(), outputPackage)
                         .forEach(builder::addMethod);
@@ -1448,7 +1448,7 @@ public class TypeFetcherGenerator {
         // declare the local with whichever shape the developer chose so the generated
         // assignment compiles.
         TypeName resultLocalType = isList ? qstf.serviceMethodCall().javaReturnType() : recordClass;
-        return buildServiceFetcherCommon(ctx, qstf.name(), qstf.serviceMethodCall(),
+        return buildServiceFetcherCommon(ctx, qstf, qstf.serviceMethodCall(),
             qstf.parentTypeName(), resultLocalType, qstf.errorChannel(), outputPackage,
             new ServiceReentryLift(qstf, row, carrierDsl, tableRef));
     }
@@ -1471,7 +1471,7 @@ public class TypeFetcherGenerator {
     private static MethodSpec buildQueryServiceRecordFetcher(TypeFetcherEmissionContext ctx, QueryField.QueryServiceRecordField qsrf,
                                                               String outputPackage) {
         TypeName returnType = computeServiceRecordReturnType(qsrf);
-        return buildServiceFetcherCommon(ctx, qsrf.name(), qsrf.serviceMethodCall(),
+        return buildServiceFetcherCommon(ctx, qsrf, qsrf.serviceMethodCall(),
             qsrf.parentTypeName(), returnType, qsrf.errorChannel(), outputPackage);
     }
 
@@ -1512,7 +1512,7 @@ public class TypeFetcherGenerator {
         boolean isList = mstf.returnType().wrapper().isList();
         // See buildQueryServiceTableFetcher for the List-cardinality policy.
         TypeName resultLocalType = isList ? mstf.serviceMethodCall().javaReturnType() : recordClass;
-        return buildServiceFetcherCommon(ctx, mstf.name(), mstf.serviceMethodCall(),
+        return buildServiceFetcherCommon(ctx, mstf, mstf.serviceMethodCall(),
             mstf.parentTypeName(), resultLocalType, mstf.errorChannel(), outputPackage,
             new ServiceReentryLift(mstf, row, carrierDsl, tableRef));
     }
@@ -1526,7 +1526,7 @@ public class TypeFetcherGenerator {
     private static MethodSpec buildMutationServiceRecordFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationServiceRecordField msrf,
                                                                  String outputPackage) {
         TypeName returnType = computeMutationServiceRecordReturnType(msrf);
-        return buildServiceFetcherCommon(ctx, msrf.name(), msrf.serviceMethodCall(),
+        return buildServiceFetcherCommon(ctx, msrf, msrf.serviceMethodCall(),
             msrf.parentTypeName(), returnType, msrf.errorChannel(), outputPackage);
     }
 
@@ -1578,12 +1578,13 @@ public class TypeFetcherGenerator {
      * construction is unavoidable on the error path because no value was returned for per-field
      * wiring to project from.
      */
-    private static MethodSpec buildServiceFetcherCommon(TypeFetcherEmissionContext ctx, String fieldName,
+    private static MethodSpec buildServiceFetcherCommon(TypeFetcherEmissionContext ctx,
+                                                        no.sikt.graphitron.rewrite.model.OutputField field,
                                                         ServiceMethodCall carrier,
                                                         String parentTypeName, TypeName valueType,
                                                         Optional<ErrorChannel.Mapped> errorChannel,
                                                         String outputPackage) {
-        return buildServiceFetcherCommon(ctx, fieldName, carrier, parentTypeName, valueType,
+        return buildServiceFetcherCommon(ctx, field, carrier, parentTypeName, valueType,
             errorChannel, outputPackage, null);
     }
 
@@ -1598,12 +1599,14 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.command.CarrierDsl carrierDsl,
             TableRef table) {}
 
-    private static MethodSpec buildServiceFetcherCommon(TypeFetcherEmissionContext ctx, String fieldName,
+    private static MethodSpec buildServiceFetcherCommon(TypeFetcherEmissionContext ctx,
+                                                        no.sikt.graphitron.rewrite.model.OutputField field,
                                                         ServiceMethodCall carrier,
                                                         String parentTypeName, TypeName valueType,
                                                         Optional<ErrorChannel.Mapped> errorChannel,
                                                         String outputPackage,
                                                         ServiceReentryLift lift) {
+        String fieldName = field.name();
         // An @service outcome field (Mapped channel) hands graphql-java a typed Outcome<X>
         // source. The DataFetcherResult payload type becomes Outcome<X>; the inner method result
         // local stays X (the service's return), wrapped in Success on the happy path and replaced by
@@ -1637,19 +1640,26 @@ public class TypeFetcherGenerator {
         // emitter generates unqualified calls and relies on the *Fetchers-class helper that
         // {@link #buildGraphitronContextHelper} installs when GRAPHITRON_CONTEXT is requested.
         ctx.graphitronContextCall();
-        ServiceMethodCallEmitter.emit(carrier, valueType, ctx.fetchersHelperNames(),
-                TenantDslEmitter.dslExpression(ctx, fieldName, outputPackage),
+        // A divining field declares its _divinedTenant local ahead of the call, so a batch whose
+        // ids name two tenants is refused before the service runs; the call's own dsl local (and
+        // the lift's, when the call declares none) reads it. Every other arm pastes nothing here.
+        var tenantHandDown = TenantDslEmitter.handDownOnly(ctx, field, outputPackage);
+        builder.addCode(tenantHandDown.declaration());
+        CodeBlock dslSource = TenantDslEmitter.serviceDslExpression(ctx, field, tenantHandDown, outputPackage);
+        ServiceMethodCallEmitter.emit(carrier, valueType, ctx.fetchersHelperNames(), dslSource,
                 outputPackage, parentTypeName + "." + fieldName, ctx.nodeIdDecodeHelpers())
             .forEach(builder::addStatement);
         if (lift != null) {
-            builder.addCode(emitServiceReentryLift(ctx, lift, carrier, fieldName,
+            builder.addCode(emitServiceReentryLift(ctx, lift, carrier, dslSource,
                 liftedValueType, outputPackage));
         }
         String payloadLocal = lift == null ? "result" : "payload";
         if (wrap) {
-            builder.addCode(returnSyncSuccessWrapped(payloadType, outputPackage, payloadLocal));
+            builder.addCode(returnSyncSuccessWrapped(payloadType, outputPackage, payloadLocal,
+                tenantHandDown.localContextTail()));
         } else {
-            builder.addCode(returnSyncSuccess(liftedValueType, payloadLocal));
+            builder.addCode(returnSyncSuccess(liftedValueType, payloadLocal,
+                tenantHandDown.localContextTail()));
         }
         builder.nextControlFlow("catch ($T e)", Exception.class);
         if (wrap) {
@@ -1691,7 +1701,7 @@ public class TypeFetcherGenerator {
      * by-PK auto-fetch.
      */
     private static CodeBlock emitServiceReentryLift(TypeFetcherEmissionContext ctx,
-            ServiceReentryLift lift, ServiceMethodCall carrier, String fieldName,
+            ServiceReentryLift lift, ServiceMethodCall carrier, CodeBlock dslSource,
             TypeName valueType, String outputPackage) {
         var row = lift.row();
         ctx.addCompanionMethod(no.sikt.graphitron.render.RootLauncherRenderer.render(
@@ -1709,8 +1719,7 @@ public class TypeFetcherGenerator {
 
         var body = CodeBlock.builder();
         if (!ServiceMethodCallEmitter.declaresDslLocal(carrier)) {
-            body.addStatement("$T dsl = $L", DSL_CONTEXT,
-                TenantDslEmitter.dslExpression(ctx, fieldName, outputPackage));
+            body.addStatement("$T dsl = $L", DSL_CONTEXT, dslSource);
         }
         if (isList) {
             body.beginControlFlow("if (result == null || result.isEmpty())")
@@ -1763,12 +1772,16 @@ public class TypeFetcherGenerator {
             ClassName.get(outputPackage + ".schema", OutcomeClassGenerator.CLASS_NAME), boxed(valueType));
     }
 
-    /** Success-path return wrapping the method result in {@code Outcome.Success}.*/
-    private static CodeBlock returnSyncSuccessWrapped(TypeName outcomeType, String outputPackage, String resultLocal) {
+    /**
+     * Success-path return wrapping the method result in {@code Outcome.Success}. {@code builderTail}
+     * is the routed tenant site's {@code localContext} hand-down, empty everywhere else.
+     */
+    private static CodeBlock returnSyncSuccessWrapped(TypeName outcomeType, String outputPackage,
+                                                      String resultLocal, CodeBlock builderTail) {
         var success = ClassName.get(outputPackage + ".schema", OutcomeClassGenerator.CLASS_NAME)
             .nestedClass(OutcomeClassGenerator.SUCCESS_CLASS);
-        return CodeBlock.of("return $T.<$T>newResult().data(new $T<>($L)).build();\n",
-            DATA_FETCHER_RESULT, outcomeType, success, resultLocal);
+        return CodeBlock.of("return $T.<$T>newResult().data(new $T<>($L))$L.build();\n",
+            DATA_FETCHER_RESULT, outcomeType, success, resultLocal, builderTail);
     }
 
     /**

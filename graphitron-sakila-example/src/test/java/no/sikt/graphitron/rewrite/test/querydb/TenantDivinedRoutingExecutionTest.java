@@ -193,6 +193,72 @@ class TenantDivinedRoutingExecutionTest {
             .isZero();
     }
 
+    // ===== @service: divined from the arguments, handed down to the returned rows =====
+
+    private static Map<String, Object> rateFilms(String rows) {
+        var result = execute("mutation { rateFilms(in: [" + rows + "]) {"
+            + " ranOn films { title inventories { inventoryId } } } }");
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        return (Map<String, Object>) ((Map<String, Object>) result.getData()).get("rateFilms");
+    }
+
+    @Test
+    void service_runsOnTheTenantItsIdsName_andHandsItDownToTheReturnedRows() {
+        var payload = rateFilms("{ film: \"" + NodeIdEncoder.encodeFilm(1) + "\" }");
+        assertThat(payload.get("ranOn")).as("the service's DSLContext is tenant 1's").isEqualTo("tenant_1");
+        var films = (List<Map<String, Object>>) payload.get("films");
+        assertThat(films).extracting(f -> f.get("title")).containsExactly("Tenant One Film");
+        assertThat((List<?>) films.get(0).get("inventories"))
+            .as("the tenant-scoped child under the wrapper inherits tenant 1").hasSize(2);
+        assertThat(TENANT_2_OPENED.get()).isZero();
+    }
+
+    @Test
+    void service_batchNamingTwoTenants_isRefusedBeforeTheServiceRuns() {
+        var result = execute("mutation { rateFilms(in: [{ film: \"" + NodeIdEncoder.encodeFilm(1)
+            + "\" }, { film: \"" + NodeIdEncoder.encodeFilm(2) + "\" }]) { ranOn } }");
+        assertThat(result.getErrors().toString()).contains("Tenant bindings disagree");
+        assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get())
+            .as("the service needs a connection, and none was acquired").isZero();
+    }
+
+    @Test
+    void service_optionalSecondIdJoinsTheAgreementOnlyWhenSent() {
+        var agreeing = rateFilms("{ film: \"" + NodeIdEncoder.encodeFilm(1) + "\", alsoFilm: \""
+            + NodeIdEncoder.encodeFilm(1) + "\" }");
+        assertThat(agreeing.get("ranOn")).isEqualTo("tenant_1");
+
+        var result = execute("mutation { rateFilms(in: [{ film: \"" + NodeIdEncoder.encodeFilm(1)
+            + "\", alsoFilm: \"" + NodeIdEncoder.encodeFilm(2) + "\" }]) { ranOn } }");
+        assertThat(result.getErrors().toString()).contains("Tenant bindings disagree");
+        assertThat(TENANT_2_OPENED.get()).isZero();
+    }
+
+    @Test
+    void service_jooqRecordParameter_routesOnTheCompositeKeysTenantSlot() {
+        var result = execute("mutation { rateFilmActors(in: [{ id: \""
+            + NodeIdEncoder.encodeFilmActor(20, 2) + "\" }]) { ranOn films { title } } }");
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        var payload = (Map<String, Object>) ((Map<String, Object>) result.getData()).get("rateFilmActors");
+        assertThat(payload.get("ranOn")).isEqualTo("tenant_2");
+        assertThat((List<Map<String, Object>>) payload.get("films"))
+            .extracting(f -> f.get("title")).containsExactly("Tenant Two Film");
+        assertThat(TENANT_1_OPENED.get()).isZero();
+    }
+
+    @Test
+    void connectionBindingChildServices_runOnTheParentsTenant() {
+        var result = execute("{ films(filmId: 2) { servedBy servedByHolder } }");
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        assertThat((List<Map<String, Object>>) ((Map<String, Object>) result.getData()).get("films"))
+            .singleElement()
+            .satisfies(film -> {
+                assertThat(film.get("servedBy")).as("the DSLContext parameter").isEqualTo("tenant_2");
+                assertThat(film.get("servedByHolder")).as("the holder's constructor").isEqualTo("tenant_2");
+            });
+        assertThat(TENANT_1_OPENED.get()).isZero();
+    }
+
     // ===== ROUTED carrier: the connection launcher's carrier rides the routed dsl =====
 
     @Test

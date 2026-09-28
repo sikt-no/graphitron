@@ -139,11 +139,12 @@ final class TenantDslEmitter {
 
     /**
      * Expression form of {@link #resolve} for sites that splice the {@code DSLContext} source
-     * into their own statement and carry only the field's name (the service-call paths). Yields
-     * the byte-identical {@code graphitronContext(env).getDslContext(env)} in single-tenant
-     * builds. {@link TenantBinding.ArgumentBound} is unreachable here by construction (service
-     * operations contribute no argument slots to the classifier); reaching it is a generation-time
-     * failure rather than an unrouted connection.
+     * into their own statement and carry only the field's name (the child polymorphic sites).
+     * Yields the byte-identical {@code graphitronContext(env).getDslContext(env)} in
+     * single-tenant builds. {@link TenantBinding.ArgumentBound} throws: an expression cannot
+     * carry the bound-slot reads, so a divining coordinate reaching one of these sites is a
+     * generation-time failure rather than an unrouted connection. The root service sites, which
+     * can divine, go through {@link #serviceDslExpression} instead.
      */
     static CodeBlock dslExpression(TypeFetcherEmissionContext ctx, String fieldName, String outputPackage) {
         var schema = ctx.graphitronSchema();
@@ -163,7 +164,8 @@ final class TenantDslEmitter {
             case TenantBinding.ArgumentBound ignored -> throw new IllegalStateException(
                 "Field '" + ctx.parentTypeName() + "." + fieldName + "' classified as tenant "
                     + "ArgumentBound reached an expression-only DSL site that cannot emit the "
-                    + "bound-slot reads; route it through TenantDslEmitter.resolve with the field carrier.");
+                    + "bound-slot reads; route it through TenantDslEmitter.resolve, or through "
+                    + "handDownOnly plus serviceDslExpression, with the field carrier.");
             // Unreachable by design: the classifier rejects @tenantFanOut on @service
             // fields, so this arm firing is a graphitron bug, not an unrouted connection.
             case TenantBinding.FanOut ignored -> throw new IllegalStateException(
@@ -176,6 +178,23 @@ final class TenantDslEmitter {
         };
     }
 
+    /**
+     * The {@code DSLContext} source a root {@code @service} site hands
+     * {@code ServiceMethodCallEmitter.emit}, which declares {@code dsl} itself: the site pastes
+     * {@code handDown}'s declaration (the {@code _divinedTenant} local for a divining field, empty
+     * otherwise) ahead of the call, and this expression reads that local when it was declared,
+     * else it is {@link #dslExpression}'s arm-forked source ({@code dslDefault} for
+     * {@link TenantBinding.Untenanted}, the handed-down read for {@link TenantBinding.Inherited}).
+     *
+     * @param handDown the {@link #handDownOnly} resolution the site already pasted
+     */
+    static CodeBlock serviceDslExpression(TypeFetcherEmissionContext ctx, OutputField field,
+                                          Resolution handDown, String outputPackage) {
+        return handDown.handsDownTenant()
+            ? CodeBlock.of("$T.dslFor(env, $L)", tenantConnectionsClass(outputPackage), TENANT_KEY_LOCAL)
+            : dslExpression(ctx, field.name(), outputPackage);
+    }
+
     /** The localContext-divined acquisition expression the inherited family splices in. */
     private static CodeBlock inheritedReadExpression(ClassName tenantConnections) {
         return CodeBlock.of("$T.dslFor(env, $T.divinedTenant(env.<Object>getLocalContext()))",
@@ -183,10 +202,12 @@ final class TenantDslEmitter {
     }
 
     /**
-     * Hand-down-only resolution for thin delegating fetchers whose SQL (and routed {@code dsl})
-     * lives in a companion rows method: when the field is {@link TenantBinding.ArgumentBound} in
+     * Hand-down-only resolution for fetchers whose routed {@code dsl} is declared elsewhere: thin
+     * delegating fetchers whose SQL lives in a companion rows method, and the root
+     * {@code @service} sites, where {@code ServiceMethodCallEmitter.emit} declares {@code dsl}
+     * from {@link #serviceDslExpression}. When the field is {@link TenantBinding.ArgumentBound} in
      * a multi-tenant build, yields just the divined-key local so the fetcher's success return can
-     * hand the key down the subtree; every other case yields an empty declaration. The companion
+     * hand the key down the subtree; every other case yields an empty declaration. A companion
      * re-divines from the same {@code env}, so the two reads agree by construction.
      */
     static Resolution handDownOnly(TypeFetcherEmissionContext ctx, OutputField field, String outputPackage) {

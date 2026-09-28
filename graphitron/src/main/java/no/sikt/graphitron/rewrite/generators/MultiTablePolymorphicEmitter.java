@@ -209,7 +209,7 @@ public final class MultiTablePolymorphicEmitter {
      */
     public static List<MethodSpec> emitServiceMethods(
             TypeFetcherEmissionContext ctx,
-            String fieldName,
+            no.sikt.graphitron.rewrite.model.OutputField field,
             ServiceMethodCall serviceCall,
             List<ParticipantRef> participants,
             boolean isList,
@@ -219,9 +219,9 @@ public final class MultiTablePolymorphicEmitter {
             .map(p -> (ParticipantRef.TableBound) p)
             .toList();
         var methods = new ArrayList<MethodSpec>();
-        methods.add(buildServiceMainFetcher(ctx, fieldName, serviceCall, tableBoundParticipants, isList, outputPackage));
+        methods.add(buildServiceMainFetcher(ctx, field, serviceCall, tableBoundParticipants, isList, outputPackage));
         for (var participant : tableBoundParticipants) {
-            methods.add(buildPerTypenameSelect(fieldName, participant, false, List.of(), outputPackage));
+            methods.add(buildPerTypenameSelect(field.name(), participant, false, List.of(), outputPackage));
         }
         return methods;
     }
@@ -242,8 +242,9 @@ public final class MultiTablePolymorphicEmitter {
      */
     private static MethodSpec buildServiceMainFetcher(
             TypeFetcherEmissionContext ctx,
-            String fieldName, ServiceMethodCall serviceCall,
+            no.sikt.graphitron.rewrite.model.OutputField field, ServiceMethodCall serviceCall,
             List<ParticipantRef.TableBound> participants, boolean isList, String outputPackage) {
+        String fieldName = field.name();
 
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         TypeName valueType = isList ? listOfRecord : RECORD;
@@ -258,13 +259,14 @@ public final class MultiTablePolymorphicEmitter {
         // Service call: declares `<reflectedReturnType> result = ServiceClass.method(args);` and a
         // `dsl` local iff the method binds a DSLContext / is instance-shaped. Stage 2's by-PK
         // auto-fetch needs a `dsl` local, so declare one here when the service call did not.
+        var tenantHandDown = TenantDslEmitter.handDownOnly(ctx, field, outputPackage);
+        builder.addCode(tenantHandDown.declaration());
+        CodeBlock dslSource = TenantDslEmitter.serviceDslExpression(ctx, field, tenantHandDown, outputPackage);
         ServiceMethodCallEmitter.emit(serviceCall, serviceCall.javaReturnType(), ctx.fetchersHelperNames(),
-            TenantDslEmitter.dslExpression(ctx, fieldName, outputPackage),
-            outputPackage, ctx.parentTypeName() + "." + fieldName, ctx.nodeIdDecodeHelpers())
+            dslSource, outputPackage, ctx.parentTypeName() + "." + fieldName, ctx.nodeIdDecodeHelpers())
             .forEach(builder::addStatement);
         if (!ServiceMethodCallEmitter.declaresDslLocal(serviceCall)) {
-            builder.addStatement("$T dsl = $L", DSL_CONTEXT,
-                TenantDslEmitter.dslExpression(ctx, fieldName, outputPackage));
+            builder.addStatement("$T dsl = $L", DSL_CONTEXT, dslSource);
         }
 
         builder.addCode(buildServiceNormaliseToRecords(isList));
@@ -275,7 +277,7 @@ public final class MultiTablePolymorphicEmitter {
             } else {
                 builder.addStatement("$T payload = ($T) null", RECORD, RECORD);
             }
-            builder.addCode(returnSyncSuccess(valueType, "payload"));
+            builder.addCode(returnSyncSuccess(valueType, "payload", tenantHandDown.localContextTail()));
             builder.nextControlFlow("catch ($T e)", Exception.class);
             builder.addCode(noChannelCatchArm(outputPackage));
             builder.endControlFlow();
@@ -293,7 +295,7 @@ public final class MultiTablePolymorphicEmitter {
         } else {
             builder.addStatement("$T payload = dispatched.length == 0 ? null : ($T) dispatched[0]", RECORD, RECORD);
         }
-        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        builder.addCode(returnSyncSuccess(valueType, "payload", tenantHandDown.localContextTail()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
@@ -387,11 +389,12 @@ public final class MultiTablePolymorphicEmitter {
      * {@code TableInterfaceType} {@code TypeResolver} routes each row off the live discriminator value.
      */
     public static List<MethodSpec> emitServiceTableInterfaceMethods(
-            TypeFetcherEmissionContext ctx, String fieldName, ServiceMethodCall serviceCall,
+            TypeFetcherEmissionContext ctx, no.sikt.graphitron.rewrite.model.OutputField field,
+            ServiceMethodCall serviceCall,
             ReturnTypeRef.TableBoundReturnType returnType, ColumnRef discriminatorColumn,
             List<String> knownDiscriminatorValues, List<ParticipantRef> participants,
             boolean isList, String outputPackage) {
-        return List.of(buildServiceTableInterfaceFetcher(ctx, fieldName, serviceCall, returnType,
+        return List.of(buildServiceTableInterfaceFetcher(ctx, field, serviceCall, returnType,
             discriminatorColumn, knownDiscriminatorValues, participants, isList, outputPackage));
     }
 
@@ -408,10 +411,12 @@ public final class MultiTablePolymorphicEmitter {
      * preserves order among the survivors.
      */
     private static MethodSpec buildServiceTableInterfaceFetcher(
-            TypeFetcherEmissionContext ctx, String fieldName, ServiceMethodCall serviceCall,
+            TypeFetcherEmissionContext ctx, no.sikt.graphitron.rewrite.model.OutputField field,
+            ServiceMethodCall serviceCall,
             ReturnTypeRef.TableBoundReturnType returnType, ColumnRef discriminatorColumn,
             List<String> knownDiscriminatorValues, List<ParticipantRef> participants,
             boolean isList, String outputPackage) {
+        String fieldName = field.name();
 
         var tableRef = returnType.table();
         var names = GeneratorUtils.ResolvedTableNames.of(tableRef, returnType.returnTypeName(), outputPackage);
@@ -427,13 +432,14 @@ public final class MultiTablePolymorphicEmitter {
         builder.beginControlFlow("try");
         // Service call: declares `result` and a `dsl` local iff the method binds a DSLContext /
         // is instance-shaped. The by-PK re-fetch needs `dsl`, so declare one here when it did not.
+        var tenantHandDown = TenantDslEmitter.handDownOnly(ctx, field, outputPackage);
+        builder.addCode(tenantHandDown.declaration());
+        CodeBlock dslSource = TenantDslEmitter.serviceDslExpression(ctx, field, tenantHandDown, outputPackage);
         ServiceMethodCallEmitter.emit(serviceCall, serviceCall.javaReturnType(), ctx.fetchersHelperNames(),
-            TenantDslEmitter.dslExpression(ctx, fieldName, outputPackage),
-            outputPackage, ctx.parentTypeName() + "." + fieldName, ctx.nodeIdDecodeHelpers())
+            dslSource, outputPackage, ctx.parentTypeName() + "." + fieldName, ctx.nodeIdDecodeHelpers())
             .forEach(builder::addStatement);
         if (!ServiceMethodCallEmitter.declaresDslLocal(serviceCall)) {
-            builder.addStatement("$T dsl = $L", DSL_CONTEXT,
-                TenantDslEmitter.dslExpression(ctx, fieldName, outputPackage));
+            builder.addStatement("$T dsl = $L", DSL_CONTEXT, dslSource);
         }
         builder.addCode(buildServiceNormaliseToRecords(isList));
 
@@ -453,7 +459,7 @@ public final class MultiTablePolymorphicEmitter {
         builder.addStatement("$T fetched = step.where(condition).fetch()", resultOfRecord);
         builder.addCode(buildServiceTableInterfaceRemap(tableRef, tableLocal, isList, valueType));
 
-        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        builder.addCode(returnSyncSuccess(valueType, "payload", tenantHandDown.localContextTail()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();

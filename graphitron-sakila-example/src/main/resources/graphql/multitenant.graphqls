@@ -30,6 +30,13 @@ type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
         method: "mountedPrincipal",
         argMapping: "identity: $session"
     })
+    # Connection-binding child services: they reach no table of their own, but are handed a
+    # DSLContext, so under a tenant-bound parent they run on the parent's tenant. One takes the
+    # DSLContext as a parameter, the other through its holder's constructor.
+    servedBy: String @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService", method: "servedBy"})
+    servedByHolder: String @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmRatingHolderService", method: "servedBy"})
 }
 
 type Inventory @table(name: "inventory") {
@@ -145,7 +152,35 @@ input UpdateFilmSceneParentInput {
     label: String @field(name: "label")
 }
 
+# The divining @service inputs: each names the tenant through a decoded node id bound to a jOOQ
+# record, so the service call runs on that tenant's connection and hands the tenant down to the
+# rows it returns. A row's optional second id joins the agreement fold when it is sent.
+input FilmRatingInput {
+    film: ID! @nodeId(typeName: "Film")
+    alsoFilm: ID @nodeId(typeName: "Film")
+    rating: String
+}
+
+# A jOOQ record parameter whose composite key carries the tenant at position 1.
+input FilmActorRatingInput {
+    id: ID! @nodeId(typeName: "FilmActor")
+}
+
+# A non-table wrapper: ranOn is the database the service ran on, and films inherit the tenant.
+type RateFilmsPayload {
+    ranOn: String
+    films: [Film!]!
+}
+
 type Mutation {
+    # ArgumentBound @service arms: the tenant is divined from the batch's ids before the service
+    # is called, so a batch naming two tenants is refused without running it.
+    rateFilms(in: [FilmRatingInput!]!): RateFilmsPayload @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
+        method: "rateFilms", argMapping: "ratings: in"})
+    rateFilmActors(in: [FilmActorRatingInput!]!): RateFilmsPayload @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
+        method: "rateFilmActors", argMapping: "actors: in"})
     createInventory(in: InventoryCreateInput!): Inventory @mutation(typeName: INSERT)
     createInventoryByFilmRef(in: InventoryCreateByFilmRefInput!): Inventory @mutation(typeName: INSERT, table: "inventory")
     # Single and bulk: the bulk form is where the agreement guard earns its keep, refusing a

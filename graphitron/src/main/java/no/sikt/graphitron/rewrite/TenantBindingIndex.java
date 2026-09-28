@@ -9,6 +9,10 @@ import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
+import no.sikt.graphitron.rewrite.model.ArgPath;
+import no.sikt.graphitron.rewrite.model.MappingEntry;
+import no.sikt.graphitron.rewrite.model.ServiceCallCarrier;
+import no.sikt.graphitron.rewrite.model.ValueShape;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.DomainReturnType;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
@@ -321,12 +325,15 @@ public record TenantBindingIndex(
                     ? TenantBinding.Untenanted.INSTANCE
                     : TenantBinding.NodeIdBound.INSTANCE;
             }
-            // A $session-bound method call reads per-connection state (the handle its
-            // connection's mount returned), so which connection serves it is semantics, not
-            // plumbing: under a tenant context the call runs on the inherited tenant's
-            // connection and observes that tenant's handle. Decided ahead of the reach-derived
-            // Untenanted arm, whose "touches no tables" reading is about SQL only.
-            if (bindsSessionHandle(out) && tenantContextOf(coord.getTypeName())) {
+            // A method call handed a connection-bound value (a DSLContext, or the $session handle
+            // its connection's mount returned) runs on whichever connection it is handed, so which
+            // connection serves it is semantics, not plumbing: under a tenant context the call runs
+            // on the inherited tenant's connection. Decided ahead of the reach-derived Untenanted
+            // arm, whose "touches no tables" reading is about graphitron's SQL only, a service's
+            // own SQL being opaque. Not where the field's own reach is global: graphitron re-reads
+            // that global return table on the same connection, and global tables live on the
+            // default source, so the field keeps the Untenanted arm below.
+            if (!anyGlobal && bindsConnection(out) && tenantContextOf(coord.getTypeName())) {
                 return new TenantBinding.Inherited(coord.getTypeName());
             }
             if (!anyTenant) {
@@ -547,16 +554,28 @@ public record TenantBindingIndex(
         }
 
         /**
-         * Whether the field's method call binds the {@code $session} handle: a
-         * {@link no.sikt.graphitron.rewrite.model.MethodBackedField} parameter sourced
-         * {@link no.sikt.graphitron.rewrite.model.ParamSource.SessionHandle}, or a
-         * {@link no.sikt.graphitron.rewrite.model.ServiceField} carrier entry of
-         * {@link no.sikt.graphitron.rewrite.model.MappingEntry.FromSessionHandle}. The same
-         * two producers {@code GraphitronSchemaValidator.validateSessionHandleBindings} walks.
+         * Whether the field's method call is handed a connection-bound value, a {@code DSLContext}
+         * or the {@code $session} handle. For a
+         * {@link no.sikt.graphitron.rewrite.model.MethodBackedField}: a
+         * {@link no.sikt.graphitron.rewrite.model.MethodRef.Service} whose
+         * {@link no.sikt.graphitron.rewrite.model.MethodRef.CallShape#needsDsl()} holds (a
+         * {@code DSLContext} method parameter, or a holder constructor taking one), any other
+         * method ref with a {@link no.sikt.graphitron.rewrite.model.ParamSource.DslContext}
+         * parameter, or a parameter sourced
+         * {@link no.sikt.graphitron.rewrite.model.ParamSource.SessionHandle}. For a
+         * {@link no.sikt.graphitron.rewrite.model.ServiceField}: a carrier entry of
+         * {@link no.sikt.graphitron.rewrite.model.MappingEntry.FromDsl} or
+         * {@link no.sikt.graphitron.rewrite.model.MappingEntry.FromSessionHandle}, across the
+         * constructor and method rounds.
          */
-        private static boolean bindsSessionHandle(OutputField out) {
+        private static boolean bindsConnection(OutputField out) {
             if (out instanceof no.sikt.graphitron.rewrite.model.MethodBackedField mbf) {
-                return mbf.method().params().stream().anyMatch(p ->
+                var method = mbf.method();
+                boolean needsDsl = method instanceof no.sikt.graphitron.rewrite.model.MethodRef.Service svc
+                    ? svc.callShape().needsDsl()
+                    : method.params().stream().anyMatch(p ->
+                        p.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.DslContext);
+                return needsDsl || method.params().stream().anyMatch(p ->
                     p.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.SessionHandle);
             }
             if (out instanceof no.sikt.graphitron.rewrite.model.ServiceField sf) {
@@ -567,7 +586,8 @@ public record TenantBindingIndex(
                     entries.addAll(inst.ctorArgs());
                 }
                 return entries.stream().anyMatch(e ->
-                    e instanceof no.sikt.graphitron.rewrite.model.MappingEntry.FromSessionHandle);
+                    e instanceof no.sikt.graphitron.rewrite.model.MappingEntry.FromDsl
+                        || e instanceof no.sikt.graphitron.rewrite.model.MappingEntry.FromSessionHandle);
             }
             return false;
         }
@@ -695,7 +715,8 @@ public record TenantBindingIndex(
          * place (a polymorphic root carries one condition member per participant, so the
          * per-participant rows need no fallback), the lookup member's
          * key mapping, an INSERT / UPSERT write member's {@code @table} input, and the WHERE
-         * surface of the two verbs that have one. Deduped by slot name across members (the same
+         * surface of the two verbs that have one, and a root service call's argument-sourced
+         * parameters. Deduped by slot name across members (the same
          * argument typically binds on every polymorphic participant, and one slot per name
          * suffices for the agreement fold).
          */
@@ -712,6 +733,7 @@ public record TenantBindingIndex(
                     // Dml.whereKeyColumns(), so a third WHERE-bearing write arm is covered on
                     // arrival rather than falling silently to the no-op default below.
                     case OperationMember.Write.Dml dml -> collectFromWhereKeys(dml, collector);
+                    case OperationMember.ServiceCall sc -> collectFromServiceCall(coord, sc, collector);
                     default -> { }
                 }
             }
@@ -854,6 +876,177 @@ public record TenantBindingIndex(
                     }
                 }
             }
+        }
+
+        /**
+         * A root {@code @service} call's tenant-bearing arguments: every argument-sourced
+         * parameter's {@link ValueShape} tree, walked to the leaves that carry a column. A child
+         * service carries a reflected method rather than the structured call and contributes
+         * nothing: it gets its tenant from its parent ({@link #bindsConnection}).
+         *
+         * <p>A service whose own reach holds a global table (a {@code @table} return over one)
+         * mints nothing, whatever its arguments name: graphitron re-reads that return table on
+         * the connection the call is handed, and global tables live on the default source. The
+         * gate sits here rather than in {@link #armOf} so {@link #edgeEstablishesOrTransmitsContext}
+         * reads the same answer, and the fields under such a service inherit no tenant that
+         * nothing stamped.
+         */
+        private void collectFromServiceCall(FieldCoordinates coord, OperationMember.ServiceCall member,
+                                            SlotCollector collector) {
+            if (!(member.call() instanceof ServiceCallCarrier.StructuredCall structured)) {
+                return;
+            }
+            if (fields.get(coord) instanceof OutputField out
+                    && reachedTables(out).stream().anyMatch(t -> !tenantScoped(t))) {
+                return;
+            }
+            // Constructor rounds carry no argument-sourced entry (the walker refuses one there).
+            for (MappingEntry entry : structured.call().methodArgs()) {
+                if (entry instanceof MappingEntry.FromArg arg) {
+                    collectFromValueShape(arg.shape(), collector);
+                }
+            }
+        }
+
+        private void collectFromValueShape(ValueShape shape, SlotCollector collector) {
+            switch (shape) {
+                case ValueShape.ListOf list -> collectFromValueShape(list.elementShape(), collector);
+                case ValueShape.RecordInput record -> {
+                    for (var field : record.fields()) collectFromValueShape(field.shape(), collector);
+                }
+                case ValueShape.JavaBeanInput bean -> {
+                    for (var field : bean.fields()) collectFromValueShape(field.shape(), collector);
+                }
+                case ValueShape.JooqRecordInput jr -> collectFromJooqRecord(jr, collector);
+                case ValueShape.Scalar scalar ->
+                    collectFromServiceLeaf(scalar.leafTransform(), pathOf(scalar.sdlPath()), collector);
+            }
+        }
+
+        /**
+         * A jOOQ record parameter: a column binding on the tenant column reads the tenant off the
+         * wire as it is, and a {@code @nodeId} decode whose node key includes the tenant column
+         * reads it off the decoded key at that position. Both paths are relative to the
+         * record's own input, so they extend the parameter's argument path.
+         */
+        private void collectFromJooqRecord(ValueShape.JooqRecordInput jr, SlotCollector collector) {
+            List<String> base = pathOf(jr.sdlPath());
+            for (var binding : jr.carrier().columnBindings()) {
+                if (!matchesTenantColumn(binding.column())) continue;
+                for (List<String> path : binding.paths()) {
+                    var full = concat(base, path);
+                    collector.add(slotNameOf(full), binding.column(), new SlotAccess.Resolved(
+                        readOf(full), TenantBinding.SlotProjection.Raw.INSTANCE));
+                }
+            }
+            for (var keyDecode : jr.carrier().keyDecodes()) {
+                // Read off the node type's own key tuple rather than the record's target columns: a
+                // reference decode lands the key on foreign-key columns that need not carry the
+                // tenant column's name, and the tuple is what the decode helper projects from.
+                var decode = nodeTypeByTypeId(keyDecode.typeId()).decodeMethod();
+                int slot = tenantIndex(decode.outputColumnShape());
+                if (slot < 0) continue;
+                var full = concat(base, keyDecode.path());
+                collector.add(slotNameOf(full), decode.outputColumnShape().get(slot), new SlotAccess.Resolved(
+                    readOf(full), new TenantBinding.SlotProjection.DecodedKeySlot(decode, slot)));
+            }
+        }
+
+        /**
+         * One service leaf. A record decode of one node type and a key decode read the tenant off
+         * the decoded key at the tenant column's position; a polymorphic record decode declines,
+         * since its candidates decode the same id with their own key columns; every other leaf
+         * carries no column and mints nothing.
+         */
+        private void collectFromServiceLeaf(CallSiteExtraction leaf, List<String> path,
+                                            SlotCollector collector) {
+            switch (leaf) {
+                case CallSiteExtraction.NodeIdDecodeRecord record -> {
+                    var decode = nodeTypeByTypeId(record.typeId()).decodeMethod();
+                    int slot = tenantIndex(decode.outputColumnShape());
+                    if (slot < 0) return;
+                    collector.add(slotNameOf(path), decode.outputColumnShape().get(slot), new SlotAccess.Resolved(
+                        readOf(path), new TenantBinding.SlotProjection.DecodedKeySlot(decode, slot)));
+                }
+                case CallSiteExtraction.NodeIdDecodeKeys keys -> {
+                    var shape = keys.decodeMethod().outputColumnShape();
+                    int slot = tenantIndex(shape);
+                    if (slot < 0) return;
+                    collector.add(slotNameOf(path), shape.get(slot), accessOf(keys, readOf(path), slot));
+                }
+                // The service-side twin of PruneOnMismatch. Minting nothing would leave the id
+                // unchecked beside a divining sibling, and the service would be handed a record
+                // from another tenant to act on in the wrong database. Only where some candidate
+                // is tenant-scoped: an id every candidate of which is global names no tenant.
+                case CallSiteExtraction.NodeIdDecodePolymorphicRecord poly -> {
+                    if (poly.candidates().stream().anyMatch(c -> tenantScoped(c.table()))) {
+                        collector.decline("the tenant is reached through a @nodeId slot naming '"
+                            + poly.containerName() + "', whose members decode the same id as"
+                            + " different node types, each with its own key columns: there is no"
+                            + " single decode to route the service call on. Take a record of one"
+                            + " node type, or bind the tenant through a field mapping to tenant"
+                            + " column '" + scopes.columnName() + "'.");
+                    }
+                }
+                default -> { }
+            }
+        }
+
+        /** The tenant column's position in {@code columns}, or {@code -1}. */
+        private int tenantIndex(List<ColumnRef> columns) {
+            for (int i = 0; i < columns.size(); i++) {
+                if (matchesTenantColumn(columns.get(i))) return i;
+            }
+            return -1;
+        }
+
+        /**
+         * The node type a decode's type id names. {@code TypeBuilder} enforces type-id
+         * uniqueness, so at most one matches; a decode naming none is a classifier bug.
+         */
+        private GraphitronType.NodeType nodeTypeByTypeId(String typeId) {
+            for (GraphitronType type : types.values()) {
+                if (type instanceof GraphitronType.NodeType nt && typeId.equals(nt.typeId())) {
+                    return nt;
+                }
+            }
+            throw new IllegalStateException("no node type carries type id '" + typeId + "'");
+        }
+
+        /** An argument path as its SDL names: the argument, then each input field below it. */
+        private static List<String> pathOf(ArgPath path) {
+            var names = new ArrayList<String>(path.deeperSegments().size() + 1);
+            names.add(path.outerArgName());
+            for (var segment : path.deeperSegments()) names.add(segment.name());
+            return names;
+        }
+
+        private static List<String> concat(List<String> head, List<String> tail) {
+            var out = new ArrayList<String>(head.size() + tail.size());
+            out.addAll(head);
+            out.addAll(tail);
+            return out;
+        }
+
+        /**
+         * A one-segment path is the argument itself; a longer one walks into its input. The
+         * runtime walk maps a list-shaped level over its elements, so a batch input needs nothing
+         * further here.
+         */
+        private static TenantBinding.SlotRead readOf(List<String> path) {
+            return path.size() == 1
+                ? TenantBinding.SlotRead.TopLevelArg.INSTANCE
+                : new TenantBinding.SlotRead.NestedInput(path.get(0), path.subList(1, path.size()));
+        }
+
+        /**
+         * The argument name for a top-level slot, which is what {@link TenantBinding.SlotRead.TopLevelArg}
+         * reads by, and the dot-joined path for a nested one: the collector dedupes by name, so a
+         * name stopping at the last segment would merge two {@code id} fields at different paths
+         * and drop the second from the agreement fold.
+         */
+        private static String slotNameOf(List<String> path) {
+            return String.join(".", path);
         }
 
         private void collectFromTableInput(ArgumentRef.InputTypeArg.TableInputArg input,
