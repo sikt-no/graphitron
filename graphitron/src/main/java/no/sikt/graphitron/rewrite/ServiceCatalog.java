@@ -2431,14 +2431,19 @@ class ServiceCatalog {
                 boolean isTenantSlot = p.getParameterizedType() instanceof java.lang.reflect.ParameterizedType pt
                     && TypeName.get(pt.getActualTypeArguments()[0]).equals(boxedTenant);
                 String name = p.isNamePresent() ? p.getName() : "tenant";
+                String tenantSimple = boxedTenant instanceof ClassName c ? c.simpleName() : boxedTenant.toString();
                 if (!isTenantSlot) {
+                    String declaredSimple = p.getParameterizedType() instanceof java.lang.reflect.ParameterizedType pt
+                            && pt.getActualTypeArguments()[0] instanceof Class<?> arg
+                        ? "Optional<" + arg.getSimpleName() + ">"
+                        : p.getType().getSimpleName();
                     rejections.add(new ReflectionError.TenantSlotMistyped(
-                        className, methodName, name, typeName, boxedTenant.toString()));
+                        className, methodName, name, declaredSimple, tenantSimple));
                     return null;
                 }
                 if (tenantSlotSeen) {
                     rejections.add(new ReflectionError.TenantSlotDuplicated(
-                        className, methodName, boxedTenant.toString()));
+                        className, methodName, tenantSimple));
                     return null;
                 }
                 tenantSlotSeen = true;

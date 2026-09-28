@@ -77,7 +77,7 @@ public final class SessionHookStub {
         throw new UnsupportedOperationException();
     }
 
-        // ===== Rejection shapes =====
+    // ===== Rejection shapes =====
 
     /** Two tenant slots for an {@code Integer}-tenant build. */
     public static void mountTwoTenantSlots(Configuration cfg, Optional<Integer> a, Optional<Integer> b) {

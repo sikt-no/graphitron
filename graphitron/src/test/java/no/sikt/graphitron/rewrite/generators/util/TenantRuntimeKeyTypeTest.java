@@ -1,11 +1,15 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.FieldSpec;
+import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.session.SessionHooks;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
+import javax.lang.model.element.Modifier;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -21,12 +25,28 @@ import static org.assertj.core.api.Assertions.assertThat;
 @UnitTier
 class TenantRuntimeKeyTypeTest {
 
-    private static String render(List<TypeSpec> units, String className) {
+    private static TypeSpec type(List<TypeSpec> units, String className) {
         return units.stream()
             .filter(t -> className.equals(t.name()))
             .findFirst()
-            .orElseThrow()
-            .toString();
+            .orElseThrow();
+    }
+
+    private static String render(List<TypeSpec> units, String className) {
+        return type(units, className).toString();
+    }
+
+    private static MethodSpec method(TypeSpec type, String name) {
+        return type.methodSpecs().stream()
+            .filter(m -> name.equals(m.name()))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("no method " + name + " on " + type.name()));
+    }
+
+    private static List<String> parameters(MethodSpec method) {
+        return method.parameters().stream()
+            .map(p -> p.type() + " " + p.name())
+            .toList();
     }
 
     @Test
@@ -47,21 +67,20 @@ class TenantRuntimeKeyTypeTest {
     }
 
     @Test
-    void multiTenantAcquisitionHandsTheMountTheTenantItIsFor() {
+    void multiTenantAcquisitionTakesTheTenantItMountsFor() {
         var units = ConnectionRuntimeClassGenerator.generate(
             "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class));
 
-        var pinned = render(units, ConnectionRuntimeClassGenerator.PINNED_CONNECTION_CLASS_NAME);
-        assertThat(pinned).contains("acquire(javax.sql.DataSource dataSource,\n"
-            + "      org.jooq.SQLDialect dialect, org.jooq.conf.Settings settings,\n"
-            + "      java.util.Optional<java.lang.Integer> mountedTenant,\n"
-            + "      java.util.concurrent.Executor abortExecutor)");
-
-        var runtime = render(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
-        assertThat(runtime)
-            .as("a routed acquisition mounts for its key, the default source for none")
-            .contains("tenantSource.settings(), java.util.Optional.of(tenantKey), abortExecutor)")
-            .contains("defaultSource.settings(), java.util.Optional.empty(), abortExecutor)");
+        // The tenant rides between the seam's settings and the abort executor; the runtime's
+        // Optional.of(key) / Optional.empty() arguments are pinned where they run, in
+        // TenantAuthorizationSubstrateTest.
+        assertThat(parameters(method(type(units, ConnectionRuntimeClassGenerator.PINNED_CONNECTION_CLASS_NAME), "acquire")))
+            .containsExactly(
+                "javax.sql.DataSource dataSource",
+                "org.jooq.SQLDialect dialect",
+                "org.jooq.conf.Settings settings",
+                "java.util.Optional<java.lang.Integer> mountedTenant",
+                "java.util.concurrent.Executor abortExecutor");
     }
 
     @Test
@@ -69,34 +88,56 @@ class TenantRuntimeKeyTypeTest {
         var units = ConnectionRuntimeClassGenerator.generate(
             "fake.code.generated", SessionHooks.NotConfigured.INSTANCE);
 
-        assertThat(render(units, ConnectionRuntimeClassGenerator.PINNED_CONNECTION_CLASS_NAME))
-            .doesNotContain("Optional");
-        assertThat(render(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME))
-            .doesNotContain("Optional");
+        assertThat(parameters(method(type(units, ConnectionRuntimeClassGenerator.PINNED_CONNECTION_CLASS_NAME), "acquire")))
+            .containsExactly(
+                "javax.sql.DataSource dataSource",
+                "org.jooq.SQLDialect dialect",
+                "org.jooq.conf.Settings settings",
+                "java.util.concurrent.Executor abortExecutor");
     }
 
     @Test
-    void multiTenantCarrierChecksTheRequestTenantSetAheadOfTheEntryMapMint() {
+    void multiTenantCarrierHoldsTheRequestTenantSet() {
         var units = ConnectionRuntimeClassGenerator.generate(
             "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class));
+        var carrier = type(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
 
-        var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
-        assertThat(carrier)
-            .contains("private final java.util.Set<java.lang.Integer> tenants;")
-            .contains("fake.code.generated.schema.GraphitronTransactionProvider.CommitPolicy commitPolicy,\n"
-                + "      java.util.Set<java.lang.Integer> tenants)")
-            .contains("if (key.isPresent() && !tenants.contains(key.get())) {")
-            .contains("throw new fake.code.generated.schema.GraphitronClientException(\"Tenant '\" + key.get() + \"' is not permitted for this request.\");")
-            // The read side for the per-row lookups' null-not-error skip.
-            .contains("public static boolean permits(graphql.schema.DataFetchingEnvironment env,\n"
-                + "      java.lang.Integer tenantKey)")
-            .contains("return of(env).tenants.contains(tenantKey);");
-        // Membership runs first in entryFor: before the timed-out quarantine and before the one
-        // computeIfAbsent mint, so only an authorized key ever enters the entry map.
-        int membership = carrier.indexOf("!tenants.contains(key.get())");
-        assertThat(membership).isPositive()
-            .isLessThan(carrier.indexOf("timedOutTenants.contains(key.get())"))
-            .isLessThan(carrier.indexOf("entries.computeIfAbsent("));
+        // The shape of the set the carrier owns. What entryFor does with it (refusal before any
+        // getConnection and ahead of the hosting check) is pinned where it runs, in
+        // TenantAuthorizationSubstrateTest and TenantDivinedRoutingExecutionTest.
+        var tenants = carrier.fieldSpecs().stream()
+            .filter(f -> "tenants".equals(f.name()))
+            .findFirst()
+            .orElseThrow();
+        assertThat(tenants.type().toString()).isEqualTo("java.util.Set<java.lang.Integer>");
+        assertThat(tenants.modifiers()).containsExactlyInAnyOrder(Modifier.PRIVATE, Modifier.FINAL);
+
+        var constructor = carrier.methodSpecs().stream()
+            .filter(MethodSpec::isConstructor)
+            .findFirst()
+            .orElseThrow();
+        assertThat(parameters(constructor)).containsExactly(
+            "fake.code.generated.schema.GraphitronRuntime runtime",
+            "fake.code.generated.schema.GraphitronTransactionProvider.CommitPolicy commitPolicy",
+            "java.util.Set<java.lang.Integer> tenants");
+
+        // The read side for the per-row lookups' null-not-error skip.
+        var permits = method(carrier, "permits");
+        assertThat(permits.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
+        assertThat(permits.returnType()).isEqualTo(TypeName.BOOLEAN);
+        assertThat(parameters(permits)).containsExactly(
+            "graphql.schema.DataFetchingEnvironment env",
+            "java.lang.Integer tenantKey");
+    }
+
+    @Test
+    void singleTenantCarrierHoldsNoTenantSet() {
+        var units = ConnectionRuntimeClassGenerator.generate(
+            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE);
+        var carrier = type(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+
+        assertThat(carrier.fieldSpecs()).extracting(FieldSpec::name).doesNotContain("tenants");
+        assertThat(carrier.methodSpecs()).extracting(MethodSpec::name).doesNotContain("permits");
     }
 
     @Test
@@ -202,12 +243,9 @@ class TenantRuntimeKeyTypeTest {
         assertThat(carrier)
             // The graphitron-owned request key the factory writes and the instrumentation reads.
             .contains("String TENANTS_KEY = \"no.sikt.graphitron.request.tenants\"")
-            // Domain: map-order intersection with the carrier's request tenant set (never the
-            // context); a tenant in the set that is not hosted is a pre-SQL request error.
+            // Domain: map-order intersection; named-but-unhosted is a pre-SQL request error.
             .contains("static java.util.List<java.lang.Integer> fanOutDomain(")
-            .contains("java.util.Set<java.lang.Integer> requested = carrier.tenants;")
             .contains("hosted.contains(claimed)")
-            .doesNotContain("env.getGraphQlContext().get(TENANTS_KEY)")
             // Union with per-element tenant stamping, failures appended after successful rows.
             .contains("static <R> java.util.List<java.lang.Object> fanOutRows(")
             .contains(".localContext(success.key())")

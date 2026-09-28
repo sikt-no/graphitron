@@ -136,7 +136,7 @@ class SessionHookResolutionTest {
         assertThat(result.rejections()).singleElement()
             .isInstanceOfSatisfying(ReflectionError.TenantSlotDuplicated.class, dup -> {
                 assertThat(dup.methodName()).isEqualTo("mountTwoTenantSlots");
-                assertThat(dup.tenantTypeSimple()).isEqualTo("java.lang.Integer");
+                assertThat(dup.tenantTypeSimple()).isEqualTo("Integer");
             });
     }
 
@@ -150,7 +150,9 @@ class SessionHookResolutionTest {
                 .isInstanceOfSatisfying(ReflectionError.TenantSlotMistyped.class, mistyped -> {
                     assertThat(mistyped.methodName()).isEqualTo(method);
                     assertThat(mistyped.parameterName()).isEqualTo("tenant");
-                    assertThat(mistyped.tenantTypeSimple()).isEqualTo("java.lang.Integer");
+                    assertThat(mistyped.tenantTypeSimple()).isEqualTo("Integer");
+                    assertThat(mistyped.declaredTypeSimple())
+                        .isEqualTo(method.equals("mountOptionalString") ? "Optional<String>" : "Optional<Long>");
                 });
         }
     }
