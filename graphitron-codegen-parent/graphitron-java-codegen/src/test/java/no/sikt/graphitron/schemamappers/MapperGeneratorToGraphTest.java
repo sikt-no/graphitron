@@ -67,6 +67,15 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Table-less wrapper inside a listed jOOQ record with listed splitQuery field")
+    void splitQueryInTablelessWrapper() {
+        assertGeneratedContentContains(
+                "splitQueryInTablelessWrapper",
+                "_mo_city_wrapper.setAddressesKey(_nit_cityRecord.key().into(CityRecord.class));"
+        );
+    }
+
+    @Test
     @DisplayName("Wrapper type with single @splitQuery field")
     void singleSplitQueryInWrapper() {
         assertGeneratedContentContains(

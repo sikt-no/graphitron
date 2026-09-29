@@ -292,11 +292,17 @@ public class MapperContext {
             return createNodeIdBlockForRecord(nodeConfig, namedIteratorPrefixIf(previousContext.sourceName, previousContext.isIterable));
         }
 
-        return getValue(
-                (!isValidation || toRecord) && previousContext.isIterable || !toRecord && previousContext.lastInputDeclarationWasIterable
-                        ? namedIteratorPrefix(previousContext.sourceName)
-                        : inputPrefix(previousContext.sourceName), getSourceMapping
-        );
+        return getValue(getPreviousSourceVariableName(), getSourceMapping);
+    }
+
+    /**
+     * @return Name of the variable holding the source record of the previous context, as it is declared in the generated code.
+     * Wrapper types without a table reuse the record of their parent, so this is not necessarily a variable declared by the previous context itself.
+     */
+    private String getPreviousSourceVariableName() {
+        return (!isValidation || toRecord) && previousContext.isIterable || !toRecord && previousContext.lastInputDeclarationWasIterable
+                ? namedIteratorPrefix(previousContext.sourceName)
+                : inputPrefix(previousContext.sourceName);
     }
 
     public MapperContext iterateContext(GenerationField field) {
@@ -416,7 +422,7 @@ public class MapperContext {
     }
 
     public CodeBlock getResolverKeySetMappingBlockForJooqRecord() {
-        return getResolverKeySetMappingBlock(namedIteratorPrefixIf(previousContext.sourceName, previousContext.isIterable), false);
+        return getResolverKeySetMappingBlock(getPreviousSourceVariableName(), false);
     }
 
     public CodeBlock getResolverKeySetMappingBlock(String varName) {
