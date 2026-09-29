@@ -1229,6 +1229,59 @@ CREATE TABLE diverged_child_label (
 -- on their SQL type; a populated sibling beside a populated diverged branch is covered by the list
 -- field instead, whose second participant is converter_campus.
 
+-- A second referrer of converter_org that escapes the converter the way diverged_ref_child does:
+-- its org_code is a plain bigint, so it generates as Field<Long> against the referenced
+-- Field<String>. A union over the two is what lets a verdict be told apart per branch, since with
+-- one such table the branch a per-participant route applies at and its sibling are the same table.
+CREATE TABLE diverged_ref_sibling (
+    sibling_id    serial      PRIMARY KEY,
+    sibling_name  varchar(50) NOT NULL,
+    org_code      bigint      NOT NULL REFERENCES converter_org(org_code)
+);
+
+-- A composite foreign key into converter_campus_term whose first column escapes the converter.
+-- org_code is a plain bigint, Field<Long> against the referenced Field<String>, and term_no agrees
+-- on integer. A landing that reaches every position of the key is then a tuple comparison in which
+-- exactly one position diverges, which no single-column key can show.
+CREATE TABLE diverged_term_ref (
+    ref_id    serial   PRIMARY KEY,
+    org_code  bigint   NOT NULL,
+    term_no   integer  NOT NULL,
+    FOREIGN KEY (org_code, term_no) REFERENCES converter_campus_term (org_code, term_no)
+);
+
+-- Two branch tables over which one written path is two walks. Each branch declares a foreign key
+-- named link_fkey onto an intermediate table of its own, and each intermediate declares one named
+-- rolle_fkey onto the one node table, so a @reference path of link_fkey then rolle_fkey resolves
+-- against whichever branch it departs. The intermediates depart their second hop from columns of one
+-- name, link_code, which makes the two second hops interchangeable to a walk that has lost track of
+-- its branch; the branches depart their first hop from columns of different names, emne_code and
+-- klasse_code, which makes that confusion show as a wrong column rather than as a doubled row.
+-- Constraint names are per table in PostgreSQL, so both repeats are legal, as dup_gizmo_fk shows.
+CREATE TABLE rolle (
+    rollekode  varchar(20) PRIMARY KEY
+);
+
+CREATE TABLE emne_link (
+    link_code  varchar(20) PRIMARY KEY,
+    CONSTRAINT rolle_fkey FOREIGN KEY (link_code) REFERENCES rolle (rollekode)
+);
+
+CREATE TABLE klasse_link (
+    link_code  varchar(20) PRIMARY KEY,
+    CONSTRAINT rolle_fkey FOREIGN KEY (link_code) REFERENCES rolle (rollekode)
+);
+
+CREATE TABLE emnerolle (
+    emne_code  varchar(20) PRIMARY KEY,
+    CONSTRAINT link_fkey FOREIGN KEY (emne_code) REFERENCES emne_link (link_code)
+);
+
+CREATE TABLE klasserolle (
+    klasse_code  varchar(20) PRIMARY KEY,
+    CONSTRAINT link_fkey FOREIGN KEY (klasse_code) REFERENCES klasse_link (link_code)
+);
+
 -- R446 array-column fixture: a table carrying array-typed columns. jOOQ maps a PostgreSQL
 -- `boolean[]` to `Field<Boolean[]>`, whose `getType().getName()` is the JVM binary descriptor
 -- `[Ljava.lang.Boolean;` (not a source-form FQCN), which `ClassName.bestGuess` rejects. Before the

@@ -444,7 +444,11 @@ shape the root condemns, still in the tree. Evidence in
   conversion attempt. The first attempt wanted an overload and the service module had none across
   ninety-seven classes, so `FilmService.topRated` is now a pair. That is the expected cost, a method
   added to a module that already compiles; what is not knowable in advance is which shape the next
-  attempt wants.
+  attempt wants. The node-id subject enumerated its own once, and they went in together:
+  `NodeIdSlotService`, an overload whose halves name their parameter alike and a method taking a
+  primitive, and in the catalog a second plain-`bigint` referrer of `converter_org`, a composite
+  referrer of `converter_campus_term` whose first column escapes the converter, and two branch
+  tables that reach one node table through repeated constraint names.
 * **The SDL half converts** `open`. 50 classes, 354 tests.
 * **A case that resists a document may still not need seeding** `open`, and the difference decides
   the node below. Nine of `FieldProducerMethodTest`'s ten cases are a document now; the tenth wants
