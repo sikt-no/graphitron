@@ -6105,13 +6105,18 @@ CREATE TABLE code_type_slot (
   declaring_class VARCHAR NOT NULL,
   slot_name       VARCHAR NOT NULL,
   slot_type       VARCHAR NOT NULL,
+  erased_class    VARCHAR,
+  element_class   VARCHAR,
+  delivery        VARCHAR,
   origin          VARCHAR NOT NULL,
   touched_at      TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, class_name, method_name, descriptor),
   FOREIGN KEY (source_name, class_name)
     REFERENCES code_class (source_name, class_name) ON DELETE CASCADE,
   FOREIGN KEY (source_name, slot_type) REFERENCES code_type (source_name, type_name),
-  CHECK (origin IN ('RECORD_COMPONENT', 'BEAN_ACCESSOR'))
+  CHECK (origin IN ('RECORD_COMPONENT', 'BEAN_ACCESSOR')),
+  CHECK (delivery IS NULL OR delivery IN ('DIRECT', 'WRAPPED', 'MANY')),
+  CHECK ((element_class IS NULL) = (delivery IS NULL))
 );
 COMMENT ON TABLE code_type_slot IS 'One member name a class offers an author, the method that reads it and what reading it yields. For example a Film record offering title through its title() accessor, or a FilmDto offering it through getTitle().';
 COMMENT ON COLUMN code_type_slot.source_name IS 'the entry the declaring class was read from, as on code_method; the key''s leading dimension';
@@ -6119,7 +6124,10 @@ COMMENT ON COLUMN code_type_slot.class_name IS 'the class offering the member, w
 COMMENT ON COLUMN code_type_slot.method_name IS 'the method that reads the member. The accessor is the key rather than the name an author writes, because the name is the part that is not unique: a class spelling one property getTitle and isTitle offers title twice';
 COMMENT ON COLUMN code_type_slot.descriptor IS 'the method''s descriptor, completing the key: two accessors of one name on one class are two slots, which is what overloading is';
 COMMENT ON COLUMN code_type_slot.declaring_class IS 'the class the accessor is written on, which is the class a jump to the member''s own source lands in. Equal to the offering class wherever the class declares its own member and different wherever it inherits one. No foreign key, for the reason the write side names the call it makes without keying to it: a base class may be read from a different classpath entry than the class offering its members, so the method''s own row sits under a key this one does not carry, and a constraint would refuse exactly the inheritance this column exists to record';
-COMMENT ON COLUMN code_type_slot.slot_type IS 'what reading the member yields, as code_type spells it. Carried rather than reached through the accessor''s own row, which is the shape the write side settled on first and for the same two reasons: every reader of a slot wants the type and none of them wants anything else the method has, so the join was a step on the way to one column; and an inherited accessor has no row under the class offering it, so a slot that could only be typed through one could not exist at all';
+COMMENT ON COLUMN code_type_slot.slot_type IS 'what reading the member yields, as code_type spells it. Carried rather than reached through the accessor''s own row, because what a member yields is a fact about the class offering it and not about the method behind it. The two agree wherever a class declares its own member. They part at inheritance: an inherited accessor has no row under the offering class, and its base may have been read from another entry or not read at all, so a slot typed only through one could not exist. And a base class declaring K getId() offers Integer to a subclass extending it at Integer, which only the offering class can say. The spelling is the accessor''s declared result today, type variables unsubstituted, so that case reads K here; this column is where the substituted type goes when the reading states it';
+COMMENT ON COLUMN code_type_slot.erased_class IS 'the class what the member yields erases to, on code_method.result_erased_class'' terms. Here rather than through the accessor for the reasons slot_type gives';
+COMMENT ON COLUMN code_type_slot.element_class IS 'the class the member delivers once its containers are peeled off, on code_method.result_element_class'' terms: which class backs the GraphQL type a field reading this member produces';
+COMMENT ON COLUMN code_type_slot.delivery IS 'how the member delivers that class, on code_method.result_delivery'' terms; NULL with the element beside it';
 COMMENT ON COLUMN code_type_slot.slot_name IS 'the name @field(name:) resolves against: a record component''s own name, or the property a getter offers, which is the remainder after get or is with its first letter lowered. Deliberately not unique within a class, two spellings of one property being two rows; a reader wanting one takes the first and a reader offering candidates offers both';
 COMMENT ON COLUMN code_type_slot.origin IS 'RECORD_COMPONENT or BEAN_ACCESSOR, which is a fact about the offering class rather than the member: a class takes exactly one arm, chosen by its declared form, so a record answers with its components and anything else with its getters. Carried because two readers turn on it, one choosing where a go-to-definition lands and one choosing the noun a diagnostic uses';
 COMMENT ON COLUMN code_type_slot.touched_at IS 'when the reading that produced this row ran; swept with the accessor it hangs on';
@@ -6152,11 +6160,16 @@ CREATE TABLE code_write_slot (
   position    INT NOT NULL,
   slot_name   VARCHAR NOT NULL,
   slot_type   VARCHAR NOT NULL,
+  erased_class  VARCHAR,
+  element_class VARCHAR,
+  delivery      VARCHAR,
   touched_at  TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, class_name, method_name, descriptor, position),
   FOREIGN KEY (source_name, class_name)
     REFERENCES code_construction (source_name, class_name) ON DELETE CASCADE,
-  FOREIGN KEY (source_name, slot_type) REFERENCES code_type (source_name, type_name)
+  FOREIGN KEY (source_name, slot_type) REFERENCES code_type (source_name, type_name),
+  CHECK (delivery IS NULL OR delivery IN ('DIRECT', 'WRAPPED', 'MANY')),
+  CHECK ((element_class IS NULL) = (delivery IS NULL))
 );
 COMMENT ON TABLE code_write_slot IS 'One member an author can fill when a value of the class is made, and the call that fills it. For example a FilmInput''s title, filled at argument zero of its canonical constructor.';
 COMMENT ON COLUMN code_write_slot.source_name IS 'the entry the class was read from, as on code_construction';
@@ -6165,7 +6178,10 @@ COMMENT ON COLUMN code_write_slot.method_name IS 'the call that fills the member
 COMMENT ON COLUMN code_write_slot.descriptor IS 'that call''s descriptor, completing its key';
 COMMENT ON COLUMN code_write_slot.position IS 'which argument of the call carries the member, counted from zero. At POSITIONAL it is the component''s place in the record header, which is what makes the call emittable in one go; at SETTERS it is zero, a setter taking one argument. Part of the key because one call carries many members at POSITIONAL and the argument is what tells them apart';
 COMMENT ON COLUMN code_write_slot.slot_name IS 'the name @field(name:) resolves against on an input: the record component''s own name, or the property a setter fills, which is the remainder after set with its first letter lowered. Deliberately not unique within a class, on code_type_slot''s terms: a class spelling one property two ways offers it twice and this relation declines to choose between them';
-COMMENT ON COLUMN code_write_slot.slot_type IS 'what the member is filled with, as code_type spells it. The write side''s answer to the question code_method.result_type answers for reading: a value bound here is coerced into this type, and a reader needing what it finally delivers peels it on code_type_element';
+COMMENT ON COLUMN code_write_slot.slot_type IS 'what the member is filled with, as code_type spells it. The write side''s answer to the question code_method.result_type answers for reading: a value bound here is coerced into this type. Carried with its parse rather than reached through the call''s own row, because a POSITIONAL call is a constructor and constructors have no code_method row, and an inherited setter has none under the class being made; the write side is a parameter position and says so on code_method_parameter''s terms';
+COMMENT ON COLUMN code_write_slot.erased_class IS 'the class the member''s type erases to, on code_method_parameter.erased_class'' terms';
+COMMENT ON COLUMN code_write_slot.element_class IS 'the class the member takes once its containers are peeled off, on code_method_parameter.element_class'' terms: which class the value bound here is built as';
+COMMENT ON COLUMN code_write_slot.delivery IS 'how the member takes that class, on code_method_parameter.delivery'' terms; NULL with the element beside it';
 COMMENT ON COLUMN code_write_slot.touched_at IS 'when the reading that produced this row ran; swept with the construction it hangs on';
 CREATE INDEX code_write_slot_name_ix ON code_write_slot (source_name, slot_name);
 COMMENT ON INDEX code_write_slot_name_ix IS 'The read side''s index, for the same access and the same reason: intent_field_accessor_hop matches every input coordinate in a graph against every member a source can fill, without binding a class first, so the answer is a product and the name is the only thing narrowing it. The primary key leads with the class and the foreign key with the entry, and neither can serve that. Measured rather than assumed: on a corpus of five thousand fillable members, the arm without this index scanned two and a half million rows against the read arm''s twenty thousand, the planner falling back to the foreign key''s own index and filtering the name per row. Both arms took about the same wall clock, which is why the plan is what says this is needed and the clock is not.';

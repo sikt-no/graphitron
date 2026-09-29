@@ -312,16 +312,43 @@ result_delivery      -- DIRECT | WRAPPED | MANY, NULL with element_class
   `delivery` answers whether a field declared a list is backed by a method that delivers one, which
   `intent_producer_cardinality_conflict` states and no surface reads yet. `erased_class` is what a
   binding compares against, at argument mapping and at a `@nodeId` decode's landing.
-* **A use site carries its own parse** `open`, on `code_method`, `code_method_parameter` and through
-  the accessor for a slot.
-* **`code_type_slot` reads its type through the accessor** `open`. Its `slot_type` is the accessor's
-  result, which `code_method` already holds for the same method, so the slot keys into that rather
-  than carrying the four columns a second time.
+* **A use site carries its own parse** `done`. `code_method` and `code_method_parameter` each hold
+  their own erasure, delivered class and delivery. Nothing new is computed: the reading reached all
+  three at the position already and deduplicated them into the dictionary, so siting them is
+  declining to deduplicate. Held against the dictionary in both directions while both exist, which
+  is an oracle only this order affords.
+* **The readers move off the dictionary** `blocked`, on the seeded cases being gathered. The two
+  parameter-side readers flip cleanly; flipping them turned seventeen `@nodeId` cases red because
+  `SeededStore` writes the dictionary half of a claim and not the position half, so a seeded store
+  states that one signature parses two ways. Teaching the seeder both halves is work on a fixture
+  whose conversion makes the question disappear, a capture writing both from one reading. So the
+  flip waits for those cases rather than paying for them twice.
+* **A slot carries its own parse** `done`. `code_type_slot` and `code_write_slot` each hold the
+  erasure, delivered class and delivery of their own type, beside the spelling they already had,
+  and `CodeCaptureTest` holds both against the dictionary as it holds the method positions. The
+  node read the other way round first, the slot reaching its type through its accessor's
+  `code_method` row, and inheritance is what turned it: what a member yields is a fact about the
+  class offering it and not about the method behind it. An inherited accessor has no row under the
+  offering class and may sit in an entry the reading did not read; a constructor has no
+  `code_method` row at all, so a POSITIONAL write slot would have nothing to reach; and a base class
+  declaring `K getId()` offers `Integer` to a subclass extending it at `Integer`, which only the
+  offering class can say. That last case is a known limit rather than a fixed one: the spelling is
+  the accessor's declared result, type variables unsubstituted, so it reads `K`. The slot is where
+  the substituted type goes when the reading states it.
 * **`code_construction` keys on the class it is about** `done`. It states how a value of one class is
   made and was keyed by a type spelling, a class fact filed under a type key. It keys into
   `code_class` now and `code_write_slot` follows it, so a class the next reading does not find takes
   its construction and its write slots with it.
-* **`code_type` and `code_type_element` are gone** `blocked`, on the two above.
+* **`code_type` and `code_type_element` are gone** `blocked`, on the readers moving off them.
+
+**Why this unblocks the leaf above it, stated because the graph does not say it.** Of the
+sixteen `code_` relations, all but the dictionary pair now carry `class_name`, and `code_method`,
+`code_type_slot`, `code_method_parameter`, `code_construction` and `code_write_slot` cascade from
+`code_class`. The ones that could not be attributed to a class were exactly the four this node
+removes or re-keys: `code_type` hangs off the entry and `code_type_element` inherits its grain, and
+the construction pair did too until it was re-keyed. One relation's
+grain sets the floor for the family's sweep, which is why the sweep scopes by entry and why the
+remodel is the cascade fix rather than a foreign key being missing.
 
 **Two facts recorded so their absence is not read as an oversight.** The rendering is not stored:
 `display_name` is a formatting of the spelling, both its readers are Java, and a store should not

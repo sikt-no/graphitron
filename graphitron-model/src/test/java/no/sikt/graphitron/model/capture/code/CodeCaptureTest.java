@@ -26,6 +26,7 @@ import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_SLOT;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE_SUPERTYPE;
+import static no.sikt.graphitron.model.Tables.CODE_WRITE_SLOT;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -761,8 +762,8 @@ class CodeCaptureTest {
     }
 
     /**
-     * A slot carries no type of its own: it is read by a method, and that method's result already
-     * names one. So what a slot offers is reached through the method rather than restated here.
+     * What a slot yields is spelled as its accessor's result spells it, rendered the same way for
+     * a record component as for a getter.
      */
     @Test
     @DisplayName("what a slot carries is its accessor's result")
@@ -943,8 +944,48 @@ class CodeCaptureTest {
                 .as("a parameter whose peel differs from the dictionary's")
                 .isEmpty();
 
+            var s = CODE_TYPE_SLOT;
+            assertThat(dsl.select(s.CLASS_NAME, s.METHOD_NAME, s.SLOT_TYPE)
+                    .from(s)
+                    .join(t).on(t.SOURCE_NAME.eq(s.SOURCE_NAME), t.TYPE_NAME.eq(s.SLOT_TYPE))
+                    .where(s.ERASED_CLASS.isDistinctFrom(t.ROOT_CLASS))
+                    .fetch())
+                .as("a slot whose erasure differs from the dictionary's")
+                .isEmpty();
+            assertThat(dsl.select(s.CLASS_NAME, s.METHOD_NAME, s.SLOT_TYPE)
+                    .from(s)
+                    .leftJoin(e).on(e.SOURCE_NAME.eq(s.SOURCE_NAME), e.TYPE_NAME.eq(s.SLOT_TYPE))
+                    .where(s.ELEMENT_CLASS.isDistinctFrom(e.ELEMENT_CLASS)
+                        .or(s.DELIVERY.isDistinctFrom(e.DELIVERY)))
+                    .fetch())
+                .as("a slot whose peel differs from the dictionary's")
+                .isEmpty();
+
+            var w = CODE_WRITE_SLOT;
+            assertThat(dsl.select(w.CLASS_NAME, w.METHOD_NAME, w.POSITION, w.SLOT_TYPE)
+                    .from(w)
+                    .join(t).on(t.SOURCE_NAME.eq(w.SOURCE_NAME), t.TYPE_NAME.eq(w.SLOT_TYPE))
+                    .where(w.ERASED_CLASS.isDistinctFrom(t.ROOT_CLASS))
+                    .fetch())
+                .as("a write slot whose erasure differs from the dictionary's")
+                .isEmpty();
+            assertThat(dsl.select(w.CLASS_NAME, w.METHOD_NAME, w.POSITION)
+                    .from(w)
+                    .leftJoin(e).on(e.SOURCE_NAME.eq(w.SOURCE_NAME), e.TYPE_NAME.eq(w.SLOT_TYPE))
+                    .where(w.ELEMENT_CLASS.isDistinctFrom(e.ELEMENT_CLASS)
+                        .or(w.DELIVERY.isDistinctFrom(e.DELIVERY)))
+                    .fetch())
+                .as("a write slot whose peel differs from the dictionary's")
+                .isEmpty();
+
             assertThat(dsl.fetchCount(m, m.RESULT_ELEMENT_CLASS.isNotNull()))
                 .as("the fixture reaches resolved results, so the comparison is not over nothing")
+                .isPositive();
+            assertThat(dsl.fetchCount(s, s.ELEMENT_CLASS.isNotNull()))
+                .as("and resolved slots")
+                .isPositive();
+            assertThat(dsl.fetchCount(w, w.ELEMENT_CLASS.isNotNull()))
+                .as("and resolved write slots")
                 .isPositive();
             assertThat(dsl.fetchCount(m, m.RESULT_DELIVERY.eq("MANY")))
                 .as("and reaches a delivering container, which is the arm the peel exists for")

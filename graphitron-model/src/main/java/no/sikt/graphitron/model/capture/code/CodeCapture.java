@@ -314,7 +314,7 @@ public final class CodeCapture {
             .map(d -> new Member(d.source(), d.className(), d.at()))
             .toList(), ancestry, containers, touchedAt);
 
-        slots(dsl, classes, touchedAt);
+        slots(dsl, classes, containers, touchedAt);
         construction(dsl, classes, containers, touchedAt);
 
         arm(dsl, CODE_CONDITION_METHOD, found.stream()
@@ -413,7 +413,7 @@ public final class CodeCapture {
      * that member and a rule that second-guessed the type would hide it.
      */
     private static void slots(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
-                              LocalDateTime touchedAt) {
+                              Map<String, Container> containers, LocalDateTime touchedAt) {
         record Slot(String source, String className, String declaringClass,
                     ClassfileCensus.MethodAt at, String slotName, String origin) {}
         var byName = new java.util.LinkedHashMap<String, ClassfileCensus.ClassAt>();
@@ -459,16 +459,27 @@ public final class CodeCapture {
             row -> val(row.declaringClass(), t.DECLARING_CLASS),
             row -> val(row.slotName(), t.SLOT_NAME),
             row -> val(row.at().qualifiedReturnType(), t.SLOT_TYPE),
+            // The parse, at the slot, on code_method's result terms. What the offering class yields
+            // is the slot's fact, so it is stated here even where the accessor's row states it too.
+            row -> val(rootOf(row.at().returnTypeRefs()), t.ERASED_CLASS),
+            row -> val(elementOf(deliveryOf(row.at().returnTypeRefs(), containers)),
+                t.ELEMENT_CLASS),
+            row -> val(deliveryNameOf(deliveryOf(row.at().returnTypeRefs(), containers)),
+                t.DELIVERY),
             row -> val(row.origin(), t.ORIGIN),
             row -> val(touchedAt, t.TOUCHED_AT)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.CLASS_NAME, t.METHOD_NAME, t.DESCRIPTOR,
-                    t.DECLARING_CLASS, t.SLOT_NAME, t.SLOT_TYPE, t.ORIGIN, t.TOUCHED_AT)
+                    t.DECLARING_CLASS, t.SLOT_NAME, t.SLOT_TYPE, t.ERASED_CLASS, t.ELEMENT_CLASS,
+                    t.DELIVERY, t.ORIGIN, t.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.DECLARING_CLASS, excluded(t.DECLARING_CLASS))
                 .set(t.SLOT_NAME, excluded(t.SLOT_NAME))
                 .set(t.SLOT_TYPE, excluded(t.SLOT_TYPE))
+                .set(t.ERASED_CLASS, excluded(t.ERASED_CLASS))
+                .set(t.ELEMENT_CLASS, excluded(t.ELEMENT_CLASS))
+                .set(t.DELIVERY, excluded(t.DELIVERY))
                 .set(t.ORIGIN, excluded(t.ORIGIN))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
@@ -631,7 +642,7 @@ public final class CodeCapture {
                 .set(c.TOUCHED_AT, excluded(c.TOUCHED_AT)));
 
         record Slot(String source, String className, String methodName, String descriptor,
-                    int position, String slotName, String slotType) {}
+                    int position, String slotName, ClassfileCensus.ParameterAt parameter) {}
         var slots = new ArrayList<Slot>();
         for (Made row : made) {
             if ("POSITIONAL".equals(row.shape())) {
@@ -640,14 +651,14 @@ public final class CodeCapture {
                 for (int i = 0; i < parameters.size() && i < components.size(); i++) {
                     slots.add(new Slot(row.at().source(), row.at().className(), "<init>",
                         row.constructor().descriptor(), i, components.get(i).name(),
-                        parameters.get(i).qualifiedType()));
+                        parameters.get(i)));
                 }
                 continue;
             }
             for (ClassfileCensus.MethodAt setter : settersOf(row.at(), byName)) {
                 slots.add(new Slot(row.at().source(), row.at().className(), setter.name(),
                     setter.descriptor(), 0, setterProperty(setter),
-                    setter.parameters().getFirst().qualifiedType()));
+                    setter.parameters().getFirst()));
             }
         }
         if (slots.isEmpty()) {
@@ -661,15 +672,25 @@ public final class CodeCapture {
             row -> val(row.descriptor(), w.DESCRIPTOR),
             row -> val(row.position(), w.POSITION),
             row -> val(row.slotName(), w.SLOT_NAME),
-            row -> val(row.slotType(), w.SLOT_TYPE),
+            row -> val(row.parameter().qualifiedType(), w.SLOT_TYPE),
+            // The parse, at the argument that carries the member, on code_method_parameter's terms.
+            row -> val(rootOf(row.parameter().typeRefs()), w.ERASED_CLASS),
+            row -> val(elementOf(deliveryOf(row.parameter().typeRefs(), containers)),
+                w.ELEMENT_CLASS),
+            row -> val(deliveryNameOf(deliveryOf(row.parameter().typeRefs(), containers)),
+                w.DELIVERY),
             row -> val(touchedAt, w.TOUCHED_AT)));
         BindBatch.execute(dsl, slotRows, markers ->
             dsl.insertInto(w, w.SOURCE_NAME, w.CLASS_NAME, w.METHOD_NAME, w.DESCRIPTOR, w.POSITION,
-                    w.SLOT_NAME, w.SLOT_TYPE, w.TOUCHED_AT)
+                    w.SLOT_NAME, w.SLOT_TYPE, w.ERASED_CLASS, w.ELEMENT_CLASS, w.DELIVERY,
+                    w.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(w.SLOT_NAME, excluded(w.SLOT_NAME))
                 .set(w.SLOT_TYPE, excluded(w.SLOT_TYPE))
+                .set(w.ERASED_CLASS, excluded(w.ERASED_CLASS))
+                .set(w.ELEMENT_CLASS, excluded(w.ELEMENT_CLASS))
+                .set(w.DELIVERY, excluded(w.DELIVERY))
                 .set(w.TOUCHED_AT, excluded(w.TOUCHED_AT)));
     }
 
