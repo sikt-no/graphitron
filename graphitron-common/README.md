@@ -253,6 +253,9 @@ var graphitronContext = new DefaultGraphitronContext(dslContext, 1000);
 If you implement `GraphitronContext` yourself, override `getDataLoaderMaxBatchSize(DataFetchingEnvironment env)`.
 A value less than 1 means no limit, which is the default.
 
+Setting a limit requires java-dataloader 5.0 or newer, which graphql-java 24.0 and newer bring in. Without a limit,
+older versions keep working.
+
 ### Database Error Formatting
 
 The `ErrorMessageFormatter` class provides user-friendly messages for common SQL errors:

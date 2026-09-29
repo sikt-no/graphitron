@@ -74,9 +74,16 @@ public class EnvironmentHandler {
                 .toList();
     }
 
+    /**
+     * Build the options for the DataLoaders Graphitron creates.
+     * <p>
+     * Without a limit this uses only the {@link DataLoaderOptions} constructor, which exists in every java-dataloader
+     * version, so applications that pin an older graphql-java keep working. Setting a limit uses the options builder,
+     * which requires java-dataloader 5.0 or newer (graphql-java 24.0 or newer).
+     */
     protected static DataLoaderOptions buildDataLoaderOptions(int maxBatchSize) {
         if (maxBatchSize < 1) {
-            return DataLoaderOptions.newDefaultOptions();
+            return new DataLoaderOptions();
         }
         return DataLoaderOptions.newOptions().setMaxBatchSize(maxBatchSize).build();
     }
