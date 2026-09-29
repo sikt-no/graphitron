@@ -51,3 +51,30 @@ On the same sis schema, with the fix installed, `graphitron:dev`'s initial run o
 137.8 s. Before the fix, the run was killed after more than ten minutes, still inside the one
 `directiveApplications` statement. The store was warm (a cache from an earlier run existed), so this
 run did not exercise R980's cold-store failure.
+
+## Reviewer findings
+
+### Round 1: In Review → Done, no verdict, 2026-09-29
+
+A pre-read by a session that did not implement the item. It gives no verdict and hands the gate to a
+fresh session. The implementing commits carry no `Claude-Session` trailer, so git log cannot show who
+implemented the item. The Spec → Ready sign-off was self-signed, and the user accepted the item as it
+stood.
+
+1. It is the change the spec described. The rule view keeps the walk's body unchanged, and the table
+   takes the old name, so `directiveApplications` is not edited. No other main-source reader of
+   `graphql_ast_element_declaration` exists. `elementDeclarations` runs after every entry arm and
+   before the only reader.
+2. Replacing the rows per graph instead of stamping and sweeping them has precedent:
+   `FieldColumnScopes` and `ArgumentColumnScopes` do the same. The cascading key into
+   `graphql_ast_element_entry` removes the rows of an element an edit deleted, once the anchor's
+   sweep runs.
+3. Completeness: `StageAnswerAgreementTest` compares the table with its rule by `EXCEPT` both ways,
+   and its non-vacuity case requires the table to have rows. The cost claim has no in-repo test,
+   since the fixtures are too small to show it. The evidence is the sis measurement above. The next
+   reviewer should decide whether that is enough for the fourth gate question.
+4. Non-blocking: the `STAGES` javadoc in `StageAnswerAgreementTest` still says "the stratum's order",
+   but its new first entry is filled by capture, not by a stage.
+5. Verification: a full install on the tree rebased onto `4dd1dd6a8` passed every module up to
+   `graphitron-sakila-example`. That module failed only `ReadmeLinkIntegrityTest`, on a roll-up the
+   rebase left stale, which `e256a39` regenerates.
