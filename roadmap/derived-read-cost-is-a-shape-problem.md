@@ -317,13 +317,18 @@ result_delivery      -- DIRECT | WRAPPED | MANY, NULL with element_class
   three at the position already and deduplicated them into the dictionary, so siting them is
   declining to deduplicate. Held against the dictionary in both directions while both exist, which
   is an oracle only this order affords.
-* **The readers move off the dictionary** `blocked`, on the seeded cases being gathered. The two
-  parameter-side readers flip cleanly; flipping them turned seventeen `@nodeId` cases red because
+* **The readers move off the dictionary** `blocked`, on the seeded cases being gathered. Read at the
+  queries rather than the views, what is left reading it through a position is the rendering and
+  nothing else: `ClassMemberSlots` in the language server, and `SchemaQueries.members` and
+  `CodeQueries`' methods, parameters and components in the MCP server, each joining `code_type` on
+  a spelling the row already carries to fetch `display_name`. Each moves by formatting that
+  spelling, which also retires an inner join that would drop a member whose spelling had no row.
+  The two parameter-side readers of the parse flip cleanly; flipping them turned seventeen `@nodeId` cases red because
   `SeededStore` writes the dictionary half of a claim and not the position half, so a seeded store
   states that one signature parses two ways. Teaching the seeder both halves is work on a fixture
   whose conversion makes the question disappear, a capture writing both from one reading. So the
   flip waits for those cases rather than paying for them twice.
-* **A slot carries its own parse** `done`. `code_type_slot` and `code_write_slot` each hold the
+* **A slot carries its own parse** `done`. `code_read_slot` and `code_write_slot` each hold the
   erasure, delivered class and delivery of their own type, beside the spelling they already had,
   and `CodeCaptureTest` holds both against the dictionary as it holds the method positions. The
   node read the other way round first, the slot reaching its type through its accessor's
@@ -335,6 +340,14 @@ result_delivery      -- DIRECT | WRAPPED | MANY, NULL with element_class
   offering class can say. That last case is a known limit rather than a fixed one: the spelling is
   the accessor's declared result, type variables unsubstituted, so it reads `K`. The slot is where
   the substituted type goes when the reading states it.
+* **The read slot is named for its axis** `done`. `code_type_slot` became `code_read_slot`: keyed by
+  the offering class and its accessor, it has no type in its key, and the store already called it
+  the read side of the pair `code_write_slot` is the other half of.
+* **A slot's parse is read by what replaces the accessor hop** `open`. No query reads the new
+  columns. Their reader was `intent_field_accessor_hop`, which peels `slot_type` through
+  `code_type_element` to say which class a member of a class delivers, the edge the type-backing
+  walk steps along, and which is dissolving. Its successor reads `element_class` off the slot with
+  no peel; if the hop's dissolution needs no such edge, the columns are unearned and go.
 * **`code_construction` keys on the class it is about** `done`. It states how a value of one class is
   made and was keyed by a type spelling, a class fact filed under a type key. It keys into
   `code_class` now and `code_write_slot` follows it, so a class the next reading does not find takes
@@ -343,7 +356,7 @@ result_delivery      -- DIRECT | WRAPPED | MANY, NULL with element_class
 
 **Why this unblocks the leaf above it, stated because the graph does not say it.** Of the
 sixteen `code_` relations, all but the dictionary pair now carry `class_name`, and `code_method`,
-`code_type_slot`, `code_method_parameter`, `code_construction` and `code_write_slot` cascade from
+`code_read_slot`, `code_method_parameter`, `code_construction` and `code_write_slot` cascade from
 `code_class`. The ones that could not be attributed to a class were exactly the four this node
 removes or re-keys: `code_type` hangs off the entry and `code_type_element` inherits its grain, and
 the construction pair did too until it was re-keyed. One relation's
@@ -402,8 +415,8 @@ tables into `jvm_declared_type_ref`: `jvm_method_parameter_type_ref`, `jvm_metho
 `graphitron_type_declaration_synthesis` (now `graphitron_minted_type` and
 `graphitron_minted_type_site`), `intent_argmapping_pair_live`, `intent_errors_field_live`,
 `intent_condition_param_extraction`, `intent_condition_table_parameter`,
-`graphitron_argument_path_segment`, and `code_condition_method_parameter` (now
-`code_method_parameter`).
+`graphitron_argument_path_segment`, `code_condition_method_parameter` (now
+`code_method_parameter`), and `code_type_slot` (now `code_read_slot`).
 
 **Renamed, by rule rather than by list.** Every relation of the as-written half of `graphitron_`
 gained the `_entry` suffix. A sweep for a survivor is a search for a `graphitron_` name that is
@@ -417,7 +430,9 @@ not go stale. Two index names followed: `graphitron_spelled_reference_name_ix`,
 `trailing_name`; `graphitron_argmapping_entry.head_segment`, `head_kind`, `candidate_coordinate`,
 `candidate_path`, `type_name`, `field_name`, `argument_name`, and `argument_path` (now
 `written_path`); `graphitron_argmapping_candidate.element_name` (now `name`), `type_name`,
-`field_name`; `intent_resolved_node_key_projection.trailing_segment_name` (now `trailing_name`).
+`field_name`; `intent_resolved_node_key_projection.trailing_segment_name` (now `trailing_name`);
+`code_construction.type_name` and `code_write_slot.type_name` (now `class_name`); the index
+`code_type_slot_name_ix` (now `code_read_slot_name_ix`).
 Values `AUTHORED_EXPRESSION` and `TRAILING_SEGMENTS_BEYOND_ONE`.
 `graphitron_field_chain_link_resolution.reach` and its values `TAIL` and `HEAD` as a stored column
 (now the payload flags `reached_by_tail` and `reached_by_head`), and `reach` in the

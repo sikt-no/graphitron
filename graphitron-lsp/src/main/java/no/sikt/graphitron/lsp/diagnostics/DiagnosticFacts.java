@@ -26,7 +26,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 
-import static no.sikt.graphitron.model.Tables.CODE_TYPE_SLOT;
+import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
 import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
@@ -1029,15 +1029,15 @@ final class DiagnosticFacts {
      * populations after this arm has returned, and a slot is a fact about a class either way.
      */
     private static Field<List<SlotRow>> slotArm(StoreHandle store, Collection<String> typeNames) {
-        return multiset(selectDistinct(CODE_TYPE_SLOT.CLASS_NAME,
-                CODE_TYPE_SLOT.SLOT_NAME, CODE_TYPE_SLOT.ORIGIN)
-            .from(CODE_TYPE_SLOT)
+        return multiset(selectDistinct(CODE_READ_SLOT.CLASS_NAME,
+                CODE_READ_SLOT.SLOT_NAME, CODE_READ_SLOT.ORIGIN)
+            .from(CODE_READ_SLOT)
             .join(INTENT_TYPE_BACKING)
-            .on(INTENT_TYPE_BACKING.CLASS_NAME.eq(CODE_TYPE_SLOT.CLASS_NAME))
-            .where(store.reads(CODE_TYPE_SLOT.SOURCE_NAME))
+            .on(INTENT_TYPE_BACKING.CLASS_NAME.eq(CODE_READ_SLOT.CLASS_NAME))
+            .where(store.reads(CODE_READ_SLOT.SOURCE_NAME))
             .and(INTENT_TYPE_BACKING.GRAPH_NAME.eq(store.graphName()))
             .and(INTENT_TYPE_BACKING.TYPE_NAME.in(typeNames))
-            .orderBy(CODE_TYPE_SLOT.CLASS_NAME, CODE_TYPE_SLOT.SLOT_NAME))
+            .orderBy(CODE_READ_SLOT.CLASS_NAME, CODE_READ_SLOT.SLOT_NAME))
             .convertFrom(rows -> rows.map(Records.mapping(SlotRow::new)));
     }
 

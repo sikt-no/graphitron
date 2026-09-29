@@ -10,7 +10,7 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
-import static no.sikt.graphitron.model.Tables.CODE_TYPE_SLOT;
+import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
 import static no.sikt.graphitron.model.Tables.INTENT_DELIVERY_CONTAINER;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_ACCESSOR_HOP;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
@@ -33,7 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * The registered agreement anchor for the three relations an accessor hop is built from:
  * {@code intent_delivery_container}, the classes a declared type delivers through;
- * {@code code_type_slot}, the member names a class offers and the accessor each is read by; and
+ * {@code code_read_slot}, the member names a class offers and the accessor each is read by; and
  * {@code intent_field_accessor_hop}, where a field coordinate standing on a class lands.
  *
  * <p>One peel now, where there were two. The reading peels a declaration as it reads it, keyed by
@@ -601,12 +601,12 @@ class AccessorHopTest {
      */
     private static List<String> delivered(DSLContext dsl, String className, String slotName) {
         return dsl.select(CODE_TYPE_ELEMENT.ELEMENT_CLASS)
-            .from(CODE_TYPE_SLOT)
+            .from(CODE_READ_SLOT)
             .join(CODE_TYPE_ELEMENT)
-            .on(CODE_TYPE_ELEMENT.SOURCE_NAME.eq(CODE_TYPE_SLOT.SOURCE_NAME)
-                .and(CODE_TYPE_ELEMENT.TYPE_NAME.eq(CODE_TYPE_SLOT.SLOT_TYPE)))
-            .where(CODE_TYPE_SLOT.CLASS_NAME.eq(className)
-                .and(CODE_TYPE_SLOT.SLOT_NAME.eq(slotName)))
+            .on(CODE_TYPE_ELEMENT.SOURCE_NAME.eq(CODE_READ_SLOT.SOURCE_NAME)
+                .and(CODE_TYPE_ELEMENT.TYPE_NAME.eq(CODE_READ_SLOT.SLOT_TYPE)))
+            .where(CODE_READ_SLOT.CLASS_NAME.eq(className)
+                .and(CODE_READ_SLOT.SLOT_NAME.eq(slotName)))
             .fetch(0, String.class);
     }
 

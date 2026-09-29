@@ -23,7 +23,7 @@ import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
 import static no.sikt.graphitron.model.Tables.CODE_SERVICE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT;
-import static no.sikt.graphitron.model.Tables.CODE_TYPE_SLOT;
+import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.CODE_WRITE_SLOT;
@@ -736,12 +736,12 @@ class CodeCaptureTest {
                     + " not the one whose prefix is followed by a lower-case letter")
                 .containsExactlyInAnyOrder("title", "title", "tags", "restricted", "uRL");
             assertThat(originsOn(dsl, SLOT_BEAN)).containsOnly("BEAN_ACCESSOR");
-            assertThat(dsl.select(CODE_TYPE_SLOT.METHOD_NAME)
-                    .from(CODE_TYPE_SLOT)
-                    .where(CODE_TYPE_SLOT.CLASS_NAME.eq(SLOT_BEAN))
-                    .and(CODE_TYPE_SLOT.SLOT_NAME.eq("title"))
-                    .orderBy(CODE_TYPE_SLOT.METHOD_NAME)
-                    .fetch(CODE_TYPE_SLOT.METHOD_NAME))
+            assertThat(dsl.select(CODE_READ_SLOT.METHOD_NAME)
+                    .from(CODE_READ_SLOT)
+                    .where(CODE_READ_SLOT.CLASS_NAME.eq(SLOT_BEAN))
+                    .and(CODE_READ_SLOT.SLOT_NAME.eq("title"))
+                    .orderBy(CODE_READ_SLOT.METHOD_NAME)
+                    .fetch(CODE_READ_SLOT.METHOD_NAME))
                 .as("one slot name, two accessors, which is why the accessor is the key")
                 .containsExactly("getTitle", "isTitle");
         });
@@ -771,11 +771,11 @@ class CodeCaptureTest {
         withReactorCapture(dsl -> {
             var t = CODE_TYPE;
             assertThat(dsl.select(t.DISPLAY_NAME)
-                    .from(CODE_TYPE_SLOT)
-                    .join(t).on(t.SOURCE_NAME.eq(CODE_TYPE_SLOT.SOURCE_NAME),
-                        t.TYPE_NAME.eq(CODE_TYPE_SLOT.SLOT_TYPE))
-                    .where(CODE_TYPE_SLOT.CLASS_NAME.eq(SLOT_BEAN))
-                    .and(CODE_TYPE_SLOT.SLOT_NAME.eq("tags"))
+                    .from(CODE_READ_SLOT)
+                    .join(t).on(t.SOURCE_NAME.eq(CODE_READ_SLOT.SOURCE_NAME),
+                        t.TYPE_NAME.eq(CODE_READ_SLOT.SLOT_TYPE))
+                    .where(CODE_READ_SLOT.CLASS_NAME.eq(SLOT_BEAN))
+                    .and(CODE_READ_SLOT.SLOT_NAME.eq("tags"))
                     .fetchOne(t.DISPLAY_NAME))
                 .as("rendered for a person, packages dropped and type arguments kept")
                 .isEqualTo("List<String>");
@@ -944,7 +944,7 @@ class CodeCaptureTest {
                 .as("a parameter whose peel differs from the dictionary's")
                 .isEmpty();
 
-            var s = CODE_TYPE_SLOT;
+            var s = CODE_READ_SLOT;
             assertThat(dsl.select(s.CLASS_NAME, s.METHOD_NAME, s.SLOT_TYPE)
                     .from(s)
                     .join(t).on(t.SOURCE_NAME.eq(s.SOURCE_NAME), t.TYPE_NAME.eq(s.SLOT_TYPE))
@@ -1051,30 +1051,30 @@ class CodeCaptureTest {
 
     /** The slot names one class offers. */
     private static List<String> slotsOn(DSLContext dsl, String className) {
-        return dsl.select(CODE_TYPE_SLOT.SLOT_NAME)
-            .from(CODE_TYPE_SLOT)
-            .where(CODE_TYPE_SLOT.CLASS_NAME.eq(className))
-            .fetch(CODE_TYPE_SLOT.SLOT_NAME);
+        return dsl.select(CODE_READ_SLOT.SLOT_NAME)
+            .from(CODE_READ_SLOT)
+            .where(CODE_READ_SLOT.CLASS_NAME.eq(className))
+            .fetch(CODE_READ_SLOT.SLOT_NAME);
     }
 
     /** How a slot's type renders, which is its accessor's result type's property. */
     private static String displayTypeOf(DSLContext dsl, String className, String slotName) {
         var t = CODE_TYPE;
         return dsl.select(t.DISPLAY_NAME)
-            .from(CODE_TYPE_SLOT)
-            .join(t).on(t.SOURCE_NAME.eq(CODE_TYPE_SLOT.SOURCE_NAME),
-                t.TYPE_NAME.eq(CODE_TYPE_SLOT.SLOT_TYPE))
-            .where(CODE_TYPE_SLOT.CLASS_NAME.eq(className))
-            .and(CODE_TYPE_SLOT.SLOT_NAME.eq(slotName))
+            .from(CODE_READ_SLOT)
+            .join(t).on(t.SOURCE_NAME.eq(CODE_READ_SLOT.SOURCE_NAME),
+                t.TYPE_NAME.eq(CODE_READ_SLOT.SLOT_TYPE))
+            .where(CODE_READ_SLOT.CLASS_NAME.eq(className))
+            .and(CODE_READ_SLOT.SLOT_NAME.eq(slotName))
             .fetchOne(t.DISPLAY_NAME);
     }
 
     /** The arms those slots came from, which is a fact about the class. */
     private static List<String> originsOn(DSLContext dsl, String className) {
-        return dsl.select(CODE_TYPE_SLOT.ORIGIN)
-            .from(CODE_TYPE_SLOT)
-            .where(CODE_TYPE_SLOT.CLASS_NAME.eq(className))
-            .fetch(CODE_TYPE_SLOT.ORIGIN);
+        return dsl.select(CODE_READ_SLOT.ORIGIN)
+            .from(CODE_READ_SLOT)
+            .where(CODE_READ_SLOT.CLASS_NAME.eq(className))
+            .fetch(CODE_READ_SLOT.ORIGIN);
     }
 
     /** The service candidates one class declares, by name. */

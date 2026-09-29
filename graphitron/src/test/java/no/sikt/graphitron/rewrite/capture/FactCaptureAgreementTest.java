@@ -269,7 +269,7 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
  *       needs (a macro-rewritten type expression, a contested coordinate, a spelling two schemas
  *       both answer) being ones a fixture states in a line and a capture arranges in a schema;
  *       the member names a backing class offers are no longer a derivation at all, the reading
- *       writing them down as {@code code_type_slot}, so the rule is pinned once rather than twice
+ *       writing them down as {@code code_read_slot}, so the rule is pinned once rather than twice
  *       and where the reading lives: {@code no.sikt.graphitron.model.capture.code.CodeCaptureTest}
  *       binds it against a real reading of this build's own classes, both arms and every near-miss
  *       of the bean rule stated as a fixture whose declared form the test did not write;
@@ -287,7 +287,7 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
  *       apart (a name matching no catalog object, one matching a stored table rather than a
  *       callable, and a callable the generated model exposes no call surface for);
  *       {@code no.sikt.graphitron.model.intent.AccessorHopTest} binds the four relations an
- *       accessor hop is built from ({@code intent_delivery_container}, {@code code_type_slot}
+ *       accessor hop is built from ({@code intent_delivery_container}, {@code code_read_slot}
  *       and {@code intent_field_accessor_hop}) to a census stated as rows in
  *       the module whose DDL declares them, one accessor per delivery shape beside the arrangements
  *       no scan of compiled fixtures offers side by side (one class name declared on two classpath

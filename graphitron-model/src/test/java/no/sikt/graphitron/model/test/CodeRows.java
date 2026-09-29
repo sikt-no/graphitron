@@ -18,7 +18,7 @@ import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT;
-import static no.sikt.graphitron.model.Tables.CODE_TYPE_SLOT;
+import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
 import static no.sikt.graphitron.model.Tables.CODE_WRITE_SLOT;
 
 /**
@@ -201,16 +201,16 @@ public final class CodeRows {
         }
         type(dsl, sourceName, slotType, readAt);
         clazz(dsl, sourceName, className, readAt);
-        dsl.insertInto(CODE_TYPE_SLOT)
-            .set(CODE_TYPE_SLOT.SOURCE_NAME, sourceName)
-            .set(CODE_TYPE_SLOT.CLASS_NAME, className)
-            .set(CODE_TYPE_SLOT.METHOD_NAME, methodName)
-            .set(CODE_TYPE_SLOT.DESCRIPTOR, descriptor)
-            .set(CODE_TYPE_SLOT.DECLARING_CLASS, className)
-            .set(CODE_TYPE_SLOT.SLOT_NAME, slotName)
-            .set(CODE_TYPE_SLOT.SLOT_TYPE, slotType)
-            .set(CODE_TYPE_SLOT.ORIGIN, origin)
-            .set(CODE_TYPE_SLOT.TOUCHED_AT, readAt)
+        dsl.insertInto(CODE_READ_SLOT)
+            .set(CODE_READ_SLOT.SOURCE_NAME, sourceName)
+            .set(CODE_READ_SLOT.CLASS_NAME, className)
+            .set(CODE_READ_SLOT.METHOD_NAME, methodName)
+            .set(CODE_READ_SLOT.DESCRIPTOR, descriptor)
+            .set(CODE_READ_SLOT.DECLARING_CLASS, className)
+            .set(CODE_READ_SLOT.SLOT_NAME, slotName)
+            .set(CODE_READ_SLOT.SLOT_TYPE, slotType)
+            .set(CODE_READ_SLOT.ORIGIN, origin)
+            .set(CODE_READ_SLOT.TOUCHED_AT, readAt)
             .onDuplicateKeyIgnore()
             .execute();
     }

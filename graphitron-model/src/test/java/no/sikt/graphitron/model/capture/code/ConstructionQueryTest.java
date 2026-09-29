@@ -14,7 +14,7 @@ import java.util.function.Consumer;
 import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTION;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT;
-import static no.sikt.graphitron.model.Tables.CODE_TYPE_SLOT;
+import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
 import static no.sikt.graphitron.model.Tables.CODE_WRITE_SLOT;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.jooq.impl.DSL.notExists;
@@ -147,15 +147,15 @@ class ConstructionQueryTest {
     @DisplayName("which members can be read but not filled")
     void theAsymmetryBetweenTheAxes() {
         withReactorCapture(dsl ->
-            assertThat(dsl.selectDistinct(CODE_TYPE_SLOT.SLOT_NAME)
-                .from(CODE_TYPE_SLOT)
-                .where(CODE_TYPE_SLOT.CLASS_NAME.eq(FIXTURES + "SlotBean"))
+            assertThat(dsl.selectDistinct(CODE_READ_SLOT.SLOT_NAME)
+                .from(CODE_READ_SLOT)
+                .where(CODE_READ_SLOT.CLASS_NAME.eq(FIXTURES + "SlotBean"))
                 .and(notExists(selectOne().from(CODE_WRITE_SLOT)
-                    .where(CODE_WRITE_SLOT.SOURCE_NAME.eq(CODE_TYPE_SLOT.SOURCE_NAME),
-                        CODE_WRITE_SLOT.CLASS_NAME.eq(CODE_TYPE_SLOT.CLASS_NAME),
-                        CODE_WRITE_SLOT.SLOT_NAME.eq(CODE_TYPE_SLOT.SLOT_NAME))))
-                .orderBy(CODE_TYPE_SLOT.SLOT_NAME.asc())
-                .fetch(CODE_TYPE_SLOT.SLOT_NAME))
+                    .where(CODE_WRITE_SLOT.SOURCE_NAME.eq(CODE_READ_SLOT.SOURCE_NAME),
+                        CODE_WRITE_SLOT.CLASS_NAME.eq(CODE_READ_SLOT.CLASS_NAME),
+                        CODE_WRITE_SLOT.SLOT_NAME.eq(CODE_READ_SLOT.SLOT_NAME))))
+                .orderBy(CODE_READ_SLOT.SLOT_NAME.asc())
+                .fetch(CODE_READ_SLOT.SLOT_NAME))
                 .as("a class with getters and no setters offers every member to a reader and none"
                     + " to a caller filling one")
                 .containsExactly("restricted", "tags", "title", "uRL"));
@@ -174,13 +174,13 @@ class ConstructionQueryTest {
     @DisplayName("what can I read off this class, inherited members included")
     void theRecipeForReadingABean() {
         withReactorCapture(dsl ->
-            assertThat(dsl.select(CODE_TYPE_SLOT.SLOT_NAME, CODE_TYPE.DISPLAY_NAME,
-                    CODE_TYPE_SLOT.METHOD_NAME, CODE_TYPE_SLOT.DECLARING_CLASS)
-                .from(CODE_TYPE_SLOT)
-                .join(CODE_TYPE).on(CODE_TYPE.SOURCE_NAME.eq(CODE_TYPE_SLOT.SOURCE_NAME),
-                    CODE_TYPE.TYPE_NAME.eq(CODE_TYPE_SLOT.SLOT_TYPE))
-                .where(CODE_TYPE_SLOT.CLASS_NAME.eq(FIXTURES + "BeanChild"))
-                .orderBy(CODE_TYPE_SLOT.SLOT_NAME.asc())
+            assertThat(dsl.select(CODE_READ_SLOT.SLOT_NAME, CODE_TYPE.DISPLAY_NAME,
+                    CODE_READ_SLOT.METHOD_NAME, CODE_READ_SLOT.DECLARING_CLASS)
+                .from(CODE_READ_SLOT)
+                .join(CODE_TYPE).on(CODE_TYPE.SOURCE_NAME.eq(CODE_READ_SLOT.SOURCE_NAME),
+                    CODE_TYPE.TYPE_NAME.eq(CODE_READ_SLOT.SLOT_TYPE))
+                .where(CODE_READ_SLOT.CLASS_NAME.eq(FIXTURES + "BeanChild"))
+                .orderBy(CODE_READ_SLOT.SLOT_NAME.asc())
                 .fetch(r -> r.value1() + " " + r.value2() + " " + r.value3() + " from "
                     + r.value4().substring(FIXTURES.length())))
                 .as("the inherited getter is offered here and written there")
@@ -195,11 +195,11 @@ class ConstructionQueryTest {
     @DisplayName("an inherited member is both readable and fillable")
     void bothAxesReachAnInheritedMember() {
         withReactorCapture(dsl -> {
-            assertThat(dsl.select(CODE_TYPE_SLOT.METHOD_NAME)
-                .from(CODE_TYPE_SLOT)
-                .where(CODE_TYPE_SLOT.CLASS_NAME.eq(FIXTURES + "BeanChild"))
-                .and(CODE_TYPE_SLOT.SLOT_NAME.eq("title"))
-                .fetch(CODE_TYPE_SLOT.METHOD_NAME))
+            assertThat(dsl.select(CODE_READ_SLOT.METHOD_NAME)
+                .from(CODE_READ_SLOT)
+                .where(CODE_READ_SLOT.CLASS_NAME.eq(FIXTURES + "BeanChild"))
+                .and(CODE_READ_SLOT.SLOT_NAME.eq("title"))
+                .fetch(CODE_READ_SLOT.METHOD_NAME))
                 .containsExactly("getTitle");
             assertThat(dsl.select(CODE_WRITE_SLOT.METHOD_NAME)
                 .from(CODE_WRITE_SLOT)

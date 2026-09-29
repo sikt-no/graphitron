@@ -9,12 +9,12 @@ import java.util.List;
 import java.util.Optional;
 
 import static no.sikt.graphitron.model.Tables.CODE_TYPE;
-import static no.sikt.graphitron.model.Tables.CODE_TYPE_SLOT;
+import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
 
 /**
  * The member names a backing class offers an SDL author: what a {@code @field(name:)} site resolves
  * against on a type backed by a Java class rather than by a table. One query over
- * {@code code_type_slot}, where the reading already decided whether the class answers with record
+ * {@code code_read_slot}, where the reading already decided whether the class answers with record
  * components or with bean accessors.
  *
  * <p>Shared by every surface that asks the question, which is all four of them: completion offers
@@ -47,15 +47,15 @@ public final class ClassMemberSlots {
 
     private static List<Slot> of(StoreHandle store, String className, Condition slotFilter) {
         var rows = store.dsl()
-            .select(CODE_TYPE_SLOT.SLOT_NAME, CODE_TYPE.DISPLAY_NAME,
-                CODE_TYPE_SLOT.METHOD_NAME, CODE_TYPE_SLOT.ORIGIN)
-            .from(CODE_TYPE_SLOT)
-            .join(CODE_TYPE).on(CODE_TYPE.SOURCE_NAME.eq(CODE_TYPE_SLOT.SOURCE_NAME)
-                .and(CODE_TYPE.TYPE_NAME.eq(CODE_TYPE_SLOT.SLOT_TYPE)))
-            .where(store.reads(CODE_TYPE_SLOT.SOURCE_NAME))
-            .and(CODE_TYPE_SLOT.CLASS_NAME.eq(className))
+            .select(CODE_READ_SLOT.SLOT_NAME, CODE_TYPE.DISPLAY_NAME,
+                CODE_READ_SLOT.METHOD_NAME, CODE_READ_SLOT.ORIGIN)
+            .from(CODE_READ_SLOT)
+            .join(CODE_TYPE).on(CODE_TYPE.SOURCE_NAME.eq(CODE_READ_SLOT.SOURCE_NAME)
+                .and(CODE_TYPE.TYPE_NAME.eq(CODE_READ_SLOT.SLOT_TYPE)))
+            .where(store.reads(CODE_READ_SLOT.SOURCE_NAME))
+            .and(CODE_READ_SLOT.CLASS_NAME.eq(className))
             .and(slotFilter)
-            .orderBy(CODE_TYPE_SLOT.SLOT_NAME, CODE_TYPE_SLOT.METHOD_NAME)
+            .orderBy(CODE_READ_SLOT.SLOT_NAME, CODE_READ_SLOT.METHOD_NAME)
             .fetch();
         var slots = new ArrayList<Slot>(rows.size());
         for (var row : rows) {
@@ -73,7 +73,7 @@ public final class ClassMemberSlots {
      * first, which is the order a candidate list would have offered them in.
      */
     public static Optional<Slot> named(StoreHandle store, String className, String slotName) {
-        var matching = of(store, className, CODE_TYPE_SLOT.SLOT_NAME.eq(slotName));
+        var matching = of(store, className, CODE_READ_SLOT.SLOT_NAME.eq(slotName));
         return matching.isEmpty() ? Optional.empty() : Optional.of(matching.getFirst());
     }
 
@@ -96,7 +96,7 @@ public final class ClassMemberSlots {
                 case "RECORD_COMPONENT" -> RECORD_COMPONENT;
                 case "BEAN_ACCESSOR" -> BEAN_ACCESSOR;
                 default -> throw new IllegalStateException(
-                    "code_type_slot.origin holds an unknown arm '" + stored
+                    "code_read_slot.origin holds an unknown arm '" + stored
                     + "'; the relation's vocabulary and this decode are one closed set");
             };
         }

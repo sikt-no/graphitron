@@ -25,7 +25,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE;
-import static no.sikt.graphitron.model.Tables.CODE_TYPE_SLOT;
+import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_CLAIM_CONFLICT;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_CLAIM_REJECTION;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_FIELD_CLAIM;
@@ -555,15 +555,15 @@ final class SchemaQueries {
      */
     private static Field<List<MemberSlot>> members(StoreHandle store) {
         return multiset(
-            select(CODE_TYPE_SLOT.SLOT_NAME, CODE_TYPE.DISPLAY_NAME,
-                CODE_TYPE_SLOT.ORIGIN, CODE_TYPE_SLOT.METHOD_NAME)
-                .from(CODE_TYPE_SLOT)
+            select(CODE_READ_SLOT.SLOT_NAME, CODE_TYPE.DISPLAY_NAME,
+                CODE_READ_SLOT.ORIGIN, CODE_READ_SLOT.METHOD_NAME)
+                .from(CODE_READ_SLOT)
                 .join(CODE_TYPE)
-                .on(CODE_TYPE.SOURCE_NAME.eq(CODE_TYPE_SLOT.SOURCE_NAME)
-                    .and(CODE_TYPE.TYPE_NAME.eq(CODE_TYPE_SLOT.SLOT_TYPE)))
-                .where(CODE_TYPE_SLOT.CLASS_NAME.eq(INTENT_TYPE_BACKING.CLASS_NAME)
-                    .and(store.reads(CODE_TYPE_SLOT.SOURCE_NAME)))
-                .orderBy(CODE_TYPE_SLOT.SLOT_NAME.asc(), CODE_TYPE_SLOT.METHOD_NAME.asc()))
+                .on(CODE_TYPE.SOURCE_NAME.eq(CODE_READ_SLOT.SOURCE_NAME)
+                    .and(CODE_TYPE.TYPE_NAME.eq(CODE_READ_SLOT.SLOT_TYPE)))
+                .where(CODE_READ_SLOT.CLASS_NAME.eq(INTENT_TYPE_BACKING.CLASS_NAME)
+                    .and(store.reads(CODE_READ_SLOT.SOURCE_NAME)))
+                .orderBy(CODE_READ_SLOT.SLOT_NAME.asc(), CODE_READ_SLOT.METHOD_NAME.asc()))
             .convertFrom(r -> r.map(Records.mapping(MemberSlot::new)));
     }
 

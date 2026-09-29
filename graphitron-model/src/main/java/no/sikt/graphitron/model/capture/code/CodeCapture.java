@@ -28,7 +28,7 @@ import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTION;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT;
-import static no.sikt.graphitron.model.Tables.CODE_TYPE_SLOT;
+import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
 import static no.sikt.graphitron.model.Tables.CODE_WRITE_SLOT;
 import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
 import static no.sikt.graphitron.model.Tables.CODE_SERVICE_METHOD;
@@ -450,7 +450,7 @@ public final class CodeCapture {
             .map(row -> new Named(row.source(), row.at().qualifiedReturnType(),
                 row.at().declaredReturnType(), rootOf(row.at().returnTypeRefs())))
             .toList(), touchedAt);
-        var t = CODE_TYPE_SLOT;
+        var t = CODE_READ_SLOT;
         var rows = found.stream().collect(Rows.toRowList(
             row -> val(row.source(), t.SOURCE_NAME),
             row -> val(row.className(), t.CLASS_NAME),
@@ -1210,7 +1210,7 @@ public final class CodeCapture {
         for (org.jooq.Table<?> table : List.of(
                 CODE_CONDITION_METHOD_PARAMETER_TABLE,
                 CODE_METHOD_PARAMETER, CODE_METHOD_EXCEPTION, CODE_WRITE_SLOT, CODE_CONSTRUCTION,
-                CODE_TYPE_SLOT,
+                CODE_READ_SLOT,
                 CODE_SERVICE_METHOD, CODE_CONDITION_METHOD, CODE_EXTERNAL_FIELD_METHOD,
                 CODE_METHOD, CODE_TYPE_ELEMENT, CODE_TYPE,
                 CODE_THROWABLE_SUPERTYPE, CODE_THROWABLE, CODE_SCALAR_CONSTANT, CODE_CLASS)) {
