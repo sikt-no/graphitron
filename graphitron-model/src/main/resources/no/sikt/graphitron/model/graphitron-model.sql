@@ -618,7 +618,7 @@ COMMENT ON COLUMN graphql_ast_directive_application_entry.source_column IS 'colu
 COMMENT ON COLUMN graphql_ast_directive_application_entry.touched_at IS 'when the reading that produced this row ran, carried from the entry this describes. The reading finishes by deleting its file''s rows carrying an older instant, and this relation is swept beside the arms that write it so a position the author removed leaves the hierarchy whole';
 COMMENT ON COLUMN graphql_ast_directive_application_entry.name IS 'the directive name written here, without the at sign. The one column the five sites share, which is why this relation exists: a reader asking where a named directive was written joins this once instead of unioning five relations that differ only in what the application was written inside. What it was written inside is the parent hop graphql_ast_entry already carries, so the site is a join away and not a column here';
 
-CREATE VIEW graphql_ast_element_declaration
+CREATE VIEW graphql_ast_element_declaration_rule
   (graph_name, source_name, source_line, source_column,
    declaration_kind, declaration_line, declaration_column) AS
 -- Up the parent chain the entry supertype already carries, stopping at the first position that is
@@ -648,7 +648,31 @@ WITH RECURSIVE up (graph_name, source_name, source_line, source_column,
 SELECT graph_name, source_name, source_line, source_column, at_kind, at_line, at_column
   FROM up
  WHERE at_kind IN ('TYPE_DECLARATION', 'SCHEMA_DEFINITION', 'DIRECTIVE_DEFINITION');
-COMMENT ON VIEW graphql_ast_element_declaration IS 'The declaration one element-declaring position was written inside, which is itself where the position is a declaration. For example the lang: of Film.title(lang:) reaches the type declaration Film in two hops, through the field it is an argument of, and that type declaration reaches itself in nought.';
+COMMENT ON VIEW graphql_ast_element_declaration_rule IS 'One row the walk up the entry parent chain computes, in the shape graphql_ast_element_declaration stores: the rule itself, evaluated on demand rather than read off disk. For example capture inserts this view''s rows for one graph into graphql_ast_element_declaration before numbering the directive applications, which is the name the reader spells.';
+COMMENT ON COLUMN graphql_ast_element_declaration_rule.graph_name IS 'the graph_name of a row of this rule, which capture writes into graphql_ast_element_declaration.graph_name';
+COMMENT ON COLUMN graphql_ast_element_declaration_rule.source_name IS 'the source_name of a row of this rule, which capture writes into graphql_ast_element_declaration.source_name';
+COMMENT ON COLUMN graphql_ast_element_declaration_rule.source_line IS 'the source_line of a row of this rule, which capture writes into graphql_ast_element_declaration.source_line';
+COMMENT ON COLUMN graphql_ast_element_declaration_rule.source_column IS 'the source_column of a row of this rule, which capture writes into graphql_ast_element_declaration.source_column';
+COMMENT ON COLUMN graphql_ast_element_declaration_rule.declaration_kind IS 'the declaration_kind of a row of this rule, which capture writes into graphql_ast_element_declaration.declaration_kind';
+COMMENT ON COLUMN graphql_ast_element_declaration_rule.declaration_line IS 'the declaration_line of a row of this rule, which capture writes into graphql_ast_element_declaration.declaration_line';
+COMMENT ON COLUMN graphql_ast_element_declaration_rule.declaration_column IS 'the declaration_column of a row of this rule, which capture writes into graphql_ast_element_declaration.declaration_column';
+
+CREATE TABLE graphql_ast_element_declaration (
+  graph_name         VARCHAR NOT NULL,
+  source_name        VARCHAR NOT NULL,
+  source_line        INT     NOT NULL,
+  source_column      INT     NOT NULL,
+  declaration_kind   VARCHAR NOT NULL,
+  declaration_line   INT     NOT NULL,
+  declaration_column INT     NOT NULL,
+  -- A position sits inside exactly one declaration, so the element's position is the whole grain.
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_element_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  CHECK (declaration_kind IN ('TYPE_DECLARATION', 'SCHEMA_DEFINITION', 'DIRECTIVE_DEFINITION'))
+);
+COMMENT ON TABLE graphql_ast_element_declaration IS 'The declaration one element-declaring position was written inside, which is itself where the position is a declaration. For example the lang: of Film.title(lang:) reaches the type declaration Film in two hops, through the field it is an argument of, and that type declaration reaches itself in nought.';
 COMMENT ON COLUMN graphql_ast_element_declaration.graph_name IS 'the owning graph''s partition, carried from the element entry this is about';
 COMMENT ON COLUMN graphql_ast_element_declaration.source_name IS 'the file the element was declared in, the first of the three columns naming its position. The declaration is in the same file by construction, a node being written inside the file that holds it, so the position below names both';
 COMMENT ON COLUMN graphql_ast_element_declaration.source_line IS 'line of the element''s own position, the second';
@@ -15442,7 +15466,11 @@ INSERT INTO meta_relation VALUES
   ('graphql_ast_element_declaration', 'sdl-entry-position', 'graphql-ast',
    'The declaration one element-declaring position was written inside, which is itself where the position is a declaration.',
    'For example the lang: of Film.title(lang:) reaches the type declaration Film in two hops, through the field it is an argument of, and that type declaration reaches itself in nought.',
-   'The parent chain the entry supertype carries, walked once and stated as a fact rather than climbed again at each consumer. Which declaration a position sits inside is the same question however deep the position is, but the depth is not the same: nought for a declaration, one for a field or an enum value, two for a field''s argument. A consumer that wanted it had to union an arm per depth, which is a shape that reads as five site-specific joins and is really one recursive rule. What it is first needed for is the order a repeated directive application takes, which is the merge order of the declaration carrying it, and that consumer is why the schema block is a stop alongside the type declaration: a schema directive reaches a declaration that has no merge order, and reaching nothing at all would have made it an arm of its own again. Keyed at the element position and not at the coordinate, because two documents declaring one name are two positions and each sits inside its own declaration.'),
+   'The parent chain the entry supertype carries, walked once and stated as a fact rather than climbed again at each consumer. Which declaration a position sits inside is the same question however deep the position is, but the depth is not the same: nought for a declaration, one for a field or an enum value, two for a field''s argument. A consumer that wanted it had to union an arm per depth, which is a shape that reads as five site-specific joins and is really one recursive rule. What it is first needed for is the order a repeated directive application takes, which is the merge order of the declaration carrying it, and that consumer is why the schema block is a stop alongside the type declaration: a schema directive reaches a declaration that has no merge order, and reaching nothing at all would have made it an arm of its own again. Keyed at the element position and not at the coordinate, because two documents declaring one name are two positions and each sits inside its own declaration. Stored, because H2 re-walks a recursive view for every row joined to it and the anchor joins this once per application; capture fills it from graphql_ast_element_declaration_rule once per reading.'),
+  ('graphql_ast_element_declaration_rule', 'sdl-entry-position', 'graphql-ast',
+   'One row the walk up the entry parent chain computes, in the shape graphql_ast_element_declaration stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example capture inserts this view''s rows for one graph into graphql_ast_element_declaration before numbering the directive applications, which is the name the reader spells.',
+   'The rule, kept in the catalog rather than in the capture step that runs it, on graphitron_field_chain_link_resolution_rule''s terms and for its reasons: the EXCEPT between this view and the table it fills stays runnable for as long as both exist. Read once per capture and never joined, since a recursive view joined into a larger query is evaluated again for every row of it.'),
   ('graphql_ast_directive_application_entry', 'sdl-entry-position', 'graphql-ast',
    'This written position applies a directive, and this is the name it applies: the five entry kinds that are an application, under the nineteen that need not be.',
    'For example the @key on type Widget @key(fields: "id") is one row here, and the declaration it was written on is one row of graphql_ast_element_entry beside it.',

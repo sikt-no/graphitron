@@ -47,12 +47,14 @@ class StageAnswerAgreementTest {
     private record Stage(String target, String ruleView) {}
 
     /**
-     * The stage-written tables and their rules, in the stratum's order, led by the chain-link
-     * resolution from the assembly pass: its rule's columns are exactly the union view's over its
+     * The stage-written tables and their rules, in the stratum's order, led by the element
+     * declarations capture stores before the directive application anchor reads them, then the
+     * chain-link resolution from the assembly pass: its rule's columns are exactly the union view's over its
      * three arm tables, where {@code FieldTableLinks}' table carries a mark its rule does not and
      * is compared in {@code FieldTableLinksTest} instead.
      */
     private static final List<Stage> STAGES = List.of(
+        new Stage("graphql_ast_element_declaration", "graphql_ast_element_declaration_rule"),
         new Stage("graphitron_field_chain_link_resolution",
             "graphitron_field_chain_link_resolution_rule"),
         new Stage("graphitron_field_column_scope", "graphitron_field_column_scope_rule"),

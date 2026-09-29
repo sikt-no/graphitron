@@ -352,6 +352,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_mutation_payload_column_rule", Arm.DERIVED);
         registrations.put("sql_constraint_hop", Arm.DERIVED);
         registrations.put("graphql_ast_element_declaration", Arm.DERIVED);
+        registrations.put("graphql_ast_element_declaration_rule", Arm.DERIVED);
         registrations.put("graphitron_field_chain_link_reading", Arm.DERIVED);
         registrations.put("graphitron_field_chain_link_resolution", Arm.DERIVED);
         registrations.put("graphitron_field_chain_link_resolution_rule", Arm.DERIVED);

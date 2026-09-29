@@ -41,6 +41,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_DECLARATION;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_DECLARATION_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT;
@@ -210,6 +211,7 @@ public final class GraphQLAstCapture {
         directiveLocations(dsl, graph, readAt);
         directiveArguments(dsl, graph, readAt);
         rootOperations(dsl, graph, readAt);
+        elementDeclarations(dsl, graph);
         directiveApplications(dsl, graph, readAt);
         directiveApplicationArguments(dsl, graph, readAt);
         sweep(dsl, graph, readAt);
@@ -1161,6 +1163,28 @@ public final class GraphQLAstCapture {
             .execute();
     }
 
+
+    /**
+     * Which declaration each element-declaring position was written inside, walked once for the
+     * reading and stored for {@link #directiveApplications} to join.
+     *
+     * <p>The walk is {@code graphql_ast_element_declaration_rule}, a recursive view, and it is read
+     * here alone because H2 evaluates a recursive view again for every row joined to it. Joined into
+     * the application anchor directly, it re-walked the corpus once per application, which did not
+     * finish on a consumer-size schema.
+     *
+     * <p>Replaced rather than stamped and swept: the rows are the reading's own derivation and the
+     * entries they key into are this reading's too, so the graph's rows before this call say
+     * nothing the rule does not say again.
+     */
+    private static void elementDeclarations(DSLContext dsl, String graph) {
+        var t = GRAPHQL_AST_ELEMENT_DECLARATION;
+        var r = GRAPHQL_AST_ELEMENT_DECLARATION_RULE;
+        dsl.deleteFrom(t).where(t.GRAPH_NAME.eq(graph)).execute();
+        dsl.insertInto(t)
+            .select(dsl.selectFrom(r).where(r.GRAPH_NAME.eq(graph)))
+            .execute();
+    }
 
     /**
      * Every directive an author applied, at the coordinate they applied it to.
