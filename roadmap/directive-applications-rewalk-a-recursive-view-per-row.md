@@ -1,7 +1,7 @@
 ---
 id: R982
 title: "directiveApplications joins a recursive view, and H2 re-walks it once per application"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 1
 theme: model-cleanup
@@ -43,3 +43,11 @@ The walk becomes `graphql_ast_element_declaration_rule`, body unchanged, and
 replaced rather than stamped and swept, since every row is this reading's derivation over this
 reading's entries. `StageAnswerAgreementTest` holds the table to the rule by EXCEPT in both
 directions, as it does for the other stored rules.
+
+## Measured
+
+On the same sis schema, with the fix installed, `graphitron:dev`'s initial run opened its ports after
+321 s. That covers capture and all 28 derivation stages, and the derivation stratum alone took
+137.8 s. Before the fix, the run was killed after more than ten minutes, still inside the one
+`directiveApplications` statement. The store was warm (a cache from an earlier run existed), so this
+run did not exercise R980's cold-store failure.
