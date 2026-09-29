@@ -76,6 +76,14 @@ public class MapperNodeStrategyTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Node ID field in table-less wrapper to graph with node strategy")
+    void toGraphNodeIdInTablelessWrapper() {
+        assertGeneratedContentContains("toGraph/nodeIdInTablelessWrapper", Set.of(NODE),
+                "_mo_customerNode_wrapper.setOtherId(_iv_nodeIdStrategy.createId(_nit_customerRecord, \"CustomerNode\", Customer.CUSTOMER.CUSTOMER_ID))"
+        );
+    }
+
+    @Test
     @DisplayName("To graph with node strategy (temporary test)")
     void toGraphNotNodeId() {
         assertGeneratedContentContains("toGraph/notNodeId",

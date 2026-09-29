@@ -1,0 +1,15 @@
+type Query {
+    query: Payload @service(service: {className: "MapperFetchService", method: "cityQuery"})
+}
+
+type Payload {
+    cities: [City]
+}
+
+type City @table {
+    wrapper: CityWrapper
+}
+
+type CityWrapper {
+    id: ID @field(name: "CITY_ID")
+}

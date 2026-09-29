@@ -112,7 +112,7 @@ public class MapperContext {
         recursion = previousContext.recursion + 1;
         isIterable = createsDataFetchers ? target.isIterableWrapped() : (target.isIterableWrapped() && !hasJavaRecordReference || previousContext.isInitContext);
         wasIterable = isIterable || previousContext.wasIterable;
-        isSimpleIDMode = !previousContext.hasRecordReference && !toRecord && !target.isInput() && target.isID(); // Special case, may become unsupported in the future.
+        isSimpleIDMode = !previousContext.hasRecordReferenceInPath() && !toRecord && !target.isInput() && target.isID(); // Special case, may become unsupported in the future.
 
         var schemaNameToUse = getSchemaNameToUse();
         var recordName = getRecordName();
@@ -206,6 +206,14 @@ public class MapperContext {
         return hasRecordReference;
     }
 
+    /**
+     * @return Does this context or any of the contexts it is nested in have a record reference?
+     * Wrapper types without a table reuse the record of their parent, so they should not be treated as types without records.
+     */
+    private boolean hasRecordReferenceInPath() {
+        return !isInitContext && (hasRecordReference || previousContext.hasRecordReferenceInPath());
+    }
+
     public boolean hasJavaRecordReference() {
         return hasJavaRecordReference;
     }
@@ -288,8 +296,11 @@ public class MapperContext {
         }
 
         if (!toRecord && schema.isNodeIdField(target)) {
-            var nodeConfig = schema.getNodeConfigurationForTypeOrThrow(target.getContainerTypeName());
-            return createNodeIdBlockForRecord(nodeConfig, namedIteratorPrefixIf(previousContext.sourceName, previousContext.isIterable));
+            // Wrapper types without a table have no node configuration of their own, so use the node type given in the directive.
+            var nodeConfig = previousContext.hasTable
+                    ? schema.getNodeConfigurationForTypeOrThrow(target.getContainerTypeName())
+                    : schema.getNodeConfigurationForNodeIdFieldOrThrow(target);
+            return createNodeIdBlockForRecord(nodeConfig, getPreviousSourceVariableName());
         }
 
         return getValue(getPreviousSourceVariableName(), getSourceMapping);
