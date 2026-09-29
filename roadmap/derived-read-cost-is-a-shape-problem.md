@@ -278,11 +278,56 @@ new one.
   carries a graph, so the rows are the store's.
 * The file is the grain `done`. `store_class_file` is keyed by path under an entry, and `code_class`
   holds which class a reading found in which file.
-* **A single changed class re-reads only itself** `blocked`, on `code_type` being re-grained to
-  `(source_name, class_name, type_name)`. `CodeCapture.sweep` scopes by entry, so skipping one class
-  would sweep its rows. Re-checked after the census dissolution went past the relation without
-  changing its grain. Until then `store_class_file.byte_size` and `.mtime` are written and read by
+* **A single changed class re-reads only itself** `blocked`, on the node below. The blocker was
+  written here as re-graining `code_type`, and trying it found the relation rather than its key is
+  what holds this: a row shared across classes by construction has no per-class mark that can decide
+  its fate. Until this lands `store_class_file.byte_size` and `.mtime` are written and read by
   nobody, which is an arm waiting for its reader.
+
+### A signature's type is a fact about the position that writes it
+
+`code_type` is the parse of a generic type expression, memoised once per distinct spelling and so
+shared by every class mentioning it. Generics are the whole of why a position's type is an
+expression rather than a name; the memo is what makes the parse cheap; and giving the memo a primary
+key is what made it look like a thing. Shared across classes by construction, it is what the leaf
+above cannot invalidate per class.
+
+The position carries the parse instead, four columns and no relation:
+
+```
+result_type          -- the spelling, the transcription
+result_erased_class  -- NULL where it erases to no class
+result_element_class -- NULL where nothing resolves
+result_delivery      -- DIRECT | WRAPPED | MANY, NULL with element_class
+```
+
+* **Nothing anchors to it** `done`, by inspection. Every reader joins in from a site already holding
+  the spelling and none enumerates the relation, so a row's existence asserts nothing.
+* **The peel is a function of the spelling and a stored vocabulary** `done`, by inspection.
+  `intent_delivery_container` supplies the container set, so siting the parse moves columns rather
+  than moving a resolution.
+* **Each column is earned by a named reader** `done`, by tracing them to the queries. The spelling
+  is what an emitter declares a type from. `element_class` answers which class backs a GraphQL type,
+  through `intent_type_backing_seed` to five language-server surfaces and `TypeBackingRows`.
+  `delivery` answers whether a field declared a list is backed by a method that delivers one, which
+  `intent_producer_cardinality_conflict` states and no surface reads yet. `erased_class` is what a
+  binding compares against, at argument mapping and at a `@nodeId` decode's landing.
+* **A use site carries its own parse** `open`, on `code_method`, `code_method_parameter` and through
+  the accessor for a slot.
+* **`code_type_slot` reads its type through the accessor** `open`. Its `slot_type` is the accessor's
+  result, which `code_method` already holds for the same method, so the slot keys into that rather
+  than carrying the four columns a second time.
+* **`code_construction` keys on the class it is about** `open`. It states how a value of one class is
+  made and is keyed by a type spelling, which is a class fact filed under a type key.
+* **`code_type` and `code_type_element` are gone** `blocked`, on the three above.
+
+**Two facts recorded so their absence is not read as an oversight.** The rendering is not stored:
+`display_name` is a formatting of the spelling, both its readers are Java, and a store should not
+carry a presentation string. And the type is not captured as a tree: no consumer asks which
+container it was or how deep it nested, and the classpath is re-read on every capture with the whole
+signature in hand, so that fact is a line in the reading whenever something earns it. The one thing
+that would earn it is the emitters moving off the walk and wanting a structured type rather than a
+string to parse, which is the decision of whoever moves them.
 
 ### The store knows whether an artifact can go stale
 
