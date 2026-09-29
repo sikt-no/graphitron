@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R982` | directiveApplications joins a recursive view, and H2 re-walks it once per application | Spec | 2026-09-29 | [plan](directive-applications-rewalk-a-recursive-view-per-row.md) |
+| `R982` | directiveApplications joins a recursive view, and H2 re-walks it once per application | Ready | 2026-09-29 | [plan](directive-applications-rewalk-a-recursive-view-per-row.md) |
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-09-28 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |
 | `R923` | A grain declares its corpora, so a cross-corpus grain can say so | Spec | 2026-09-05 | [plan](grain-declares-its-corpora.md) |
@@ -644,7 +644,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R876` [**Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject**](derived-read-cost-is-a-shape-problem.md) — In Progress, architecture
 - `R979` [**The spec is a Mikado graph, because a plan written before the work is a guess and four sessions cannot share a phase list**](mikado-graph-replaces-the-phase-plan.md) — Backlog, architecture
-- `R982` [**directiveApplications joins a recursive view, and H2 re-walks it once per application**](directive-applications-rewalk-a-recursive-view-per-row.md) — Spec, bug
+- `R982` [**directiveApplications joins a recursive view, and H2 re-walks it once per application**](directive-applications-rewalk-a-recursive-view-per-row.md) — Ready, bug
 - `R973` [**A first capture into an empty store writes no classpath facts, so every verdict the store derives from the classpath comes out short**](first-capture-writes-no-classpath-facts.md) — Backlog, architecture
 - `R923` [**A grain declares its corpora, so a cross-corpus grain can say so**](grain-declares-its-corpora.md) — Spec, architecture
 - `R963` [**The graphitron gatherer has one resolution tail: the five producers and the stages under them join the assembly list, and FactCapture is not a second tail**](one-resolution-tail-for-the-graphitron-gatherer.md) — Backlog, architecture

@@ -1,7 +1,7 @@
 ---
 id: R982
 title: "directiveApplications joins a recursive view, and H2 re-walks it once per application"
-status: Spec
+status: Ready
 bucket: bug
 priority: 1
 theme: model-cleanup
