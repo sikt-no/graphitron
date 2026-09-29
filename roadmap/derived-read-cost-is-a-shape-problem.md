@@ -385,6 +385,37 @@ Reading a jar is safe for a release and dangerous for a snapshot, and Maven sett
   today.
 * **A stale snapshot is detectable** `open`, waits on both above.
 
+### A polymorphic id resolves per member, to the overload that accepts it
+
+A union's members are unrelated results rather than subtypes, and the schema declares all of them,
+so the decode switches on the id's type and builds that member's record. The best slot for it is one
+overload per member, `assign(CustomerRecord)` beside `assign(StaffRecord)`, which hands each call a
+concrete record, and it must be supported. The store modelled the slot as general subtyping instead:
+every member's captured supertype chain joined against one parameter type, so that an interface a
+consumer's jOOQ `recordImplements` option puts on the records could be that type. That option is not
+supported, and without it the chain carries nothing a member does not already say.
+
+* **An overload accepts a member by two spellings** `open`: its parameter is the member's own record,
+  or one of the four types every node's record is, `Object`, `Record`, `TableRecord<?>` and
+  `UpdatableRecord<?>`, because a node has a primary key by definition. One method taking
+  `UpdatableRecord<?>` is the case where one overload accepts every member, and a mix resolves the
+  way javac resolves it, most specific first.
+* **The destination names the overload** `open`. One row per member already stands; it carries
+  which overload that member lands in, and the refusal is a member's: no overload of the named
+  method accepts it.
+* **The overloads differ only in the polymorphic parameter** `open`. Anything else, another
+  parameter or an argument mapping that differs between them, is refused, so every call is spelled
+  from one argument list.
+* **The generated code widens** `open`. An overload usually returns the record that went in, and an
+  author cannot be asked to widen it, so the dispatch assigns each arm's result to the shared type
+  and the field's own resolution takes it from there.
+* **The generator dispatches** `open`. `BuildContext.admitPolymorphicSlotType` checks one parameter
+  type against every member and an overloaded producer is ambiguous today, so this is a capability
+  to add rather than a rule to simplify; it waits on the three nodes above.
+* **The per-member fit goes** `blocked`, on the dispatch: `intent_record_slot_assignable`, the
+  `SLOT_NOT_SUPERTYPE_OF_MEMBER` verdict, and `sql_table_record_supertype` with the capture walk that
+  climbs the record class, which has no other reader.
+
 ### Seeding dissolves, and the fixture goes with it
 
 Seeding is the fallout of the module boundary this item already moved, and the fixtures are the
@@ -428,6 +459,12 @@ shape the root condemns, still in the tree. Evidence in
   and 131 tests, fields nine and 108, mutations eight and 100, nodes six and 77, input fields six
   and 71: five schema families carry 38 classes and 487 tests. What a subject owes up front is its
   corpus gaps, enumerated once, rather than one missing shape found per class.
+* **The node-id subject converts** `open`, eight classes of nine. Its gaps are one classpath shape
+  and three catalog shapes, and its six sibling-graph cases need no replacement: the runner captures
+  every document into one store as its own graph and compares each block against that graph alone,
+  so a derivation that drops `graph_name` fails whichever document it leaks into.
+  `PolymorphicNodeIdDecodeTest` waits on the branch above, because a document written now would pin
+  the rule that branch replaces.
 * **There is no residue, and no partial conversion** `open`. A class converts whole or it has not
   converted, which is what the caller count measures and why it is the right count. A case that
   fabricates a state no capture reaches is not a case the fixture has to be kept for: it is either
