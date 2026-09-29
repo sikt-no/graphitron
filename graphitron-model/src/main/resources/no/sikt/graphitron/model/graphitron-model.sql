@@ -14982,6 +14982,14 @@ INSERT INTO meta_gatherer_dependency VALUES
   -- ModelCapture runs CodeCapture before this gatherer for that reason, and the chain resolution
   -- has read the signature across that boundary for as long as the arm has existed.
   ('graphitron', 'code'),
+  -- The graphitron decode keys each application to the node the transcription wrote at its position,
+  -- and its anchor resolves against the elements the transcription anchored.
+  ('graphitron-ast', 'graphql-ast'),
+  -- What an application names is resolved in the anchor, so the anchor runs after the catalog and
+  -- the classpath have been read. ModelCapture runs it after CodeCapture for that reason; before
+  -- them it could only copy the author's strings.
+  ('graphitron-ast', 'jooq'),
+  ('graphitron-ast', 'code'),
   -- A concrete table position is keyed to the table it names, so the arm reads the catalog the
   -- jOOQ gatherer wrote. ModelCapture runs the two in this order for that reason.
   ('code', 'classpath-source'),

@@ -7,7 +7,7 @@ priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-09-29
+last-updated: 2026-09-30
 ---
 
 # Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject
@@ -174,12 +174,10 @@ a derivation over either corpus alone, and `graphitron_` already does this again
 `FieldReferenceStepHops` reads a spelled step entry and `sql_`, writes owned tables, and reaches
 `code_` only through one of these views.
 
-* **The graphitron anchor runs after what it resolves against** `open`, and first.
-  `GraphitronAstCapture` runs its anchor before `JooqFactCapture` and `CodeCapture`, so every coordinate table it writes
-  can only copy strings and every resolution went to a second pass running last, which is
-  `DerivationStratum`. Moving it after `CodeCapture` and declaring `jooq` and `code` is the first
-  move; nothing between reads a `graphitron_` row. The producer resolution waits on it, and so does
-  every step `DerivationStratum` gives back to the graphitron anchor.
+* **The graphitron anchor runs after what it resolves against** `done`. `GraphitronAstCapture`
+  runs after `CodeCapture`, and `graphitron-ast` declares `graphql-ast`, `jooq` and `code`. The
+  anchor is placed to resolve and does not yet; its tables still copy strings, which is what the
+  nodes below and every step `DerivationStratum` gives back to it change.
 * **Four of the eleven go** `open`. `intent_condition_context_parameter`,
   `intent_external_field_contract_defect`, `intent_producer_cardinality_conflict` and
   `intent_scalar_java_type` are read by their own tests and by nothing else, and a view nothing uses
@@ -192,7 +190,6 @@ a derivation over either corpus alone, and `graphitron_` already does this again
   resolution the other arms hang on, and four of the eleven read it. `graphitron_service_entry` and
   `graphitron_external_field_entry` are wrong as they stand: keyed by coordinate, holding the
   authored strings the `graphitron_ast_` twins already hold, and joined to nothing.
-  * The move above comes first; every child below waits on it.
   * **The resolved entries** `open`. `graphitron_service_resolved_entry` and
     `graphitron_external_field_resolved_entry`, at the twin's grain with the coordinate carried,
     keyed to `code_method`; no match is no row, and the anti-join against the twin is a
@@ -207,8 +204,9 @@ a derivation over either corpus alone, and `graphitron_` already does this again
     new relations and the view goes with its tests. The oracle is the consumer's own test, stated
     as SDL, which passes before and after; a consumer with none gets one first, and a departure is
     an edit to that test. One child per consumer, grown as each is tried.
-  * **The old shape is gone** `blocked`, on the move. The two producer views, the unused views and
-    their tests, and the coordinate-keyed entries with their writers in `GraphitronAnchor`.
+  * **The old shape is gone** `blocked`, on each consumer being answered from the new model. The
+    two producer views, the unused views and their tests, and the coordinate-keyed entries with
+    their writers in `GraphitronAnchor`.
   * **The resolved entries take the entry names** `blocked`, on the subtraction. A rename.
 * **The type questions follow it** `blocked`, on the producer resolution, because a `graphitron_`
   relation reading `intent_` is the same crossing pointed the other way.
@@ -255,11 +253,11 @@ leaves the population is overwritten rather than deleted, so `ON DELETE CASCADE`
 is part of the subtractive goal because it is the old shape of the anchor phase standing beside the
 new one.
 
-* **The graphitron anchor runs after what it resolves against** `open`, under the reference branch
-  above; every step here waits on it.
-* **Each step moves into its owner's anchor phase, marked and swept** `open`, waits on the move. A
-  step is done when it marks what it wrote and sweeps what it did not, in the anchor phase of the
-  gatherer that owns its table. One child per step, grown as each is tried.
+* **The graphitron anchor runs after what it resolves against** `done`, under the reference branch
+  above.
+* **Each step moves into its owner's anchor phase, marked and swept** `open`. A step is done when
+  it marks what it wrote and sweeps what it did not, in the anchor phase of the gatherer that owns
+  its table. One child per step, grown as each is tried.
 * **The `intent_` writers go to a family or go** `open`. `ClassificationDomainCapture`,
   `InputOccurrencePaths`, `TypeBackingRows`, `AuthoredClaimRejectionRows` and
   `UnlowerableOrderingRejectionRows` write `intent_` tables, so each moves to the family whose facts

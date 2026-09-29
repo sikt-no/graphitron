@@ -84,16 +84,16 @@ public final class ModelCapture {
         // The corpus is read once, by the gatherer that owns the store's record of what was read,
         // and every gatherer below it is handed the documents rather than the configuration.
         var documents = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
-        // The transcription, then the decode of what it transcribed, then the two stages that can
-        // only be asked of the corpus whole. The assembly's verdict is written down rather than
-        // returned onwards: nothing here needs the executable schema, and a capture whose corpus
-        // did not assemble still has every fact above it to record.
+        // The transcription, then the stage that can only be asked of the corpus whole. The
+        // assembly's verdict is written down rather than returned onwards: nothing here needs the
+        // executable schema, and a capture whose corpus did not assemble still has every fact
+        // above it to record.
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
-        GraphitronAstCapture.capture(dsl, graph, documents, readAt);
         var assembly = GraphQLAssemblyCapture.capture(dsl, graph, documents, readAt);
-        // Once the gatherers have been told what the dropped documents no longer say. The source
-        // row is the provenance their rows hang on, so forgetting it before they were swept would
-        // orphan them rather than remove them.
+        // Once the transcription has been told what the dropped documents no longer say. The
+        // source row is the provenance its rows hang on, so forgetting it before they were swept
+        // would orphan them rather than remove them. The graphitron decode further down hangs
+        // nothing on the source row: its rows hang on the transcription's and went with them.
         GraphQLSourceCapture.reclaim(dsl, documents);
         StoreEntries.write(dsl, graph.name(), config, readAt);
         JooqFactCapture.capture(dsl, graph.name(), jooq, readAt);
@@ -108,6 +108,11 @@ public final class ModelCapture {
         var classes = ClasspathSourceCapture.capture(dsl, graph.name(), classpath,
             config.jooqPackage().orElse(null), readAt);
         CodeCapture.capture(dsl, classes, jooq == null ? null : jooq.codegenLoader(), readAt);
+        // The decode of what each graphitron directive says, and its anchor. After the catalog and
+        // the classpath rather than beside the transcription, because an anchor resolves what an
+        // application names against them: run before them, it could only copy the author's
+        // strings.
+        GraphitronAstCapture.capture(dsl, graph, documents, readAt);
         // Last, and the ordering is a dependency rather than a preference: these stages resolve
         // what the author wrote against the catalog and the classpath, so they read every family
         // above them and would resolve against whichever of those a pass had reached so far.

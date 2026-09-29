@@ -21,6 +21,10 @@ import java.util.List;
  * anchors it resolves against are settled at the end of that run. What survives there is what this
  * decodes.
  *
+ * <p>And after the catalog and the classpath have been read, which the decode does not need and
+ * the anchor does: what an application names is a table or a method, and an anchor run before
+ * either was read could only copy the name.
+ *
  * <h2>The decode is one writer per site</h2>
  *
  * <p>A directive application is decoded where it sits, and the rows it decodes live in a different
