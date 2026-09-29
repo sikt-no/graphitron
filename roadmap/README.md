@@ -15,7 +15,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-09-28 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
-| `R768` | Capture the classification corpus once per test JVM, and stop graphitron-lsp booting a store per fixture | In Review | 2026-09-28 <sub>created 2026-08-20</sub> | [plan](store-boots-once-per-test-not-once-per-build.md) |
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |
 | `R923` | A grain declares its corpora, so a cross-corpus grain can say so | Spec | 2026-09-05 | [plan](grain-declares-its-corpora.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
@@ -714,7 +713,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### tooling
 
-- `R768` [**Capture the classification corpus once per test JVM, and stop graphitron-lsp booting a store per fixture**](store-boots-once-per-test-not-once-per-build.md) — In Review, dx
 - `R616` [**Landed-note SHA citations die when a branch is rebased before its gate**](collapsed-plan-sha-citations.md) — Backlog, process
 - `R857` [**A dev round refreshes what the edit touched**](refresh-what-the-edit-touched.md) — Spec, dx, blocked by [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)
 - `R776` [**An agent cannot run SQL against the fact store, only the queries we anticipated**](store-query-mcp-tool.md) — Spec, dx
