@@ -37,9 +37,9 @@ A Backlog sketch, not a plan; the plan is written when the item moves to Spec.
   numbered-versus-unnumbered rule for "stratum" goes with the word. `modeling-discipline.adoc` stops
   calling provenance "stratum one against stratum two" and says capture phase against anchor phase.
 * `DerivationStratum`, which describes itself as the graphitron gatherer's derivation stratum, is
-  renamed to say that it is the graphitron gatherer's anchor phase. The obvious name collides with
-  `GraphitronAnchor` in `capture/document`, so the name is settled at Spec. Its javadoc, the DDL
-  comments, `StageOrderGateTest`, `StageProgress` and the other readers follow.
+  not renamed here: R876 dissolves it, each step moving into its owner's anchor phase with mark and
+  sweep. What this item owes is the prose around it, the DDL comments and the javadoc of its
+  readers, so that nothing calls it a stratum while it stands.
 * The "Enforced by:" paragraph that closes `fact-model.adoc` § "Provenance: every source is a fact,
   and the resolved value is another" is restated. It registers "the whole `intent_` stratum" and
   names a store seeded row by row as what pins a view's output, a shape R876's seeding branch rules
@@ -54,4 +54,4 @@ A Backlog sketch, not a plan; the plan is written when the item moves to Spec.
 
 * "stratum", "strata", in every form: "stratum one/two/three", "the three strata", "derivation
   stratum", "derived stratum", "capture stratum", "claim stratum", "diagnostics stratum"
-* `DerivationStratum`
+* `DerivationStratum`, retired by R876 rather than by this item
