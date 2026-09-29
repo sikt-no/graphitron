@@ -7,7 +7,7 @@ priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-09-28
+last-updated: 2026-09-29
 ---
 
 # Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject
@@ -174,17 +174,47 @@ a derivation over either corpus alone, and `graphitron_` already does this again
 `FieldReferenceStepHops` reads a spelled step entry and `sql_`, writes owned tables, and reaches
 `code_` only through one of these views.
 
-* **Four of the eleven reach a reader or go** `open`. `intent_condition_context_parameter`,
+* **The graphitron anchor runs after what it resolves against** `open`, and first.
+  `GraphitronAstCapture` runs its anchor before `JooqFactCapture` and `CodeCapture`, so every coordinate table it writes
+  can only copy strings and every resolution went to a second pass running last, which is
+  `DerivationStratum`. Moving it after `CodeCapture` and declaring `jooq` and `code` is the first
+  move; nothing between reads a `graphitron_` row. The producer resolution waits on it, and so does
+  every step `DerivationStratum` gives back to the graphitron anchor.
+* **Four of the eleven go** `open`. `intent_condition_context_parameter`,
   `intent_external_field_contract_defect`, `intent_producer_cardinality_conflict` and
-  `intent_scalar_java_type` are read by their own tests and by nothing else, so each is an unfinished
-  arm or a question that stopped mattering, and which one is a decision rather than a discovery.
+  `intent_scalar_java_type` are read by their own tests and by nothing else, and a view nothing uses
+  has not shown it is worth saving, so each goes with its tests. The two reading the producer
+  resolution go in that branch's subtraction.
 * **The condition route resolves in `graphitron_`** `done`. `graphitron_condition_method_route`,
   renamed and declared to the gatherer that already read it; declaring it is what cost anything,
   the comment being reduced to its grain and example with the argument moved into the declaration.
 * **The producer resolution resolves in `graphitron_`** `open`. `intent_field_producer_method` is the
-  resolution the other arms hang on, and four of the eleven read it.
+  resolution the other arms hang on, and four of the eleven read it. `graphitron_service_entry` and
+  `graphitron_external_field_entry` are wrong as they stand: keyed by coordinate, holding the
+  authored strings the `graphitron_ast_` twins already hold, and joined to nothing.
+  * The move above comes first; every child below waits on it.
+  * **The resolved entries** `open`. `graphitron_service_resolved_entry` and
+    `graphitron_external_field_resolved_entry`, at the twin's grain with the coordinate carried,
+    keyed to `code_method`; no match is no row, and the anti-join against the twin is a
+    `graphitron_entry_defect` arm in the same commit, so the store states what does not resolve.
+  * **The walk's unknown-method rejections go** `blocked`, on entry defects failing validate.
+    `Rejection.unknownServiceMethod` and `unknownLifterMethod` are the gate until then, and the
+    editor shows a second diagnostic for the one fault until they leave.
+  * **The coordinate anchors** `open`, waits on the entries. `graphitron_service` and
+    `graphitron_external_field` are the winning entry row per field, keyed to it.
+  * **Each consumer is answered from the new model** `open`, waits on the anchors. The views were
+    designed before the discipline, so none is flipped: a consumer's query is rewritten against the
+    new relations and the view goes with its tests. The oracle is the consumer's own test, stated
+    as SDL, which passes before and after; a consumer with none gets one first, and a departure is
+    an edit to that test. One child per consumer, grown as each is tried.
+  * **The old shape is gone** `blocked`, on the move. The two producer views, the unused views and
+    their tests, and the coordinate-keyed entries with their writers in `GraphitronAnchor`.
+  * **The resolved entries take the entry names** `blocked`, on the subtraction. A rename.
 * **The type questions follow it** `blocked`, on the producer resolution, because a `graphitron_`
   relation reading `intent_` is the same crossing pointed the other way.
+* **Entry defects fail validate** `open`. `graphitron_entry_defect` is read by the `diagnostic`
+  view alone, so every code in it reaches the editor and none stops a build. Not the producer
+  resolution's alone: it holds for every arm, and the producer resolution's rejections wait on it.
 * **The defects are stored where the diagnostic reads them** `blocked`, on the producer resolution.
   `graphitron_entry_defect` is the precedent, and the `intent_mutation_routine_seat` overlap under
   the chain branch above is the same two-producers shape.
@@ -196,15 +226,16 @@ built, readers were left where they were, and the predecessors still stand, so t
 both shapes and every consumer is still on the old one. This is the branch that draws that down, and
 it is where the root's rule bites hardest: a branch is done when what it replaced is gone.
 
-More branches will hang here than the one below. It is the first because it is the one with a rule
-that decides every case without a judgment call.
+More branches will hang here than the two below. The entry branch is first because it is the one
+with a rule that decides every case without a judgment call; the second is the pass the early anchor
+made necessary, and it goes once the anchor no longer runs early.
 
 #### No `graphitron_*_entry` survives, an entry being the transcription's alone
 
 An entry is what a document wrote, at the position it was written, and the graphitron-ast family
 holds those. A relation outside it carrying the name is the old decode under the transcription's
-word, and renaming would not fix it: what the name is wrong about is which stratum the row belongs
-to. Counted in `roadmap/audits/2026-09-28-graphitron-entry-census.md`.
+word, and renaming would not fix it: what the name is wrong about is which phase writes the row, and an
+entry is written by the capture phase alone. Counted in `roadmap/audits/2026-09-28-graphitron-entry-census.md`.
 
 * **The per-site triples collapse onto a coordinate** `open`, and first, because one collapse
   retires several relations where a flip retires one. `graphql_directive_application` is the
@@ -214,6 +245,31 @@ to. Counted in `roadmap/audits/2026-09-28-graphitron-entry-census.md`.
 * **The untwinned ones get an ast entry first** `open`, and are the longer half.
 * **The supertype roster becomes shrink-only** `open`. It already records the duplication and only
   ever gains rows, so making it a ratchet turns the record into the gate rather than adding one.
+
+#### `DerivationStratum` is gone, each step anchored by its owner
+
+`DerivationStratum` is a second pass that runs after every gatherer, and it exists because the
+graphitron anchor ran too early to resolve anything. Its 28 steps clear their graph's partition and
+derive it again, which is not mark and sweep: nothing is marked, so nothing is swept, and a row that
+leaves the population is overwritten rather than deleted, so `ON DELETE CASCADE` never has a root. It
+is part of the subtractive goal because it is the old shape of the anchor phase standing beside the
+new one.
+
+* **The graphitron anchor runs after what it resolves against** `open`, under the reference branch
+  above; every step here waits on it.
+* **Each step moves into its owner's anchor phase, marked and swept** `open`, waits on the move. A
+  step is done when it marks what it wrote and sweeps what it did not, in the anchor phase of the
+  gatherer that owns its table. One child per step, grown as each is tried.
+* **The `intent_` writers go to a family or go** `open`. `ClassificationDomainCapture`,
+  `InputOccurrencePaths`, `TypeBackingRows`, `AuthoredClaimRejectionRows` and
+  `UnlowerableOrderingRejectionRows` write `intent_` tables, so each moves to the family whose facts
+  it reads, or goes with its readers.
+* **The step that reads an executable schema reads a captured fact** `open`.
+  `ClassificationDomainCapture` derives `intent_type_domain` from the assembled `GraphQLSchema`, which
+  is not a row in the store; the input is captured first and the step then reads it.
+* **The class and its order gate are gone** `blocked`, on the steps. `DerivationStratum`,
+  `StageProgress` and `StageOrderGateTest` go, the order they kept being the gatherer order and the
+  order inside one anchor phase.
 
 ### A capture reads only what changed
 
