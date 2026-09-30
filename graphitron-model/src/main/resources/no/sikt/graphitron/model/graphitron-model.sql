@@ -6001,7 +6001,7 @@ CREATE TABLE code_type (
   root_class   VARCHAR,
   touched_at   TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, type_name),
-  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name) ON DELETE CASCADE
 );
 COMMENT ON TABLE code_type IS 'One type the signatures of an entry''s methods mention, as the source wrote it. For example java.util.List<no.sikt.example.Film>, beside the plain java.lang.String and the int that other positions carry.';
 COMMENT ON COLUMN code_type.source_name IS 'the classpath entry whose signatures mention the type; the key''s leading dimension, so a type is swept with the entry that mentioned it rather than outliving it. A type name is global and this relation is not, which is the same trade every relation in the family makes: what a reading read is what it can answer for';
@@ -6041,7 +6041,8 @@ CREATE TABLE code_method (
   PRIMARY KEY (source_name, class_name, method_name, descriptor),
   FOREIGN KEY (source_name, class_name)
     REFERENCES code_class (source_name, class_name) ON DELETE CASCADE,
-  FOREIGN KEY (source_name, result_type) REFERENCES code_type (source_name, type_name),
+  FOREIGN KEY (source_name, result_type) REFERENCES code_type (source_name, type_name)
+    ON DELETE CASCADE,
   CHECK (result_delivery IS NULL OR result_delivery IN ('DIRECT', 'WRAPPED', 'MANY')),
   -- A peel lands on a class or it does not land, so the two say the same silence together.
   CHECK ((result_element_class IS NULL) = (result_delivery IS NULL))
@@ -6075,7 +6076,8 @@ CREATE TABLE code_method_parameter (
   PRIMARY KEY (source_name, class_name, method_name, descriptor, position),
   FOREIGN KEY (source_name, class_name, method_name, descriptor)
     REFERENCES code_method (source_name, class_name, method_name, descriptor) ON DELETE CASCADE,
-  FOREIGN KEY (source_name, parameter_type) REFERENCES code_type (source_name, type_name),
+  FOREIGN KEY (source_name, parameter_type) REFERENCES code_type (source_name, type_name)
+    ON DELETE CASCADE,
   CHECK (role IN ('DSL_CONTEXT', 'TABLE_CONCRETE', 'TABLE_ANY', 'OTHER')),
   CHECK (extraction IN ('DIRECT', 'ENUM_VALUE_OF')),
   CHECK (delivery IS NULL OR delivery IN ('DIRECT', 'WRAPPED', 'MANY')),
@@ -6113,7 +6115,8 @@ CREATE TABLE code_read_slot (
   PRIMARY KEY (source_name, class_name, method_name, descriptor),
   FOREIGN KEY (source_name, class_name)
     REFERENCES code_class (source_name, class_name) ON DELETE CASCADE,
-  FOREIGN KEY (source_name, slot_type) REFERENCES code_type (source_name, type_name),
+  FOREIGN KEY (source_name, slot_type) REFERENCES code_type (source_name, type_name)
+    ON DELETE CASCADE,
   CHECK (origin IN ('RECORD_COMPONENT', 'BEAN_ACCESSOR')),
   CHECK (delivery IS NULL OR delivery IN ('DIRECT', 'WRAPPED', 'MANY')),
   CHECK ((element_class IS NULL) = (delivery IS NULL))
@@ -6167,7 +6170,8 @@ CREATE TABLE code_write_slot (
   PRIMARY KEY (source_name, class_name, method_name, descriptor, position),
   FOREIGN KEY (source_name, class_name)
     REFERENCES code_construction (source_name, class_name) ON DELETE CASCADE,
-  FOREIGN KEY (source_name, slot_type) REFERENCES code_type (source_name, type_name),
+  FOREIGN KEY (source_name, slot_type) REFERENCES code_type (source_name, type_name)
+    ON DELETE CASCADE,
   CHECK (delivery IS NULL OR delivery IN ('DIRECT', 'WRAPPED', 'MANY')),
   CHECK ((element_class IS NULL) = (delivery IS NULL))
 );

@@ -1,9 +1,15 @@
 package no.sikt.graphitron.model.capture.code;
 
+import no.sikt.graphitron.model.Public;
 import no.sikt.graphitron.model.config.ClasspathEntry;
+import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.run.GraphitronStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import java.io.IOException;
+import java.nio.file.Files;
 
 import java.nio.file.Path;
 import java.time.LocalDateTime;
@@ -853,6 +859,92 @@ class CodeCaptureTest {
                 .fetchOne(CODE_METHOD_PARAMETER.ROLE))
             .as("a generated table class names one table, which is what the site compares against")
             .isEqualTo("TABLE_CONCRETE"));
+    }
+
+    // ===== Forgetting: an entry gone from disk takes what was read from it =====
+
+    /**
+     * An entry the filesystem no longer has is forgotten, and every row read from it goes with its
+     * source row. The reading asks the filesystem rather than the classpath, an entry one run stopped
+     * naming being one another graph may still read, so the case removes the directory itself.
+     *
+     * <p>Two entries rather than one, because a reading handed no classpath says nothing about one
+     * and forgets nothing. The entry that stays is the control: it proves the second reading ran, so
+     * an empty store is not what makes the gone entry's rows absent.
+     *
+     * <p>The gone entry holds types on purpose. The type dictionary keys the entry without a
+     * cascade, so it is the relation that could refuse the deletion rather than follow it.
+     */
+    @Test
+    @DisplayName("an entry gone from disk is forgotten, and every row read from it goes with it")
+    void anEntryGoneFromDiskIsForgotten(@TempDir Path dir) throws IOException {
+        Path gone = fixtureEntry(dir.resolve("gone"), SLOT_RECORD);
+        Path stays = fixtureEntry(dir.resolve("stays"), SLOT_BEAN);
+        try (var store = GraphitronStore.inMemory()) {
+            var dsl = store.dsl();
+            ModelCapture.writeGraph(dsl, new GraphIdentity("reclaim", dir), FIRST);
+            CodeCapture.capture(dsl, ClasspathSourceCapture.capture(dsl, "reclaim",
+                    List.of(ClasspathEntry.project(gone), ClasspathEntry.project(stays)), null, FIRST),
+                null, FIRST);
+            String goneName = gone.toString();
+            assertThat(dsl.fetchCount(STORE_SOURCE, STORE_SOURCE.SOURCE_NAME.eq(goneName)))
+                .as("the entry is a source under the name this case asks by")
+                .isOne();
+            assertThat(dsl.fetchCount(CODE_TYPE, CODE_TYPE.SOURCE_NAME.eq(goneName)))
+                .as("and holds types, the rows that could refuse its deletion")
+                .isPositive();
+
+            deleteTree(gone);
+            CodeCapture.capture(dsl, ClasspathSourceCapture.capture(dsl, "reclaim",
+                    List.of(ClasspathEntry.project(stays)), null, SECOND),
+                null, SECOND);
+
+            assertThat(dsl.fetchCount(STORE_SOURCE, STORE_SOURCE.SOURCE_NAME.eq(goneName)))
+                .as("the entry gone from disk is forgotten")
+                .isZero();
+            assertThat(rowsPerSourceTable(dsl, goneName))
+                .as("and nothing read from it outlives it")
+                .allSatisfy((table, rows) -> assertThat(rows).as(table).isZero());
+            assertThat(dsl.fetchCount(CODE_CLASS, CODE_CLASS.SOURCE_NAME.eq(stays.toString())))
+                .as("while the entry that stays keeps its classes, so the reading ran")
+                .isPositive();
+        }
+    }
+
+    /** A directory entry holding one compiled fixture class, at the path its package names. */
+    private static Path fixtureEntry(Path entry, String className) throws IOException {
+        String relative = className.replace('.', '/') + ".class";
+        Path target = entry.resolve(relative);
+        Files.createDirectories(target.getParent());
+        Files.copy(TEST_CLASSES.resolve(relative), target);
+        return entry;
+    }
+
+    /** Removes a directory and everything under it, deepest first. */
+    private static void deleteTree(Path root) throws IOException {
+        try (var paths = Files.walk(root)) {
+            for (Path path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) {
+                Files.delete(path);
+            }
+        }
+    }
+
+    /**
+     * How many rows each source-keyed relation of the classpath families holds for one entry. Every
+     * relation the reading writes, found by prefix and by column rather than listed, so one added
+     * later is in scope without being named here.
+     */
+    private static java.util.Map<String, Integer> rowsPerSourceTable(DSLContext dsl, String source) {
+        var counts = new java.util.TreeMap<String, Integer>();
+        for (var table : Public.PUBLIC.getTables()) {
+            String name = table.getName().toLowerCase(java.util.Locale.ROOT);
+            var column = table.field("SOURCE_NAME", String.class);
+            if (column == null || !(name.startsWith("code_") || name.equals("store_class_file"))) {
+                continue;
+            }
+            counts.put(name, dsl.fetchCount(table, column.eq(source)));
+        }
+        return counts;
     }
 
     private static void withCapture(LocalDateTime at, Consumer<DSLContext> body) {

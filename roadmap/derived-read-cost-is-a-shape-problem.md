@@ -281,10 +281,12 @@ new one.
   what holds this: a row shared across classes by construction has no per-class mark that can decide
   its fate. Until this lands `store_class_file.byte_size` and `.mtime` are written and read by
   nobody, which is an arm waiting for its reader.
-* **An entry gone from disk can be deleted** `open`. `code_type` keys `store_source` with no
-  `ON DELETE`, and the positions keying `code_type` do the same, so `reclaim` deleting a vanished
-  entry should be refused while the entry holds a type. No test runs `reclaim`, so the first step is
-  the case that says whether it is refused.
+* **An entry gone from disk can be deleted** `done`. It could not: `code_type` keyed `store_source`
+  with no `ON DELETE`, so `reclaim` deleting a vanished entry was refused and the whole capture
+  threw. `CodeCaptureTest` now removes an entry from disk between two readings and holds every
+  classpath relation empty for it afterwards, against a control entry that stays. The dictionary's
+  key and the positions' keys into it cascade; `sql_schema` and `sql_enum_binding` key
+  `store_source` the same way and are the catalog's to look at.
 * **Every `code_` row hangs off a class** `open`. `code_throwable` and `code_throwable_supertype`
   key the entry, though every throwable is a class the reading read; the dictionary pair is the
   other two, and is going.
