@@ -467,7 +467,7 @@ Seeding is the fallout of the module boundary this item already moved, and the f
 shape the root condemns, still in the tree. Evidence in
 `roadmap/audits/2026-09-27-seeding-dissolution.md`.
 
-* The corpora are reachable `done`. All three strata have one and two are modules the tests already
+* The corpora are reachable `done`. All three families have one and two are modules the tests already
   depend on: the fact documents, `graphitron-sakila-db`, `graphitron-sakila-service`.
 * A document states what a fixture stated `done`. Seven documents replaced four test classes, at
   forty fewer `@Test` methods and no lost coverage.
