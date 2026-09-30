@@ -385,6 +385,51 @@ Reading a jar is safe for a release and dangerous for a snapshot, and Maven sett
   today.
 * **A stale snapshot is detectable** `open`, waits on both above.
 
+### A node id's candidates are modelled from what was written
+
+The current model is flawed. `graphitron_node_id_instruction` blends what the author wrote with what
+was inferred from it, so its readers cannot tell a written `typeName`, which applies to the whole
+coordinate, from a type inferred per member of an interface or a union, which applies to that
+member alone. They cross every candidate with every table at the coordinate: capture fails on the
+carrier role's key, and the decode destination, the slot's candidate count and the filter roles
+answer wrongly without failing. Unions and interfaces were not taken into account when it was
+built, and the seeded cases could not show it. It is modelled again from scratch as two relations,
+reading nothing from `intent_`, and replaced by adding, flipping and subtracting. Evidence in
+`roadmap/audits/2026-09-30-node-id-instruction-grain.md`.
+
+The sites are symmetric: an output field needs every candidate to encode, an argument or an input
+field every candidate to decode. A node is a type, so the tables do not decide a candidate, with one
+exception: a path lands on a table, so a bare `@nodeId` with `@reference` takes the one node type
+over the table the path lands on. A union is never a node, and `@node` on an interface is not
+supported and stays out, a possible future addition that would give its `@nodeId` fields one
+candidate, the interface's.
+
+* **The model comes first, as tables** `open`. The entry and the candidates relation are declared
+  with their keys, foreign keys and grain sentences before anything writes them, so a document can
+  name them.
+* **The corpus is written against the model** `open`, as fact documents asserting with
+  `@expectEquals` the rows each schema should give the two new relations: an output field, an
+  argument and an input field, at a node type, an interface and a union, by a written `typeName`,
+  a bare `@nodeId`, the id-name forms and `@reference`. Written before the gatherer, because a
+  document is an example of the model and writing them is where the cases nobody thought of turn
+  up, while no code depends on the answer. Each is committed with the gatherer step that satisfies
+  it, so every commit stays green.
+* **Add: the entry states what was written** `open`. One row per `@nodeId` application at its site,
+  with `typeName` where the author wrote one. The existing entry relations are checked against that
+  sentence rather than assumed to meet it.
+* **Add: the candidates relation states what may be legal** `open`, one row per use site and node
+  type. A written `typeName` is its type. A bare `@nodeId` is the coordinate's node type, or each
+  member of an interface or a union that is a node. With `@reference` it is the one node type over
+  the table the path lands on. The id-name forms are the coordinate's node type.
+* **Add: an input field's use site** `open`. A use site is a definition joined to its consumer, and
+  the model holds it today only as an `intent_` view, so it is modelled here rather than read.
+* **Flip: the readers depart per candidate** `blocked`, on the three adds. A written candidate
+  departs from every participant of the coordinate and an inferred one from its member's table. The
+  encode, the decode, the filter and carrier roles, the hops and the coverage census read the new
+  relations.
+* **Subtract** `blocked`, on the flip: `graphitron_node_id_instruction`, the endpoint that crosses,
+  and whatever in the chain stops being read.
+
 ### A polymorphic id resolves per member, to the overload that accepts it
 
 A union's members are unrelated results rather than subtypes, and the schema declares all of them,
@@ -463,7 +508,9 @@ shape the root condemns, still in the tree. Evidence in
   and 131 tests, fields nine and 108, mutations eight and 100, nodes six and 77, input fields six
   and 71: five schema families carry 38 classes and 487 tests. What a subject owes up front is its
   corpus gaps, enumerated once, rather than one missing shape found per class.
-* **The node-id subject converts** `open`, eight classes of nine. Its gaps are one classpath shape
+* **The node-id subject converts** `blocked`, on the candidates branch above: every class in it
+  reads the instruction, and its first conversion crashed capture. Eight classes of nine. Its gaps
+  are one classpath shape
   and three catalog shapes, and its six sibling-graph cases need no replacement: the runner captures
   every document into one store as its own graph and compares each block against that graph alone,
   so a derivation that drops `graph_name` fails whichever document it leaks into.
