@@ -451,12 +451,8 @@ supported, and without it the chain carries nothing a member does not already sa
 * **The overloads differ only in the polymorphic parameter** `open`. Anything else, another
   parameter or an argument mapping that differs between them, is refused, so every call is spelled
   from one argument list.
-* **The generated code widens** `open`. An overload usually returns the record that went in, and an
-  author cannot be asked to widen it, so the dispatch assigns each arm's result to the shared type
-  and the field's own resolution takes it from there.
-* **The generator dispatches** `open`. `BuildContext.admitPolymorphicSlotType` checks one parameter
-  type against every member and an overloaded producer is ambiguous today, so this is a capability
-  to add rather than a rule to simplify; it waits on the three nodes above.
+* **The generator dispatches from these rows** `blocked`, on R984, which owns the dispatch and
+  the widening of each arm's result; it reads the three nodes above and waits on them.
 * **The per-member fit goes** `blocked`, on the dispatch: `intent_record_slot_assignable`, the
   `SLOT_NOT_SUPERTYPE_OF_MEMBER` verdict, and `sql_table_record_supertype` with the capture walk that
   climbs the record class, which has no other reader.
