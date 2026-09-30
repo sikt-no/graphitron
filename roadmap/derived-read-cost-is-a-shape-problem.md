@@ -281,6 +281,16 @@ new one.
   what holds this: a row shared across classes by construction has no per-class mark that can decide
   its fate. Until this lands `store_class_file.byte_size` and `.mtime` are written and read by
   nobody, which is an arm waiting for its reader.
+* **An entry gone from disk can be deleted** `open`. `code_type` keys `store_source` with no
+  `ON DELETE`, and the positions keying `code_type` do the same, so `reclaim` deleting a vanished
+  entry should be refused while the entry holds a type. No test runs `reclaim`, so the first step is
+  the case that says whether it is refused.
+* **Every `code_` row hangs off a class** `open`. `code_throwable` and `code_throwable_supertype`
+  key the entry, though every throwable is a class the reading read; the dictionary pair is the
+  other two, and is going.
+* **One sweep, at the class file** `blocked`, on both above. `CodeCapture` sweeps all sixteen
+  relations by instant beside the class-file sweep, whose cascade already reaches every class-keyed
+  one. What only the second sweep reaches is the four above.
 
 ### A signature's type is a fact about the position that writes it
 
@@ -341,6 +351,13 @@ result_delivery      -- DIRECT | WRAPPED | MANY, NULL with element_class
 * **The read slot is named for its axis** `done`. `code_type_slot` became `code_read_slot`: keyed by
   the offering class and its accessor, it has no type in its key, and the store already called it
   the read side of the pair `code_write_slot` is the other half of.
+* **A delivered class the reading holds is referenced by its key** `open`. `element_class` is a class
+  name, a part of `code_class`'s key and not the whole of it, so a reader joining on it can meet
+  the wrong copy or several, and a class that goes takes nothing with it. Where the reading holds
+  the class a position delivers, the position carries that class's entry beside it and the pair
+  keys `code_class`; where it does not, as for `java.lang.String` or a generated jOOQ class, the
+  entry is NULL and the name is a name for the compiler to resolve. NULL then says the class was not
+  gathered, which a join on names cannot say at all.
 * **A slot's parse is read by what replaces the accessor hop** `open`. No query reads the new
   columns. Their reader was `intent_field_accessor_hop`, which peels `slot_type` through
   `code_type_element` to say which class a member of a class delivers, the edge the type-backing
@@ -369,6 +386,63 @@ signature in hand, so that fact is a line in the reading whenever something earn
 that would earn it is the emitters moving off the walk and wanting a structured type rather than a
 string to parse, which is the decision of whoever moves them.
 
+### Gatherers run in the order their corpora stand in
+
+A gatherer's anchor phase reads upstream gatherers only, and a row can only reference a row that is
+already there, so the order gatherers run in is part of the model: it is the order foreign keys can
+point in. Today the call order, the roster and the corpora disagree. `ModelCapture` runs the documents
+first, then the configuration, then the catalog, then the classpath. `code` declares `jooq` and not
+`store`. And the classpath reaches its reading as a method argument, so the configuration is
+transcribed beside the reading rather than read by it. The order the corpora stand in is the
+configuration, then the classpath and the catalog, then the documents, then what resolves the
+documents against the rest.
+
+* **The configuration runs first** `open`. Every `store_graph_*` relation keys `store_graph` and
+  nothing else, and no gatherer reads them before they are written, so this is a move in
+  `ModelCapture` and changes no row.
+* **The documents run after the classpath and the catalog** `open`, waits on the node above. The
+  three `graphql-` gatherers declare no upstream, and the first gatherer reading them after the
+  corpora is `graphitron-ast`, so this move changes no row either.
+* **The classpath is configuration** `open`. What a module depends on is something its build
+  declares. A reactor dependency is a class directory the build writes. A repository dependency is
+  a jar, a release that cannot change under its coordinate and version or a snapshot that can. The
+  configuration gatherer transcribes one row per dependency per graph, stating which of the three it
+  is as the producer resolved it. The point is the row and not reading it back: the Java already
+  holds what it just wrote, but a graph's claim on an entry can only reference a dependency that is
+  a row, and that reference is what makes a dependency the build stops declaring release its claim
+  by cascade rather than by a hand-written delete. The producer already
+  knows more than the store keeps: `ClasspathEntry.suppliedStamp` carries a repository's identity
+  for a jar it resolved, which the session census trusts and the persisted reading ignores, hashing
+  every jar on every capture. This is also what the version node in the staleness branch below is
+  waiting for.
+* **A claim references the dependency it resolves** `blocked`, on the node above.
+  `store_graph_source` for a classpath entry keys the dependency row, `classpath-source` declares
+  `store`, and the code family has the configuration as its one upstream.
+* **Code does not depend on jOOQ** `open`. The two families are parallel: each reads its own
+  corpus under the configuration, and neither keys the other. The reading skips the generated jOOQ
+  package, and that is right, the generated classes being the catalog's to describe and no part of
+  the service layer. Two reads cross today, one child each.
+  * **The table a parameter is bound to is the graphitron anchor's** `open`.
+    `code_condition_method_parameter_table` keys a parameter to the `sql_table` its class names, so
+    the reading runs after the catalog, and it matches by class name in Java with a hand-kept
+    ambiguity check. The binding crosses two families, so it belongs to the gatherer downstream of
+    both: matched by name once, at `graphitron`'s anchor, and stored as a table keying both sides,
+    which is the shape the relation already has under the wrong family. Readers join on its keys.
+    `code_method_parameter.role` keeps `TABLE_CONCRETE`, which is a fact about the signature alone.
+  * **The reading's loader comes from the classpath it read** `open`. `CodeCapture` and
+    `ClassAncestry` are handed `jooq.codegenLoader()`, to load scalar constants and to ask whether a
+    position is a `Table` or an enum. That is a loader and not a family, but reaching it through
+    the catalog makes the catalog look upstream of code when it is not.
+* **The jOOQ exclusion is pinned where services share its package** `open`. Services are commonly
+  written in the module jOOQ generates into, so one directory holds both, and the exclusion is the
+  package and every package under it. A service package beneath the generated one is dropped
+  silently, every arm reading as a classpath that does not carry it. A case first, then either the
+  exclusion stops at the package or the layout is refused out loud.
+* **A gate holds the call order to the roster** `open`. Nothing checks that `ModelCapture` calls a
+  gatherer after every gatherer it declares, which is how the two drifted apart. `java-source` and
+  `compile` run in the dev loop on their own cadence rather than in this sequence, and `sdl` names a
+  class that writes nothing, so the gate's population is the gatherers `ModelCapture` calls.
+
 ### The store knows whether an artifact can go stale
 
 Reading a jar is safe for a release and dangerous for a snapshot, and Maven settles which.
@@ -377,13 +451,19 @@ Reading a jar is safe for a release and dangerous for a snapshot, and Maven sett
   module's own output, which was false twice, and the lie was load-bearing: it removed the reactor
   limit the `@service` arm leans on.
 * The store records which repository answered `done`, by consequence.
-* **The version is carried** `open`, and the whole of what remains. `store_source.coordinate` is
-  `groupId:artifactId` by design, for naming a module in a refusal, and stops one field short of the
-  identity question.
+* **The version is carried** `blocked`, on the classpath being configuration. `store_source.coordinate`
+  is `groupId:artifactId` by design, for naming a module in a refusal, and stops one field short of
+  the identity question. The version is a fact the build declares, so it arrives with the dependency
+  rather than as another column on the entry.
 * **Three kinds get three treatments** `open`, waits on the version. A release jar needs no content
   stamp, a snapshot jar does, and only a directory needs the stat walk; all three share one path
   today.
 * **A stale snapshot is detectable** `open`, waits on both above.
+* **A directory's stamp covers what the reading reads** `open`. The stamp walks every file under the
+  directory, the generated jOOQ files included, so where services share a module with the catalog a
+  migration regenerating jOOQ moves the stamp and every service class is read again though none
+  changed. The stamp covers the class files the reading takes, or the file-grain skip in the capture
+  branch makes the directory's stamp matter less; either removes the false invalidation.
 
 ### A node id's candidates are modelled from what was written
 
