@@ -206,22 +206,40 @@ a derivation over either corpus alone, and `graphitron_` already does this again
   resolution the other arms hang on, and four of the eleven read it. `graphitron_service_entry` and
   `graphitron_external_field_entry` are wrong as they stand: keyed by coordinate, holding the
   authored strings the `graphitron_ast_` twins already hold, and joined to nothing.
-  * **The resolved relations** `open`. `graphitron_service` and `graphitron_external_field`, at the
-    twin's grain with the coordinate carried, keyed to `code_method`; no match is no row, and the
-    anti-join against the twin is a `graphitron_entry_defect` arm in the same commit, so the store
-    states what does not resolve. No `_entry`: a resolution is an anchor. Tried once and dropped
-    for the reorder above, and what it taught: declare them after the `code_` family, the key into
-    `code_method` failing otherwise; alias the resolution's columns, the file's `source_name` and the
-    classpath entry's colliding; make the stage the graphitron anchor's own, which it can be now;
-    and state the four outcomes, resolved, class not read, method not found and ambiguous, as one
-    fact document, which passed. The signature gate reads the two as one payload at two sites,
-    which the roster node under the graphitron family decides.
+  * **A code reference is written once** `open`. The signature gate's roster already holds the
+    set: seven `graphitron_ast_` twins and the two coordinate-keyed entries carry one class, method
+    and argMapping under keys of one shape, so the fact nobody wrote is the reference itself. The
+    directive vocabulary is the specification here and the implementation is not, `@routine`,
+    `@service`, `@externalField` and `@condition` being meant to take one argMapping one way and
+    today sharing no code.
+    * **The written reference** `open`, and first. `graphitron_ast_code_reference_entry`: one Java
+      code reference as written, class and optional method, keyed by the `ExternalCodeReference`
+      value's position, or `@sourceRow`'s directive, and referencing `graphql_ast_entry`. Every
+      site the vocabulary allows is one row, and which site is a join. Added beside the twins, with
+      a fact document stating every site from the vocabulary rather than from what the twins hold.
+    * **The argMapping is written once** `open`. One argMapping as written, at the application
+      that wrote it, for `@routine`, `@service`, `@externalField` and `@condition` alike, with its
+      pairs hanging off it: one parse and one reading everywhere. `columnMapping` stays
+      `@routine`'s own.
+    * **The resolution** `open`, waits on the written reference. `graphitron_code_reference`: the
+      one method a written reference names, keyed to it and to `code_method`; no match is no row,
+      and the anti-join is one `graphitron_entry_defect` arm for every site. The `@externalField`
+      default is its one site rule. A first attempt at two per-directive relations was dropped for
+      the reorder above and left what it taught: declare after the `code_` family, the key into
+      `code_method` failing otherwise; alias the file's and the classpath entry's `source_name`,
+      which collide in the resolution; make the stage the graphitron anchor's own; and state the
+      outcomes, resolved, class not read, method not found and ambiguous, as one fact document.
+    * **`@enum` resolves to a class** `open`, when a consumer asks. A class reference names no
+      method, so its resolution is to `code_class` and is its own relation.
+    * **The per-site copies go** `blocked`, on each consumer being answered. The twins lose
+      `class_name`, `method` and `argmapping`, a twin left with nothing goes, and the gate's set
+      goes with them; `graphitron_ast_record_entry` goes too, `@record` being ignored.
   * **The walk's unknown-method rejections go** `blocked`, on entry defects failing validate.
     `Rejection.unknownServiceMethod` and `unknownLifterMethod` are the gate until then, and the
     editor shows a second diagnostic for the one fault until they leave.
-  * **The winning application per field** `open`, waits on the resolved relations. Whether that is
+  * **The winning application per field** `open`, waits on the resolution. Whether that is
     a relation of its own or a query over the two is for its first consumer to say.
-  * **Each consumer is answered from the new model** `open`, waits on the resolved relations. The views were
+  * **Each consumer is answered from the new model** `open`, waits on the resolution. The views were
     designed before the discipline, so none is flipped: a consumer's query is rewritten against the
     new relations and the view goes with its tests. The oracle is the consumer's own test, stated
     as SDL, which passes before and after; a consumer with none gets one first, and a departure is
