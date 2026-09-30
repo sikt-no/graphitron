@@ -206,16 +206,22 @@ a derivation over either corpus alone, and `graphitron_` already does this again
   resolution the other arms hang on, and four of the eleven read it. `graphitron_service_entry` and
   `graphitron_external_field_entry` are wrong as they stand: keyed by coordinate, holding the
   authored strings the `graphitron_ast_` twins already hold, and joined to nothing.
-  * **The resolved entries** `open`. `graphitron_service_resolved_entry` and
-    `graphitron_external_field_resolved_entry`, at the twin's grain with the coordinate carried,
-    keyed to `code_method`; no match is no row, and the anti-join against the twin is a
-    `graphitron_entry_defect` arm in the same commit, so the store states what does not resolve.
+  * **The resolved relations** `open`. `graphitron_service` and `graphitron_external_field`, at the
+    twin's grain with the coordinate carried, keyed to `code_method`; no match is no row, and the
+    anti-join against the twin is a `graphitron_entry_defect` arm in the same commit, so the store
+    states what does not resolve. No `_entry`: a resolution is an anchor. Tried once and dropped
+    for the reorder above, and what it taught: declare them after the `code_` family, the key into
+    `code_method` failing otherwise; alias the resolution's columns, the file's `source_name` and the
+    classpath entry's colliding; make the stage the graphitron anchor's own, which it can be now;
+    and state the four outcomes, resolved, class not read, method not found and ambiguous, as one
+    fact document, which passed. The signature gate reads the two as one payload at two sites,
+    which the roster node under the graphitron family decides.
   * **The walk's unknown-method rejections go** `blocked`, on entry defects failing validate.
     `Rejection.unknownServiceMethod` and `unknownLifterMethod` are the gate until then, and the
     editor shows a second diagnostic for the one fault until they leave.
-  * **The coordinate anchors** `open`, waits on the entries. `graphitron_service` and
-    `graphitron_external_field` are the winning entry row per field, keyed to it.
-  * **Each consumer is answered from the new model** `open`, waits on the anchors. The views were
+  * **The winning application per field** `open`, waits on the resolved relations. Whether that is
+    a relation of its own or a query over the two is for its first consumer to say.
+  * **Each consumer is answered from the new model** `open`, waits on the resolved relations. The views were
     designed before the discipline, so none is flipped: a consumer's query is rewritten against the
     new relations and the view goes with its tests. The oracle is the consumer's own test, stated
     as SDL, which passes before and after; a consumer with none gets one first, and a departure is
@@ -223,7 +229,6 @@ a derivation over either corpus alone, and `graphitron_` already does this again
   * **The old shape is gone** `blocked`, on each consumer being answered from the new model. The
     two producer views, the unused views and their tests, and the coordinate-keyed entries with
     their writers in `GraphitronAnchor`.
-  * **The resolved entries take the entry names** `blocked`, on the subtraction. A rename.
 * **The type questions follow it** `blocked`, on the producer resolution, because a `graphitron_`
   relation reading `intent_` is the same crossing pointed the other way.
 * **Entry defects fail validate** `blocked`, on the defects agreeing with the generator on a consumer
