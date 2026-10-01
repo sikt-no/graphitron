@@ -7,7 +7,7 @@ priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-09-30
+last-updated: 2026-10-01
 ---
 
 # Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject
@@ -137,6 +137,23 @@ are gone.
   * **The reading's KEY arm is an equi-join** `open`. A three-way `OR` against `sql_constraint` is
     most of the reading's cost; a `UNION ALL` of two equi-joins matched it by `EXCEPT` on a schema
     that never exercised the jOOQ-name branch.
+  * **The defects agree with the generator on a consumer schema** `open`. On sis the four chain
+    codes report 161 coordinates the generator accepts. Each child is a reading that is wrong
+    rather than a rule that is, and evidence is in
+    `roadmap/audits/2026-10-01-sis-entry-defect-false-positives.md`.
+    * **A departure is inherited through a type with no table of its own** `open`. The endpoints
+      take the departure from the enclosing type's own binding only, so a nested type departs from
+      nowhere and its chains report `NO_ROUTE_FROM_DEPARTURE`.
+    * **A scalar `@reference` has a target** `open`. The path's last table is where a column read
+      through a chain arrives, and with no target basis for it `CHAIN_WITHOUT_TARGET` fires. Shares
+      its question with "a routine resolving to nothing says so" below.
+    * **A named self-referencing key reads one way** `open`. The KEY arm reads both hops of the
+      constraint, and on a self-reference both depart and arrive at one table, so the link reports
+      `ROUTE_AMBIGUOUS` where the generator picks the direction.
+    * **A condition-only element resolves from its method** `open`, unexplained. The CONDITION arm
+      produced no reading for a method that exists in a sibling module, so the link reports
+      `ELEMENT_UNRESOLVED`. Which of the method row and its parameter-table row is missing is the
+      first thing to establish.
 
 ### The chain replaces the walk it was built to retire
 
@@ -210,8 +227,10 @@ a derivation over either corpus alone, and `graphitron_` already does this again
   * **The resolved entries take the entry names** `blocked`, on the subtraction. A rename.
 * **The type questions follow it** `blocked`, on the producer resolution, because a `graphitron_`
   relation reading `intent_` is the same crossing pointed the other way.
-* **Entry defects fail validate** `open`. `graphitron_entry_defect` is read by the `diagnostic`
-  view alone, so every code in it reaches the editor and none stops a build. Not the producer
+* **Entry defects fail validate** `blocked`, on the defects agreeing with the generator on a consumer
+  schema, without which this fails sis on 161 coordinates that generate. `graphitron_entry_defect`
+  is read by the `diagnostic` view alone, so every code in it reaches the editor and none stops a
+  build. Not the producer
   resolution's alone: it holds for every arm, and the producer resolution's rejections wait on it.
 * **The defects are stored where the diagnostic reads them** `blocked`, on the producer resolution.
   `graphitron_entry_defect` is the precedent, and the `intent_mutation_routine_seat` overlap under
