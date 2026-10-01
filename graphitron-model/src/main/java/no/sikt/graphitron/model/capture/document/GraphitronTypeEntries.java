@@ -23,7 +23,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_KEYCOLUMN_ENTR
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_GENERIC_HANDLER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_VALIDATION_HANDLER_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_RECORD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SCALAR_TYPE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.applied;
@@ -49,8 +48,8 @@ import static org.jooq.impl.DSL.val;
  * written on, and in which file, is one join away rather than a column.
  *
  * <p>The type-site directives this writes are {@code @table}, {@code @scalarType}, {@code @enum},
- * {@code @record}, {@code @error}, {@code @node}, {@code @discriminate},
- * {@code @discriminator} and federation's {@code @key}, and two of those nine surprise. {@code @error} has no
+ * {@code @error}, {@code @node}, {@code @discriminate}, {@code @discriminator} and
+ * federation's {@code @key}, and two of those eight surprise. {@code @error} has no
  * relation, its only argument being the handler list, so a row carrying its key and nothing else
  * would say what the applied-directive row already says. Its handlers have one relation per kind,
  * because the kind decides which of the input's six fields mean anything: GENERIC matches by class
@@ -71,7 +70,6 @@ final class GraphitronTypeEntries {
         tables(dsl, graph, touchedAt, wrote(applied(applications, "table"), "name"));
         scalarTypes(dsl, graph, touchedAt, wrote(applied(applications, "scalarType"), "scalar"));
         enums(dsl, graph, touchedAt, naming(applied(applications, "enum"), "enumReference"));
-        records(dsl, graph, touchedAt, naming(applied(applications, "record"), "record"));
         var handlers = elementsOf(applied(applications, "error"), "handlers");
         genericHandlers(dsl, graph, touchedAt, ofKind(handlers, "GENERIC").stream()
             .filter(handler -> stringOf(inside(handler.node(), "className")) != null).toList());
@@ -104,7 +102,7 @@ final class GraphitronTypeEntries {
      */
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
         GRAPHITRON_AST_TABLE_ENTRY, GRAPHITRON_AST_SCALAR_TYPE_ENTRY, GRAPHITRON_AST_ENUM_ENTRY,
-        GRAPHITRON_AST_RECORD_ENTRY, GRAPHITRON_AST_ERROR_GENERIC_HANDLER_ENTRY,
+        GRAPHITRON_AST_ERROR_GENERIC_HANDLER_ENTRY,
         GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY,
         GRAPHITRON_AST_ERROR_VALIDATION_HANDLER_ENTRY,
         GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY, GRAPHITRON_AST_NODE_ENTRY,
@@ -181,25 +179,6 @@ final class GraphitronTypeEntries {
                 .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
                 .set(t.METHOD, excluded(t.METHOD))
                 .set(t.ARGMAPPING, excluded(t.ARGMAPPING)));
-    }
-
-    private static void records(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                List<Directive> applications) {
-        var t = GRAPHITRON_AST_RECORD_ENTRY;
-        var rows = applications.stream().collect(Rows.toRowList(
-            application -> val(graph, t.GRAPH_NAME),
-            application -> GraphQLAstEntries.sourceName(application),
-            application -> GraphQLAstEntries.sourceLine(application),
-            application -> GraphQLAstEntries.sourceColumn(application),
-            application -> val(touchedAt, t.TOUCHED_AT),
-            application -> val(inside(application, "record", "className"), t.CLASS_NAME)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.CLASS_NAME)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .set(t.CLASS_NAME, excluded(t.CLASS_NAME)));
     }
 
     private static void genericHandlers(DSLContext dsl, String graph, LocalDateTime touchedAt,

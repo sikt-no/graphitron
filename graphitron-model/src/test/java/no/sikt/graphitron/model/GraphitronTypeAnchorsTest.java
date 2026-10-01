@@ -25,7 +25,6 @@ import java.util.Arrays;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_RECORD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_TYPE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -129,30 +128,6 @@ class GraphitronTypeAnchorsTest {
                 .as("Money is bound and split; Weight named nothing and the grain has no row for "
                     + "an application that said nothing")
                 .containsExactly(List.of("Money", "com.example.Scalars", "MONEY"));
-        });
-    }
-
-    /**
-     * The deprecated backing, which takes the outer join for a reason the schema states: the class
-     * name is the relation's only payload column and it is nullable, so an application the decode
-     * refused is a row with an empty column rather than no row.
-     */
-    @Test
-    @DisplayName("a record backing that names no class is still an application with a row")
-    void aRecordBackingNamingNoClassIsStillARow(@TempDir Path tmp) {
-        write(tmp, "corpus.graphqls", """
-            type Film @record(record: {className: "com.example.FilmRecord"}) { title: String }
-            type Actor @record { name: String }
-            type Query { films: [Film!], actors: [Actor!] }
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-            var t = GRAPHITRON_RECORD_ENTRY;
-            assertThat(dsl.select(t.TYPE_NAME, t.CLASS_NAME).from(t).where(t.GRAPH_NAME.eq(GRAPH))
-                    .orderBy(t.TYPE_NAME).fetch().map(Record::intoList))
-                .containsExactly(Arrays.asList("Actor", null),
-                    Arrays.asList("Film", "com.example.FilmRecord"));
         });
     }
 

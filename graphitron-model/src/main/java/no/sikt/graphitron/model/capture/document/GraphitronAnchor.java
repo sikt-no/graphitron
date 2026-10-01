@@ -26,7 +26,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DEFAULT_ORDER_FIELD
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_PIVOT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_DEPRECATED_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_RECORD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SCALAR_TYPE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ENTRY;
@@ -38,7 +37,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PIVOT_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_RECORD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_TYPE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY;
@@ -128,7 +126,6 @@ public final class GraphitronAnchor {
         deprecatedInputFields(dsl, graph, touchedAt);
         tables(dsl, graph, touchedAt);
         scalarTypes(dsl, graph, touchedAt);
-        records(dsl, graph, touchedAt);
         connections(dsl, graph, touchedAt);
         pivots(dsl, graph, touchedAt);
         mutations(dsl, graph, touchedAt);
@@ -321,7 +318,7 @@ public final class GraphitronAnchor {
     /** What the sweep deletes from, children before parents, listed rather than found by prefix. */
     private static final List<Table<?>> TABLES_TO_SWEEP =
         List.of(GRAPHITRON_DEPRECATED, GRAPHITRON_TABLE_ENTRY,
-            GRAPHITRON_SCALAR_TYPE_ENTRY, GRAPHITRON_RECORD_ENTRY,
+            GRAPHITRON_SCALAR_TYPE_ENTRY,
             GRAPHITRON_CONNECTION_ENTRY, GRAPHITRON_PIVOT_ENTRY, GRAPHITRON_MUTATION_ENTRY,
             GRAPHITRON_SERVICE_ENTRY, GRAPHITRON_EXTERNAL_FIELD_ENTRY,
             GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY, GRAPHITRON_DEFAULT_ORDER_ENTRY,
@@ -1235,39 +1232,5 @@ public final class GraphitronAnchor {
             .and(entrySource.eq(claimed.field(SITE_NAME)))
             .and(entryLine.eq(claimed.field(SITE_LINE)))
             .and(entryColumn.eq(claimed.field(SITE_COLUMN)));
-    }
-
-    /**
-     * The class a declaration says it is backed by. A left join like {@link #tables}, and here the
-     * outer half costs nothing to state: {@code class_name} is the only payload column and it is
-     * nullable, so an application the decode refused lands as the null row the walk wrote too.
-     */
-    private static void records(DSLContext dsl, String graph,
-                                        LocalDateTime touchedAt) {
-        var c = claimed(dsl, graph, "record");
-        var e = GRAPHITRON_AST_RECORD_ENTRY;
-        var t = GRAPHITRON_RECORD_ENTRY;
-        dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.SOURCE_NAME, t.DECLARATION_LINE,
-                t.DECLARATION_COLUMN, t.SOURCE_LINE, t.SOURCE_COLUMN, t.CLASS_NAME, t.TOUCHED_AT)
-            .select(dsl
-                .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME), c.field(SITE_NAME),
-                    c.field(DECLARATION_LINE), c.field(DECLARATION_COLUMN), c.field(SITE_LINE),
-                    c.field(SITE_COLUMN), e.CLASS_NAME, val(touchedAt, t.TOUCHED_AT))
-                .from(c)
-                .leftJoin(e).on(e.GRAPH_NAME.eq(graph))
-                    .and(e.SOURCE_NAME.eq(c.field(SITE_NAME)))
-                    .and(e.SOURCE_LINE.eq(c.field(SITE_LINE)))
-                    .and(e.SOURCE_COLUMN.eq(c.field(SITE_COLUMN)))
-                .where(c.field(RANK).eq(1)))
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
-            .set(t.DECLARATION_LINE, excluded(t.DECLARATION_LINE))
-            .set(t.DECLARATION_COLUMN, excluded(t.DECLARATION_COLUMN))
-            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
-            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
-            .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .execute();
     }
 }

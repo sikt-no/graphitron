@@ -217,8 +217,8 @@ a derivation over either corpus alone, and `graphitron_` already does this again
       position, or `@sourceRow`'s directive, and referencing `graphql_ast_entry`. Written beside
       the twins by a walk over the vocabulary's types, so a site is found rather than listed, and
       pinned by a fact document stating twelve sites from the vocabulary, a multitable path
-      condition two input types deep among them. `@record` still writes rows, the vocabulary
-      still declaring it.
+      condition two input types deep among them. `@record` is declared only so schemas keep
+      parsing and is decoded by nothing, its two relations gone with it.
     * **The argMapping is written once** `open`. One argMapping as written, at the application
       that wrote it, for `@routine`, `@service`, `@externalField` and `@condition` alike, with its
       pairs hanging off it: one parse and one reading everywhere. `columnMapping` stays
@@ -235,7 +235,7 @@ a derivation over either corpus alone, and `graphitron_` already does this again
       method, so its resolution is to `code_class` and is its own relation.
     * **The per-site copies go** `blocked`, on each consumer being answered. The twins lose
       `class_name`, `method` and `argmapping`, a twin left with nothing goes, and the gate's set
-      goes with them; `graphitron_ast_record_entry` goes too, `@record` being ignored.
+      goes with them.
   * **The walk's unknown-method rejections go** `blocked`, on entry defects failing validate.
     `Rejection.unknownServiceMethod` and `unknownLifterMethod` are the gate until then, and the
     editor shows a second diagnostic for the one fault until they leave.

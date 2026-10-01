@@ -18,6 +18,7 @@ import org.jooq.Table;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import static graphql.language.AstPrinter.printAstCompact;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
@@ -75,6 +76,13 @@ public final class GraphitronAstEntries {
     }
 
     /**
+     * The directives the vocabulary declares so that existing schemas keep parsing, and that are
+     * not graphitron's: nothing decodes them, so no writer is handed one. {@code @record} binds
+     * nothing any more, and the warning telling an author to remove it reads the document itself.
+     */
+    private static final Set<String> KEPT_FOR_PARSING = Set.of("record");
+
+    /**
      * The applications the directive definition admits, whichever site they came from.
      *
      * <p>One helper and no per-site variant, because the site's only contribution to this question
@@ -85,6 +93,9 @@ public final class GraphitronAstEntries {
     private static List<GraphQLAstEntries.Nested<Directive>> admitted(List<GraphQLAstEntries.Located> located) {
         var kept = new ArrayList<GraphQLAstEntries.Nested<Directive>>();
         for (GraphQLAstEntries.Located one : located) {
+            if (KEPT_FOR_PARSING.contains(one.application().node().getName())) {
+                continue;
+            }
             if (DirectiveLegality.admits(one.application().node(), one.location())) {
                 kept.add(one.application());
             }

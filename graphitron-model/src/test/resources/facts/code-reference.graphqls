@@ -49,6 +49,12 @@ type Language @table(name: "language") {
   languageId: ID
 }
 
+# @record is declared so existing schemas keep parsing and is not graphitron's, so the reference it
+# carries is decoded by nothing and has no row below.
+type Category @record(record: {className: "example.CategoryRecord", method: "notDecoded"}) {
+  name: String
+}
+
 # A class reference, naming no method.
 enum Rating @enum(enumReference: {className: "example.RatingEnum"}) {
   G

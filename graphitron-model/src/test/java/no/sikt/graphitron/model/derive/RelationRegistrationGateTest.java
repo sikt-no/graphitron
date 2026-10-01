@@ -94,7 +94,7 @@ class RelationRegistrationGateTest {
             "graphitron_pivot_entry", "graphitron_routine_entry", "graphitron_routine_column_mapping_pair_entry",
             "graphitron_federation_key_entry", "graphitron_federation_key_field_entry",
             "graphitron_federation_key_field_segment_entry", "graphitron_link_entry",
-            "graphitron_multitable_reference_entry", "graphitron_record_entry",
+            "graphitron_multitable_reference_entry",
             "graphitron_undecoded_argument_entry",
             // The three supertypes ride the arm of the sites that spell them. The spelled reference
             // and the method reference are written in the same walk as the per-site row they sit
@@ -151,7 +151,7 @@ class RelationRegistrationGateTest {
             // application, so two documents binding one type have nothing to agree about here.
             // What pins them is GraphitronAstEntriesTest, over a corpus that binds one type twice.
             "graphitron_ast_table_entry", "graphitron_ast_scalar_type_entry",
-            "graphitron_ast_enum_entry", "graphitron_ast_record_entry",
+            "graphitron_ast_enum_entry",
             "graphitron_ast_node_entry", "graphitron_ast_node_keycolumn_entry",
             "graphitron_ast_discriminate_entry", "graphitron_ast_discriminator_entry",
             "graphitron_ast_federation_key_entry",

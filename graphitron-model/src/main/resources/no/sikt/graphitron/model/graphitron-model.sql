@@ -1886,27 +1886,6 @@ COMMENT ON COLUMN graphitron_ast_enum_entry.class_name IS 'the className field o
 COMMENT ON COLUMN graphitron_ast_enum_entry.method IS 'the method field of the reference, as written, or NULL where none was';
 COMMENT ON COLUMN graphitron_ast_enum_entry.argmapping IS 'the argMapping field of the reference, as written, or NULL where none was. Kept as the one string the author typed; what its segments name is a question for the argument-mapping derivation';
 
-CREATE TABLE graphitron_ast_record_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
-  class_name    VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphql_ast_type_directive_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_ast_record_entry IS 'What a @record application says: the class this declaration is backed by, as written. For example type Film @record(record: {className: "com.example.FilmRecord"}) gives one row.';
-COMMENT ON COLUMN graphitron_ast_record_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_ast_record_entry.source_name IS 'the file the application was written in';
-COMMENT ON COLUMN graphitron_ast_record_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_ast_record_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_type_directive_entry and neither carries what the other holds';
-COMMENT ON COLUMN graphitron_ast_record_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
-COMMENT ON COLUMN graphitron_ast_record_entry.class_name IS 'the className field of the reference, as written. A bare @record writes no row: the backing class is then inferred, which is what the author asked for by leaving it out';
-
 CREATE TABLE graphitron_ast_error_generic_handler_entry (
   graph_name    VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL,
@@ -4326,34 +4305,6 @@ COMMENT ON COLUMN graphitron_multitable_reference_entry.field_name IS 'the field
 COMMENT ON COLUMN graphitron_multitable_reference_entry.source_name IS 'the SDL file the row was captured from';
 COMMENT ON COLUMN graphitron_multitable_reference_entry.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_multitable_reference_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-
-CREATE TABLE graphitron_record_entry (
-  graph_name       VARCHAR NOT NULL,
-  type_name        VARCHAR NOT NULL,
-  source_name      VARCHAR NOT NULL,
-  declaration_line INT     NOT NULL,
-  declaration_column INT   NOT NULL,
-  source_line      INT,
-  source_column    INT,
-  class_name       VARCHAR,
-  touched_at       TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name)
-    ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_record_entry IS 'The class a type says it is backed by through @record, which is deprecated and read only to warn. For example type Film @record(record: {className: "com.example.FilmRecord"}) gives one row naming that class.';
-COMMENT ON COLUMN graphitron_record_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_record_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_record_entry.source_name IS 'half of the site FK, so NOT NULL; a graphitron application always has an SDL position';
-COMMENT ON COLUMN graphitron_record_entry.declaration_line IS 'line of the contributing declaration site, keyed with source_name';
-COMMENT ON COLUMN graphitron_record_entry.declaration_column IS 'column of the contributing declaration site, the site key''s fourth part';
-COMMENT ON COLUMN graphitron_record_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_record_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_record_entry.class_name IS 'record.className as written';
-COMMENT ON COLUMN graphitron_record_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a coordinate that still stands; a coordinate the author removed takes its rows with it through the cascade on the reference below, so the two together are what makes this relation total without a pass emptying it first';
 
 CREATE TABLE graphitron_undecoded_argument_entry (
   graph_name              VARCHAR NOT NULL,
@@ -15626,10 +15577,6 @@ INSERT INTO meta_relation VALUES
    'What an @enum application says: the external code reference this enum declaration is bound to, as written.',
    'For example enum Rating @enum(enumReference: {className: "com.example.Ratings"}) gives one row.',
    'A decode of one directive application, keyed by the application''s own position, so the type it was written on and the file are one join away rather than columns here. The reference''s three fields are lifted into columns because an object literal is not a value a reader can query, and each is kept exactly as typed: whether the class is on the classpath and whether it declares that method are questions for the classpath census, which is a different relation and a different reading.'),
-  ('graphitron_ast_record_entry', 'sdl-declaration-site', 'graphitron-ast',
-   'What a @record application says: the class this declaration is backed by, as written.',
-   'For example type Film @record(record: {className: "com.example.FilmRecord"}) gives one row.',
-   'A decode of one directive application, keyed by the application''s own position, so the type it was written on and the file are one join away rather than columns here. One column out of the object literal rather than three, because the directive''s argument shares its shape with @enum''s and not its meaning: a record backing names a class and nothing calls a method on it.'),
   ('graphitron_table_entry', 'graph-type', 'graphitron',
    'The table a type is bound to, as one row per type however many @table applications the corpus wrote on it.',
    'For example type Film @table(name: "film") gives the row Film reading film, and a bare @table on Actor gives a row carrying no name at all.',
@@ -15638,10 +15585,6 @@ INSERT INTO meta_relation VALUES
    'The Java constant a scalar type is bound to, as one row per scalar however many @scalarType applications the corpus wrote on it.',
    'For example scalar Money @scalarType(scalar: "com.example.Scalars.MONEY") gives one row, split into the class that declares the field and the field itself.',
    'Derived from the entry beside it on the same terms as the table binding, a rank over a type''s applications in corpus merge order with the first taken. Where that one joins the decode outwards this joins it inwards, and the difference is the relation''s own shape rather than a preference: the reference is this row''s only unkeyed column and it is NOT NULL, so an application naming nothing has no fact to state and draws no row, which is what the walk this replaces said by returning early. Whether the named class declares such a field is the classpath census''s question and is asked where the resolving happens.'),
-  ('graphitron_record_entry', 'graph-type', 'graphitron',
-   'The class a type says it is backed by through @record, which is deprecated and read only to warn.',
-   'For example type Film @record(record: {className: "com.example.FilmRecord"}) gives one row naming that class.',
-   'Derived from the entry beside it by the same rank the table binding takes, and joined outwards for a reason that costs nothing to state: the class name is this relation''s only payload column and it is nullable, so an application whose literal named no class lands as the null row rather than as no row, which is what the walk this replaces wrote. The directive is deprecated and its own definition says the backing class is inferred, so the one consumer left compares this against what reflection found and warns where they differ; that is why the relation survives the directive being ignored.'),
   ('graphitron_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
