@@ -227,14 +227,14 @@ a derivation over either corpus alone, and `graphitron_` already does this again
       as written. `columnMapping` stays `@routine`'s own. The vocabulary still calls argMapping
       inert on `@externalField`, which its reading and the generator's rejection follow until
       changed.
-    * **The resolution** `open`, waits on the written reference. `graphitron_code_reference`: the
-      one method a written reference names, keyed to it and to `code_method`; no match is no row,
-      and the anti-join is one `graphitron_entry_defect` arm for every site. The `@externalField`
-      default is its one site rule. A first attempt at two per-directive relations was dropped for
-      the reorder above and left what it taught: declare after the `code_` family, the key into
-      `code_method` failing otherwise; alias the file's and the classpath entry's `source_name`,
-      which collide in the resolution; make the stage the graphitron anchor's own; and state the
-      outcomes, resolved, class not read, method not found and ambiguous, as one fact document.
+    * **The resolution** `done`. `graphitron_code_reference`: the one method a written reference
+      names, keyed to it and to `code_method`, written by the graphitron-ast anchor; no match is no
+      row. `graphitron_code_reference_site` states once what both it and the defects read: the
+      directive and element a reference sits on, and the method it names, the `@externalField`
+      default included. One `graphitron_entry_defect` arm reports every site in three codes, and
+      says a class is absent only where the graph's classpath was read at all. Pinned by a fact
+      document over the classpath corpus. `graphql_element` and `graphql_element_field` are
+      declared to `graphql-ast` now, their writer.
     * **`@enum` resolves to a class** `open`, when a consumer asks. A class reference names no
       method, so its resolution is to `code_class` and is its own relation.
     * **The per-site copies go** `blocked`, on each consumer being answered. The twins lose
@@ -757,10 +757,6 @@ rather than left in a transcript.
   real reason, but the rule is stated once in jOOQ with nothing to diff it against, where
   `FieldColumnScopes` ten lines away keeps its rule in a view so an `EXCEPT` against the target stays
   runnable. Worth an item.
-* **`graphql_element` and `graphql_element_field` are declared to the retired `sdl` gatherer.** That
-  roster row points at `SdlFactCapture`, which creates no record and writes no relation, so the
-  declaration names a writer that does not write. Repointing it is a one-line change that wants
-  checking rather than guessing.
 * **`SchemaIdentifierDriftCheck` can report findings the source no longer holds.** It reads the store
   prose out of a booted H2 store, so the DDL it sees is the compiled resource rather than the file it
   names, and it labels every finding with the `src/main/resources` path. On an incremental build that

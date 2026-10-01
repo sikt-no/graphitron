@@ -2280,6 +2280,57 @@ COMMENT ON COLUMN graphitron_ast_code_reference_entry.touched_at IS 'when the re
 COMMENT ON COLUMN graphitron_ast_code_reference_entry.class_name IS 'the class the reference names, as written. NOT NULL because a reference naming no class asserts nothing this relation can hold, and writes no row';
 COMMENT ON COLUMN graphitron_ast_code_reference_entry.method IS 'the method the reference names, as written, or NULL where it names none. A default a site applies to an omitted method is a resolution and is not applied here';
 
+CREATE VIEW graphitron_code_reference_site
+  (graph_name, source_name, source_line, source_column,
+   directive_name, coordinate, type_name, field_name, class_name, method_name) AS
+SELECT w.graph_name, w.source_name, w.source_line, w.source_column,
+       da.name, el.coordinate, ef.type_name, ef.field_name, w.class_name,
+       -- The one site whose omitted method has a default: an @externalField names its field.
+       COALESCE(w.method, CASE WHEN da.name = 'externalField' THEN ef.field_name END)
+  FROM (
+    -- A reference written as a value: the value's holder is the applied argument, at any depth,
+    -- and the argument's parent is the application.
+    SELECT r.graph_name, r.source_name, r.source_line, r.source_column, r.class_name, r.method,
+           arg.parent_line AS application_line, arg.parent_column AS application_column
+      FROM graphitron_ast_code_reference_entry r
+      JOIN graphql_ast_value_entry v
+        ON v.graph_name = r.graph_name AND v.source_name = r.source_name
+       AND v.source_line = r.source_line AND v.source_column = r.source_column
+      JOIN graphql_ast_entry arg
+        ON arg.graph_name = v.graph_name AND arg.source_name = v.source_name
+       AND arg.source_line = v.holder_line AND arg.source_column = v.holder_column
+    UNION ALL
+    -- @sourceRow, whose reference is written as the application itself.
+    SELECT r.graph_name, r.source_name, r.source_line, r.source_column, r.class_name, r.method,
+           r.source_line, r.source_column
+      FROM graphitron_ast_code_reference_entry r
+      JOIN graphql_ast_directive_application_entry d
+        ON d.graph_name = r.graph_name AND d.source_name = r.source_name
+       AND d.source_line = r.source_line AND d.source_column = r.source_column
+  ) w
+  JOIN graphql_ast_directive_application_entry da
+    ON da.graph_name = w.graph_name AND da.source_name = w.source_name
+   AND da.source_line = w.application_line AND da.source_column = w.application_column
+  JOIN graphql_ast_entry an
+    ON an.graph_name = da.graph_name AND an.source_name = da.source_name
+   AND an.source_line = da.source_line AND an.source_column = da.source_column
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = an.graph_name AND el.source_name = an.source_name
+   AND el.source_line = an.parent_line AND el.source_column = an.parent_column
+  LEFT JOIN graphql_element_field ef
+    ON ef.graph_name = el.graph_name AND ef.coordinate = el.coordinate;
+COMMENT ON VIEW graphitron_code_reference_site IS 'Where one written Java code reference sits: the directive that wrote it, the element it is on, and the method it names once that site''s default applies. For example isEnglish: Boolean @externalField(reference: {className: "no.example.FilmExtensions"}) sits at Film.isEnglish under externalField and names isEnglish.';
+COMMENT ON COLUMN graphitron_code_reference_site.graph_name IS 'the owning graph''s partition, carried from the written reference';
+COMMENT ON COLUMN graphitron_code_reference_site.source_name IS 'the file the reference was written in, the first of the four columns that are the written reference''s key';
+COMMENT ON COLUMN graphitron_code_reference_site.source_line IS 'source line of the node the reference was written as';
+COMMENT ON COLUMN graphitron_code_reference_site.source_column IS 'source column of the same, completing the key';
+COMMENT ON COLUMN graphitron_code_reference_site.directive_name IS 'the directive whose application wrote the reference, reached through the argument that holds it, or the application itself at @sourceRow';
+COMMENT ON COLUMN graphitron_code_reference_site.coordinate IS 'the element the application is written on, as graphql_ast_element_entry spells it: a type, a field, an argument or an input field';
+COMMENT ON COLUMN graphitron_code_reference_site.type_name IS 'the type owning that element where the element is a field or an argument, NULL where it is a type';
+COMMENT ON COLUMN graphitron_code_reference_site.field_name IS 'the field that element is or belongs to, NULL where it is a type';
+COMMENT ON COLUMN graphitron_code_reference_site.class_name IS 'the class the reference names, as written';
+COMMENT ON COLUMN graphitron_code_reference_site.method_name IS 'the method the reference names: as written, or the field''s own name where an @externalField wrote none, which is the one default any site applies. NULL where the reference names a class only, as @enum does';
+
 CREATE TABLE graphitron_ast_service_entry (
   graph_name    VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL,
@@ -7652,6 +7703,36 @@ COMMENT ON COLUMN intent_federation_key.ordinal IS 'the authored application''s 
 COMMENT ON COLUMN intent_federation_key.fields_sdl IS 'the field-set literal: as written on an authored row, and the rule''s own id on a synthesized one';
 COMMENT ON COLUMN intent_federation_key.resolvable IS 'as written on an authored row, NULL where the author omitted it; always true on a synthesized one';
 
+CREATE TABLE graphitron_code_reference (
+  graph_name         VARCHAR NOT NULL,
+  source_name        VARCHAR NOT NULL,
+  source_line        INT     NOT NULL,
+  source_column      INT     NOT NULL,
+  method_source_name VARCHAR NOT NULL,
+  method_class_name  VARCHAR NOT NULL,
+  method_name        VARCHAR NOT NULL,
+  method_descriptor  VARCHAR NOT NULL,
+  touched_at         TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  -- The reference as written, so a resolution cannot outlive the writing it resolves.
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_ast_code_reference_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  -- The method, so a reading that no longer finds it takes the resolution with it.
+  FOREIGN KEY (method_source_name, method_class_name, method_name, method_descriptor)
+    REFERENCES code_method (source_name, class_name, method_name, descriptor) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_code_reference IS 'The one method a written Java code reference names, where the graph''s classpath answers with exactly one. For example @service(service: {className: "no.example.CityService", method: "cityUppercase"}) draws one row naming the one cityUppercase that class declares, and a misspelt method draws none.';
+COMMENT ON COLUMN graphitron_code_reference.graph_name IS 'the owning graph''s partition, carried from the written reference';
+COMMENT ON COLUMN graphitron_code_reference.source_name IS 'the file the reference was written in, the first of the four columns that are the written reference''s key in graphitron_ast_code_reference_entry';
+COMMENT ON COLUMN graphitron_code_reference.source_line IS 'source line of the node the reference was written as';
+COMMENT ON COLUMN graphitron_code_reference.source_column IS 'source column of the same, completing the key. One reference resolves to at most one method, so the reference is the whole grain';
+COMMENT ON COLUMN graphitron_code_reference.method_source_name IS 'the classpath entry the resolved method was read from, the first of the four columns naming one code_method row; one of the entries the graph reached through store_graph_source';
+COMMENT ON COLUMN graphitron_code_reference.method_class_name IS 'the class declaring the resolved method, equal to what the author wrote, the match being exact: Java names are case-sensitive and a misspelling resolves to nothing rather than to a near match';
+COMMENT ON COLUMN graphitron_code_reference.method_name IS 'the resolved method''s name: the reference''s, or the field''s where an @externalField wrote none, as graphitron_code_reference_site states it';
+COMMENT ON COLUMN graphitron_code_reference.method_descriptor IS 'the resolved method''s JVM descriptor, completing the reference into code_method. Not in the key: a reference matching two overloads is ambiguous and draws no row, so the descriptor is what the one method is rather than what tells two rows apart';
+COMMENT ON COLUMN graphitron_code_reference.touched_at IS 'when the reading that derived this row ran. Swept per graph after the reading upserts, so a reference that stopped resolving leaves and the rest stay; a reference the author removed goes through the cascade on its written form';
+
 CREATE VIEW graphitron_condition_method_route
   (graph_name, class_name, method,
    from_source_name, from_schema, from_table,
@@ -8431,7 +8512,40 @@ SELECT cl.graph_name, cl.source_name, cl.source_line, cl.source_column,
    AND NOT EXISTS (SELECT 1 FROM graphitron_field_chain_application ca
                     WHERE ca.graph_name = cl.graph_name AND ca.type_name = cl.type_name
                       AND ca.field_name = cl.field_name
-                      AND ca.directive_name = 'routine');
+                      AND ca.directive_name = 'routine')
+UNION ALL
+-- A code reference that resolves to no one method, at the position it was written: exactly the
+-- references naming a method that graphitron_code_reference lacks, told apart by what the graph's
+-- classpath holds under the names. No class, a class without the method, or more than one method;
+-- exclusive by construction, a single match being the resolution's row. One arm for every site,
+-- the reference being one fact wherever it is written.
+SELECT s.graph_name, s.source_name, s.source_line, s.source_column,
+       CASE WHEN s.classes = 0 THEN 'CODE_REFERENCE_CLASS_NOT_READ'
+            WHEN s.methods = 0 THEN 'CODE_REFERENCE_METHOD_NOT_FOUND'
+            ELSE 'CODE_REFERENCE_METHOD_AMBIGUOUS' END,
+       s.type_name, s.field_name,
+       CASE WHEN s.classes = 0 THEN s.class_name ELSE s.class_name || '.' || s.method_name END
+  FROM (SELECT c.graph_name, c.source_name, c.source_line, c.source_column,
+               c.type_name, c.field_name, c.class_name, c.method_name,
+               (SELECT COUNT(*) FROM store_graph_source g
+                  JOIN code_class k ON k.source_name = g.source_name
+                 WHERE g.graph_name = c.graph_name AND k.class_name = c.class_name) AS classes,
+               (SELECT COUNT(*) FROM store_graph_source g
+                  JOIN code_method m ON m.source_name = g.source_name
+                 WHERE g.graph_name = c.graph_name AND m.class_name = c.class_name
+                   AND m.method_name = c.method_name) AS methods
+          FROM graphitron_code_reference_site c
+         WHERE c.method_name IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM graphitron_code_reference r
+                            WHERE r.graph_name = c.graph_name AND r.source_name = c.source_name
+                              AND r.source_line = c.source_line
+                              AND r.source_column = c.source_column)
+           -- A graph whose classpath was never read has told the store nothing about any class, so
+           -- no name it writes is wrong yet: a store before its first build, or a capture with no
+           -- classpath at all. Only a reading that read something can say a class is absent.
+           AND EXISTS (SELECT 1 FROM store_graph_source g
+                         JOIN code_class k ON k.source_name = g.source_name
+                        WHERE g.graph_name = c.graph_name)) s;
 COMMENT ON VIEW graphitron_entry_defect_rule IS 'One row the entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
 COMMENT ON COLUMN graphitron_entry_defect_rule.graph_name IS 'the owning graph''s partition, carried from the entry; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_entry_defect_rule.source_name IS 'the file the offending directive was written in, the first of the three columns naming its position; with them a reference into graphql_ast_entry, which is the supertype that makes a @routine application and a path element the same kind of thing to point at';
@@ -15455,7 +15569,13 @@ INSERT INTO graphitron_defect_type VALUES
   ('NO_ROUTE_TO_TARGET', 'error', 'AUTHOR', 'GRAPHITRON_NO_ROUTE_TO_TARGET',
    'A chain runs to its last link and arrives somewhere other than the table the field''s rows were said to come from.'),
   ('CHAIN_WITHOUT_TARGET', 'error', 'AUTHOR', 'GRAPHITRON_CHAIN_WITHOUT_TARGET',
-   'A field whose chain is @reference alone returns a type bound to no table, so the path has nowhere to arrive and no catalog could make it resolve.');
+   'A field whose chain is @reference alone returns a type bound to no table, so the path has nowhere to arrive and no catalog could make it resolve.'),
+  ('CODE_REFERENCE_CLASS_NOT_READ', 'error', 'AUTHOR', 'GRAPHITRON_CODE_REFERENCE_CLASS_NOT_READ',
+   'A code reference names a class the classpath reading did not read, so no method of it can be called: the name is misspelt, or the class sits in an entry the build does not hand the generator.'),
+  ('CODE_REFERENCE_METHOD_NOT_FOUND', 'error', 'AUTHOR', 'GRAPHITRON_CODE_REFERENCE_METHOD_NOT_FOUND',
+   'A code reference names a class the classpath reading read and a method that class does not declare publicly, an @externalField that names none meaning the field''s own name.'),
+  ('CODE_REFERENCE_METHOD_AMBIGUOUS', 'error', 'AUTHOR', 'GRAPHITRON_CODE_REFERENCE_METHOD_AMBIGUOUS',
+   'A code reference names a method the classpath answers more than once, as overloads or as one class two entries declare, and nothing says which of them is meant.');
 
 INSERT INTO meta_relation VALUES
   ('graphql_schema_problem', 'graph-schema-problem', 'graphql-assembly',
@@ -15574,7 +15694,7 @@ INSERT INTO meta_relation VALUES
    'This schema element is deprecated, and this is the replacement hint the author gave: whatever the corpus retired, under the coordinate that names it.',
    'For example a retired directive draws the row @asConnection and a retired argument of one draws @asConnection(connectionName:).',
    'One relation where there were three, which is what keying on a coordinate buys. They were a relation per shape of key, a directive under its name, an argument of one under two names and an input field under a type and a field, each carrying the same reason under a differently spelled key, and a reader asking whether something was deprecated had to know which of the three to ask before it could ask. The coordinate is the specification''s own answer to what names an element, and the two directive forms were anchored so that this relation could use it rather than spelling its keys out again.'),
-  ('graphql_element', 'schema-element', 'sdl',
+  ('graphql_element', 'schema-element', 'graphql-ast',
    'A schema element exists in this graph: the supertype of the four element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it.',
    'For example the input argument of Mutation.rentFilm is the row Mutation.rentFilm(input:), the field it sits on is Mutation.rentFilm, and the type declaring that field is Mutation.',
    'The element family states an element''s existence at four grains and states nowhere that an element exists, so a relation naming any coordinate has nothing to reference and renders one into a string instead, where no foreign key reaches it. This is the supertype those four have always implied, written by capture beside the anchors it generalises rather than stated as a union over them, which is what makes a reference to any coordinate one column and one key. The four carry the spelling and a foreign key back here, which is the join down to the parts and what makes an anchor with no coordinate impossible; one call writes both rows from one string, so there is no second rendering for a constraint to have to check. Keyed by the spelling and not by a decomposition, because the decompositions are exactly what differ between the four and the specification has already settled the grammar. The element kind names the row in the specification''s own vocabulary, so a reader wanting the parts joins the relation for it instead of splitting the spelling, FIELD and INPUT_FIELD sharing one because they share a coordinate form and are told apart by the parent''s kind.'),
@@ -15599,6 +15719,14 @@ INSERT INTO meta_relation VALUES
    'What a @scalarType application says: the constant holding the scalar this declaration is bound to, as written.',
    'For example scalar Money @scalarType(scalar: "com.example.Scalars.MONEY") gives one row.',
    'A decode of one directive application, keyed by the application''s own position, so the type it was written on and the file are one join away rather than columns here. The payload columns are nullable where the directive definition marks the argument required: a required argument the author left out is a schema problem the toolchain reports, and refusing the row here would lose the transcription of what they did write. Whether the named class holds such a field is a question for the classpath census and belongs where the resolving happens.'),
+  ('graphitron_code_reference_site', 'sdl-code-reference', 'graphitron-ast',
+   'Where one written Java code reference sits: the directive that wrote it, the element it is on, and the method it names once that site''s default applies.',
+   'For example isEnglish: Boolean @externalField(reference: {className: "no.example.FilmExtensions"}) sits at Film.isEnglish under externalField and names isEnglish.',
+   'What both the resolution and the defects that report it need to know about a reference and the written relation does not say: which directive wrote it and on what. Both are a fixed climb through keys the transcription declares, the holder of a value being the applied argument at any depth and an argument''s parent its application, so it is a view and not a grain. The @externalField default is stated here because both readers apply it; stated twice, the two could disagree about which method a reference names.'),
+  ('graphitron_code_reference', 'sdl-code-reference', 'graphitron-ast',
+   'The one method a written Java code reference names, where the graph''s classpath answers with exactly one.',
+   'For example @service(service: {className: "no.example.CityService", method: "cityUppercase"}) draws one row naming the one cityUppercase that class declares, and a misspelt method draws none.',
+   'The written reference met with the classpath, once for every site, as a reference into code_method rather than as the two strings again. Only a settled resolution is a row, on graphitron_tabletype''s terms: a reference naming nothing and one naming two overloads both draw none, so the anti-join against the written reference is every one that does not resolve, and graphitron_entry_defect says which of the three ways it failed. Resolved against every public method rather than a directive''s admission arm, because a method a site may not name is a different fault from one that does not exist. A reference naming a class only is not in this population; its resolution is to a class. Written by the graphitron-ast anchor, which runs after the classpath is read.'),
   ('graphitron_ast_argmapping_pair_entry', 'sdl-argmapping-pair', 'graphitron-ast',
    'One entry of an argMapping as one document wrote it: at this position in this mapping, this parameter is bound to this.',
    'For example argMapping: "customerId: input.customerId, session: $session" gives two rows, customerId bound to input.customerId at position 0 and session to $session at 1.',
@@ -15951,7 +16079,7 @@ INSERT INTO meta_relation VALUES
    'Which type a connection type paginates: one row per type whose shape is a Relay connection, naming the element it delivers.',
    'For example a FilmConnection declaring edges whose element declares node: Film draws one row naming Film, and a type that is not a connection draws none, so a reader left-joins this rather than joining it.',
    'Structural and not directive-driven, which is the whole of what it buys: a connection the generator synthesised from @asConnection and one the author wrote out have the same shape and therefore the same row, where a rule reading the synthesis record could see only the first. The shape test is the spec''s own and the names are literal because the spec''s are, edges then an OBJECT element then node, so a type spelling them differently is not a connection to the classifier either; field names being unique within a type, each resolves at most once and this never fans out. Absence is every type that is not a connection, and two near misses worth naming so a reader does not read them as defects: a type with edges whose element declares no node, and a type reaching node some other way than through edges. Named in this family rather than the derivation one on that family''s own admission test: expanded to captured relations this rule reaches graphitron_type and graphitron_field and stops, which is one family rather than two, and a rule that crosses nothing belongs to the family it reads. Its grain is graphitron_type''s rather than one of its own, the key being that relation''s key restricted to the types this rule admits, so nothing here establishes a grain and no table is owed. It does not state nullability or the page-info shape; a consumer needing the element''s optionality joins the node field''s own row from the element name this one carries.'),
-  ('graphql_element_field', 'element-field-site', 'sdl',
+  ('graphql_element_field', 'element-field-site', 'graphql-ast',
    'The field a schema element sits on, for the element kinds whose coordinate names one: one row per field coordinate, output and input alike, and one per field-argument coordinate, carrying the parts the spelling is built from.',
    'For example Query.films draws a row naming the type and the field, and Query.films(filter:) draws another naming those and the argument, so a reader holding either spelling reaches the field with one join.',
    'What a reader joins when it holds a coordinate and needs the field, which before this was two left joins and a COALESCE spelled once per reader, and wrongly available to a reader that forgot the second arm. Named-type and enum-value elements are absent and that is the population rather than a gap: neither sits on a field, so a reader asking this question of one is asking something with no answer and gets no row instead of a half-populated one. The argument component is NULL on a field coordinate, which is the one nullness here and is the difference between the two arms rather than a fact withheld. Not columns on graphql_element itself, because a type coordinate has no field and an enum value''s name is not one, so carrying them up would put two nullnesses on the supertype to serve half its subtypes. It reads as a reconstruction and is not one: the supertype exists and every member points at it, so this unions a hierarchy that is already written rather than standing in for one nobody wrote, which is the distinction SupertypeSignatureGateTest draws before it counts a union as debt.'),

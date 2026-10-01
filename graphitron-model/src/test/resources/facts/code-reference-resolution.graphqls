@@ -1,0 +1,54 @@
+# Each written code reference met with the classpath. A reference naming a method resolves to it
+# where exactly one method answers; every other one is a defect at the position it was written, and
+# which of three follows from what the classpath holds under the names. The classes are real Java
+# in the classpath corpus, so a resolution is what a reading of the bytes found.
+
+type City @table(name: "city") {
+  cityId: ID
+  # One method answers, so this is a row.
+  uppercase: String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.CityService", method: "cityUppercase"})
+  # The class was read and declares no method of this name.
+  misspelt: String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.CityService", method: "cityUpercase"})
+  # No reading read this class at all, which is a different thing to tell an author.
+  unread: String
+    @service(service: {className: "no.example.Absent", method: "anything"})
+}
+
+# An @externalField naming no method names its field, so isEnglish resolves with no method written
+# and missing is a defect for the same reason. A condition is resolved like any other reference,
+# and a name two public overloads answer resolves to neither.
+type Film @table(name: "film") {
+  filmId: ID
+  isEnglish: Boolean
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions"})
+  missing: String
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions"})
+  overloaded: [City!]!
+    @condition(condition: {className: "no.sikt.graphitron.rewrite.test.conditions.MultiTableConditionFixtures", method: "occupantTypedNamePrefix"})
+}
+
+# A class reference names no method, so it is neither resolved here nor a defect.
+enum Rating @enum(enumReference: {className: "no.example.RatingEnum"}) {
+  G
+}
+
+extend type Query {
+  cities: [City!]!
+  films: [Film!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_code_reference", rows: """
+  method_class_name,                                          method_name
+  no.sikt.graphitron.rewrite.test.services.CityService,       cityUppercase
+  no.sikt.graphitron.rewrite.test.extensions.FilmExtensions,  isEnglish
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect", rows: """
+  code,                            type_name, field_name, detail
+  CODE_REFERENCE_METHOD_NOT_FOUND, City,      misspelt,   no.sikt.graphitron.rewrite.test.services.CityService.cityUpercase
+  CODE_REFERENCE_CLASS_NOT_READ,   City,      unread,     no.example.Absent
+  CODE_REFERENCE_METHOD_NOT_FOUND, Film,      missing,    no.sikt.graphitron.rewrite.test.extensions.FilmExtensions.missing
+  CODE_REFERENCE_METHOD_AMBIGUOUS, Film,      overloaded, no.sikt.graphitron.rewrite.test.conditions.MultiTableConditionFixtures.occupantTypedNamePrefix
+  """)

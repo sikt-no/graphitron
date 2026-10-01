@@ -400,6 +400,11 @@ class SupertypeSignatureGateTest {
         "intent_argument_filter_role|graphitron_argument_condition_entry,graphitron_field_condition_entry",
         "intent_condition_context_parameter|graphitron_argument_condition_context_arg_entry,graphitron_field_condition_context_arg_entry",
         "graphitron_condition_method_route|graphitron_argument_reference_step_entry,graphitron_field_reference_step_entry",
+        // Older than its row. The read-surface arms have always unioned the two condition sites;
+        // the code-reference arm beside them names class_name, which is the payload column that
+        // confirms a union here. The written code reference is the supertype it reaches for, and
+        // the row goes when the condition copies do.
+        "graphitron_entry_defect_rule|graphitron_argument_condition_entry,graphitron_field_condition_entry",
         "intent_condition_param_decode|graphitron_argument_condition_entry,graphitron_field_condition_entry",
         "intent_field_demand_rule|graphitron_external_field_entry,graphitron_service_entry",
         "intent_field_exemption_rule|graphitron_external_field_entry,graphitron_service_entry",

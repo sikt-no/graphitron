@@ -100,6 +100,9 @@ public final class GraphitronAstCapture {
      */
     public static void anchor(DSLContext dsl, GraphIdentity graph, LocalDateTime readAt) {
         GraphitronAnchor.write(dsl, graph.name(), readAt);
+        // What each written code reference names on the classpath, which this anchor can ask now it
+        // runs after the classpath has been read.
+        GraphitronCodeReferences.write(dsl, graph.name(), readAt);
         // Then what the applications just anchored mint. Second by our choice rather than by
         // necessity of the entries: at the entry grain an @asConnection and an @asFacet are
         // siblings, each decoded from its own position and reading nothing of the other. It is
