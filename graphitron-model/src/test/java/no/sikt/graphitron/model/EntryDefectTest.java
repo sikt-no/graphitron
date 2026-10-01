@@ -229,6 +229,25 @@ class EntryDefectTest {
     }
 
     /**
+     * A self-referencing key, both of whose hops depart and arrive at {@code category}, so the walk
+     * reaches both and has nothing to choose by. The generator chooses by the field's cardinality,
+     * and so does the reading, which leaves one route at each spelling and nothing to report: the
+     * key named, and the table named with the one key between it and itself.
+     */
+    @Test
+    @DisplayName("a self-referencing key is one route, read the way the field's cardinality says")
+    void aSelfReferenceIsOneRoute(@TempDir Path tmp) {
+        withCatalogStore(tmp, """
+            type Query { categories: [Category!]! }
+            type Category @table(name: "category") {
+              parent: Category @reference(path: [{key: "category_parent_category_id_fkey"}])
+              children: [Category!]! @reference(path: [{key: "category_parent_category_id_fkey"}])
+              parentByTable: Category @reference(path: [{table: "category"}])
+            }
+            """, dsl -> assertThat(codes(dsl)).isEmpty());
+    }
+
+    /**
      * An element naming a constraint the catalog does not have. The chain stops there, and the
      * element before it resolved on its own terms and is not reported: a chain resolves at every
      * position or at none, so a broken one has a single break and the row sits at it.

@@ -6326,23 +6326,41 @@ condition_spelling (graph_name, source_name, source_line, source_column, class_n
 ),
 -- One link of one chain toward one target, which is the grain every arm below answers at: the
 -- chain's order is stated once at the coordinate and the target is what a resolution belongs to.
+--
+-- single_valued is the one fact about the field a link's reading turns on rather than the link's
+-- own. A self-referencing key departs and arrives at one table, so where the chain stands cannot
+-- say which way it runs; the generator takes it from the field's cardinality, a single-valued field
+-- reading the row's own key toward its parent and a list or connection of objects reading the
+-- children that point back. A scalar is single-valued whatever its wrapping, the generator never
+-- consulting cardinality for a column read through a path.
 link (graph_name, type_name, field_name, position, last_position,
       source_name, source_line, source_column,
-      target_source_name, target_schema, target_table) AS (
+      target_source_name, target_schema, target_table, single_valued) AS (
   SELECT cl.graph_name, cl.type_name, cl.field_name, cl.position,
          (SELECT MAX(cl2.position) FROM graphitron_field_chain_link cl2
            WHERE cl2.graph_name = cl.graph_name AND cl2.type_name = cl.type_name
              AND cl2.field_name = cl.field_name),
          cl.source_name, cl.source_line, cl.source_column,
-         ft.to_source_name, ft.to_schema, ft.to_table
+         ft.to_source_name, ft.to_schema, ft.to_table,
+         NOT (f.is_list OR nv.basis = 'CONNECTION_ELEMENT') OR nt.kind IN ('SCALAR', 'ENUM')
     FROM graphitron_field_chain_link cl
     JOIN graphitron_field_table ft
       ON ft.graph_name = cl.graph_name AND ft.type_name = cl.type_name
      AND ft.field_name = cl.field_name
+    JOIN graphitron_field f
+      ON f.graph_name = cl.graph_name AND f.type_name = cl.type_name
+     AND f.field_name = cl.field_name
+    JOIN graphitron_field_navigation nv
+      ON nv.graph_name = cl.graph_name AND nv.type_name = cl.type_name
+     AND nv.field_name = cl.field_name
+    JOIN graphitron_type nt
+      ON nt.graph_name = f.graph_name AND nt.type_name = f.named_type
 )
 -- Every way one link could be read, before anything says which. An arm states its arrival always
 -- and its departure where the element decides it; a key element reads both of the hops its
--- constraint affords, which sql_constraint_hop states once for the catalog rather than here.
+-- constraint affords, which sql_constraint_hop states once for the catalog rather than here. The
+-- exception is a self-referencing key, whose two hops depart and arrive at one table so that no
+-- walk can choose between them; both arms riding a key keep the one link.single_valued names.
   -- A @routine application arrives at its result and departs from nothing, whatever its position:
   -- a function result is where a chain's rows begin.
   SELECT l.graph_name, l.type_name, l.field_name,
@@ -6392,6 +6410,9 @@ link (graph_name, type_name, field_name, position, last_position,
     JOIN sql_constraint_hop h
       ON h.source_name = c.source_name AND h.table_schema = c.table_schema
      AND h.table_name = c.table_name AND h.constraint_name = c.constraint_name
+   WHERE NOT (h.from_source_name = h.to_source_name AND h.from_schema = h.to_schema
+              AND h.from_table = h.to_table)
+      OR h.fk_on_from = l.single_valued
   UNION ALL
   -- An element naming a table alone arrives there, and the route is a hop of some key that lands
   -- on it. Each such hop is a reading; the chain picks the one whose departure it reaches.
@@ -6416,6 +6437,9 @@ link (graph_name, type_name, field_name, position, last_position,
    WHERE NOT EXISTS (SELECT 1 FROM key_spelling k
                       WHERE k.graph_name = l.graph_name AND k.source_name = l.source_name
                         AND k.source_line = l.source_line AND k.source_column = l.source_column)
+     AND (NOT (h.from_source_name = h.to_source_name AND h.from_schema = h.to_schema
+               AND h.from_table = h.to_table)
+          OR h.fk_on_from = l.single_valued)
   UNION ALL
   -- The same element where the departure is a function result, which declares no foreign key for
   -- the arm above to find. The route is then the arrival's primary key matched to the function's

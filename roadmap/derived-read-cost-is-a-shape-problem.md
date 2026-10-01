@@ -147,13 +147,12 @@ are gone.
     * **A scalar `@reference` has a target** `open`. The path's last table is where a column read
       through a chain arrives, and with no target basis for it `CHAIN_WITHOUT_TARGET` fires. Shares
       its question with "a routine resolving to nothing says so" below.
-    * **A named self-referencing key reads one way** `open`. The KEY arm reads both hops of the
-      constraint, and on a self-reference both depart and arrive at one table, so the link reports
-      `ROUTE_AMBIGUOUS` where the generator picks the direction.
-    * **A condition-only element resolves from its method** `open`, unexplained. The CONDITION arm
-      produced no reading for a method that exists in a sibling module, so the link reports
-      `ELEMENT_UNRESOLVED`. Which of the method row and its parameter-table row is missing is the
-      first thing to establish.
+    * **A named self-referencing key reads one way** `done`. Both hops of a self-reference depart
+      and arrive at one table, so the reading keeps the one the field's cardinality names, which
+      is the generator's rule: along the key on a single-valued field, against it on a list.
+    * **A condition-only element resolves from its method** `open`. The method row is the missing
+      one: `CodeCapture` admits a condition method only on an exact `Condition` return, and the
+      generator checks no return type, so a `Field<Boolean>` method generates and has no row.
 
 ### The chain replaces the walk it was built to retire
 

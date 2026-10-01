@@ -33,3 +33,37 @@ and were not tested for equivalence on sis.
 
 Separating a reading that was always wrong from one that regressed would need sis run against jars
 built at `5eaa3b0ec~1` and at `3874671fe`. That was not done.
+
+## What the generator does instead
+
+Read from the generator's sources on 2026-10-01, a day after the classes above were found. File
+and line references are to trunk at `f5a571e`.
+
+* **Departure.** A type with no `@table` is never classified on its own. Its fields are classified
+  from the field that embeds it, which passes the enclosing `TableBackedType` down unchanged
+  (`FieldBuilder.java` nesting arm, 1843-1912), so a path on a nested field departs from the
+  nearest `@table` ancestor's table, through any number of nesting levels. A nested type reached
+  from several parents is classified once per parent; `GraphitronSchemaValidator`'s
+  `validateNestingParentCompat` then requires the parents to agree field by field, including on a
+  scalar `@reference`'s terminal table. So the store's departure is a set per nested type, and the
+  generator only accepts a set whose members agree on what each field reads.
+* **Scalar target.** A scalar `@reference` is a `ColumnBackedReferenceField`; its table is
+  `ServiceCatalog.terminalTableForReference`, the last hop's target of the path walked from the
+  departure. A `{table:}` step arrives at its table, a `{key:}` step at the key's other end, a
+  `{condition:}` step at the method's second parameter. The column named by `@field(name:)` is then
+  looked up there.
+* **Self-referencing key.** `JooqCatalog.foreignKeyOnSource` returns a cardinality hint when the
+  key's two ends are one table class: `!isList`, so a single-valued field runs along the key to
+  its parent and a list or connection runs against it to the children. Scalar fields always pass
+  `isList = false`. The hint governs `{key:}` and `{table:}` steps alike. The store's older walk
+  (`FieldReferenceStepHops.crossesTables`) always keeps the forward hop, which agrees with the
+  generator on single-valued fields and not on list ones.
+* **Condition-only element.** The generator does not check a condition method's return type at
+  all: `ServiceCatalog.admitConditionShape` requires overloads to agree on it and nothing else, and
+  the call is rendered verbatim into `.on(...)` or `.where(...)`, both of which jOOQ overloads for
+  `Field<Boolean>`. `CodeCapture.isConditionMethod` admits only an erased return of exactly
+  `org.jooq.Condition`, so `apiHendelseEmneSoknadJoinCondition`, returning `Field<Boolean>`, has no
+  `code_condition_method` row and the CONDITION arm has nothing to join. That settles the open
+  question above: the method row is the missing one. Where the rendered call is the first term of
+  a chain (`ConditionGlueRenderer.reachExists` appending `.and(...)`), a `Field<Boolean>` would not
+  compile, `org.jooq.Field` declaring no `and`; read from the jOOQ signatures, not built.

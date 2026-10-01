@@ -65,6 +65,10 @@ class FieldTableLinksTest {
                               {key: "no_such_constraint"}])
         }
         type Rental @table(name: "rental") { rentalId: Int @field(name: "rental_id") }
+        type Category @table(name: "category") {
+          parent: Category @reference(path: [{key: "category_parent_category_id_fkey"}])
+          children: [Category!]! @reference(path: [{key: "category_parent_category_id_fkey"}])
+        }
         type Row { title: String }
         type Query {
           films: [Film!]!
@@ -106,6 +110,28 @@ class FieldTableLinksTest {
         withCaptured(dsl -> assertThat(links(dsl, "FilmActor", "film"))
             .containsExactly("[film] 0 KEY film_actor -> film"
                 + " via film_actor.film_actor_film_id_fkey, fk_on_from=true"));
+    }
+
+    /**
+     * A self-referencing key, where the chain's position cannot choose: both of the key's hops
+     * depart and arrive at {@code category}. The field's cardinality chooses instead, as it does in
+     * the generator, so a single-valued field runs along the key to the row its own column names.
+     */
+    @Test
+    @DisplayName("a self-referencing key on a single-valued field runs along it, to the parent")
+    void aSelfReferenceOnASingleFieldRunsAlongIt() {
+        withCaptured(dsl -> assertThat(links(dsl, "Category", "parent"))
+            .containsExactly("[category] 0 KEY category -> category"
+                + " via category.category_parent_category_id_fkey, fk_on_from=true"));
+    }
+
+    /** The same key on a list field runs against it, to the rows naming this one as their parent. */
+    @Test
+    @DisplayName("the same key on a list field runs against it, to the children")
+    void aSelfReferenceOnAListFieldRunsAgainstIt() {
+        withCaptured(dsl -> assertThat(links(dsl, "Category", "children"))
+            .containsExactly("[category] 0 KEY category -> category"
+                + " via category.category_parent_category_id_fkey, fk_on_from=false"));
     }
 
     /**
