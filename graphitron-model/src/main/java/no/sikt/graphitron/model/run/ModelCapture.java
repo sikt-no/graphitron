@@ -67,61 +67,56 @@ public final class ModelCapture {
 
     /**
      * {@link #capture(DSLContext, GraphIdentity, SubjectConfig, List, JooqCatalog, LocalDateTime)}
-     * reporting the derivation stratum to {@code progress} rather than to the log.
+     * reporting the derivations to {@code progress} rather than to the log.
      *
      * <p>Same store either way, so this changes nothing a reader can ask the rows. It exists
-     * because the stratum picks its cadence from the store's own state, and which cadence it
-     * picked is only observable from inside the pass: both leave the same rows behind. A caller
-     * with somewhere better to put those events than a log supplies one.
+     * because the derivations pick their cadence from the store's own state, and which cadence
+     * they picked is only observable from inside the pass: both leave the same rows behind. A
+     * caller with somewhere better to put those events than a log supplies one.
      *
-     * @param progress what the stratum reports to, or null for the log
+     * @param progress what the derivations report to, or null for the log
      */
-    @SuppressWarnings("deprecation")  // drives the decode until it reads the entry stratum
+    @SuppressWarnings("deprecation")  // drives the decode until it reads the written entries
     public static void capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
                                List<ClasspathEntry> classpath, JooqCatalog jooq,
                                LocalDateTime readAt, StageProgress progress) {
         writeGraph(dsl, graph, readAt);
+        StoreEntries.write(dsl, graph.name(), config, readAt);
+
+        JooqFactCapture.capture(dsl, graph.name(), jooq, readAt);
+        // The catalog's own closure, over the rows just written. A stage of the catalog rather
+        // than a derivation: it reads no graph and no directive, and the resolution stages
+        // resolve against it.
+        NameMatchedKeys.derive(dsl);
+        // The classpath read once, by the gatherer that owns the store's record of what was
+        // read, and the gatherer after it handed the reading rather than the configuration. The
+        // same shape the corpus has, and for the same reason: two readings of one corpus are two
+        // answers that have to agree, with nothing to notice when they stop.
+        var classes = ClasspathSourceCapture.capture(dsl, graph.name(), classpath,
+            config.jooqPackage().orElse(null), readAt);
+        CodeCapture.capture(dsl, classes, jooq == null ? null : jooq.codegenLoader(), readAt);
+
         // The corpus is read once, by the gatherer that owns the store's record of what was read,
-        // and every gatherer below it is handed the documents rather than the configuration.
+        // and every gatherer after it is handed the documents rather than the configuration.
         var reading = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
         var documents = reading.documents();
-        // The transcription, then the stage that can only be asked of the corpus whole. The
-        // assembly's verdict is written down rather than returned onwards: nothing here needs the
-        // executable schema, and a capture whose corpus did not assemble still has every fact
-        // above it to record. The assembly is handed the whole reading, inputs and all, because it
+        // The assembly's verdict is written down rather than returned onwards: nothing here needs
+        // the executable schema, and a capture whose corpus did not assemble still has every fact
+        // to record. The assembly is handed the whole reading, inputs and all, because it
         // composes the corpus as the generator does and the composition is configured.
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
         var assembled = GraphQLAssemblyCapture.capture(dsl, graph, reading, readAt);
         // Once the transcription has been told what the dropped documents no longer say. The
         // source row is the provenance its rows hang on, so forgetting it before they were swept
-        // would orphan them rather than remove them. The graphitron decode further down hangs
-        // nothing on the source row: its rows hang on the transcription's and went with them.
+        // would orphan them rather than remove them. The graphitron decode hangs nothing on the
+        // source row: its rows hang on the transcription's and went with them.
         GraphQLSourceCapture.reclaim(dsl, documents);
-        StoreEntries.write(dsl, graph.name(), config, readAt);
-        JooqFactCapture.capture(dsl, graph.name(), jooq, readAt);
-        // The catalog's own closure, over the rows just written. A stage of the catalog rather
-        // than a derivation: it reads no graph and no directive, and the resolution stages below
-        // resolve against it.
-        NameMatchedKeys.derive(dsl);
-        // The classpath read once, by the gatherer that owns the store's record of what was
-        // read, and both gatherers below it handed the reading rather than the configuration. The
-        // same shape the corpus above has, and for the same reason: two readings of one corpus are
-        // two answers that have to agree, with nothing to notice when they stop.
-        var classes = ClasspathSourceCapture.capture(dsl, graph.name(), classpath,
-            config.jooqPackage().orElse(null), readAt);
-        CodeCapture.capture(dsl, classes, jooq == null ? null : jooq.codegenLoader(), readAt);
-        // The decode of what each graphitron directive says, and its anchor. After the catalog and
-        // the classpath rather than beside the transcription, because an anchor resolves what an
-        // application names against them: run before them, it could only copy the author's
-        // strings.
+
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);
-        // Last, and the ordering is a dependency rather than a preference: these stages resolve
-        // what the author wrote against the catalog and the classpath, so they read every family
-        // above them and would resolve against whichever of those a pass had reached so far.
         // The decode of what the author wrote at each directive, driven here rather than by a
         // second pass over the same corpus. The walk it rides is all that is left of the incumbent
-        // one: it writes no relation of its own, and every family it used to hold is written above
-        // by the gatherers that read the documents. It walks the merged corpus the assembly's
+        // one: it writes no relation of its own, and every family it used to hold is written by
+        // the gatherers that read the documents. It walks the merged corpus the assembly's
         // composition started from, the corpus as written: the decode is a function of the
         // documents alone, so neither the tag configuration nor the federation library reaches it.
         var decode = new FactSink(dsl, graph.name(), readAt);
@@ -134,14 +129,14 @@ public final class ModelCapture {
         // call every column carries the unanalysed placeholder, and with H2's default a table
         // would be analysed only once it passed two thousand changes, which makes a plan a
         // function of how large the captured graph happens to be rather than of anything anyone
-        // chose. One statement over every table this pass has just filled, the derivation stratum's
+        // chose. One statement over every table this pass has just filled, the derivations' own
         // included: on a warm store those hold the previous capture's rows, which is what the steps
-        // below plan against, and on a cold one they are empty, which is what makes the stratum
+        // below plan against, and on a cold one they are empty, which is what makes the derivations
         // commit and analyse each step instead.
         //
         // ANALYZE commits, which moves the pass's first commit ahead of the derivations. The one
         // commit that would corrupt a store is one between a step's delete and its inserts, and
-        // this is before the stratum rather than inside it.
+        // this is before the derivations rather than inside them.
         dsl.execute("ANALYZE");
         // The derivations the incumbent pass still owns, at the tail because every one of them
         // reads what this pass has just written. It captures nothing of its own any more.

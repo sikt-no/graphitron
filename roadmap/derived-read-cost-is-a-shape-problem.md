@@ -448,12 +448,13 @@ transcribed beside the reading rather than read by it. The order the corpora sta
 configuration, then the classpath and the catalog, then the documents, then what resolves the
 documents against the rest.
 
-* **The configuration runs first** `open`. Every `store_graph_*` relation keys `store_graph` and
-  nothing else, and no gatherer reads them before they are written, so this is a move in
-  `ModelCapture` and changes no row.
-* **The documents run after the classpath and the catalog** `open`, waits on the node above. The
-  three `graphql-` gatherers declare no upstream, and the first gatherer reading them after the
-  corpora is `graphitron-ast`, so this move changes no row either.
+* **The configuration runs first** `done`. Every `store_graph_*` relation keys `store_graph` and
+  nothing else, and no gatherer reads them before they are written, so it was a move in
+  `ModelCapture` and changed no row.
+* **The documents run after the classpath and the catalog** `done`. The three `graphql-` gatherers
+  declare no upstream, and the first gatherer reading them after the corpora is `graphitron-ast`, so
+  this move changed no row either. `ModelCapture` carries no comments now: they did not keep the
+  order right, and the gate below is what will.
 * **The classpath is configuration** `open`. What a module depends on is something its build
   declares. A reactor dependency is a class directory the build writes. A repository dependency is
   a jar, a release that cannot change under its coordinate and version or a snapshot that can. The
