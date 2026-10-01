@@ -8181,36 +8181,6 @@ COMMENT ON COLUMN intent_field_chain_terminus.table_name IS 'the landing table''
 COMMENT ON COLUMN intent_field_chain_terminus.table_type IS 'the landing''s kind, carried from sql_table: FUNCTION where the chain ends on the routine''s own result, whatever the hopped-to table declares otherwise. The column every axis over this relation actually turns on, because a function result has no primary key and no foreign keys, so an ordering there cannot fall back on a key and must be authored. Always FUNCTION on a ROUTINE row, which is worth carrying rather than leaving to the via column: a reader asks one column whichever arm answered, and the day a non-function callable reaches a chain the answer changes here instead of at every reader';
 COMMENT ON COLUMN intent_field_chain_terminus.candidates IS 'how many distinct tables this field''s chain lands on, this row''s landing being one of them; 1 where the terminus is certain. Distinct landings and not routes, which is the arity a reader of a terminus needs and the reason this relation counts differently from the hop and target views; stated as a column rather than left to each reader''s own count, on intent_bound_table.candidates'' terms';
 
-CREATE VIEW intent_scalar_java_type (graph_name, type_name, java_type) AS
-SELECT t.graph_name, t.type_name, engine.java_type
-  FROM graphitron_type t
-  JOIN (VALUES ('Int', 'java.lang.Integer'),
-               ('Float', 'java.lang.Double'),
-               ('String', 'java.lang.String'),
-               ('Boolean', 'java.lang.Boolean'),
-               ('ID', 'java.lang.String'),
-               ('federation__FieldSet', 'java.lang.String'),
-               ('federation__Scope', 'java.lang.String'),
-               ('federation__Policy', 'java.lang.String'),
-               ('federation__ContextFieldValue', 'java.lang.String'),
-               ('_FieldSet', 'java.lang.String'),
-               ('link__Import', 'java.lang.String'),
-               ('link__Purpose', 'java.lang.String')) engine (scalar_name, java_type)
-    ON engine.scalar_name = t.type_name
- WHERE t.kind = 'SCALAR'
- UNION ALL
-SELECT s.graph_name, s.type_name, f.input_type
-  FROM graphitron_scalar_type_entry s
-  JOIN store_graph_source g ON g.graph_name = s.graph_name
-  JOIN code_scalar_constant f
-    ON f.source_name = g.source_name AND f.class_name = s.scalar_ref_class_part
-   AND f.field_name = s.scalar_ref_field_part
- WHERE f.input_type IS NOT NULL;
-COMMENT ON VIEW intent_scalar_java_type IS 'The Java type a value of one of a graph''s scalars arrives as: one row per scalar a Java type was reached for, whether the engine provides the scalar or a @scalarType names the constant carrying it. For example a graph declaring scalar DateTime @scalarType(scalar: "com.example.Scalars.DATE_TIME") draws a row saying java.time.OffsetDateTime, beside the row Int draws for java.lang.Integer.';
-COMMENT ON COLUMN intent_scalar_java_type.graph_name IS 'the owning graph''s partition; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN intent_scalar_java_type.type_name IS 'the scalar''s name as the graph spells it, completing the key';
-COMMENT ON COLUMN intent_scalar_java_type.java_type IS 'the fully-qualified Java type a value of the scalar arrives as, boxed where the coercing accepts a primitive; the same spelling code_type.display_name carries for a parameter''s declared type, which is what makes the two comparable';
-
 CREATE VIEW intent_condition_slot
   (graph_name, site, use_site, slot_name, slot_kind, container_type_name, container_field_name,
    named_type, non_null, is_list, item_non_null) AS
@@ -8249,53 +8219,6 @@ COMMENT ON COLUMN intent_condition_slot.named_type IS 'the slot''s named type wi
 COMMENT ON COLUMN intent_condition_slot.non_null IS 'whether the slot''s outermost wrapper is non-null';
 COMMENT ON COLUMN intent_condition_slot.is_list IS 'whether the slot is list-shaped, which is what a depth-1 descent refuses to walk through';
 COMMENT ON COLUMN intent_condition_slot.item_non_null IS 'whether a list slot''s items are non-null; NULL where the slot is not a list';
-
-CREATE VIEW intent_condition_context_parameter
-  (graph_name, site, use_site, descriptor, position) AS
-WITH
-declared (graph_name, site, use_site, class_name, method, name) AS (
-  SELECT mr.graph_name, mr.site, mr.use_site, mr.class_name, mr.method, ca.name
-    FROM graphitron_field_condition_context_arg_entry ca
-    JOIN graphitron_method_reference_entry mr
-      ON mr.graph_name = ca.graph_name AND mr.type_name = ca.type_name
-     AND mr.field_name = ca.field_name
-     AND mr.site IN ('FIELD_CONDITION', 'INPUT_FIELD_CONDITION')
-   UNION ALL
-  SELECT mr.graph_name, mr.site, mr.use_site, mr.class_name, mr.method, ca.name
-    FROM graphitron_argument_condition_context_arg_entry ca
-    JOIN graphitron_method_reference_entry mr
-      ON mr.graph_name = ca.graph_name AND mr.type_name = ca.type_name
-     AND mr.field_name = ca.field_name AND mr.argument_name = ca.argument_name
-     AND mr.site = 'ARGUMENT_CONDITION'
-)
-SELECT DISTINCT d.graph_name, d.site, d.use_site, p.descriptor, p.position
-  FROM declared d
-  JOIN store_graph_source g ON g.graph_name = d.graph_name
-  JOIN code_condition_method cm
-    ON cm.source_name = g.source_name AND cm.class_name = d.class_name
-   AND cm.method_name = d.method
-  JOIN code_method_parameter p
-    ON p.source_name = cm.source_name AND p.class_name = cm.class_name
-   AND p.method_name = cm.method_name AND p.descriptor = cm.descriptor
-   AND p.parameter_name = d.name AND p.role = 'OTHER'
- WHERE NOT EXISTS (SELECT 1
-                     FROM graphitron_argmapping_entry ap
-                    WHERE ap.graph_name = d.graph_name AND ap.site = d.site
-                      AND ap.use_site = d.use_site AND ap.param_name = d.name)
-   AND (NOT EXISTS (SELECT 1
-                      FROM intent_condition_slot s
-                     WHERE s.graph_name = d.graph_name AND s.site = d.site
-                       AND s.use_site = d.use_site AND s.slot_name = d.name)
-        OR EXISTS (SELECT 1
-                     FROM graphitron_argmapping_entry ap
-                    WHERE ap.graph_name = d.graph_name AND ap.site = d.site
-                      AND ap.use_site = d.use_site AND ap.root_name = d.name));
-COMMENT ON VIEW intent_condition_context_parameter IS 'Which of a condition method''s parameters receive a request-context value at one application of the directive: one row per parameter position a context key the application declared reaches. For example a method taking the source table, a parameter named after an argument the field declares, and a third named after a declared context key draws one row and it is the third position''s, the table being read from the type and the argument binding being asked before the context keys.';
-COMMENT ON COLUMN intent_condition_context_parameter.graph_name IS 'the owning graph''s partition, carried from the application that declared the context key; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN intent_condition_context_parameter.site IS 'which condition spelling the application is, in graphitron_method_reference_entry.site''s own vocabulary; part of the key, a row being a fact about one application rather than about a method';
-COMMENT ON COLUMN intent_condition_context_parameter.use_site IS 'the application spelled as one string, in the spelling graphitron_method_reference_entry.use_site and graphitron_argmapping_entry.use_site already use';
-COMMENT ON COLUMN intent_condition_context_parameter.descriptor IS 'the owning method''s raw JVM descriptor, the census''s own overload discriminator; part of the key, so two overloads one application names stay apart';
-COMMENT ON COLUMN intent_condition_context_parameter.position IS 'the parameter''s 0-based position, completing the key. A signature may take several context values and each is a row; nothing here ranks them';
 
 CREATE VIEW graphitron_connection_element_type
   (graph_name, type_name, element_type_name) AS
@@ -9379,56 +9302,6 @@ COMMENT ON COLUMN intent_field_accessor_hop.from_class_name IS 'the class the pa
 COMMENT ON COLUMN intent_field_accessor_hop.slot_name IS 'the member name the coordinate resolved to: the @field(name:) override, or the field''s own name where it carries none';
 COMMENT ON COLUMN intent_field_accessor_hop.accessor_method_name IS 'the Java declaration the hop goes through: the accessor on the read arm and the setter or constructor on the write arm, each the method its own slot relation is keyed by. The column a jump to the member''s own source lands on';
 COMMENT ON COLUMN intent_field_accessor_hop.to_class_name IS 'the class the hop lands on: what the accessor''s result delivers on the read arm and what the member is filled with on the write arm, each with its containers peeled and carried from code_type_element. Not a foreign key, a landing class no classpath entry declares being ordinary rather than exceptional. A slot whose accessor returns a void, a primitive, an array or a type variable names no class and so draws no row here, the peel relation stating presence rather than carrying a placeholder, and that silence is the same one a reader would have had to read out of a null';
-
-CREATE VIEW intent_producer_cardinality_conflict
-  (graph_name, type_name, field_name, declared_via, source_name, class_name,
-   method_name, descriptor, field_is_list, producer_delivers_many) AS
-SELECT p.graph_name, p.type_name, p.field_name, p.declared_via,
-       p.source_name, p.class_name, p.method_name, p.descriptor,
-       f.is_list, e.delivery = 'MANY'
-  FROM intent_field_producer_method p
-  JOIN graphql_field f
-    ON f.graph_name = p.graph_name AND f.type_name = p.type_name
-   AND f.field_name = p.field_name
-  JOIN code_method cm
-    ON cm.source_name = p.source_name AND cm.class_name = p.class_name
-   AND cm.method_name = p.method_name AND cm.descriptor = p.descriptor
-  JOIN code_type_element e
-    ON e.source_name = cm.source_name AND e.type_name = cm.result_type
- WHERE f.is_list <> (e.delivery = 'MANY');
-COMMENT ON VIEW intent_producer_cardinality_conflict IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Where a field and the method producing its value disagree about how many: one row per producing coordinate whose SDL type is a list whose producer delivers one, or whose SDL type is single where the producer delivers many. A detection the store did not have, and the reason it did not is worth stating, because it is the argument for decomposing a walk into facts at all. The walk this derivation replaces reads the same two cardinalities and uses the comparison as a clause: where they disagree it declines to bind, reading the field as a carrier whose collection feeds an inner list field. So the reading existed and its result was a silence, which is exactly the shape a defect hides in. Stated as its own relation the comparison is observable, and whether a given row is a carrier or an author error is a question a reader can now ask rather than one the walk answered by moving on. Nothing gates on these rows yet. A coordinate whose reference matches several overloads contributes a row per overload that disagrees, on intent_field_producer_method''s terms, since which method the reference means is that relation''s open question and not this one''s to settle. A producer whose declared return names no class at its root has no row here at all rather than a row asserting agreement: code_type_element states presence rather than carrying a placeholder, so there is no peel row to compare against, and a primitive, void or array return is a different complaint from a cardinality one.';
-COMMENT ON COLUMN intent_producer_cardinality_conflict.graph_name IS 'the owning graph''s partition, carried from intent_field_producer_method';
-COMMENT ON COLUMN intent_producer_cardinality_conflict.type_name IS 'the disagreeing coordinate''s owning type';
-COMMENT ON COLUMN intent_producer_cardinality_conflict.field_name IS 'the disagreeing coordinate''s field name';
-COMMENT ON COLUMN intent_producer_cardinality_conflict.declared_via IS 'SERVICE or EXTERNAL_FIELD, as on intent_field_producer_method; which directive named the method whose cardinality disagrees';
-COMMENT ON COLUMN intent_producer_cardinality_conflict.source_name IS 'the producing method''s classpath entry, as on intent_field_producer_method';
-COMMENT ON COLUMN intent_producer_cardinality_conflict.class_name IS 'the class declaring the producing method';
-COMMENT ON COLUMN intent_producer_cardinality_conflict.method_name IS 'the producing method''s name';
-COMMENT ON COLUMN intent_producer_cardinality_conflict.descriptor IS 'the producing method''s raw JVM descriptor, which tells two overloads of one reference apart';
-COMMENT ON COLUMN intent_producer_cardinality_conflict.field_is_list IS 'what the SDL says, carried from graphql_field.is_list; always the negation of the column beside it, and carried anyway so a reader learns which way the disagreement runs without joining back';
-COMMENT ON COLUMN intent_producer_cardinality_conflict.producer_delivers_many IS 'what the declared return says: whether code_type_element calls the return type''s delivery MANY. The other half of the disagreement this row reports. Read as a three-way delivery and compared as a boolean, which is the reading this column has always wanted: WRAPPED and DIRECT both deliver one, and a field is a list or it is not';
-
-CREATE VIEW intent_external_field_contract_defect
-  (graph_name, type_name, field_name, source_name, class_name, method_name, descriptor) AS
-SELECT p.graph_name, p.type_name, p.field_name,
-       p.source_name, p.class_name, p.method_name, p.descriptor
-  FROM intent_field_producer_method p
-  JOIN store_source s ON s.source_name = p.source_name
- WHERE p.declared_via = 'EXTERNAL_FIELD'
-   AND s.origin IN ('PROJECT', 'REACTOR', 'SIBLING')
-   AND NOT EXISTS (SELECT 1 FROM code_external_field_method a
-                    WHERE a.source_name = p.source_name
-                      AND a.class_name = p.class_name
-                      AND a.method_name = p.method_name
-                      AND a.descriptor = p.descriptor);
-COMMENT ON VIEW intent_external_field_contract_defect IS 'One @externalField naming a method that exists and cannot do the job: one row per reference resolving to a class method the directive''s contract does not admit. For example a field whose reference names fromName, which takes a String and returns an org.jooq.Field, where the directive admits only a method taking the table.';
-COMMENT ON COLUMN intent_external_field_contract_defect.graph_name IS 'the owning graph''s partition, carried from intent_field_producer_method';
-COMMENT ON COLUMN intent_external_field_contract_defect.type_name IS 'the accused coordinate''s owning type';
-COMMENT ON COLUMN intent_external_field_contract_defect.field_name IS 'the accused coordinate''s field name within that type; the field whose @externalField named the method';
-COMMENT ON COLUMN intent_external_field_contract_defect.source_name IS 'the named method''s classpath entry, as on intent_field_producer_method; reactor-origin by construction, since no other entry is one the admitting relation read';
-COMMENT ON COLUMN intent_external_field_contract_defect.class_name IS 'the class declaring the named method, exactly as the reference resolved it';
-COMMENT ON COLUMN intent_external_field_contract_defect.method_name IS 'the named method''s name: the directive''s method argument, or the SDL field''s own name where @externalField omitted it';
-COMMENT ON COLUMN intent_external_field_contract_defect.descriptor IS 'the named method''s raw JVM descriptor, which tells two overloads of one reference apart and is the column that pairs this row with the admission that is missing';
 
 CREATE VIEW intent_type_backing_seed (graph_name, type_name, class_name) AS
 SELECT p.graph_name, f.named_type, e.element_class
@@ -15327,15 +15200,9 @@ INSERT INTO meta_grain VALUES
   ('graph-scalar',
    'one scalar type of one graph',
    'graph_name, type_name', 'sdl'),
-  ('condition-site-parameter',
-   'one parameter position of one condition method, at one application of the directive that names the method, in one graph',
-   'graph_name, site, use_site, descriptor, position', 'sdl'),
   ('reference-for-application',
    'one @referenceFor application at one coordinate that consumes it, in one graph',
    'graph_name, site, type_name, field_name, argument_name, ordinal, consuming_type_name, consuming_field_name', 'sdl'),
-  ('external-field-contract-defect',
-   'one @externalField reference that resolved to a class method the directive cannot admit, at one coordinate in one graph',
-   'graph_name, type_name, field_name, source_name, class_name, method_name, descriptor', 'sdl'),
   ('nodeid-landing-defect',
    'one refused key landing of one @nodeId decode, at one use site and one branch of it, in one graph',
    'graph_name, site, use_site, origin_source_name, origin_schema, origin_table, verdict, position', 'sdl'),
@@ -16523,18 +16390,10 @@ INSERT INTO meta_relation VALUES
    'One javac diagnostic from the latest compile round over a graph''s emitted sources.',
    'For example an ERROR at line 42 of a generated FilmResolver.java, carrying the compiler''s own code and rendered message.',
    'The compile oracle''s verdict on what a run emitted, which nothing in the store can derive: whether javac accepts the output is a fact about the compiler rather than about the schema. Graph-keyed and graph-private, a sibling graph''s compile errors being its internals rather than its schema contract, and a round replaces the graph''s rows wholesale so the relation''s content is exactly the published round. Only a dev session ever writes here: in the batch pipeline javac runs in the consumer''s own build after the generator exits, so a batch run''s partition stays empty rather than claiming what it cannot know.'),
-  ('intent_scalar_java_type', 'graph-scalar', 'derivation',
-   'The Java type a value of one of a graph''s scalars arrives as: one row per scalar a Java type was reached for, whether the engine provides the scalar or a @scalarType names the constant carrying it.',
-   'For example a graph declaring scalar DateTime @scalarType(scalar: "com.example.Scalars.DATE_TIME") draws a row saying java.time.OffsetDateTime, beside the row Int draws for java.lang.Integer.',
-   'The pairing a @condition''s parameters go through compares a Java type against a slot''s, so a store that cannot name a scalar''s Java type cannot state that rule at all. One relation for both populations because a reader asks what type, not which rule found it: the engine''s scalars are a closed list here and a consumer''s is a classpath read. The two cannot collide, @scalarType being refused on a name the engine provides. Absence means no Java type was reached, and for a consumer scalar that is the classpath census''s own silence: a constant on an entry the census skips draws no row here while the generator, resolving through its codegen loader, finds it.'),
   ('intent_condition_slot', 'condition-site-slot', 'graphitron',
    'One GraphQL slot in scope at one application of a @condition: one row per argument or input field a parameter of the named method may bind there.',
    'For example a field condition on films(rating: String, first: Int) draws two rows, one per argument, while a condition written on the rating argument itself draws only that one.',
    'The scope is the site''s rule rather than the method''s: three condition spellings admit three different sets, and every reader that pairs parameters with slots needs the same one. Stated once here so the arms are not respelled per reader. A path-step condition draws no row, its method binding nothing, so silence at that site is the rule and not a gap. The slot''s type rides along because a slot is a name and a type together, and the inference that pairs an unbound parameter with a slot reads both.'),
-  ('intent_condition_context_parameter', 'condition-site-parameter', 'derivation',
-   'Which of a condition method''s parameters receive a request-context value at one application of the directive: one row per parameter position a context key the application declared reaches.',
-   'For example a method taking the source table, a parameter named after an argument the field declares, and a third named after a declared context key draws one row and it is the third position''s, the table being read from the type and the argument binding being asked before the context keys.',
-   'The role a parameter plays is decided per application of the directive rather than by the signature, so the grain is the site: one signature named at two sites answers differently. A name match alone is not the rule. A parameter typed to receive the source table belongs to the table role whatever it is called, and an argument binding is asked first, so a parameter sharing a slot''s name reads a context key only where no binding claims that slot. What is in scope at each spelling is read off intent_condition_slot rather than restated here. A parameter absent from this relation is not therefore bound: absence carries no verdict.'),
   ('intent_reference_for_application', 'reference-for-application', 'graphitron',
    'One @referenceFor application paired with a consuming coordinate that offers the participant it names: one row per application and consumer whose participant set holds the spelling.',
    'For example an application naming Film under an input type two queries consume draws a row for the query whose union holds Film and none for the query whose does not.',
@@ -16559,10 +16418,6 @@ INSERT INTO meta_relation VALUES
    'Where a field-site @reference path passes through an intermediate table, and whether that table can hold more than one row per pair of columns the entering and leaving hops bind: one row per intermediate, in a closed verdict vocabulary of four.',
    'For example film to film_actor to actor draws one row at position 0 reading COVERED, film_actor_pkey being exactly the pair the two hops bind, while a junction carrying a key column neither hop binds reads FANS_OUT there instead.',
    'A @reference path is mechanical foreign-key traversal and a SQL join yields a bag, so a list field over a path that fans out returns the same child row several times. That is the declared path''s correct result, and nothing said so: the generator emitted the multiset silently and a field reading as a set was indistinguishable from one that is. The decidable property is not the one the obvious formulation reaches for. A hop into the child side of a foreign key that the path does not terminate on fires on film to film_actor to actor, the most canonical shape there is, and film_actor returns each actor once; what separates it from a junction carrying its own payload is not the direction of one hop but whether the intermediate can hold more than one row per bound pair. So the grain is the intermediate rather than the path, which is what lets a five-hop path be five independent questions and a finding name the hop that multiplies. The subset runs as columns(constraint) inside bound and never the reverse, a constraint pinning a row only where the join knows every column of it; the inverted reading clears any composite key the path only partly binds, a silence teaching an author the path is a set. The undecidable arms are values for that same reason: an absence meaning no path here, not reached, undecidable and covered at once would hide that false negative inside it.'),
-  ('intent_external_field_contract_defect', 'external-field-contract-defect', 'derivation',
-   'One @externalField naming a method that exists and cannot do the job: one row per reference resolving to a class method the directive''s contract does not admit.',
-   'For example a field whose reference names fromName, which takes a String and returns an org.jooq.Field, where the directive admits only a method taking the table.',
-   'The gap intent_field_producer_method states in its own comment and declines to close: that relation adds the census match and nothing else, the census carrying neither a static flag nor the shape of the sole parameter, so an @externalField row there does not assert the method satisfies the directive. Both facts are code_external_field_method''s now, and the check is a NOT EXISTS against the relation whose subject is the admission rather than a second reading of a return type. Its own relation rather than a clause on the resolution, on intent_producer_cardinality_conflict''s grounds: the resolution answers which method a reference names and stays true whether or not that method can serve. That precedent also covers why this is worth stating, the generator''s refusal being a silence a reader could not observe. Nothing gates on these rows yet. The population is the reactor, a limit rather than a definition, the admitting relation reading the modules a build compiles; a reference into a jar has no row either way. Scoped by store_source.origin positively, that column being nullable and an unrecorded origin not-classified rather than not-reactor. No clause column says which half failed and none is recoverable: the arm records that it admitted a method, never why it refused one, and naming the clause would mean reading the return type and the parameter here, the reading this relation exists to stop trusting. Overloads contribute a row each, on intent_field_producer_method''s terms.'),
   ('intent_node_id_decode_landing_defect', 'nodeid-landing-defect', 'graphitron',
    'One @nodeId decode whose key landing the store can show is wrong: one row per refused instruction, use site and branch, in a closed verdict vocabulary of two.',
    'For example a path stopping on film_category where the node type is bound to category draws PATH_STOPS_SHORT naming both tables, and a key column jOOQ binds as String landing on one it binds as Long draws LANDING_TYPE_DISAGREEMENT naming both.',

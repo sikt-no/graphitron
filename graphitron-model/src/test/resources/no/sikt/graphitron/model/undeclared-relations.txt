@@ -109,7 +109,6 @@ intent_node_id_encode
 intent_node_id_polymorphic_decode_defect
 intent_node_metadata_defect
 intent_poly_member
-intent_producer_cardinality_conflict
 intent_record_slot_assignable
 intent_resolved_field_claim
 intent_resolved_field_demand

@@ -194,11 +194,11 @@ a derivation over either corpus alone, and `graphitron_` already does this again
   runs after `CodeCapture`, and `graphitron-ast` declares `graphql-ast`, `jooq` and `code`. The
   anchor is placed to resolve and does not yet; its tables still copy strings, which is what the
   nodes below and every step `DerivationStratum` gives back to it change.
-* **Four of the eleven go** `open`. `intent_condition_context_parameter`,
+* **Four of the eleven go** `done`. `intent_condition_context_parameter`,
   `intent_external_field_contract_defect`, `intent_producer_cardinality_conflict` and
-  `intent_scalar_java_type` are read by their own tests and by nothing else, and a view nothing uses
-  has not shown it is worth saving, so each goes with its tests. The two reading the producer
-  resolution go in that branch's subtraction.
+  `intent_scalar_java_type` were read by their own tests and by nothing else, and a view nothing
+  uses has not shown it is worth saving, so each went with its tests, the scalar view's
+  vocabulary gate among them.
 * **The condition route resolves in `graphitron_`** `done`. `graphitron_condition_method_route`,
   renamed and declared to the gatherer that already read it; declaring it is what cost anything,
   the comment being reduced to its grain and example with the argument moved into the declaration.
@@ -367,7 +367,8 @@ result_delivery      -- DIRECT | WRAPPED | MANY, NULL with element_class
   is what an emitter declares a type from. `element_class` answers which class backs a GraphQL type,
   through `intent_type_backing_seed` to five language-server surfaces and `TypeBackingRows`.
   `delivery` answers whether a field declared a list is backed by a method that delivers one, which
-  `intent_producer_cardinality_conflict` states and no surface reads yet. `erased_class` is what a
+  a cardinality-conflict view stated until it was retired for having no reader, so the column has
+  none now. `erased_class` is what a
   binding compares against, at argument mapping and at a `@nodeId` decode's landing.
 * **A use site carries its own parse** `done`. `code_method` and `code_method_parameter` each hold
   their own erasure, delivered class and delivery. Nothing new is computed: the reading reached all

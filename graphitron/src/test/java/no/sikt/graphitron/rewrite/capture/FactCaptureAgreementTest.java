@@ -303,17 +303,6 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
  *       ground it and {@code no.sikt.graphitron.model.intent.TypeBackingTest} carrying what
  *       coalescing those rows with the table-bound population makes of them, both against a store
  *       seeded row by row in the module whose DDL declares them;
- *       {@code no.sikt.graphitron.model.intent.ProducerCardinalityTest} binds
- *       {@code intent_producer_cardinality_conflict}, where a field and its producer disagree
- *       about how many, to seeded rows in the module whose DDL declares it, both sides of the
- *       comparison being a cardinality a row can state; every case pairs a disagreement with an
- *       agreement over the same producer so the detection's silence is asserted and not assumed;
- *       {@code no.sikt.graphitron.model.intent.ExternalFieldContractDefectTest} binds
- *       {@code intent_external_field_contract_defect}, where an {@code @externalField} names a
- *       method that exists and cannot do the job, to seeded rows in the same module; the accusation
- *       is a NOT EXISTS against the relation that admits such a method, so every case pairs an
- *       accusation with a silence over one class, and the silences carry their own causes apart,
- *       an admitted method and a method the arm never read being different answers;
  *       with
  *       {@code no.sikt.graphitron.rewrite.derive.TypeBackingShadowTest} beside it running the
  *       differential against the classification walk's own answer on both axes, projected in that

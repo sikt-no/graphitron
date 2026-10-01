@@ -314,8 +314,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_condition_method_route", Arm.DERIVED);
         registrations.put("intent_condition_param_decode", Arm.DERIVED);
         registrations.put("intent_condition_slot", Arm.DERIVED);
-        registrations.put("intent_scalar_java_type", Arm.DERIVED);
-        registrations.put("intent_condition_context_parameter", Arm.DERIVED);
         registrations.put("intent_table_key_candidate", Arm.DERIVED);
         registrations.put("intent_node_metadata_defect", Arm.DERIVED);
         registrations.put("graphitron_node_type", Arm.DERIVED);
@@ -442,8 +440,6 @@ class RelationRegistrationGateTest {
         registrations.put("intent_type_backing_class", Arm.DERIVED);
         registrations.put("intent_type_backing", Arm.DERIVED);
         registrations.put("intent_type_backing_conflict", Arm.DERIVED);
-        registrations.put("intent_producer_cardinality_conflict", Arm.DERIVED);
-        registrations.put("intent_external_field_contract_defect", Arm.DERIVED);
         registrations.put("intent_resolved_field_claim", Arm.DERIVED);
         registrations.put("intent_type_domain", Arm.DERIVED);
         registrations.put("intent_field_demand_rule", Arm.DERIVED);
