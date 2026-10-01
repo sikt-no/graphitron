@@ -55,7 +55,9 @@ inherits that answer. Two things the change has to keep straight:
   no field reaches, and under today's fold such a type's edges poison every type they point at. A
   type no root reaches never executes, so its edges say nothing about the paths that do; the fold
   should either compute over root-reachable types only or treat an unreached parent as vacuous.
-  Whether sis has such types is unchecked.
+  It is not what sis hits: of its 6 object types no root reaches, none has an edge into any of the
+  155 types carrying rejections, so on sis the component fold alone clears the cascade. The rule
+  is owed for correctness, not for this consumer.
 * **The dispatch surfaces stay where they are.** The node and entity checks at the top of
   `computeTenantContext` are entries from outside the field graph and keep vetoing a component the
   way they veto a type today.
