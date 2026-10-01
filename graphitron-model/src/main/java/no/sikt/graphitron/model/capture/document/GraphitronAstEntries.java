@@ -57,16 +57,21 @@ public final class GraphitronAstEntries {
      */
     public static void write(DSLContext dsl, String graph, String source,
                              TypeDefinitionRegistry document, LocalDateTime touchedAt) {
-        GraphitronTypeEntries.write(dsl, graph, source,
-            admitted(GraphQLAstEntries.locatedOnTypes(document)), touchedAt);
-        GraphitronFieldEntries.write(dsl, graph, source,
-            admitted(GraphQLAstEntries.locatedOnFields(document)), touchedAt);
-        GraphitronInputValueEntries.write(dsl, graph, source,
-            admitted(GraphQLAstEntries.locatedOnInputValues(document)), touchedAt);
-        GraphitronEnumValueEntries.write(dsl, graph, source,
-            admitted(GraphQLAstEntries.locatedOnEnumValues(document)), touchedAt);
-        GraphitronSchemaEntries.write(dsl, graph, source,
-            admitted(GraphQLAstEntries.locatedOnSchemas(document)), touchedAt);
+        var onTypes = admitted(GraphQLAstEntries.locatedOnTypes(document));
+        var onFields = admitted(GraphQLAstEntries.locatedOnFields(document));
+        var onInputValues = admitted(GraphQLAstEntries.locatedOnInputValues(document));
+        var onEnumValues = admitted(GraphQLAstEntries.locatedOnEnumValues(document));
+        var onSchemas = admitted(GraphQLAstEntries.locatedOnSchemas(document));
+        GraphitronTypeEntries.write(dsl, graph, source, onTypes, touchedAt);
+        GraphitronFieldEntries.write(dsl, graph, source, onFields, touchedAt);
+        GraphitronInputValueEntries.write(dsl, graph, source, onInputValues, touchedAt);
+        GraphitronEnumValueEntries.write(dsl, graph, source, onEnumValues, touchedAt);
+        GraphitronSchemaEntries.write(dsl, graph, source, onSchemas, touchedAt);
+        // The one writer that is not a site's: a code reference is the same fact wherever it is
+        // written, so it is read off every application at once.
+        var everywhere = new ArrayList<GraphQLAstEntries.Nested<Directive>>();
+        List.of(onTypes, onFields, onInputValues, onEnumValues, onSchemas).forEach(everywhere::addAll);
+        GraphitronCodeReferenceEntries.write(dsl, graph, source, everywhere, touchedAt);
     }
 
     /**

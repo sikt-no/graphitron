@@ -212,11 +212,13 @@ a derivation over either corpus alone, and `graphitron_` already does this again
     directive vocabulary is the specification here and the implementation is not, `@routine`,
     `@service`, `@externalField` and `@condition` being meant to take one argMapping one way and
     today sharing no code.
-    * **The written reference** `open`, and first. `graphitron_ast_code_reference_entry`: one Java
-      code reference as written, class and optional method, keyed by the `ExternalCodeReference`
-      value's position, or `@sourceRow`'s directive, and referencing `graphql_ast_entry`. Every
-      site the vocabulary allows is one row, and which site is a join. Added beside the twins, with
-      a fact document stating every site from the vocabulary rather than from what the twins hold.
+    * **The written reference** `done`. `graphitron_ast_code_reference_entry`: one Java code
+      reference as written, class and optional method, keyed by the `ExternalCodeReference` value's
+      position, or `@sourceRow`'s directive, and referencing `graphql_ast_entry`. Written beside
+      the twins by a walk over the vocabulary's types, so a site is found rather than listed, and
+      pinned by a fact document stating twelve sites from the vocabulary, a multitable path
+      condition two input types deep among them. `@record` still writes rows, the vocabulary
+      still declaring it.
     * **The argMapping is written once** `open`. One argMapping as written, at the application
       that wrote it, for `@routine`, `@service`, `@externalField` and `@condition` alike, with its
       pairs hanging off it: one parse and one reading everywhere. `columnMapping` stays

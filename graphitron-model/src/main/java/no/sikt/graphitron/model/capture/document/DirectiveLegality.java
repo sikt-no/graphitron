@@ -95,6 +95,20 @@ final class DirectiveLegality {
     }
 
     /**
+     * The bundled definition of the directive {@code name}, or null for one the vocabulary does not
+     * declare. For a reader that walks an application by its declared types, so it walks by the
+     * definitions this class judges against.
+     */
+    static DirectiveDefinition definition(String name) {
+        return Vocabulary.INSTANCE.directives.get(name);
+    }
+
+    /** The bundled input object {@code name}, or null where the vocabulary declares none. */
+    static InputObjectTypeDefinition inputObject(String name) {
+        return Vocabulary.INSTANCE.inputObjects.get(name);
+    }
+
+    /**
      * Whether {@code application} is one the bundled definition of its directive admits at
      * {@code location}.
      *

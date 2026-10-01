@@ -282,6 +282,10 @@ class SupertypeSignatureGateTest {
                "graphitron_ast_input_value_reference_for_condition_step_entry",
                "graphitron_ast_service_entry", "graphitron_external_field_entry",
                "graphitron_service_entry"),
+        // The written code reference and the one site copy that carries nothing beside it. The
+        // reference is the supertype the set above was missing, written for every site at once;
+        // the copies go as their readers move, and @sourceRow's goes whole, having no fact left.
+        Set.of("graphitron_ast_code_reference_entry", "graphitron_ast_source_row_entry"),
         Set.of("graphitron_ast_default_order_field_entry", "graphitron_ast_order_field_entry",
                "graphitron_default_order_field_entry"),
         Set.of("graphitron_argument_node_id_entry", "graphitron_ast_field_node_id_entry",

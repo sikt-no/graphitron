@@ -2248,6 +2248,32 @@ COMMENT ON COLUMN graphitron_ast_field_reference_for_condition_step_entry.class_
 COMMENT ON COLUMN graphitron_ast_field_reference_for_condition_step_entry.method IS 'the method of the same, as written, or NULL where none was';
 COMMENT ON COLUMN graphitron_ast_field_reference_for_condition_step_entry.argmapping IS 'the argMapping of the same, kept as the one string the author typed';
 
+CREATE TABLE graphitron_ast_code_reference_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  class_name    VARCHAR NOT NULL,
+  method        VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  -- The node the reference was written as: an object value at every site but one, and the
+  -- directive at @sourceRow, which spells its reference as two arguments. Both are positions, and
+  -- this is the relation that holds every position.
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_code_reference_entry IS 'A Java code reference as one document wrote it: this position names this class and, where it says, this method. For example @service(service: {className: "no.example.FilmService", method: "films"}) gives one row at the object value, and @enum(enumReference: {className: "no.example.Rating"}) gives one naming no method.';
+COMMENT ON COLUMN graphitron_ast_code_reference_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_code_reference_entry.source_name IS 'the file the reference was written in';
+COMMENT ON COLUMN graphitron_ast_code_reference_entry.source_line IS 'source line of the node the reference was written as, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_code_reference_entry.source_column IS 'source column of the same. The four columns are a graphql_ast_entry key: the ExternalCodeReference object value wherever one is written, and the @sourceRow application, so which directive and which argument wrote the reference are joins from here rather than columns';
+COMMENT ON COLUMN graphitron_ast_code_reference_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; a reference whose node went is swept with that node';
+COMMENT ON COLUMN graphitron_ast_code_reference_entry.class_name IS 'the class the reference names, as written. NOT NULL because a reference naming no class asserts nothing this relation can hold, and writes no row';
+COMMENT ON COLUMN graphitron_ast_code_reference_entry.method IS 'the method the reference names, as written, or NULL where it names none. A default a site applies to an omitted method is a resolution and is not applied here';
+
 CREATE TABLE graphitron_ast_service_entry (
   graph_name    VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL,
@@ -15167,6 +15193,9 @@ INSERT INTO meta_grain VALUES
   ('sdl-written-value',
    'one value node written in one SDL document, at the position it was written',
    'graph_name, source_name, source_line, source_column', 'sdl'),
+  ('sdl-code-reference',
+   'one Java code reference written in one SDL document, at the position it was written',
+   'graph_name, source_name, source_line, source_column', 'sdl'),
   ('sdl-entry-position',
    'one position in one SDL document, whatever the parse read there',
    'graph_name, source_name, source_line, source_column', 'sdl'),
@@ -15589,6 +15618,10 @@ INSERT INTO meta_relation VALUES
    'What a @scalarType application says: the constant holding the scalar this declaration is bound to, as written.',
    'For example scalar Money @scalarType(scalar: "com.example.Scalars.MONEY") gives one row.',
    'A decode of one directive application, keyed by the application''s own position, so the type it was written on and the file are one join away rather than columns here. The payload columns are nullable where the directive definition marks the argument required: a required argument the author left out is a schema problem the toolchain reports, and refusing the row here would lose the transcription of what they did write. Whether the named class holds such a field is a question for the classpath census and belongs where the resolving happens.'),
+  ('graphitron_ast_code_reference_entry', 'sdl-code-reference', 'graphitron-ast',
+   'A Java code reference as one document wrote it: this position names this class and, where it says, this method.',
+   'For example @service(service: {className: "no.example.FilmService", method: "films"}) gives one row at the object value, and @enum(enumReference: {className: "no.example.Rating"}) gives one naming no method.',
+   'The fact every site that names Java states, written once. Nine relations carried a class and a method under keys of one shape, one per site, and each was a decode a site wrote for itself, so a reader asking what Java a graph names unioned them. Which values are references is the vocabulary''s answer, read by type: anything it declares ExternalCodeReference, at whatever depth, plus @sourceRow, which spells one as two arguments. A site the vocabulary gains therefore writes rows here without new code. Keyed by the node the reference was written as, so the site, the directive and the argument are joins rather than columns, and the reference''s argMapping is the application''s fact and not this one''s.'),
   ('graphitron_ast_enum_entry', 'sdl-declaration-site', 'graphitron-ast',
    'What an @enum application says: the external code reference this enum declaration is bound to, as written.',
    'For example enum Rating @enum(enumReference: {className: "com.example.Ratings"}) gives one row.',

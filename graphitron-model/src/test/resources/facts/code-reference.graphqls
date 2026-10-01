@@ -1,0 +1,77 @@
+# Every Java code reference an author can write, one row per reference at the position it was
+# written. The vocabulary decides what a reference is: a value it types ExternalCodeReference,
+# wherever that value sits, and @sourceRow, which names a class and a method without the input type.
+# Nothing here is resolved, so the class names need not exist; each method is named for its site so
+# the rows below say which site wrote them.
+#
+# The sites are taken from the directive vocabulary rather than from the relations that held a
+# reference before this one, which covered some of them and spelled each one differently.
+
+type Film @table(name: "film") {
+  filmId: ID
+  # A field's own producer, and the one site whose omitted method is defaulted later rather than
+  # here: what was written is a class and no method, so that is the row.
+  rating: String
+    @service(service: {className: "example.Ref", method: "serviceOnField"})
+  lengthBand: String
+    @externalField(reference: {className: "example.Ref"})
+  language: Language
+    @sourceRow(className: "example.Ref", method: "sourceRowOnField")
+  # A condition at each of the three places @condition may sit.
+  actors(name: String @condition(condition: {className: "example.Ref", method: "conditionOnArgument"})): [Actor!]!
+    @condition(condition: {className: "example.Ref", method: "conditionOnField"})
+}
+
+input FilmFilter {
+  title: String
+    @condition(condition: {className: "example.Ref", method: "conditionOnInputField"})
+}
+
+# A path element's condition, under each directive that writes a path. The multitable one sits two
+# input types deep, which is what makes the vocabulary rather than a list of sites the rule.
+type Actor @table(name: "actor") {
+  actorId: ID
+  films: [Film!]!
+    @reference(path: [{table: "film_actor"}, {table: "film", condition: {className: "example.Ref", method: "referenceStepOnField"}}])
+  filmsFor(filter: String @reference(path: [{table: "film", condition: {className: "example.Ref", method: "referenceStepOnArgument"}}])): [Film!]!
+  owned: [Film!]!
+    @referenceFor(type: "Film", path: [{table: "film", condition: {className: "example.Ref", method: "referenceForStepOnField"}}])
+  anything: [Film!]!
+    @multitableReference(routes: [{typeName: "Film", path: [{table: "film", condition: {className: "example.Ref", method: "multitableStepOnField"}}]}])
+}
+
+input ActorFilter {
+  film: String
+    @reference(path: [{table: "film", condition: {className: "example.Ref", method: "referenceStepOnInputField"}}])
+}
+
+type Language @table(name: "language") {
+  languageId: ID
+}
+
+# A class reference, naming no method.
+enum Rating @enum(enumReference: {className: "example.RatingEnum"}) {
+  G
+  PG
+}
+
+extend type Query {
+  films(filter: FilmFilter, actors: ActorFilter): [Film!]!
+  actors: [Actor!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_ast_code_reference_entry", rows: """
+  class_name,         method
+  example.Ref,        serviceOnField
+  example.Ref,
+  example.Ref,        sourceRowOnField
+  example.Ref,        conditionOnArgument
+  example.Ref,        conditionOnField
+  example.Ref,        conditionOnInputField
+  example.Ref,        referenceStepOnField
+  example.Ref,        referenceStepOnArgument
+  example.Ref,        referenceForStepOnField
+  example.Ref,        multitableStepOnField
+  example.Ref,        referenceStepOnInputField
+  example.RatingEnum,
+  """)

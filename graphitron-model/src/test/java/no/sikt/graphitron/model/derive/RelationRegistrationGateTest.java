@@ -178,6 +178,10 @@ class RelationRegistrationGateTest {
             "graphitron_ast_mutation_entry", "graphitron_ast_pivot_entry",
             "graphitron_ast_default_order_entry", "graphitron_ast_default_order_field_entry",
             "graphitron_ast_routine_entry",
+            // Every Java code reference a document writes, read off the vocabulary's types rather
+            // than off a site. Nothing older states the whole of it to agree with; the fact
+            // document code-reference.graphqls pins one row per site the vocabulary allows.
+            "graphitron_ast_code_reference_entry",
             // Its columnMapping pairs, decoded where the string was written. The oracle it
             // would be compared against is the same one its parent has none of, and a pair
             // carries less besides: the walk that wrote the resolved relation is gone, so
