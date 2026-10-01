@@ -160,9 +160,10 @@ any depth (`TenantDslEmitter`), so a cycle traversed at runtime needs nothing ne
   and no `Query.node`, so the dispatch veto is the only thing denying `Inventory` a context:
   `Film.inventories` rejects alongside the node-key rejection, the veto reaching `Film` through
   `Inventory.film`.
-* **Fan-out marker inside a cycle.** The cyclic fixture with `Inventory.film` marked
-  `@tenantFanOut` under the binding `Query.films`: it rejects as "sits under a tenant-bound
-  ancestor". Today's answer depends on which type the recursion asks first and on edge order, so
+* **Fan-out marker inside a cycle.** The cyclic fixture with `Film.inventories` marked
+  `@tenantFanOut` under the binding `Query.films` (list-typed, since `fanOutArmOf` rejects a
+  single-valued field as "not list-shaped" ahead of the ancestor rungs): it rejects as "sits under
+  a tenant-bound ancestor". Today's answer depends on which type the recursion asks first and on edge order, so
   this case may pass before the change; it pins the answer so the closure cannot regress it.
 
 No execution-tier case is owed. Emission and runtime are untouched: the change only lets more
