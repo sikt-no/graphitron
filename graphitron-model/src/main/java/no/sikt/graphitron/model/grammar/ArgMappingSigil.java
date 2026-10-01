@@ -1,6 +1,11 @@
 package no.sikt.graphitron.model.grammar;
 
+import no.sikt.graphitron.model.selection.GraphQLSelectionParser;
+import no.sikt.graphitron.model.selection.ParsedEntry;
+
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -128,6 +133,54 @@ public final class ArgMappingSigil {
             residual.append(piece);
         }
         return new ScanResult.Ok(sigils, positions, residual.toString());
+    }
+
+    /** One entry of an argMapping as written: the parameter it names and what it binds it to. */
+    public record Entry(String parameter, String boundTo) {}
+
+    /**
+     * Every entry of {@code raw} in the order it was written, judging nothing about the site.
+     *
+     * <p>The reading an argMapping has wherever it is written, which {@link #scan} is not: that
+     * fuses this with which site admits a sigil, a rule about the application rather than about the
+     * string. A {@code $}-prefixed right-hand side is lifted verbatim before the rest is tokenized,
+     * for the reason {@link #scan} gives, and is an entry like any other. Empty or blank is no
+     * entries, which is identity for every parameter.
+     *
+     * @throws no.sikt.graphitron.model.selection.GraphQLSelectionParseException where the residual
+     *         does not parse
+     */
+    public static List<Entry> entries(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+        var lifted = new LinkedHashMap<Integer, Entry>();
+        var residual = new StringBuilder();
+        String[] pieces = raw.split(",", -1);
+        for (int index = 0; index < pieces.length; index++) {
+            String piece = pieces[index];
+            int colon = piece.indexOf(':');
+            String rhs = colon < 0 ? "" : piece.substring(colon + 1).strip();
+            if (colon >= 0 && rhs.startsWith("$")) {
+                lifted.put(index, new Entry(piece.substring(0, colon).strip(), rhs));
+                continue;
+            }
+            if (!residual.isEmpty()) {
+                residual.append(',');
+            }
+            residual.append(piece);
+        }
+        var parsed = GraphQLSelectionParser.parseEntries(residual.toString()).iterator();
+        var entries = new ArrayList<Entry>();
+        for (int index = 0; index < pieces.length; index++) {
+            if (lifted.containsKey(index)) {
+                entries.add(lifted.get(index));
+            } else if (parsed.hasNext()) {
+                ParsedEntry entry = parsed.next();
+                entries.add(new Entry(entry.key(), String.join(".", entry.segments())));
+            }
+        }
+        return entries;
     }
 
     /** Canonical message for a {@code $}-prefixed argMapping value that is not an admitted sigil. */

@@ -182,6 +182,9 @@ class RelationRegistrationGateTest {
             // than off a site. Nothing older states the whole of it to agree with; the fact
             // document code-reference.graphqls pins one row per site the vocabulary allows.
             "graphitron_ast_code_reference_entry",
+            // Every entry of every argMapping, read off the vocabulary's name for one; pinned by the
+            // fact document argmapping-pair.graphqls, one mapping per directive that takes one.
+            "graphitron_ast_argmapping_pair_entry",
             // Its columnMapping pairs, decoded where the string was written. The oracle it
             // would be compared against is the same one its parent has none of, and a pair
             // carries less besides: the walk that wrote the resolved relation is gone, so

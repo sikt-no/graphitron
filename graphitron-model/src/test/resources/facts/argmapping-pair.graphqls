@@ -1,0 +1,59 @@
+# Every entry of every argMapping, read one way wherever it is written. @routine declares the
+# argument itself and every ExternalCodeReference carries one, so @routine, @service, @externalField
+# and @condition are all here, and each mapping names its parameters for its site so the rows below
+# say which wrote them. Nothing is resolved: the parameters and paths need not exist, and whether a
+# site admits what was written is a later question than what was written.
+
+type Film @table(name: "film") {
+  filmId: ID
+  # Two entries, a dotted path and a sigil, in the order written.
+  rating(input: String): String
+    @service(service: {className: "example.Ref", method: "m", argMapping: "serviceInput: input.value, serviceSession: $session"})
+  lengthBand: String
+    @externalField(reference: {className: "example.Ref", argMapping: "externalFieldParam: film"})
+  actors(name: String @condition(condition: {className: "example.Ref", method: "m", argMapping: "conditionOnArgument: name"})): [Actor!]!
+    @condition(condition: {className: "example.Ref", method: "m", argMapping: "conditionOnField: name"})
+  # An empty mapping is identity for every parameter and writes no entry.
+  identity: String
+    @service(service: {className: "example.Ref", method: "m", argMapping: ""})
+  # A mapping that does not parse writes no entry; the transcription keeps the string.
+  broken: String
+    @service(service: {className: "example.Ref", method: "m", argMapping: "noColonHere"})
+}
+
+input FilmFilter {
+  title: String
+    @condition(condition: {className: "example.Ref", method: "m", argMapping: "conditionOnInputField: title"})
+}
+
+type Actor @table(name: "actor") {
+  actorId: ID
+  films: [Film!]!
+    @reference(path: [{table: "film", condition: {className: "example.Ref", method: "m", argMapping: "pathCondition: actorId"}}])
+}
+
+# @record is not graphitron's, so its mapping is decoded by nothing.
+type Category @record(record: {className: "example.CategoryRecord", argMapping: "notDecoded: name"}) {
+  name: String
+}
+
+type Mutation {
+  rentFilm(customer: String): Film
+    @routine(name: "rent_film", argMapping: "pCustomer: customer")
+}
+
+extend type Query {
+  films(filter: FilmFilter): [Film!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_ast_argmapping_pair_entry", rows: """
+  position, param_name,            bound_to
+  0,        serviceInput,          input.value
+  1,        serviceSession,        $session
+  0,        externalFieldParam,    film
+  0,        conditionOnArgument,   name
+  0,        conditionOnField,      name
+  0,        conditionOnInputField, title
+  0,        pathCondition,         actorId
+  0,        pCustomer,             customer
+  """)

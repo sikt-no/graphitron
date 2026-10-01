@@ -219,10 +219,14 @@ a derivation over either corpus alone, and `graphitron_` already does this again
       pinned by a fact document stating twelve sites from the vocabulary, a multitable path
       condition two input types deep among them. `@record` is declared only so schemas keep
       parsing and is decoded by nothing, its two relations gone with it.
-    * **The argMapping is written once** `open`. One argMapping as written, at the application
-      that wrote it, for `@routine`, `@service`, `@externalField` and `@condition` alike, with its
-      pairs hanging off it: one parse and one reading everywhere. `columnMapping` stays
-      `@routine`'s own.
+    * **The argMapping is written once** `done`. `graphitron_ast_argmapping_pair_entry`: one entry
+      of one argMapping as written, keyed to the string's own `graphql_ast_value_entry` row and the
+      entry's position, for `@routine`, `@service`, `@externalField` and `@condition` alike. Found
+      by the vocabulary's name for a mapping through `VocabularyWalk`, which the code reference now
+      walks on too, and read by `ArgMappingSigil.entries`, which judges no site; a sigil is a row
+      as written. `columnMapping` stays `@routine`'s own. The vocabulary still calls argMapping
+      inert on `@externalField`, which its reading and the generator's rejection follow until
+      changed.
     * **The resolution** `open`, waits on the written reference. `graphitron_code_reference`: the
       one method a written reference names, keyed to it and to `code_method`; no match is no row,
       and the anti-join is one `graphitron_entry_defect` arm for every site. The `@externalField`

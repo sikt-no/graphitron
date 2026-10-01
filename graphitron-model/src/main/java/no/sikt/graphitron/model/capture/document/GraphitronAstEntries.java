@@ -68,11 +68,12 @@ public final class GraphitronAstEntries {
         GraphitronInputValueEntries.write(dsl, graph, source, onInputValues, touchedAt);
         GraphitronEnumValueEntries.write(dsl, graph, source, onEnumValues, touchedAt);
         GraphitronSchemaEntries.write(dsl, graph, source, onSchemas, touchedAt);
-        // The one writer that is not a site's: a code reference is the same fact wherever it is
-        // written, so it is read off every application at once.
+        // The writers that are not a site's: a code reference and an argMapping are each the same
+        // fact wherever they are written, so they are read off every application at once.
         var everywhere = new ArrayList<GraphQLAstEntries.Nested<Directive>>();
         List.of(onTypes, onFields, onInputValues, onEnumValues, onSchemas).forEach(everywhere::addAll);
         GraphitronCodeReferenceEntries.write(dsl, graph, source, everywhere, touchedAt);
+        GraphitronArgMappingEntries.write(dsl, graph, source, everywhere, touchedAt);
     }
 
     /**

@@ -1,16 +1,9 @@
 package no.sikt.graphitron.model.capture.document;
 
-import graphql.language.ArrayValue;
 import graphql.language.Directive;
-import graphql.language.InputValueDefinition;
-import graphql.language.ListType;
 import graphql.language.Node;
-import graphql.language.NonNullType;
-import graphql.language.ObjectField;
 import graphql.language.ObjectValue;
 import graphql.language.StringValue;
-import graphql.language.Type;
-import graphql.language.TypeName;
 import graphql.language.Value;
 import no.sikt.graphitron.model.sink.BindBatch;
 import org.jooq.DSLContext;
@@ -30,8 +23,9 @@ import static org.jooq.impl.DSL.val;
  * The writer of {@code graphitron_ast_code_reference_entry}: every Java code reference a document
  * writes, at the node it was written as.
  *
- * <p>Which values are references is read off the vocabulary rather than listed by site. A value the
- * bundled definitions type {@code ExternalCodeReference} is one, however deep: a directive argument
+ * <p>Which values are references is read off the vocabulary rather than listed by site, through
+ * {@link VocabularyWalk}. A value the bundled definitions type {@code ExternalCodeReference} is
+ * one, however deep: a directive argument
  * of that type, a field of an input object an argument carries, an element of a list of those. So
  * a site the vocabulary gains writes rows here without a writer of its own, which is the failure a
  * per-site list has, each site a decode nobody else shares.
@@ -70,16 +64,15 @@ final class GraphitronCodeReferenceEntries {
                 }
                 continue;
             }
-            var definition = DirectiveLegality.definition(application.getName());
-            if (definition == null) {
-                continue;
-            }
-            for (var argument : application.getArguments()) {
-                definition.getInputValueDefinitions().stream()
-                    .filter(declared -> declared.getName().equals(argument.getName()))
-                    .findFirst()
-                    .ifPresent(declared -> walk(argument.getValue(), declared.getType(), written));
-            }
+            VocabularyWalk.walk(application, (name, value, declared) -> {
+                if (declared.getName().equals(REFERENCE_TYPE) && value instanceof ObjectValue object) {
+                    var className = stringOf(inside(object, "className"));
+                    if (className != null) {
+                        written.add(new Written(object, className,
+                            stringOf(inside(object, "method"))));
+                    }
+                }
+            });
         }
 
         var t = GRAPHITRON_AST_CODE_REFERENCE_ENTRY;
@@ -100,46 +93,6 @@ final class GraphitronCodeReferenceEntries {
                 .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
                 .set(t.METHOD, excluded(t.METHOD)));
         GraphitronAstEntries.sweep(dsl, graph, source, touchedAt, List.of(t));
-    }
-
-    /**
-     * Every reference inside one written value, read against the type the vocabulary declares for
-     * it. A lone value where a list is declared is a list of one, on {@link DirectiveLegality}'s
-     * terms, and a type the vocabulary does not declare holds no reference.
-     */
-    private static void walk(Value<?> value, Type<?> declared, List<Written> written) {
-        switch (declared) {
-            case NonNullType nonNull -> walk(value, nonNull.getType(), written);
-            case ListType list -> {
-                if (value instanceof ArrayValue array) {
-                    array.getValues().forEach(element -> walk(element, list.getType(), written));
-                } else {
-                    walk(value, list.getType(), written);
-                }
-            }
-            case TypeName named when value instanceof ObjectValue object -> {
-                if (named.getName().equals(REFERENCE_TYPE)) {
-                    var className = stringOf(inside(object, "className"));
-                    if (className != null) {
-                        written.add(new Written(object, className,
-                            stringOf(inside(object, "method"))));
-                    }
-                    return;
-                }
-                var inputObject = DirectiveLegality.inputObject(named.getName());
-                if (inputObject == null) {
-                    return;
-                }
-                for (ObjectField field : object.getObjectFields()) {
-                    inputObject.getInputValueDefinitions().stream()
-                        .filter(declaredField -> declaredField.getName().equals(field.getName()))
-                        .map(InputValueDefinition::getType)
-                        .findFirst()
-                        .ifPresent(type -> walk(field.getValue(), type, written));
-                }
-            }
-            default -> { }
-        }
     }
 
     private static String stringOf(Value<?> value) {

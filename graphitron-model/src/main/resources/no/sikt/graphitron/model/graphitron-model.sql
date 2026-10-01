@@ -2227,6 +2227,33 @@ COMMENT ON COLUMN graphitron_ast_field_reference_for_condition_step_entry.class_
 COMMENT ON COLUMN graphitron_ast_field_reference_for_condition_step_entry.method IS 'the method of the same, as written, or NULL where none was';
 COMMENT ON COLUMN graphitron_ast_field_reference_for_condition_step_entry.argmapping IS 'the argMapping of the same, kept as the one string the author typed';
 
+CREATE TABLE graphitron_ast_argmapping_pair_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  position      INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  param_name    VARCHAR NOT NULL,
+  bound_to      VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, position),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  -- The string the mapping was written as, which the transcription already holds verbatim.
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_value_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  CHECK (position >= 0)
+);
+COMMENT ON TABLE graphitron_ast_argmapping_pair_entry IS 'One entry of an argMapping as one document wrote it: at this position in this mapping, this parameter is bound to this. For example argMapping: "customerId: input.customerId, session: $session" gives two rows, customerId bound to input.customerId at position 0 and session to $session at 1.';
+COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.source_name IS 'the file the mapping was written in';
+COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.source_line IS 'source line of the string the mapping was written as, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.source_column IS 'source column of the same. The four columns are that string''s key in graphql_ast_value_entry, which holds it verbatim, so the directive or reference it was written in is a join from here and the raw text is not repeated';
+COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.position IS 'the entry''s 0-based position in the mapping as written, completing the key; the order an author wrote the entries in';
+COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; a mapping whose string went is swept with it';
+COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.param_name IS 'the parameter the entry names, as written: a Java parameter at a code reference, a routine parameter at @routine';
+COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.bound_to IS 'what the entry binds the parameter to, as written: a dotted path into the arguments, or a sigil such as $session. Which sites admit a sigil is a rule about the site and not about the string, so nothing here judges it';
+
 CREATE TABLE graphitron_ast_code_reference_entry (
   graph_name    VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL,
@@ -15144,6 +15171,9 @@ INSERT INTO meta_grain VALUES
   ('sdl-written-value',
    'one value node written in one SDL document, at the position it was written',
    'graph_name, source_name, source_line, source_column', 'sdl'),
+  ('sdl-argmapping-pair',
+   'one entry of one argMapping written in one SDL document, at its position in the mapping',
+   'graph_name, source_name, source_line, source_column, position', 'sdl'),
   ('sdl-code-reference',
    'one Java code reference written in one SDL document, at the position it was written',
    'graph_name, source_name, source_line, source_column', 'sdl'),
@@ -15569,6 +15599,10 @@ INSERT INTO meta_relation VALUES
    'What a @scalarType application says: the constant holding the scalar this declaration is bound to, as written.',
    'For example scalar Money @scalarType(scalar: "com.example.Scalars.MONEY") gives one row.',
    'A decode of one directive application, keyed by the application''s own position, so the type it was written on and the file are one join away rather than columns here. The payload columns are nullable where the directive definition marks the argument required: a required argument the author left out is a schema problem the toolchain reports, and refusing the row here would lose the transcription of what they did write. Whether the named class holds such a field is a question for the classpath census and belongs where the resolving happens.'),
+  ('graphitron_ast_argmapping_pair_entry', 'sdl-argmapping-pair', 'graphitron-ast',
+   'One entry of an argMapping as one document wrote it: at this position in this mapping, this parameter is bound to this.',
+   'For example argMapping: "customerId: input.customerId, session: $session" gives two rows, customerId bound to input.customerId at position 0 and session to $session at 1.',
+   'The mapping @routine, @service, @externalField and @condition all take, read once and one way. Each site used to read the string for itself, so what one site supported another did not. The string is the transcription''s already, verbatim at its own position, so this holds what a parse of it says and keys to that position: which directive or reference wrote it is a join, and the raw text is not repeated. Which strings are mappings is the vocabulary''s answer, by name, any argument or input field it calls argMapping. A sigil is recorded as written, admission being a rule about the site. A string that does not parse writes no rows, the transcription keeping it.'),
   ('graphitron_ast_code_reference_entry', 'sdl-code-reference', 'graphitron-ast',
    'A Java code reference as one document wrote it: this position names this class and, where it says, this method.',
    'For example @service(service: {className: "no.example.FilmService", method: "films"}) gives one row at the object value, and @enum(enumReference: {className: "no.example.Rating"}) gives one naming no method.',
