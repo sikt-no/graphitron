@@ -36,8 +36,6 @@ intent_errors_field graphql_field
 intent_errors_field graphql_type
 graphitron_facet_binding graphql_field
 graphitron_facet_binding graphql_type
-intent_field_demand_rule graphql_field
-intent_field_demand_rule graphql_type
 intent_field_separate_fetch graphql_field
 intent_field_separate_fetch graphql_type
 graphitron_input_field_column_match_rule graphql_field
@@ -55,7 +53,6 @@ graphitron_node_id_instruction_rule graphql_type
 intent_routine_return_binding graphql_type
 intent_type_backing_seed graphql_field
 intent_type_backing_seed graphql_type
-intent_type_exemption graphql_type
 
 # Adjudicated and kept: the authored arms of the emitted population.
 #

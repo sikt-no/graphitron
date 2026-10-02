@@ -442,12 +442,6 @@ class RelationRegistrationGateTest {
         registrations.put("intent_type_backing_conflict", Arm.DERIVED);
         registrations.put("intent_resolved_field_claim", Arm.DERIVED);
         registrations.put("intent_type_domain", Arm.DERIVED);
-        registrations.put("intent_field_demand_rule", Arm.DERIVED);
-        registrations.put("intent_field_exemption_rule", Arm.DERIVED);
-        registrations.put("intent_type_demand", Arm.DERIVED);
-        registrations.put("intent_type_exemption", Arm.DERIVED);
-        registrations.put("intent_resolved_field_demand", Arm.DERIVED);
-        registrations.put("intent_resolved_type_demand", Arm.DERIVED);
         registrations.put("graphitron_argmapping_candidate", Arm.DERIVED);
         registrations.put("intent_input_occurrence_path", Arm.DERIVED);
         registrations.put("intent_input_occurrence_path_step", Arm.DERIVED);

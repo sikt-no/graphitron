@@ -314,13 +314,6 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
  *       whole sets where the schema is small enough to write one out, with the two node-seed
  *       widenings and the assembly cliff each carrying their own case, so the relation is pinned to
  *       what its seed rule promises rather than to what the retiring walk reached;
- *       {@code no.sikt.graphitron.rewrite.derive.DemandShadowTest} binds the
- *       resolved reductions to the walked registries via {@code ClaimDomain} over a real capture
- *       of every corpus example, residues named and disagreement directions pinned, with
- *       {@code no.sikt.graphitron.model.intent.DemandRuleTest} carrying the other half of that
- *       reason: each rule arm, each position mask, the machinery arm's structural recognition and
- *       both reductions' precedence, pinned against a census stated row by row in the module
- *       whose DDL declares them;
  *       {@code no.sikt.graphitron.rewrite.derive.InputOccurrenceShadowTest} binds the input
  *       occurrence-path pair to a structural reference enumeration and to the walk's use-keyed
  *       cascade verdicts, and pins the authored override flag reaching the view at all, with

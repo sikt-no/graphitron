@@ -200,6 +200,13 @@ a derivation over either corpus alone, and `graphitron_` already does this again
   `intent_scalar_java_type` were read by their own tests and by nothing else, and a view nothing
   uses has not shown it is worth saving, so each went with its tests, the scalar view's
   vocabulary gate among them.
+* **The demand relations go** `done`. `intent_field_demand_rule` and its five siblings answered
+  whether the generator owes a coordinate a verdict: a copy of the walk's registries, kept for a
+  store-side classifier that does not exist. The generator never read them, MCP's schema tool
+  restated directives it already showed, and the catch-all exemption restated every demand arm as a
+  negation that had already drifted, missing `@routine`. They go with `DemandRuleTest`,
+  `DemandShadowTest` and `DemandResidue`; `intent_type_domain`, the domain they quantified over,
+  stays. R740's demand slice is delivered by this, and R677 is told its precedent is gone.
 * **The condition route resolves in `graphitron_`** `done`. `graphitron_condition_method_route`,
   renamed and declared to the gatherer that already read it; declaring it is what cost anything,
   the comment being reduced to its grain and example with the argument moved into the declaration.
@@ -734,7 +741,10 @@ tables into `jvm_declared_type_ref`: `jvm_method_parameter_type_ref`, `jvm_metho
 `graphitron_minted_type_site`), `intent_argmapping_pair_live`, `intent_errors_field_live`,
 `intent_condition_param_extraction`, `intent_condition_table_parameter`,
 `graphitron_argument_path_segment`, `code_condition_method_parameter` (now
-`code_method_parameter`), and `code_type_slot` (now `code_read_slot`).
+`code_method_parameter`), and `code_type_slot` (now `code_read_slot`). The demand relations,
+dissolved rather than replaced: `intent_field_demand_rule`, `intent_field_exemption_rule`,
+`intent_type_demand`, `intent_type_exemption`, `intent_resolved_field_demand` and
+`intent_resolved_type_demand`.
 
 **Renamed, by rule rather than by list.** Every relation of the as-written half of `graphitron_`
 gained the `_entry` suffix. A sweep for a survivor is a search for a `graphitron_` name that is
@@ -757,7 +767,8 @@ Values `AUTHORED_EXPRESSION` and `TRAILING_SEGMENTS_BEYOND_ONE`.
 `field-chain-link-reach` grain's key shape. Added rather than retired, and
 listed because the grain is the point: `store_graph_source.stamp` and `store_graph_source.read_at`.
 
-**Java.** `MacroCapture.expandConnections` (now `expand`); the `Expansions` record, the five
+**Java.** `DemandRuleTest`, `DemandShadowTest`, `DemandResidue`, `SchemaQueries.Demand` and the
+MCP schema tool's `demand` slot; `MacroCapture.expandConnections` (now `expand`); the `Expansions` record, the five
 `captureXDirective` callbacks, `captureNavigation`, `connectionElementByType`;
 `EntryFamilyFixture.ENTRY_RELATIONS` and `ANCHOR_RELATIONS` (now `entryRelations()`);
 `EntryFamilyCoverageTest`'s partition case; `GraphitronFactCapture`'s `schemaDirectives`,

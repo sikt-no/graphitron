@@ -9,15 +9,10 @@ import java.util.Set;
  * The coordinates the classification walk visited: the walked model's type and field registries
  * as membership sets.
  *
- * <p>This value is the unreified demand relation, and diffing against it is the only thing left
- * that reads it. The demand and exemption derivations exist in the store (the rule views and the
- * resolved reductions over them) and are diffed against exactly this value by their shadow
- * agreement (see {@code no.sikt.graphitron.rewrite.derive.DemandShadowTest}), with the populations
- * the store cannot yet express named by {@link DemandResidue}. Nothing reifies it: the
- * authored-claim conflict detection used to gate on a membership set written from here, and now
- * reads a relation total over the authored claims with each consumer applying its own population,
- * so the two membership relations this value was transcribed into were deleted rather than
- * re-pointed. The value itself retires with the shadow that reads it.
+ * <p>Read only by a test comparing the store's type-backing answer with the walk's. The store
+ * relations this value was once diffed against, which coordinates the generator owes a verdict,
+ * were dissolved: the generator never read them, and the one surface that did restated directives
+ * it already showed. The value retires with its last reader.
  */
 public record ClaimDomain(Set<String> typeNames, Set<FieldCoordinates> fieldCoordinates) {
 

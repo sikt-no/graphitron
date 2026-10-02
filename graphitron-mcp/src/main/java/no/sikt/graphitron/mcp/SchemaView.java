@@ -16,15 +16,15 @@ import no.sikt.graphitron.model.derive.FieldClaim;
 /**
  * The {@code schema} tool's wire shape: what {@link SchemaQueries} read, rendered.
  *
- * <p>One entry per SDL coordinate, answering five questions and carrying a slot only where the store
+ * <p>One entry per SDL coordinate, answering four questions and carrying a slot only where the store
  * holds a row for it. An absent slot is therefore an answer rather than a gap, and it is the same
- * answer at every coordinate: nothing claims this, nothing binds it, nothing demands a verdict of it.
+ * answer at every coordinate: nothing claims this, nothing binds it.
  *
  * <p>What retired here was ninety-odd exhaustive switch arms over the classification permits, and the
  * shape of what replaced them is the argument for it: the entry no longer names the generator's internal
  * taxonomy at all. A permit name was a fact about how the classifier is written, promised on a wire that
  * had no business promising it, and holding the arms inside this module was the price of keeping the
- * label stable. The claim, binding and demand vocabularies are the store's, and they are about the
+ * label stable. The claim and binding vocabularies are the store's, and they are about the
  * author's schema.
  */
 final class SchemaView {
@@ -106,7 +106,6 @@ final class SchemaView {
         entry.put("kind", type.kind());
 
         putList(entry, "claims", type.claims(), SchemaView::mapTypeClaim);
-        putDemand(entry, type.demand());
         putConflict(entry, type.conflict());
         putList(entry, "tables", type.tables(), SchemaView::mapTable);
         putList(entry, "backing", type.backing(), SchemaView::mapBacking);
@@ -188,7 +187,6 @@ final class SchemaView {
         entry.put("typeSdl", field.typeSdl());
 
         putList(entry, "claims", field.claims().claims(), SchemaView::mapFieldClaim);
-        putDemand(entry, field.demand());
         putConflict(entry, field.conflict());
         field.claims().column().ifPresent(column -> {
             var map = new LinkedHashMap<String, Object>();
@@ -238,15 +236,6 @@ final class SchemaView {
     }
 
     // ---- slot conventions, shared by the two grains ----
-
-    private static void putDemand(Map<String, Object> entry, Optional<SchemaQueries.Demand> demand) {
-        demand.ifPresent(d -> {
-            var map = new LinkedHashMap<String, Object>();
-            map.put("verdict", d.verdict());
-            map.put("rule", d.rule());
-            entry.put("demand", map);
-        });
-    }
 
     private static void putConflict(
         Map<String, Object> entry, Optional<SchemaQueries.Conflict> conflict

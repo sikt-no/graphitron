@@ -35,8 +35,6 @@ import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_TARGET;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_CLAIM;
-import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_DEMAND;
-import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_TYPE_DEMAND;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CONFLICT;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
@@ -54,11 +52,11 @@ import static org.jooq.impl.DSL.selectOne;
  * This module's reads for the {@code schema} tool: what the store says a graph's SDL coordinates are
  * and what it made of them.
  *
- * <p>Five questions per coordinate, each answered by the relations that own it: what claims it, what it
- * binds, whether a verdict was demanded of it, what conflicts on it, and where it is declared. None of
- * those is a projection of a classification verdict, and that is the point of the shape rather than a
- * consequence of it: a permit name is a fact about the generator's own taxonomy, where a claim, a
- * binding and a demand are facts about the author's schema, and it is the second set an agent asking
+ * <p>Four questions per coordinate, each answered by the relations that own it: what claims it, what it
+ * binds, what conflicts on it, and where it is declared. None of those is a projection of a
+ * classification verdict, and that is the point of the shape rather than a consequence of it: a
+ * permit name is a fact about the generator's own taxonomy, where a claim and a binding are facts
+ * about the author's schema, and it is the second set an agent asking
  * "what did graphitron make of this" actually wants.
  *
  * <p>Two statements, one per grain, and the grain boundary is the store's. A type and a
@@ -119,7 +117,6 @@ final class SchemaQueries {
         String typeName,
         String kind,
         List<TypeClaim> claims,
-        Optional<Demand> demand,
         Optional<Conflict> conflict,
         List<TableBinding> tables,
         List<Backing> backing,
@@ -141,7 +138,6 @@ final class SchemaQueries {
         String fieldName,
         String typeSdl,
         ClaimSet claims,
-        Optional<Demand> demand,
         Optional<Conflict> conflict,
         List<Hop> joinPath,
         List<MethodBinding> producerMethods,
@@ -208,15 +204,6 @@ final class SchemaQueries {
 
     /** A {@code Type.field} coordinate, the key the claim read's answer is paired to its field row on. */
     private record Coordinate(String typeName, String fieldName) {}
-
-    /**
-     * Whether a verdict was demanded of a coordinate, and the rule that says so.
-     *
-     * <p>Strictly more than the absence it replaces: a coordinate with no classification used to report
-     * one verdict whether it was expected to classify or was never in scope, where {@code DEMANDED}
-     * plus a rule names why one was expected and {@code EXEMPT} says the coordinate is out of scope.
-     */
-    record Demand(String verdict, String rule) {}
 
     /**
      * A claim conflict at a coordinate.
@@ -419,7 +406,7 @@ final class SchemaQueries {
 
         var rows = store.dsl()
             .select(GRAPHQL_TYPE.TYPE_NAME, GRAPHQL_TYPE.KIND,
-                typeClaims(), typeDemand(), typeConflict(), tables(), backing(store),
+                typeClaims(), typeConflict(), tables(), backing(store),
                 backingConflict(), unionMembers(), implementors(), node(), declarations())
             .from(GRAPHQL_TYPE)
             .where(page)
@@ -452,19 +439,6 @@ final class SchemaQueries {
             .convertFrom(r -> r.map(row -> new TypeClaim(row.value1(), row.value2(),
                 Boolean.TRUE.equals(row.value3()),
                 McpWire.position(row.value4(), row.value5(), row.value6()))));
-    }
-
-    /**
-     * Whether the type grain demanded a verdict of this type. At most one row, the reduction being one
-     * verdict per member of the classification domain, so the list is a presence check with a payload.
-     */
-    private static Field<Optional<Demand>> typeDemand() {
-        return multiset(
-            select(INTENT_RESOLVED_TYPE_DEMAND.VERDICT, INTENT_RESOLVED_TYPE_DEMAND.RULE)
-                .from(INTENT_RESOLVED_TYPE_DEMAND)
-                .where(ofType(INTENT_RESOLVED_TYPE_DEMAND.GRAPH_NAME,
-                    INTENT_RESOLVED_TYPE_DEMAND.TYPE_NAME)))
-            .convertFrom(r -> r.map(Records.mapping(Demand::new)).stream().findFirst());
     }
 
     /**
@@ -682,7 +656,7 @@ final class SchemaQueries {
         var claims = claims(store, typeNames);
         var rows = store.dsl()
             .select(GRAPHQL_FIELD.TYPE_NAME, GRAPHQL_FIELD.FIELD_NAME, GRAPHQL_FIELD.TYPE_SDL,
-                fieldDemand(), fieldConflict(), joinPath(), producerMethods(),
+                fieldConflict(), joinPath(), producerMethods(),
                 conditionMethods(store))
             .from(GRAPHQL_FIELD)
             .where(GRAPHQL_FIELD.GRAPH_NAME.eq(store.graphName())
@@ -704,13 +678,13 @@ final class SchemaQueries {
      * resolution, which is the read beside this one.
      */
     private record FieldRow(
-        String typeName, String fieldName, String typeSdl, Optional<Demand> demand,
+        String typeName, String fieldName, String typeSdl,
         Optional<Conflict> conflict, List<Hop> joinPath, List<MethodBinding> producerMethods,
         List<MethodBinding> conditionMethods
     ) {
 
         FieldEntry withClaims(ClaimSet claims) {
-            return new FieldEntry(typeName, fieldName, typeSdl, claims, demand, conflict, joinPath,
+            return new FieldEntry(typeName, fieldName, typeSdl, claims, conflict, joinPath,
                 producerMethods, conditionMethods);
         }
     }
@@ -817,17 +791,6 @@ final class SchemaQueries {
         return graph.eq(GRAPHQL_FIELD.GRAPH_NAME)
             .and(type.eq(GRAPHQL_FIELD.TYPE_NAME))
             .and(fieldName.eq(GRAPHQL_FIELD.FIELD_NAME));
-    }
-
-    /** Whether the field grain demanded a verdict of this coordinate. */
-    private static Field<Optional<Demand>> fieldDemand() {
-        return multiset(
-            select(INTENT_RESOLVED_FIELD_DEMAND.VERDICT, INTENT_RESOLVED_FIELD_DEMAND.RULE)
-                .from(INTENT_RESOLVED_FIELD_DEMAND)
-                .where(ofField(INTENT_RESOLVED_FIELD_DEMAND.GRAPH_NAME,
-                    INTENT_RESOLVED_FIELD_DEMAND.TYPE_NAME,
-                    INTENT_RESOLVED_FIELD_DEMAND.FIELD_NAME)))
-            .convertFrom(r -> r.map(Records.mapping(Demand::new)).stream().findFirst());
     }
 
     /** The field-grain claim conflict, told from its type's by carrying a field name. */

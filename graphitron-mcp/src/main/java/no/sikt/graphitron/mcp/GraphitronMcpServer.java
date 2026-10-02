@@ -811,8 +811,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
     /**
      * {@code schema}: the graph's SDL coordinates and what the store made of them, read live on every
      * call. Per coordinate: what claims it, what it binds (table, column, class and its members, join
-     * path, method, participants), whether a verdict was demanded of it, what conflicts on it, and every
-     * site it is declared at.
+     * path, method, participants), what conflicts on it, and every site it is declared at.
      *
      * <p>The reader as well as the handle, an answer here being one statement per grain. The
      * lifecycle axes are one more statement inside the same read, and they say how current the facts

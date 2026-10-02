@@ -988,8 +988,6 @@ class GraphitronMcpServerTest {
                 .containsEntry("classifier", "TABLE")
                 .containsEntry("trigger", "@table")
                 .containsEntry("decoded", true));
-            assertThat((Map<String, Object>) film.get("demand"))
-                .containsEntry("verdict", "DEMANDED").containsEntry("rule", "TABLE_TYPE");
 
             // The binding carries the table's full key and the arity of the reference that reached it.
             assertThat((List<Map<String, Object>>) film.get("tables"))
@@ -1176,23 +1174,6 @@ class GraphitronMcpServerTest {
             assertThat(searchable).containsEntry("kind", "UNION")
                 .containsEntry("unionMembers", List.of("Film", "Language"))
                 .doesNotContainKey("implementors");
-        }
-    }
-
-    @Test
-    @SuppressWarnings("unchecked")
-    void schemaReportsAnExemptCoordinateWithTheRuleThatPutsItOutOfScope(@TempDir Path tmp) {
-        // The answer with no predecessor at all. The retired wire reported one verdict whether a
-        // coordinate failed to classify or was never asked to, so an agent could not tell "graphitron
-        // could not read this" from "graphitron does not classify this kind of coordinate".
-        try (var fixture = StoreFixture.ofSchema(tmp, SCHEMA_SDL)) {
-            assertThat((Map<String, Object>) fieldNamed(onlyType(fixture, "Named"), "Named.name")
-                .get("demand"))
-                .containsEntry("verdict", "EXEMPT").containsEntry("rule", "INTERFACE_TYPE");
-
-            assertThat((Map<String, Object>) fieldNamed(onlyType(fixture, "FilmFilter"),
-                "FilmFilter.title").get("demand"))
-                .containsEntry("verdict", "EXEMPT").containsEntry("rule", "INPUT_TYPE");
         }
     }
 

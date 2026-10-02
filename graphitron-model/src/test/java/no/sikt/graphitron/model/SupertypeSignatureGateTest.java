@@ -405,8 +405,6 @@ class SupertypeSignatureGateTest {
         // the row goes when the condition copies do.
         "graphitron_entry_defect_rule|graphitron_argument_condition_entry,graphitron_field_condition_entry",
         "intent_condition_param_decode|graphitron_argument_condition_entry,graphitron_field_condition_entry",
-        "intent_field_demand_rule|graphitron_external_field_entry,graphitron_service_entry",
-        "intent_field_exemption_rule|graphitron_external_field_entry,graphitron_service_entry",
         "intent_field_producer_reference|graphitron_external_field_entry,graphitron_service_entry",
         "intent_input_occurrence_override|graphitron_argument_condition_entry,graphitron_field_condition_entry",
         "graphitron_node_id_instruction_rule|graphitron_argument_node_id_entry,graphitron_field_node_id_entry",

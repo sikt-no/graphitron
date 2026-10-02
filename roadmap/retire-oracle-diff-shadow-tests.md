@@ -18,6 +18,12 @@ Five tests in `graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/` are 
 
 `DemandShadowTest` (422 lines) asserts the demand relations agree with `ClaimDomain.of(bundle.model())` outside five named residue populations, and it needs `derive/DemandResidue.java`, a class in *main* sources whose only job is to enumerate the walk's holes so the test can subtract them. The relations it anchors already have a specification test that does not mention the walk: `graphitron-model/src/test/java/no/sikt/graphitron/model/intent/DemandRuleTest.java`, 687 lines, seeded row by row against intended semantics. So the diff's entire marginal claim is "and it also matches the walk, except here", and the exception list is where the design content has ended up.
 
+**2026-10-02: the demand slice is delivered by R876.** R876 dissolved the six demand relations
+rather than un-shadowing them: nothing in the generator read them, and the one surface that did
+restated directives it already showed. `DemandShadowTest`, `DemandRuleTest` and `DemandResidue` went
+with them. `ClaimDomain` stays for now, `TypeBackingClassesTest` still reading it. What remains here
+is the other two oracle diffs and the anchor gate.
+
 `ColumnMatchShadowTest` (268 lines) is the same shape over `ColumnMatchClaimTest`, and its own javadoc says the walk "is the other side of every assertion here".
 
 `InputOccurrenceShadowTest` (367 lines) is weaker still: its javadoc names the drift it structurally cannot catch, because a store predicate that is too narrow suppresses no walk verdict while the walk still evaluates its own threaded `enclosingOverride` boolean.

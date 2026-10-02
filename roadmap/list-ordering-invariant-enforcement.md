@@ -216,6 +216,13 @@ separately fetched, and may not say a field without one is inlined." The never-u
 an absence check, so building class B as a `NOT EXISTS` against an ordering fact table would violate
 that rule directly.
 
+> **2026-10-02, for this item's author: the precedent below is gone.** R876 dissolved
+> `intent_resolved_field_demand` and the five relations behind it, nothing in the generator having
+> read them. The shape this section borrows still stands on its own: rows are a population, one
+> verdict per row from a closed vocabulary, a coverage gate counting resolved rows against the
+> population. It wants stating in this item's own words rather than by citing the relation, here and
+> under **Shape** below.
+
 Class B has to be a positive population carrying a verdict, on the `intent_resolved_field_demand`
 model: rows are the list-shaped read coordinates of the classification domain, one verdict per row
 from a closed vocabulary, and a coverage gate counting resolved rows against the population so the
