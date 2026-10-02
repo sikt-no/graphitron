@@ -344,7 +344,8 @@ class CodeCaptureTest {
     void aConditionMethodIsAdmitted() {
         withReactorCapture(dsl -> {
             assertThat(methodsOn(dsl, FIXTURE))
-                .as("both overloads of the qualifying name, and neither of the two beside them")
+                .as("both overloads of the qualifying name, the boolean field beside them, and"
+                    + " none of the methods returning something else")
                 .containsExactlyInAnyOrder(
                     "titleContains(Ljava/lang/String;Ljava/lang/String;)Lorg/jooq/Condition;",
                     "titleContains(Ljava/lang/String;)Lorg/jooq/Condition;",
@@ -356,7 +357,8 @@ class CodeCaptureTest {
                     "onAnEnum(Lorg/jooq/Table;Lno/sikt/graphitron/model/config/"
                         + "ClasspathEntry$Origin;)Lorg/jooq/Condition;",
                     "onAnEnumArray(Lorg/jooq/Table;[Lno/sikt/graphitron/model/config/"
-                        + "ClasspathEntry$Origin;)Lorg/jooq/Condition;");
+                        + "ClasspathEntry$Origin;)Lorg/jooq/Condition;",
+                    "titleMatches(Ljava/lang/String;)Lorg/jooq/Field;");
         });
     }
 
@@ -550,8 +552,8 @@ class CodeCaptureTest {
                 .as("the condition fixture's condition-returning methods are the other arm's,"
                     + " and the one method on it that returns something else is not, which is what"
                     + " makes the exclusion a method's and not a class's")
-                .doesNotContain("titleContains", "onAnyTable", "onOneTable")
-                .containsExactly("notACondition");
+                .doesNotContain("titleContains", "onAnyTable", "onOneTable", "titleMatches")
+                .containsExactlyInAnyOrder("notACondition", "rawField", "notABooleanField");
             assertThat(serviceMethodsOn(dsl, LIFTERS))
                 .as("the lifters are the other arm's; what is left of that class is not a lifter")
                 .doesNotContain("titleUpper", "byInterface")

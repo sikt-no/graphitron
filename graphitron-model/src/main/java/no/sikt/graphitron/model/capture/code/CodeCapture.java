@@ -77,6 +77,9 @@ public final class CodeCapture {
     /** The return type a method must have to be nameable in {@code @condition(condition:)}. */
     private static final String JOOQ_CONDITION = "org.jooq.Condition";
 
+    /** The type argument a {@code Field} return carries when it stands in for a condition. */
+    private static final String JAVA_BOOLEAN = "java.lang.Boolean";
+
     /** The return type a lifter must have to be nameable in {@code @externalField(reference:)}. */
     private static final String JOOQ_FIELD = "org.jooq.Field";
 
@@ -924,9 +927,21 @@ public final class CodeCapture {
                 .set(e.TOUCHED_AT, excluded(e.TOUCHED_AT)));
     }
 
-    /** Whether the condition arm admits this method, which is its return type and nothing else. */
+    /**
+     * Whether the condition arm admits this method, which is its return type and nothing else.
+     *
+     * <p>A {@code Condition}, or a {@code Field<Boolean>}, which jOOQ accepts wherever the generator
+     * places the call. The manual documents the first; the generator checks neither, and admitting
+     * the second is what keeps a method it generates for from reading here as one nobody wrote. The
+     * type argument is read off the signature rather than assumed, so a raw or wildcarded
+     * {@code Field} stays out.
+     */
     private static boolean isConditionMethod(ClassfileCensus.MethodAt method) {
-        return JOOQ_CONDITION.equals(method.returnType());
+        return JOOQ_CONDITION.equals(method.returnType())
+            || JOOQ_FIELD.equals(method.returnType())
+                && method.returnTypeRefs().stream().anyMatch(ref -> "0".equals(ref.path())
+                    && JAVA_BOOLEAN.equals(ref.referencedClass())
+                    && "NONE".equals(ref.variance()));
     }
 
     /** Whether the lifter arm admits this method, which is every clause of its contract. */

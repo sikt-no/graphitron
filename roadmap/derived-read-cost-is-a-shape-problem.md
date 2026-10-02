@@ -150,9 +150,10 @@ are gone.
     * **A named self-referencing key reads one way** `done`. Both hops of a self-reference depart
       and arrive at one table, so the reading keeps the one the field's cardinality names, which
       is the generator's rule: along the key on a single-valued field, against it on a list.
-    * **A condition-only element resolves from its method** `open`. The method row is the missing
-      one: `CodeCapture` admits a condition method only on an exact `Condition` return, and the
-      generator checks no return type, so a `Field<Boolean>` method generates and has no row.
+    * **A condition-only element resolves from its method** `done`. The method row was the
+      missing one, `CodeCapture` admitting only a `Condition` return where the generator checks
+      none; a `Field<Boolean>` return is admitted beside it, read off the signature's type
+      argument. The manual still documents `Condition` alone, deliberately.
 
 ### The chain replaces the walk it was built to retire
 

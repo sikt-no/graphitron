@@ -46,6 +46,10 @@ class FieldTableLinksTest {
               className: "no.sikt.graphitron.rewrite.TestConditionRoutes",
               method: "filmToFilmActor"
           }}])
+          junctionByField: [FilmActor!]! @reference(path: [{condition: {
+              className: "no.sikt.graphitron.rewrite.TestConditionRoutes",
+              method: "filmToFilmActorAsField"
+          }}])
           rentals: [Rental!]! @reference(path: [{condition: {
               className: "no.sikt.graphitron.rewrite.TestConditionRoutes",
               method: "routineResultToRental"
@@ -238,6 +242,14 @@ class FieldTableLinksTest {
     @DisplayName("a condition element routes by its method's signature")
     void aConditionElementRoutesByItsSignature() {
         withCaptured(dsl -> assertThat(links(dsl, "Film", "junction"))
+            .containsExactly("[film_actor] 0 CONDITION film -> film_actor"));
+    }
+
+    /** The same route from a method returning a boolean field, which the generator accepts. */
+    @Test
+    @DisplayName("a condition returning a boolean field routes by its signature too")
+    void aBooleanFieldConditionRoutesByItsSignature() {
+        withCaptured(dsl -> assertThat(links(dsl, "Film", "junctionByField"))
             .containsExactly("[film_actor] 0 CONDITION film -> film_actor"));
     }
 

@@ -67,3 +67,13 @@ and line references are to trunk at `f5a571e`.
   question above: the method row is the missing one. Where the rendered call is the first term of
   a chain (`ConditionGlueRenderer.reachExists` appending `.and(...)`), a `Field<Boolean>` would not
   compile, `org.jooq.Field` declaring no `and`; read from the jOOQ signatures, not built.
+
+## What was changed
+
+* `ROUTE_AMBIGUOUS`: the chain-link reading keeps the self-referencing hop the field's cardinality
+  names (`f147ce6`).
+* `ELEMENT_UNRESOLVED`: `CodeCapture.isConditionMethod` admits a `Field<Boolean>` return beside
+  `Condition`, the type argument read from the signature so a raw or non-boolean `Field` stays out.
+  The manual is unchanged and documents `Condition` only: the generator tolerating `Field<Boolean>`
+  is not the same as every placement of the call compiling, which the note on `reachExists` above
+  leaves unverified.

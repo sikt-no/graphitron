@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.test.jooq.tables.FilmActor;
 import no.sikt.graphitron.rewrite.test.jooq.tables.RentFilm;
 import no.sikt.graphitron.rewrite.test.jooq.tables.Rental;
 import org.jooq.Condition;
+import org.jooq.Field;
 
 /**
  * Condition methods whose route the <em>store</em> has to resolve, which is why they are here and
@@ -44,6 +45,15 @@ public final class TestConditionRoutes {
      * condition arm exists for.
      */
     public static Condition filmToFilmActor(Film src, FilmActor tgt) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * The same route returning the predicate as a boolean field, which the generator accepts and
+     * jOOQ takes wherever a condition goes. Pins that the store reads the route off it too, rather
+     * than reporting an element that generates as unresolved.
+     */
+    public static Field<Boolean> filmToFilmActorAsField(Film src, FilmActor tgt) {
         throw new UnsupportedOperationException();
     }
 

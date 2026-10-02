@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.capture.code.fixtures;
 
 import org.jooq.Condition;
+import org.jooq.Field;
 import org.jooq.impl.DSL;
 
 /**
@@ -70,6 +71,25 @@ public final class ConditionFixture {
      */
     public Condition nonStatic(String table) {
         return DSL.trueCondition();
+    }
+
+    /**
+     * A boolean field standing in for a condition, which jOOQ takes wherever a condition goes and
+     * the generator accepts. Admitted on the type argument the signature records.
+     */
+    public static Field<Boolean> titleMatches(String table) {
+        return DSL.field(DSL.trueCondition());
+    }
+
+    /** A raw field says nothing about what it holds, so it is not admitted as a condition. */
+    @SuppressWarnings("rawtypes")
+    public static Field rawField(String table) {
+        return DSL.field(DSL.trueCondition());
+    }
+
+    /** A field of something other than a boolean is not a predicate either. */
+    public static Field<String> notABooleanField(String table) {
+        return DSL.inline(table);
     }
 
     /** Returns something else, so the arm's one admission rule leaves it out. */
