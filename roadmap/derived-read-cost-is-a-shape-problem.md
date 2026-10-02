@@ -153,6 +153,14 @@ are gone.
     codes report 161 coordinates the generator accepts. Each child is a reading that is wrong
     rather than a rule that is, and evidence is in
     `roadmap/audits/2026-10-01-sis-entry-defect-false-positives.md`.
+    * **The reactor's own example is the check** `open`. The sakila example reproduces it in tree:
+      made build errors, the defects report 44 coordinates it generates, and fail
+      `MethodClosureOracleTest`, `IncrementalCompileHarnessTest` and five corpus fragments with it.
+      This node is done when that example draws no error-severity entry defect, which a build can
+      check where sis cannot. Evidence in
+      `roadmap/audits/2026-10-02-sakila-entry-defect-false-positives.md`.
+    * **A chain arrives where its field says** `open`. Eight sakila coordinates report
+      `NO_ROUTE_TO_TARGET`, a class sis did not show; not yet examined.
     * **A departure is inherited through a type with no table of its own** `open`. The endpoints
       take the departure from the enclosing type's own binding only, so a nested type departs from
       nowhere and its chains report `NO_ROUTE_FROM_DEPARTURE`.
@@ -247,7 +255,7 @@ a derivation over either corpus alone, and `graphitron_` already does this again
       as written. `columnMapping` stays `@routine`'s own. The vocabulary still calls argMapping
       inert on `@externalField`, which its reading and the generator's rejection follow until
       changed.
-    * **The resolution** `done`. `graphitron_code_reference`: the one method a written reference
+    * **The resolution** `open`, reopened on a legal schema. `graphitron_code_reference`: the one method a written reference
       names, keyed to it and to `code_method`, written by the graphitron-ast anchor; no match is no
       row. `graphitron_code_reference_site` states once what both it and the defects read: the
       directive and element a reference sits on, and the method it names, the `@externalField`
@@ -255,6 +263,11 @@ a derivation over either corpus alone, and `graphitron_` already does this again
       says a class is absent only where the graph's classpath was read at all. Pinned by a fact
       document over the classpath corpus. `graphql_element` and `graphql_element_field` are
       declared to `graphql-ast` now, their writer.
+      * **A condition reference names an overload set** `open`. A multitable `@condition` names
+        one declaration per participant table and javac picks each branch's own, which is the
+        feature; keeping only a single match reports `CODE_REFERENCE_METHOD_AMBIGUOUS` on two sakila
+        coordinates that generate. So the resolution holds every match, and needing exactly one is
+        the rule of a site that calls one method, `@service`, `@externalField` and `@sourceRow`.
     * **`@enum` resolves to a class** `open`, when a consumer asks. A class reference names no
       method, so its resolution is to `code_class` and is its own relation.
     * **The per-site copies go** `blocked`, on each consumer being answered. The twins lose
@@ -308,7 +321,8 @@ a derivation over either corpus alone, and `graphitron_` already does this again
 * **The type questions follow it** `blocked`, on the producer resolution, because a `graphitron_`
   relation reading `intent_` is the same crossing pointed the other way.
 * **Entry defects fail validate** `blocked`, on the defects agreeing with the generator on a consumer
-  schema, without which this fails sis on 161 coordinates that generate. `graphitron_entry_defect`
+  schema, without which this fails sis on 161 coordinates that generate and the reactor's own
+  example on 44. `graphitron_entry_defect`
   is read by the `diagnostic` view alone, so every code in it reaches the editor and none stops a
   build. Not the producer
   resolution's alone: it holds for every arm, and the producer resolution's rejections wait on it.
