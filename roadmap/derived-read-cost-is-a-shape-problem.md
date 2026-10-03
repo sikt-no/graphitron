@@ -749,8 +749,10 @@ conversion frees one.
   converted, which is what the caller count measures and why it is the right count. A case that
   fabricates a state no capture reaches is not a case the fixture has to be kept for: it is either
   a property test, which is the tool for a pattern nobody writes on purpose, or it is a test of a
-  strange shape nobody cares about and it goes. `CarrierDataFieldPopulationTest` is the clearest
-  instance and is not an exception to plan around.
+  strange shape nobody cares about and it goes. `CarrierDataFieldPopulationTest` was named here as
+  the clearest instance and was not one: every state it seeded is SDL, and it is the fact document
+  `carrier-data-field.graphqls`, its four cases one expectation over the whole graph. A class is
+  read for what it fabricates before it is called residue.
 * **A fresh store per test stops being the only shape** `open`, and it is not tidiness: every
   `sql_` and `code_` relation is store-wide, so one store holds many graphs against one reading of
   the catalog and the classpath, and varying which SDL loads into a warm store is the only thing

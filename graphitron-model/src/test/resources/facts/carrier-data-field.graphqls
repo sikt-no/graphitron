@@ -1,0 +1,87 @@
+# Which types graphitron_carrier_data_field draws its population from, and how many data channels
+# each is told it has. The rule tests, inside its windowed derivation, that a candidate type is a
+# payload some mutation-rooted producer returns, and its outer query joins the producers on the same
+# two columns and tests it again. Two statements of one condition agree until one of them changes,
+# so this pins both the population and the arity over every partition.
+#
+# Five payload-shaped types, each with an errors channel that is not a data channel: one a
+# mutation-rooted @service returns, one two producer families return, one with two data channels,
+# and the two negatives, one a query-rooted @service returns and one nothing produces. The negatives
+# sit inside the population the derivation faces before it tests anything, so the boundary pinned
+# is the rule's own.
+
+type Film @table(name: "film") {
+  title: String
+}
+
+type Actor @table(name: "actor") {
+  firstName: String @field(name: "first_name")
+}
+
+type DbErr @error(handlers: [{handler: DATABASE}]) {
+  message: String
+}
+
+union WriteError = DbErr
+
+type CreateFilmPayload {
+  film: Film
+  errors: [WriteError]
+}
+
+type FilmPayload {
+  film: Film
+  errors: [WriteError]
+}
+
+# Two data channels, so a driving row counted twice changes the count rather than hiding inside a
+# one-row partition.
+type MultiPayload {
+  film: Film
+  actor: Actor
+  errors: [WriteError]
+}
+
+# A query-rooted producer returns it: a producer row exists and only its root keeps it out.
+type FilmResult {
+  film: Film
+  errors: [WriteError]
+}
+
+# Nothing produces it, though it is shaped exactly like a payload.
+type FilmHolder {
+  film: Film
+  errors: [WriteError]
+}
+
+input FilmUpdateInput {
+  filmId: Int! @field(name: "film_id")
+  title: String
+}
+
+type Mutation {
+  createFilm: CreateFilmPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "create"})
+  # A payload two families return is a row per family, at the payload's own arity.
+  serviceFilm: FilmPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "create"})
+  updateFilm(in: FilmUpdateInput!): FilmPayload
+    @mutation(typeName: UPDATE)
+  createBoth: MultiPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "create"})
+}
+
+extend type Query {
+  findFilm: FilmResult
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "find"})
+  holder: FilmHolder
+}
+
+extend schema @expectEquals(relation: "graphitron_carrier_data_field", rows: """
+  type_name,         field_name, family,  element_kind, data_fields
+  CreateFilmPayload, film,       SERVICE, TABLE,        1
+  FilmPayload,       film,       DML,     TABLE,        1
+  FilmPayload,       film,       SERVICE, TABLE,        1
+  MultiPayload,      actor,      SERVICE, TABLE,        2
+  MultiPayload,      film,       SERVICE, TABLE,        2
+  """)
