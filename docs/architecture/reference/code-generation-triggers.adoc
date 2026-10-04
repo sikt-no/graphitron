@@ -971,9 +971,10 @@ it moves the site the name resolves against, and `intent_column_match_claim` the
 
 === Reading a database routine
 
-`@routine` points a field at a table-valued function instead of a table. The return type still binds
-a `@table`, because the function's result set has a shape, and its children still resolve as columns
-of it. `argMapping:` binds the field's GraphQL arguments to the function's parameters by name.
+`@routine` points a field at a table-valued function instead of a table. The return type is bound to
+the function's result by that field and carries no `@table`, which a type naming a function is refused
+for; the result set has a shape, and the type's children still resolve as columns of it. `argMapping:`
+binds the field's GraphQL arguments to the function's parameters by name.
 
 include::_example-routine-table-valued-read.adoc[]
 

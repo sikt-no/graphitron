@@ -21,7 +21,7 @@ directive @auth(role: String!) on FIELD_DEFINITION
 # R300: the result type of the table-valued read function tilganger_for_feidebruker_med_fs_fiktivt_fnr.
 # jOOQ generates the function as a catalog Table<R>, so the @table binding resolves the same way a
 # plain table type does and the routine-result columns map by name.
-type Tilgang @table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr") {
+type Tilgang {
     organisasjonskode: Int
     rollekode: String
 }

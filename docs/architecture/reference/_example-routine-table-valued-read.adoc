@@ -9,7 +9,7 @@ type Query {
   feideId: String!): [Tilgang!]! @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId") @defaultOrder(fields: [{name : "organisasjonskode"}, {name : "rollekode"}])
 }
 
-type Tilgang @table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr") {
+type Tilgang {
   organisasjonskode: Int
   rollekode: String
 }

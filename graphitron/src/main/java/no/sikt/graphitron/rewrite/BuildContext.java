@@ -1430,6 +1430,18 @@ class BuildContext {
     }
 
     /**
+     * A {@code @table} naming a table-valued function's result. A type is not bound to a function:
+     * the field carrying {@code @routine} binds its return type to the routine's result, so the
+     * directive is refused rather than accepted as a second spelling of that binding.
+     */
+    Rejection tableNamesRoutineRejection(String sqlName) {
+        return Rejection.structural(
+            "@table(name: '" + sqlName + "') names a table-valued function, and a type is not bound"
+                + " to a function: remove @table, and the field carrying @routine binds this type"
+                + " to the routine's result");
+    }
+
+    /**
      * Builds the {@link Rejection} for an FK-name lookup that did not produce a
      * {@link JooqCatalog.ForeignKeyResolution.Resolved} variant. Sibling of
      * {@link #unknownTableRejection}; surfaces a Levenshtein-ranked candidate hint over the

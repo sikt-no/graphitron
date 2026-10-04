@@ -54,7 +54,7 @@ The rewrite emits `select(Tilgang.$project(...)).from(Routines.tilgangerForFeide
 
 The `@defaultOrder` is required here rather than decorative: the routine result is the chain's last node and a function result carries no primary key, so nothing can supply a deterministic order unless the schema names it. See <<read-surface,The read surface>>.
 
-Writing `@table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr")` on `Tilgang` is still accepted and changes nothing, so schemas that carry it keep working. It is worth removing: the two spellings of the routine's name have to agree, the annotation reads as a claim that the type is a stored table, and it welds the type to one routine, so two functions returning the same row shape cannot share it.
+A type is not bound to a function, so `@table` cannot name one: `@table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr")` on `Tilgang` fails the build, and the editor reports it as `GRAPHITRON_TABLE_NAMES_ROUTINE`. Remove the directive; the field carrying `@routine` binds the type to the routine's result. The binding belongs to the field because that is where the routine is called: a `@table` there would read as a claim that the type is a stored table, would have to repeat the routine's name and agree with it, and would weld the type to one routine, so two functions returning the same row shape could not share it.
 
 [[read-surface]]
 == The read surface: filtering, ordering and pagination
@@ -164,7 +164,13 @@ The single name-matched hop is also *implicit*. A `@table`-bound child of a rout
 
 [source,graphql]
 ----
-type Brukertilgang @table(name: "mine_tilganger") {   # mine_tilganger is a table-valued function
+type Query {
+    mineTilganger: [Brukertilgang!]!
+        @routine(name: "mine_tilganger")              # a table-valued function
+        @defaultOrder(fields: [{name: "rollekode"}])
+}
+
+type Brukertilgang {                                  # bound to mine_tilganger's result by the field above
     tilgangsrolle: Tilgangsrolle                      # Tilgangsrolle is @table(name: "rolle")
 }
 ----

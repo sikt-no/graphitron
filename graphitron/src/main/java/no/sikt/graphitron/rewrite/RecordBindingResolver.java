@@ -731,10 +731,10 @@ final class RecordBindingResolver {
 
     /**
      * Grounds the return binding of a hop-less {@code @routine} read field: the type it returns is
-     * bound to the routine's own result table, which is the fact an author states by hand when they
-     * repeat the routine's name in a {@code @table} on that type. Nothing is grounded where the
-     * author did write it, {@code @table} being read by the ordinary type classification, so this
-     * fills the silence rather than competing with a directive.
+     * bound to the routine's own result table. This is the only way a type is bound to a function's
+     * result; a {@code @table} naming one is refused at the type. Nothing is grounded where the
+     * return carries {@code @table} at all, that directive naming a catalog table the ordinary type
+     * classification reads, so this fills the silence rather than competing with a directive.
      *
      * <p>The boundary is that the chain's last application is the {@code @routine}, so the landing
      * is the routine's own result: hops before it move where the chain starts and never where it

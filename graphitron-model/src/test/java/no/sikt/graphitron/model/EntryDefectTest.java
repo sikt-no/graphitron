@@ -319,6 +319,39 @@ class EntryDefectTest {
     }
 
     /**
+     * A {@code @table} naming a table-valued function. A type is not bound to a function: the field
+     * carrying {@code @routine} binds its return type to the routine's result, so the directive is
+     * refused at its own position, and the type that leaves it off is the control.
+     */
+    @Test
+    @DisplayName("a @table naming a table-valued function is refused, and the routine's field binds the type")
+    void aTableNamingARoutineResultIsRefused(@TempDir Path tmp) {
+        String routineField = """
+            type Query {
+              tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
+                         argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
+            }
+            """;
+        withCatalogStore(tmp.resolve("written"), routineField + """
+            type Tilgang @table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr") {
+              organisasjonskode: Int
+            }
+            """, dsl -> {
+            assertThat(codes(dsl)).containsExactly("TABLE_NAMES_ROUTINE");
+            var row = dsl.select(GRAPHITRON_ENTRY_DEFECT.TYPE_NAME, GRAPHITRON_ENTRY_DEFECT.DETAIL)
+                .from(GRAPHITRON_ENTRY_DEFECT)
+                .fetchOne();
+            assertThat(row.value1() + " " + row.value2())
+                .as("at the type, quoting the spelling")
+                .isEqualTo("Tilgang tilganger_for_feidebruker_med_fs_fiktivt_fnr");
+        });
+        withCatalogStore(tmp.resolve("bound"), routineField + """
+            type Tilgang { organisasjonskode: Int }
+            """, dsl -> assertThat(codes(dsl)).as("bound by its field, nothing to refuse").isEmpty());
+    }
+
+    /**
      * A capture against the jOOQ catalog, which the chain arms need and the write arms do not: a
      * route is ambiguous only against tables that declare more than one way between them.
      */

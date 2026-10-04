@@ -7249,7 +7249,7 @@ class GraphitronSchemaBuilderTest {
     // classify as typed Deferred until the chain build + emitters land.
 
     private static final String TILGANG_TYPE = """
-        type Tilgang @table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr") {
+        type Tilgang {
           organisasjonskode: Int
           rollekode: String
         }
@@ -7356,11 +7356,15 @@ class GraphitronSchemaBuilderTest {
         // table name, and the child's return type already carries it.
         var schema = build("""
             type Film @table(name: "film") { title: String }
-            type ActorFilmRow @table(name: "films_for_actor") {
+            type ActorFilmRow {
               filmId: Int @field(name: "film_id")
               film: Film
             }
-            type Query { rows: ActorFilmRow }
+            type Query {
+              rows(actorId: Int!, minLength: Int!): [ActorFilmRow!]!
+                @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+                @defaultOrder(fields: [{name: "film_id"}])
+            }
             """);
         var f = (no.sikt.graphitron.rewrite.model.ChildField.TableField)
             schema.field("ActorFilmRow", "film");
@@ -7378,11 +7382,15 @@ class GraphitronSchemaBuilderTest {
         // steering the author toward an intermediate table.
         var schema = build("""
             type Language @table(name: "language") { name: String }
-            type ActorFilmRow @table(name: "films_for_actor") {
+            type ActorFilmRow {
               filmId: Int @field(name: "film_id")
               language: Language
             }
-            type Query { rows: ActorFilmRow }
+            type Query {
+              rows(actorId: Int!, minLength: Int!): [ActorFilmRow!]!
+                @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+                @defaultOrder(fields: [{name: "film_id"}])
+            }
             """);
         var f = (UnclassifiedField) schema.field("ActorFilmRow", "language");
         assertThat(f.reason())
@@ -7677,7 +7685,7 @@ class GraphitronSchemaBuilderTest {
         // against the previous hop's node (film_actor), not the implicit head (film); this is the
         // order-significance under test. The routine result is the terminus.
         var schema = build("""
-            type ActorFilm @table(name: "films_for_actor") {
+            type ActorFilm {
               filmId: Int @field(name: "FILM_ID")
             }
             type Film @table(name: "film") {
@@ -7757,7 +7765,7 @@ class GraphitronSchemaBuilderTest {
         // the previous node is film_actor, so the candidate hint lists ITS columns, not the
         // implicit head's.
         var schema = build("""
-            type ActorFilm @table(name: "films_for_actor") {
+            type ActorFilm {
               filmId: Int @field(name: "FILM_ID")
             }
             type Film @table(name: "film") {
@@ -8015,7 +8023,7 @@ class GraphitronSchemaBuilderTest {
         // the batch key stays the first hop's source-side columns; the mid-chain lateral reads
         // the previous hop's alias inside the batch query — no key rule change.
         var schema = build("""
-            type ActorFilm @table(name: "films_for_actor") {
+            type ActorFilm {
               filmId: Int @field(name: "FILM_ID")
             }
             type Film @table(name: "film") {
@@ -8227,7 +8235,7 @@ class GraphitronSchemaBuilderTest {
         // anchor, which a correlated routine child does not compose with. Nothing about the
         // routine result, which paginates fine at root.
         var schema = build("""
-            type ActorFilm @table(name: "films_for_actor") { filmId: Int @field(name: "film_id") }
+            type ActorFilm { filmId: Int @field(name: "film_id") }
             type Actor @table(name: "actor") {
               films(minLength: Int!): [ActorFilm!]
                 @asConnection
@@ -8378,14 +8386,15 @@ class GraphitronSchemaBuilderTest {
         // classifyMutationField's @routine fork, its summary worded around the anchor's seat
         // and naming the shapes the result-shapes follow-up carries (void / scalar /
         // OUT-parameter binding / non-carrier Objects).
-        var schema = build(TILGANG_TYPE + """
-            type Query { tilgang: Tilgang }
+        var schema = build("""
+            type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+            type Query { rental: Rental }
             type Mutation {
-              tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
-                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
+              rentFilm(inventoryId: Int!, customerId: Int!): Rental
+                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
             }
             """);
-        var f = (UnclassifiedField) schema.field("Mutation", "tilganger");
+        var f = (UnclassifiedField) schema.field("Mutation", "rentFilm");
         assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
         assertThat(f.reason()).contains("no payload data field");
     }

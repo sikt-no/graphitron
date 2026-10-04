@@ -1515,6 +1515,9 @@ class TypeBuilder {
         if (tableOpt.isEmpty()) {
             return new UnclassifiedType(name, location, ctx.unknownTableRejection(tableName));
         }
+        if (ctx.catalog.isTableValuedFunction(tableName)) {
+            return new UnclassifiedType(name, location, ctx.tableNamesRoutineRejection(tableName));
+        }
         TableRef tableRef = tableOpt.get();
 
         // Platform-id synthesis. The malformed-metadata diagnostic runs unconditionally so SDL
@@ -1729,6 +1732,9 @@ class TypeBuilder {
         Optional<TableRef> tableOpt = svc.resolveTable(tableName);
         if (tableOpt.isEmpty()) {
             return new UnclassifiedType(name, location, ctx.unknownTableRejection(tableName));
+        }
+        if (ctx.catalog.isTableValuedFunction(tableName)) {
+            return new UnclassifiedType(name, location, ctx.tableNamesRoutineRejection(tableName));
         }
         // @discriminate(on:) is String! in the directive schema, so the argument is present
         // whenever the directive is; the empty fallback keeps the lookup total either way.

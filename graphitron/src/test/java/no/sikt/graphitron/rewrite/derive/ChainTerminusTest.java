@@ -54,7 +54,7 @@ class ChainTerminusTest {
     @Test
     void aRoutineWithNoHopLandsOnItsOwnResult() {
         withCaptured("""
-            type Tilgang @table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr") {
+            type Tilgang {
               organisasjonskode: Int
               rollekode: String
             }
@@ -193,7 +193,7 @@ class ChainTerminusTest {
                 @routine(name: "films_for_actor",
                          argMapping: "pActorId: actorId, pMinLength: minLength")
             }
-            type ActorFilmRow @table(name: "films_for_actor") { title: String }
+            type ActorFilmRow { title: String }
             type Query { actors: [Actor] }
             """, dsl -> {
             var rows = termini(dsl);

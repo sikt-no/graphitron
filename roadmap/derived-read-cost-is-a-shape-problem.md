@@ -268,11 +268,12 @@ a derivation over either corpus alone, and `graphitron_` already does this again
   store, across catalogs no graph reads together, for joins nobody wrote, and four readers re-scope
   it by graph. The walk's `BuildContext.synthesizeNameMatchedJoin` derives the same rule again from
   the live catalog. Nothing compares the two.
-  * **`@table` cannot name a routine result** `open`. A type is bound to a routine's result
-    implicitly, by the field returning it; binding one with `@table` is refused. The example's
+  * **`@table` cannot name a routine result** `done`. A type is bound to a routine's result
+    implicitly, by the field returning it; binding one with `@table` is refused, by the walk while it
+    is the build's gate and by a `TABLE_NAMES_ROUTINE` entry defect the editor reads. The example's
     `Tilgang @table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr")` loses the directive and
     keeps working, which is the case that pins both halves.
-    * **The manual says a routine result is bound by its field** `open`, lands with the node above.
+    * **The manual says a routine result is bound by its field** `done`.
       `routine.adoc` says the `@table` spelling is accepted and changes nothing, and its implicit
       name-matched hop example binds `Brukertilgang` to a function with `@table`; both become the
       field's binding and the refusal. `code-generation-triggers.adoc` says the return type still
@@ -722,6 +723,18 @@ What the gate should still refuse is the inference the obligation was guarding a
 does not follow from a dissolved register. The DDL half of the boot goes up under this item's own
 remedy, which replaces registrations with stored keys and indexes. The figures for both halves are in
 `roadmap/audits/2026-09-22-capture-dissolution-measurements.md`.
+
+## For the changelog at Done
+
+The entry is written at Done, the board and the changelog holding an id one place at a time. These
+are what it owes a consumer reading it, each with the subject of the commit it landed in, a hash
+not surviving the harvest, so they are recorded here as they land rather than found afterwards.
+
+* **Breaking: `@table` cannot name a table-valued function** ("a type is not bound to a function"). A schema binding a type to
+  a function's result with `@table` stops building, with a message saying to remove the directive.
+  The field carrying `@routine` binds the type, which is what the directive used to repeat.
+* **Removed: the MCP schema tool's `demand` slot** ("the demand relations go"). A tool reading it gets no slot; it
+  restated directives the same entry shows.
 
 ## Retired vocabulary
 

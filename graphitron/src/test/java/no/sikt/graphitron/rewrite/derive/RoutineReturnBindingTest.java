@@ -215,24 +215,6 @@ class RoutineReturnBindingTest {
     }
 
     /**
-     * Both arms answering the same table is one binding, which is what lets a reader guarding on a
-     * single candidate keep working while a schema still carries the redundant {@code @table}. A
-     * provenance column on the reduction would make this two rows and break exactly that.
-     */
-    @Test
-    void theTwoArmsAgreeingAreOneResolvedBinding() {
-        withCaptured(routineReturning("Row @table(name: \"films_for_actor\")", ""), dsl -> {
-            assertThat(derived(dsl)).as("the derivation's own arm").hasSize(1);
-            assertThat(directiveArmFor(dsl, "Row")).as("the @table arm").hasSize(1);
-            var resolved = resolvedFor(dsl, "Row");
-            assertThat(resolved).hasSize(1);
-            assertThat(lower(resolved.getFirst().get(GRAPHITRON_RESOLVED_TYPE_BINDING.TABLE_NAME)))
-                .isEqualTo("films_for_actor");
-            assertThat(resolved.getFirst().get(GRAPHITRON_RESOLVED_TYPE_BINDING.CANDIDATES)).isEqualTo(1);
-        });
-    }
-
-    /**
      * The two arms disagreeing is the ambiguity a reader must not have decided for it: the author's
      * {@code @table} names one table and the chain lands on another, and both rows survive.
      */
@@ -343,18 +325,6 @@ class RoutineReturnBindingTest {
             .where(GRAPHITRON_RESOLVED_TYPE_BINDING.GRAPH_NAME.eq(CapturedStore.GRAPH))
             .and(GRAPHITRON_RESOLVED_TYPE_BINDING.TYPE_NAME.eq(typeName))
             .orderBy(GRAPHITRON_RESOLVED_TYPE_BINDING.TABLE_NAME)
-            .fetch();
-    }
-
-    /** The {@code @table} arm's rows for one type, scoped for the same reason. */
-    private static Result<Record2<String, String>>
-            directiveArmFor(DSLContext dsl, String typeName) {
-        // The caller counts rather than reads, so this names what identifies a row: which type
-        // bound which table. Nothing else on the relation is part of the question.
-        return dsl.select(INTENT_BOUND_TABLE.TYPE_NAME, INTENT_BOUND_TABLE.TABLE_NAME)
-            .from(INTENT_BOUND_TABLE)
-            .where(INTENT_BOUND_TABLE.GRAPH_NAME.eq(CapturedStore.GRAPH))
-            .and(INTENT_BOUND_TABLE.TYPE_NAME.eq(typeName))
             .fetch();
     }
 

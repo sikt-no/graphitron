@@ -47,7 +47,7 @@ class RoutineSpentInputPipelineTest {
     private static final String PRELUDE = """
         type Actor implements Node @table(name: "actor") @node(keyColumns: ["actor_id"]) { id: ID! }
 
-        type ActorFilm @table(name: "films_for_actor") {
+        type ActorFilm {
           filmId: Int @field(name: "film_id")
           title:  String
         }

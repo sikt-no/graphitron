@@ -7229,9 +7229,9 @@ COMMENT ON COLUMN javac_diagnostic.message IS 'javac''s own rendered text (root 
 -- binding, so it walks the same hops from its own seed and answers where the chain lands and what
 -- kind of table that is, which is the question every read-surface axis on a routine-backed field
 -- turns out to be asking. That terminus is also a binding: the type such a field returns is bound
--- to the table the chain lands on, which is the fact @table on a routine's return type states by
--- hand today, so intent_routine_return_binding derives it and graphitron_resolved_type_binding is where
--- it meets the @table population. The reduction is where the readers point, because what a reader
+-- to the table the chain lands on, and only that way, a @table naming a function being refused, so
+-- intent_routine_return_binding derives it and graphitron_resolved_type_binding is where it meets the
+-- @table population. The reduction is where the readers point, because what a reader
 -- of a binding asks is which table stands for the type and never which rule found it; the two
 -- populations stay separate relations because each derives by its own rule from its own facts.
 --
@@ -8456,7 +8456,21 @@ SELECT s.graph_name, s.source_name, s.source_line, s.source_column,
            -- classpath at all. Only a reading that read something can say a class is absent.
            AND EXISTS (SELECT 1 FROM store_graph_source g
                          JOIN code_class k ON k.source_name = g.source_name
-                        WHERE g.graph_name = c.graph_name)) s;
+                        WHERE g.graph_name = c.graph_name)) s
+UNION ALL
+-- A @table naming a table-valued function. A type is not bound to a function: the field carrying
+-- @routine binds its return type to the routine's result, so the directive names something a type
+-- cannot stand on. Reported at the @table, with the spelling as written.
+SELECT DISTINCT t.graph_name, t.source_name, t.source_line, t.source_column,
+       'TABLE_NAMES_ROUTINE', t.type_name, CAST(NULL AS VARCHAR), COALESCE(t.table_ref, t.type_name)
+  FROM graphitron_table_entry t
+  JOIN graphitron_spelled_table sp
+    ON sp.graph_name = t.graph_name AND sp.spelling = COALESCE(t.table_ref, t.type_name)
+  JOIN sql_table st
+    ON st.source_name = sp.table_source_name AND st.table_schema = sp.table_schema
+   AND st.table_name = sp.table_name
+ WHERE t.source_line IS NOT NULL
+   AND st.table_type = 'FUNCTION';
 COMMENT ON VIEW graphitron_entry_defect_rule IS 'One row the entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
 COMMENT ON COLUMN graphitron_entry_defect_rule.graph_name IS 'the owning graph''s partition, carried from the entry; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_entry_defect_rule.source_name IS 'the file the offending directive was written in, the first of the three columns naming its position; with them a reference into graphql_ast_entry, which is the supertype that makes a @routine application and a path element the same kind of thing to point at';
@@ -8464,7 +8478,7 @@ COMMENT ON COLUMN graphitron_entry_defect_rule.source_line IS 'the offending dir
 COMMENT ON COLUMN graphitron_entry_defect_rule.source_column IS 'the offending directive''s source column; with the two columns above, the entry this defect is about. The key is the entry and not the coordinate, because a coordinate is an aggregate over the sites that declare it and two offending applications at one coordinate are two things to fix';
 COMMENT ON COLUMN graphitron_entry_defect_rule.code IS 'which defect, a graphitron_defect_type key. With the entry the whole key: one entry may break two rules and then carries two rows, there being no ranking here and nothing to choose between them';
 COMMENT ON COLUMN graphitron_entry_defect_rule.type_name IS 'the type owning the coordinate the offending directive was written at. Payload and not key: an entry is written at one coordinate, so this is determined by the position beside it and adds no way to tell two rows apart. Carried because the read surface this feeds groups by coordinate, and a class of rows answering NULL there is an axis with a hole in it rather than an axis';
-COMMENT ON COLUMN graphitron_entry_defect_rule.field_name IS 'the field of that type, NULL where the defect sits at a type rather than a field. Every rule here is about a field today and the column is nullable anyway, the coordinate axis it feeds being nullable at the type grain by construction';
+COMMENT ON COLUMN graphitron_entry_defect_rule.field_name IS 'the field of that type, NULL where the defect sits at a type rather than a field, as TABLE_NAMES_ROUTINE does; the coordinate axis it feeds is nullable at the type grain by construction';
 COMMENT ON COLUMN graphitron_entry_defect_rule.detail IS 'the specific a rendered message quotes back, null where the code says everything. One column and never a payload: what a consumer needs beyond this is a join from the entry, and the columns that used to differ per defect were all message material';
 COMMENT ON TABLE graphitron_entry_defect IS 'A written graphitron directive the generator will not emit for, at the position it was written and under the rule that stopped it. For example a mutation field carrying @routine and an @orderBy draws one row at the @orderBy''s own line, reading READ_SURFACE_ON_WRITE.';
 COMMENT ON COLUMN graphitron_entry_defect.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -15193,6 +15207,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A chain link resolves to a route and none of its routes departs the table the chain is standing on, so the link cannot follow the one before it.'),
   ('NO_ROUTE_TO_TARGET', 'error', 'AUTHOR', 'GRAPHITRON_NO_ROUTE_TO_TARGET',
    'A chain runs to its last link and arrives somewhere other than the table the field''s rows were said to come from.'),
+  ('TABLE_NAMES_ROUTINE', 'error', 'AUTHOR', 'GRAPHITRON_TABLE_NAMES_ROUTINE',
+   'A @table names a table-valued function, and a type is not bound to a function: the field carrying @routine binds its return type to the routine''s result, so the directive is removed.'),
   ('CHAIN_WITHOUT_TARGET', 'error', 'AUTHOR', 'GRAPHITRON_CHAIN_WITHOUT_TARGET',
    'A field whose chain is @reference alone returns a type bound to no table, so the path has nowhere to arrive and no catalog could make it resolve.'),
   ('CODE_REFERENCE_CLASS_NOT_READ', 'error', 'AUTHOR', 'GRAPHITRON_CODE_REFERENCE_CLASS_NOT_READ',

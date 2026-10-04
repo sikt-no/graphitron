@@ -54,7 +54,7 @@ class LauncherMembershipTest {
         }
         enum Sprak { nn @field(name: "nno") nb @field(name: "nob") }
         type TranslatedTexts { nn: String nb: String }
-        type Tilgang @table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr") {
+        type Tilgang {
           organisasjonskode: Int
         }
         type Language @table(name: "language") {

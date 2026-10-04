@@ -23,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ValidateListRequiresOrderingPipelineTest {
 
     private static final String TILGANG_TYPE = """
-        type Tilgang @table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr") {
+        type Tilgang {
           organisasjonskode: Int
           rollekode: String
         }
@@ -115,7 +115,7 @@ class ValidateListRequiresOrderingPipelineTest {
         // The rule does not fork on position: a correlated child chain terminating on the
         // function result is the same absent key and the same remedy.
         var messages = messagesFor("Actor.films", """
-            type ActorFilm @table(name: "films_for_actor") { filmId: Int @field(name: "film_id") }
+            type ActorFilm { filmId: Int @field(name: "film_id") }
             type Actor @table(name: "actor") {
               films(minLength: Int!): [ActorFilm!]
                 @routine(name: "films_for_actor", argMapping: "pMinLength: minLength",
