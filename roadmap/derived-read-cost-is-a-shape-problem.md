@@ -254,6 +254,37 @@ a derivation over either corpus alone, and `graphitron_` already does this again
   * **The old shape is gone** `blocked`, on each consumer being answered from the new model. The
     two producer views, the unused views and their tests, and the coordinate-keyed entries with
     their writers in `GraphitronAnchor`.
+* **A routine result joins its target on the target's key, matched by name** `open`. A routine's
+  result declares no key, so the rule is that it is joined to a target by matching the target's
+  primary-key columns by name. The rule is real and stated twice, neither time where it belongs.
+  `sql_name_matched_key_column` crosses every table-valued function with every primary key in the
+  store, across catalogs no graph reads together, for joins nobody wrote, and four readers re-scope
+  it by graph. The walk's `BuildContext.synthesizeNameMatchedJoin` derives the same rule again from
+  the live catalog. Nothing compares the two.
+  * **`@table` cannot name a routine result** `open`. A type is bound to a routine's result
+    implicitly, by the field returning it; binding one with `@table` is refused. The example's
+    `Tilgang @table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr")` loses the directive and
+    keeps working, which is the case that pins both halves.
+    * **The manual says a routine result is bound by its field** `open`, lands with the node above.
+      `routine.adoc` says the `@table` spelling is accepted and changes nothing, and its implicit
+      name-matched hop example binds `Brukertilgang` to a function with `@table`; both become the
+      field's binding and the refusal. `code-generation-triggers.adoc` says the return type still
+      binds a `@table`, and its routine example is generated from the corpus file, which loses the
+      directive and is regenerated.
+  * **The pairing is the anchor's, where a field joins a routine result** `open`. Matched once, by
+    `graphitron`'s anchor, for each join a field asks of a routine result: an authored reference
+    departing one, and a routine write's payload re-reading the rows it returned. Stored at that
+    join's grain, keyed to the element and to both `sql_column` rows.
+  * **The anchored pairs agree with the walk's** `blocked`, on the pairing. An oracle only this
+    order affords, while the walk still synthesizes its own.
+  * **Each reader reads the anchored pairs** `blocked`, on the pairing. `FieldReferenceStepHops`'
+    `NAME_MATCH` arm and `RoutineWriteFacts.hopPairs`; `intent_argument_reference_step_hop` and
+    `intent_mutation_routine_seat` go with their family rather than being flipped.
+  * **`sql_name_matched_key_column` is gone** `blocked`, on the readers. With `NameMatchedKeys`,
+    which was the jOOQ gatherer's only anchor step.
+    * **The fact model stops citing it** `blocked`, on the node above. `fact-model.adoc`'s
+      case-fold paragraph names it as a reader joining an owned fold; the anchored pairing takes its
+      place there or the citation goes.
 * **The type questions follow it** `blocked`, on the producer resolution, because a `graphitron_`
   relation reading `intent_` is the same crossing pointed the other way.
 * **Entry defects fail validate** `blocked`, on the defects agreeing with the generator on a consumer
@@ -419,6 +450,10 @@ result_delivery      -- DIRECT | WRAPPED | MANY, NULL with element_class
   `code_class` now and `code_write_slot` follows it, so a class the next reading does not find takes
   its construction and its write slots with it.
 * **`code_type` and `code_type_element` are gone** `blocked`, on the readers moving off them.
+  * **The modeling discipline's worked example follows them out** `blocked`, on the node above.
+    `modeling-discipline.adoc` names `code_type` as a fact read off the classfiles and
+    `code_type_element` as the family's derived peel, so the example is restated over the
+    positions that carry the parse.
 
 **Why this unblocks the leaf above it, stated because the graph does not say it.** Of the
 sixteen `code_` relations, all but the dictionary pair now carry `class_name`, and `code_method`,
@@ -490,10 +525,21 @@ documents against the rest.
   package and every package under it. A service package beneath the generated one is dropped
   silently, every arm reading as a classpath that does not carry it. A case first, then either the
   exclusion stops at the package or the layout is refused out loud.
+  * **The manual says what the jOOQ package keeps out of the reading** `open`, lands with the node
+    above. The `jooqPackage` row of `mojo-configuration.adoc` says the catalog is rooted there and
+    not that the classpath reading leaves it out, which is what an author whose services share the
+    module needs to know.
 * **A gate holds the call order to the roster** `open`. Nothing checks that `ModelCapture` calls a
   gatherer after every gatherer it declares, which is how the two drifted apart. `java-source` and
   `compile` run in the dev loop on their own cadence rather than in this sequence, and `sdl` names a
   class that writes nothing, so the gate's population is the gatherers `ModelCapture` calls.
+* **The pipeline overview states the order and what holds it** `blocked`, on the gate.
+  `pipeline-overview.adoc` § Capture transcribes says the gatherers run in the order their
+  declared read edges require, which was false until the order moved and is held by nothing until
+  the gate lands. The sentence names the order and the gate; the vocabulary around it is R983's.
+* **The pipeline overview describes a dependency's row** `blocked`, on a claim referencing its
+  dependency. The same section's `store_` bookkeeping sentence names the graph, its sources and
+  their stamps, and gains the dependencies and what each kind lets a capture skip.
 
 ### The store knows whether an artifact can go stale
 
