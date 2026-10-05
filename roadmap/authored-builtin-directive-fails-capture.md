@@ -17,11 +17,11 @@ last-updated: 2026-09-29
 A schema that declares a directive graphql-java already ships, such as `directive @oneOf on
 INPUT_OBJECT`, captures normally, and the fact store (the H2 database `graphitron:dev` and the
 language server read the schema from) holds the author's declaration in place of the built-in one,
-which is what graphql-java does when it builds the schema. Today a first capture of such a schema
-fails outright as an infrastructure error, so `graphitron:dev` has no store and the author's editor
-loses every diagnostic instead of getting none about a line that is legal. A later capture over a
-store that already holds the row does not fail, but it can leave the built-in's shape standing
-where the author's declaration should be.
+which is what graphql-java does when it builds the schema for three of the five built-ins (the two
+executable directives, `@include` and `@skip`, are the stated exception below). Today every capture
+of such a schema fails outright as an infrastructure error, the first into an empty store and every
+later one alike, so `graphitron:dev` has no usable store and the author's editor loses every
+diagnostic instead of getting none about a line that is legal.
 
 The minimal pair, from the field report and the federated sakila fixture:
 
@@ -64,10 +64,18 @@ building an executable schema over each redeclaration:
 
 - Each of the five specified directives (`@deprecated`, `@include`, `@oneOf`, `@skip`,
   `@specifiedBy`) redeclared once builds without error.
-- The authored declaration replaces the built-in. `directive @oneOf on INPUT_OBJECT | OBJECT`
-  builds a `@oneOf` valid on `OBJECT` and `INPUT_OBJECT`; `directive @deprecated(reason: String) on
-  FIELD_DEFINITION` builds a `@deprecated` valid on `FIELD_DEFINITION` alone, with a nullable
-  `reason` where the built-in's is `String!`.
+- For `@deprecated`, `@oneOf` and `@specifiedBy` the authored declaration replaces the built-in:
+  the built directive carries the author's description, locations, argument types and source
+  location. `directive @oneOf on INPUT_OBJECT | OBJECT` builds a `@oneOf` valid on `OBJECT` and
+  `INPUT_OBJECT`; `directive @deprecated(reason: String) on FIELD_DEFINITION` builds a `@deprecated`
+  valid on `FIELD_DEFINITION` alone, with a nullable `reason` where the built-in's is `String!`.
+- For `@include` and `@skip` the built-in stands and the authored declaration is silently dropped:
+  `"mine" directive @include(if: Boolean) on FIELD` builds a `@include` with the built-in's
+  description, locations `FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT`, argument `if: Boolean!` and no
+  definition node. `@skip` is the same.
+- graphql-java's SDL validation nonetheless checks an application against the authored declaration:
+  `directive @include(if: Boolean) on FIELD_DEFINITION` with `@include(if: true)` on a field builds
+  without error, although the built `@include` does not list `FIELD_DEFINITION`.
 - A redeclaration that a use contradicts is refused with a positioned error: `'f' [@1:14] tried to
   use a directive 'deprecated' in the 'FIELD_DEFINITION' location but that is illegal`.
 - Declaring one directive twice, in one document or across two merged registries, is refused with
@@ -77,9 +85,20 @@ building an executable schema over each redeclaration:
 
 So refusing would make graphitron reject a schema that graphql-java, graphitron's own generator
 pipeline and federation practice all accept. Tolerating is what the engine does, and the store
-takes the engine's rule: a specified directive stands in the anchors only where no document of the
-graph declares that name, and a document that declares it replaces it. No new diagnostic is minted;
-the positioned refusals above are graphql-java's and already have a relation.
+takes one rule for all five: a specified directive stands in the anchors only where no document of
+the graph declares that name, and a document that declares it replaces it. No new diagnostic is
+minted; the positioned refusals above are graphql-java's and already have a relation.
+
+That rule is the engine's for `@deprecated`, `@oneOf` and `@specifiedBy`. For `@include` and
+`@skip` graphql-java is split: its SDL validation checks applications against the authored
+declaration, and only the built schema's directive object reverts to the built-in. The store
+holds the authored declaration, so it agrees with the validation and diverges from the built
+directive object, and it accepts that divergence rather than special-casing two names. Both are
+executable directives, applied in operations rather than in the schema, so the built object is
+what governs a query and the authored declaration is what governs the SDL the store transcribes.
+The divergence reaches only what a reader shows about the definition itself: hover shows the
+author's description, and go-to-definition lands on the author's line, which is the line the
+author wrote.
 
 ## The fault
 
@@ -99,11 +118,10 @@ documents declare with `UNION ALL` and no rank between the two arms:
 An authored `@oneOf` therefore arrives twice in each upsert (`onDuplicateKeyUpdate`, which jOOQ
 renders as a `MERGE` on H2). On a cold store both source rows insert and the key refuses the
 second. `elements` runs first in `anchor`, which is why the field report's stack names it; fixing it
-alone moves the failure to `directiveElements`. On a warm store both source rows update the
-existing one and the one applied last stands. For `graphql_directive` that can be the specified row,
-and `directiveLocations` and `directiveArguments` reach a declaration through `graphql_directive`'s
-site, so a redeclared directive's locations and arguments can drop out of the anchors with nothing
-failing.
+alone moves the failure to `directiveElements`. On a warm store both source rows match the one
+existing row, and H2 2.4.240 refuses that too: "Merge using ON column expression, duplicate
+_ROWID_ target record already processed". So the key refuses on every reading, whatever the store
+already holds.
 
 The class comment on `GraphQLAstCapture` already names this shape: "a statement that unions with
 `ALL` and then does not rank is a statement that has not decided anything, and the key will decide
@@ -132,9 +150,12 @@ All in `graphitron-model`'s `GraphQLAstCapture`; no DDL change and no new relati
 - `directiveArgumentElements` reads only authored entries and needs no change.
 - The comments beside the three arms, and the `SPECIFIED_DIRECTIVES` javadoc, state the rule instead
   of the refusal that does not happen: a specified directive stands where no document declares it,
-  and an authored declaration replaces it, as graphql-java's does. The sentence beside the
-  specified-scalar arm in `elements` says a redeclared `String` is "refused"; it is filtered out of
-  the transcription, and the sentence says so while the statement is open.
+  and an authored declaration replaces it, as graphql-java's does for every specified directive but
+  the executable `@include` and `@skip`, whose authored declaration the store keeps although the
+  built schema reverts to the built-in, graphql-java's SDL validation having honoured the
+  authored one. The sentence beside the specified-scalar arm in `elements` says a redeclared
+  `String` is "refused"; it is filtered out of the transcription, and the sentence says so while
+  the statement is open.
 
 Sweeping needs nothing new. When a document stops redeclaring `@oneOf`, the next reading's specified
 arm offers `@oneOf` again with that reading's instant and a null site, and the location and argument
@@ -149,17 +170,20 @@ what the author wrote. No emitter reads these anchors.
 
 - `GraphQLAnchorTest`, "an authored redeclaration of a built-in directive stands in its place": one
   document with `directive @oneOf on INPUT_OBJECT`, `directive @deprecated(reason: String) on
-  FIELD_DEFINITION` and an input applying `@oneOf`, read into a fresh store. The anchor completes;
-  `graphql_element` holds exactly one `@oneOf` and one `@deprecated`, both `DIRECTIVE`;
-  `graphql_directive` for each carries the document's source name and line; `graphql_directive_location`
-  holds `INPUT_OBJECT` for `@oneOf` and `FIELD_DEFINITION` for `@deprecated` (a built-in has no
-  location rows, so any row proves the authored declaration won); `graphql_directive_argument` holds
-  `reason` with `type_sdl` `String`; `@include`, `@skip` and `@specifiedBy` still stand with a null
-  site. The same corpus read a second time leaves every one of those assertions true, which is the
-  warm-store half.
+  FIELD_DEFINITION`, `directive @include(if: Boolean) on FIELD` and an input applying `@oneOf`, read
+  into a fresh store. The anchor completes; `graphql_element` holds exactly one `@oneOf`, one
+  `@deprecated` and one `@include`, all `DIRECTIVE`; `graphql_directive` for each carries the
+  document's source name and line; `graphql_directive_location` holds `INPUT_OBJECT` for `@oneOf`,
+  `FIELD_DEFINITION` for `@deprecated` and `FIELD` alone for `@include` (a built-in has no location
+  rows, so any row proves the authored declaration won); `graphql_directive_argument` holds `reason`
+  with `type_sdl` `String` and `if` with `type_sdl` `Boolean`; `@skip` and `@specifiedBy` still
+  stand with a null site. The `@include` assertions pin the executable-directive exception the
+  Decision takes: the store keeps the author's declaration although the built schema does not. The
+  same corpus read a second time leaves every one of those assertions true, which is the warm-store
+  half; that second reading fails today as well as the first.
 - `GraphQLAnchorTest`, "a built-in stands again when its redeclaration goes away": read the corpus
-  above, then a second reading without the two declarations. `@oneOf` and `@deprecated` are back
-  with a null site, and their location and argument rows are gone.
+  above, then a second reading without the three declarations. `@oneOf`, `@deprecated` and
+  `@include` are back with a null site, and their location and argument rows are gone.
 - `GraphQLAnchorTest.capturingTwiceRestampsRatherThanDuplicating`: add `directive @oneOf on
   INPUT_OBJECT` to its corpus, so the census over `DERIVED` covers a redeclaration.
 - A capture-tier case through `CapturedStore.withCapturedStore`, which drives `ModelCapture`, the
@@ -190,6 +214,12 @@ what the author wrote. No emitter reads these anchors.
   every authored site. It reaches the same rows, but the specified arm has no site or modification
   time to rank by, so every rank grows a precedence column to carry a rule that a `NOT EXISTS` states
   directly.
+- Follow the engine for `@include` and `@skip` too, keeping the built-in in the anchors and
+  dropping the authored declaration. That means excluding authored `include` and `skip` from four
+  statements (`elements`, `directiveElements`, `directives`, and `directiveArgumentElements`,
+  whose rows would otherwise lose their `graphql_directive_argument` partners), a name list in the
+  capture to buy agreement with the built directive object while disagreeing with graphql-java's
+  own SDL validation, which honours the authored declaration.
 
 ## Seen on
 
@@ -229,6 +259,15 @@ design.
    sentence where (b) costs four exclusions, but the Decision section has to stop claiming that
    all five are replaced either way, and the test list should pin whichever answer is chosen.
 
+   *Response:* took (a). The Decision's measurement now records the split per directive, plus a
+   further measurement that bears on the choice: graphql-java's SDL validation checks applications
+   against the authored `@include` (one granted `FIELD_DEFINITION` admits a field application),
+   so the store, holding the authored declaration, agrees with the engine's validation and diverges
+   only from the built directive object. A Decision paragraph states the exception and its reach
+   (hover and go-to-definition), the Implementation's comment bullet names it, the first test
+   redeclares `@include` and pins its authored site, location and argument, and (b) moved to Other
+   solutions with its cost.
+
 2. **A warm store fails too; it does not silently keep the built-in's row.** (Gate question 1: the
    Goal misstates what the consumer sees today.) On H2 2.4.240, the version the root pom pins,
    jOOQ 3.20.11's `onDuplicateKeyUpdate` renders `MERGE INTO … USING (… UNION ALL …) ON … WHEN
@@ -242,3 +281,7 @@ design.
    does not happen. That makes the item's case stronger, and the plan and tests stand unchanged;
    the second-read assertion in the first test still covers the warm path, which now fails today
    as well.
+
+   *Response:* the Goal's first paragraph and the warm-store paragraph of The fault now state that
+   every reading fails, with the H2 message. The first test's warm-store note says the second
+   reading fails today too.
