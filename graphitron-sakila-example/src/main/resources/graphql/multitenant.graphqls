@@ -110,6 +110,12 @@ type Query {
         [Film!]! @asConnection @defaultOrder(primaryKey: true)
     # Untenanted root: acquires dslDefault(), never consults the divined context.
     languages: [Language!]!
+    # @globalData: a root service handed a connection whose arguments name no tenant. Unmarked
+    # it would be a build error; the marker states its SQL touches only global data, so it runs on
+    # the default source.
+    globalServedBy: String @globalData @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
+        method: "globalServedBy"})
     node(id: ID!): Node
     nodes(ids: [ID!]!): [Node]!
 }

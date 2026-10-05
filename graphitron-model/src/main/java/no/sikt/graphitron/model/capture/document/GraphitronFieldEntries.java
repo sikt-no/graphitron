@@ -68,11 +68,12 @@ import static org.jooq.impl.DSL.val;
  * how the walk this replaces routed them, and it follows from the key: an entry references the AST
  * row it decodes, and those rows are in different relations.
  *
- * <p>Sixteen directive names reach this site and twelve of them get a relation. {@code @splitQuery}
- * and {@code @tenantFanOut} declare no argument, and {@code @multitableReference} is rejected
- * before anything reads its one argument, so a row for any of the three would carry its key and
- * nothing else, which is what the applied-directive row already says. {@code @reference} has only
- * its path, so its steps get a relation and the application does not.
+ * <p>Seventeen directive names reach this site and twelve of them get a relation.
+ * {@code @splitQuery}, {@code @tenantFanOut} and {@code @globalData} declare no argument, and
+ * {@code @multitableReference} is rejected before anything reads its one argument, so a row for
+ * any of the four would carry its key and nothing else, which is what the applied-directive row
+ * already says. {@code @reference} has only its path, so its steps get a relation and the
+ * application does not.
  *
  * @see GraphitronAstEntries for what every site's decode holds in common
  */

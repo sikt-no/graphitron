@@ -226,9 +226,10 @@ class TenantBindingClassificationTest {
     }
 
     @Test
-    void sessionBoundServiceAtAnUntenantedRoot_staysUntenanted() {
-        // The complement: with no tenant context to inherit, the $session binding changes
-        // nothing; the call runs on the default source and reads its handle.
+    void sessionBoundServiceAtARootNamingNoTenant_rejects() {
+        // The complement: a root has no tenant context to inherit, and the service's own SQL is
+        // opaque, so a $session binding with nothing in the arguments naming a tenant would run
+        // on the default source whatever the service touches. The build refuses it.
         var schema = build("""
             type Query {
                 sessionPrincipal: String @service(service: {
@@ -239,8 +240,34 @@ class TenantBindingClassificationTest {
             }
             """);
 
-        assertThat(schema.tenantBindingOf("Query", "sessionPrincipal"))
-            .isEqualTo(TenantBinding.Untenanted.INSTANCE);
+        assertThat(schema.tenantBindingOf("Query", "sessionPrincipal")).isNull();
+        assertUnroutedWithoutDeclines(schema, "Query.sessionPrincipal");
+    }
+
+    /**
+     * The no-declines form of the unrouted-service refusal: one rejection at the coordinate,
+     * naming the tenant column and both fixes.
+     */
+    static Rejection.AuthorError.UnroutedServiceCall assertUnroutedWithoutDeclines(
+            GraphitronSchema schema, String coordinate) {
+        var unrouted = schema.tenantBindings().rejections().stream()
+            .filter(e -> e.coordinate().equals(coordinate))
+            .map(e -> e.rejection())
+            .filter(r -> r instanceof Rejection.AuthorError.UnroutedServiceCall)
+            .map(r -> (Rejection.AuthorError.UnroutedServiceCall) r)
+            .toList();
+        assertThat(unrouted).hasSize(1);
+        var rejection = unrouted.get(0);
+        assertThat(rejection.declines()).isEmpty();
+        assertThat(rejection.message())
+            .contains("'" + coordinate + "' is a @service that is handed a connection")
+            .contains("tenant column 'film_id'")
+            .contains("@nodeId(typeName:)")
+            .doesNotContain("reaches tenant-scoped table");
+        if (rejection.evidence().isEmpty()) {
+            assertThat(rejection.message()).contains("mark the field @globalData");
+        }
+        return rejection;
     }
 
     @Test
@@ -1291,6 +1318,73 @@ class TenantBindingClassificationTest {
     }
 
     @Test
+    void anUndecodedIdHandedAConnectionRejectsAtTheRootAndTheChildStillRejects() {
+        // The same undecoded id, but the service is handed a DSLContext: it would write on the
+        // default database, so the root itself is refused, beside the payload child's own text.
+        var schema = build(SERVICE_TYPES + """
+            type Mutation { rateByRawIdOnConnection(film: ID!): RateFilmsPayload %s }
+            """.formatted(service("rateByRawIdOnConnection")));
+
+        assertThat(schema.tenantBindingOf("Mutation", "rateByRawIdOnConnection")).isNull();
+        var rejection = assertUnroutedWithoutDeclines(schema, "Mutation.rateByRawIdOnConnection");
+        assertThat(rejection.evidence()).isEmpty();
+        assertRejects(schema, "RateFilmsPayload.films", "no ancestor established a tenant context");
+    }
+
+    @Test
+    void aTenantReachRootServiceHandedAConnectionGetsTheServiceText() {
+        var schema = build(SERVICE_TYPES + """
+            type Mutation { pickFilmOnConnection(film: ID!): Film %s }
+            """.formatted(service("pickFilmOnConnection")));
+
+        assertThat(schema.tenantBindingOf("Mutation", "pickFilmOnConnection")).isNull();
+        assertUnroutedWithoutDeclines(schema, "Mutation.pickFilmOnConnection");
+        assertThat(schema.tenantBindings().rejections())
+            .noneMatch(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding
+                && e.coordinate().equals("Mutation.pickFilmOnConnection"));
+    }
+
+    @Test
+    void aTenantTablesRecordBindingNoTenantIsNamedAsEvidence() {
+        var schema = build(SERVICE_TYPES + """
+            input RetitleFilmInput { title: String @field(name: "title") }
+            type Mutation { retitleFilm(in: RetitleFilmInput!): String %s }
+            """.formatted(service("retitleFilm")));
+
+        var rejection = assertUnroutedWithoutDeclines(schema, "Mutation.retitleFilm");
+        assertThat(rejection.evidence()).containsExactly("FilmRecord at in");
+        assertThat(rejection.message())
+            .contains("Its arguments carry tenant-scoped values that bind no tenant: FilmRecord at in.")
+            .doesNotContain("@globalData");
+    }
+
+    @Test
+    void aPolymorphicRecordIdAtAnEmptyReachConnectionServiceRejectsOnceWithTheDecline() {
+        // The widened decline gate: the service needs a tenant though its reach is empty, and the
+        // shape naming the tenant cannot route it. One rejection, carrying the decline's own text.
+        var schema = build(SERVICE_TYPES + FILM_THING + """
+            input ThingInput { occupant: ID! @nodeId(typeName: "FilmThing") }
+            type Mutation { pickForThing(in: ThingInput!): String %s }
+            """.formatted(service("pickForThing")));
+
+        assertThat(schema.tenantBindingOf("Mutation", "pickForThing")).isNull();
+        var atField = schema.tenantBindings().rejections().stream()
+            .filter(e -> e.coordinate().equals("Mutation.pickForThing"))
+            .toList();
+        assertThat(atField).hasSize(1);
+        assertThat(atField.get(0).rejection())
+            .isInstanceOfSatisfying(Rejection.AuthorError.UnroutedServiceCall.class, r -> {
+                assertThat(r.declines()).hasSize(1);
+                assertThat(r.message())
+                    .contains("only through shapes that cannot route the call")
+                    .contains("no single decode to route the service call on")
+                    .doesNotContain("reaches tenant-scoped table")
+                    .doesNotContain("nothing in its arguments names a tenant")
+                    .doesNotContain("@globalData");
+            });
+    }
+
+    @Test
     void aTableReturningServiceRootOverATenantTableDivines() {
         var schema = build(SERVICE_TYPES + """
             type Mutation { pickFilm(in: RateFilmInput!): Film %s }
@@ -1438,6 +1532,235 @@ class TenantBindingClassificationTest {
         assertThat(schema.tenantBindingOf("Film", "sessionLanguage"))
             .isEqualTo(TenantBinding.Untenanted.INSTANCE);
         assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    // ===== @globalData: a root service's statement that its data is global =====
+
+    private static String globalService(String method) {
+        return "@globalData " + service(method);
+    }
+
+    /**
+     * The marker rejected with {@code fragment}, and with no other text: no other rung's, no
+     * cross-scope or no-binding rejection at the coordinate, and no sweep rejection beside it.
+     */
+    private static void assertGlobalDataRejection(GraphitronSchema schema, String coordinate,
+                                                  String fragment, String... directives) {
+        assertThat(schema.tenantBindingOf(coordinate.split("\\.")[0], coordinate.split("\\.")[1]))
+            .isNull();
+        var atField = schema.tenantBindings().rejections().stream()
+            .filter(e -> e.coordinate().equals(coordinate))
+            .toList();
+        assertThat(atField).hasSize(1);
+        assertThat(atField.get(0).rejection())
+            .isInstanceOfSatisfying(Rejection.InvalidSchema.DirectiveConflict.class, conflict -> {
+                assertThat(conflict.directives()).containsExactlyInAnyOrder(directives);
+                assertThat(conflict.message())
+                    .contains("'" + coordinate + "'")
+                    .contains(fragment)
+                    .doesNotContain("never reached");
+            });
+    }
+
+    @Test
+    void aMarkedSessionServiceRunsOnTheDefaultSource() {
+        var schema = build("""
+            type Query {
+                sessionPrincipal: String @globalData @service(service: {
+                    className: "no.sikt.graphitron.rewrite.TestServiceStub",
+                    method: "principalOf",
+                    argMapping: "identity: $session"
+                })
+            }
+            """);
+
+        assertThat(schema.tenantBindingOf("Query", "sessionPrincipal"))
+            .isEqualTo(TenantBinding.Untenanted.INSTANCE);
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aMarkedDslContextServiceRunsOnTheDefaultSource() {
+        var schema = build(SERVICE_TYPES + """
+            type Mutation { refreshLanguages: Boolean %s }
+            """.formatted(globalService("refreshLanguages")));
+
+        assertThat(schema.tenantBindingOf("Mutation", "refreshLanguages"))
+            .isEqualTo(TenantBinding.Untenanted.INSTANCE);
+        assertThat(schema.tenantBindings().rejections())
+            .noneMatch(e -> e.coordinate().equals("Mutation.refreshLanguages"));
+    }
+
+    @Test
+    void globalDataOnAChildFieldRejects() {
+        var schema = build(boundFilmWith("rating: String " + globalService("ratingWithDsl")));
+
+        assertGlobalDataRejection(schema, "Film.rating", "supported on root fields only",
+            "globalData");
+    }
+
+    @Test
+    void globalDataOnANonServiceRootRejects() {
+        var schema = build("""
+            type Language @table(name: "language") { name: String }
+            type Query { languages: [Language!]! @globalData }
+            """);
+
+        assertGlobalDataRejection(schema, "Query.languages",
+            "only a @service field's SQL is opaque to the build", "globalData");
+    }
+
+    @Test
+    void globalDataOnACrossScopeRootGetsItsRungsTextAlone() {
+        // A cross-scope reach always holds a tenant-scoped table; the marker's ladder answers it
+        // ahead of the cross-scope rejection, so neither that text nor the sweep's appears.
+        var schema = build("""
+            type Film @table(name: "film") { filmId: Int @field(name: "film_id") }
+            type Language @table(name: "language") { name: String }
+            union Media = Film | Language
+            type Query { media: [Media!]! @globalData }
+            """);
+
+        assertGlobalDataRejection(schema, "Query.media",
+            "only a @service field's SQL is opaque to the build", "globalData");
+        assertThat(schema.tenantBindings().rejections())
+            .noneMatch(e -> e.rejection().message().contains("cross-scope"));
+    }
+
+    @Test
+    void globalDataOnAServiceHandedNoConnectionRejects() {
+        var schema = build(SERVICE_TYPES + """
+            type Mutation { rateByRawId(film: ID!): RateFilmsPayload %s }
+            """.formatted(globalService("rateByRawId")));
+
+        assertGlobalDataRejection(schema, "Mutation.rateByRawId",
+            "the service is handed no connection, so there is nothing to route", "globalData");
+    }
+
+    @Test
+    void globalDataOnATenantScopedTableReturnRejects() {
+        var schema = build(SERVICE_TYPES + """
+            type Mutation { pickFilmOnConnection(film: ID!): Film %s }
+            """.formatted(globalService("pickFilmOnConnection")));
+
+        assertGlobalDataRejection(schema, "Mutation.pickFilmOnConnection",
+            "returns tenant-scoped @table type 'Film'", "globalData");
+    }
+
+    @Test
+    void globalDataOnAGlobalTableReturnRejects() {
+        var schema = build(SERVICE_TYPES + """
+            type Language @table(name: "language") { name: String }
+            type Mutation { languageOnConnection: Language %s }
+            """.formatted(globalService("languageOnConnection")));
+
+        assertGlobalDataRejection(schema, "Mutation.languageOnConnection",
+            "returns global @table type 'Language', which already runs on the default source",
+            "globalData");
+    }
+
+    @Test
+    void globalDataOverArgumentsNamingATenantRejects() {
+        var schema = build(SERVICE_TYPES + """
+            type Mutation { rateFilmWithDsl(in: RateFilmInput!): RateFilmsPayload %s }
+            """.formatted(globalService("rateFilmWithDsl")));
+
+        assertGlobalDataRejection(schema, "Mutation.rateFilmWithDsl",
+            "the arguments name a tenant (in.film), which contradicts @globalData", "globalData");
+    }
+
+    @Test
+    void globalDataOverADeclinedTenantShapeRejects() {
+        var schema = build(SERVICE_TYPES + FILM_THING + """
+            input ThingInput { occupant: ID! @nodeId(typeName: "FilmThing") }
+            type Mutation { pickForThing(in: ThingInput!): String %s }
+            """.formatted(globalService("pickForThing")));
+
+        assertGlobalDataRejection(schema, "Mutation.pickForThing",
+            "through a shape that cannot route the call), which contradicts @globalData",
+            "globalData");
+    }
+
+    @Test
+    void globalDataOverTenantEvidenceRejects() {
+        var schema = build(SERVICE_TYPES + """
+            input RetitleFilmInput { title: String @field(name: "title") }
+            type Mutation { retitleFilm(in: RetitleFilmInput!): String %s }
+            """.formatted(globalService("retitleFilm")));
+
+        assertGlobalDataRejection(schema, "Mutation.retitleFilm",
+            "the arguments carry tenant-scoped values (FilmRecord at in)", "globalData");
+    }
+
+    @Test
+    void globalDataBesideTenantFanOutRejectsOnce() {
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type Query { films: [Film] @globalData @tenantFanOut }
+            """);
+
+        assertGlobalDataRejection(schema, "Query.films", "combines @globalData with @tenantFanOut",
+            "globalData", "tenantFanOut");
+    }
+
+    @Test
+    void globalDataOnAnInterfaceFieldRejectsThroughTheSweep() {
+        var schema = build("""
+            interface Subject @table(name: "jti_subject") @discriminate(on: "subject_kind") {
+                subjectId: Int! @field(name: "jti_subject_id")
+                subjectKind: String! @field(name: "subject_kind")
+                label: String @globalData
+            }
+            type AppAccount implements Subject @table(name: "jti_subject") @discriminator(value: "APP") {
+                subjectId: Int! @field(name: "jti_subject_id")
+                subjectKind: String! @field(name: "subject_kind")
+                label: String
+            }
+            type Query { subjects: [Subject!]! }
+            """);
+
+        assertThat(schema.tenantBindings().rejections())
+            .anyMatch(e -> e.rejection() instanceof Rejection.InvalidSchema.DirectiveConflict conflict
+                && conflict.directives().equals(List.of("globalData"))
+                && conflict.message().contains("'Subject.label'")
+                && conflict.message().contains("never reached the tenant-binding classification"));
+    }
+
+    @Test
+    void globalDataOnAFieldOfANestingTypeRejectsThroughTheSweep() {
+        var schema = build("""
+            type Film @table(name: "film") {
+                title: String
+                meta: FilmMeta
+            }
+            type FilmMeta { title: String @globalData }
+            type Query { films(filmId: Int @field(name: "film_id")): [Film!]! }
+            """);
+
+        assertThat(schema.tenantBindings().rejections())
+            .anyMatch(e -> e.rejection() instanceof Rejection.InvalidSchema.DirectiveConflict conflict
+                && conflict.directives().equals(List.of("globalData"))
+                && conflict.message().contains("'FilmMeta.title'")
+                && conflict.message().contains("never reached the tenant-binding classification"));
+    }
+
+    @Test
+    void globalDataInASingleTenantBuildRejects() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Query {
+                sessionPrincipal: String @globalData @service(service: {
+                    className: "no.sikt.graphitron.rewrite.TestServiceStub",
+                    method: "principalOf",
+                    argMapping: "identity: $session"
+                })
+            }
+            """);
+
+        assertThat(schema.tenantBindings().rejections())
+            .anyMatch(e -> e.rejection() instanceof Rejection.InvalidSchema.DirectiveConflict conflict
+                && conflict.directives().equals(List.of("globalData"))
+                && conflict.message().contains("'Query.sessionPrincipal'")
+                && conflict.message().contains("no <tenantColumn>"));
     }
 
     @Test

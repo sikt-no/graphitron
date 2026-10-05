@@ -193,6 +193,16 @@ Consumer impact: this is a breaking build change. A schema with an unmarked, non
 - **A mojo-configuration list of global services.** That moves a per-field fact out of the schema, where neither the LSP nor a schema reviewer sees it.
 - **Naming the marker for the routing (`@defaultSource`).** The manual's vocabulary would support it, but the author is asserting something about the data ("this service touches only global data"), and the entry discipline records what the author meant. The routing follows from that.
 
+## Implementation notes
+
+Landed as specified, with three choices the plan left open:
+
+- **The evidence form of `UnroutedServiceCall` does not suggest `@globalData`.** The plan's no-declines form appends the evidence sentence to the Goal's message, which ends by suggesting the marker. Rung 7 rejects the marker over that same evidence, so the evidence form drops the suggestion, on the reasoning the plan already gives for the declines form.
+- **The sweep's verdict predicate is the same for both markers: the coordinate reached the marker's ladder.** Every rung of both ladders ends in an arm or a marker-specific rejection, so reaching the ladder is the verdict. `armOf` records it per marker (both, for the conflict), and the marker table carries the two texts each marker's sweep rejects with (single-tenant, never reached). The `@tenantFanOut` texts are unchanged.
+- **Marker rejections are `InvalidSchema.DirectiveConflict`**, as the `@tenantFanOut` ladder's are, naming `globalData` (and `tenantFanOut` for the conflict).
+
+Fixture grep (classification tests via `withTenantColumn`, the multitenant example, the corpus): the only root connection-binding service that divined nothing was `TenantBindingClassificationTest.sessionBoundServiceAtAnUntenantedRoot_staysUntenanted`, replaced by `sessionBoundServiceAtARootNamingNoTenant_rejects`. Every root service in `multitenant.graphqls` divines; it gains `Query.globalServedBy` for the execution test. The corpus configures no tenant column.
+
 ## Reviewer findings
 
 ### Round 1 (Spec → Ready): request revisions

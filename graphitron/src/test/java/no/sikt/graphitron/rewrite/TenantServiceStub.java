@@ -69,6 +69,36 @@ class TenantServiceStub {
         throw new UnsupportedOperationException();
     }
 
+    /** {@link #rateByRawId} handed a connection: nothing routes it, so it would run on the default source. */
+    public static TenantFilmsPayload rateByRawIdOnConnection(DSLContext dsl, String film) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** A table-returning root over a tenant-scoped table, handed a connection, naming no tenant. */
+    public static FilmRecord pickFilmOnConnection(DSLContext dsl, String film) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** A tenant-scoped table's record bound only to a non-tenant column: tenant evidence. */
+    public static String retitleFilm(DSLContext dsl, FilmRecord in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** A polymorphic record member at an empty-reach root handed a connection. */
+    public static String pickForThing(DSLContext dsl, TestNodeIdPolymorphicRecordBean in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** A root handed a connection with no arguments at all, as a service over global data is. */
+    public static Boolean refreshLanguages(DSLContext dsl) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** A table-returning root over a global table, handed a connection. */
+    public static LanguageRecord languageOnConnection(DSLContext dsl) {
+        throw new UnsupportedOperationException();
+    }
+
     /** A table-returning root over a tenant-scoped table. */
     public static FilmRecord pickFilm(TestNodeIdRecordBean in) {
         throw new UnsupportedOperationException();

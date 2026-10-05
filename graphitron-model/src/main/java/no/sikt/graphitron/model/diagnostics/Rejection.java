@@ -34,7 +34,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      * carry typed structural data (a name-lookup attempt with candidates, conflict
      * sites, ...) so downstream tooling reads it off the arm.
      */
-    sealed interface AuthorError extends Rejection permits AuthorError.UnknownName, AuthorError.Structural, AuthorError.AccessorMismatch, AuthorError.RecordBindingMultiProducer, AuthorError.TypeConflict, AuthorError.MultiProducerDomainTypeDisagreement, AuthorError.SortEnumMissingOrder, AuthorError.TenantColumnTypeDisagreement, AuthorError.NoTenantBinding, ServiceMethodCallError, ReflectionError, UpdateRowsError, DeleteRowsError, MutationTableArgError, ErrorChannelWalkerError, WireCoercionError, ServiceCarrierShapeError, PivotError, JooqRecordInputError {
+    sealed interface AuthorError extends Rejection permits AuthorError.UnknownName, AuthorError.Structural, AuthorError.AccessorMismatch, AuthorError.RecordBindingMultiProducer, AuthorError.TypeConflict, AuthorError.MultiProducerDomainTypeDisagreement, AuthorError.SortEnumMissingOrder, AuthorError.TenantColumnTypeDisagreement, AuthorError.NoTenantBinding, AuthorError.UnroutedServiceCall, ServiceMethodCallError, ReflectionError, UpdateRowsError, DeleteRowsError, MutationTableArgError, ErrorChannelWalkerError, WireCoercionError, ServiceCarrierShapeError, PivotError, JooqRecordInputError {
 
         /**
          * The classifier resolved a name (column, table, FK, service method,
@@ -351,6 +351,55 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
                 return new NoTenantBinding(prefix + coordinate, tableName, detail);
             }
         }
+
+        /**
+         * A root {@code @service} that is handed a connection (a {@code DSLContext} or the
+         * {@code $session} handle) while nothing in its arguments routes it to a tenant, in a
+         * database-per-tenant build. The service's own SQL is opaque to the build, so the call
+         * would run on the default database whatever that SQL touches. A sibling of
+         * {@link NoTenantBinding} rather than a use of it because the field need reach no
+         * tenant-scoped table of graphitron's own, so that arm's opening would be false here.
+         *
+         * <p>{@code declines} picks the message form. Empty: nothing names the tenant, and the
+         * message names both fixes, listing {@code evidence} (the argument values typed by a
+         * tenant-scoped table that bind no tenant) when there is any. Non-empty: the arguments
+         * name the tenant column only through shapes that cannot route the call, and each
+         * decline's detail carries its own fix.
+         */
+        record UnroutedServiceCall(String coordinate, String tenantColumn, List<String> declines,
+                                   List<String> evidence)
+                implements AuthorError {
+
+            public UnroutedServiceCall {
+                declines = List.copyOf(declines);
+                evidence = List.copyOf(evidence);
+            }
+
+            @Override public String message() {
+                String opening = "'" + coordinate + "' is a @service that is handed a connection";
+                if (!declines.isEmpty()) {
+                    return opening + ", and its arguments name tenant column '" + tenantColumn
+                        + "' only through shapes that cannot route the call, so it would run on"
+                        + " the default database: " + String.join(" ", declines);
+                }
+                String fixes = opening + ", but nothing in its arguments names a tenant for"
+                    + " tenant column '" + tenantColumn + "', so it would run on the default"
+                    + " database. Take the node table's jOOQ record with @nodeId(typeName:)"
+                    + " (a bean member, a parameter, or a top-level argument), or bind a jOOQ"
+                    + " record field to '" + tenantColumn + "'.";
+                // Tenant evidence is what @globalData rejects, so the marker is suggested only
+                // where it would be accepted.
+                return evidence.isEmpty()
+                    ? fixes + " If the service works only on global data, mark the field"
+                        + " @globalData."
+                    : fixes + " Its arguments carry tenant-scoped values that bind no tenant: "
+                        + String.join(", ", evidence) + ".";
+            }
+
+            @Override public Rejection prefixedWith(String prefix) {
+                return new UnroutedServiceCall(prefix + coordinate, tenantColumn, declines, evidence);
+            }
+        }
     }
 
     /**
@@ -541,6 +590,12 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
     /** {@link AuthorError.NoTenantBinding} factory. */
     static Rejection noTenantBinding(String coordinate, String tableName, String detail) {
         return new AuthorError.NoTenantBinding(coordinate, tableName, detail);
+    }
+
+    /** {@link AuthorError.UnroutedServiceCall} factory. */
+    static Rejection unroutedServiceCall(String coordinate, String tenantColumn,
+                                         List<String> declines, List<String> evidence) {
+        return new AuthorError.UnroutedServiceCall(coordinate, tenantColumn, declines, evidence);
     }
 
     /** {@link InvalidSchema.Structural} factory; the majority shape. */

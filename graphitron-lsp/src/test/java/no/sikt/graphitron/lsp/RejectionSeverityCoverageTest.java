@@ -259,6 +259,13 @@ class RejectionSeverityCoverageTest {
                 "no argument or input field maps to tenant column 'eier_organisasjon', and no"
                     + " ancestor established a tenant context.");
         }
+        if (permit == Rejection.AuthorError.UnroutedServiceCall.class) {
+            // Tenant-binding fold rejection: a root service handed a connection whose arguments
+            // name no tenant. Diagnostics.compute's switch on Rejection.AuthorError catches it
+            // uniformly (Error severity).
+            return new Rejection.AuthorError.UnroutedServiceCall(
+                "Mutation.godkjenn", "eier_organisasjon", List.of(), List.of());
+        }
         if (permit == Rejection.InvalidSchema.Structural.class) {
             return new Rejection.InvalidSchema.Structural("reason");
         }

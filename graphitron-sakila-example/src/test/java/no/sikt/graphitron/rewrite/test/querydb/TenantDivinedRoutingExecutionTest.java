@@ -319,6 +319,18 @@ class TenantDivinedRoutingExecutionTest {
             .isZero();
     }
 
+    @Test
+    void globalDataService_runsOnTheDefaultSource_touchingNoTenantDatabase() {
+        var result = execute("{ globalServedBy }");
+        assertThat(result.getErrors()).isEmpty();
+        assertThat(((Map<String, Object>) result.getData()).get("globalServedBy"))
+            .as("the marked service is handed the default source's connection")
+            .isEqualTo(dsl.fetchValue(DSL.field("current_database()", String.class)));
+        assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get())
+            .as("a @globalData service acquires only the default source")
+            .isZero();
+    }
+
     // ===== Unknown divined tenant: request-level error before any SQL =====
 
     @Test

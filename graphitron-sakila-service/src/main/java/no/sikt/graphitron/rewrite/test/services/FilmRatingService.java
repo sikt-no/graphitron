@@ -14,8 +14,8 @@ import java.util.stream.Collectors;
 import static no.sikt.graphitron.rewrite.test.jooq.Tables.FILM;
 
 /**
- * Multi-tenant fixture: {@code @service} methods whose arguments name the tenant, and child
- * services that bind a connection under a tenant-bound parent. Each reports
+ * Multi-tenant fixture: {@code @service} methods whose arguments name the tenant, child services
+ * that bind a connection under a tenant-bound parent, and one root over global data. Each reports
  * {@code current_database()} on the connection it was handed, so the execution tier can see which
  * database served it. The tenant databases carry only the tenant-scoped tables, so the film reads
  * select the two columns they hold.
@@ -48,7 +48,12 @@ public final class FilmRatingService {
         return payload(dsl, actors.stream().map(FilmActorRecord::getFilmId).toList());
     }
 
-    /** A child service taking the {@code DSLContext} as a parameter. */
+    /** A root over global data only, marked {@code @globalData}: reports the database it ran on. */
+    public static String globalServedBy(DSLContext dsl) {
+        return database(dsl);
+    }
+
+        /** A child service taking the {@code DSLContext} as a parameter. */
     public static Map<FilmRecord, String> servedBy(Set<FilmRecord> films, DSLContext dsl) {
         return byFilm(films, database(dsl));
     }

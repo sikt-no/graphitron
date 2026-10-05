@@ -28,6 +28,7 @@ import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.OutputField;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
+import no.sikt.graphitron.rewrite.model.ServiceField;
 import no.sikt.graphitron.rewrite.model.UpdateRows;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.model.diagnostics.Rejection;
@@ -58,9 +59,11 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  * <p>{@link #EMPTY} for single-tenant builds ({@link TenantScopes.None}): the axis is absent,
  * not "everything {@link TenantBinding.Untenanted}".
  *
- * <p>{@link #rejections()} carries the typed {@code noTenantBinding} findings: a field or
- * dispatch surface reaching a tenant-scoped table with no binding in scope. The validator
- * drains them through its tenant mirror; nothing here demotes a classified verdict.
+ * <p>{@link #rejections()} carries the typed {@code noTenantBinding} findings (a field or
+ * dispatch surface reaching a tenant-scoped table with no binding in scope), the
+ * {@code unroutedServiceCall} findings (a root service handed a connection whose arguments name
+ * no tenant), and the tenancy markers' ladder and sweep rejections. The validator drains them
+ * through its tenant mirror; nothing here demotes a classified verdict.
  */
 public record TenantBindingIndex(
     Map<FieldCoordinates, TenantBinding> byCoordinate,
@@ -104,8 +107,8 @@ public record TenantBindingIndex(
             return EMPTY;
         }
         if (!(scopes instanceof TenantScopes.Configured configured)) {
-            // The axis is absent, but a @tenantFanOut marker must not be silently ignored: the
-            // author asked for a per-tenant union in a build with no tenants to fan over.
+            // The axis is absent, but a tenancy marker must not be silently ignored: the author
+            // asked for tenant routing in a build with no tenants to route over.
             var markerRejections = rejectMarkersWithoutTenancy(sdl);
             return markerRejections.isEmpty()
                 ? EMPTY
@@ -116,29 +119,69 @@ public record TenantBindingIndex(
     }
 
     /**
-     * Every {@code @tenantFanOut} application in a single-tenant build is a validate-time error.
-     * Walks every {@link graphql.schema.GraphQLFieldsContainer} (objects <em>and</em> interfaces:
-     * the directive is legal on interface field definitions, and graphql-java does not copy
-     * interface-field directives onto implementors), mirroring
-     * {@link Fold#sweepUnreachedFanOutMarkers}.
+     * A field-level tenancy marker, with the two texts its completeness sweep rejects with: one
+     * for a single-tenant build, where the marker decides nothing, and one for a coordinate that
+     * never reached the marker's ladder in {@link Fold#armOf}. Reaching the ladder is the
+     * marker's verdict, since every ladder ends in an arm or a marker-specific rejection.
      */
-    private static List<ValidationError> rejectMarkersWithoutTenancy(GraphQLSchema sdl) {
-        var rejections = new ArrayList<ValidationError>();
+    private record TenancyMarker(String directive,
+                                 java.util.function.UnaryOperator<String> withoutTenancy,
+                                 java.util.function.UnaryOperator<String> unreached) {}
+
+    private static final List<TenancyMarker> TENANCY_MARKERS = List.of(
+        new TenancyMarker(BuildContext.DIR_TENANT_FAN_OUT,
+            coordinate -> "'" + coordinate + "' declares @tenantFanOut, but this build configures no"
+                + " <tenantColumn>: there are no tenants to fan out over. Configure"
+                + " database-per-tenant routing or remove the directive.",
+            coordinate -> "'" + coordinate + "' declares @tenantFanOut, but the coordinate never"
+                + " reached the fan-out classification: either the field failed"
+                + " classification on its own (see its error), or its parent is a"
+                + " class-, record-, or nesting-backed type, where the fanned"
+                + " fetcher boundary is deferred in v1. Move the field to a root or"
+                + " @table-backed parent, or remove the directive."),
+        new TenancyMarker(BuildContext.DIR_GLOBAL_DATA,
+            coordinate -> "'" + coordinate + "' declares @globalData, but this build configures no"
+                + " <tenantColumn>: every field already runs on the one database. Remove the"
+                + " directive.",
+            coordinate -> "'" + coordinate + "' declares @globalData, but the coordinate never"
+                + " reached the tenant-binding classification: either the field failed"
+                + " classification on its own (see its error), or it is an interface field or a"
+                + " field of a nesting type. @globalData is supported on root @service fields"
+                + " only; remove the directive."));
+
+    /**
+     * Every tenancy marker application, as {@code (marker, "Type.field")}. Walks every
+     * {@link graphql.schema.GraphQLFieldsContainer}, objects <em>and</em> interfaces: the markers
+     * are legal on interface field definitions, graphql-java does not copy interface-field
+     * directives onto implementors, and field classification only models object coordinates, so
+     * an interface marker reaches a verdict through no other route.
+     */
+    private static void forEachMarkerApplication(GraphQLSchema sdl,
+                                                 java.util.function.BiConsumer<TenancyMarker, String> action) {
         for (var type : sdl.getAllTypesAsList()) {
             if (type.getName().startsWith("__")
                     || !(type instanceof graphql.schema.GraphQLFieldsContainer container)) continue;
             for (GraphQLFieldDefinition field : container.getFieldDefinitions()) {
-                if (!field.hasAppliedDirective(BuildContext.DIR_TENANT_FAN_OUT)) continue;
-                String coordinate = container.getName() + "." + field.getName();
-                rejections.add(new ValidationError(
-                    coordinate,
-                    Rejection.directiveConflict(List.of(BuildContext.DIR_TENANT_FAN_OUT),
-                        "'" + coordinate + "' declares @tenantFanOut, but this build configures no"
-                            + " <tenantColumn>: there are no tenants to fan out over. Configure"
-                            + " database-per-tenant routing or remove the directive."),
-                    graphql.language.SourceLocation.EMPTY));
+                for (TenancyMarker marker : TENANCY_MARKERS) {
+                    if (field.hasAppliedDirective(marker.directive())) {
+                        action.accept(marker, container.getName() + "." + field.getName());
+                    }
+                }
             }
         }
+    }
+
+    private static ValidationError markerRejection(List<String> directives, String coordinate,
+                                                   String reason) {
+        return new ValidationError(coordinate, Rejection.directiveConflict(directives, reason),
+            graphql.language.SourceLocation.EMPTY);
+    }
+
+    /** Every tenancy marker application in a single-tenant build is a validate-time error. */
+    private static List<ValidationError> rejectMarkersWithoutTenancy(GraphQLSchema sdl) {
+        var rejections = new ArrayList<ValidationError>();
+        forEachMarkerApplication(sdl, (marker, coordinate) -> rejections.add(markerRejection(
+            List.of(marker.directive()), coordinate, marker.withoutTenancy().apply(coordinate))));
         return rejections;
     }
 
@@ -185,8 +228,8 @@ public record TenantBindingIndex(
         private final Map<FieldCoordinates, TenantBinding> byCoordinate = new LinkedHashMap<>();
         private final Map<String, TenantBinding.EntityRepBound> byEntityType = new LinkedHashMap<>();
         private final List<ValidationError> rejections = new ArrayList<>();
-        /** Coordinates the fan-out ladder rejected, so the marker sweep never double-reports. */
-        private final Set<String> fanOutRejected = new HashSet<>();
+        /** Per tenancy marker, the coordinates that reached its ladder: the sweep's verdict set. */
+        private final Map<String, Set<String>> markerVerdicts = new HashMap<>();
 
         Fold(GraphQLSchema sdl,
              Set<String> domain,
@@ -243,52 +286,56 @@ public record TenantBindingIndex(
                     byCoordinate.put(coord, arm);
                 }
             }
-            sweepUnreachedFanOutMarkers();
+            sweepUnreachedMarkers();
             return new TenantBindingIndex(byCoordinate, byEntityType, rejections);
         }
 
         /**
-         * Completeness backstop: every {@code @tenantFanOut} application must end as a
-         * {@link TenantBinding.FanOut} verdict or a fan-out rejection. A marked coordinate the
-         * classification never modelled as an {@link OutputField} (a nesting type's member, a
-         * projected leaf, an already-unclassified field) would otherwise be silently ignored;
-         * the sweep turns it into a validate-time rejection.
+         * Completeness backstop: every tenancy marker application must reach its ladder, which
+         * ends in an arm or a marker-specific rejection. A marked coordinate the classification
+         * never modelled as an {@link OutputField} (an interface field, a nesting type's member, a
+         * projected leaf, an already-unclassified field) would otherwise be silently ignored; the
+         * sweep turns it into a validate-time rejection.
          */
-        private void sweepUnreachedFanOutMarkers() {
-            // Objects and interfaces both: the directive is legal on interface field definitions,
-            // graphql-java does not copy interface-field directives onto implementors, and field
-            // classification only models object coordinates, so an interface marker reaches a
-            // verdict through no other route.
-            for (var type : sdl.getAllTypesAsList()) {
-                if (type.getName().startsWith("__")
-                        || !(type instanceof graphql.schema.GraphQLFieldsContainer container)) continue;
-                for (GraphQLFieldDefinition field : container.getFieldDefinitions()) {
-                    if (!field.hasAppliedDirective(BuildContext.DIR_TENANT_FAN_OUT)) continue;
-                    String coordinate = container.getName() + "." + field.getName();
-                    if (byCoordinate.get(FieldCoordinates.coordinates(container.getName(), field.getName()))
-                            instanceof TenantBinding.FanOut
-                        || fanOutRejected.contains(coordinate)) {
-                        continue;
-                    }
-                    rejectFanOut(coordinate, List.of(BuildContext.DIR_TENANT_FAN_OUT),
-                        "'" + coordinate + "' declares @tenantFanOut, but the coordinate never"
-                            + " reached the fan-out classification: either the field failed"
-                            + " classification on its own (see its error), or its parent is a"
-                            + " class-, record-, or nesting-backed type, where the fanned"
-                            + " fetcher boundary is deferred in v1. Move the field to a root or"
-                            + " @table-backed parent, or remove the directive.");
+        private void sweepUnreachedMarkers() {
+            forEachMarkerApplication(sdl, (marker, coordinate) -> {
+                if (!markerVerdicts.getOrDefault(marker.directive(), Set.of()).contains(coordinate)) {
+                    rejections.add(markerRejection(List.of(marker.directive()), coordinate,
+                        marker.unreached().apply(coordinate)));
                 }
-            }
+            });
+        }
+
+        private void recordMarkerVerdict(String directive, String coordinate) {
+            markerVerdicts.computeIfAbsent(directive, k -> new HashSet<>()).add(coordinate);
         }
 
         // ===== Per-field arm assignment =====
 
         private TenantBinding armOf(FieldCoordinates coord, OutputField out) {
-            // A @tenantFanOut marker routes through its own ladder ahead of everything below, so a
-            // marked field always gets a fan-out-specific verdict or rejection, never the generic
+            String coordinate = coord.getTypeName() + "." + coord.getFieldName();
+            // A tenancy marker routes through its own ladder ahead of everything below, so a
+            // marked field always gets a marker-specific verdict or rejection, never the generic
             // cross-scope or noTenantBinding message.
-            if (fanMarked(coord)) {
+            boolean fanMarked = fanMarked(coord);
+            boolean globalMarked = globalMarked(coord);
+            if (fanMarked && globalMarked) {
+                recordMarkerVerdict(BuildContext.DIR_TENANT_FAN_OUT, coordinate);
+                recordMarkerVerdict(BuildContext.DIR_GLOBAL_DATA, coordinate);
+                rejections.add(markerRejection(
+                    List.of(BuildContext.DIR_GLOBAL_DATA, BuildContext.DIR_TENANT_FAN_OUT), coordinate,
+                    "'" + coordinate + "' combines @globalData with @tenantFanOut: one says the"
+                        + " field's data is global and runs on the default source, the other unions"
+                        + " it across every tenant. Remove one of the directives."));
+                return null;
+            }
+            if (fanMarked) {
+                recordMarkerVerdict(BuildContext.DIR_TENANT_FAN_OUT, coordinate);
                 return fanOutArmOf(coord, out);
+            }
+            if (globalMarked) {
+                recordMarkerVerdict(BuildContext.DIR_GLOBAL_DATA, coordinate);
+                return globalDataArmOf(coord, out);
             }
             // Every table the field's own SQL touches, not just a Record-shaped return target:
             // multi-table polymorphic fields hit their participant tables and pivot fields their
@@ -300,9 +347,9 @@ public record TenantBindingIndex(
                 // One statement cannot span the per-tenant and default sources; a binding would
                 // not make this routable, so it rejects ahead of the ArgumentBound arm.
                 rejections.add(new ValidationError(
-                    coord.getTypeName() + "." + coord.getFieldName(),
+                    coordinate,
                     Rejection.noTenantBinding(
-                        coord.getTypeName() + "." + coord.getFieldName(),
+                        coordinate,
                         reach.stream().filter(this::tenantScoped).findFirst().orElseThrow().tableName(),
                         "its SQL touches tenant-scoped and global tables in one statement ("
                             + reach.stream().map(TableRef::tableName).distinct()
@@ -314,20 +361,35 @@ public record TenantBindingIndex(
             }
             var members = operationMembers.membersOf(coord);
             var direct = directBinding(coord, members);
-            if (anyTenant && !direct.declines().isEmpty()) {
+            // A root service handed a connection runs its own SQL on that connection, and that SQL
+            // is opaque, so it needs a tenant whatever graphitron's own reach says. Not where the
+            // reach holds a global table: graphitron re-reads that return on the same connection,
+            // and global tables live on the default source, so the structure decides the field.
+            boolean connectionService = roots.contains(coord.getTypeName())
+                && out instanceof ServiceField && bindsConnection(out) && !anyGlobal;
+            boolean needsTenant = anyTenant || connectionService;
+            if (needsTenant && !direct.declines().isEmpty()) {
                 // A declined shape names the tenant column but cannot route on it. Each decline
                 // carries its own detail rather than falling through to the generic
                 // "nothing names the tenant" text, which would send an author looking for a
                 // binding they already wrote. Only where the statement needs a tenant at all:
                 // a field whose own SQL stays on the default source has nothing to route, so
                 // the shape that could not route it is moot.
+                if (!anyTenant) {
+                    // Nothing in reach is tenant-scoped, so NoTenantBinding's "reaches table"
+                    // opening would be false; the service arm carries the declines instead.
+                    rejections.add(new ValidationError(coordinate,
+                        Rejection.unroutedServiceCall(coordinate, scopes.columnName(),
+                            direct.declines(), direct.evidence()),
+                        graphql.language.SourceLocation.EMPTY));
+                    return null;
+                }
                 String tenantTable = reach.stream().filter(this::tenantScoped).findFirst()
-                    .map(TableRef::tableName).orElse(scopes.columnName());
+                    .orElseThrow().tableName();
                 for (String detail : direct.declines()) {
                     rejections.add(new ValidationError(
-                        coord.getTypeName() + "." + coord.getFieldName(),
-                        Rejection.noTenantBinding(
-                            coord.getTypeName() + "." + coord.getFieldName(), tenantTable, detail),
+                        coordinate,
+                        Rejection.noTenantBinding(coordinate, tenantTable, detail),
                         graphql.language.SourceLocation.EMPTY));
                 }
                 return null;
@@ -355,21 +417,103 @@ public record TenantBindingIndex(
             if (!anyGlobal && bindsConnection(out) && tenantContextOf(coord.getTypeName())) {
                 return new TenantBinding.Inherited(coord.getTypeName());
             }
-            if (!anyTenant) {
+            if (!needsTenant) {
                 return TenantBinding.Untenanted.INSTANCE;
             }
             if (tenantContextOf(coord.getTypeName())) {
                 return new TenantBinding.Inherited(coord.getTypeName());
             }
+            if (connectionService) {
+                // The service fix, not the generic one: whatever the reach, what routes the call
+                // is a tenant in its arguments, or the author's statement that its data is global.
+                rejections.add(new ValidationError(coordinate,
+                    Rejection.unroutedServiceCall(coordinate, scopes.columnName(), List.of(),
+                        direct.evidence()),
+                    graphql.language.SourceLocation.EMPTY));
+                return null;
+            }
             rejections.add(new ValidationError(
-                coord.getTypeName() + "." + coord.getFieldName(),
+                coordinate,
                 Rejection.noTenantBinding(
-                    coord.getTypeName() + "." + coord.getFieldName(),
+                    coordinate,
                     reach.stream().filter(this::tenantScoped).findFirst().orElseThrow().tableName(),
                     "no argument or input field maps to tenant column '"
                         + scopes.columnName() + "', and no ancestor established a tenant"
                         + " context."),
                 graphql.language.SourceLocation.EMPTY));
+            return null;
+        }
+
+        // ===== The @globalData arm =====
+
+        /** Whether the coordinate's SDL field definition carries the {@code @globalData} marker. */
+        private boolean globalMarked(FieldCoordinates coord) {
+            GraphQLFieldDefinition def = fieldDefinition(coord);
+            return def != null && def.hasAppliedDirective(BuildContext.DIR_GLOBAL_DATA);
+        }
+
+        /**
+         * The {@code @globalData} rejection ladder, closed and validate-time: a marked field
+         * either survives every rung and classifies {@link TenantBinding.Untenanted}, or rejects
+         * with a marker-specific message; the first rung that applies wins. The marker is
+         * accepted exactly where an unrouted connection-binding root service would otherwise
+         * reject. The reach and argument rungs refuse it wherever the build can see tenant data,
+         * so what it vouches for is only the service's own SQL, the one thing the build cannot
+         * see. Computes reach itself, so a cross-scope field gets a rung's text rather than the
+         * generic cross-scope rejection.
+         */
+        private TenantBinding globalDataArmOf(FieldCoordinates coord, OutputField out) {
+            String coordinate = coord.getTypeName() + "." + coord.getFieldName();
+            String declares = "'" + coordinate + "' declares @globalData, but ";
+            if (!roots.contains(coord.getTypeName())) {
+                return rejectGlobalData(coordinate, declares + "@globalData is supported on root"
+                    + " fields only; a child service runs on its parent's tenant. Remove the"
+                    + " directive.");
+            }
+            if (!(out instanceof ServiceField)) {
+                return rejectGlobalData(coordinate, declares + "only a @service field's SQL is"
+                    + " opaque to the build; graphitron decides this field's source from the tables"
+                    + " it reads. Remove the directive.");
+            }
+            if (!bindsConnection(out)) {
+                return rejectGlobalData(coordinate, declares + "the service is handed no"
+                    + " connection, so there is nothing to route; remove the directive.");
+            }
+            List<TableRef> reach = reachedTables(out);
+            String returned = GraphQLTypeUtil.unwrapAll(fieldDefinition(coord).getType()).getName();
+            var tenantTable = reach.stream().filter(this::tenantScoped).findFirst();
+            if (tenantTable.isPresent()) {
+                return rejectGlobalData(coordinate, declares + "the field returns tenant-scoped"
+                    + " @table type '" + returned + "' (table '" + tenantTable.get().tableName()
+                    + "'); its rows cannot be re-read on the default source.");
+            }
+            if (!reach.isEmpty()) {
+                return rejectGlobalData(coordinate, declares + "the field returns global @table"
+                    + " type '" + returned + "', which already runs on the default source; the"
+                    + " structure decides this field, remove the directive.");
+            }
+            var direct = directBinding(coord, operationMembers.membersOf(coord));
+            if (direct.divines() || !direct.declines().isEmpty()) {
+                String named = direct.slots().isEmpty()
+                    ? "tenant column '" + scopes.columnName() + "', through a shape that cannot"
+                        + " route the call"
+                    : direct.slots().stream().map(TenantBinding.BoundSlot::slotName).distinct()
+                        .collect(java.util.stream.Collectors.joining(", "));
+                return rejectGlobalData(coordinate, declares + "the arguments name a tenant ("
+                    + named + "), which contradicts @globalData. Remove the directive.");
+            }
+            if (!direct.evidence().isEmpty()) {
+                return rejectGlobalData(coordinate, declares + "the arguments carry tenant-scoped"
+                    + " values (" + String.join(", ", direct.evidence()) + "), so the service"
+                    + " works on tenant data. Take the node table's jOOQ record with"
+                    + " @nodeId(typeName:), or bind a jOOQ record field to '" + scopes.columnName()
+                    + "', and remove the directive.");
+            }
+            return TenantBinding.Untenanted.INSTANCE;
+        }
+
+        private TenantBinding rejectGlobalData(String coordinate, String reason) {
+            rejections.add(markerRejection(List.of(BuildContext.DIR_GLOBAL_DATA), coordinate, reason));
             return null;
         }
 
@@ -527,11 +671,7 @@ public record TenantBindingIndex(
         }
 
         private TenantBinding rejectFanOut(String coordinate, List<String> directives, String reason) {
-            fanOutRejected.add(coordinate);
-            rejections.add(new ValidationError(
-                coordinate,
-                Rejection.directiveConflict(directives, reason),
-                graphql.language.SourceLocation.EMPTY));
+            rejections.add(markerRejection(directives, coordinate, reason));
             return null;
         }
 
@@ -648,10 +788,17 @@ public record TenantBindingIndex(
          * also stops divining for its subtree, which is what {@link #divines()} states: it
          * rejects, so nothing is handed down and a child inheriting from it would inherit a value
          * that is never computed.
+         *
+         * <p>{@code evidence} names the argument values typed by a tenant-scoped table that bound
+         * no slot (a {@code FilmRecord} bound only to {@code title}, a decode of a tenant-scoped
+         * node type whose key misses the tenant column). It routes nothing; an unrouted
+         * connection-binding service's rejection names it, and the {@code @globalData} ladder
+         * refuses the marker over it.
          */
-        private record DirectBinding(List<TenantBinding.BoundSlot> slots, List<String> declines) {
+        private record DirectBinding(List<TenantBinding.BoundSlot> slots, List<String> declines,
+                                     List<String> evidence) {
 
-            static final DirectBinding NONE = new DirectBinding(List.of(), List.of());
+            static final DirectBinding NONE = new DirectBinding(List.of(), List.of(), List.of());
 
             /** Whether this coordinate establishes a tenant its subtree can inherit. */
             boolean divines() {
@@ -671,10 +818,11 @@ public record TenantBindingIndex(
             record Declined(String detail) implements SlotAccess {}
         }
 
-        /** Accumulates one coordinate's slots and declines, deduping slots by name. */
+        /** Accumulates one coordinate's slots, declines and tenant evidence, deduping slots by name. */
         private static final class SlotCollector {
             private final List<TenantBinding.BoundSlot> slots = new ArrayList<>();
             private final List<String> declines = new ArrayList<>();
+            private final List<String> evidence = new ArrayList<>();
             private final Set<String> seenNames = new HashSet<>();
 
             void add(String slotName, ColumnRef column, SlotAccess access) {
@@ -695,10 +843,16 @@ public record TenantBindingIndex(
                 }
             }
 
+            void evidence(String name) {
+                if (!evidence.contains(name)) {
+                    evidence.add(name);
+                }
+            }
+
             DirectBinding result() {
-                return slots.isEmpty() && declines.isEmpty()
+                return slots.isEmpty() && declines.isEmpty() && evidence.isEmpty()
                     ? DirectBinding.NONE
-                    : new DirectBinding(List.copyOf(slots), List.copyOf(declines));
+                    : new DirectBinding(List.copyOf(slots), List.copyOf(declines), List.copyOf(evidence));
             }
         }
 
@@ -922,14 +1076,17 @@ public record TenantBindingIndex(
          * A jOOQ record parameter: a column binding on the tenant column reads the tenant off the
          * wire as it is, and a {@code @nodeId} decode whose node key includes the tenant column
          * reads it off the decoded key at that position. Both paths are relative to the
-         * record's own input, so they extend the parameter's argument path.
+         * record's own input, so they extend the parameter's argument path. A tenant-scoped
+         * table's record that binds neither is tenant evidence.
          */
         private void collectFromJooqRecord(ValueShape.JooqRecordInput jr, SlotCollector collector) {
             List<String> base = pathOf(jr.sdlPath());
+            boolean bound = false;
             for (var binding : jr.carrier().columnBindings()) {
                 if (!matchesTenantColumn(binding.column())) continue;
                 for (List<String> path : binding.paths()) {
                     var full = concat(base, path);
+                    bound = true;
                     collector.add(slotNameOf(full), binding.column(), new SlotAccess.Resolved(
                         readOf(full), TenantBinding.SlotProjection.Raw.INSTANCE));
                 }
@@ -942,8 +1099,12 @@ public record TenantBindingIndex(
                 int slot = tenantIndex(decode.outputColumnShape());
                 if (slot < 0) continue;
                 var full = concat(base, keyDecode.path());
+                bound = true;
                 collector.add(slotNameOf(full), decode.outputColumnShape().get(slot), new SlotAccess.Resolved(
                     readOf(full), new TenantBinding.SlotProjection.DecodedKeySlot(decode, slot)));
+            }
+            if (!bound && tenantScoped(jr.carrier().table())) {
+                collector.evidence(recordNameOf(jr.carrier().table()) + " at " + slotNameOf(base));
             }
         }
 
@@ -951,7 +1112,8 @@ public record TenantBindingIndex(
          * One service leaf. A record decode of one node type and a key decode read the tenant off
          * the decoded key at the tenant column's position; a polymorphic record decode declines,
          * since its candidates decode the same id with their own key columns; every other leaf
-         * carries no column and mints nothing.
+         * carries no column and mints nothing. A decode of a tenant-scoped node type whose key
+         * misses the tenant column is tenant evidence.
          */
         private void collectFromServiceLeaf(CallSiteExtraction leaf, List<String> path,
                                             SlotCollector collector) {
@@ -959,14 +1121,25 @@ public record TenantBindingIndex(
                 case CallSiteExtraction.NodeIdDecodeRecord record -> {
                     var decode = nodeTypeByTypeId(record.typeId()).decodeMethod();
                     int slot = tenantIndex(decode.outputColumnShape());
-                    if (slot < 0) return;
+                    if (slot < 0) {
+                        if (tenantScoped(record.table())) {
+                            collector.evidence(recordNameOf(record.table()) + " at " + slotNameOf(path));
+                        }
+                        return;
+                    }
                     collector.add(slotNameOf(path), decode.outputColumnShape().get(slot), new SlotAccess.Resolved(
                         readOf(path), new TenantBinding.SlotProjection.DecodedKeySlot(decode, slot)));
                 }
                 case CallSiteExtraction.NodeIdDecodeKeys keys -> {
                     var shape = keys.decodeMethod().outputColumnShape();
                     int slot = tenantIndex(shape);
-                    if (slot < 0) return;
+                    if (slot < 0) {
+                        var node = nodeTypeByTypeId(keys.decodeMethod().typeId());
+                        if (tenantScoped(node.table())) {
+                            collector.evidence(node.name() + " id at " + slotNameOf(path));
+                        }
+                        return;
+                    }
                     collector.add(slotNameOf(path), shape.get(slot), accessOf(keys, readOf(path), slot));
                 }
                 // The service-side twin of PruneOnMismatch. Minting nothing would leave the id
@@ -985,6 +1158,12 @@ public record TenantBindingIndex(
                 }
                 default -> { }
             }
+        }
+
+        /** The simple name of a table's generated record class, as an author reads it in a parameter. */
+        private static String recordNameOf(TableRef table) {
+            String fq = table.recordClassName();
+            return fq.substring(fq.lastIndexOf('.') + 1);
         }
 
         /** The tenant column's position in {@code columns}, or {@code -1}. */

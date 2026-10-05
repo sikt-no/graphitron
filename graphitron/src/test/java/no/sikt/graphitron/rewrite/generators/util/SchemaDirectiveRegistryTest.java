@@ -21,7 +21,7 @@ class SchemaDirectiveRegistryTest {
         assertThat(SchemaDirectiveRegistry.GENERATOR_ONLY_DIRECTIVES).containsExactlyInAnyOrder(
             "asConnection", "asFacet", "condition", "defaultOrder", "discriminate",
             "discriminator", "enum", "error", "experimental_constructType", "externalField",
-            "field", "index", "lookupKey", "multitableReference", "mutation", "node",
+            "field", "globalData", "index", "lookupKey", "multitableReference", "mutation", "node",
             "nodeId", "notGenerated", "order", "orderBy", "pivot", "record", "reference",
             "referenceFor", "routine", "scalarType", "service", "sourceRow", "splitQuery",
             "table", "tenantFanOut"

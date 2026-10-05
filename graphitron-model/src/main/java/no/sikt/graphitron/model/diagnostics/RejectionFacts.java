@@ -159,6 +159,7 @@ public final class RejectionFacts {
             case Rejection.AuthorError.SortEnumMissingOrder ignored -> NONE;
             case Rejection.AuthorError.TenantColumnTypeDisagreement ignored -> NONE;
             case Rejection.AuthorError.NoTenantBinding ignored -> NONE;
+            case Rejection.AuthorError.UnroutedServiceCall ignored -> NONE;
             case ServiceMethodCallError e -> coded(e.lspCode());
             case ReflectionError e -> coded(e.lspCode());
             case UpdateRowsError e -> coded(e.lspCode());

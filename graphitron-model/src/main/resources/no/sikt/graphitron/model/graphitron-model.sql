@@ -1960,12 +1960,12 @@ COMMENT ON COLUMN graphitron_ast_error_validation_handler_entry.touched_at IS 'w
 
 -- The field site's decode. Every relation below is keyed by the position of the @ token, which is
 -- graphql_ast_field_directive_entry's key, so a row is the decode of exactly one application there
--- and carries no type name, no field name and no file: all three are one join away. Four of the
--- site's sixteen directive names get no relation at all. @splitQuery and @tenantFanOut declare no
--- argument, and @multitableReference is rejected before anything reads its one argument, so a row
--- under any of the three would carry its key and nothing else, which is what the applied-directive
--- row already says. @reference's only argument is its path, so the steps get the relation and the
--- application does not.
+-- and carries no type name, no field name and no file: all three are one join away. Five of the
+-- site's seventeen directive names get no relation at all. @splitQuery, @tenantFanOut and
+-- @globalData declare no argument, and @multitableReference is rejected before anything reads its
+-- one argument, so a row under any of the four would carry its key and nothing else, which is what
+-- the applied-directive row already says. @reference's only argument is its path, so the steps get
+-- the relation and the application does not.
 --
 -- A list argument becomes a child relation, and a child hangs off the decode of the application it
 -- was written inside, so deleting that decode takes its elements. @reference's steps are the one

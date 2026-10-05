@@ -1,0 +1,29 @@
+= @globalData
+:description: Mark a root @service field whose service works only on global data, so it runs on the default source.
+:!toc:
+
+*`@globalData`* marks a root xref:service.adoc[`@service`] field whose service works only on global data, in a build with database-per-tenant routing (`<tenantColumn>`). The service runs on the default source. Without the marker, a root service that is handed a `DSLContext` or `$session` and whose arguments name no tenant is a build error, because graphitron cannot see which tables the service's SQL touches.
+
+[source,graphql]
+----
+type Mutation {
+  refreshLanguages: Boolean @globalData @service(service: {className: "...LanguageService"})
+}
+----
+
+== SDL signature
+
+[source,graphql]
+----
+directive @globalData on FIELD_DEFINITION
+----
+
+The directive carries no arguments. It is your statement, at the field, about the one thing the build cannot check: what the service's own SQL touches. Everything else the build can see about the service's data is checked against it.
+
+== Build-time rejections
+
+The build rejects the marker where it decides nothing or contradicts what the build can see: in a build without `<tenantColumn>`, on a non-root field, on a field that is not a `@service`, on a service that is handed no connection, on a field returning a `@table` type (tenant-scoped rows cannot be read from the default source, and global ones already are), on a field whose arguments name a tenant or carry a tenant-scoped table's record, and beside xref:tenantFanOut.adoc[`@tenantFanOut`].
+
+See xref:../../how-to/tenant-scoping.adoc[How-to: Tenant scoping] for how a service that does work on tenant data names its tenant instead.
+
+xref:index.adoc[← Directives index]
