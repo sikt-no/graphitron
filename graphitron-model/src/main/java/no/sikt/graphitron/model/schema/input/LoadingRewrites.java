@@ -7,7 +7,9 @@ import graphql.language.SourceLocation;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
 
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -46,12 +48,13 @@ public final class LoadingRewrites {
          *
          * @param registry      the registry handed in, rewritten
          * @param injectedNames the names of the definitions the federation {@code @link} injected,
-         *                      empty where there is no federation {@code @link}
+         *                      in the order it injected them, empty where there is no federation
+         *                      {@code @link}
          */
         record Applied(TypeDefinitionRegistry registry, Set<String> injectedNames) implements Outcome {
             public Applied {
                 Objects.requireNonNull(registry, "registry");
-                injectedNames = Set.copyOf(injectedNames);
+                injectedNames = Collections.unmodifiableSet(new LinkedHashSet<>(injectedNames));
             }
         }
 
