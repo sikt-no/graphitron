@@ -75,14 +75,15 @@ boolean connectionService = roots.contains(coord.getTypeName())
 boolean needsTenant = anyTenant || connectionService;
 ```
 
-`!anyGlobal` keeps the global-`@table`-return case structurally decided, as it is today. The new `armOf` order, after the fan-out ladder and the cross-scope rejection, which are unchanged:
+`!anyGlobal` keeps the global-`@table`-return case structurally decided, as it is today. The new `armOf` order:
 
-1. If the field carries `@globalData`, go to the marker ladder (below) and return its verdict.
-2. The decline gate reads `needsTenant` instead of `anyTenant`. Without this, an empty-reach root service whose only tenant-bearing argument is a declined shape, such as a polymorphic `@nodeId`, would get the generic service refusal rather than the decline's own text, which names what is wrong with the binding the author did write.
-3. `divines` → `ArgumentBound`; `NODE_RESOLVE` → as today; the child-service `Inherited` rule → as today.
-4. `!needsTenant` → `Untenanted` (was `!anyTenant`).
-5. Tenant context → `Inherited`. A root coordinate never has one.
-6. Reject. If `connectionService` holds, the rejection is the new `UnroutedServiceCall` below. Otherwise it is the existing generic `NoTenantBinding`. Tenant-reach root services that bind a connection move to the new text, because the fix they need is the same one.
+1. Marker dispatch, ahead of everything else, where `fanMarked` sits today. A field carrying both `@globalData` and `@tenantFanOut` gets the `directiveConflict` rejection. A field carrying `@tenantFanOut` goes to the fan-out ladder, unchanged. A field carrying `@globalData` goes to the marker ladder (below) and returns its verdict. Like the fan-out ladder, the marker ladder computes reach and the direct binding itself, so a marked field never reaches the cross-scope rejection below. Every marked `OutputField` therefore gets a ladder verdict, which is what the sweep's predicate counts. A cross-scope reach always holds a tenant-scoped table, so a marked cross-scope field is answered by rung 2 or rung 4 with a marker-specific text.
+2. The cross-scope rejection, unchanged.
+3. The decline gate reads `needsTenant` instead of `anyTenant`. Without this, an empty-reach root service whose only tenant-bearing argument is a declined shape, such as a polymorphic `@nodeId`, would get the generic service refusal rather than the decline's own text, which names what is wrong with the binding the author did write. Reach decides which arm the gate emits. With a tenant-scoped table in reach, it emits one `NoTenantBinding` per decline, as today, because that arm's "reaches tenant-scoped table" opening is true there. With empty reach, where `needsTenant` holds only because `connectionService` does, it emits one `UnroutedServiceCall` carrying the declines, so no message names a table the field does not reach.
+4. `divines` → `ArgumentBound`; `NODE_RESOLVE` → as today; the child-service `Inherited` rule → as today.
+5. `!needsTenant` → `Untenanted` (was `!anyTenant`).
+6. Tenant context → `Inherited`. A root coordinate never has one.
+7. Reject. If `connectionService` holds, the rejection is the new `UnroutedServiceCall` below. Otherwise it is the existing generic `NoTenantBinding`. Tenant-reach root services that bind a connection move to the new text, because the fix they need is the same one.
 
 ### Tenant evidence from the existing argument walk
 
@@ -95,11 +96,23 @@ boolean needsTenant = anyTenant || connectionService;
 
 ### The new rejection arm
 
-`Rejection.AuthorError.UnroutedServiceCall(String coordinate, String tenantColumn, List<String> evidence)`. It is a new arm because `NoTenantBinding.message()` opens with "reaches tenant-scoped table 'X'", which is false for an empty-reach service. The message is the one shown in the Goal. When `evidence` is non-empty, it appends "Its arguments carry tenant-scoped values that bind no tenant: <evidence>.". The arm is added to `AuthorError`'s permits list and to `RejectionFacts.typedColumns` (`NONE`, like `NoTenantBinding`).
+`Rejection.AuthorError.UnroutedServiceCall(String coordinate, String tenantColumn, List<String> declines, List<String> evidence)`. It is a new arm because `NoTenantBinding.message()` opens with "reaches tenant-scoped table 'X'", which is false for an empty-reach service. One field gets at most one `UnroutedServiceCall`, and `declines` picks between its two message forms:
+
+- **No declines** (from the reject step): the message shown in the Goal. When `evidence` is non-empty, it appends "Its arguments carry tenant-scoped values that bind no tenant: <evidence>.".
+- **Declines** (from the decline gate at empty reach): the arguments name the tenant column, but only through shapes that cannot route the call. Each decline's own detail follows, and it carries its own fix. This form does not suggest `@globalData`, because rung 6 of the marker ladder rejects the marker over a decline:
+
+```
+'Mutation.pickForThing' is a @service that is handed a connection, and its arguments name tenant
+column 'film_id' only through shapes that cannot route the call, so it would run on the default
+database: the tenant is reached through a @nodeId slot naming 'FilmThing', whose members decode
+the same id as different node types, each with its own key columns: [...]
+```
+
+The arm is added to `AuthorError`'s permits list and to `RejectionFacts.typedColumns` (`NONE`, like `NoTenantBinding`).
 
 ### The `@globalData` marker
 
-Declared in `directives.graphqls` beside `@tenantFanOut` as `directive @globalData on FIELD_DEFINITION`, with no arguments. `BuildContext.DIR_GLOBAL_DATA` names it. The fold reads it off the SDL field definition the way `fanMarked` reads `@tenantFanOut`. No fact-store relation is added: an argument-less marker is already recorded by the applied-directive transcription (`graphql_ast_field_directive_entry`), and the comment at the `@splitQuery` / `@tenantFanOut` site in `graphitron-model.sql` already states this rule. `GraphitronFactCapture`'s per-directive switch gets no case either: its `default` arm already decodes nothing. That comment's directive count ("Four of the site's sixteen directive names") goes up by one in each place.
+Declared in `directives.graphqls` beside `@tenantFanOut` as `directive @globalData on FIELD_DEFINITION`, with no arguments. `BuildContext.DIR_GLOBAL_DATA` names it. The fold reads it off the SDL field definition the way `fanMarked` reads `@tenantFanOut`. No fact-store relation is added: an argument-less marker is already recorded by the applied-directive transcription (`graphql_ast_field_directive_entry`), and the comment at the `@splitQuery` / `@tenantFanOut` site in `graphitron-model.sql` already states this rule. `GraphitronFactCapture`'s per-directive switch gets no case either: its `default` arm already decodes nothing. The same count is stated in two places. In both, it goes up by one and `@globalData` joins the argument-less directives listed beside `@splitQuery` and `@tenantFanOut`. One is the `graphitron-model.sql` comment, where "Four of the site's sixteen directive names" becomes five of seventeen. The other is `GraphitronFieldEntries`'s class javadoc, where "Sixteen directive names reach this site and twelve of them get a relation" becomes seventeen, still with twelve relations.
 
 The marker is accepted exactly where the refusal would otherwise fire, and the arm is then `Untenanted`. It is a closed ladder like the `@tenantFanOut` one: validate-time, each rung with its own text, and the first rung that applies wins.
 
@@ -113,7 +126,7 @@ The marker is accepted exactly where the refusal would otherwise fire, and the a
 
 Rungs 4 to 7 are what stop the marker from becoming a silencer. Everything the build can see about the service's data either agrees with the marker or rejects it. What is left unchecked is the service's SQL, which is the one thing the build cannot see, and the marker is the author's signed statement about it at the field.
 
-A field carrying both `@globalData` and `@tenantFanOut` is a `directiveConflict` rejection. It is checked before either ladder and counts as a verdict for both markers.
+A field carrying both `@globalData` and `@tenantFanOut` is a `directiveConflict` rejection. It is dispatched first in `armOf` (step 1 above), before either ladder, and counts as a verdict for both markers.
 
 ### One completeness sweep for both tenancy markers
 
@@ -147,12 +160,15 @@ The `globalData.adoc` reference page:
 
 Pipeline tier, `TenantBindingClassificationTest`:
 
-- **Refusal**: an empty-reach root query service binding `$session`, and a root mutation service binding a `DSLContext` over an undecoded `String` id, each reject with `UnroutedServiceCall`. The message names `film_id` and both fixes. These replace `sessionBoundServiceAtAnUntenantedRoot_staysUntenanted` and the root assertion of `anUndecodedIdNamesNoTenantSoTheWrappersChildStillRejects`. In the second test, the payload child's own rejection still fires.
-- A tenant-reach root service binding a `DSLContext` gets the new arm rather than the generic text. A root service binding no connection stays `Untenanted` with no rejection.
+- **Refusal**: two cases each reject with `UnroutedServiceCall` in its no-declines form, and each message names `film_id` and both fixes.
+  - An empty-reach root query service binding `$session`. This replaces `sessionBoundServiceAtAnUntenantedRoot_staysUntenanted`.
+  - A root mutation service binding a `DSLContext` over an undecoded `String` id. This uses a new stub, `TenantServiceStub.rateByRawIdOnConnection(DSLContext dsl, String film)`, in a new test that also asserts the payload child's own rejection still fires.
+- **No connection**: `anUndecodedIdNamesNoTenantSoTheWrappersChildStillRejects` stays as it is. Its stub, `TenantServiceStub.rateByRawId(String film)`, takes no connection, so it is the no-connection case: the root stays `Untenanted` with no root rejection, and the child still rejects.
+- A tenant-reach root service binding a `DSLContext` gets the new arm rather than the generic text.
 - **Evidence**: a root service taking a `FilmRecord` bound only to a non-tenant column rejects, naming the record in the evidence list.
-- **Decline under the widened gate**: an empty-reach root service whose only tenant-bearing argument is a polymorphic `@nodeId` rejects with the decline's own text and not the generic service text.
+- **Decline under the widened gate**: an empty-reach root service whose only tenant-bearing argument is a polymorphic `@nodeId` rejects with exactly one `UnroutedServiceCall`, in its declines form. The message contains the decline's own detail. It does not contain "reaches tenant-scoped table", the no-declines text, or a `@globalData` suggestion. `aPolymorphicRecordIdAtATableReturningRootRejectsWithItsOwnText` stays green unchanged, which pins that a tenant-reach decline keeps `NoTenantBinding`.
 - **Marker accepted**: a root `$session` service and a root `DSLContext` service marked `@globalData` classify `Untenanted` with no rejections.
-- **Marker ladder**: one case per rung (1 to 7), plus the `@tenantFanOut` conflict. Each asserts the rung's own text and that no other rung's text appears.
+- **Marker ladder**: one case per rung (1 to 7), plus the `@tenantFanOut` conflict. Each asserts the rung's own text and that no other rung's text appears. One more case covers a marked field whose reach is cross-scope, for example a non-service polymorphic root over `Film` and `Language`. It gets its ladder rung's text alone (rung 2 there), and neither the cross-scope text nor the sweep's.
 - **Sweep**: `@globalData` on an interface field, and on a field of a nesting type, reject. `@globalData` in a single-tenant build rejects through the shared sweep. The existing `@tenantFanOut` sweep cases in `TenantFanOutClassificationTest` stay green unchanged, which pins the refactor.
 
 Execution tier, `TenantDivinedRoutingExecutionTest`, over `multitenant.graphqls`:
@@ -191,6 +207,6 @@ Question 2 fails on two points. In both, the plan leaves an author-facing reject
 
 Non-blocking:
 
-- `TestServiceStub.rateByRawId(String film)` takes no `DSLContext`, so under this plan `anUndecodedIdNamesNoTenantSoTheWrappersChildStillRejects` keeps its root `Untenanted` assertion (no connection, nothing to route). The refusal case described in Tests needs the stub to take a `DSLContext`, or a new stub. Say which, so the "replaces the root assertion" wording holds.
+- `TenantServiceStub.rateByRawId(String film)` takes no `DSLContext`, so under this plan `anUndecodedIdNamesNoTenantSoTheWrappersChildStillRejects` keeps its root `Untenanted` assertion (no connection, nothing to route). The refusal case described in Tests needs the stub to take a `DSLContext`, or a new stub. Say which, so the "replaces the root assertion" wording holds.
 - The directive count in the `graphitron-model.sql` comment is repeated in `GraphitronFieldEntries`'s class javadoc ("Sixteen directive names reach this site and twelve of them get a relation…"). "Goes up by one in each place" should name that javadoc too.
 - The Goal's `sessionPrincipal` example named `SessionIdentityService.principalOf`, which does not exist. It was corrected in this commit to the real method, `sessionPrincipal`. (`principalOf` is on `TestServiceStub`.)
