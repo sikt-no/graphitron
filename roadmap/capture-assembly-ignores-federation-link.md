@@ -1,7 +1,7 @@
 ---
 id: R985
 title: "The capture assembles the schema without the federation @link, so every imported directive is reported undeclared"
-status: Spec
+status: Ready
 bucket: dx
 theme: diagnostics
 depends-on: []
@@ -76,7 +76,8 @@ The rejected assembly costs more than the noise:
   `ReferenceForParticipantDefects`, `AuthoredClaimConflicts` and `UnlowerableOrderings` all read it. On a federated
   consumer they report nothing, whatever the schema holds. The build is affected too, not only the editor:
   `GraphQLRewriteGenerator` reads `StoreDetections.over` into the build's error stream, and `AuthoredClaimConflicts`
-  limits its build-error population to the domain ("only the emitted surface can fail a build"). Confirm per derivation
+  limits its build-error population to the domain ("only a coordinate the generator intends to classify can fail a
+  build"). Confirm per derivation
   at pickup whether it scopes by the domain or only joins it; the test below pins the domain being populated either way.
 - **The tag rewrites are missing too.** A consumer with `<schemaInput tag>` gets neither the synthesised `@link` nor the
   tag applications or notes in the registry the capture assembles and decodes. The `AttributedRegistry.load` comment
