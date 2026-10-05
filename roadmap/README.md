@@ -57,7 +57,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R697` | Name matching is a stratum: side relations, match views, and folds nowhere else <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Spec | 2026-09-17 <sub>created 2026-08-17</sub> | [plan](name-matching-stratum.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec | 2026-08-06 | [plan](operation-driven-test-corpus.md) |
 | `R180` | Resolved accessors for record-parent column reads (recordColumnReadArgs) | Spec | 2026-07-15 <sub>created 2026-05-19</sub> | [plan](record-parent-column-read-helper.md) |
-| `R985` | The capture assembles the schema without the federation @link, so every imported directive is reported undeclared | Spec | 2026-10-02 <sub>created 2026-10-01</sub> | [plan](capture-assembly-ignores-federation-link.md) |
+| `R985` | The capture assembles the schema without the federation @link, so every imported directive is reported undeclared | Spec | 2026-10-05 <sub>created 2026-10-01</sub> | [plan](capture-assembly-ignores-federation-link.md) |
 | `R684` | fact-model doctrine: consumers share relations, not queries | Ready | 2026-08-17 <sub>created 2026-08-16</sub> | [plan](consumers-share-relations-not-queries.md) |
 | `R986` | The tenant-context fold reads every cycle as unbound, so a type reachable both ways is rejected under a bound root | In Progress | 2026-10-05 <sub>created 2026-10-01</sub> | [plan](tenant-context-fold-cycles-are-unbound.md) |
 
