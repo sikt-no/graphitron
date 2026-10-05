@@ -1,7 +1,7 @@
 ---
 id: R985
 title: "The capture assembles the schema without the federation @link, so every imported directive is reported undeclared"
-status: Ready
+status: In Progress
 bucket: dx
 theme: diagnostics
 depends-on: []
