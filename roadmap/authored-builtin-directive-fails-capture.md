@@ -1,7 +1,7 @@
 ---
 id: R980
 title: "An authored redeclaration of a built-in directive fails the whole capture instead of drawing a diagnostic"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 2
 theme: diagnostics
