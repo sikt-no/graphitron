@@ -1,7 +1,7 @@
 ---
 id: R978
 title: "Refuse a connection-binding root service that names no tenant under database-per-tenant"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 2
 theme: runtime-connection
