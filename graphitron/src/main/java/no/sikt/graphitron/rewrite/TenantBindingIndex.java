@@ -44,6 +44,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**
@@ -84,9 +85,15 @@ public record TenantBindingIndex(
      * members), so the fold sees the coordinate's whole operation set rather than one summary
      * arm's payload. A condition member's slots are read from {@code columnBindings}, the column
      * each filter slot binds whatever an authored {@code @condition} does to its predicate.
+     *
+     * <p>{@code reachableTypes} is the classification walk's domain,
+     * {@link SchemaReachability#reachableTypeNames} under the classifier's node predicate: the
+     * ancestor-context fold judges paths over the types that execute, so an unreached type's
+     * fields say nothing about them.
      */
     public static TenantBindingIndex compute(
             GraphQLSchema sdl,
+            Set<String> reachableTypes,
             Map<FieldCoordinates, GraphitronField> fields,
             Map<String, EntityResolution> entitiesByType,
             Map<String, GraphitronType> types,
@@ -104,8 +111,8 @@ public record TenantBindingIndex(
                 ? EMPTY
                 : new TenantBindingIndex(Map.of(), Map.of(), markerRejections);
         }
-        return new Fold(sdl, fields, entitiesByType, types, configured, operationMembers,
-            columnBindings).run();
+        return new Fold(sdl, reachableTypes, fields, entitiesByType, types, configured,
+            operationMembers, columnBindings).run();
     }
 
     /**
@@ -137,10 +144,12 @@ public record TenantBindingIndex(
 
     /**
      * The stateful fold over one schema: computes each field's direct binding from its own
-     * carriers, then resolves the ancestor tenant context with memoisation over the SDL's
-     * reaching edges (mirroring {@code ArrivalIndex}'s edge fold). A reachable cycle resolves
-     * conservatively to "no context", so recursion terminates and a cycle can never mint a
-     * spurious {@link TenantBinding.Inherited}.
+     * carriers, then resolves the ancestor tenant context over the SDL's field edges, restricted
+     * to the walk's domain. A type has a context when every path from a root reaches it through
+     * an edge that establishes one; a cycle adds no path from a root, so it is judged by the
+     * edges entering it from outside. The context and the two any-path ancestor facts are each
+     * one forward closure over the same edges ({@link #closeForward}), computed once dispatch is
+     * classified.
      */
     private static final class Fold {
         private final GraphQLSchema sdl;
@@ -153,15 +162,21 @@ public record TenantBindingIndex(
 
         private final Set<String> roots = new HashSet<>();
         private final String mutationRootName;
-        /** target typename -> reaching field edges (parent typename + field name). */
+        /** The walk's reachable types; edges whose parent lies outside it are not recorded. */
+        private final Set<String> domain;
+        /** target typename -> reaching in-domain field edges (parent typename + field name). */
         private final Map<String, List<FieldCoordinates>> reachingEdges = new HashMap<>();
-        private final Map<String, Boolean> ctxMemo = new HashMap<>();
-        private final Set<String> ctxInProgress = new HashSet<>();
-        private final Map<String, Boolean> fannedAncestorMemo = new HashMap<>();
-        private final Set<String> fannedAncestorInProgress = new HashSet<>();
-        private final Map<String, Boolean> boundAncestorMemo = new HashMap<>();
-        private final Set<String> boundAncestorInProgress = new HashSet<>();
+        /** parent typename -> its in-domain field edges; the inverse of {@link #reachingEdges}. */
+        private final Map<String, List<FieldCoordinates>> outgoingEdges = new HashMap<>();
+        /** field edge -> the types it can materialize ({@link #structuralClosure} of its type). */
+        private final Map<FieldCoordinates, Set<String>> edgeTargets = new HashMap<>();
         private final Map<String, Set<String>> closureCache = new HashMap<>();
+        /** Types some path from a root reaches without crossing an establishing edge. */
+        private Set<String> withoutContext;
+        /** Types reached, along any path, below a tenant-divining edge. */
+        private Set<String> belowBoundEdge;
+        /** Types reached, along any path, below a {@code @tenantFanOut} edge. */
+        private Set<String> belowFannedEdge;
 
         /** Node dispatch facts, computed once: type name -> decoded tenant position. */
         private final Map<String, Integer> nodePositions = new LinkedHashMap<>();
@@ -174,6 +189,7 @@ public record TenantBindingIndex(
         private final Set<String> fanOutRejected = new HashSet<>();
 
         Fold(GraphQLSchema sdl,
+             Set<String> domain,
              Map<FieldCoordinates, GraphitronField> fields,
              Map<String, EntityResolution> entitiesByType,
              Map<String, GraphitronType> types,
@@ -181,6 +197,7 @@ public record TenantBindingIndex(
              OperationMemberRelation operationMembers,
              ColumnBindingLedger columnBindings) {
             this.sdl = sdl;
+            this.domain = domain;
             this.fields = fields;
             this.entitiesByType = entitiesByType;
             this.types = types;
@@ -216,6 +233,8 @@ public record TenantBindingIndex(
         TenantBindingIndex run() {
             classifyNodeDispatch();
             classifyEntityDispatch();
+            // The ancestor facts read the dispatch facts just filled, and armOf reads them.
+            foldAncestorContexts();
             for (var entry : fields.entrySet()) {
                 if (!(entry.getValue() instanceof OutputField out)) continue;
                 FieldCoordinates coord = entry.getKey();
@@ -479,33 +498,20 @@ public record TenantBindingIndex(
         }
 
         /**
-         * True when some reaching path to {@code typeName} crosses a tenant-divining edge (a
+         * True when some path reaching {@code typeName} crosses a tenant-divining edge (a
          * direct binding, or routable node dispatch). The any-path mirror of
          * {@link #tenantContextOf}'s every-path fold, matching the nested-marker rung's posture:
          * a marked field rejects if fanning would contradict a divined tenant on <em>any</em>
          * path (rejections are conservative), while the {@link TenantBinding.Inherited} verdict
-         * keeps demanding every-path certainty. Cycles fold to {@code false}.
+         * keeps demanding every-path certainty. A path through a cycle counts like any other.
          */
         private boolean anyBoundAncestor(String typeName) {
-            Boolean cached = boundAncestorMemo.get(typeName);
-            if (cached != null) return cached;
-            if (!boundAncestorInProgress.add(typeName)) return false;
-            boolean result = false;
-            for (FieldCoordinates edge : reachingEdges.getOrDefault(typeName, List.of())) {
-                if (edgeDivinesTenant(edge) || anyBoundAncestor(edge.getTypeName())) {
-                    result = true;
-                    break;
-                }
-            }
-            boundAncestorInProgress.remove(typeName);
-            boundAncestorMemo.put(typeName, result);
-            return result;
+            return belowBoundEdge.contains(typeName);
         }
 
         /**
          * Whether the edge's own field divines a tenant: the direct-binding and routable
-         * node-dispatch facts {@link #edgeEstablishesOrTransmitsContext} reads, without the
-         * transitive fold (the caller walks paths itself).
+         * node-dispatch facts behind {@link #anyBoundAncestor}.
          */
         private boolean edgeDivinesTenant(FieldCoordinates edge) {
             if (fields.get(edge) instanceof OutputField) {
@@ -530,27 +536,16 @@ public record TenantBindingIndex(
         }
 
         /**
-         * True when some reaching path to {@code typeName} crosses a fanned field. The
+         * True when some path reaching {@code typeName} crosses a fanned field. The
          * fanned-ancestor fact behind the nested-{@code @tenantFanOut} rejection; any-path (a
          * rejection concern), unlike {@link #tenantContextOf}'s every-path fold. The children's
          * {@link TenantBinding.Inherited} classification reads the same marker through
-         * {@link #edgeEstablishesOrTransmitsContext}, so the two facts derive from one predicate
-         * ({@link #fanMarked}) and cannot drift. Cycles fold to {@code false}.
+         * {@link #edgeEstablishesContext}, so the two facts derive from one predicate
+         * ({@link #fanMarked}) and cannot drift. A marked field on a cycle lies below itself, so
+         * it reads as nested.
          */
         private boolean anyFannedAncestor(String typeName) {
-            Boolean cached = fannedAncestorMemo.get(typeName);
-            if (cached != null) return cached;
-            if (!fannedAncestorInProgress.add(typeName)) return false;
-            boolean result = false;
-            for (FieldCoordinates edge : reachingEdges.getOrDefault(typeName, List.of())) {
-                if (fanMarked(edge) || anyFannedAncestor(edge.getTypeName())) {
-                    result = true;
-                    break;
-                }
-            }
-            fannedAncestorInProgress.remove(typeName);
-            fannedAncestorMemo.put(typeName, result);
-            return result;
+            return belowFannedEdge.contains(typeName);
         }
 
         /**
@@ -887,7 +882,7 @@ public record TenantBindingIndex(
          * <p>A service whose own reach holds a global table (a {@code @table} return over one)
          * mints nothing, whatever its arguments name: graphitron re-reads that return table on
          * the connection the call is handed, and global tables live on the default source. The
-         * gate sits here rather than in {@link #armOf} so {@link #edgeEstablishesOrTransmitsContext}
+         * gate sits here rather than in {@link #armOf} so {@link #edgeEstablishesContext}
          * reads the same answer, and the fields under such a service inherit no tenant that
          * nothing stamped.
          */
@@ -1202,6 +1197,9 @@ public record TenantBindingIndex(
             for (var type : sdl.getAllTypesAsList()) {
                 if (type.getName().startsWith("__")) continue;
                 if (!(type instanceof GraphQLObjectType obj)) continue;
+                // An unreached type never executes, so its edges say nothing about the paths
+                // that do; recording them would let it deny its targets a context.
+                if (!domain.contains(obj.getName())) continue;
                 for (GraphQLFieldDefinition field : obj.getFieldDefinitions()) {
                     var target = GraphQLTypeUtil.unwrapAll(field.getType());
                     if (!(target instanceof GraphQLObjectType
@@ -1210,62 +1208,109 @@ public record TenantBindingIndex(
                         continue;
                     }
                     var edge = FieldCoordinates.coordinates(obj.getName(), field.getName());
-                    for (String reached : structuralClosure(((GraphQLNamedType) target).getName())) {
-                        reachingEdges.computeIfAbsent(reached, k -> new ArrayList<>()).add(edge);
+                    var reached = structuralClosure(((GraphQLNamedType) target).getName());
+                    edgeTargets.put(edge, reached);
+                    outgoingEdges.computeIfAbsent(obj.getName(), k -> new ArrayList<>()).add(edge);
+                    for (String r : reached) {
+                        reachingEdges.computeIfAbsent(r, k -> new ArrayList<>()).add(edge);
                     }
                 }
             }
         }
 
         /**
-         * True when every path reaching {@code typeName} runs through a tenant binding, so a
-         * tenant-scoped field on it can inherit the divined value. Conservative on every
-         * uncovered shape: roots, unreached types, cycles, and any unbound reaching edge all
-         * fold to {@code false}.
+         * Computes the three ancestor facts as forward closures over the in-domain edges.
+         * "No context" propagates from the operation roots, the dispatch-vetoed types, and the
+         * types nothing hands a tenant, along every edge that does not establish one. That is
+         * the greatest fixed point the every-path property wants: a cycle entered only through
+         * establishing edges is never reached, while a veto or an unbound entry reaching any
+         * member reaches the whole cycle through its internal edges. The any-path facts close
+         * from the targets of their edges along every edge.
          */
-        private boolean tenantContextOf(String typeName) {
-            Boolean cached = ctxMemo.get(typeName);
-            if (cached != null) return cached;
-            if (roots.contains(typeName)) return false;
-            if (!ctxInProgress.add(typeName)) return false;
-
-            boolean result = computeTenantContext(typeName);
-
-            ctxInProgress.remove(typeName);
-            ctxMemo.put(typeName, result);
-            return result;
+        private void foldAncestorContexts() {
+            var unbound = new HashSet<String>(roots);
+            for (String typeName : domain) {
+                if (dispatchVetoed(typeName)
+                        || (!reachingEdges.containsKey(typeName) && !routableDispatchSurface(typeName))) {
+                    unbound.add(typeName);
+                }
+            }
+            withoutContext = closeForward(unbound, edge -> !edgeEstablishesContext(edge));
+            belowBoundEdge = closeForward(targetsOfEdges(this::edgeDivinesTenant), edge -> true);
+            belowFannedEdge = closeForward(targetsOfEdges(this::fanMarked), edge -> true);
         }
 
-        private boolean computeTenantContext(String typeName) {
-            // Batched dispatch surfaces reach the type outside the field-edge graph; each
-            // must itself be routable for the type's context to hold.
+        /**
+         * The types reachable from {@code seeds} along the in-domain edges {@code follow} accepts,
+         * seeds included.
+         */
+        private Set<String> closeForward(Set<String> seeds,
+                                         Predicate<FieldCoordinates> follow) {
+            var closed = new HashSet<String>();
+            var queue = new ArrayDeque<>(seeds);
+            while (!queue.isEmpty()) {
+                String typeName = queue.poll();
+                if (!closed.add(typeName)) continue;
+                for (FieldCoordinates edge : outgoingEdges.getOrDefault(typeName, List.of())) {
+                    if (follow.test(edge)) {
+                        queue.addAll(edgeTargets.get(edge));
+                    }
+                }
+            }
+            return closed;
+        }
+
+        private Set<String> targetsOfEdges(Predicate<FieldCoordinates> which) {
+            var targets = new HashSet<String>();
+            for (var entry : edgeTargets.entrySet()) {
+                if (which.test(entry.getKey())) {
+                    targets.addAll(entry.getValue());
+                }
+            }
+            return targets;
+        }
+
+        /**
+         * True when every path from a root to {@code typeName}, judged over the walk's domain,
+         * runs through an edge that establishes a tenant context, so a tenant-scoped field on it
+         * can inherit the divined value. Cycles add no path from a root. Conservative on every
+         * uncovered shape: a root, a type outside the domain, a dispatch-vetoed type and
+         * whatever it reaches, and a type nothing hands a tenant all answer {@code false}.
+         */
+        private boolean tenantContextOf(String typeName) {
+            return domain.contains(typeName) && !withoutContext.contains(typeName);
+        }
+
+        /**
+         * Batched dispatch surfaces reach the type outside the field-edge graph; each must itself
+         * be routable for the type to have a context.
+         */
+        private boolean dispatchVetoed(String typeName) {
             if (types.get(typeName) instanceof GraphitronType.NodeType nt
                     && tenantScoped(nt.table())
                     && (!nodeDispatchRoutable || !nodePositions.containsKey(typeName))) {
-                return false;
+                return true;
             }
             EntityResolution entity = entitiesByType.get(typeName);
-            if (entity != null && tenantScoped(entity.table())
-                    && !byEntityType.containsKey(typeName)) {
-                return false;
-            }
-            var edges = reachingEdges.getOrDefault(typeName, List.of());
-            if (edges.isEmpty()) {
-                // Unreached by any field edge and not a routable dispatch surface: nothing
-                // establishes a context.
-                return (types.get(typeName) instanceof GraphitronType.NodeType
-                        && nodePositions.containsKey(typeName))
-                    || byEntityType.containsKey(typeName);
-            }
-            for (FieldCoordinates edge : edges) {
-                if (!edgeEstablishesOrTransmitsContext(edge)) {
-                    return false;
-                }
-            }
-            return true;
+            return entity != null && tenantScoped(entity.table())
+                && !byEntityType.containsKey(typeName);
         }
 
-        private boolean edgeEstablishesOrTransmitsContext(FieldCoordinates edge) {
+        /**
+         * A dispatch surface that hands its type a tenant: a node type whose key embeds the
+         * tenant column, or an entity type with an {@link TenantBinding.EntityRepBound}.
+         */
+        private boolean routableDispatchSurface(String typeName) {
+            return (types.get(typeName) instanceof GraphitronType.NodeType
+                    && nodePositions.containsKey(typeName))
+                || byEntityType.containsKey(typeName);
+        }
+
+        /**
+         * Whether the edge itself hands its subtree a tenant; an edge that does not passes on
+         * its parent's context, which {@link #foldAncestorContexts} propagates.
+         */
+        private boolean edgeEstablishesContext(FieldCoordinates edge) {
             if (fanMarked(edge)) {
                 // A fanned field stamps each unioned row's tenant as per-element localContext, so
                 // its subtree is tenant-homogeneous per element: the edge establishes context and
@@ -1282,7 +1327,7 @@ public record TenantBindingIndex(
                     return nodeDispatchRoutable;
                 }
             }
-            return tenantContextOf(edge.getTypeName());
+            return false;
         }
 
         /**

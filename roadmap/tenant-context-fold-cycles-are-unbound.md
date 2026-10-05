@@ -1,7 +1,7 @@
 ---
 id: R986
 title: "The tenant-context fold reads every cycle as unbound, so a type reachable both ways is rejected under a bound root"
-status: In Progress
+status: In Review
 bucket: bug
 theme: runtime-connection
 depends-on: []

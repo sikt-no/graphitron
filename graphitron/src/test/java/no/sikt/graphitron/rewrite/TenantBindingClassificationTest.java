@@ -78,6 +78,128 @@ class TenantBindingClassificationTest {
         assertThat(schema.tenantBindings().rejections()).isEmpty();
     }
 
+    // ===== Cycles and unreached parents: every path from a root, over the walk's domain =====
+
+    /** {@link #childBelowBoundAncestorYieldsInherited}'s fixture closed into a cycle. */
+    private static final String FILM_INVENTORY_CYCLE = """
+        type Film @table(name: "film") {
+            title: String
+            inventories: [Inventory!]!%s
+        }
+        type Inventory %s@table(name: "inventory") {
+            inventoryId: Int
+            film: Film%s
+        }
+        type Query {
+            films(filmId: Int @field(name: "film_id")): [Film!]!%s
+        }
+        """;
+
+    private static String filmInventoryCycle(String inventoriesDirectives, String inventoryHead,
+                                             String inventoryFields, String queryFields) {
+        return FILM_INVENTORY_CYCLE.formatted(
+            inventoriesDirectives, inventoryHead, inventoryFields, queryFields);
+    }
+
+    private static void assertInherited(GraphitronSchema schema, String type, String field) {
+        assertThat(schema.tenantBindingOf(type, field)).isEqualTo(new TenantBinding.Inherited(type));
+    }
+
+    private static void assertFanOutRejects(GraphitronSchema schema, String coordinate, String detail) {
+        assertThat(schema.tenantBindingOf(coordinate.split("\\.")[0], coordinate.split("\\.")[1]))
+            .isNull();
+        assertThat(schema.tenantBindings().rejections())
+            .anyMatch(e -> e.rejection() instanceof Rejection.InvalidSchema.DirectiveConflict conflict
+                && conflict.message().contains("'" + coordinate + "'")
+                && conflict.message().contains(detail));
+    }
+
+    @Test
+    void aCycleEnteredOnlyThroughABindingRootInheritsOnEveryMember() {
+        var schema = build(filmInventoryCycle("", "", "", ""));
+
+        assertInherited(schema, "Film", "inventories");
+        assertInherited(schema, "Inventory", "film");
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aCycleAlsoEnteredUnboundRejectsOnEveryMember() {
+        var schema = build(filmInventoryCycle("", "", "", "\n    inventories: [Inventory!]!"));
+
+        assertRejects(schema, "Film.inventories", "no ancestor established a tenant context");
+        assertRejects(schema, "Inventory.film", "no ancestor established a tenant context");
+    }
+
+    @Test
+    void anUnreachedParentDoesNotDenyItsTargetAContext() {
+        var schema = build("""
+            type Film @table(name: "film") {
+                title: String
+                inventories: [Inventory!]!
+            }
+            type Inventory @table(name: "inventory") { inventoryId: Int }
+            type Language @table(name: "language") { films: [Film] }
+            type Query {
+                films(filmId: Int @field(name: "film_id")): [Film!]!
+            }
+            """);
+
+        assertInherited(schema, "Film", "inventories");
+        assertThat(schema.tenantBindingOf("Language", "films")).isNull();
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aDispatchVetoOnACycleMemberReachesTheWholeCycle() {
+        // No Query.node: the unroutable node key is the only thing denying Inventory a context.
+        var schema = build(filmInventoryCycle("",
+            "implements Node @node(keyColumns: [\"inventory_id\"]) ", "\n    id: ID! @nodeId", ""));
+
+        assertThat(schema.tenantBindings().rejections())
+            .anyMatch(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding r
+                && r.coordinate().equals("Inventory")
+                && r.detail().contains("node id key"));
+        assertRejects(schema, "Film.inventories", "no ancestor established a tenant context");
+    }
+
+    @Test
+    void aFanOutMarkerOnACycleEdgeReadsAsNested() {
+        // The marked field is its own fanned ancestor through Inventory.film.
+        var schema = build(filmInventoryCycle(" @tenantFanOut", "", "", ""));
+
+        assertFanOutRejects(schema, "Film.inventories", "double-fan an already fanned context");
+        assertInherited(schema, "Inventory", "film");
+    }
+
+    @Test
+    void aFanOutMarkerLeavingACycleUnderABindingRootRejectsOnEveryMember() {
+        // Asked in either order, each marker finds the binding root through the cycle.
+        var schema = build("""
+            type Film @table(name: "film") {
+                title: String
+                inventories: [Inventory!]!
+                categories: [FilmCategory!]! @tenantFanOut
+            }
+            type Inventory @table(name: "inventory") { inventoryId: Int film: Sequel }
+            type Sequel @table(name: "film") {
+                title: String
+                filmActors: [FilmActor!]!
+                categories: [FilmCategory!]! @tenantFanOut
+            }
+            type FilmActor @table(name: "film_actor") { actorId: Int film: Film }
+            type FilmCategory @table(name: "film_category") { categoryId: Int }
+            type Query { films(filmId: Int @field(name: "film_id")): [Film!]! }
+            """);
+
+        assertFanOutRejects(schema, "Film.categories", "sits under a tenant-bound ancestor");
+        assertFanOutRejects(schema, "Sequel.categories", "sits under a tenant-bound ancestor");
+        assertInherited(schema, "Film", "inventories");
+        assertInherited(schema, "Inventory", "film");
+        assertInherited(schema, "Sequel", "filmActors");
+        assertInherited(schema, "FilmActor", "film");
+    }
+
     @Test
     void sessionBoundServiceChildUnderTenantContext_yieldsInherited() {
         // A $session-bound service call reads per-connection state (the mounted handle), so

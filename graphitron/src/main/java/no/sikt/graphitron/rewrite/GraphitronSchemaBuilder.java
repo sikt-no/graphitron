@@ -361,7 +361,8 @@ public class GraphitronSchemaBuilder {
         // reaching path bound), so it is computed post-walk; read by the validator's tenant
         // mirror and the routing emitters.
         var tenantBindings = TenantBindingIndex.compute(
-            ctx.schema, dedupedFields, entitiesByType, ctx.types, ctx.tenantScopes, operationMembers,
+            ctx.schema, SchemaReachability.reachableTypeNames(ctx.schema, ctx.nodeDeclaration),
+            dedupedFields, entitiesByType, ctx.types, ctx.tenantScopes, operationMembers,
             columnBindings);
         // The session-hook resolution: the authored <sessionState> strings arrive on
         // RunContext and are reflected here, the stage that owns ServiceCatalog, into the
