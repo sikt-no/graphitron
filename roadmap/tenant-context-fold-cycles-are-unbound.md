@@ -108,9 +108,26 @@ any depth (`TenantDslEmitter`), so a cycle traversed at runtime needs nothing ne
   `fields`, so `armOf` never runs for them.
 * **Propagate "no context" to a fixed point** over the domain. Seeds:
   * the operation roots;
-  * every domain type the two dispatch checks at the top of `computeTenantContext` veto (a
-    tenant-scoped node type that is not routable, a tenant-scoped entity type with no
-    `EntityRepBound`);
+  * every domain type a dispatch surface enters with no tenant, whatever else reaches it: a
+    tenant-scoped node type that is not routable, and any type in `entitiesByType` with no
+    `EntityRepBound`. The second covers a tenant-scoped entity whose key lacks the tenant column
+    and every untenanted entity, node types included (every `NodeType` has an entity entry, the
+    path `Query.node`, `Query.nodes` and `_entities` all resolve through), since entity and node
+    dispatch serve an untenanted type from the default source. A seed rather than a reaching-edge
+    rule, because a dispatch entry is not a field edge: without it, a cycle whose only way in is
+    an untenanted entity reads as entered by nothing and keeps a context.
+
+    The untenanted half tightens acyclic verdicts too, and the item takes that on rather than
+    scoping it to cycles. An untenanted `@key` or `@node` type that a binding root also reaches
+    has a context today, so its tenant-scoped children classify `Inherited`, yet `_entities` or
+    `Query.node` reaches the same type with nothing in `localContext` and `divinedTenant` fails
+    at request time. Every-path says those children reject at build time; a cycle-only scope
+    would need component bookkeeping to keep a rule the Goal says is wrong. The same seed closes
+    `Query.node` into an untenanted node type, which `edgeEstablishesContext` counts as
+    establishing whenever `nodeDispatchRoutable` holds: that type is now seeded whatever the
+    edge says. The seed is conservative where no dispatch surface is emitted (a build without a
+    federation `@link` and no `Query.node`), matching the existing veto of a tenant-scoped entity
+    without `EntityRepBound`, which fires on the same terms;
   * every domain type no in-domain edge reaches that is not a routable dispatch surface (a node type
     in `nodePositions` under `nodeDispatchRoutable`, or an entity type in `byEntityType`). This is
     today's empty-edges branch, kept: a node or `@key` type is in the domain whether or not anything
@@ -198,6 +215,18 @@ any depth (`TenantDslEmitter`), so a cycle traversed at runtime needs nothing ne
   because `anyBoundAncestor(Film)`, asked first for `Film.categories`, walks the cycle and memoises
   `Sequel` as `false` before `Query.films` answers `true`.
 
+* **Cycle entered only through an untenanted entity.** The Round 2 probe below (`Language`
+  `@key`-marked over the untenanted `language` table, cycling with `Film` through
+  `film_language_id_fkey`, nothing from `Query` reaching either): `Language.films` rejects
+  `noTenantBinding`. Fails at `35c195c`.
+* **Untenanted entity under a binding root.** `Query.films` (binding) `→ Film.language →
+  Language` (`@key`, untenanted) `→ Language.films: [LanguageFilm!]!`, `LanguageFilm` a second
+  type over `film` so nothing cycles: `Language.films` rejects. Pins the acyclic tightening;
+  fails both before this item and at `35c195c`.
+* **Query.node into an untenanted node type.** `Language implements Node @node` with
+  `films: [Film!]!`, reached only by `Query.node`: `Language.films` rejects. Pins that the seed
+  closes the node-dispatch shape; fails both before this item and at `35c195c`.
+
 No execution-tier case is owed. Emission and runtime are untouched: the change only lets more
 fields reach the `Inherited` verdict, whose hand-down through `localContext`, across a
 `@splitQuery` batch included, `TenantDivinedRoutingExecutionTest.inheritedChild_routesItsBatchToTheDivinedTenant`
@@ -205,7 +234,9 @@ already exercises.
 
 Corroboration outside the repo: rebuilding sis should report 37 tenancy rejections (the held root
 plus the 36 service payloads), down from 595. That is a check for the implementer to run, not the
-acceptance gate.
+acceptance gate. The untenanted-entity seed can add to that count: each addition is a
+tenant-scoped field below an untenanted `@key` or `@node` type, which `_entities` or `Query.node`
+would run with no tenant.
 
 ## Other solutions we've considered
 
@@ -335,3 +366,19 @@ finding, on question 1.
    establishing whenever `nodeDispatchRoutable` holds, including into an untenanted node type, and
    that predates this item in the acyclic case. Note it in the spec, or file it as its own item, if
    it holds.
+
+   *Response (session_01JMZCY1XV4Zp4VXbHHscxiP, 2026-10-05):* took the clean seed rule. The
+   dispatch seed is now every domain type a dispatch surface enters with no tenant: the
+   tenant-scoped unroutable node type as before, and any type in `entitiesByType` without an
+   `EntityRepBound`, which adds every untenanted entity (`dispatchVetoed` becomes
+   `unboundDispatchEntry`). The Implementation section says the item takes the acyclic tightening
+   on and why: a type `_entities` or `Query.node` enters with no tenant fails at request time
+   whatever else reaches it, and a cycle-only scope would keep a rule the Goal calls wrong behind
+   component bookkeeping. The related `Query.node` shape holds (built on `35c195c`,
+   `Language.films` under an untenanted `Language implements Node` reached by `Query.node`
+   draws no rejection) and closes under the same seed, since every `NodeType` carries an
+   entity entry; no separate item. Three `@UnitTier` tests pin the probe, the acyclic
+   tightening and the node shape, and all three fail with `TenantBindingIndex` reverted to
+   `fa27fd7`. The seed over-reports where no dispatch surface is emitted (no federation `@link`,
+   no `Query.node`), on the same terms as the existing tenant-scoped entity veto; the
+   Implementation section says so.

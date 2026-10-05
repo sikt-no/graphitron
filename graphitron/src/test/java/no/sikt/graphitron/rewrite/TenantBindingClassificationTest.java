@@ -200,6 +200,67 @@ class TenantBindingClassificationTest {
         assertInherited(schema, "FilmActor", "film");
     }
 
+    // ===== Dispatch entries: an untenanted entity is entered with no tenant =====
+
+    private static final String KEY_DIRECTIVE =
+        "directive @key(fields: String!, resolvable: Boolean = true) repeatable on OBJECT | INTERFACE\n";
+
+    @Test
+    void aCycleEnteredOnlyThroughAnUntenantedEntityRejectsOnEveryMember() {
+        // Language is reached only through _entities, which serves it from the default source;
+        // the cycle through Film.language must not stand in for an entry that carries a tenant.
+        var schema = build(KEY_DIRECTIVE + """
+            type Language @table(name: "language") @key(fields: "languageId") {
+                languageId: Int @field(name: "language_id")
+                films: [Film!]! @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Film @table(name: "film") {
+                title: String
+                language: Language @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Category @table(name: "category") { name: String }
+            type Query { categories: [Category!]! }
+            """);
+
+        assertRejects(schema, "Language.films", "no ancestor established a tenant context");
+    }
+
+    @Test
+    void anUntenantedEntityUnderABindingRootDeniesItsChildrenAContext() {
+        // Query.films hands Language a tenant, but _entities reaches it with none.
+        var schema = build(KEY_DIRECTIVE + """
+            type Film @table(name: "film") {
+                title: String
+                language: Language @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Language @table(name: "language") @key(fields: "languageId") {
+                languageId: Int @field(name: "language_id")
+                films: [LanguageFilm!]! @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type LanguageFilm @table(name: "film") { title: String }
+            type Query {
+                films(filmId: Int @field(name: "film_id")): [Film!]!
+            }
+            """);
+
+        assertRejects(schema, "Language.films", "no ancestor established a tenant context");
+    }
+
+    @Test
+    void anUntenantedNodeTypeReachedThroughQueryNodeDeniesItsChildrenAContext() {
+        // Node dispatch into an untenanted node type serves it from the default source.
+        var schema = build("""
+            type Language implements Node @table(name: "language") @node {
+                id: ID! @nodeId
+                films: [Film!]! @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Film @table(name: "film") { title: String }
+            type Query { node(id: ID!): Node }
+            """);
+
+        assertRejects(schema, "Language.films", "no ancestor established a tenant context");
+    }
+
     @Test
     void sessionBoundServiceChildUnderTenantContext_yieldsInherited() {
         // A $session-bound service call reads per-connection state (the mounted handle), so

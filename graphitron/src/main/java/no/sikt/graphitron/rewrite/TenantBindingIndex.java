@@ -1399,17 +1399,18 @@ public record TenantBindingIndex(
 
         /**
          * Computes the three ancestor facts as forward closures over the in-domain edges.
-         * "No context" propagates from the operation roots, the dispatch-vetoed types, and the
-         * types nothing hands a tenant, along every edge that does not establish one. That is
-         * the greatest fixed point the every-path property wants: a cycle entered only through
-         * establishing edges is never reached, while a veto or an unbound entry reaching any
-         * member reaches the whole cycle through its internal edges. The any-path facts close
-         * from the targets of their edges along every edge.
+         * "No context" propagates from the operation roots, the types a dispatch surface enters
+         * with no tenant, and the types nothing hands a tenant, along every edge that does not
+         * establish one. That is the greatest fixed point the every-path property wants: a cycle
+         * entered only through establishing edges is never reached, while an unbound entry
+         * reaching any member, by a field edge or by dispatch, reaches the whole cycle through
+         * its internal edges. The any-path facts close from the targets of their edges along
+         * every edge.
          */
         private void foldAncestorContexts() {
             var unbound = new HashSet<String>(roots);
             for (String typeName : domain) {
-                if (dispatchVetoed(typeName)
+                if (unboundDispatchEntry(typeName)
                         || (!reachingEdges.containsKey(typeName) && !routableDispatchSurface(typeName))) {
                     unbound.add(typeName);
                 }
@@ -1453,26 +1454,28 @@ public record TenantBindingIndex(
          * True when every path from a root to {@code typeName}, judged over the walk's domain,
          * runs through an edge that establishes a tenant context, so a tenant-scoped field on it
          * can inherit the divined value. Cycles add no path from a root. Conservative on every
-         * uncovered shape: a root, a type outside the domain, a dispatch-vetoed type and
-         * whatever it reaches, and a type nothing hands a tenant all answer {@code false}.
+         * uncovered shape: a root, a type outside the domain, a type a dispatch surface enters
+         * with no tenant and whatever it reaches, and a type nothing hands a tenant all answer
+         * {@code false}.
          */
         private boolean tenantContextOf(String typeName) {
             return domain.contains(typeName) && !withoutContext.contains(typeName);
         }
 
         /**
-         * Batched dispatch surfaces reach the type outside the field-edge graph; each must itself
-         * be routable for the type to have a context.
+         * Batched dispatch surfaces reach the type outside the field-edge graph, whatever else
+         * reaches it, and hand it a tenant only when routable: a tenant-scoped node type whose
+         * key does not embed the tenant column enters with none, and so does an entity type with
+         * no {@link TenantBinding.EntityRepBound}. That includes every untenanted entity, node
+         * types among them, which entity and node dispatch serve from the default source.
          */
-        private boolean dispatchVetoed(String typeName) {
+        private boolean unboundDispatchEntry(String typeName) {
             if (types.get(typeName) instanceof GraphitronType.NodeType nt
                     && tenantScoped(nt.table())
                     && (!nodeDispatchRoutable || !nodePositions.containsKey(typeName))) {
                 return true;
             }
-            EntityResolution entity = entitiesByType.get(typeName);
-            return entity != null && tenantScoped(entity.table())
-                && !byEntityType.containsKey(typeName);
+            return entitiesByType.containsKey(typeName) && !byEntityType.containsKey(typeName);
         }
 
         /**
