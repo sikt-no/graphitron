@@ -41,7 +41,7 @@ A service over reference data, or one that only reads the mounted session handle
 ```graphql
 type Query {
     sessionPrincipal: String @globalData @service(service: {
-        className: "...SessionIdentityService", method: "principalOf", argMapping: "identity: $session"})
+        className: "...SessionIdentityService", method: "sessionPrincipal", argMapping: "identity: $session"})
 }
 ```
 
@@ -176,3 +176,21 @@ Consumer impact: this is a breaking build change. A schema with an unmarked, non
 - **A Java annotation on the service method.** That puts the claim next to the SQL that justifies it, but it needs an annotation type on the consumer's classpath, and graphitron's declarations live in the SDL.
 - **A mojo-configuration list of global services.** That moves a per-field fact out of the schema, where neither the LSP nor a schema reviewer sees it.
 - **Naming the marker for the routing (`@defaultSource`).** The manual's vocabulary would support it, but the author is asserting something about the data ("this service touches only global data"), and the entry discipline records what the author meant. The routing follows from that.
+
+## Reviewer findings
+
+### Round 1 (Spec → Ready): request revisions
+
+Question 1 passes. When this lands, a database-per-tenant build refuses a root `@service` that is handed a `DSLContext` or `$session` and whose arguments name no tenant, because today that call quietly runs on the default database. An author either takes the node table's record so the call routes, or marks the field `@globalData`, and the build rejects that marker wherever it can see tenant data. The claims about code all check out against the tree (the `armOf` sites, `bindsConnection`, `collectFromServiceCall`'s global-reach early return, `SlotCollector`, `DirectBinding`, the `NodeIdDecodeRecord` / `NodeIdDecodeKeys` leaves, `JooqRecord.table()`, the two loops being replaced, the `graphitron-model.sql` comment and `GraphitronFactCapture`'s `default` arm, the test names, the docs paths). The shape fits the tree: one widened predicate, evidence recorded by the walk that already runs, a closed marker ladder modelled on `@tenantFanOut`'s, and one sweep where there were two loops.
+
+Question 2 fails on two points. In both, the plan leaves an author-facing rejection that is either false or reported twice, and fixing either one means choosing between rejection arms, which is the author's call.
+
+1. **The widened decline gate sends empty-reach declines through the arm the spec rules out for empty reach.** Step 2 makes the gate `needsTenant && !declines.isEmpty()`, and the gate's body emits `Rejection.noTenantBinding(coordinate, tenantTable, detail)`, where `tenantTable` falls back to `scopes.columnName()` when nothing in reach is tenant-scoped. Today that fallback never runs, since the gate needs `anyTenant`. Once the gate is widened it does run, and the "Decline under the widened gate" test case would print `'Mutation.x' reaches tenant-scoped table 'film_id' with no tenant binding in scope: …`. That names a column as a table and says the field reaches it when it reaches nothing. The section "The new rejection arm" gives exactly this falsehood as its reason for adding `UnroutedServiceCall`. *To satisfy:* say which arm carries a decline at an empty-reach connection service (for example `UnroutedServiceCall` with the decline detail, or `NoTenantBinding` given a text that is true here), and make the decline test assert that the message contains no "reaches tenant-scoped table".
+
+2. **`@globalData` is dispatched after the cross-scope rejection, but the sweep only counts ladder verdicts.** The new order puts the marker check after the cross-scope rejection (`anyTenant && anyGlobal`), and that rejection returns `null` before the ladder is reached. The sweep's "reached a verdict" predicate for `@globalData` is "a ladder verdict (accepted or rejected)". So a marked field that is cross-scope gets the cross-scope rejection and then the sweep's "never reached" rejection as well, and the second one is false. `@tenantFanOut` avoids this because `fanMarked` is checked before the cross-scope rejection. *To satisfy:* either dispatch `@globalData` (and the conflict check) ahead of the cross-scope rejection, as `fanMarked` is, or widen the sweep predicate to count any rejection at the coordinate. Then add the cross-scope case to the ladder tests.
+
+Non-blocking:
+
+- `TestServiceStub.rateByRawId(String film)` takes no `DSLContext`, so under this plan `anUndecodedIdNamesNoTenantSoTheWrappersChildStillRejects` keeps its root `Untenanted` assertion (no connection, nothing to route). The refusal case described in Tests needs the stub to take a `DSLContext`, or a new stub. Say which, so the "replaces the root assertion" wording holds.
+- The directive count in the `graphitron-model.sql` comment is repeated in `GraphitronFieldEntries`'s class javadoc ("Sixteen directive names reach this site and twelve of them get a relation…"). "Goes up by one in each place" should name that javadoc too.
+- The Goal's `sessionPrincipal` example named `SessionIdentityService.principalOf`, which does not exist. It was corrected in this commit to the real method, `sessionPrincipal`. (`principalOf` is on `TestServiceStub`.)
