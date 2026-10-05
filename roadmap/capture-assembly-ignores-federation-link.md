@@ -1,7 +1,7 @@
 ---
 id: R985
 title: "The capture assembles the schema without the federation @link, so every imported directive is reported undeclared"
-status: In Progress
+status: In Review
 bucket: dx
 theme: diagnostics
 depends-on: []
@@ -344,8 +344,10 @@ It is filed as its own item and added to this item's `depends-on`, since landing
 generates. A raised coordinate the generator would also refuse is a true defect sis has had all along. The audit names it,
 and it does not hold the item.
 
-*Status:* not yet run. The implementing session had no access to the sis sources, so the run is owed by a session that
-has them, before In Review.
+*Status:* run on 2026-10-05, recorded in `roadmap/audits/2026-10-05-r985-sis-acceptance.md`. Undeclared-directive
+rows went from 109 to 0, freshness from `Previous` to `Current`, and `intent_type_domain` from 0 rows to 2320. The
+newly live domain-scoped checks raise nothing on sis, so no false positive was filed and `depends-on` is unchanged.
+sis's build fails on the same 615 tenancy errors with and without this item.
 
 ## Other solutions we've considered
 
