@@ -192,3 +192,37 @@ acceptance gate.
 * **Leave the any-path folds alone.** They are a separate fact from the title's, but they share the
   graph and the defect; fixing one fold and leaving two recursions with in-progress-`false` memos
   over the same edges keeps a known order-dependent answer and two mechanisms side by side.
+
+## Reviewer findings
+
+### Round 1: Spec → Ready, withheld (session_01VkHxXd4pAENrVWLh4cq3xE, 2026-10-05)
+
+The goal reads cleanly from its first paragraph and the minimal pair, and the outcome is reachable.
+The diagnosis checks out against the tree: the in-progress-`false` memo in `tenantContextOf`, the
+empty-edges branch, `buildEdges` recording edges from every SDL object type, and the
+order-dependent `anyBoundAncestor`/`anyFannedAncestor` recursions (a two-cycle is enough: asking
+`Film` first memoises `Inventory` as `false` before `Query.films` answers `true`). Run against the
+tree today, the Goal pair rejects both cycle fields and the unreached-`Language` fixture rejects
+`Film.inventories`, as the item says. The plan fits the architecture: the domain is
+`SchemaReachability.reachableTypeNames`, whose seeds and implementor edges match the walk that
+fills `fields`, and the propagation is the grow-until-stable shape `LookupFactVisitor.closeOverEdges`
+already uses. Splitting the edge predicate changes nothing for node dispatch: `NODE_RESOLVE` is
+minted only on `QueryNodeField`/`QueryNodesField`, whose parent is a root and so already marked,
+which means the not-routable case that today answers `false` without transmitting gives the same
+result after the split. One finding, on a named test.
+
+1. **The fan-out cycle test expects a rejection the ladder never reaches.** (Gate question 2: the
+   Tests section names the evidence the implementer will build against.) With
+   `Film.inventories: [Inventory!]! @tenantFanOut` on the Goal pair's cycle under the binding
+   `Query.films`, the field is its own fanned ancestor: `Inventory` is the marked edge's target and
+   `Inventory.film` leads back to `Film`. `fanOutArmOf` runs the `anyFannedAncestor` rung ahead of
+   `anyBoundAncestor`, so the field rejects as "sits below another @tenantFanOut field ... double-fan
+   an already fanned context", not "sits under a tenant-bound ancestor". Building that fixture on the
+   current tree gives exactly that rejection (and `Inventory.film` classifies `Inherited`), and the
+   planned forward closure gives the same answer, since `Film` is reached from the seed `Inventory`.
+   The test as written fails both before and after the change. Whether a marker on a cycle should
+   read as nested is the author's call. The nested-marker message is arguably right, because at
+   runtime the fanned field does recur below itself. If the test is meant to pin the bound-ancestor
+   rung's order dependence instead, it needs a marked list field on a cycle member whose target lies
+   outside the cycle, on the member the recursion memoises wrongly (in the two-cycle, `Inventory`
+   when `Film` is asked first).
