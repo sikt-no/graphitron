@@ -4,6 +4,7 @@ import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.run.SubjectConfig;
+import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
@@ -20,8 +21,8 @@ import java.util.Optional;
 import no.sikt.graphitron.model.schema.AttributedRegistry;
 
 /**
- * A fact store captured behind the attribution pipeline production runs, taking the handle
- * production captures. The two-tier arm of the capture harness, and the reason it is here rather
+ * A fact store captured beside the attribution pipeline production runs, over the same file and
+ * the same configuration. The two-tier arm of the capture harness, and the reason it is here rather
  * than beside the rest of {@link CapturedStore}: everything on that handle is a capture and lives
  * with capture, and this one runs {@link no.sikt.graphitron.model.schema.AttributedRegistry#load} first, so
  * it can only exist where both tiers are visible.
@@ -40,11 +41,13 @@ public final class PipelineCapturedStore implements AutoCloseable {
 
     private final no.sikt.graphitron.model.boot.GraphitronModelStore store;
     private final AttributedRegistry attributed;
+    private final Path file;
 
     private PipelineCapturedStore(no.sikt.graphitron.model.boot.GraphitronModelStore store,
-                                  AttributedRegistry attributed) {
+                                  AttributedRegistry attributed, Path file) {
         this.store = store;
         this.attributed = attributed;
+        this.file = file;
     }
 
     /** Captures {@code sdl} under {@link CapturedStore#GRAPH} behind the pipeline's attribution. */
@@ -53,9 +56,10 @@ public final class PipelineCapturedStore implements AutoCloseable {
     }
 
     /**
-     * {@link #of(Path, String)} with a tag on the input, so {@code TagLinkSynthesiser} fires and its
-     * synthesised source name enters the registry capture walks. The only fixture in the tree that
-     * puts that sentinel in front of capture's stamp lookup.
+     * {@link #of(Path, String)} with a tag on the input, so {@code TagLinkSynthesiser} fires on both
+     * halves: the generator's load, and the capture's assembly, which composes the corpus with the
+     * same rewrites. The tag reaches each half the way a run's configuration would, the generator's
+     * through its {@link RunContext} and the capture's through the recipe binding.
      */
     public static PipelineCapturedStore of(Path directory, String sdl, String tag) {
         Path file = write(directory, sdl);
@@ -72,18 +76,22 @@ public final class PipelineCapturedStore implements AutoCloseable {
         // stratum and therefore derives none of the graphitron_ relations that stand on it. The
         // fixture is already on disk above, and naming it here is what makes the two halves of this
         // pass read the same documents.
-        CapturedStore.capture(store.dsl(), CapturedStore.graph(directory), corpusOf(directory, file),
-            new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()));
-        return new PipelineCapturedStore(store, attributed);
+        CapturedStore.capture(store.dsl(), CapturedStore.graph(directory),
+            corpusOf(directory, file, tag), new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()));
+        return new PipelineCapturedStore(store, attributed, file);
     }
 
     /**
      * The corpus a reading is of, stated as the configuration a run would have had. A literal
-     * binding rather than a glob, so the gatherer is handed exactly the file this fixture wrote.
+     * binding rather than a glob, so the gatherer is handed exactly the file this fixture wrote, and
+     * carrying the tag the generator's input carries, so the two halves of the pass read the same
+     * configuration as well as the same documents.
      */
-    private static SubjectConfig corpusOf(Path directory, Path file) {
+    private static SubjectConfig corpusOf(Path directory, Path file, String tag) {
         return SubjectConfig.of(new SchemaRecipe(directory.resolve("pom.xml"),
-            List.of(SchemaRecipe.Binding.literal(SchemaSource.file(file))), List.of("graphqls")));
+            List.of(new SchemaRecipe.Binding(new SchemaRecipe.Entry.Literal(SchemaSource.file(file)),
+                Optional.ofNullable(tag), Optional.empty())),
+            List.of("graphqls")));
     }
 
     /**
@@ -106,11 +114,13 @@ public final class PipelineCapturedStore implements AutoCloseable {
     }
 
     /**
-     * The registry capture actually walked, which is the pre-synthesis handle: capture runs before
-     * the synthesis rewrites, so a test reading rows back compares them against this one.
+     * The registry the capture's decode walked: the corpus as written, the fixture's file reduced
+     * with the bundled directive vocabulary and nothing composed into it. Neither of the pipeline's
+     * handles is that registry, both carrying the loading rewrites, so a test reading the decode's
+     * rows back compares them against this one.
      */
     public graphql.schema.idl.TypeDefinitionRegistry registry() {
-        return attributed.preSynthesisRegistry();
+        return SchemaLoader.parsePerSource(List.of(SchemaSource.file(file))).registry();
     }
 
     /** The pipeline's own two handles, before and after the synthesis rewrites. */

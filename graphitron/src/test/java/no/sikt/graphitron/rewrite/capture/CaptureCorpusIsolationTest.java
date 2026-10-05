@@ -74,9 +74,6 @@ class CaptureCorpusIsolationTest {
     private static final List<String> SDL_FAMILIES = List.of("graphql_");
 
     private static final String FIXTURE = """
-        directive @link(url: String!, import: [String]) repeatable on SCHEMA
-        directive @key(fields: String!, resolvable: Boolean) repeatable on OBJECT
-
         extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
 
         type Query { pairing: Pairing, film: Film, actor: Actor }

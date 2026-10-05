@@ -8,13 +8,9 @@ import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.grammar.NodeDeclaration;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.schema.federation.KeyNodeSynthesiser;
-import no.sikt.graphitron.model.schema.input.DescriptionNoteApplier;
-import no.sikt.graphitron.model.schema.input.FederationLinkApplier;
+import no.sikt.graphitron.model.schema.input.LoadingRewrites;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
-import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
-import no.sikt.graphitron.model.schema.input.TagApplier;
-import no.sikt.graphitron.model.schema.input.TagLinkSynthesiser;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -30,12 +26,14 @@ import java.util.Set;
  *
  * <p>{@code preSynthesisRegistry} exists because {@code KeyNodeSynthesiser} rewrites in place: a
  * consumer that wants the schema an author wrote plus the loading rewrites, and not what synthesis
- * made of it, has nothing to read once the rewrite has run. It is the handle the fact-capture loads
- * take, so their macro expansion is the thing that mints the federation keys rather than finding
- * them already there. Loading rewrites are on both sides of it; only synthesis is on one.
+ * made of it, has nothing to read once the rewrite has run. It is what the generator's own verdict
+ * assembles. The store does not take this handle: its assembly composes the corpus with the same
+ * {@link LoadingRewrites} and judges that, so the two verdicts are over one schema, and its macro
+ * expansion is the thing that mints the federation keys rather than finding them already there.
+ * Loading rewrites are on both sides of it; only synthesis is on one.
  *
  * <p>{@code injectedNames} is captured once, by the pipeline orchestrator, from
- * {@link no.sikt.graphitron.model.schema.input.FederationLinkApplier#apply}'s return value;
+ * {@link LoadingRewrites#apply}'s outcome;
  * downstream stages read it off the carrier instead of re-walking the registry. The
  * {@link #federationLink()} flag is derived from it ("injected anything"), so the two facts live in
  * one component rather than a parallel boolean. The lint engine excludes these names because they
@@ -93,7 +91,7 @@ public record AttributedRegistry(TypeDefinitionRegistry registry,
      * {@link AttributedRegistry}, deriving {@code injectedNames} the same way
      * {@code FederationLinkApplier.apply} collects it (the names of every definition the
      * {@code @link} import would inject). Convenience for tests; production paths capture the set
-     * directly from {@code FederationLinkApplier.apply}'s return value.
+     * directly from {@link LoadingRewrites#apply}'s outcome.
      */
     public static AttributedRegistry from(TypeDefinitionRegistry registry) {
         var defs = LinkDirectiveProcessor.loadFederationImportedDefinitions(registry);
@@ -124,23 +122,29 @@ public record AttributedRegistry(TypeDefinitionRegistry registry,
      * is what keeps a run to one load of the generated classes rather than one per caller that
      * wants them.
      *
+     * <p>A refusal of the loading rewrites is not carried: it throws the exception it carries,
+     * which is the one each rewrite has always thrown, so a build fails as it did before the
+     * rewrites were composed in {@link LoadingRewrites}.
+     *
      * <p>This is the capture layer's because it is nobody else's: it parses, applies four
      * configuration-driven rewrites, and synthesises, and a validator or a language server wants
      * exactly that without wanting a generator. It used to live on the generator, which is why a
      * goal whose whole job is capture had to construct one.
      */
     public static AttributedRegistry load(RunContext ctx, JooqCatalog jooq) {
-        var bySource = SchemaInputAttribution.build(ctx.schemaInputs());
         var read = SchemaLoader.parsePerSource(loadableSources(ctx.schemaInputs()));
-        var registry = read.registry();
-        TagLinkSynthesiser.apply(registry, bySource);
-        var injectedNames = FederationLinkApplier.apply(registry);
-        TagApplier.apply(registry, bySource);
-        DescriptionNoteApplier.apply(registry, bySource);
+        var composed = switch (LoadingRewrites.apply(read.registry(), ctx.schemaInputs())) {
+            case LoadingRewrites.Outcome.Applied applied -> applied;
+            case LoadingRewrites.Outcome.Refused refused -> throw refused.refusal().exception();
+        };
+        var registry = composed.registry();
+        var injectedNames = composed.injectedNames();
         // Everything above is a loading rewrite and everything below is synthesis, which is the
-        // line the capture handle is cut on. TagApplier and DescriptionNoteApplier sit above it
-        // deliberately: their @tag applications and appended notes are in the emitted schema, and
-        // the store owes a round trip, so capture has to see them.
+        // line the pre-synthesis handle is cut on. The store's assembly composes the same rewrites
+        // through the same function, so the two judge one schema. TagApplier and
+        // DescriptionNoteApplier are among them: their @tag applications and appended notes are in
+        // the emitted schema and in what the store's assembly judges, though no relation
+        // transcribes them.
         var preSynthesis = registry.readOnly();
         if (!injectedNames.isEmpty()) {
             KeyNodeSynthesiser.apply(registry, new NodeDeclaration(jooq));

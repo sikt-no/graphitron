@@ -11,7 +11,6 @@ import graphql.language.StringValue;
 import graphql.language.Value;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.diagnostics.Rejection;
-import no.sikt.graphitron.model.diagnostics.RejectionKind;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
 import no.sikt.graphitron.model.schema.federation.FederationSpec;
@@ -58,33 +57,42 @@ public final class TagLinkSynthesiser {
 
     /**
      * Applies tag-link synthesis or validation to {@code registry} based on whether any
-     * entry in {@code bySource} carries a tag.
+     * entry in {@code bySource} carries a tag, throwing the refusal's exception where it refuses.
      */
     public static void apply(TypeDefinitionRegistry registry, Map<String, SchemaInput> bySource) {
+        synthesise(registry, bySource).ifPresent(refusal -> {
+            throw refusal.exception();
+        });
+    }
+
+    /**
+     * {@link #apply} with the refusal handed back rather than thrown, for {@link LoadingRewrites},
+     * whose callers decide whether a refusal fails anything.
+     */
+    static Optional<LoadingRewrites.Refusal> synthesise(TypeDefinitionRegistry registry,
+                                                        Map<String, SchemaInput> bySource) {
         boolean anyTagged = bySource.values().stream().anyMatch(i -> i.tag().isPresent());
         if (!anyTagged) {
-            return;
+            return Optional.empty();
         }
 
         Optional<Directive> federationLink = findFederationLink(registry);
         if (federationLink.isEmpty()) {
-            synthesise(registry);
-        } else {
-            var link = federationLink.get();
-            if (!tagIsImported(link)) {
-                var loc = link.getSourceLocation();
-                String locDesc = loc != null
-                        ? loc.getSourceName() + ":" + loc.getLine()
-                        : "(unknown location)";
-                throw new ValidationFailedException(List.of(new ValidationError(
-                        null,
-                        no.sikt.graphitron.model.diagnostics.Rejection.invalidSchema(
-                            "<schemaInput tag> is configured but '@tag' is not in the @link import list"
-                            + " at " + locDesc + ". Add \"@tag\" to the import array."),
-                        loc)));
-            }
-            // @tag is imported; no synthesis needed.
+            return synthesise(registry);
         }
+        var link = federationLink.get();
+        if (tagIsImported(link)) {
+            return Optional.empty();
+        }
+        var loc = link.getSourceLocation();
+        String locDesc = loc != null
+                ? loc.getSourceName() + ":" + loc.getLine()
+                : "(unknown location)";
+        String message = "<schemaInput tag> is configured but '@tag' is not in the @link import list"
+                + " at " + locDesc + ". Add \"@tag\" to the import array.";
+        return Optional.of(new LoadingRewrites.Refusal.TagNotImported(message, loc,
+                new ValidationFailedException(List.of(new ValidationError(
+                        null, Rejection.invalidSchema(message), loc)))));
     }
 
     private static Optional<Directive> findFederationLink(TypeDefinitionRegistry registry) {
@@ -127,7 +135,7 @@ public final class TagLinkSynthesiser {
         return false;
     }
 
-    private static void synthesise(TypeDefinitionRegistry registry) {
+    private static Optional<LoadingRewrites.Refusal> synthesise(TypeDefinitionRegistry registry) {
         var linkDirective = Directive.newDirective()
                 .name("link")
                 .argument(Argument.newArgument()
@@ -147,10 +155,10 @@ public final class TagLinkSynthesiser {
                 .directive(linkDirective)
                 .build();
 
-        var error = registry.add(extension);
-        if (error.isPresent()) {
-            throw new IllegalStateException(
-                    "Failed to inject synthesised federation @link: " + error.get().getMessage());
-        }
+        return registry.add(extension).map(error -> {
+            String message = "Failed to inject synthesised federation @link: " + error.getMessage();
+            return new LoadingRewrites.Refusal.SynthesisedLinkRefused(message,
+                    new IllegalStateException(message));
+        });
     }
 }

@@ -49,6 +49,8 @@ import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
+import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
@@ -638,6 +640,34 @@ class FactCaptureAgreementTest {
                 .from(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY)
                 .fetch(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME))
                 .containsExactlyInAnyOrder("Film", "Language");
+        }
+    }
+
+    /**
+     * A federated schema the generator accepts reads as sound in the store, and the derivations
+     * that need a schema get one. The fixture declares nothing its {@code @link} imports, which is
+     * the shape a consumer writes: before the store composed the corpus as the generator does, this
+     * fixture reported its {@code @link} and every {@code @key} as undeclared, so freshness read as
+     * stale and the classification domain was empty whatever the schema held.
+     */
+    @Test
+    @DisplayName("a federated schema the generator accepts records no problem and has a domain")
+    void aFederatedSchemaReadsAsSound(@TempDir Path tmp) {
+        try (var store = PipelineCapturedStore.of(tmp, FEDERATED_FIXTURE)) {
+            assertThat(store.dsl()
+                    .select(GRAPHQL_SCHEMA_PROBLEM.STAGE, GRAPHQL_SCHEMA_PROBLEM.MESSAGE)
+                    .from(GRAPHQL_SCHEMA_PROBLEM)
+                    .where(GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq(CapturedStore.GRAPH))
+                    .fetch())
+                .as("no problem rows, which is what freshness reads as current")
+                .isEmpty();
+            assertThat(store.dsl()
+                    .select(INTENT_TYPE_DOMAIN.TYPE_NAME)
+                    .from(INTENT_TYPE_DOMAIN)
+                    .where(INTENT_TYPE_DOMAIN.GRAPH_NAME.eq(CapturedStore.GRAPH))
+                    .fetch(INTENT_TYPE_DOMAIN.TYPE_NAME))
+                .as("the assembly handed the derivations a schema, so the domain is populated")
+                .contains("Query", "Film", "Language", "Actor");
         }
     }
 

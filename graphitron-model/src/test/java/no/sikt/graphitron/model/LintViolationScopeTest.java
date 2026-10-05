@@ -98,10 +98,11 @@ class LintViolationScopeTest {
         var config = SubjectConfig.of(new SchemaRecipe(directory.resolve("pom.xml"),
             List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls")));
         var readAt = LocalDateTime.now();
-        var documents = GraphQLSourceCapture.capture(dsl, identity, config, readAt);
+        var reading = GraphQLSourceCapture.capture(dsl, identity, config, readAt);
+        var documents = reading.documents();
         GraphQLAstCapture.capture(dsl, identity, documents, readAt);
         GraphitronAstCapture.capture(dsl, identity, documents, readAt);
-        GraphQLAssemblyCapture.capture(dsl, identity, documents, readAt);
+        GraphQLAssemblyCapture.capture(dsl, identity, reading, readAt);
     }
 
     private static Path temporaryDirectory() {

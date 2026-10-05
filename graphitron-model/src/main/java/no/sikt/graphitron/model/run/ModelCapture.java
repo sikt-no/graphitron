@@ -83,13 +83,15 @@ public final class ModelCapture {
         writeGraph(dsl, graph, readAt);
         // The corpus is read once, by the gatherer that owns the store's record of what was read,
         // and every gatherer below it is handed the documents rather than the configuration.
-        var documents = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
+        var reading = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
+        var documents = reading.documents();
         // The transcription, then the stage that can only be asked of the corpus whole. The
         // assembly's verdict is written down rather than returned onwards: nothing here needs the
         // executable schema, and a capture whose corpus did not assemble still has every fact
-        // above it to record.
+        // above it to record. The assembly is handed the whole reading, inputs and all, because it
+        // composes the corpus as the generator does and the composition is configured.
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
-        var assembly = GraphQLAssemblyCapture.capture(dsl, graph, documents, readAt);
+        var assembled = GraphQLAssemblyCapture.capture(dsl, graph, reading, readAt);
         // Once the transcription has been told what the dropped documents no longer say. The
         // source row is the provenance its rows hang on, so forgetting it before they were swept
         // would orphan them rather than remove them. The graphitron decode further down hangs
@@ -119,11 +121,12 @@ public final class ModelCapture {
         // The decode of what the author wrote at each directive, driven here rather than by a
         // second pass over the same corpus. The walk it rides is all that is left of the incumbent
         // one: it writes no relation of its own, and every family it used to hold is written above
-        // by the gatherers that read the documents. It runs on this pass's own composition of the
-        // corpus, so the registry it visits is the registry the assembly judged.
+        // by the gatherers that read the documents. It walks the merged corpus the assembly's
+        // composition started from, the corpus as written: the decode is a function of the
+        // documents alone, so neither the tag configuration nor the federation library reaches it.
         var decode = new FactSink(dsl, graph.name(), readAt);
         GraphitronFactCapture.clear(dsl, graph.name());
-        SdlFactCapture.capture(decode, assembly.registry());
+        SdlFactCapture.capture(decode, assembled.merged());
         decode.flush();
         GraphitronAssemblyCapture.capture(dsl, graph.name(), readAt);
         // The statistics the derivations below are planned against, stated here rather than left
@@ -143,9 +146,9 @@ public final class ModelCapture {
         // The derivations the incumbent pass still owns, at the tail because every one of them
         // reads what this pass has just written. It captures nothing of its own any more.
         if (progress == null) {
-            FactCapture.derive(dsl, graph, assembly);
+            FactCapture.derive(dsl, graph, assembled.assembly());
         } else {
-            FactCapture.derive(dsl, graph, assembly, progress);
+            FactCapture.derive(dsl, graph, assembled.assembly(), progress);
         }
         // And again at the end, so what a capture leaves is a store whose statistics describe the
         // rows it holds rather than the rows it held partway through. The call above states what

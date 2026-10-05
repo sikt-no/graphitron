@@ -362,10 +362,12 @@ public class GraphQLRewriteGenerator {
      */
     private ReadSchema assembleAndCaptureVerdicts(AttributedRegistry attributed, JooqCatalog jooq,
                                                   ClasspathCensus.Reading census) {
-        // The assembly that judges the document is the one over the registry the store transcribes,
-        // before the synthesis rewrites. Judging the post-synthesis registry instead let a verdict
-        // blame the author for a declaration graphitron's own rewrite injected; a verdict is a fact
-        // about what the author wrote, so it comes from the same registry the facts do.
+        // The assembly that judges the document is the one over the loading rewrites' composition,
+        // before the synthesis rewrites, which is the schema the store's assembly judges too: both
+        // compose the corpus through LoadingRewrites. Judging the post-synthesis registry instead
+        // let a verdict blame the author for a declaration graphitron's own rewrite injected; a
+        // verdict is a fact about what the author wrote, so it comes from the same composition the
+        // store's does.
         var assembly = SchemaAssembly.of(attributed.preSynthesisRegistry());
         var verdicts = SdlVerdicts.of(attributed.read());
         if (verdicts.anyRefusal() || !assembly.errors().isEmpty()) {
@@ -377,7 +379,7 @@ public class GraphQLRewriteGenerator {
         var pipeline = assemblyForPipeline(attributed, assembly);
         if (!(pipeline instanceof SchemaAssembly.Assembled)) {
             // graphitron's own rewrite broke a document the author wrote correctly, the assembly
-            // above having succeeded on the registry the store transcribes. Capture from that
+            // above having succeeded on the composition the store judges. Capture from that
             // assembly before failing: the author's facts are all still true, and withholding them
             // is the "one broken thing blanks every fact beside it" failure this file argues
             // against, here caused by our own defect rather than by anything they wrote. The

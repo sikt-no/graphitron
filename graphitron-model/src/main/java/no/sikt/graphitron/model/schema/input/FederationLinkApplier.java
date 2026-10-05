@@ -2,6 +2,9 @@ package no.sikt.graphitron.model.schema.input;
 
 import com.apollographql.federation.graphqljava.directives.LinkDirectiveProcessor;
 import com.apollographql.federation.graphqljava.exceptions.MultipleFederationLinksException;
+import com.apollographql.federation.graphqljava.exceptions.UnsupportedFederationVersionException;
+import com.apollographql.federation.graphqljava.exceptions.UnsupportedLinkImportException;
+import com.apollographql.federation.graphqljava.exceptions.UnsupportedRenameException;
 import graphql.language.Argument;
 import graphql.language.ArrayValue;
 import graphql.language.Directive;
@@ -61,36 +64,63 @@ public final class FederationLinkApplier {
      * {@code @link}; the wrapper's message lists every offending {@code @link}'s source file and
      * line so the developer can find them. Throws
      * {@link com.apollographql.federation.graphqljava.exceptions.UnsupportedFederationVersionException}
-     * if the {@code @link} URL names a federation spec version the library does not yet support.
-     * Both are programming errors in the consumer SDL and are treated as hard build failures.
+     * if the {@code @link} URL names a federation spec version the library does not yet support,
+     * and an {@link IllegalStateException} when an injected definition collides with one already
+     * in the registry. Each is the exception its {@link LoadingRewrites.Refusal} carries, and each is
+     * a programming error in the consumer SDL treated as a hard build failure.
      */
     public static Set<String> apply(TypeDefinitionRegistry registry) {
+        return switch (inject(registry)) {
+            case LoadingRewrites.Outcome.Applied applied -> applied.injectedNames();
+            case LoadingRewrites.Outcome.Refused refused -> throw refused.refusal().exception();
+        };
+    }
+
+    /**
+     * {@link #apply} with the refusal handed back rather than thrown, for {@link LoadingRewrites},
+     * whose callers decide whether a refusal fails anything. The registry is rewritten in place
+     * either way, and on a refusal it holds whatever was added before the refusal.
+     */
+    static LoadingRewrites.Outcome inject(TypeDefinitionRegistry registry) {
         try {
             var defs = LinkDirectiveProcessor.loadFederationImportedDefinitions(registry);
             if (defs == null) {
-                return Set.of();
+                return new LoadingRewrites.Outcome.Applied(registry, Set.of());
             }
             var injectedNames = new LinkedHashSet<String>();
-            defs.forEach(def -> {
-                var error = registry.add(def);
-                if (error.isPresent()) {
-                    throw new IllegalStateException(buildCollisionMessage(registry, def));
+            for (var it = defs.iterator(); it.hasNext(); ) {
+                var def = it.next();
+                if (registry.add(def).isPresent()) {
+                    return new LoadingRewrites.Outcome.Refused(collisionRefusal(registry, def));
                 }
                 if (def instanceof NamedNode<?> named) {
                     injectedNames.add(named.getName());
                 }
-            });
-            return injectedNames;
+            }
+            return new LoadingRewrites.Outcome.Applied(registry, injectedNames);
         } catch (MultipleFederationLinksException e) {
             // Drop the cause: its message is a raw Directive{...}Directive{...} dump that
             // Maven appends to ours. buildMultipleLinksMessage produces a developer-friendly
             // replacement that already names every offending @link, its url, and its imports.
-            throw new IllegalStateException(buildMultipleLinksMessage(registry));
+            String message = buildMultipleLinksMessage(registry);
+            var links = federationLinks(registry).toList();
+            var at = links.size() > 1 ? links.get(1).getSourceLocation() : null;
+            return new LoadingRewrites.Outcome.Refused(new LoadingRewrites.Refusal.MultipleFederationLinks(
+                    message, at, new IllegalStateException(message)));
+        } catch (UnsupportedFederationVersionException e) {
+            return new LoadingRewrites.Outcome.Refused(
+                    new LoadingRewrites.Refusal.UnsupportedFederationVersion(linkLocation(registry), e));
+        } catch (UnsupportedLinkImportException e) {
+            return new LoadingRewrites.Outcome.Refused(
+                    new LoadingRewrites.Refusal.UnsupportedLinkImport(linkLocation(registry), e));
+        } catch (UnsupportedRenameException e) {
+            return new LoadingRewrites.Outcome.Refused(
+                    new LoadingRewrites.Refusal.UnsupportedRename(linkLocation(registry), e));
         }
     }
 
     /**
-     * Builds the error message for a definition that the federation library is injecting but a
+     * Builds the refusal for a definition that the federation library is injecting but a
      * matching name already exists in the registry. Two distinct causes need different remediation:
      * a hand-written declaration in the consumer's SDL (carries a {@link SourceLocation} with a
      * file path) gets a "remove the manual declaration at file:line" message; a source-name-less
@@ -100,7 +130,7 @@ public final class FederationLinkApplier {
      * {@code directive @tag} twice). The remediation there is to bump the consumer's {@code @link}
      * URL to a non-buggy spec version, not to touch graphitron or any consumer code.
      */
-    private static String buildCollisionMessage(TypeDefinitionRegistry registry, SDLDefinition<?> def) {
+    private static LoadingRewrites.Refusal collisionRefusal(TypeDefinitionRegistry registry, SDLDefinition<?> def) {
         String name = def instanceof NamedNode<?> n ? n.getName() : null;
         boolean isDirective = def instanceof DirectiveDefinition;
         String kind = isDirective ? "directive" : "type";
@@ -112,9 +142,12 @@ public final class FederationLinkApplier {
 
         if (hasSourceFile) {
             String at = existingLoc.getSourceName() + ":" + existingLoc.getLine();
-            return "Your schema declares " + ref + " at " + at + ", but that " + kind + " is injected "
-                    + "automatically by federation-graphql-java-support based on your @link import. "
-                    + "Remove the manual " + ref + " " + kind + " definition from your schema SDL.";
+            String message = "Your schema declares " + ref + " at " + at + ", but that " + kind
+                    + " is injected automatically by federation-graphql-java-support based on your "
+                    + "@link import. Remove the manual " + ref + " " + kind
+                    + " definition from your schema SDL.";
+            return new LoadingRewrites.Refusal.DeclarationCollision(message, existingLoc,
+                    new IllegalStateException(message));
         }
 
         // No source file means the existing entry was not parsed from any .graphqls; it was added
@@ -123,6 +156,12 @@ public final class FederationLinkApplier {
         // again with the v2.4 location set that adds SCHEMA), so loadFederationImportedDefinitions
         // returns @tag twice and the second registry.add fails. The fix is to move off the buggy
         // spec version, since v2.8+ and v2.5- declare each directive exactly once.
+        String message = libraryDuplicateMessage(registry, ref);
+        return new LoadingRewrites.Refusal.LibraryDuplicateDeclaration(message, linkLocation(registry),
+                new IllegalStateException(message));
+    }
+
+    private static String libraryDuplicateMessage(TypeDefinitionRegistry registry, String ref) {
         String version = federationLinkVersion(registry);
         if ("v2.6".equals(version) || "v2.7".equals(version)) {
             return "Your @link URL points at federation " + version + ", whose SDL bundled with "
@@ -182,14 +221,7 @@ public final class FederationLinkApplier {
      */
     private static String buildMultipleLinksMessage(TypeDefinitionRegistry registry) {
         var entries = new ArrayList<String>();
-        Stream.concat(
-                        registry.schemaDefinition()
-                                .map(sd -> sd.getDirectives("link").stream())
-                                .orElse(Stream.empty()),
-                        registry.getSchemaExtensionDefinitions().stream()
-                                .flatMap(ext -> ext.getDirectives("link").stream()))
-                .filter(FederationLinkApplier::isFederationLink)
-                .forEach(d -> entries.add(formatLinkLocation(d)));
+        federationLinks(registry).forEach(d -> entries.add(formatLinkLocation(d)));
 
         var sb = new StringBuilder("Your schema declares more than one federation @link, ");
         sb.append("but federation-graphql-java-support allows only one. ");
@@ -204,6 +236,22 @@ public final class FederationLinkApplier {
 
     private static boolean isFederationLink(Directive directive) {
         return federationUrl(directive) != null;
+    }
+
+    /** Every federation {@code @link}, on the schema definition first and then on each extension. */
+    private static Stream<Directive> federationLinks(TypeDefinitionRegistry registry) {
+        return Stream.concat(
+                        registry.schemaDefinition()
+                                .map(sd -> sd.getDirectives("link").stream())
+                                .orElse(Stream.empty()),
+                        registry.getSchemaExtensionDefinitions().stream()
+                                .flatMap(ext -> ext.getDirectives("link").stream()))
+                .filter(FederationLinkApplier::isFederationLink);
+    }
+
+    /** Where the federation {@code @link} was written, or {@code null} where there is none. */
+    private static SourceLocation linkLocation(TypeDefinitionRegistry registry) {
+        return federationLinks(registry).findFirst().map(Directive::getSourceLocation).orElse(null);
     }
 
     private static String federationUrl(Directive directive) {

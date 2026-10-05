@@ -3,8 +3,8 @@ package no.sikt.graphitron.model.run;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.config.SessionStateConfig;
 import no.sikt.graphitron.model.lint.LintConfig;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
-import no.sikt.graphitron.model.schema.input.SchemaSource;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -95,24 +95,27 @@ public record SubjectConfig(Optional<SchemaRecipe> recipe, Optional<String> jooq
     }
 
     /**
-     * The schema files this configuration resolves to under {@code baseDir}, or none.
+     * The inputs this configuration resolves to under {@code baseDir}, in recipe order, or none.
      *
      * <p>A question about the configuration, answered by it: the recipe is the whole of what
      * decides, so nothing but this record is consulted. A pattern matching nothing and a scanner
-     * that failed both resolve to no files here rather than to a refusal, which is what lets a run
+     * that failed both resolve to no inputs here rather than to a refusal, which is what lets a run
      * whose recipe is half broken still have the other half's facts. A caller that wants the
      * refusal itself expands the recipe, {@link SchemaRecipe.Expansion} being where that is said.
+     *
+     * <p>Every match, the tag and note each carries included, and the list a
+     * {@link RunContext} built from the same recipe holds: two patterns matching one file are two
+     * inputs here, which is what lets the attribution say a source is claimed twice. A reader that
+     * wants files filters them out of this rather than expanding the recipe a second time.
      */
-    public List<SchemaSource.File> schemaFiles(Path baseDir) {
+    public List<SchemaInput> schemaInputs(Path baseDir) {
         return recipe
             .filter(configured -> !configured.bindings().isEmpty())
             .map(configured -> configured.expand(baseDir))
             .filter(SchemaRecipe.Expansion.Resolved.class::isInstance)
             .map(SchemaRecipe.Expansion.Resolved.class::cast)
             .map(resolved -> resolved.matches().stream()
-                .map(match -> match.input().source())
-                .filter(SchemaSource.File.class::isInstance)
-                .map(SchemaSource.File.class::cast)
+                .map(SchemaRecipe.Expansion.Match::input)
                 .toList())
             .orElseGet(List::of);
     }

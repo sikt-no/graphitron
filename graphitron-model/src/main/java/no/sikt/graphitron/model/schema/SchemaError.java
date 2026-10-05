@@ -33,12 +33,15 @@ public record SchemaError(Stage stage, String errorClass, String message, Source
                           GraphQLError cause) {
 
     /**
-     * The two document-wide stages, in the order they run. Both refuse with a
-     * {@code SchemaProblem} carrying a list of errors, and both have a live population: the
-     * registry stage refuses the duplicate base declarations (a second {@code type Query}, a
-     * second {@code directive @d}, a second {@code schema} block), which in a multi-file workspace
-     * are the errors no single file's parse can see, and the assembly stage refuses everything
-     * else the SDL specification rules out.
+     * graphql-java's two document-wide stages, in the order they run. The assembling gatherer
+     * records a third between them, the loading rewrites' {@code REWRITE}, which is not a constant
+     * here: its refusals are graphitron's own and never travel as a {@link SchemaError}.
+     *
+     * <p>Both refuse with a {@code SchemaProblem} carrying a list of errors, and both have a live
+     * population: the registry stage refuses the duplicate base declarations (a second
+     * {@code type Query}, a second {@code directive @d}, a second {@code schema} block), which in a
+     * multi-file workspace are the errors no single file's parse can see, and the assembly stage
+     * refuses everything else the SDL specification rules out.
      */
     public enum Stage {
         /** Combining every parsed source's definitions into one registry. */

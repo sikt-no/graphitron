@@ -143,7 +143,7 @@ class GraphQLSourceCaptureTest {
         return GraphQLSourceCapture.capture(dsl, graph,
             SubjectConfig.of(new SchemaRecipe(tmp.resolve("pom.xml"),
                 List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls"))),
-            readAt);
+            readAt).documents();
     }
 
     /** The authored sources by file name, the bundled directive vocabulary being nobody's file. */

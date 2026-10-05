@@ -232,8 +232,8 @@ class RelationRegistrationGateTest {
             // GraphitronSchemaEntriesTest pins them, over a corpus writing both import spellings
             // and repeating the directive on one schema.
             "graphitron_ast_link_entry", "graphitron_ast_link_import_entry",
-            // What went wrong making a schema out of the documents, as graphql-java stated it,
-            // at whichever of the three reading stages said so. GraphitronSchema is only ever
+            // What went wrong making a schema out of the documents, as the build's toolchain
+            // stated it, at whichever reading stage said so. GraphitronSchema is only ever
             // built from a corpus that made a schema, so it has nothing to say about one that did
             // not. The family's only verdict relation, and unshadowed for that reason rather than
             // by exemption: the walk's own two verdict relations are retired, so there is no

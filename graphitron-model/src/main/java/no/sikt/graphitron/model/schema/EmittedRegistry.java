@@ -376,14 +376,16 @@ public final class EmittedRegistry {
      *
      * <p>That is not a shortcut around the store, and the alternative was tried. A tag reaches an
      * element two ways: an author writes it, or a schema input carries one and the tag applier
-     * stamps it on everything that input declared. Only the first is captured, the applier running
-     * above the capture cut, so a store-sourced inheritance silently drops the second and a
+     * stamps it on everything that input declared. Only the first is captured: the applier's tags
+     * reach the store's assembly but no relation transcribes them, so a store-sourced inheritance
+     * silently drops the second and a
      * federated build configuring {@code <schemaInput tag>} emits synthesised types a gateway can
      * no longer filter. The registry has both by the time this runs, because the applier has
      * already rewritten it.
      *
-     * <p>The store owing those tags is a real gap and it is not this method's to close. It is the
-     * capture cut moving, which is a fact arriving earlier rather than a reader compensating.
+     * <p>The store owing those tags is a real gap and it is not this method's to close. It is a
+     * relation transcribing them, which is a fact arriving earlier rather than a reader
+     * compensating.
      *
      * <p>Distinct by name, because shared machinery is minted once per carrier: two tagged carriers
      * state the same {@code PageInfo}, and it carries each tag once rather than twice.

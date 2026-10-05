@@ -30,13 +30,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 @UnitTier
 class FieldSetDecodeTest {
 
-    private static final String DIRECTIVES = """
-        directive @link(url: String!, import: [String]) repeatable on SCHEMA
-        directive @key(fields: String!, resolvable: Boolean) repeatable on OBJECT
-        """;
-
     private static String federated(String fieldSet) {
-        return DIRECTIVES + """
+        return """
             extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
 
             type Query { film: Film }

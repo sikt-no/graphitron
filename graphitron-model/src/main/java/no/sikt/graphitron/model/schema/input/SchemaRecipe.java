@@ -45,8 +45,9 @@ public record SchemaRecipe(Path buildFile, List<Binding> bindings, List<String> 
 
     /**
      * One resolved recipe entry. The tag and description note are not optional
-     * fidelity: their appliers run above the capture cut, so replaying a graph's SDL capture
-     * without them would mint different rows than the graph's own build.
+     * fidelity: the capture's assembly composes the corpus with them, as the generator does, so
+     * replaying a graph's SDL capture without them would judge a different schema than the graph's
+     * own build.
      */
     public record Binding(Entry entry, Optional<String> tag, Optional<String> descriptionNote) {
         public Binding {

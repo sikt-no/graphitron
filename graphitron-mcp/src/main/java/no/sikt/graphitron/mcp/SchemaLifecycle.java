@@ -26,8 +26,10 @@ import static org.jooq.impl.DSL.selectOne;
  *
  * <p>One statement carrying two {@code EXISTS} predicates, one per axis. The freshness axis was an
  * or over two relations while the parser's refusals and the document-wide stages' were kept apart;
- * one relation records all three stages now, with the stage a column, and which stage refused is no
- * business of this record's. Nothing here needs a count either: the axes turn on whether a partition
+ * one relation records every stage now, the parse, the reduce, the loading rewrites and the
+ * assembly, with the stage a column, and which stage refused is no business of this record's. A
+ * federation {@code @link} the rewrites could not apply reads {@code Previous} like any other
+ * refusal, which is what it is. Nothing here needs a count either: the axes turn on whether a partition
  * is empty, and a reader that counted refusals would be paying for a number the {@code diagnostics}
  * tools already answer properly.
  *

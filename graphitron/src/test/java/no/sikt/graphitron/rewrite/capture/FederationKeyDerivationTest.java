@@ -41,6 +41,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 @UnitTier
 class FederationKeyDerivationTest {
 
+    /**
+     * The declarations a schema with no federation {@code @link} has to write itself to use
+     * {@code @key}. A linked schema writes none: the {@code @link} imports them.
+     */
     private static final String DIRECTIVES = """
         directive @link(url: String!, import: [String]) repeatable on SCHEMA
         directive @key(fields: String!, resolvable: Boolean) repeatable on OBJECT
@@ -49,7 +53,7 @@ class FederationKeyDerivationTest {
     private static final String LINK =
         "extend schema @link(url: \"https://specs.apollo.dev/federation/v2.10\", import: [\"@key\"])";
 
-    private static final String FEDERATED = DIRECTIVES + LINK + """
+    private static final String FEDERATED = LINK + """
 
 
         type Query { film: Film }
@@ -67,7 +71,7 @@ class FederationKeyDerivationTest {
      * here is a conjunction over two corpora, so the case only means anything with a real catalog
      * behind it; {@code film_actor} is the fixture table that publishes the node-identity constants.
      */
-    private static final String INFERRED = DIRECTIVES + LINK + """
+    private static final String INFERRED = LINK + """
 
 
         type Query { pairing: Pairing }
@@ -214,7 +218,7 @@ class FederationKeyDerivationTest {
     @Test
     @DisplayName("no federation link, no derived key")
     void theDerivationNeedsAFederationLink(@TempDir Path tmp) {
-        String sdl = FEDERATED.replace(LINK, "");
+        String sdl = DIRECTIVES + FEDERATED.replace(LINK, "");
         try (var store = CapturedStore.of(tmp, sdl)) {
             assertThat(store.dsl().fetchCount(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY)).isZero();
             assertThat(store.dsl().fetchCount(INTENT_FEDERATION_KEY)).isZero();
@@ -228,7 +232,7 @@ class FederationKeyDerivationTest {
     @Test
     @DisplayName("a non-federation link is not the opt-in")
     void aLinkToAnotherSpecIsNotTheOptIn(@TempDir Path tmp) {
-        String sdl = FEDERATED.replace(LINK,
+        String sdl = DIRECTIVES + FEDERATED.replace(LINK,
             "extend schema @link(url: \"https://specs.apollo.dev/tag/v0.3\", import: [\"@tag\"])");
         try (var store = CapturedStore.of(tmp, sdl)) {
             assertThat(store.dsl().fetchCount(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY)).isZero();

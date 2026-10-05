@@ -3,15 +3,16 @@ package no.sikt.graphitron.model.capture.document;
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.model.schema.SchemaError;
 import no.sikt.graphitron.model.schema.SchemaLoader;
+import no.sikt.graphitron.model.schema.input.LoadingRewrites;
 import no.sikt.graphitron.model.sink.BindBatch;
 import org.jooq.DSLContext;
 import org.jooq.Rows;
 
 import java.time.LocalDateTime;
-import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.IntStream;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
@@ -19,13 +20,14 @@ import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
 
 /**
- * Records what went wrong when the documents were read and made into a schema, as graphql-java
- * stated it.
+ * Records what went wrong when the documents were read and made into a schema, as the toolchain
+ * this graph is built with stated it: graphql-java, the federation link processor and the
+ * configured loading rewrites.
  *
- * <p>One relation for all three stages, the stage a column. Parsing a file, merging the files and
- * building a schema of the result are not three questions a reader has, and none of it is
- * re-derived: computing any of these checks from the declaration entries would be a second
- * implementation of a validation the toolchain already runs.
+ * <p>One relation for all four stages, the stage a column. Parsing a file, merging the files,
+ * composing them as the generator does and building a schema of the result are not four questions
+ * a reader has, and none of it is re-derived: computing any of these checks from the declaration
+ * entries would be a second implementation of a validation the toolchain already runs.
  *
  * <p>A file the parser rejected reaches nothing else. It contributes no entries, so this is the
  * only relation that can say it was read, which is what the site columns are for.
@@ -45,8 +47,23 @@ public final class GraphQLSchemaProblems {
     private static final String PARSE_STAGE = "PARSE";
 
     /**
+     * The loading rewrites' stage, between the reduce and the assembly. Named here rather than on
+     * {@link SchemaError.Stage}, whose constants are graphql-java's stages: a rewrite refusal is
+     * graphitron's own, and it does not travel as a {@link SchemaError}.
+     */
+    private static final String REWRITE_STAGE = "REWRITE";
+
+    /**
+     * The stages the assembling gatherer owns, in the order they run, which is the scope its sweep
+     * clears. Named rather than read off {@link SchemaError.Stage}, which does not carry
+     * {@link #REWRITE_STAGE}: a stage missing here is one whose fixed refusal is never swept.
+     */
+    private static final List<String> ASSEMBLED_STAGES = List.of(
+        SchemaError.Stage.REGISTRY.name(), REWRITE_STAGE, SchemaError.Stage.ASSEMBLY.name());
+
+    /**
      * A problem reduced to what is recorded of it, so two of them can be compared. One shape for
-     * all three stages: a syntax failure and a build refusal are different objects in
+     * every stage: a syntax failure and a build refusal are different objects in
      * graphql-java's vocabulary and the same four facts here, which is what lets them share the
      * relation.
      */
@@ -68,17 +85,23 @@ public final class GraphQLSchemaProblems {
     }
 
     /**
-     * Makes {@code graph}'s merge- and assembly-stage problems be exactly what those two refused,
-     * in the order the stages ran. Written by the gatherer that assembles, each row naming its own
-     * stage.
+     * Makes {@code graph}'s merge-, rewrite- and assembly-stage problems be exactly what those three
+     * refused, in the order the stages ran. Written by the gatherer that assembles, each row naming
+     * its own stage.
+     *
+     * <p>The rewrite refusal is an input of its own rather than one more {@link SchemaError}: it is
+     * graphitron's verdict in graphitron's words, and at most one, the composition stopping at the
+     * first.
      */
-    public static void writeAssembled(DSLContext dsl, String graph, List<SchemaError> raised,
-                                      LocalDateTime touchedAt) {
+    public static void writeAssembled(DSLContext dsl, String graph, List<SchemaError> merged,
+                                      Optional<LoadingRewrites.Refusal> rewrite,
+                                      List<SchemaError> assembled, LocalDateTime touchedAt) {
         var seen = new ArrayList<Problem>();
-        raised.forEach(error -> seen.add(stageProblem(error)));
+        merged.forEach(error -> seen.add(stageProblem(error)));
+        rewrite.ifPresent(refusal -> seen.add(rewriteProblem(refusal)));
+        assembled.forEach(error -> seen.add(stageProblem(error)));
         write(dsl, graph, seen, touchedAt);
-        sweep(dsl, graph, Arrays.stream(SchemaError.Stage.values()).map(Enum::name).toList(),
-            touchedAt);
+        sweep(dsl, graph, ASSEMBLED_STAGES, touchedAt);
     }
 
     /**
@@ -167,6 +190,16 @@ public final class GraphQLSchemaProblems {
         var at = error.location();
         return new Problem(error.stage().name(), error.errorClass(), error.message(),
             at == null ? null : at.getSourceName(), line(at), column(at));
+    }
+
+    /**
+     * A refusal of the loading rewrites as a row: the variant's name as the class, a bare name like
+     * graphql-java's and told apart from them by the stage, and the sentence the build fails with.
+     */
+    private static Problem rewriteProblem(LoadingRewrites.Refusal refusal) {
+        var at = refusal.location();
+        return new Problem(REWRITE_STAGE, refusal.name(), refusal.message(), refusal.sourceName(),
+            line(at), column(at));
     }
 
     private static Integer line(SourceLocation at) {

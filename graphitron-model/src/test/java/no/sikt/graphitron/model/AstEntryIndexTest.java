@@ -155,7 +155,8 @@ class AstEntryIndexTest {
     private static void read(DSLContext dsl, Path baseDir) {
         var graph = new GraphIdentity(GRAPH, baseDir);
         var readAt = LocalDateTime.now();
-        var documents = GraphQLSourceCapture.capture(dsl, graph, corpus(baseDir), readAt);
+        var reading = GraphQLSourceCapture.capture(dsl, graph, corpus(baseDir), readAt);
+        var documents = reading.documents();
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);
     }

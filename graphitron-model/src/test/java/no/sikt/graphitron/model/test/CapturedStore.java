@@ -12,7 +12,6 @@ import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
-import no.sikt.graphitron.model.schema.SchemaError;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
@@ -27,8 +26,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
@@ -650,12 +649,12 @@ public final class CapturedStore implements AutoCloseable {
     }
 
     /**
-     * Writes what the three reading stages refused, for a test that drove the walk itself and wants
+     * Writes what the reading stages refused, for a test that drove the walk itself and wants
      * the verdict beside what the walk transcribed.
      *
      * <p>A primitive rather than a step inside the walk, because the two are on either side of the
      * migration: the walk writes the transcription families and {@link GraphQLSchemaProblems} writes the
-     * one relation all three stages record in. Reached directly rather than through the document
+     * one relation every stage records in. Reached directly rather than through the document
      * gatherers, whose anchor step sweeps every anchor row carrying an instant other than
      * its own and would therefore delete what the walk had just written, and called after the walk,
      * the verdict row referencing a graph whose anchor row is the walk's to write.
@@ -663,13 +662,13 @@ public final class CapturedStore implements AutoCloseable {
     public static void writeSchemaProblems(DSLContext dsl, String graphName,
                                            SchemaLoader.PerSourceParse parse,
                                            SchemaAssembly assembly) {
-        var raised = new ArrayList<SchemaError>(parse.registryErrors());
-        raised.addAll(assembly.errors());
         var at = LocalDateTime.now();
         // Two calls because the relation numbers and sweeps per stage, so each stage's writer
-        // stands alone; a fixture driving the walk plays both of them.
+        // stands alone; a fixture driving the walk plays both of them. No rewrite refusal: the
+        // walk is handed a registry that is already whatever it was composed into.
         GraphQLSchemaProblems.writeParsed(dsl, graphName, parse.failures(), at);
-        GraphQLSchemaProblems.writeAssembled(dsl, graphName, List.copyOf(raised), at);
+        GraphQLSchemaProblems.writeAssembled(dsl, graphName, parse.registryErrors(),
+            Optional.empty(), assembly.errors(), at);
     }
 
     /**

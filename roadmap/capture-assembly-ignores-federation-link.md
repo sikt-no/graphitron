@@ -77,8 +77,8 @@ The rejected assembly costs more than the noise:
   consumer they report nothing, whatever the schema holds. The build is affected too, not only the editor:
   `GraphQLRewriteGenerator` reads `StoreDetections.over` into the build's error stream, and `AuthoredClaimConflicts`
   limits its build-error population to the domain ("only a coordinate the generator intends to classify can fail a
-  build"). Confirm per derivation
-  at pickup whether it scopes by the domain or only joins it; the test below pins the domain being populated either way.
+  build"). Confirmed at pickup: all seven scope by the domain, each through an `inDomain` EXISTS predicate,
+  so on a federated consumer every one of them reports nothing.
 - **The tag rewrites are missing too.** A consumer with `<schemaInput tag>` gets neither the synthesised `@link` nor the
   tag applications or notes in the registry the capture assembles and decodes. The `AttributedRegistry.load` comment
   saying capture has to see `TagApplier` and `DescriptionNoteApplier` is not true on the current path. Nor is the
@@ -127,9 +127,17 @@ The refusal is a sealed type with one variant per way the composition refuses:
 - `LibraryDuplicateDeclaration`, for `federation-graphql-java-support` returning one definition twice. This is the
   v2.6/v2.7 arm.
 - `TagNotImported`, for `TagLinkSynthesiser`'s refusal.
+- `UnsupportedLinkImport` and `UnsupportedRename`, found at pickup: `LinkDirectiveProcessor` also throws
+  `UnsupportedLinkImportException` (a malformed import, or a directive the linked version does not have yet) and,
+  through its renaming visitor, `UnsupportedRenameException`. Both escaped `FederationLinkApplier.apply` untouched, so
+  the generator keeps throwing them and the capture records them.
+- `SynthesisedLinkRefused`, for `TagLinkSynthesiser`'s own `registry.add`, typed at pickup. graphql-java re-checks the
+  schema's operation types on every schema extension it admits, so a corpus whose own extensions already redefine one
+  refuses the synthesised extension too.
 
-Whatever `TagLinkSynthesiser`'s own `registry.add` can refuse gets typed at pickup. Each variant carries the location
-it points at where it has one, the message today's code builds, and the exception today's code throws.
+Each variant carries the location it points at where it has one, the message today's code builds, and the exception
+today's code throws. `FederationLinkApplier` and `TagLinkSynthesiser` build the refusals themselves, through
+package-private siblings of their `apply`, which stays as the throwing wrapper their own tests call.
 
 The line between loading rewrites and synthesis stays where `AttributedRegistry.load` draws it. Synthesis is not part
 of this function. It stays on the generator path, and the capture derives its own synthesised keys
@@ -247,8 +255,9 @@ one exactly while the store does not hold the inputs it was computed from. Appli
   holds rather than by moving a row.
 - `REWRITE` splits by variant. `MultipleFederationLinks` and `TagNotImported` are stratum two, recomputable from the
   `@link` application entries and `store_graph_schema_input.tag`. `UnsupportedFederationVersion`,
-  `DeclarationCollision` and `LibraryDuplicateDeclaration` are stratum one, since which definitions a `@link` imports,
-  and which versions exist, is the library's knowledge. `SourceInTwoInputs` is stratum one too:
+  `DeclarationCollision`, `LibraryDuplicateDeclaration`, `UnsupportedLinkImport` and `UnsupportedRename` are stratum
+  one, since which definitions a `@link` imports, and which versions exist, is the library's knowledge.
+  `SynthesisedLinkRefused` is stratum two, the operation-type check being recomputable from the schema extension entries. `SourceInTwoInputs` is stratum one too:
   `store_graph_schema_input` holds one row per recipe entry, not per match, so the overlap cannot be recomputed without
   expanding the globs again.
 
@@ -334,6 +343,9 @@ count, which should be zero. A raised coordinate that sis's own generator run ac
 It is filed as its own item and added to this item's `depends-on`, since landing would fail sis on a schema that
 generates. A raised coordinate the generator would also refuse is a true defect sis has had all along. The audit names it,
 and it does not hold the item.
+
+*Status:* not yet run. The implementing session had no access to the sis sources, so the run is owed by a session that
+has them, before In Review.
 
 ## Other solutions we've considered
 

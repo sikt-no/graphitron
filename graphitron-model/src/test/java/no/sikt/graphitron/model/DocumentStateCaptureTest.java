@@ -208,7 +208,8 @@ class DocumentStateCaptureTest {
     private static void read(DSLContext dsl, Path baseDir, LocalDateTime readAt, String pattern) {
         var graph = new GraphIdentity(GRAPH, baseDir);
         ModelCapture.writeGraph(dsl, graph, readAt);
-        var documents = GraphQLSourceCapture.capture(dsl, graph, corpus(baseDir, pattern), readAt);
+        var reading = GraphQLSourceCapture.capture(dsl, graph, corpus(baseDir, pattern), readAt);
+        var documents = reading.documents();
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);
         GraphQLSourceCapture.reclaim(dsl, documents);

@@ -41,10 +41,11 @@ class GraphitronSchemaEntriesTest {
 
     private static final String GRAPH = "schema-site";
 
-    /** What every case here writes above its own schema block: the vocabulary a federated consumer declares. */
+    /**
+     * What every case here writes above its own schema block. No federation declaration: a
+     * federated consumer writes none, the {@code @link} importing them.
+     */
     private static final String FEDERATION = """
-        scalar link__Import
-        directive @link(url: String, import: [link__Import]) repeatable on SCHEMA
         type Query { films: [Film!] }
         type Film { title: String }
         """;
@@ -166,10 +167,11 @@ class GraphitronSchemaEntriesTest {
             List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls")));
         var readAt = LocalDateTime.now();
         ModelCapture.writeGraph(dsl, graph, readAt);
-        var documents = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
+        var reading = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
+        var documents = reading.documents();
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);
-        GraphQLAssemblyCapture.capture(dsl, graph, documents, readAt);
+        GraphQLAssemblyCapture.capture(dsl, graph, reading, readAt);
     }
 
     private static void write(Path directory, String name, String sdl) {

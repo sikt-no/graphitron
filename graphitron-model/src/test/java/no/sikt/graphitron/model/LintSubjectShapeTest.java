@@ -193,10 +193,11 @@ class LintSubjectShapeTest {
             var config = SubjectConfig.of(new SchemaRecipe(directory.resolve("pom.xml"),
                 List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls")));
             var readAt = LocalDateTime.now();
-            var documents = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
+            var reading = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
+            var documents = reading.documents();
             GraphQLAstCapture.capture(dsl, graph, documents, readAt);
             GraphitronAstCapture.capture(dsl, graph, documents, readAt);
-            GraphQLAssemblyCapture.capture(dsl, graph, documents, readAt);
+            GraphQLAssemblyCapture.capture(dsl, graph, reading, readAt);
             body.accept(dsl);
         });
     }

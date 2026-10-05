@@ -72,10 +72,11 @@ final class SdlDeprecations {
             var graph = new GraphIdentity(GRAPH, directory);
             var config = config(directory);
             var readAt = LocalDateTime.now();
-            var documents = GraphQLSourceCapture.capture(store.dsl(), graph, config, readAt);
+            var reading = GraphQLSourceCapture.capture(store.dsl(), graph, config, readAt);
+            var documents = reading.documents();
             GraphQLAstCapture.capture(store.dsl(), graph, documents, readAt);
             GraphitronAstCapture.capture(store.dsl(), graph, documents, readAt);
-            GraphQLAssemblyCapture.capture(store.dsl(), graph, documents, readAt);
+            GraphQLAssemblyCapture.capture(store.dsl(), graph, reading, readAt);
             var dsl = store.dsl();
             var out = new LinkedHashSet<SchemaCoordinate>();
             var deprecated = GRAPHITRON_DEPRECATED;

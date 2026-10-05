@@ -179,7 +179,8 @@ class GraphitronTypeAnchorsTest {
             List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls")));
         var readAt = LocalDateTime.now();
         ModelCapture.writeGraph(dsl, graph, readAt);
-        var documents = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
+        var reading = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
+        var documents = reading.documents();
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);
     }

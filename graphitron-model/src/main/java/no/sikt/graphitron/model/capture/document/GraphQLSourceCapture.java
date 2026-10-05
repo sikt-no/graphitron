@@ -5,6 +5,8 @@ import no.sikt.graphitron.model.read.SourceStamp;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.SchemaLoader;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 
@@ -119,6 +121,30 @@ public final class GraphQLSourceCapture {
     }
 
     /**
+     * One reading of the corpus: the documents, and the inputs the recipe expanded to on the way.
+     *
+     * <p>The inputs ride along because they carry what the documents cannot: the tag and the
+     * description note each source is configured with, which the assembly composes the corpus
+     * under. One expansion of the recipe produces both halves, so nothing below re-expands it and
+     * no second reading of which inputs the corpus has can disagree with this one.
+     *
+     * <p>A list in recipe order rather than one input per document. The attribution's one refusal
+     * is a source two inputs claim, which a per-document input cannot state once the read has kept
+     * one document per file, and the bundled directive vocabulary is a document no input names.
+     *
+     * @param documents every source this reading is accountable for, oldest file first
+     * @param inputs    the recipe's matches in recipe order, the list a
+     *                  {@link no.sikt.graphitron.model.config.RunContext} built from the same
+     *                  recipe would hold
+     */
+    public record CorpusReading(List<SourceDocument> documents, List<SchemaInput> inputs) {
+        public CorpusReading {
+            documents = List.copyOf(documents);
+            inputs = List.copyOf(inputs);
+        }
+    }
+
+    /**
      * Reads {@code graph}'s configured documents and records what was read, oldest file first.
      *
      * <p>The order is the contract, not an accident of the directory walk: a gatherer reducing
@@ -129,12 +155,17 @@ public final class GraphQLSourceCapture {
      * <p>The instant is the reading's: the rows this writes carry it and the sweeps tell readings
      * apart by it.
      */
-    public static List<SourceDocument> capture(DSLContext dsl, GraphIdentity graph,
-                                               SubjectConfig config, LocalDateTime readAt) {
+    public static CorpusReading capture(DSLContext dsl, GraphIdentity graph,
+                                        SubjectConfig config, LocalDateTime readAt) {
         // Read before anything is written, the question being what this graph's rows were derived
         // from rather than what this reading is about to say they were.
         var held = heldStamps(dsl, graph.name());
-        var parse = SchemaLoader.parsePerSource(config.schemaFiles(graph.baseDir()));
+        var inputs = config.schemaInputs(graph.baseDir());
+        var parse = SchemaLoader.parsePerSource(inputs.stream()
+            .map(SchemaInput::source)
+            .filter(SchemaSource.File.class::isInstance)
+            .map(SchemaSource.File.class::cast)
+            .toList());
         var documents = new ArrayList<SourceDocument>();
         for (var source : parse.perSource()) {
             documents.add(read(dsl, graph.name(), source.sourceName(), source.registry(), held, readAt));
@@ -152,7 +183,7 @@ public final class GraphQLSourceCapture {
         dropMembership(dsl, graph.name(), configured);
         GraphQLSchemaProblems.writeParsed(dsl, graph.name(), parse.failures(), readAt);
         documents.sort(OLDEST_FIRST);
-        return List.copyOf(documents);
+        return new CorpusReading(documents, inputs);
     }
 
     /**

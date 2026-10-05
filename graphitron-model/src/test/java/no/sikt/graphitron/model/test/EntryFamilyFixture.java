@@ -83,17 +83,12 @@ public final class EntryFamilyFixture {
     /**
      * Type-level vocabulary, the output-field vocabulary, and the enum ordering vocabulary.
      *
-     * <p>Federation's {@code @link} and {@code @key} are declared here rather than assumed, the way
-     * a federated consumer's own schema declares them. The import list carries both spellings the
-     * grammar admits, a bare name and an aliased object, which the AST entry for an import
+     * <p>Federation's {@code @link} and {@code @key} are not declared here: the {@code @link} imports
+     * them, the way a federated consumer's own schema has them. The import list carries both
+     * spellings the grammar admits, a bare name and an aliased object, which the AST entry for an import
      * transcribes; the decode that held them beside it is reaped.
      */
     public static final String CORE = """
-        scalar link__Import
-
-        directive @link(url: String!, import: [link__Import]) repeatable on SCHEMA
-        directive @key(fields: String!, resolvable: Boolean) repeatable on OBJECT
-
         extend schema @link(
           url: "https://specs.apollo.dev/federation/v2.10"
           import: ["@key", {name: "@shareable", as: "@federatedShareable"}]
