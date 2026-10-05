@@ -198,3 +198,47 @@ reproduced on a cold store with and without the chain-resolution change. The sta
 `GraphQLAstCapture.elements`, from `GraphQLAstCapture.anchor`, from `ModelCapture.capture`. The
 violated key is `graphql_element (graph_name, coordinate)`. The specified-directive union arrived
 with `1644b314b`.
+
+## Reviewer findings
+
+### Round 1: Spec → Ready, withheld (session_01ShDxSCBoNJzdDFcZSoayF6, 2026-10-05)
+
+The fault analysis, the three statements named, the `NOT EXISTS` shape, the sweep argument, the
+reader census and the scalar filter all check out against the tree, and the fix keeps the
+`graphql_directive_element`/`graphql_directive` population equality that
+`RelationRegistrationGateTest` asserts. Two premises do not hold, and the first one bears on the
+design.
+
+1. **graphql-java does not replace `@include` or `@skip`; the Decision's rule holds for three of the
+   five.** (Gate question 2: the rule the store adopts is stated as the engine's.) Building an
+   executable schema on graphql-java 25.0 over `"mine" directive @include(if: Boolean) on FIELD`
+   gives a `@include` with the built-in's description, locations `[FIELD, FRAGMENT_SPREAD,
+   INLINE_FRAGMENT]`, argument `if: Boolean!` and no definition node. `@skip` behaves the same way.
+   `@deprecated`, `@oneOf` and `@specifiedBy` do take the author's declaration (description,
+   locations, argument nullability and source location all the author's). The measurement in the
+   Decision tested only `@oneOf` and `@deprecated`, and its first bullet, that all five build
+   without error, is true, but it does not show which declaration won. As planned, the store would
+   hold the author's `@include` while the built schema holds the built-in one, which is the inverse
+   of the divergence the spec rejects under "Other solutions". The author has two ways to go:
+   (a) keep the plan and say plainly that the two executable directives are the exception: no
+   type-system location can apply them, so the divergence reaches hover and go-to-definition only;
+   or (b) follow the engine exactly, which means excluding authored `include`/`skip` from the
+   ranked arms of `elements`, `directiveElements` and `directives`, and also from
+   `directiveArgumentElements`, or its rows lose their `graphql_directive_argument` partners. The
+   spec currently says that statement "needs no change". I lean towards (a), since it costs a
+   sentence where (b) costs four exclusions, but the Decision section has to stop claiming that
+   all five are replaced either way, and the test list should pin whichever answer is chosen.
+
+2. **A warm store fails too; it does not silently keep the built-in's row.** (Gate question 1: the
+   Goal misstates what the consumer sees today.) On H2 2.4.240, the version the root pom pins,
+   jOOQ 3.20.11's `onDuplicateKeyUpdate` renders `MERGE INTO … USING (… UNION ALL …) ON … WHEN
+   MATCHED THEN UPDATE … WHEN NOT MATCHED THEN INSERT`. With two source rows for one key, the
+   cold store fails on the primary key, as the spec says. The warm store also fails, with
+   `Merge using ON column expression, duplicate _ROWID_ target record already processed`. So once a
+   schema declares a built-in directive, every capture fails, not just the first. The Goal's "A
+   later capture over a store that already holds the row does not fail, but it can leave the
+   built-in's shape standing", and the warm-store paragraph of "The fault" (the last-applied row
+   stands, and locations and arguments drop out with nothing failing), describe something that
+   does not happen. That makes the item's case stronger, and the plan and tests stand unchanged;
+   the second-read assertion in the first test still covers the warm path, which now fails today
+   as well.
