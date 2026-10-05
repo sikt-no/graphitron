@@ -73,8 +73,11 @@ The two any-path folds beside it, `anyBoundAncestor` and `anyFannedAncestor`, sh
 recursion-with-in-progress-`false` shape. They feed the `@tenantFanOut` ladder's rejections ("sits
 under a tenant-bound ancestor", the nested-marker rejection), which are meant to over-report. On a
 cycle, whichever member is asked first can memoise a cycle-mate `false` before reaching its own
-`true` through another edge, so the answer depends on `buildEdges` iteration order and a marker
-inside a cycle under a bound root can be accepted as `FanOut` where a rejection is owed.
+`true` through another edge, so the answer depends on which marked field the `armOf` loop reaches
+first and on `buildEdges` order, and a marker on a field leading out of a cycle under a bound root
+can be accepted as `FanOut` where a rejection is owed. A marker on a field inside the cycle is not
+exposed to this: the marked field lies on a path back to its own parent, so the nested-marker rung,
+which the ladder runs ahead of the bound-ancestor rung, rejects it today and after the change.
 
 Observed on sis (2026-10-01): 595 tenancy rejections, one of them a genuinely unbound root
 (`Query.godkjenningssakstatuskoder`, held on purpose), every other one "no ancestor established a
@@ -126,7 +129,9 @@ any depth (`TenantDslEmitter`), so a cycle traversed at runtime needs nothing ne
   path wants the least fixed point, which these already intend; their defect is the
   order-dependent memo, and a forward closure has none. One helper, "close forward from these seeds
   along edges satisfying this predicate", serves all three, so the class carries one traversal over
-  one graph rather than a recursion per question.
+  one graph rather than a recursion per question. A marked field on a cycle lies in its own fanned
+  closure (its target reaches its parent), so it keeps rejecting as nested, and the ladder's rung
+  order in `fanOutArmOf` is unchanged.
 * **When it runs.** The propagation reads `nodePositions`, `nodeDispatchRoutable` and
   `byEntityType`, which `classifyNodeDispatch` and `classifyEntityDispatch` fill. It runs eagerly in
   `run()` after those two and before the `armOf` loop; today's lazy memo hid that ordering. The
@@ -160,11 +165,38 @@ any depth (`TenantDslEmitter`), so a cycle traversed at runtime needs nothing ne
   and no `Query.node`, so the dispatch veto is the only thing denying `Inventory` a context:
   `Film.inventories` rejects alongside the node-key rejection, the veto reaching `Film` through
   `Inventory.film`.
-* **Fan-out marker inside a cycle.** The cyclic fixture with `Film.inventories` marked
+* **Fan-out marker on a cycle edge.** The cyclic fixture with `Film.inventories` marked
   `@tenantFanOut` under the binding `Query.films` (list-typed, since `fanOutArmOf` rejects a
-  single-valued field as "not list-shaped" ahead of the ancestor rungs): it rejects as "sits under
-  a tenant-bound ancestor". Today's answer depends on which type the recursion asks first and on edge order, so
-  this case may pass before the change; it pins the answer so the closure cannot regress it.
+  single-valued field as "not list-shaped" ahead of the ancestor rungs): it rejects with the
+  nested-marker message ("double-fan an already fanned context"), since the marked field is its own
+  fanned ancestor through `Inventory.film`, and `Inventory.film` is `Inherited`. This passes today;
+  it pins that a marker on a cycle reads as nested, so the closure cannot drop the self-reaching
+  path.
+* **Fan-out marker leaving a cycle.** A four-type cycle under the binding `Query.films`, with two
+  types over the `film` table so the cycle can close through foreign keys the catalog has:
+
+  ```graphql
+  type Film @table(name: "film") {
+      title: String
+      inventories: [Inventory!]!
+      categories: [FilmCategory!]! @tenantFanOut
+  }
+  type Inventory @table(name: "inventory") { inventoryId: Int film: Sequel }
+  type Sequel @table(name: "film") {
+      title: String
+      filmActors: [FilmActor!]!
+      categories: [FilmCategory!]! @tenantFanOut
+  }
+  type FilmActor @table(name: "film_actor") { actorId: Int film: Film }
+  type FilmCategory @table(name: "film_category") { categoryId: Int }
+  type Query { films(filmId: Int @field(name: "film_id")): [Film!]! }
+  ```
+
+  `Film.categories` and `Sequel.categories` both reject as "sits under a tenant-bound ancestor",
+  and the four cycle fields (`Film.inventories`, `Inventory.film`, `Sequel.filmActors`,
+  `FilmActor.film`) are `Inherited`. This fails today: `Sequel.categories` classifies `FanOut`,
+  because `anyBoundAncestor(Film)`, asked first for `Film.categories`, walks the cycle and memoises
+  `Sequel` as `false` before `Query.films` answers `true`.
 
 No execution-tier case is owed. Emission and runtime are untouched: the change only lets more
 fields reach the `Inherited` verdict, whose hand-down through `localContext`, across a
@@ -226,3 +258,13 @@ result after the split. One finding, on a named test.
    rung's order dependence instead, it needs a marked list field on a cycle member whose target lies
    outside the cycle, on the member the recursion memoises wrongly (in the two-cycle, `Inventory`
    when `Film` is asked first).
+
+   *Response (session_01VkHxXd4pAENrVWLh4cq3xE, 2026-10-05):* did both. The cycle-edge test now
+   expects the nested-marker rejection, pinning that a marker on a cycle reads as nested; the
+   Implementation bullet on the forward closures says the self-reaching path stays in the fanned
+   closure and the rung order is unchanged. A new test, "Fan-out marker leaving a cycle", uses a
+   four-type cycle (`Film → Inventory → Sequel → FilmActor → Film`, with `Sequel` a second type over
+   `film`) with markers on `Film.categories` and `Sequel.categories`. Built on the current tree,
+   `Sequel.categories` classifies `FanOut`, so this test fails today and passes once the closure
+   lands. The "What is true today" paragraph now says the exposure is a marker leading out of a
+   cycle, not one inside it.
