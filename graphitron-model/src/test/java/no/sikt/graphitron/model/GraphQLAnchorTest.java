@@ -4,6 +4,7 @@ import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLAstEntries;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
+import no.sikt.graphitron.model.test.CapturedStore;
 import org.assertj.core.api.ListAssert;
 import org.assertj.core.groups.Tuple;
 import org.jooq.DSLContext;
@@ -31,6 +32,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_IMPLEMENTS_INTERFACE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_UNION_MEMBER;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
@@ -525,6 +527,136 @@ class GraphQLAnchorTest {
     }
 
     @Test
+    @DisplayName("an authored redeclaration of a built-in directive stands in its place")
+    void aRedeclaredBuiltInStandsInItsPlace(@TempDir Path directory) {
+        withSeededStore(dsl -> {
+            seedGraph(dsl, GRAPH);
+            var file = write(directory, "schema.graphqls", REDECLARING);
+            // The second reading is the warm store, which refused the duplicate source rows just as
+            // the cold one did, on the merge rather than on the key.
+            for (var touchedAt : List.of(LocalDateTime.now(), LocalDateTime.now().plusSeconds(1))) {
+                read(dsl, touchedAt, file);
+
+                assertThat(coordinates(dsl))
+                    .filteredOn(coordinate -> coordinate.startsWith("@"))
+                    .containsOnlyOnce("@oneOf", "@deprecated", "@include");
+                declared(dsl).contains(
+                    tuple("@oneOf", "DIRECTIVE"), tuple("@deprecated", "DIRECTIVE"),
+                    tuple("@include", "DIRECTIVE"));
+
+                assertThat(directiveSites(dsl)).contains(
+                    tuple("oneOf", file.toString(), 1),
+                    tuple("deprecated", file.toString(), 2),
+                    tuple("include", file.toString(), 3),
+                    tuple("skip", null, null),
+                    tuple("specifiedBy", null, null));
+
+                // A built-in has no location rows, so any row says the authored declaration won;
+                // for @include that is the store keeping it although graphql-java's built schema
+                // reverts to the built-in.
+                assertThat(directiveLocations(dsl)).containsExactlyInAnyOrder(
+                    tuple("oneOf", "INPUT_OBJECT"),
+                    tuple("deprecated", "FIELD_DEFINITION"),
+                    tuple("include", "FIELD"));
+
+                assertThat(directiveArguments(dsl)).containsExactlyInAnyOrder(
+                    tuple("deprecated", "reason", "String"),
+                    tuple("include", "if", "Boolean"));
+            }
+        });
+    }
+
+    @Test
+    @DisplayName("a built-in stands again when its redeclaration goes away")
+    void aBuiltInStandsAgainWhenItsRedeclarationGoesAway(@TempDir Path directory) {
+        withSeededStore(dsl -> {
+            seedGraph(dsl, GRAPH);
+            var file = write(directory, "schema.graphqls", REDECLARING);
+            var first = LocalDateTime.now();
+            read(dsl, first, file);
+
+            write(directory, "schema.graphqls", """
+                input FilmOneOfFilter @oneOf { filmId: Int title: String }
+                """);
+            read(dsl, first.plusSeconds(1), file);
+
+            assertThat(coordinates(dsl))
+                .filteredOn(coordinate -> coordinate.startsWith("@"))
+                .containsOnlyOnce("@oneOf", "@deprecated", "@include");
+            assertThat(directiveSites(dsl)).contains(
+                tuple("oneOf", null, null),
+                tuple("deprecated", null, null),
+                tuple("include", null, null));
+            assertThat(directiveLocations(dsl)).isEmpty();
+            assertThat(directiveArguments(dsl)).isEmpty();
+        });
+    }
+
+    @Test
+    @DisplayName("a schema redeclaring a built-in directive captures, as graphitron:dev runs it")
+    void aRedeclaredBuiltInCapturesThroughModelCapture(@TempDir Path directory) {
+        // The field report's path: the whole capture over a fresh store, which threw from the
+        // anchors before the authored declaration and the specified one stopped colliding.
+        CapturedStore.withCapturedStore(directory, """
+            directive @oneOf on INPUT_OBJECT
+            type Query { films(filter: FilmOneOfFilter): String }
+            input FilmOneOfFilter @oneOf { filmId: Int title: String }
+            """, dsl -> {
+                assertThat(dsl.fetchCount(GRAPHQL_SCHEMA_PROBLEM))
+                    .as("graphql-java builds the schema, so there is nothing to refuse")
+                    .isZero();
+                assertThat(dsl.select(GRAPHQL_DIRECTIVE.SOURCE_LINE).from(GRAPHQL_DIRECTIVE)
+                        .where(GRAPHQL_DIRECTIVE.GRAPH_NAME.eq(CapturedStore.GRAPH))
+                        .and(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME.eq("oneOf"))
+                        .fetch(GRAPHQL_DIRECTIVE.SOURCE_LINE))
+                    .as("and the store's @oneOf is the fixture's declaration")
+                    .containsExactly(1);
+            });
+    }
+
+    /**
+     * Three of the five specified directives redeclared, each a line of its own so its site says
+     * which declaration the store holds, and one applied.
+     */
+    private static final String REDECLARING = """
+        directive @oneOf on INPUT_OBJECT
+        directive @deprecated(reason: String) on FIELD_DEFINITION
+        directive @include(if: Boolean) on FIELD
+        input FilmOneOfFilter @oneOf { filmId: Int title: String }
+        """;
+
+    /** The specified directives' rows as name, source and line, which is what says whose they are. */
+    private static List<Tuple> directiveSites(DSLContext dsl) {
+        return dsl.select(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME, GRAPHQL_DIRECTIVE.SOURCE_NAME,
+                GRAPHQL_DIRECTIVE.SOURCE_LINE)
+            .from(GRAPHQL_DIRECTIVE)
+            .where(GRAPHQL_DIRECTIVE.GRAPH_NAME.eq(GRAPH))
+            .and(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME.in(SPECIFIED_DIRECTIVE_NAMES))
+            .fetch(row -> tuple(row.value1(), row.value2(), row.value3()));
+    }
+
+    private static List<Tuple> directiveLocations(DSLContext dsl) {
+        return dsl.select(GRAPHQL_DIRECTIVE_LOCATION.DIRECTIVE_NAME,
+                GRAPHQL_DIRECTIVE_LOCATION.LOCATION)
+            .from(GRAPHQL_DIRECTIVE_LOCATION)
+            .where(GRAPHQL_DIRECTIVE_LOCATION.GRAPH_NAME.eq(GRAPH))
+            .and(GRAPHQL_DIRECTIVE_LOCATION.DIRECTIVE_NAME.in(SPECIFIED_DIRECTIVE_NAMES))
+            .fetch(row -> tuple(row.value1(), row.value2()));
+    }
+
+    private static List<Tuple> directiveArguments(DSLContext dsl) {
+        return dsl.select(GRAPHQL_DIRECTIVE_ARGUMENT.DIRECTIVE_NAME,
+                GRAPHQL_DIRECTIVE_ARGUMENT.ARGUMENT_NAME, GRAPHQL_DIRECTIVE_ARGUMENT.TYPE_SDL)
+            .from(GRAPHQL_DIRECTIVE_ARGUMENT)
+            .where(GRAPHQL_DIRECTIVE_ARGUMENT.GRAPH_NAME.eq(GRAPH))
+            .and(GRAPHQL_DIRECTIVE_ARGUMENT.DIRECTIVE_NAME.in(SPECIFIED_DIRECTIVE_NAMES))
+            .fetch(row -> tuple(row.value1(), row.value2(), row.value3()));
+    }
+
+    private static final List<String> SPECIFIED_DIRECTIVE_NAMES =
+        List.of("deprecated", "include", "oneOf", "skip", "specifiedBy");
+
+    @Test
     @DisplayName("a spelled root binding wins, and the name convention fills what none spells")
     void rootOperations(@TempDir Path directory) {
         withSeededStore(dsl -> {
@@ -558,6 +690,7 @@ class GraphQLAnchorTest {
             var file = write(directory, "schema.graphqls", """
                 schema { query: Root }
                 directive @table(name: String) on OBJECT
+                directive @oneOf on INPUT_OBJECT
                 type Root { film: Film }
                 type Film implements Node @table(name: "film") { id: ID! title(p: String): String }
                 interface Node { id: ID! }

@@ -68,6 +68,7 @@ import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.partitionBy;
 import static org.jooq.impl.DSL.row;
 import static org.jooq.impl.DSL.rowNumber;
+import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.upper;
 import static org.jooq.impl.DSL.val;
@@ -286,16 +287,18 @@ public final class GraphQLAstCapture {
                     ranked.field(ELEMENT_KIND), val(touchedAt, t.TOUCHED_AT))
                 .from(ranked).where(ranked.field(RANK).eq(1))
                 // Outside the rank, because a specified scalar has no site to rank by: the five
-                // are one coordinate each and cannot collide with a declared one, a document that
-                // redeclares String being refused before any of this.
+                // are one coordinate each and cannot collide with a declared one, because the
+                // transcription filters an authored scalar String out before any of this.
                 .unionAll(dsl
                     .select(val(graph, t.GRAPH_NAME), SPECIFIED_SCALAR_NAME,
                         val("NAMED_TYPE", t.ELEMENT_KIND), val(touchedAt, t.TOUCHED_AT))
                     .from(SPECIFIED_SCALARS))
+                // Outside the rank too, but a document can declare a specified directive, so only
+                // the ones none declares: a redeclared @oneOf is the authored candidate alone.
                 .unionAll(dsl
                     .select(val(graph, t.GRAPH_NAME), SPECIFIED_DIRECTIVE_COORDINATE,
                         val("DIRECTIVE", t.ELEMENT_KIND), val(touchedAt, t.TOUCHED_AT))
-                    .from(SPECIFIED_DIRECTIVES)))
+                    .from(specifiedDirectivesUndeclared(graph))))
             .onDuplicateKeyUpdate()
             .set(t.ELEMENT_KIND, excluded(t.ELEMENT_KIND))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -403,12 +406,13 @@ public final class GraphQLAstCapture {
                     ef.SOURCE_NAME.eq(d.SOURCE_NAME), ef.SOURCE_LINE.eq(d.SOURCE_LINE),
                     ef.SOURCE_COLUMN.eq(d.SOURCE_COLUMN))
                 .where(d.GRAPH_NAME.eq(graph))
-                // On the specified scalars' terms: no document declares these and no entry holds
-                // them, and the anchor carries them because an author can apply one.
+                // On the specified scalars' terms: no entry holds these, and the anchor carries them
+                // because an author can apply one. Only the ones no document declares, so a
+                // redeclared name arrives once, from the arm above.
                 .unionAll(dsl
                     .select(val(graph, t.GRAPH_NAME), SPECIFIED_DIRECTIVE_NAME,
                         SPECIFIED_DIRECTIVE_COORDINATE, val(touchedAt, t.TOUCHED_AT))
-                    .from(SPECIFIED_DIRECTIVES)))
+                    .from(specifiedDirectivesUndeclared(graph))))
             .onDuplicateKeyUpdate()
             .set(t.COORDINATE, excluded(t.COORDINATE))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -507,8 +511,16 @@ public final class GraphQLAstCapture {
 
     /**
      * The directives the specification gives every schema, on {@link #SPECIFIED_SCALARS}' terms and
-     * for its reasons: no document declares them, so the entries do not hold them, and they are
-     * still names an author can apply. None is repeatable and none has a position.
+     * for its reasons: the entries do not hold them, and they are still names an author can apply.
+     * None is repeatable and none has a position.
+     *
+     * <p>Unlike a specified scalar, a document can declare one, and the transcription keeps that
+     * declaration. The anchors read these through {@link #specifiedDirectivesUndeclared}, so one
+     * stands only where no document of the graph declares its name and an authored declaration
+     * replaces it. That is what graphql-java does for every specified directive but the executable
+     * {@code @include} and {@code @skip}: for those its built schema reverts to the built-in, while
+     * its SDL validation checks applications against the authored declaration, and the store keeps
+     * the authored one, agreeing with the validation.
      *
      * <p>What made them necessary is an application that had nowhere to land until the applications
      * collapsed onto the coordinate. Graphitron applies {@code @deprecated} to a formal argument of
@@ -532,6 +544,22 @@ public final class GraphQLAstCapture {
     /** The same as a coordinate, which for a directive is the at sign and the name. */
     private static final Field<String> SPECIFIED_DIRECTIVE_COORDINATE =
         concat(inline("@"), SPECIFIED_DIRECTIVE_NAME);
+
+    /**
+     * The {@link #SPECIFIED_DIRECTIVES} no document of the graph declares, under the same alias and
+     * column so {@link #SPECIFIED_DIRECTIVE_NAME} and {@link #SPECIFIED_DIRECTIVE_COORDINATE} read
+     * it unchanged. Every arm that appends the specified directives to the authored ones reads this,
+     * which is what leaves each key one candidate: without it a redeclared {@code @oneOf} arrived
+     * twice and the key refused the second, on a cold store and a warm one alike.
+     */
+    private static Table<Record1<String>> specifiedDirectivesUndeclared(String graph) {
+        var d = GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY;
+        return select(SPECIFIED_DIRECTIVE_NAME)
+            .from(SPECIFIED_DIRECTIVES)
+            .where(notExists(selectOne().from(d)
+                .where(d.GRAPH_NAME.eq(graph), d.NAME.eq(SPECIFIED_DIRECTIVE_NAME))))
+            .asTable("specified_directive", "directive_name");
+    }
 
     /** Which arm a root-operation candidate came from, spelled sorting before assumed. */
     private static final Field<Integer> PRECEDENCE = field(name("precedence"), Integer.class);
@@ -989,13 +1017,14 @@ public final class GraphQLAstCapture {
                     val(touchedAt, t.TOUCHED_AT))
                 .from(ranked).where(ranked.field(RANK).eq(1))
                 // Outside the rank, for the reason the specified scalars are: these have no site
-                // to rank by, and a document redeclaring one is refused before any of this.
+                // to rank by. A document that declares one replaces it, so only the ones no
+                // document declares, and a redeclared name is its ranked declaration alone.
                 .unionAll(dsl
                     .select(val(graph, t.GRAPH_NAME), SPECIFIED_DIRECTIVE_NAME,
                         val(false, t.REPEATABLE), val((String) null, t.DESCRIPTION),
                         val((String) null, t.SOURCE_NAME), val((Integer) null, t.SOURCE_LINE),
                         val((Integer) null, t.SOURCE_COLUMN), val(touchedAt, t.TOUCHED_AT))
-                    .from(SPECIFIED_DIRECTIVES)))
+                    .from(specifiedDirectivesUndeclared(graph))))
             .onDuplicateKeyUpdate()
             .set(t.REPEATABLE, excluded(t.REPEATABLE))
             .set(t.DESCRIPTION, excluded(t.DESCRIPTION))

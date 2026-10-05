@@ -1,7 +1,7 @@
 ---
 id: R980
 title: "An authored redeclaration of a built-in directive fails the whole capture instead of drawing a diagnostic"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 2
 theme: diagnostics
@@ -190,6 +190,21 @@ what the author wrote. No emitter reads these anchors.
   pass `graphitron:dev` runs: an SDL fixture carrying `directive @oneOf on INPUT_OBJECT` captures
   into a fresh store without throwing. This is the field report's path and the case that fails
   today.
+
+## Landed
+
+The plan above landed as written. Two notes for the reviewer:
+
+- The per-graph table expression is `GraphQLAstCapture.specifiedDirectivesUndeclared(graph)`. It
+  keeps the `specified_directive (directive_name)` alias and column, so `SPECIFIED_DIRECTIVE_NAME`
+  and `SPECIFIED_DIRECTIVE_COORDINATE` read it unchanged in all three arms.
+- The capture-tier case sits in `GraphQLAnchorTest` beside the others, as
+  `aRedeclaredBuiltInCapturesThroughModelCapture`, rather than in a class of its own. Besides
+  capturing without throwing, it asserts that `graphql_schema_problem` is empty, so graphql-java
+  built the schema, and that the store's `@oneOf` sits at the fixture's line.
+
+All four new or extended cases fail on the key without the change to `GraphQLAstCapture` and pass
+with it.
 
 ## Out of scope
 

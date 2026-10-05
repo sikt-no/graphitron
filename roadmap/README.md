@@ -20,8 +20,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R978` | Refuse a connection-binding root service that names no tenant under database-per-tenant | Spec | 2026-10-05 <sub>created 2026-09-25</sub> | [plan](service-undecoded-node-id-tenant.md) |
 | `R872` | The keys say what a source owns, and the gatherer decides how to refresh it | Spec | 2026-09-25 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
-| `R980` | An authored redeclaration of a built-in directive fails the whole capture instead of drawing a diagnostic | In Progress | 2026-10-05 <sub>created 2026-09-28</sub> | [plan](authored-builtin-directive-fails-capture.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
+| `R980` | An authored redeclaration of a built-in directive fails the whole capture instead of drawing a diagnostic | In Review | 2026-10-05 <sub>created 2026-09-28</sub> | [plan](authored-builtin-directive-fails-capture.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R942` | A rule that evaluates an unregistered view once per driving row fails the build, whoever writes the next one | Spec | 2026-09-09 | [plan](per-row-view-naming-fails-the-build.md) |
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Spec | 2026-09-22 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
@@ -448,7 +448,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### diagnostics
 
-- `R980` [**An authored redeclaration of a built-in directive fails the whole capture instead of drawing a diagnostic**](authored-builtin-directive-fails-capture.md) — In Progress, bug
+- `R980` [**An authored redeclaration of a built-in directive fails the whole capture instead of drawing a diagnostic**](authored-builtin-directive-fails-capture.md) — In Review, bug
 - `R411` [**Wire-coercion cast guard for @condition and @externalField (R261 Slice 2)**](reject-wire-coercion-nonservice-sites.md) — Backlog, architecture
 - `R817` [**AuthoredClaimConflicts.fieldGrain reads a recursive view once per conflict row**](authored-claim-conflicts-reads-a-recursive-view-per-row.md) — Backlog, bug
 - `R625` [**Honour coercing argMapping leaf extractions on routine bindings**](routine-coercing-arg-extractions.md) — Backlog, validation
