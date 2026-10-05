@@ -1,7 +1,7 @@
 ---
 id: R986
 title: "The tenant-context fold reads every cycle as unbound, so a type reachable both ways is rejected under a bound root"
-status: In Review
+status: Ready
 bucket: bug
 theme: runtime-connection
 depends-on: []
@@ -268,3 +268,70 @@ result after the split. One finding, on a named test.
    `Sequel.categories` classifies `FanOut`, so this test fails today and passes once the closure
    lands. The "What is true today" paragraph now says the exposure is a marker leading out of a
    cycle, not one inside it.
+
+### Round 2: In Review → Done, withheld (session_01HFkWnWV9Vb4L7Ut7sEwLnD, 2026-10-05)
+
+Reviewed at `35c195c` (rebased on `da3ee68`). The delivery is the change the spec approved, with no
+substitutions or unapproved scope:
+* the edge predicate is split and keeps its establishing cases;
+* the domain is `SchemaReachability.reachableTypeNames` under `ctx.nodeDeclaration`, the walk's own
+  arguments;
+* "no context" propagates forward from the three seed groups the spec names;
+* both any-path folds are forward closures through one `closeForward`;
+* all six recursion fields are gone, and the four javadoc passages are rewritten.
+
+All six named tests are present, and they assert verdicts, not generated code. `mvn install
+-Plocal-db` passes. With `TenantBindingIndex` and `GraphitronSchemaBuilder` reverted to `35c195c^`,
+exactly the three tests the spec says fail today do fail (`aCycleEnteredOnlyThroughABindingRoot...`,
+`anUnreachedParentDoesNotDenyItsTargetAContext`, `aFanOutMarkerLeavingACycle...`). The other three
+pass, so question 2 is answered. No `docs/` changes are owed: the manual and `typed-rejection.adoc`
+make no cycle claim. The retirement sweep finds none of the retired recursion names anywhere. One
+finding, on question 1.
+
+1. **A cycle entered only through a dispatch surface that hands no tenant now gets a context.**
+   (Gate question 1: the delivery turns a correct build-time rejection into a runtime failure.) The
+   third seed group is "every domain type no in-domain edge reaches that is not a routable dispatch
+   surface". Under the old least fixed point, having a reaching edge implied being judged by edges
+   from somewhere that executes. The new greatest fixed point drops that implication: a type whose
+   only reaching edges come from its own cycle is neither seeded nor marked, so the cycle reads as
+   having a context even though the only way into it is a dispatch that carries no tenant. Probe,
+   built with this class's `build(...)` helper:
+
+   ```graphql
+   directive @key(fields: String!, resolvable: Boolean = true) repeatable on OBJECT | INTERFACE
+   type Language @table(name: "language") @key(fields: "languageId") {
+       languageId: Int @field(name: "language_id")
+       films: [Film!]! @reference(path: [{key: "film_language_id_fkey"}])
+   }
+   type Film @table(name: "film") {
+       title: String
+       language: Language @reference(path: [{key: "film_language_id_fkey"}])
+   }
+   type Category @table(name: "category") { name: String }
+   type Query { categories: [Category!]! }
+   ```
+
+   `Language` is an untenanted entity: it is in `entitiesByType` and not in `byEntityType`, so
+   `_entities` serves it from the default source and hands nothing down. Before `35c195c`,
+   `Language.films` rejects `noTenantBinding`. After it, `Language.films` is
+   `Inherited(Language)` with no rejection, so `divinedTenant` fails at request time instead. Delete
+   `Film.language` and both trees reject, which is the spec's own rule ("an untenanted node type
+   reached only through dispatch has no tenant in `localContext` for a child to inherit"). The cycle
+   alone makes that rule stop firing. The Implementation section promises that "a veto or an unbound
+   entry reaching any member marks the whole component". An entry by an untenanted dispatch surface
+   is an unbound entry, but it is not seeded.
+
+   *What would satisfy it:* seed every dispatch entry that hands no tenant, whether or not a field
+   edge also reaches the type. For entities that is a domain type in `entitiesByType` without an
+   `EntityRepBound`. Two further points:
+   * **The acyclic case tightens too.** An untenanted `@key` type that a binding root also reaches
+     is accepted today and after `35c195c`, yet `_entities` reaches it unbound. Every-path says that
+     type should reject, and the clean seed rule rejects it, which is a stricter verdict than today
+     for existing schemas. Say in the Implementation section whether the item takes that on or scopes
+     the seed to the cycle case, and why.
+   * **Pin the probe shape** (or the chosen variant) as a seventh `@UnitTier` test.
+
+   A related, likely pre-existing, shape stays out of this finding: `Query.node` counts as
+   establishing whenever `nodeDispatchRoutable` holds, including into an untenanted node type, and
+   that predates this item in the acyclic case. Note it in the spec, or file it as its own item, if
+   it holds.
