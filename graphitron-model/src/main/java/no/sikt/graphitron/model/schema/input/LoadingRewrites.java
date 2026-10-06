@@ -46,12 +46,17 @@ public final class LoadingRewrites {
         /**
          * Every rewrite ran.
          *
-         * @param registry      the registry handed in, rewritten
-         * @param injectedNames the names of the definitions the federation {@code @link} injected,
-         *                      in the order it injected them, empty where there is no federation
-         *                      {@code @link}
+         * @param registry        the registry handed in, rewritten
+         * @param injectedNames   the names of the definitions the federation {@code @link} injected,
+         *                        in the order it injected them, empty where there is no federation
+         *                        {@code @link}
+         * @param synthesisedLink whether that {@code @link} is the one {@link TagLinkSynthesiser}
+         *                        added because a tag is configured and the author wrote none; the
+         *                        tag arm of the federation opt-in, which the store records because
+         *                        no document states it
          */
-        record Applied(TypeDefinitionRegistry registry, Set<String> injectedNames) implements Outcome {
+        record Applied(TypeDefinitionRegistry registry, Set<String> injectedNames,
+                       boolean synthesisedLink) implements Outcome {
             public Applied {
                 Objects.requireNonNull(registry, "registry");
                 injectedNames = Collections.unmodifiableSet(new LinkedHashSet<>(injectedNames));
@@ -181,16 +186,17 @@ public final class LoadingRewrites {
             return new Outcome.Refused(new Refusal.SourceInTwoInputs(firstClaimedTwice(inputs), e));
         }
         var tagLink = TagLinkSynthesiser.synthesise(registry, bySource);
-        if (tagLink.isPresent()) {
-            return new Outcome.Refused(tagLink.get());
+        if (tagLink instanceof TagLinkSynthesiser.Result.Refused refused) {
+            return new Outcome.Refused(refused.refusal());
         }
         var injected = FederationLinkApplier.inject(registry);
-        if (injected instanceof Outcome.Refused refused) {
-            return refused;
+        if (!(injected instanceof Outcome.Applied applied)) {
+            return injected;
         }
         TagApplier.apply(registry, bySource);
         DescriptionNoteApplier.apply(registry, bySource);
-        return injected;
+        return new Outcome.Applied(registry, applied.injectedNames(),
+            tagLink instanceof TagLinkSynthesiser.Result.Synthesised);
     }
 
     private static String firstClaimedTwice(List<SchemaInput> inputs) {

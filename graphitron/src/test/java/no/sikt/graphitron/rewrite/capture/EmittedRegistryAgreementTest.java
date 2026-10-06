@@ -5,6 +5,7 @@ import graphql.schema.idl.SchemaPrinter;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.model.schema.AttributedRegistry;
 import no.sikt.graphitron.model.schema.EmittedRegistry;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.test.CapturedStore;
@@ -142,7 +143,8 @@ class EmittedRegistryAgreementTest {
             GraphQLSchema derived;
             try (var store = CapturedStore.ofCatalog(tmp.resolve(document.id()),
                     CapturedStore.GRAPH, sdl, jooq, census)) {
-                var assembly = SchemaAssembly.of(EmittedRegistry.of(store.registry(),
+                var assembly = SchemaAssembly.of(EmittedRegistry.of(
+                    new AttributedRegistry(store.registry(), Set.of()),
                     new StoreHandle(store.dsl(), CapturedStore.GRAPH)));
                 if (!(assembly instanceof SchemaAssembly.Assembled assembled)) {
                     var rejected = (SchemaAssembly.Rejected) assembly;

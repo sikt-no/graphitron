@@ -6,6 +6,7 @@ import graphql.language.ObjectTypeDefinition;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.model.schema.AttributedRegistry;
 import no.sikt.graphitron.model.schema.EmittedRegistry;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.test.CapturedStore;
@@ -15,12 +16,15 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Set;
 
 import static no.sikt.graphitron.model.test.SeededStore.seedFederationKey;
 import static no.sikt.graphitron.model.test.SeededStore.seedLink;
 import static no.sikt.graphitron.model.test.SeededStore.seedNode;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The registry the generator emits, derived from the one capture transcribed.
@@ -103,6 +107,45 @@ class EmittedRegistryTest {
         }
         """;
 
+    /**
+     * A tagged carrier beside a {@code PageInfo} its author declared. The mint of the shared page
+     * info stands down to the author, so the declared type is the author's and takes no tag from
+     * the carrier, while the connection and edge nobody declared do.
+     */
+    private static final String DECLARED_PAGE_INFO_SCHEMA = """
+        directive @tag(name: String!) repeatable on FIELD_DEFINITION | OBJECT | INTERFACE | UNION \
+        | ARGUMENT_DEFINITION | SCALAR | ENUM | ENUM_VALUE | INPUT_OBJECT | INPUT_FIELD_DEFINITION
+
+        type Query {
+          films: [Film!] @asConnection @tag(name: "experimental")
+        }
+
+        type Film {
+          title: String!
+        }
+
+        type PageInfo {
+          hasPreviousPage: Boolean!
+          hasNextPage: Boolean!
+          startCursor: String
+          endCursor: String
+        }
+        """;
+
+    /** {@link #NODE_SCHEMA} as it stands after key synthesis, which is not what emission starts from. */
+    private static final String SYNTHESISED_KEY_SCHEMA = """
+        interface Node { id: ID! }
+
+        type Query {
+          film: Film
+        }
+
+        type Film implements Node @key(fields: "id", resolvable: true) {
+          id: ID!
+          title: String!
+        }
+        """;
+
     private static final String FEDERATION_GRAPH = "federation";
 
     /** The federation spec prefix as a url a real {@code @link} carries. */
@@ -120,12 +163,12 @@ class EmittedRegistryTest {
     static void capture() {
         try (var store = CapturedStore.of(tmp.resolve("connection"), CONNECTION_SCHEMA)) {
             connectionTranscribed = store.registry();
-            connectionEmitted = EmittedRegistry.of(connectionTranscribed,
+            connectionEmitted = EmittedRegistry.of(attributed(connectionTranscribed),
                 new StoreHandle(store.dsl(), CapturedStore.GRAPH));
         }
         try (var store = CapturedStore.of(tmp.resolve("plain"), PLAIN_SCHEMA)) {
             plainTranscribed = store.registry();
-            plainEmitted = EmittedRegistry.of(plainTranscribed,
+            plainEmitted = EmittedRegistry.of(attributed(plainTranscribed),
                 new StoreHandle(store.dsl(), CapturedStore.GRAPH));
         }
     }
@@ -248,6 +291,33 @@ class EmittedRegistryTest {
         assertThat(returnTypeOf(plainEmitted, "Query", "films")).isEqualTo("[Film!]");
     }
 
+    // ===== The tags a minted type inherits =====
+
+    /**
+     * Inheritance follows the mint, not the coinage. Every carrier coins a {@code PageInfo}, so
+     * a fold over coinage alone tags one the author declared with every carrier's tags; the store
+     * already says that mint stood down, and the fold asks it. The minted connection and edge in
+     * the same schema are the control: they still inherit, so the case fails on a fix that
+     * switched inheritance off rather than aimed it.
+     */
+    @Test
+    @DisplayName("a declared PageInfo takes no tag from a carrier, and the minted connection does")
+    void aDeclaredPageInfoInheritsNoTag() {
+        CapturedStore.withCapturedStore(tmp.resolve("declared-page-info"),
+            DECLARED_PAGE_INFO_SCHEMA, dsl -> {
+                var emitted = EmittedRegistry.of(attributed(parse(DECLARED_PAGE_INFO_SCHEMA)),
+                    new StoreHandle(dsl, CapturedStore.GRAPH));
+
+                assertThat(typeDirectives(emitted, "PageInfo"))
+                    .as("the author's PageInfo, as the author wrote it")
+                    .isEmpty();
+                assertThat(typeDirectives(emitted, "QueryFilmsConnection"))
+                    .containsExactly("@tag(name: \"experimental\")");
+                assertThat(typeDirectives(emitted, "QueryFilmsConnectionEdge"))
+                    .containsExactly("@tag(name: \"experimental\")");
+            });
+    }
+
     // ===== The keys the rule derives =====
 
     /**
@@ -270,7 +340,7 @@ class EmittedRegistryTest {
             seedLink(dsl, FEDERATION_GRAPH, 0, FEDERATION_URL);
             seedNode(dsl, FEDERATION_GRAPH, "Film");
 
-            var emitted = EmittedRegistry.of(parse(NODE_SCHEMA),
+            var emitted = EmittedRegistry.of(attributed(parse(NODE_SCHEMA)),
                 new StoreHandle(dsl, FEDERATION_GRAPH));
 
             var film = (ObjectTypeDefinition) emitted.getTypeOrNull("Film");
@@ -291,7 +361,7 @@ class EmittedRegistryTest {
         withSeededStore(FEDERATION_GRAPH, dsl -> {
             seedNode(dsl, FEDERATION_GRAPH, "Film");
 
-            var emitted = EmittedRegistry.of(parse(NODE_SCHEMA),
+            var emitted = EmittedRegistry.of(attributed(parse(NODE_SCHEMA)),
                 new StoreHandle(dsl, FEDERATION_GRAPH));
 
             assertThat(((ObjectTypeDefinition) emitted.getTypeOrNull("Film")).getDirectives())
@@ -318,7 +388,7 @@ class EmittedRegistryTest {
             seedNode(dsl, FEDERATION_GRAPH, "Film");
             seedFederationKey(dsl, FEDERATION_GRAPH, "Film", 0, "id", true, "id");
 
-            var emitted = EmittedRegistry.of(parse(AUTHORED_KEY_SCHEMA),
+            var emitted = EmittedRegistry.of(attributed(parse(AUTHORED_KEY_SCHEMA)),
                 new StoreHandle(dsl, FEDERATION_GRAPH));
 
             assertThat(((ObjectTypeDefinition) emitted.getTypeOrNull("Film")).getDirectives())
@@ -341,7 +411,7 @@ class EmittedRegistryTest {
             seedLink(dsl, FEDERATION_GRAPH, 0, FEDERATION_URL);
             seedNode(dsl, FEDERATION_GRAPH, "Ghost");
 
-            var emitted = EmittedRegistry.of(parse(NODE_SCHEMA),
+            var emitted = EmittedRegistry.of(attributed(parse(NODE_SCHEMA)),
                 new StoreHandle(dsl, FEDERATION_GRAPH));
 
             assertThat(emitted.getTypeOrNull("Ghost")).isNull();
@@ -350,7 +420,40 @@ class EmittedRegistryTest {
         });
     }
 
+    /**
+     * The derivation starts from the registry before synthesis, and a key it finds already there
+     * is synthesis having been applied twice. Stated by handing it a pre-synthesis handle that is
+     * not one: the patch has to say so rather than append a second key or quietly skip, either of
+     * which would let the wrong input through.
+     */
+    @Test
+    @DisplayName("a registry already carrying the synthesised key is refused as a generator defect")
+    void aKeyAlreadySynthesisedIsRefused() {
+        withSeededStore(FEDERATION_GRAPH, dsl -> {
+            seedLink(dsl, FEDERATION_GRAPH, 0, FEDERATION_URL);
+            seedNode(dsl, FEDERATION_GRAPH, "Film");
+
+            assertThatThrownBy(() -> EmittedRegistry.of(attributed(parse(SYNTHESISED_KEY_SCHEMA)),
+                    new StoreHandle(dsl, FEDERATION_GRAPH)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("'Film'")
+                .hasMessageContaining("defect in graphitron");
+        });
+    }
+
     // ---------------------------------------------------------------------------------------
+
+    /** A registry nothing synthesised over, whose two handles are therefore one object. */
+    private static AttributedRegistry attributed(TypeDefinitionRegistry registry) {
+        return new AttributedRegistry(registry, Set.of());
+    }
+
+    private static List<String> typeDirectives(TypeDefinitionRegistry registry,
+                                               String type) {
+        assertThat(registry.getTypeOrNull(type)).as(type).isInstanceOf(ObjectTypeDefinition.class);
+        return ((ObjectTypeDefinition) registry.getTypeOrNull(type)).getDirectives().stream()
+            .map(AstPrinter::printAst).toList();
+    }
 
     private static TypeDefinitionRegistry parse(String sdl) {
         return new SchemaParser().parse(sdl);

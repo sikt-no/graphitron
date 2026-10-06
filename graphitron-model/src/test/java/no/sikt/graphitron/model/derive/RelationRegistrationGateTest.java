@@ -239,7 +239,12 @@ class RelationRegistrationGateTest {
             // by exemption: the walk's own two verdict relations are retired, so there is no
             // oracle arm left here to agree with. GraphQLSchemaProblemsTest pins it, over a corpus
             // that provokes each stage in turn.
-            "graphql_schema_problem")) {
+            "graphql_schema_problem",
+            // Whether the composition gained the federation @link a configured tag synthesises.
+            // GraphitronSchema is built from the composed registry and holds the link it added
+            // with no word on who wrote it, so there is nothing to agree with.
+            // FederationKeyDerivationTest pins it, over a corpus tagged and linked each way.
+            "graphql_assembly_synthesised_link")) {
             registrations.put(relation, Arm.UNSHADOWED);
         }
         // The classfile census: what the compiled classes on the classpath declare, read with no

@@ -11,6 +11,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ASSEMBLY_SYNTHESISED_LINK;
+
 /**
  * Combines the documents into one schema and records what combining them raised.
  *
@@ -51,7 +53,9 @@ import java.util.Optional;
  *
  * <p>The refusals of all three stages, as {@code graphql_schema_problem} rows numbered within their
  * own stage. The parse stage is not among them: the gatherer that ran the parser wrote those, each
- * stage numbering and sweeping its own rows.
+ * stage numbering and sweeping its own rows. And whether the composition gained the federation
+ * {@code @link} a configured tag synthesises, as a {@code graphql_assembly_synthesised_link} row:
+ * the one federation opt-in no document states, so the only place it can be read from is here.
  *
  * <p>It returns the merged registry beside the assembly. The decode walks the merged registry, the
  * corpus as written, which the composition started from and never touches: the rewrites run on a
@@ -104,13 +108,42 @@ public final class GraphQLAssemblyCapture {
                                           LocalDateTime readAt) {
         var merged = merge(reading.documents());
         var composition = merge(reading.documents()).registry();
-        var refusal = switch (LoadingRewrites.apply(composition, reading.inputs())) {
+        var outcome = LoadingRewrites.apply(composition, reading.inputs());
+        var refusal = switch (outcome) {
             case LoadingRewrites.Outcome.Applied ignored -> null;
             case LoadingRewrites.Outcome.Refused refused -> refused.refusal();
         };
         var assembly = SchemaAssembly.of(refusal == null ? composition : merged.registry());
         GraphQLSchemaProblems.writeAssembled(dsl, graph.name(), merged.registryErrors(),
             Optional.ofNullable(refusal), assembly.errors(), readAt);
+        writeSynthesisedLink(dsl, graph.name(),
+            outcome instanceof LoadingRewrites.Outcome.Applied applied && applied.synthesisedLink(),
+            readAt);
         return new AssemblyReading(merged.registry(), assembly);
+    }
+
+    /**
+     * Makes {@code graph}'s {@code graphql_assembly_synthesised_link} row be whether this
+     * composition added the federation {@code @link} a configured tag asks for.
+     *
+     * <p>Recorded because no document states it, and the generator federates on it: the decode
+     * walks the corpus as written, so without this row a graph federated through a tag alone looks
+     * unfederated to every relation that asks. A composition that refused writes nothing, the
+     * assembly then judging the corpus as written, which carries no synthesised link.
+     */
+    private static void writeSynthesisedLink(DSLContext dsl, String graph, boolean synthesised,
+                                             LocalDateTime readAt) {
+        var t = GRAPHQL_ASSEMBLY_SYNTHESISED_LINK;
+        if (synthesised) {
+            dsl.insertInto(t, t.GRAPH_NAME, t.TOUCHED_AT)
+                .values(graph, readAt)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, readAt)
+                .execute();
+        }
+        dsl.deleteFrom(t)
+            .where(t.GRAPH_NAME.eq(graph))
+            .and(t.TOUCHED_AT.ne(readAt))
+            .execute();
     }
 }

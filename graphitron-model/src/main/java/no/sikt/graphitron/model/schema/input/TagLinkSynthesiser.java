@@ -60,20 +60,32 @@ public final class TagLinkSynthesiser {
      * entry in {@code bySource} carries a tag, throwing the refusal's exception where it refuses.
      */
     public static void apply(TypeDefinitionRegistry registry, Map<String, SchemaInput> bySource) {
-        synthesise(registry, bySource).ifPresent(refusal -> {
-            throw refusal.exception();
-        });
+        if (synthesise(registry, bySource) instanceof Result.Refused refused) {
+            throw refused.refusal().exception();
+        }
+    }
+
+    /** What the synthesiser made of a registry. */
+    sealed interface Result {
+
+        /** No tag is configured, or the author's federation {@code @link} already imports {@code @tag}. */
+        record Untouched() implements Result {}
+
+        /** A tag is configured and the author wrote no federation {@code @link}, so one was added. */
+        record Synthesised() implements Result {}
+
+        /** The author's {@code @link} does not import {@code @tag}, or the registry refused the one added. */
+        record Refused(LoadingRewrites.Refusal refusal) implements Result {}
     }
 
     /**
-     * {@link #apply} with the refusal handed back rather than thrown, for {@link LoadingRewrites},
-     * whose callers decide whether a refusal fails anything.
+     * {@link #apply} with the outcome handed back rather than thrown, for {@link LoadingRewrites},
+     * whose callers decide whether a refusal fails anything and record whether a link was added.
      */
-    static Optional<LoadingRewrites.Refusal> synthesise(TypeDefinitionRegistry registry,
-                                                        Map<String, SchemaInput> bySource) {
+    static Result synthesise(TypeDefinitionRegistry registry, Map<String, SchemaInput> bySource) {
         boolean anyTagged = bySource.values().stream().anyMatch(i -> i.tag().isPresent());
         if (!anyTagged) {
-            return Optional.empty();
+            return new Result.Untouched();
         }
 
         Optional<Directive> federationLink = findFederationLink(registry);
@@ -82,7 +94,7 @@ public final class TagLinkSynthesiser {
         }
         var link = federationLink.get();
         if (tagIsImported(link)) {
-            return Optional.empty();
+            return new Result.Untouched();
         }
         var loc = link.getSourceLocation();
         String locDesc = loc != null
@@ -90,7 +102,7 @@ public final class TagLinkSynthesiser {
                 : "(unknown location)";
         String message = "<schemaInput tag> is configured but '@tag' is not in the @link import list"
                 + " at " + locDesc + ". Add \"@tag\" to the import array.";
-        return Optional.of(new LoadingRewrites.Refusal.TagNotImported(message, loc,
+        return new Result.Refused(new LoadingRewrites.Refusal.TagNotImported(message, loc,
                 new ValidationFailedException(List.of(new ValidationError(
                         null, Rejection.invalidSchema(message), loc)))));
     }
@@ -135,7 +147,7 @@ public final class TagLinkSynthesiser {
         return false;
     }
 
-    private static Optional<LoadingRewrites.Refusal> synthesise(TypeDefinitionRegistry registry) {
+    private static Result synthesise(TypeDefinitionRegistry registry) {
         var linkDirective = Directive.newDirective()
                 .name("link")
                 .argument(Argument.newArgument()
@@ -155,10 +167,10 @@ public final class TagLinkSynthesiser {
                 .directive(linkDirective)
                 .build();
 
-        return registry.add(extension).map(error -> {
+        return registry.add(extension).<Result>map(error -> {
             String message = "Failed to inject synthesised federation @link: " + error.getMessage();
-            return new LoadingRewrites.Refusal.SynthesisedLinkRefused(message,
-                    new IllegalStateException(message));
-        });
+            return new Result.Refused(new LoadingRewrites.Refusal.SynthesisedLinkRefused(message,
+                    new IllegalStateException(message)));
+        }).orElseGet(Result.Synthesised::new);
     }
 }

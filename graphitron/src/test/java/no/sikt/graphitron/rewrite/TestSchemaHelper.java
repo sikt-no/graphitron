@@ -125,7 +125,9 @@ public final class TestSchemaHelper {
                 java.nio.file.Files.createTempDirectory("emitted"),
                 captured)) {
             var assembly = no.sikt.graphitron.model.schema.SchemaAssembly.of(
-                no.sikt.graphitron.model.schema.EmittedRegistry.of(store.registry(),
+                no.sikt.graphitron.model.schema.EmittedRegistry.of(
+                    new no.sikt.graphitron.model.schema.AttributedRegistry(store.registry(),
+                        java.util.Set.of()),
                     new no.sikt.graphitron.model.read.StoreHandle(store.dsl(),
                         no.sikt.graphitron.model.test.CapturedStore.GRAPH)));
             if (assembly instanceof no.sikt.graphitron.model.schema.SchemaAssembly.Assembled a) {

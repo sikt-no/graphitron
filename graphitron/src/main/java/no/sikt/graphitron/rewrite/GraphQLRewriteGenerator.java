@@ -534,7 +534,7 @@ public class GraphQLRewriteGenerator {
      * itself, which is a defect in the generator and is raised as one.
      */
     private graphql.schema.GraphQLSchema emittedSchema(AttributedRegistry attributed) {
-        var assembly = SchemaAssembly.of(EmittedRegistry.of(attributed.registry(), store));
+        var assembly = SchemaAssembly.of(EmittedRegistry.of(attributed, store));
         if (assembly instanceof SchemaAssembly.Assembled assembled) {
             return assembled.schema();
         }

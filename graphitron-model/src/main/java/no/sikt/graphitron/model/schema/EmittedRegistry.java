@@ -15,6 +15,7 @@ import graphql.language.TypeDefinition;
 import graphql.parser.Parser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.model.schema.federation.FederationKeyFieldsParser;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -29,8 +30,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_COINAGE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SYNTHESIZED_FEDERATION_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MINTED;
 import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.select;
+import static org.jooq.impl.DSL.selectOne;
 
 /**
  * The registry the generator emits, derived from the one capture transcribed plus what the store
@@ -86,8 +89,16 @@ import static org.jooq.impl.DSL.select;
  * union, interface or scalar reaches the emitted registry exactly as the author wrote it and this
  * class does not visit one.
  *
- * <p>The registry handed in is not modified; the patch is applied to a copy, so a caller holding
- * the read-only pre-synthesis snapshot keeps it.
+ * <h3>Which registry it starts from</h3>
+ *
+ * <p>The pre-synthesis one, and this class takes it off the {@link AttributedRegistry} itself
+ * rather than trusting a caller to pick the handle. The other handle has already been through
+ * {@code KeyNodeSynthesiser}, so starting from it applies every synthesised key a second time; the
+ * choice belongs with the class that states the contract, and production and tests reach the
+ * derivation through one input shape.
+ *
+ * <p>The registry is not modified; the patch is applied to a copy, so a caller holding the
+ * read-only pre-synthesis snapshot keeps it.
  */
 public final class EmittedRegistry {
 
@@ -103,12 +114,26 @@ public final class EmittedRegistry {
     private EmittedRegistry() {}
 
     /**
+     * The emitted registry for {@code store}'s graph, derived from {@code attributed}'s
+     * pre-synthesis registry.
+     *
+     * @param attributed the run's registry; a caller with no synthesis to account for wraps its
+     *                   own with {@link AttributedRegistry#AttributedRegistry(TypeDefinitionRegistry, java.util.Set)},
+     *                   whose two handles are one object
+     * @param store      the graph's own partition of the fact store
+     */
+    public static TypeDefinitionRegistry of(AttributedRegistry attributed, StoreHandle store) {
+        Objects.requireNonNull(attributed, "attributed");
+        return of(attributed.preSynthesisRegistry(), store);
+    }
+
+    /**
      * The emitted registry for {@code store}'s graph, derived from {@code transcribed}.
      *
      * @param transcribed the registry capture wrote its facts from, which is the pre-synthesis one
      * @param store       the graph's own partition of the fact store
      */
-    public static TypeDefinitionRegistry of(TypeDefinitionRegistry transcribed, StoreHandle store) {
+    private static TypeDefinitionRegistry of(TypeDefinitionRegistry transcribed, StoreHandle store) {
         Objects.requireNonNull(transcribed, "transcribed");
         Objects.requireNonNull(store, "store");
 
@@ -362,7 +387,7 @@ public final class EmittedRegistry {
     private record Replacement(SDLDefinition<?> old, SDLDefinition<?> replacement) {}
 
     // ---------------------------------------------------------------------------------------
-    // Federation keys
+    // Federation tags and keys
     // ---------------------------------------------------------------------------------------
 
     /**
@@ -373,6 +398,14 @@ public final class EmittedRegistry {
      * sees the field. The store names the coining coordinate; the tags themselves are read off the
      * registry being patched, which is the same place every other authored detail on a patched node
      * comes from.
+     *
+     * <p>Only a type the store says was minted inherits. Coinage is written for every carrier
+     * whether or not its mint wins, so a {@code PageInfo} the author declared has coinage rows
+     * like any other, and stamping their tags on it would publish a type the author put in one
+     * feature as belonging to every feature with a connection. Whether the mint stood down is
+     * {@code graphitron_type_minted}'s to say, which is where the author-wins rule already lives,
+     * so the coinage is joined to it rather than checked against the registry here: a second
+     * statement of precedence, and one whose answer would depend on which registry was passed.
      *
      * <p>That is not a shortcut around the store, and the alternative was tried. A tag reaches an
      * element two ways: an author writes it, or a schema input carries one and the tag applier
@@ -396,10 +429,14 @@ public final class EmittedRegistry {
         // arms are not enumerated here: a mint arm added to the schema is one this fold already
         // reads. The whole fold goes when the emitted population carries its own applied
         // directives; see the method's note.
+        var minted = GRAPHITRON_TYPE_MINTED;
         var coined = store.dsl()
             .select(m.TYPE_NAME, m.COORDINATE)
             .from(m)
             .where(m.GRAPH_NAME.eq(store.graphName()))
+            .andExists(selectOne().from(minted)
+                .where(minted.GRAPH_NAME.eq(m.GRAPH_NAME))
+                .and(minted.TYPE_NAME.eq(m.TYPE_NAME)))
             .orderBy(m.TYPE_NAME, m.COORDINATE)
             .fetch();
 
@@ -486,9 +523,12 @@ public final class EmittedRegistry {
      * about provenance, and reading it as provenance would work only for as long as those two facts
      * happen to coincide.
      *
-     * <p>Nothing here checks whether the type already carries the key. The relation's third
-     * condition is that no authored key states the id contract, so its rows are disjoint from the
-     * authored applications by construction rather than by a check this method repeats.
+     * <p>The relation's third condition is that no authored key states the id contract, so its
+     * rows are disjoint from the registry's applications by construction, provided the registry is
+     * the pre-synthesis one. This method enforces that rather than trusting it: a type already
+     * carrying a key with the row's field set means synthesis was applied twice, which is a
+     * generator defect, and it ends the run instead of being skipped, a skip hiding the wrong input
+     * rather than reporting it.
      */
     private static void applySynthesisedKeys(TypeDefinitionRegistry patched, StoreHandle store) {
         var t = GRAPHITRON_SYNTHESIZED_FEDERATION_KEY;
@@ -504,6 +544,13 @@ public final class EmittedRegistry {
                     instanceof ObjectTypeDefinition object)) {
                 continue;
             }
+            if (carriesKey(object, row.get(t.FIELDS_SDL))) {
+                throw new IllegalStateException("Type '" + object.getName() + "' already carries"
+                    + " the @key(fields: \"" + row.get(t.FIELDS_SDL) + "\") the store synthesises"
+                    + " for it. This is a defect in graphitron, not in the schema: key synthesis was"
+                    + " applied twice, the emitted registry having been derived from a registry"
+                    + " that had already been through it.");
+            }
             var directives = new ArrayList<>(object.getDirectives());
             directives.add(keyDirective(row.get(t.FIELDS_SDL), row.get(t.RESOLVABLE)));
             replacements.add(new Replacement(object,
@@ -513,6 +560,29 @@ public final class EmittedRegistry {
             patched.remove(replacement.old());
             patched.add(replacement.replacement());
         }
+    }
+
+    /**
+     * Whether {@code object} already carries a {@code @key} whose {@code fields:} decodes to the
+     * same field set as {@code fieldsSdl}, decoded the way {@code KeyNodeSynthesiser} decides it.
+     * A {@code fields:} that does not decode states no field set and so matches nothing.
+     */
+    private static boolean carriesKey(ObjectTypeDefinition object, String fieldsSdl) {
+        var wanted = FederationKeyFieldsParser.parse(fieldsSdl);
+        for (var directive : object.getDirectives(KEY_DIRECTIVE)) {
+            var argument = directive.getArgument(KEY_FIELDS_ARG);
+            if (argument == null || !(argument.getValue() instanceof StringValue value)) {
+                continue;
+            }
+            try {
+                if (FederationKeyFieldsParser.parse(value.getValue()).equals(wanted)) {
+                    return true;
+                }
+            } catch (FederationKeyFieldsParser.ParseException ignored) {
+                // A malformed fields: argument is the classifier's to report; it is no key here.
+            }
+        }
+        return false;
     }
 
     /**

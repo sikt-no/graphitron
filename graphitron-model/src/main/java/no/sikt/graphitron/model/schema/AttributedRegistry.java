@@ -27,10 +27,13 @@ import java.util.Set;
  * <p>{@code preSynthesisRegistry} exists because {@code KeyNodeSynthesiser} rewrites in place: a
  * consumer that wants the schema an author wrote plus the loading rewrites, and not what synthesis
  * made of it, has nothing to read once the rewrite has run. It is what the generator's own verdict
- * assembles. The store does not take this handle: its assembly composes the corpus with the same
+ * assembles. Capture does not take this handle: its assembly composes the corpus with the same
  * {@link LoadingRewrites} and judges that, so the two verdicts are over one schema, and its macro
  * expansion is the thing that mints the federation keys rather than finding them already there.
- * Loading rewrites are on both sides of it; only synthesis is on one.
+ * Emission does take it: {@link EmittedRegistry#of} patches this handle with what the store says
+ * synthesis added, which on the other handle would be applied a second time. Loading rewrites are
+ * on both sides of the cut, so the configured tags and appended notes are on this handle too; only
+ * synthesis is on one.
  *
  * <p>{@code injectedNames} is captured once, by the pipeline orchestrator, from
  * {@link LoadingRewrites#apply}'s outcome;

@@ -4,15 +4,23 @@ import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ASSEMBLY_SYNTHESISED_LINK;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_ENTRY;
 import static no.sikt.graphitron.model.Tables.INTENT_FEDERATION_KEY;
@@ -237,6 +245,56 @@ class FederationKeyDerivationTest {
         try (var store = CapturedStore.of(tmp, sdl)) {
             assertThat(store.dsl().fetchCount(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY)).isZero();
         }
+    }
+
+    /**
+     * The opt-in's second arm: a configured tag with no {@code @link} in any document. The loading
+     * rewrites synthesise the federation {@code @link}, the generator federates on it, and the
+     * store has to agree although no document states it. Driven both ways and with an authored link
+     * beside the tag, which federates through the first arm and records no synthesis.
+     */
+    @Test
+    @DisplayName("a configured tag with no authored link federates through the synthesised link")
+    void aConfiguredTagIsTheOptInsSecondArm(@TempDir Path tmp) throws IOException {
+        String unlinked = FEDERATED.replace(LINK, "");
+        String linkedWithTag = FEDERATED.replace(LINK,
+            "extend schema @link(url: \"https://specs.apollo.dev/federation/v2.10\","
+                + " import: [\"@key\", \"@tag\"])");
+
+        try (var store = GraphitronStore.captured(context(tmp.resolve("tagged"), unlinked, "stable"))) {
+            assertThat(store.dsl().fetchCount(GRAPHQL_ASSEMBLY_SYNTHESISED_LINK)).isOne();
+            assertThat(synthesizedKeysOf(store.dsl())).containsExactly("Film");
+        }
+        try (var store = GraphitronStore.captured(context(tmp.resolve("untagged"), unlinked, null))) {
+            assertThat(store.dsl().fetchCount(GRAPHQL_ASSEMBLY_SYNTHESISED_LINK)).isZero();
+            assertThat(synthesizedKeysOf(store.dsl())).isEmpty();
+        }
+        try (var store = GraphitronStore.captured(
+                context(tmp.resolve("linked"), linkedWithTag, "stable"))) {
+            assertThat(store.dsl().fetchCount(GRAPHQL_ASSEMBLY_SYNTHESISED_LINK))
+                .as("the author wrote the link, so the composition synthesised none")
+                .isZero();
+            assertThat(synthesizedKeysOf(store.dsl())).containsExactly("Film");
+        }
+    }
+
+    /** A run over one schema file, carrying {@code tag} where it is not null. */
+    private static RunContext context(Path dir, String sdl, String tag) throws IOException {
+        Files.createDirectories(dir);
+        Path file = dir.resolve("schema.graphqls");
+        Files.writeString(file, sdl);
+        return new RunContext(
+            List.of(new SchemaInput(SchemaSource.file(file), Optional.ofNullable(tag), Optional.empty())),
+            dir, "FederationKeyDerivationTest", dir.resolve("out"),
+            TestConfiguration.DEFAULT_OUTPUT_PACKAGE, TestConfiguration.DEFAULT_JOOQ_PACKAGE);
+    }
+
+    /** The types the rule synthesised a key for, by name. */
+    private static List<String> synthesizedKeysOf(DSLContext dsl) {
+        return dsl.select(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME)
+            .from(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY)
+            .orderBy(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME)
+            .fetch(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME);
     }
 
     /** The ordinals of the {@code @key} applications transcribed for a type, in order. */

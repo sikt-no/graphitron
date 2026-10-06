@@ -85,7 +85,7 @@ public final class FederationLinkApplier {
         try {
             var defs = LinkDirectiveProcessor.loadFederationImportedDefinitions(registry);
             if (defs == null) {
-                return new LoadingRewrites.Outcome.Applied(registry, Set.of());
+                return new LoadingRewrites.Outcome.Applied(registry, Set.of(), false);
             }
             var injectedNames = new LinkedHashSet<String>();
             for (var it = defs.iterator(); it.hasNext(); ) {
@@ -97,7 +97,7 @@ public final class FederationLinkApplier {
                     injectedNames.add(named.getName());
                 }
             }
-            return new LoadingRewrites.Outcome.Applied(registry, injectedNames);
+            return new LoadingRewrites.Outcome.Applied(registry, injectedNames, false);
         } catch (MultipleFederationLinksException e) {
             // Drop the cause: its message is a raw Directive{...}Directive{...} dump that
             // Maven appends to ours. buildMultipleLinksMessage produces a developer-friendly

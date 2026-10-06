@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
+import graphql.language.AstPrinter;
+import graphql.language.Directive;
 import graphql.language.EnumTypeDefinition;
 import graphql.language.ObjectTypeDefinition;
 import graphql.schema.idl.SchemaParser;
@@ -61,6 +63,32 @@ class SchemaSdlEmissionTest {
             .contains(FederationSpec.URL)
             .as("federated SDL carries the schema-applied @link declaration (R250)")
             .containsPattern("schema\\s+@link\\s*\\(");
+    }
+
+    /**
+     * No type in the federated SDL carries one {@code @key} twice. Stated as the property, over
+     * every object type, rather than as a count for the node types that once carried the
+     * synthesised key twice: a duplicate is wrong wherever it lands, and a count names only the
+     * types someone thought to check.
+     */
+    @Test
+    void federatedSdlCarriesEachKeyOncePerType() throws IOException {
+        var registry = new SchemaParser().parse(Files.readString(
+            sdlFor("no.sikt.graphitron.generated.federated"), StandardCharsets.UTF_8));
+
+        registry.getTypes(ObjectTypeDefinition.class).forEach(type -> {
+            var keys = type.getDirectives("key").stream()
+                .map(key -> argument(key, "fields") + " " + argument(key, "resolvable"))
+                .toList();
+            assertThat(keys)
+                .as("the @key applications on %s, by fields: and resolvable:", type.getName())
+                .doesNotHaveDuplicates();
+        });
+    }
+
+    private static String argument(Directive directive, String name) {
+        var argument = directive.getArgument(name);
+        return argument == null ? "(absent)" : AstPrinter.printAst(argument.getValue());
     }
 
     @Test

@@ -497,7 +497,8 @@ class GraphQLSchemaProblemsTest {
     }
 
     /**
-     * Every {@code graphql_} relation but the verdict, and the {@code graphitron_} entry relations,
+     * Every {@code graphql_} relation but the two the composition writes, and the
+     * {@code graphitron_} entry relations,
      * as sorted rendered rows: the transcription and the decode, which are functions of the
      * documents alone.
      */
@@ -505,7 +506,8 @@ class GraphQLSchemaProblemsTest {
         var rows = new LinkedHashMap<String, List<String>>();
         for (Table<?> relation : Public.PUBLIC.getTables()) {
             String name = relation.getName().toLowerCase(Locale.ROOT);
-            boolean inScope = (name.startsWith("graphql_") && !name.equals("graphql_schema_problem"))
+            boolean inScope = (name.startsWith("graphql_") && !name.equals("graphql_schema_problem")
+                    && !name.equals("graphql_assembly_synthesised_link"))
                 || EntryFamilyFixture.entryRelations().contains(name);
             if (inScope) {
                 rows.put(name, dsl.selectFrom(relation).fetch().stream()
