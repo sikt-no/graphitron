@@ -1,7 +1,7 @@
 ---
 id: R991
 title: "The schema emitted from the store doubles synthesised @key and tags an author-declared PageInfo"
-status: Spec
+status: Ready
 bucket: bug
 priority: 1
 theme: codegen-correctness
@@ -133,3 +133,19 @@ Non-blocking: `applyInheritedTags` has no javadoc of its own today; its prose si
 comment above `tagDirective`'s javadoc. The planned javadoc revision is the natural place to move it
 onto the method. And the pipeline test's "PageInfo carries no `@tag`" should be read as type-level:
 `TagApplier` tags the declared `PageInfo`'s fields with `stable` and never the type itself.
+
+### Round 2 (2026-10-06, Spec -> Ready, reviewer session 01QQpyuwJ5Bx7ke5Aew8HUf5)
+
+Verdict: sign off. The round-1 finding is resolved: the assembly capture already runs
+`LoadingRewrites.apply` over the same recipe-expanded inputs the generator's
+`AttributedRegistry.load` hands it, so recording the `TagLinkSynthesiser` outcome there and reading
+it as a second opt-in arm of `graphitron_synthesized_federation_key` keeps a tag-only graph's one
+`@key` without moving the predicate. The `('graphitron', 'graphql-assembly')` edge points upstream
+(`ModelCapture` runs the assembly before the decode), and the tag-only pipeline case pins the arm on
+production's path.
+
+Non-blocking: the `graphql_` family charter (`meta_family`) says the family is a transcription with
+exactly one non-transcription resident, `graphql_schema_problem`. `graphql_assembly_synthesised_link`
+is a second one: a fact about the composition the charter already counts as "the toolchain this
+graph is built with". When the DDL lands, amend that sentence so the charter keeps describing the
+family.
