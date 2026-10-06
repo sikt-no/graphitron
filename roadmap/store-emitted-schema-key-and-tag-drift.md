@@ -1,7 +1,7 @@
 ---
 id: R991
 title: "The schema emitted from the store doubles synthesised @key and tags an author-declared PageInfo"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 1
 theme: codegen-correctness
