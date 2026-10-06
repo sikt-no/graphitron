@@ -316,10 +316,7 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
  *       what its seed rule promises rather than to what the retiring walk reached;
  *       {@code no.sikt.graphitron.rewrite.derive.InputOccurrenceShadowTest} binds the input
  *       occurrence-path pair to a structural reference enumeration and to the walk's use-keyed
- *       cascade verdicts, and pins the authored override flag reaching the view at all, with
- *       {@code no.sikt.graphitron.model.intent.InputOccurrenceOverrideTest} carrying what the view
- *       makes of it: the three enclosing sites as their own arms, the boundary a step draws around
- *       what is below it, and the order the nearest witness is picked in;
+ *       cascade verdicts;
  *       {@code no.sikt.graphitron.rewrite.derive.SeparateFetchTest} binds
  *       {@code intent_field_separate_fetch}'s two marker arms to the walk's own gathered delivery
  *       relation over a real capture, and pins the record-handed arm reaching a closure a

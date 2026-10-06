@@ -61,7 +61,6 @@ graphql_union_member
 intent_argmapping_bound_parameter_type
 intent_argmapping_key_column_candidate
 intent_argmapping_projection_defect
-intent_argument_filter_role
 intent_argument_reference_step_hop
 intent_authored_claim_conflict
 intent_authored_field_claim
@@ -69,8 +68,6 @@ intent_authored_type_claim
 intent_bound_table
 intent_carrier_routine_hop
 intent_column_match_claim
-intent_condition_membership
-intent_condition_param_decode
 intent_delivery_container
 intent_errors_field
 intent_errors_field_member
@@ -92,7 +89,6 @@ intent_field_separate_fetch
 intent_foreign_key_column_pair
 intent_input_field_column_scope
 intent_input_occurrence_descent_order
-intent_input_occurrence_override
 intent_mutation_matched_key
 intent_mutation_routine_seat
 intent_mutation_write_agreement

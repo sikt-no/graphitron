@@ -397,16 +397,13 @@ class SupertypeSignatureGateTest {
         // that view is for readers outside this store, and going through it would put a second view
         // body in every detection component that asks this question.
         "intent_poly_member|graphql_implements_interface,graphql_union_member",
-        "intent_argument_filter_role|graphitron_argument_condition_entry,graphitron_field_condition_entry",
         "graphitron_condition_method_route|graphitron_argument_reference_step_entry,graphitron_field_reference_step_entry",
         // Older than its row. The read-surface arms have always unioned the two condition sites;
         // the code-reference arm beside them names class_name, which is the payload column that
         // confirms a union here. The written code reference is the supertype it reaches for, and
         // the row goes when the condition copies do.
         "graphitron_entry_defect_rule|graphitron_argument_condition_entry,graphitron_field_condition_entry",
-        "intent_condition_param_decode|graphitron_argument_condition_entry,graphitron_field_condition_entry",
         "intent_field_producer_reference|graphitron_external_field_entry,graphitron_service_entry",
-        "intent_input_occurrence_override|graphitron_argument_condition_entry,graphitron_field_condition_entry",
         "graphitron_node_id_instruction_rule|graphitron_argument_node_id_entry,graphitron_field_node_id_entry",
         "intent_reference_for_application|graphitron_argument_reference_for_entry,graphitron_reference_for_entry",
         // The scope rule reaching a table by either keying of one resolution, which became visible
@@ -421,7 +418,6 @@ class SupertypeSignatureGateTest {
         // to carry it, so the fold names the field-site relation, and one with arguments names the
         // argument-site one. It is a reconstruction of the set above by this gate's reading and a
         // rule with two cases by its own, and it arrived with that set rather than being written.
-        "intent_condition_membership|graphitron_argument_scope_table,graphitron_field_scope_table",
         // The reachability closure's two arms, which are its seed and its step rather than two
         // answers to one question: an argument names the input type a reach starts from, and an
         // input field names the one it continues to. A supertype here would have to carry every

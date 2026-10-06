@@ -317,8 +317,6 @@ class RelationRegistrationGateTest {
         registrations.put("sql_name_matched_key_column", Arm.DERIVED);
         registrations.put("sql_table_reference", Arm.DERIVED);
         registrations.put("graphitron_condition_method_route", Arm.DERIVED);
-        registrations.put("intent_condition_param_decode", Arm.DERIVED);
-        registrations.put("intent_condition_slot", Arm.DERIVED);
         registrations.put("intent_table_key_candidate", Arm.DERIVED);
         registrations.put("intent_node_metadata_defect", Arm.DERIVED);
         registrations.put("graphitron_node_type", Arm.DERIVED);
@@ -354,7 +352,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_input_field_column_match_rule", Arm.DERIVED);
         registrations.put("graphitron_input_field_filter_role", Arm.DERIVED);
         registrations.put("graphitron_input_field_carrier_role", Arm.DERIVED);
-        registrations.put("intent_condition_membership", Arm.DERIVED);
         registrations.put("graphitron_field_scope_table_rule", Arm.DERIVED);
         registrations.put("graphitron_mutation_write_payload", Arm.DERIVED);
         registrations.put("graphitron_mutation_write_payload_rule", Arm.DERIVED);
@@ -424,7 +421,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_argument_column_match", Arm.DERIVED);
         registrations.put("graphitron_argument_column_match_rule", Arm.DERIVED);
         registrations.put("graphitron_input_field_filter_role_rule", Arm.DERIVED);
-        registrations.put("intent_argument_filter_role", Arm.DERIVED);
         registrations.put("graphitron_facet_binding", Arm.DERIVED);
         registrations.put("graphitron_connection_facet", Arm.DERIVED);
         registrations.put("graphitron_connection_carrier", Arm.DERIVED);
@@ -451,7 +447,6 @@ class RelationRegistrationGateTest {
         registrations.put("intent_input_occurrence_path", Arm.DERIVED);
         registrations.put("intent_input_occurrence_path_step", Arm.DERIVED);
         registrations.put("intent_input_occurrence_descent_order", Arm.DERIVED);
-        registrations.put("intent_input_occurrence_override", Arm.DERIVED);
         registrations.put("intent_authored_claim_conflict", Arm.DERIVED);
         // The defect collapse. UNSHADOWED because the model it would be compared against
         // states no defect population at all: the walk threw, and a thrown error is not a

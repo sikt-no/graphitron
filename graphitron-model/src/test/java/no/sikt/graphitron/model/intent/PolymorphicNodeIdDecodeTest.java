@@ -8,7 +8,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_ARGUMENT_FILTER_ROLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_INPUT_FIELD_FILTER_ROLE;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_CONTAINER_MEMBER;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_CANDIDATE_NODE_TYPE;
@@ -438,26 +437,16 @@ class PolymorphicNodeIdDecodeTest {
     /**
      * A container-naming argument on a generated fetch field: no producer parameter is fed from it, so
      * the value binds a table predicate rather than descending into Java, and the polymorphic rule
-     * does not reach the coordinate. The widening's reach is a claim here, not a discovery: the same
-     * argument draws no {@code NODE_ID} filter role either.
+     * does not reach the coordinate.
      */
     @Test
-    void aContainerAtAReadSideArgumentDrawsTheCoordinateVerdictAndNoFilterRole() {
+    void aContainerAtAReadSideArgumentDrawsTheCoordinateVerdict() {
         withCatalog(dsl -> {
             seedUnion(dsl);
-            // The control, seeded first and at its own coordinate: the same argument shape naming a
-            // node type does draw NODE_ID at precedence 4, so the container's silence below is the
-            // kind predicate rather than this relation drawing nothing at all here.
-            seedField(dsl, GRAPH, "Query", "customers", "Customer", true);
-            seedArgumentNodeId(dsl, GRAPH, "Query", "customers", "customerId", "Customer");
             seedArgumentNodeId(dsl, GRAPH, "Query", "occupants", "occupant", "AddressOccupant");
 
             assertThat(polymorphicDefects(dsl)).containsExactly(
                 "Query.occupants(occupant) AddressOccupant CONTAINER_NOT_AT_A_SLOT -");
-            assertThat(nodeIdFilterRoles(dsl))
-                .as("a container resolves no node key, so it contributes to no filter surface,"
-                    + " while the node type beside it still does")
-                .containsExactly("Query.customers(customerId)");
             assertThat(destinations(dsl))
                 .as("and no decode is carried out at the container's coordinate")
                 .noneMatch(row -> row.startsWith("Query.occupants(occupant)"));
@@ -781,16 +770,5 @@ class PolymorphicNodeIdDecodeTest {
             .fetch()
             .map(x -> x.get(r.TYPE_NAME) + "." + x.get(r.FIELD_NAME) + "@"
                 + x.get(r.RESOLVING_TABLE) + " " + x.get(r.ROLE));
-    }
-
-    private static List<String> nodeIdFilterRoles(DSLContext dsl) {
-        derive(dsl);
-        var f = INTENT_ARGUMENT_FILTER_ROLE;
-        return dsl.select(f.TYPE_NAME, f.FIELD_NAME, f.ARGUMENT_NAME).from(f)
-            .where(f.GRAPH_NAME.eq(GRAPH), f.ROLE.eq("NODE_ID"))
-            .orderBy(f.TYPE_NAME, f.FIELD_NAME, f.ARGUMENT_NAME)
-            .fetch()
-            .map(r -> r.get(f.TYPE_NAME) + "." + r.get(f.FIELD_NAME) + "("
-                + r.get(f.ARGUMENT_NAME) + ")");
     }
 }

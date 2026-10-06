@@ -6161,7 +6161,7 @@ COMMENT ON COLUMN code_method_parameter.parameter_name IS 'the parameter''s name
 COMMENT ON COLUMN code_type.root_class IS 'the fully-qualified class the type names at its root position, type arguments dropped: java.util.List for a List<Film>, and the class itself where the type is one. NULL where the root names no class, which a primitive, a void, an array and a type variable are alike in, so a reader asking what a value has to be to be assigned here reads the absence as "not a class" and does not have to tell those four apart; type_name does tell them apart, for the reader that has to. What a position accepts, and deliberately not how many it accepts: a List<Film> accepts a list, and that it delivers films is code_type_element.delivery''s answer to a different question. The two are stated separately because they diverge exactly where it matters, a reader comparing against a jOOQ record class wanting the list and a reader asking whether one value can be handed over wanting the films';
 COMMENT ON COLUMN code_method_parameter.parameter_type IS 'the type bound at this position, by reference. A parameter is a binding rather than a description: what the type is and what it resolves to are the type''s own facts and are stated once however many positions carry it, which over this module''s main sources is thirteen hundred positions over two hundred types';
 COMMENT ON COLUMN code_method_parameter.role IS 'what the position is for as far as its type alone decides, in a closed vocabulary of four, and the four are exclusive because no type satisfies two of them. DSL_CONTEXT: the run''s own jOOQ context is passed here. TABLE_CONCRETE: the declaration names one generated table, and code_condition_method_parameter_table says which where the catalog holds it. TABLE_ANY: the declaration is org.jooq.Table itself, raw or wildcarded, or a type variable, so the position takes whatever table the site supplies. OTHER: everything else, whose role is the application''s to decide from the arguments and context keys in scope at the site. Decided here rather than by a reader because deciding it needs an assignability walk, which a reader either re-derives through a recursive closure or asks a loader for';
-COMMENT ON COLUMN code_method_parameter.extraction IS 'how a value bound to this position is coerced into it, decided by the declared type alone: ENUM_VALUE_OF where that type is an enum and DIRECT otherwise. The standing rule rather than the last word, a parameter bound to a slot carrying @nodeId receiving that slot''s decoded key instead, which intent_condition_param_decode states as the exception to this. Decided by loading the class, which is what makes it answerable for both populations at once: an author''s own enum and a generated one a column binds to, the second living in the package this reading excludes and so reachable no other way';
+COMMENT ON COLUMN code_method_parameter.extraction IS 'how a value bound to this position is coerced into it, decided by the declared type alone: ENUM_VALUE_OF where that type is an enum and DIRECT otherwise. The standing rule rather than the last word, a parameter bound to a slot carrying @nodeId receiving that slot''s decoded key instead, an exception the generator applies. Decided by loading the class, which is what makes it answerable for both populations at once: an author''s own enum and a generated one a column binds to, the second living in the package this reading excludes and so reachable no other way';
 COMMENT ON COLUMN code_method_parameter.touched_at IS 'when the reading that produced this row ran; swept with the method it hangs on';
 
 CREATE TABLE code_read_slot (
@@ -7301,12 +7301,7 @@ COMMENT ON COLUMN javac_diagnostic.message IS 'javac''s own rendered text (root 
 -- The stratum's second resident group is the input occurrence surface: the path relation and
 -- its step child at the DDL tail enumerate every occurrence of the input surface under a use
 -- site (an occurrence path is its own identity, so this lands ahead of any input-member
--- coordinate work), and intent_input_occurrence_override states the condition cascade's
--- enclosing-override fact as a predicate over path prefixes with its witness kept. The
--- classification walk still evaluates that fact as a boolean threaded through its recursion
--- (capture runs after classification, so the walk cannot read these rows); the shadow
--- agreement binds the two evaluations, and the walk-side re-derivation retires when capture
--- moves ahead of classification.
+-- coordinate work).
 --
 -- The stratum's fourth resident group is the class-backing chain, which answers which Java class
 -- a type is backed by and is a chain rather than a relation because that question decomposes.
@@ -8225,45 +8220,6 @@ COMMENT ON COLUMN intent_field_chain_terminus.table_schema IS 'the landing table
 COMMENT ON COLUMN intent_field_chain_terminus.table_name IS 'the landing table''s SQL name. With the two columns above this is sql_table''s full key, so the terminus''s columns, its primary key and its generated classes are each one join away';
 COMMENT ON COLUMN intent_field_chain_terminus.table_type IS 'the landing''s kind, carried from sql_table: FUNCTION where the chain ends on the routine''s own result, whatever the hopped-to table declares otherwise. The column every axis over this relation actually turns on, because a function result has no primary key and no foreign keys, so an ordering there cannot fall back on a key and must be authored. Always FUNCTION on a ROUTINE row, which is worth carrying rather than leaving to the via column: a reader asks one column whichever arm answered, and the day a non-function callable reaches a chain the answer changes here instead of at every reader';
 COMMENT ON COLUMN intent_field_chain_terminus.candidates IS 'how many distinct tables this field''s chain lands on, this row''s landing being one of them; 1 where the terminus is certain. Distinct landings and not routes, which is the arity a reader of a terminus needs and the reason this relation counts differently from the hop and target views; stated as a column rather than left to each reader''s own count, on intent_bound_table.candidates'' terms';
-
-CREATE VIEW intent_condition_slot
-  (graph_name, site, use_site, slot_name, slot_kind, container_type_name, container_field_name,
-   named_type, non_null, is_list, item_non_null) AS
-SELECT mr.graph_name, mr.site, mr.use_site, a.argument_name, 'ARGUMENT',
-       mr.type_name, mr.field_name, a.named_type, a.non_null, a.is_list, a.item_non_null
-  FROM graphitron_method_reference_entry mr
-  JOIN graphql_argument a
-    ON a.graph_name = mr.graph_name AND a.type_name = mr.type_name
-   AND a.field_name = mr.field_name
- WHERE mr.site = 'FIELD_CONDITION'
- UNION ALL
-SELECT mr.graph_name, mr.site, mr.use_site, a.argument_name, 'ARGUMENT',
-       mr.type_name, mr.field_name, a.named_type, a.non_null, a.is_list, a.item_non_null
-  FROM graphitron_method_reference_entry mr
-  JOIN graphql_argument a
-    ON a.graph_name = mr.graph_name AND a.type_name = mr.type_name
-   AND a.field_name = mr.field_name AND a.argument_name = mr.argument_name
- WHERE mr.site = 'ARGUMENT_CONDITION'
- UNION ALL
-SELECT mr.graph_name, mr.site, mr.use_site, f.field_name, 'INPUT_FIELD',
-       mr.type_name, mr.field_name, f.named_type, f.non_null, f.is_list, f.item_non_null
-  FROM graphitron_method_reference_entry mr
-  JOIN graphitron_field f
-    ON f.graph_name = mr.graph_name AND f.type_name = mr.type_name
-   AND f.field_name = mr.field_name
- WHERE mr.site = 'INPUT_FIELD_CONDITION';
-COMMENT ON VIEW intent_condition_slot IS 'One GraphQL slot in scope at one application of a @condition: one row per argument or input field a parameter of the named method may bind there. For example a field condition on films(rating: String, first: Int) draws two rows, one per argument, while a condition written on the rating argument itself draws only that one.';
-COMMENT ON COLUMN intent_condition_slot.graph_name IS 'the owning graph''s partition, carried from the method reference; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN intent_condition_slot.site IS 'which condition spelling the application is, in graphitron_method_reference_entry.site''s own vocabulary; part of the key, and what decides which arm drew the row';
-COMMENT ON COLUMN intent_condition_slot.use_site IS 'the application spelled as one string, in the spelling graphitron_method_reference_entry.use_site and graphitron_argmapping_entry.use_site already use';
-COMMENT ON COLUMN intent_condition_slot.slot_name IS 'the slot''s own name, completing the key: the argument name on an ARGUMENT row, the input field''s name on an INPUT_FIELD row. This is the name a parameter matches to bind by identity, and the name an argMapping head segment names';
-COMMENT ON COLUMN intent_condition_slot.slot_kind IS 'ARGUMENT or INPUT_FIELD, saying which relation declared the slot: graphql_argument at a site whose slots are a field''s arguments, and graphql_field at an input-field site. A closed two-value vocabulary, the arms of this view being the whole of what can produce a slot';
-COMMENT ON COLUMN intent_condition_slot.container_type_name IS 'the type owning the coordinate the directive sits on, carried so the slot''s declaration is one join away';
-COMMENT ON COLUMN intent_condition_slot.container_field_name IS 'the field owning the coordinate: the field the argument belongs to on an ARGUMENT row, the input field itself on an INPUT_FIELD row';
-COMMENT ON COLUMN intent_condition_slot.named_type IS 'the slot''s named type with every wrapper stripped, as the declaring relation spells it';
-COMMENT ON COLUMN intent_condition_slot.non_null IS 'whether the slot''s outermost wrapper is non-null';
-COMMENT ON COLUMN intent_condition_slot.is_list IS 'whether the slot is list-shaped, which is what a depth-1 descent refuses to walk through';
-COMMENT ON COLUMN intent_condition_slot.item_non_null IS 'whether a list slot''s items are non-null; NULL where the slot is not a list';
 
 CREATE VIEW graphitron_connection_element_type
   (graph_name, type_name, element_type_name) AS
@@ -9736,7 +9692,7 @@ CREATE TABLE graphitron_field_scope_table (
 
 CREATE INDEX ix_field_scope_table_coordinate ON graphitron_field_scope_table
   (graph_name, type_name, field_name);
-COMMENT ON INDEX ix_field_scope_table_coordinate IS 'Serves the coordinate probe every correlating reader makes, of which intent_condition_membership is the one that forced the measurement: it holds a set of contributing coordinates and asks this relation for each one''s table. Measured against a store captured from the example schema, that reader is 6167 milliseconds with this relation a view, 342 with it this table, and 91045 with the table carrying no index at all. The index is therefore part of storing the rule rather than a tuning of it: without it the target is fifteen times worse than the view it replaced, an inlined view being evaluable restricted where a table can only be scanned.';
+COMMENT ON INDEX ix_field_scope_table_coordinate IS 'Serves the coordinate probe every correlating reader makes, of which a condition-membership view since retired was the one that forced the measurement: it held a set of contributing coordinates and asked this relation for each one''s table. Measured against a store captured from the example schema, that reader was 6167 milliseconds with this relation a view, 342 with it this table, and 91045 with the table carrying no index at all. The index is therefore part of storing the rule rather than a tuning of it: without it the target is fifteen times worse than the view it replaced, an inlined view being evaluable restricted where a table can only be scanned.';
 
 CREATE VIEW graphitron_field_scope_table_rule
   (graph_name, type_name, field_name, basis,
@@ -10646,44 +10602,6 @@ COMMENT ON VIEW intent_input_occurrence_descent_order IS 'Deprecated with the wh
 COMMENT ON COLUMN intent_input_occurrence_descent_order.graph_name IS 'the owning graph''s partition, carried from the occurrence path; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN intent_input_occurrence_descent_order.path IS 'the occurrence this rank is about; with graph_name, the key intent_input_occurrence_path is keyed by, which is what a reader joins on';
 COMMENT ON COLUMN intent_input_occurrence_descent_order.ordinal IS 'zero-based position of the occurrence in its argument''s descent, dense within that argument: the argument occurrence itself is zero, a grouping input precedes every field it groups, and siblings follow their declaration order. Comparable only against another rank under the same argument.';
-
-CREATE VIEW intent_input_occurrence_override
-  (graph_name, path, override_type_name, override_field_name, override_argument_name) AS
-SELECT graph_name, path, override_type_name, override_field_name, override_argument_name
-  FROM (SELECT o.graph_name, o.path, o.override_type_name, o.override_field_name,
-               o.override_argument_name,
-               ROW_NUMBER() OVER (PARTITION BY o.graph_name, o.path ORDER BY o.nearness DESC) AS rn
-          FROM (SELECT p.graph_name, p.path,
-                       fc.type_name AS override_type_name, fc.field_name AS override_field_name,
-                       CAST(NULL AS VARCHAR) AS override_argument_name, 0 AS nearness
-                  FROM intent_input_occurrence_path p
-                  JOIN graphitron_field_condition_entry fc
-                    ON fc.graph_name = p.graph_name AND fc.type_name = p.root_type_name
-                   AND fc.field_name = p.root_field_name AND fc.override = TRUE
-                UNION ALL
-                SELECT p.graph_name, p.path,
-                       ac.type_name, ac.field_name, ac.argument_name, 1
-                  FROM intent_input_occurrence_path p
-                  JOIN graphitron_argument_condition_entry ac
-                    ON ac.graph_name = p.graph_name AND ac.type_name = p.root_type_name
-                   AND ac.field_name = p.root_field_name
-                   AND ac.argument_name = p.root_argument_name AND ac.override = TRUE
-                UNION ALL
-                SELECT p.graph_name, p.path,
-                       fc.type_name, fc.field_name, CAST(NULL AS VARCHAR), 1 + s.ordinal
-                  FROM intent_input_occurrence_path p
-                  JOIN intent_input_occurrence_path_step s
-                    ON s.graph_name = p.graph_name AND s.path = p.path AND s.ordinal < p.depth
-                  JOIN graphitron_field_condition_entry fc
-                    ON fc.graph_name = s.graph_name AND fc.type_name = s.container_type_name
-                   AND fc.field_name = s.field_name AND fc.override = TRUE) o) w
- WHERE rn = 1;
-COMMENT ON VIEW intent_input_occurrence_override IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. The cascade fact as a predicate over path prefixes: one row per occurrence path with an enclosing @condition(override: true), which in the classification walk is the enclosingOverride boolean threaded through the recursion. A path''s enclosing sites are the use-site field''s own @condition, the argument''s @condition, and the @condition of every step strictly above the leaf (the leaf''s own override is the condition-owned carrier''s fact, not a cascade fact). Absence is the no-override reading, which is what the use-keyed cascade verdict fires on when the leaf is unbound. The witness columns name the nearest enclosing overriding site (deepest step first, then the argument, then the field), the row the admitted-because message and the future fix-it need; a NULL argument name means the witness is a field-site condition row, the witness''s own key shape across the two condition relations.';
-COMMENT ON COLUMN intent_input_occurrence_override.graph_name IS 'the owning graph''s partition, carried from the path';
-COMMENT ON COLUMN intent_input_occurrence_override.path IS 'the overridden occurrence path';
-COMMENT ON COLUMN intent_input_occurrence_override.override_type_name IS 'witness: the overriding @condition site''s owning type (an input object type for a step witness)';
-COMMENT ON COLUMN intent_input_occurrence_override.override_field_name IS 'witness: the overriding site''s field name';
-COMMENT ON COLUMN intent_input_occurrence_override.override_argument_name IS 'witness: the overriding site''s argument name; NULL when the witness is a field-site condition (graphitron_field_condition_entry''s key shape), non-NULL when it is the argument-site relation''s row';
 
 CREATE TABLE graphitron_input_field_resolving_table (
   graph_name        VARCHAR NOT NULL,
@@ -11643,83 +11561,6 @@ COMMENT ON COLUMN graphitron_node_id_instruction.carries_reference_path IS 'whet
 COMMENT ON COLUMN graphitron_node_id_instruction.source_name IS 'the SDL file the instruction was captured from; the directive application''s own position on the three directive bases, and the slot declaration''s on the two name-carried ones, there being no application to locate';
 COMMENT ON COLUMN graphitron_node_id_instruction.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_node_id_instruction.source_column IS 'source column, 1-based per the graphql-java convention';
-
-CREATE INDEX ix_node_id_instruction_coordinate ON graphitron_node_id_instruction
-  (graph_name, site, type_name, field_name);
-COMMENT ON INDEX ix_node_id_instruction_coordinate IS 'Serves the slot coordinate a reader joining this table by site holds: intent_condition_param_decode, whose three arms probe an ARGUMENT and an INPUT_FIELD row from the captured @condition beside it, two of them at an argument. The materialization is what makes the index necessary rather than an optimisation: the rule stated as a view is evaluated restricted, H2 pushing a probe''s equality down into the union arms, and a table is scanned whole unless a key lets the probe reach its rows. Measured on the read-cost gate''s twelve-unit fixture with statistics current, the reader costs 9787 scans without this index and 2426 with it, against 2923 for the same reader over the rule view, so the index is what turns a stored table that cost that reader more into one that costs it less. Site leads the coordinate because every probe fixes it: a reader binds a value from an argument or from an input field and never from both, so the discriminator is a constant per arm rather than a column compared. Not UNIQUE and not the grain: an input field''s use sites are several per coordinate, the occurrence path telling them apart, and that path is deliberately not in the key because no reader probes by it.';
-
-CREATE VIEW intent_condition_param_decode
-  (graph_name, site, type_name, field_name, argument_name, path, use_site,
-   class_name, method_name, node_type_name, key_arity, list_valued) AS
-WITH
-key_shape (graph_name, type_name, arity) AS (
-  SELECT graph_name, type_name, CAST(COUNT(*) AS INT)
-    FROM graphitron_node_keycolumn
-   GROUP BY graph_name, type_name
-)
-SELECT i.graph_name, 'ARGUMENT', i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
-       c.class_name, c.method, i.resolved_type_name, k.arity, a.is_list
-  FROM graphitron_argument_condition_entry c
-  JOIN graphql_argument a
-    ON a.graph_name = c.graph_name AND a.type_name = c.type_name
-   AND a.field_name = c.field_name AND a.argument_name = c.argument_name
-  JOIN graphitron_node_id_instruction i
-    ON i.graph_name = c.graph_name AND i.site = 'ARGUMENT'
-   AND i.type_name = c.type_name AND i.field_name = c.field_name
-   AND i.argument_name = c.argument_name
-  JOIN key_shape k
-    ON k.graph_name = i.graph_name AND k.type_name = i.resolved_type_name
- WHERE c.class_name IS NOT NULL AND c.method IS NOT NULL
- UNION ALL
-SELECT i.graph_name, 'INPUT_FIELD', i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
-       c.class_name, c.method, i.resolved_type_name, k.arity, f.is_list
-  FROM graphitron_field_condition_entry c
-  JOIN graphql_type t
-    ON t.graph_name = c.graph_name AND t.type_name = c.type_name
-   AND t.kind = 'INPUT_OBJECT'
-  JOIN graphql_field f
-    ON f.graph_name = c.graph_name AND f.type_name = c.type_name
-   AND f.field_name = c.field_name
-  JOIN graphitron_node_id_instruction i
-    ON i.graph_name = c.graph_name AND i.site = 'INPUT_FIELD'
-   AND i.type_name = c.type_name AND i.field_name = c.field_name
-  JOIN key_shape k
-    ON k.graph_name = i.graph_name AND k.type_name = i.resolved_type_name
- WHERE c.class_name IS NOT NULL AND c.method IS NOT NULL
- UNION ALL
-SELECT i.graph_name, 'ARGUMENT', i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
-       c.class_name, c.method, i.resolved_type_name, k.arity, a.is_list
-  FROM graphitron_field_condition_entry c
-  JOIN graphql_type t
-    ON t.graph_name = c.graph_name AND t.type_name = c.type_name
-   AND t.kind IN ('OBJECT', 'INTERFACE')
-  JOIN graphitron_node_id_instruction i
-    ON i.graph_name = c.graph_name AND i.site = 'ARGUMENT'
-   AND i.type_name = c.type_name AND i.field_name = c.field_name
-  JOIN graphql_argument a
-    ON a.graph_name = i.graph_name AND a.type_name = i.type_name
-   AND a.field_name = i.field_name AND a.argument_name = i.argument_name
-  JOIN key_shape k
-    ON k.graph_name = i.graph_name AND k.type_name = i.resolved_type_name
- WHERE c.class_name IS NOT NULL AND c.method IS NOT NULL
-   AND NOT EXISTS (SELECT 1
-                     FROM graphitron_argument_condition_entry ac
-                    WHERE ac.graph_name = i.graph_name AND ac.type_name = i.type_name
-                      AND ac.field_name = i.field_name AND ac.argument_name = i.argument_name
-                      AND ac.class_name = c.class_name AND ac.method = c.method);
-COMMENT ON VIEW intent_condition_param_decode IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Where a @condition parameter bound to a slot is exempted from the declared-type extraction rule and receives the slot''s decoded node key instead, and what shape that key has. The override half of a pair: code_method_parameter.extraction states the standing rule by declared type, this states the exception, and presence here is the whole of what says the exception applies. Absence is not a silence; it is the assertion that the declared-type rule stands at that coordinate, which is the shape the fact model uses wherever a rule has an exception rather than a variant. The population is every slot carrying the @nodeId instruction that a @condition names a class and a method at, and a slot is named two ways: by its own directive, and by a directive on the field whose arguments it is one of. So the arms are three where the slot sites a value is bound from are two, an argument and an input field. Each arm reads its directive at the coordinate capture wrote it to: an argument condition at the three-part coordinate, an input-field condition at the shared field coordinate with the owning type''s kind INPUT_OBJECT, and a field-level condition at that same shared coordinate with the kind an object or an interface, the slots it sees being its field''s own arguments. They are one relation because they are one rule: the generator installs the decode keyed on the slot, so a parameter bound to a @nodeId argument receives the decoded key however the directive binding it was written, and an arm missing here would assert the declared-type rule stands at a coordinate where it does not. Keyed by the method as well as by the coordinate, for the reason the third arm makes visible: one argument can be named by its own @condition and by its field''s at once, and those are two authored methods each receiving the decoded key, so class_name and method_name complete the key rather than riding as payload of the coordinate. Two directives naming one method at one coordinate stay one row, which the third arm''s anti-join is what says: the exemption is a fact about a slot and a method, and a second directive asserting it again adds no fact. Use-keyed, and that is the point of it being separate: the rule the extraction relation states is a fact of a signature and the same signature written at two sites is one row there, while this is a fact of a site, so one method named by a @nodeId-bound slot at one coordinate and a plain scalar at another is one row here and not two answers on one method-keyed row. The coordinate it carries is graphitron_node_id_instruction''s own, so a reader holding a use site joins straight across; the instruction relation''s multiplicity is inherited whole, one row per consuming coordinate for an input field and one row for an argument. What this relation does not say is which of the method''s parameters receives the decoded key. That is the binding question the fact model defers everywhere: which parameter takes an argument, which takes the source table and which takes a context value is decided per directive application from the slots and the context keys in scope, and code_method_parameter''s own comment defers it for the same reason. A reader that has resolved the binding for itself, which the editor and the validator both have, reads the shape here and needs nothing further; a reader that has not cannot get it from this relation and must not read the row as naming a parameter. The shape is stated as an arity and a list flag rather than as a Java type, because the type is the generator''s composition of two facts a reader already has: the key columns'' own types, at graphitron_node_keycolumn''s grain, and the wrapping this relation names. An arity of one means the key column''s own type, above one means the typed jOOQ Row of the key columns in key order, and list_valued wraps either. Spelling the composed type here would be a second statement of a convention that lives in generated code, and it would go stale against a column type change this relation cannot see. Population boundary, since a hole reads as an exemption that does not apply: a slot whose node type resolves no key columns has no row, the arity join being what excludes it, and that coordinate already meets a shipped rejection naming the type rather than needing a row here to be silent about. A parameter reached by a dotted argMapping into the key columns of the same slot is a different mechanism at a different grain, the projection rail''s, and is not this relation''s exemption; the two do not overlap because a dotted binding is not a whole-slot binding.';
-COMMENT ON COLUMN intent_condition_param_decode.graph_name IS 'the owning graph''s partition, carried from the instruction the row is about; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN intent_condition_param_decode.site IS 'which SDL site carries the slot, in a closed vocabulary of two: ARGUMENT and INPUT_FIELD. Narrower than graphitron_node_id_instruction.site''s three by construction, an output field binding no value into a condition method; the column every other column''s nullness is determined by, on that relation''s terms. The slot''s site and not the directive''s, which is why two of the three arms land ARGUMENT: a field-level @condition is written at a field and binds that field''s arguments, so what it exempts sits at an argument like the argument''s own directive does';
-COMMENT ON COLUMN intent_condition_param_decode.type_name IS 'the GraphQL type owning the slot''s field: the object type at an argument, the input object type at an input field';
-COMMENT ON COLUMN intent_condition_param_decode.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN intent_condition_param_decode.argument_name IS 'the argument the slot is, where the site is an argument; NULL at an input field, on graphitron_node_id_instruction.argument_name''s terms';
-COMMENT ON COLUMN intent_condition_param_decode.path IS 'the occurrence path reaching the slot, where the site is an input field; NULL at an argument, on graphitron_node_id_instruction.path''s terms';
-COMMENT ON COLUMN intent_condition_param_decode.use_site IS 'the consuming coordinate this row is about, carried whole from graphitron_node_id_instruction.use_site so a reader holding one joins straight across. Part of the key, and what makes this relation use-keyed rather than method-keyed';
-COMMENT ON COLUMN intent_condition_param_decode.class_name IS 'the condition class as the author wrote it, fully qualified; the same spelling code_method_parameter.class_name carries, so a reader holding one row of each is holding two statements about one method. Part of the key with the method beside it, one argument being nameable by its own @condition and by its field''s at once';
-COMMENT ON COLUMN intent_condition_param_decode.method_name IS 'the condition method name as the author wrote it, completing the key with the class beside it. No descriptor there, unlike code_method_parameter: this row is a statement about a slot and not about a signature, and every overload a name resolves to receives the same decoded key at this coordinate';
-COMMENT ON COLUMN intent_condition_param_decode.node_type_name IS 'the node type the slot''s instruction resolved, carried from graphitron_node_id_instruction.resolved_type_name; what the decode is a decode of, and the type whose key columns graphitron_node_keycolumn lists. A node type and not a container, which the arity join is what enforces rather than a predicate here: a container resolves no key columns, so a slot whose typeName: names one draws no row on any of the three arms, which is the silence the view comment discloses';
-COMMENT ON COLUMN intent_condition_param_decode.key_arity IS 'how many key columns the node type resolved, one or more. One means the bound parameter receives the key column''s own Java type; above one means the typed jOOQ Row of the key columns in key order. Never zero: a slot whose node type resolves no key columns is not a row at all, that coordinate meeting a shipped rejection instead';
-COMMENT ON COLUMN intent_condition_param_decode.list_valued IS 'whether the slot is list-shaped in the SDL, read off the slot''s own captured declaration. The wrapping applied over the shape key_arity names, and carried rather than derived because list-ness is a fact of the slot and the arity is a fact of the node type; the two are independent and a reader needs both to name the parameter type';
 
 CREATE VIEW intent_node_id_decode_endpoint
   (graph_name, site, type_name, field_name, argument_name, path, use_site, node_type_name,
@@ -12765,122 +12606,6 @@ COMMENT ON COLUMN intent_node_id_decode_landing_defect.source_name IS 'the SDL f
 COMMENT ON COLUMN intent_node_id_decode_landing_defect.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN intent_node_id_decode_landing_defect.source_column IS 'source column, 1-based per the graphql-java convention';
 
-CREATE VIEW intent_argument_filter_role
-  (graph_name, type_name, field_name, argument_name, role, lookup_key, suppressed,
-   source_name, source_line, source_column) AS
-WITH argument_node_id (graph_name, type_name, field_name, argument_name,
-                       wired, falls_through) AS (
-  SELECT n.graph_name, n.type_name, n.field_name, n.argument_name,
-         n.is_id AND NOT n.has_binding
-           AND (NOT n.implicit
-                OR (NOT n.shadowed
-                    AND NOT (n.arity > 1 AND NOT n.lookup_key)
-                    AND NOT (n.is_list AND n.arity = 1 AND NOT n.lookup_key))),
-         n.implicit
-           AND (n.has_binding
-                OR (n.is_list AND n.arity = 1 AND NOT n.lookup_key))
-    FROM (SELECT DISTINCT i.graph_name, i.type_name, i.field_name, i.argument_name,
-                 CASE WHEN i.basis = 'TARGET_ID_NAME' THEN TRUE ELSE FALSE END AS implicit,
-                 COALESCE(ks.arity, 1) AS arity,
-                 CASE WHEN a.named_type = 'ID' THEN TRUE ELSE FALSE END AS is_id,
-                 a.is_list,
-                 CASE WHEN EXISTS (SELECT 1 FROM graphitron_argument_binding_entry ab
-                                    WHERE ab.graph_name = i.graph_name
-                                      AND ab.type_name = i.type_name
-                                      AND ab.field_name = i.field_name
-                                      AND ab.argument_name = i.argument_name)
-                      THEN TRUE ELSE FALSE END AS has_binding,
-                 CASE WHEN EXISTS (SELECT 1 FROM graphitron_argument_lookup_key_entry lk
-                                    WHERE lk.graph_name = i.graph_name
-                                      AND lk.type_name = i.type_name
-                                      AND lk.field_name = i.field_name
-                                      AND lk.argument_name = i.argument_name)
-                      THEN TRUE ELSE FALSE END AS lookup_key,
-                 CASE WHEN EXISTS (SELECT 1 FROM graphitron_argument_column_match m
-                                    WHERE m.graph_name = i.graph_name
-                                      AND m.type_name = i.type_name
-                                      AND m.field_name = i.field_name
-                                      AND m.argument_name = i.argument_name)
-                      THEN TRUE ELSE FALSE END AS shadowed
-            FROM graphitron_node_id_instruction i
-            JOIN graphql_argument a
-              ON a.graph_name = i.graph_name AND a.type_name = i.type_name
-             AND a.field_name = i.field_name AND a.argument_name = i.argument_name
-            LEFT JOIN intent_resolved_node_key_shape ks
-              ON ks.graph_name = i.graph_name AND ks.type_name = i.resolved_type_name
-           -- Node types only. The role below means the predicate's columns come from the resolved
-           -- node key, and a container resolves none: without this predicate a container-naming ID
-           -- argument with no @field(name:) binding would reduce through NOT implicit to
-           -- is_id AND NOT has_binding and draw NODE_ID at precedence 4, which
-           -- intent_condition_membership then carries into a contributor set with nothing behind
-           -- it. Excluded by what the type is rather than read as the single-column shape a node
-           -- has when nothing says otherwise.
-           WHERE i.site = 'ARGUMENT' AND i.resolved_type_kind = 'NODE_TYPE') n
-)
-SELECT graph_name, type_name, field_name, argument_name, role, lookup_key, suppressed,
-       source_name, source_line, source_column
-  FROM (SELECT arm.graph_name, arm.type_name, arm.field_name, arm.argument_name, arm.role,
-               CASE WHEN EXISTS (SELECT 1 FROM graphitron_argument_lookup_key_entry lk
-                                  WHERE lk.graph_name = arm.graph_name
-                                    AND lk.type_name = arm.type_name
-                                    AND lk.field_name = arm.field_name
-                                    AND lk.argument_name = arm.argument_name)
-                    THEN TRUE ELSE FALSE END AS lookup_key,
-               CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_condition_entry fc
-                                  WHERE fc.graph_name = arm.graph_name
-                                    AND fc.type_name = arm.type_name
-                                    AND fc.field_name = arm.field_name
-                                    AND fc.override)
-                      OR EXISTS (SELECT 1 FROM graphitron_argument_condition_entry ac
-                                  WHERE ac.graph_name = arm.graph_name
-                                    AND ac.type_name = arm.type_name
-                                    AND ac.field_name = arm.field_name
-                                    AND ac.argument_name = arm.argument_name
-                                    AND ac.override)
-                    THEN TRUE ELSE FALSE END AS suppressed,
-               a.source_name, a.source_line, a.source_column,
-               ROW_NUMBER() OVER (
-                 PARTITION BY arm.graph_name, arm.type_name, arm.field_name, arm.argument_name
-                 ORDER BY arm.precedence) AS rn
-          FROM (SELECT graph_name, type_name, field_name, argument_name,
-                       'ORDER_BY' AS role, 1 AS precedence
-                  FROM graphitron_order_by_entry
-                 UNION ALL
-                SELECT graph_name, type_name, field_name, argument_name, 'PAGINATE', 2
-                  FROM graphql_argument
-                 WHERE argument_name IN ('first', 'last', 'after', 'before')
-                 UNION ALL
-                SELECT a.graph_name, a.type_name, a.field_name, a.argument_name,
-                       'INPUT_EXPANSION', 3
-                  FROM graphql_argument a
-                  JOIN graphql_type it
-                    ON it.graph_name = a.graph_name AND it.type_name = a.named_type
-                   AND it.kind = 'INPUT_OBJECT'
-                 UNION ALL
-                SELECT n.graph_name, n.type_name, n.field_name, n.argument_name,
-                       CASE WHEN n.wired THEN 'NODE_ID' ELSE 'NONE' END, 4
-                  FROM argument_node_id n
-                 WHERE NOT n.falls_through
-                 UNION ALL
-                SELECT m.graph_name, m.type_name, m.field_name, m.argument_name,
-                       'NAME_MATCHED', 5
-                  FROM graphitron_argument_column_match m) arm
-          JOIN graphql_argument a
-            ON a.graph_name = arm.graph_name AND a.type_name = arm.type_name
-           AND a.field_name = arm.field_name AND a.argument_name = arm.argument_name) ranked
- WHERE rn = 1 AND role <> 'NONE';
-COMMENT ON VIEW intent_argument_filter_role IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Which rule resolves what one argument contributes to the filter surface of the field it sits on. The argument-grain counterpart of the field-grain claim stratum, and the relation a consumer building a generated WHERE clause reads before it reads any of the rules'' own relations, because what it needs first is which of them applies. The classifier''s argument switch is an ordered fork rather than a set of disjoint tests, so this is a ranked collapse and not a union: @orderBy first, then a pagination-role name, then an input-object type, then the node-id decode, then the name match. Stating it as a union would let a @lookupKey-marked @orderBy argument surface twice, and picking either row would be a precedence this relation invented; the rank is the switch''s own order transcribed. Absence is where no rule answers, and every one of those sites is a rejection''s population rather than an argument that quietly contributes nothing: an unresolvable name, a repeated @reference, an @asFacet-style misuse. What the roles mean. ORDER_BY and PAGINATE contribute no predicate at all, the ordering and pagination facts consuming those arguments; PAGINATE reads the four reserved names, which is a generator constant rather than a captured fact and so is stated here in the derivation where the capture doctrine puts such things. INPUT_EXPANSION means the contribution is the argument''s input type''s own fields, resolved at their coordinates and not at this one, so a reader following it changes grain. NODE_ID means the predicate''s columns come from the resolved node key rather than from a name, and the population is the NODE_TYPE rows of graphitron_node_id_instruction rather than the directive: that relation already carries both readings, the authored @nodeId and the implicit one at an ID argument literally named id on a field returning a node type, with the type resolution and every decline it makes already applied. Reading that relation whole is what the kind column ended. An authored @nodeId may name a polymorphic container at a @service slot, so an instruction no longer promises a node type, and the kind predicate is this relation''s own rather than something the instruction relation already applied on its behalf. Restating either rule here was the first draft of this relation and it was wrong twice over, duplicating a rule the store states and getting the implicit one''s reach narrower than the store''s. What this relation adds is the wiring the instruction relation deliberately does not state: an instruction says the decode applies at a site, and whether the classifier can build a filter from it is a separate question with three exits. A @field(name:) binding beside it names two binding axes at once and the site resolves to nothing. On the implicit reading only, a column of that name on the argument''s own scope shadows it into nothing, a composite key without @lookupKey is unwired and resolves to nothing, and a list at arity one without @lookupKey falls through to the name match, which is the one exit that lands on another role rather than on silence. Those three are the implicit reading''s because the authored directive''s equivalents are the decode''s own forks, which graphitron_node_id_instruction and the decode relations below it already answer. Where a named type resolves to no key at all the fork is on the kind and not on the arity. A container is excluded by what it is, ahead of the three exits above: it resolves no key of its own, its members'' keys being the decode''s business rather than a column this relation could project. A node type is read as the single-column shape, which is the shape a node has when nothing says otherwise, and no arity this relation could invent would change that. NAME_MATCHED means the predicate compares the column graphitron_argument_column_match resolved, and it covers the @reference-pathed argument and the plain one alike: the two are one rule here because the column resolution already tells them apart, its scope''s basis saying whether the predicate lands on the field''s own table or a join away. It also covers the argument of a multi-table polymorphic root, which it did not before the participant fan-out reached the column resolution: such a coordinate is rooted in one table per branch, the name resolves against each of them, and this relation had no row at all where the classifier lowers a predicate per branch. Which is where the grain of this relation and the grain below it deliberately part. The rule an argument falls under is the argument''s and is the same on every branch, so this stays one row per argument, and the branch-specific answer, which column on which table, is the resolution''s to give; a reader assembling a branch''s filter surface joins the match on the table it is assembling for. That division is the one this relation already declares for the monomorphic case, that it chooses the rule and does not assemble the predicate, and the fan-out only makes the reason visible. Two consequences worth stating rather than leaving to be met. A name that reaches a column on one participant''s table and none on another''s carries NAME_MATCHED here on the strength of the branch that resolved, which is a rejection''s population and reads as one only against the match rows, per the reading of absence this relation already takes. And the implicit node id''s shadowing modifier is an existence test over those same rows, so it reads "shadowed on some branch"; branches disagreeing on it is the same detection over the same pair, not a second vocabulary here. Two columns beside the role are modifiers and not arms, because the classifier treats them that way. lookup_key says the argument is consumed by the keyed lookup instead of the WHERE clause, which it can be on the node-id and name-matched roles alike, so folding it into the vocabulary would have split two roles into four. suppressed says an override cascade suppresses the generated predicate, from @condition(override: true) on the field or on the argument; it is not an absence because a suppressed argument carrying its own @condition still contributes that authored filter, and on an INPUT_EXPANSION row it is the cascade''s starting value for the walk into the input type. What this relation does not state is the predicate itself. Which column, which comparison and which reach are the resolution relations'' answers, read through the role; putting them here would make this a filter-surface relation at the wrong grain, an argument being where the rule is chosen and not where the predicate is assembled.';
-COMMENT ON COLUMN intent_argument_filter_role.graph_name IS 'the owning graph''s partition, carried from graphql_argument';
-COMMENT ON COLUMN intent_argument_filter_role.type_name IS 'the type owning the field the argument sits on';
-COMMENT ON COLUMN intent_argument_filter_role.field_name IS 'the field the argument sits on';
-COMMENT ON COLUMN intent_argument_filter_role.argument_name IS 'the argument''s name within the owning field; the grain, one row per argument any rule answers for';
-COMMENT ON COLUMN intent_argument_filter_role.role IS 'which rule resolves the contribution: ORDER_BY, PAGINATE, INPUT_EXPANSION, NODE_ID or NAME_MATCHED, the winner of the ranked fork. A closed vocabulary, and a new classifier arm is a new value here rather than a silence';
-COMMENT ON COLUMN intent_argument_filter_role.lookup_key IS '@lookupKey on the argument: the value is consumed by the keyed lookup rather than by the WHERE clause. A modifier on the role and not a role, because the classifier reads it inside several arms rather than instead of them';
-COMMENT ON COLUMN intent_argument_filter_role.suppressed IS 'an override cascade suppresses the generated predicate: @condition(override: true) on the field or on the argument. Not an absence, an argument carrying its own @condition still contributing that authored filter; on an INPUT_EXPANSION row it is what the walk into the input type starts from';
-COMMENT ON COLUMN intent_argument_filter_role.source_name IS 'the argument''s own declaration file; the position a diagnostic would carry';
-COMMENT ON COLUMN intent_argument_filter_role.source_line IS 'source line of the argument declaration, 1-based';
-COMMENT ON COLUMN intent_argument_filter_role.source_column IS 'source column of the argument declaration, 1-based';
-
 CREATE TABLE graphitron_input_field_filter_role (
   graph_name            VARCHAR NOT NULL,
   type_name             VARCHAR NOT NULL,
@@ -12919,7 +12644,7 @@ node_id_at_table (graph_name, type_name, field_name,
     JOIN graphitron_argument_scope_table sc
       ON sc.graph_name = p.graph_name AND sc.type_name = p.root_type_name
      AND sc.field_name = p.root_field_name AND sc.argument_name = p.root_argument_name
-   -- Node types only, for the reason intent_argument_filter_role states one rung over: this arm
+   -- Node types only: this arm
    -- emits NODE_ID wherever the group hits, and a container-naming input field missed the group
    -- before the instruction population admitted containers. It would now hit wherever the root
    -- argument's scope table resolves, flipping the role at a read-side filter input on a type that
@@ -13187,110 +12912,6 @@ COMMENT ON COLUMN graphitron_input_field_carrier_role.resolving_source_name IS '
 COMMENT ON COLUMN graphitron_input_field_carrier_role.resolving_schema IS 'the classifying table''s SQL schema; part of the grain, as above';
 COMMENT ON COLUMN graphitron_input_field_carrier_role.resolving_table IS 'the classifying table''s SQL name; with the two coordinate columns and the two columns above, the grain';
 COMMENT ON COLUMN graphitron_input_field_carrier_role.carrier_role IS 'what the carrier points at: OWN_COLUMNS, SELF_FK, CROSS_TABLE_FK or REMOTE, the four the classifier can answer. A closed vocabulary, and a fifth carrier shape is a new value here rather than a silence';
-
-CREATE VIEW intent_condition_membership
-  (graph_name, type_name, field_name, basis,
-   table_source_name, table_schema, table_name) AS
-WITH
-filtering (graph_name, type_name, field_name) AS (
-  SELECT f.graph_name, f.type_name, f.field_name
-    FROM graphql_field f
-    LEFT JOIN graphitron_mutation_entry m
-      ON m.graph_name = f.graph_name AND m.type_name = f.type_name
-     AND m.field_name = f.field_name
-    LEFT JOIN graphitron_service_entry sv
-      ON sv.graph_name = f.graph_name AND sv.type_name = f.type_name
-     AND sv.field_name = f.field_name
-    LEFT JOIN (SELECT r.graph_name, r.type_name
-                 FROM graphql_root_operation r
-                 JOIN graphql_type nt
-                   ON nt.graph_name = r.graph_name AND nt.type_name = 'Node'
-                  AND nt.kind = 'INTERFACE'
-                WHERE r.operation <> 'MUTATION') node_root
-      ON node_root.graph_name = f.graph_name AND node_root.type_name = f.type_name
-     AND f.named_type = 'Node'
-   WHERE m.field_name IS NULL
-     AND sv.field_name IS NULL
-     AND node_root.type_name IS NULL
-),
-occurrence (graph_name, type_name, field_name, argument_name, path,
-            input_type_name, input_field_name) AS (
-  SELECT p.graph_name, p.root_type_name, p.root_field_name, p.root_argument_name, p.path,
-         s.container_type_name, s.field_name
-    FROM intent_input_occurrence_path p
-    JOIN intent_input_occurrence_path_step s
-      ON s.graph_name = p.graph_name AND s.path = p.path AND s.ordinal = p.depth
-    JOIN intent_argument_filter_role ar
-      ON ar.graph_name = p.graph_name AND ar.type_name = p.root_type_name
-     AND ar.field_name = p.root_field_name AND ar.argument_name = p.root_argument_name
-     AND ar.lookup_key = FALSE
-),
-input_role (graph_name, type_name, field_name, path,
-            input_type_name, input_field_name, role, authored_condition) AS (
-  SELECT o.graph_name, o.type_name, o.field_name, o.path,
-         o.input_type_name, o.input_field_name, r.role, r.authored_condition
-    FROM occurrence o
-    JOIN graphitron_argument_scope_table a
-      ON a.graph_name = o.graph_name AND a.type_name = o.type_name
-     AND a.field_name = o.field_name AND a.argument_name = o.argument_name
-    JOIN graphitron_input_field_filter_role r
-      ON r.graph_name = o.graph_name AND r.type_name = o.input_type_name
-     AND r.field_name = o.input_field_name
-     AND r.resolving_source_name = a.table_source_name
-     AND r.resolving_schema = a.table_schema
-     AND r.resolving_table = a.table_name
-),
-contributor (graph_name, type_name, field_name) AS (
-  SELECT c.graph_name, c.type_name, c.field_name
-    FROM graphitron_field_condition_entry c
-    JOIN graphql_type t
-      ON t.graph_name = c.graph_name AND t.type_name = c.type_name
-     AND t.kind <> 'INPUT_OBJECT'
-   UNION
-  SELECT c.graph_name, c.type_name, c.field_name
-    FROM graphitron_argument_condition_entry c
-   UNION
-  SELECT o.graph_name, o.type_name, o.field_name
-    FROM occurrence o
-    JOIN graphitron_field_condition_entry c
-      ON c.graph_name = o.graph_name AND c.type_name = o.input_type_name
-     AND c.field_name = o.input_field_name
-   UNION
-  SELECT r.graph_name, r.type_name, r.field_name
-    FROM intent_argument_filter_role r
-   WHERE r.role IN ('NODE_ID', 'NAME_MATCHED')
-     AND r.suppressed = FALSE
-     AND r.lookup_key = FALSE
-   UNION
-  SELECT i.graph_name, i.type_name, i.field_name
-    FROM input_role i
-    LEFT JOIN intent_input_occurrence_override ov
-      ON ov.graph_name = i.graph_name AND ov.path = i.path
-    LEFT JOIN graphitron_field_lookup_key_entry lk
-      ON lk.graph_name = i.graph_name AND lk.type_name = i.input_type_name
-     AND lk.field_name = i.input_field_name
-   WHERE i.role IN ('NODE_ID', 'NAME_MATCHED')
-     AND i.authored_condition = FALSE
-     AND ov.path IS NULL
-     AND lk.field_name IS NULL
-)
-SELECT c.graph_name, c.type_name, c.field_name, t.basis,
-       t.table_source_name, t.table_schema, t.table_name
-  FROM contributor c
-  JOIN filtering fl
-    ON fl.graph_name = c.graph_name AND fl.type_name = c.type_name
-   AND fl.field_name = c.field_name
-  JOIN graphitron_field_scope_table t
-    ON t.graph_name = c.graph_name AND t.type_name = c.type_name
-   AND t.field_name = c.field_name;
-COMMENT ON VIEW intent_condition_membership IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Which tables a coordinate contributes a WHERE clause against, one row per coordinate and table. The condition family''s membership fold: a consumer minting the generated filter glue reads this to know which glue exists, and every other relation in the family answers a question about a row this one admits. Membership is presence and nothing else, which is what makes it a fold rather than a payload: what the predicates are, which columns they compare and which arguments carry them are the resolution relations'' answers, read through this one. The rule is that the coordinate''s lowered filter surface is nonempty, and it is nonempty when any of five sources contributes. Three are authored and cannot be suppressed, a @condition being a method the author wrote and asked to have called: one on the field itself, one on any argument of it whatever that argument''s role, and one on any input field the field''s arguments reach at any depth. Two are generated and can be: an argument whose role resolves a predicate, and an input field whose role does. The generated pair is where the modifiers matter, and they are read at the grain the classifier reads them at. An argument contributes only when its role is one that resolves a predicate, which is NODE_ID or NAME_MATCHED and not the four that resolve something else; ORDER_BY and PAGINATE are consumed by the ordering and pagination facts, and INPUT_EXPANSION contributes nothing of its own, the contribution being the fields below it, which arrive here as the input-field sources instead. An input field contributes under the same two roles, and additionally not when the override cascade suppresses it, which is intent_input_occurrence_override read at the occurrence rather than at the field, and not when a @lookupKey consumes it. That last exclusion propagates: a @lookupKey on the argument consumes the whole expansion beneath it, so an occurrence under such an argument contributes nothing at any depth, which is a rule about the argument applied at the grain of the field under it. Four kinds of coordinate are excluded outright because their filter surface is not a filter surface. A mutation''s predicates come from the write partition and not from here, and the write payload argument that would otherwise read as a filter is the largest part of what that exclusion removes. A @service field generates no SQL at all. The relay node field resolves a node and never filters, its shape carrying the node-resolve member and no condition member however its id argument classifies. And an argument consumed by a keyed lookup is the VALUES-and-join path rather than the WHERE clause. Each is stated as its own exclusion rather than folded into one predicate, because they are four different reasons and a reader debugging a missing row wants to know which one fired. The table side is graphitron_field_scope_table at its own grain, which is why that relation''s grain had to be corrected before this fold could exist: a @condition on a field with no arguments has a table to filter and no argument to carry it. A multi-table polymorphic root gets one row per branch here for free, that relation carrying a PARTICIPANT_TABLE row per participant table, and the branch fan-out is therefore the scope table''s and not this relation''s. Membership itself stays a property of the coordinate: a name that resolves a column on one participant and not on another is a build failure at that participant rather than a membership difference between branches, so the fold has nothing to decide there and deliberately does not fan the sources out. A consumer minting the per-participant glue method, whose name is the participant''s, joins intent_field_participant_scope_table on the table. Three populations are missing from this relation and each is measured rather than supposed. The store has no read-side refusal: a coordinate whose argument classification fails is refused whole and has no filter surface at all, and where the write partition states its refusals in two relations of their own the filter surface states none, so a refused coordinate has a row here that no consumer will find glue for. On a schema that builds, that population is empty, every refusal being a build failure; it is the fold''s one structural gap and closing it is a relation of its own. One more is a silence one rung up, found by diffing this relation against what the producer emits for the example schema and filed: a field returning an author-declared connection type has no scope row, so a coordinate whose only table would come from that row contributes nothing here that the generator does contribute. That diff is no longer run by hand. no.sikt.graphitron.rewrite.derive.ConditionMembershipShadowTest holds this relation''s key set against what the producer yields, so a population that goes missing announces itself as a failing test with the coordinate named rather than as a count in this sentence that nothing recomputes; it retires with the walk when the producer reads the fold. The sibling silence that sentence used to carry, an argument whose @reference path ends in a condition hop resolving no column, is closed: such a path resolves through graphitron_condition_method_route and lands a column scope like any other. Absence otherwise is every coordinate that reads no table, every coordinate whose arguments all resolve to something other than a predicate, and every coordinate whose generated predicates are all suppressed while it carries no authored condition to fall back on.';
-COMMENT ON COLUMN intent_condition_membership.graph_name IS 'the owning graph''s partition, carried from the contributing source; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN intent_condition_membership.type_name IS 'the type owning the filtering field';
-COMMENT ON COLUMN intent_condition_membership.field_name IS 'the field whose filter surface this row admits; with the type above and the table below, the grain, and the same key the condition command relation is keyed by';
-COMMENT ON COLUMN intent_condition_membership.basis IS 'which rule resolved the table, carried from graphitron_field_scope_table unchanged: NAMED_TYPE_TABLE, PAYLOAD_TABLE, MUTATION_TABLE or PARTICIPANT_TABLE. PARTICIPANT_TABLE is the one that changes what a consumer does with the row, marking it one branch of a polymorphic root rather than a coordinate''s whole statement, and so deciding which glue method name is minted; the other three are provenance';
-COMMENT ON COLUMN intent_condition_membership.table_source_name IS 'the filtered table''s catalog partition, the first column of the sql_table key this row names';
-COMMENT ON COLUMN intent_condition_membership.table_schema IS 'the filtered table''s SQL schema';
-COMMENT ON COLUMN intent_condition_membership.table_name IS 'the filtered table''s SQL name; with the two columns above this is sql_table''s full key, so the table''s own columns are one join away';
 
 CREATE TABLE graphitron_mutation_write_payload (
   graph_name         VARCHAR NOT NULL,
@@ -15093,9 +14714,6 @@ INSERT INTO meta_grain VALUES
   ('directive-argument-name',
    'one formal argument of one directive definition in one graph',
    'graph_name, directive_name, argument_name', 'sdl'),
-  ('condition-site-slot',
-   'one GraphQL slot in scope at one application of a @condition directive, in one graph',
-   'graph_name, site, use_site, slot_name', 'sdl'),
   ('graph-scalar',
    'one scalar type of one graph',
    'graph_name, type_name', 'sdl'),
@@ -16050,7 +15668,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_input_field_filter_role', 'input-field-site', 'graphitron',
    'Which rule resolves what one input field contributes at the site that reaches it.',
    'For example the title field of an input classified against film draws one row with the role NAME_MATCHED, and a field carrying @nodeId draws one with NODE_ID.',
-   'The input-field counterpart of intent_argument_filter_role, and the relation a consumer assembling a generated predicate or a generated assignment out of an input surface reads before it reads any of the resolution relations under it, because what it needs first is which of them applies. The grain differs from the argument relation''s, and that is the first thing to know about it. An argument''s role is a function of the argument. An input field''s is a function of the field and the table it was classified against, because two arms of the fork ask the catalog a question about that table: whether the written name reaches a column on it, and whether it backs exactly one node type. So the resolving table is part of the key here exactly as it is on the three resolution relations below, and the same input field reached under two arguments whose fields select from different tables carries two rows and can carry two different roles. The switch is an ordered fork rather than a set of disjoint tests, so this is a ranked collapse and not a union: the two retired directive applications first, then an authored @nodeId, then a @reference path, then a nested input object, then the implicit node id, then the condition-owned carrier, then the name match, then the unbound carrier. Written once per capture by a stage of the graphitron gatherer, from the rule view beside it.'),
+   'The relation a consumer assembling a generated predicate or a generated assignment out of an input surface reads before it reads any of the resolution relations under it, because what it needs first is which of them applies. Its grain is the first thing to know about it. An input field''s role is a function of the field and the table it was classified against, because two arms of the fork ask the catalog a question about that table: whether the written name reaches a column on it, and whether it backs exactly one node type. So the resolving table is part of the key here exactly as it is on the three resolution relations below, and the same input field reached under two arguments whose fields select from different tables carries two rows and can carry two different roles. The switch is an ordered fork rather than a set of disjoint tests, so this is a ranked collapse and not a union: the two retired directive applications first, then an authored @nodeId, then a @reference path, then a nested input object, then the implicit node id, then the condition-owned carrier, then the name match, then the unbound carrier. Written once per capture by a stage of the graphitron gatherer, from the rule view beside it.'),
   ('graphitron_input_field_filter_role_rule', 'input-field-site', 'graphitron',
    'One row the input-field filter-role rule computes, in the shape graphitron_input_field_filter_role stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_input_field_filter_role, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
@@ -16295,10 +15913,6 @@ INSERT INTO meta_relation VALUES
    'One javac diagnostic from the latest compile round over a graph''s emitted sources.',
    'For example an ERROR at line 42 of a generated FilmResolver.java, carrying the compiler''s own code and rendered message.',
    'The compile oracle''s verdict on what a run emitted, which nothing in the store can derive: whether javac accepts the output is a fact about the compiler rather than about the schema. Graph-keyed and graph-private, a sibling graph''s compile errors being its internals rather than its schema contract, and a round replaces the graph''s rows wholesale so the relation''s content is exactly the published round. Only a dev session ever writes here: in the batch pipeline javac runs in the consumer''s own build after the generator exits, so a batch run''s partition stays empty rather than claiming what it cannot know.'),
-  ('intent_condition_slot', 'condition-site-slot', 'graphitron',
-   'One GraphQL slot in scope at one application of a @condition: one row per argument or input field a parameter of the named method may bind there.',
-   'For example a field condition on films(rating: String, first: Int) draws two rows, one per argument, while a condition written on the rating argument itself draws only that one.',
-   'The scope is the site''s rule rather than the method''s: three condition spellings admit three different sets, and every reader that pairs parameters with slots needs the same one. Stated once here so the arms are not respelled per reader. A path-step condition draws no row, its method binding nothing, so silence at that site is the rule and not a gap. The slot''s type rides along because a slot is a name and a type together, and the inference that pairs an unbound parameter with a slot reads both.'),
   ('intent_reference_for_application', 'reference-for-application', 'graphitron',
    'One @referenceFor application paired with a consuming coordinate that offers the participant it names: one row per application and consumer whose participant set holds the spelling.',
    'For example an application naming Film under an input type two queries consume draws a row for the query whose union holds Film and none for the query whose does not.',

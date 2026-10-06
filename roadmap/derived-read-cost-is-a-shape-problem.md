@@ -702,7 +702,12 @@ conversion frees one.
   branch's subtraction. Twenty-nine classes seed the per-site copies of a code reference, through
   `seedService`, `seedFieldCondition`, `seedArgumentCondition`, `seedExternalField` and their
   argMapping variants; three of them are the node-id subject's and wait with it. Of the other
-  twenty-six, seventeen need no corpus change; the rest wait on a gap each, eight catalog shapes
+  twenty-six, seventeen need no corpus change, and two of those pinned a view nothing read, so they
+  went with `intent_condition_slot` and `intent_condition_param_decode` rather than converting, as
+  did three more with `intent_condition_membership`, `intent_argument_filter_role` and
+  `intent_input_occurrence_override`, which read only each other, and with them the gap
+  `ArgumentFilterRoleTest` held. A class's pinned view is checked for a production reader, through
+  every view between, before the class is converted. The rest wait on a gap each, eight catalog shapes
   and ten classpath ones, two of which want a second classpath entry rather than a class. Every
   class and gap, and the cases no capture reaches, in
   `roadmap/audits/2026-10-03-code-reference-subject-gaps.md`.

@@ -25,40 +25,22 @@ import java.util.Map;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_OVERRIDE;
 import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH;
 import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH_STEP;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The shadow reader of the input occurrence surface, and the registered agreement anchor for
- * {@code intent_input_occurrence_path}, its step child, and
- * {@code intent_input_occurrence_override}. Three bindings, each deliberately independent of
- * the others' machinery: the derived path population equals a structural reference enumeration
- * recomputed from the assembled schema (classification-independent, so tombstoned consumers
- * cost no exclusion list); the override view equals the {@code @condition(override:)} facts
- * read from the same enumeration's AST; and every use-keyed cascade verdict the classification
- * walk mints into the build diagnostics names a derived path that has no override row.
+ * {@code intent_input_occurrence_path} and its step child. Two bindings, each deliberately
+ * independent of the other's machinery: the derived path population equals a structural reference
+ * enumeration recomputed from the assembled schema (classification-independent, so tombstoned
+ * consumers cost no exclusion list); and every use-keyed cascade verdict the classification walk
+ * mints into the build diagnostics names a derived path.
  *
- * <p>That third binding is one-directional by design, and this is the drift it cannot catch:
- * a store predicate too narrow (an occurrence the derivation misses, or an override row it
- * over-produces) suppresses no walk verdict, because the walk still evaluates its own threaded
- * {@code enclosingOverride} boolean in production. The converse binding arrives when the
- * store-side unbound predicate lands with its own slice and the detection reads these
- * relations; until then the targeted fixtures pin each population non-empty (an admitted
- * cascade, a rejected cascade at two use sites, the malformed shape inside a cascade, cyclic
- * nesting), so the bindings cannot go vacuous, and
- * {@link #rejectedCascadeAtTwoUseSitesMintsTwoUseKeyedFacts} is the named fixture pinning the
- * Java mint's path serialization equal to the store key.
- *
- * <p>Which occurrences the override view calls enclosed, and which of several enclosing sites it
- * names as the witness, is not asked here. That is the view's own algebra, its three site arms,
- * the boundary each draws and the order it picks a witness in, and it lives in the module whose
- * DDL declares it, in {@code no.sikt.graphitron.model.intent.InputOccurrenceOverrideTest}, against
- * a store seeded row by row. What the fixtures below owe instead is the capture side of the same
- * relation: that an author's {@code @condition(override: true)} arrives as a flag the view reads,
- * that the occurrences it answers over are the ones the walk expands, and that the walk's verdicts
- * and the view's rows do not both go empty at once.
+ * <p>The targeted fixtures pin each population non-empty (an admitted cascade, a rejected cascade
+ * at two use sites, the malformed shape inside a cascade, cyclic nesting), so the bindings cannot
+ * go vacuous, and {@link #rejectedCascadeAtTwoUseSitesMintsTwoUseKeyedFacts} is the named fixture
+ * pinning the Java mint's path serialization equal to the store key.
  */
 @PipelineTier
 class InputOccurrenceShadowTest {
@@ -73,8 +55,8 @@ class InputOccurrenceShadowTest {
 
     /**
      * Per corpus example, captured as its own graph in one store: the derived paths equal the
-     * reference enumeration, the override rows equal the AST-read expectation, and each cascade
-     * verdict's quoted path is a derived row with no override row. The floor on compared paths
+     * reference enumeration, and each cascade verdict's quoted path is a derived row. The floor on
+     * compared paths
      * keeps the sweep from passing on an accidentally empty surface.
      */
     @Test
@@ -93,13 +75,6 @@ class InputOccurrenceShadowTest {
                     .containsExactlyInAnyOrderElementsOf(expected.keySet());
                 comparedPaths += derived.size();
 
-                var overridden = fetchOverriddenPaths(dsl, example.id());
-                var expectedOverridden = expected.entrySet().stream()
-                    .filter(Map.Entry::getValue).map(Map.Entry::getKey).collect(java.util.stream.Collectors.toSet());
-                assertThat(overridden)
-                    .as("override view vs the AST-read cascade expectation (%s)", example.id())
-                    .containsExactlyInAnyOrderElementsOf(expectedOverridden);
-
                 for (var diagnostic : bundle.model().diagnostics()) {
                     String path = occurrencePathOf(diagnostic.message());
                     if (path == null) continue;
@@ -107,9 +82,6 @@ class InputOccurrenceShadowTest {
                     assertThat(derived)
                         .as("cascade verdict names a derived path (%s): %s", example.id(), path)
                         .contains(path);
-                    assertThat(overridden)
-                        .as("cascade verdict fired on an unoverridden path (%s): %s", example.id(), path)
-                        .doesNotContain(path);
                 }
             }
             return new Tally(comparedPaths, cascadeVerdicts);
@@ -125,13 +97,10 @@ class InputOccurrenceShadowTest {
 
     /**
      * The admitted cascade: an arg-level {@code @condition(override: true)} resolves the unbound
-     * field, so the walk mints no cascade verdict and the consumer classifies, while the override
-     * view carries the path. The flag is the fixture's subject on this side: written in SDL at a
-     * site the walk reads, it has to arrive in the store as a flag the view reads too, which is
-     * what keeps the seeded half's arms from being about a column nothing populates.
+     * field, so the walk mints no cascade verdict and the consumer classifies.
      */
     @Test
-    void admittedCascadeSilencesTheWalkAndReachesTheOverrideView() {
+    void admittedCascadeSilencesTheWalk() {
         String sdl = """
             input PlainFilter { foo: String }
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
@@ -145,10 +114,6 @@ class InputOccurrenceShadowTest {
         assertThat(schema.field("Query", "films"))
             .isNotInstanceOf(GraphitronField.UnclassifiedField.class);
         assertThat(schema.diagnostics()).noneMatch(d -> d.message().contains(OCCURRENCE_MARK));
-        try (var store = CapturedStore.ofCatalog(tmp, sdl, jooq())) {
-            assertThat(fetchOverriddenPaths(store.dsl(), GRAPH))
-                .contains("Query.films(filter)/foo");
-        }
     }
 
     /**
@@ -181,7 +146,6 @@ class InputOccurrenceShadowTest {
             "Query.films(filter)/foo", "Query.moreFilms(other)/foo");
         try (var store = CapturedStore.ofCatalog(tmp, sdl, jooq())) {
             assertThat(fetchPaths(store.dsl(), GRAPH)).containsAll(mintedPaths);
-            assertThat(fetchOverriddenPaths(store.dsl(), GRAPH)).isEmpty();
         }
     }
 
@@ -330,18 +294,6 @@ class InputOccurrenceShadowTest {
             .fetch(org.jooq.Record1::value1));
     }
 
-    private static Set<String> fetchOverriddenPaths(DSLContext dsl, String graphName) {
-        return new LinkedHashSet<>(dsl.select(INTENT_INPUT_OCCURRENCE_OVERRIDE.PATH)
-            .from(INTENT_INPUT_OCCURRENCE_OVERRIDE)
-            .where(INTENT_INPUT_OCCURRENCE_OVERRIDE.GRAPH_NAME.eq(graphName))
-            .fetch(org.jooq.Record1::value1));
-    }
-
-    /**
-     * A corpus example's SDL as the walk sees it. The Relay Node interface is appended when absent
-     * so the captured document matches the one the walk parses, {@link TestSchemaHelper} injecting
-     * it there.
-     */
     private static String preluded(CorpusDocuments.Document example) {
         String full = CorpusDocuments.prelude() + "\n" + example.sdl();
         return full.contains("interface Node") ? full : full + "\ninterface Node { id: ID! }\n";

@@ -19,7 +19,6 @@
 # emitted-element-family arm, rather than in any definition text.
 
 graphitron_argument_column_match_rule graphql_type
-intent_argument_filter_role graphql_type
 intent_authored_claim_conflict graphql_field
 intent_authored_field_claim graphql_field
 intent_authored_field_claim graphql_type
@@ -28,10 +27,6 @@ graphitron_carrier_data_field_rule graphql_type
 intent_carrier_routine_hop graphql_field
 intent_column_match_claim graphql_field
 intent_column_match_claim graphql_type
-intent_condition_membership graphql_field
-intent_condition_membership graphql_type
-intent_condition_param_decode graphql_field
-intent_condition_param_decode graphql_type
 intent_errors_field graphql_field
 intent_errors_field graphql_type
 graphitron_facet_binding graphql_field
