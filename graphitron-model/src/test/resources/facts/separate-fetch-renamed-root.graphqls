@@ -1,0 +1,19 @@
+# Membership of a root operation is read off the binding and never off the name. Api is the query
+# root here, so its @service field is the root's own entry point and draws ROOT_OPERATION alone;
+# Query is a type bound to no slot, so its @service is an ordinary one.
+
+schema { query: Api }
+
+type Api {
+  films: String @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+}
+
+extend type Query {
+  rated: String @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+}
+
+extend schema @expectEquals(relation: "intent_field_separate_fetch", rows: """
+  type_name, field_name, rule
+  Api,       films,      ROOT_OPERATION
+  Query,     rated,      SERVICE
+  """)

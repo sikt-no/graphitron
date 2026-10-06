@@ -753,6 +753,12 @@ conversion frees one.
   the clearest instance and was not one: every state it seeded is SDL, and it is the fact document
   `carrier-data-field.graphqls`, its four cases one expectation over the whole graph. A class is
   read for what it fabricates before it is called residue.
+* **The code-reference subject's conversions so far** `open`. `CarrierDataFieldPopulationTest` and
+  `SeparateFetchRuleTest` are fact documents; the second keeps one Java case, a contested binding
+  that needs the multischema catalog, which no document can vary. Of what no capture reaches, one
+  type at two root slots went, the specification forbidding it; an input field of an output type
+  became an input field of a `@table` input, the legal shape of the same guard; and the sibling-graph
+  case is the harness's own, every document being its own graph checked alone.
 * **A fresh store per test stops being the only shape** `open`, and it is not tidiness: every
   `sql_` and `code_` relation is store-wide, so one store holds many graphs against one reading of
   the catalog and the classpath, and varying which SDL loads into a warm store is the only thing

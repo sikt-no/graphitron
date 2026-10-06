@@ -34,8 +34,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>What the relation returns given rows is not asked here. Each arm's own population, the
  * boundary the record-handed one draws around a parent both populations answer, the parent's kind
  * guard, and the arity a coordinate several rules reach carries are the view's algebra, and they
- * live in the module whose DDL declares it, in
- * {@code no.sikt.graphitron.model.intent.SeparateFetchRuleTest}, against a store seeded row by row.
+ * live in the module whose DDL declares it, in the fact documents
+ * {@code separate-fetch.graphqls} and {@code separate-fetch-renamed-root.graphqls}, with the
+ * multischema route in {@code no.sikt.graphitron.model.intent.SeparateFetchRuleTest}.
  * The absence cases carry their weight there for the same reason: a field whose value comes out of
  * its parent's row is the population this relation exists to exclude, and stating that boundary
  * takes rows rather than a schema.

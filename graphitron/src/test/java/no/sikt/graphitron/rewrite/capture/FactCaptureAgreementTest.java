@@ -321,7 +321,9 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
  *       {@code intent_field_separate_fetch}'s two marker arms to the walk's own gathered delivery
  *       relation over a real capture, and pins the record-handed arm reaching a closure a
  *       derivation writer materialized from a captured census, with
- *       {@code no.sikt.graphitron.model.intent.SeparateFetchRuleTest} carrying what the view makes
+ *       the fact documents {@code separate-fetch.graphqls} and
+ *       {@code separate-fetch-renamed-root.graphqls}, with
+ *       {@code no.sikt.graphitron.model.intent.SeparateFetchRuleTest}, carrying what the view makes
  *       of those rows: each of the five rules as its own arm, the two boundaries the record-handed
  *       one draws, and the arity a coordinate several rules reach carries against the single row a
  *       rule reaching one coordinate twice still answers with;

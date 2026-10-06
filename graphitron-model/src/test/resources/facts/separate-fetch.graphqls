@@ -1,0 +1,73 @@
+# Which coordinates cost a statement of their own rather than a column of their parent's. Five rules
+# answer, each its own SELECT in the relation's union: the two markers an author writes, the non-root @service, membership of a
+# bound root operation type, and the implicit split under a parent a producer hands back as a Java
+# object, where a child naming a table of its own has no enclosing statement to be projected out of.
+#
+# One graph holding every rule, the fields no rule reaches beside them, so a rule that reaches too far
+# fails as loudly as a missing one. A coordinate several rules reach is several rows.
+
+type Language @table(name: "language") { name: String }
+
+# The two markers sit on sibling fields of one parent, which keeps them two literals. inlined is a
+# child projected out of the parent's statement and draws nothing. Film is also returned by a
+# @service whose method returns its generated record, so the backing closure grounds it on a class
+# as well as on its table: a parent both populations answer is read as a table row, and its
+# children split only for a reason of their own.
+type Film @table(name: "film") {
+  title: String
+  inlined: Language @reference(path: [{key: "film_language_id_fkey"}])
+  deferred: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+  fanned: [Language!]! @tenantFanOut
+  rated: String @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+}
+
+type Plain { name: String }
+
+# Handed back as a Java record by summaries below. A scalar read off the record and a child whose
+# type is bound to no table draw nothing; a child naming a table splits; and films, which three more
+# rules also reach, is four rows.
+type Payload {
+  label: String
+  plain: Plain
+  film: Film
+  films: [Film!]! @splitQuery @tenantFanOut
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "topRated"})
+}
+
+# The same table-bound child under a parent nothing hands, so the enclosing statement exists.
+type Bare { film: Film }
+
+# The closure backs an input object too, a producer's parameter grounding the argument's type, and
+# an input coordinate is not a fetch, so its table-bound field draws nothing.
+input FilmInput @table(name: "film") { title: String }
+input Assign { film: FilmInput }
+
+extend type Query {
+  films: [Film!]!
+  summaries: [Payload!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummaryService", method: "summaries"})
+  topRated: [Film!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "topRated"})
+}
+
+type Mutation {
+  assign(in: Assign!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignFilmRecord"})
+}
+
+extend schema @expectEquals(relation: "intent_field_separate_fetch", rows: """
+  type_name, field_name, rule
+  Query,     ping,       ROOT_OPERATION
+  Query,     films,      ROOT_OPERATION
+  Query,     summaries,  ROOT_OPERATION
+  Query,     topRated,   ROOT_OPERATION
+  Mutation,  assign,     ROOT_OPERATION
+  Film,      deferred,   SPLIT_QUERY
+  Film,      fanned,     TENANT_FAN_OUT
+  Film,      rated,      SERVICE
+  Payload,   film,       RECORD_HANDED_PARENT
+  Payload,   films,      SPLIT_QUERY
+  Payload,   films,      TENANT_FAN_OUT
+  Payload,   films,      SERVICE
+  Payload,   films,      RECORD_HANDED_PARENT
+  """)
