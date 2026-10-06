@@ -64,6 +64,59 @@ No DDL change and no new relation: both fixes read facts the store already holds
 
 ## Other solutions we've considered
 
-- **One-line call-site fix** (`attributed.preSynthesisRegistry()` at `emittedSchema`) plus javadoc. It fixes the reported symptom, and a scratch build of it does, but it leaves the registry-taking entry public, so the next caller can pass the wrong handle and every test keeps reaching the derivation through a different input from production. The overload costs seven mechanical test call sites.
+- **One-line call-site fix** (`attributed.preSynthesisRegistry()` at `emittedSchema`) plus javadoc. It fixes the reported symptom, and a scratch build of it does, but it leaves the registry-taking entry public, so the next caller can pass the wrong handle and every test keeps reaching the derivation through a different input from production. The overload costs eight mechanical test call sites.
 - **Make `applySynthesisedKeys` idempotent.** It hides a wrong input instead of reporting it; the enforcer above is the same check with the opposite consequence.
 - **Stop capture writing coinage for a mint that stands down.** Coinage is a true fact, which application would have minted what, and the family comment argues for writing it unconditionally. The stand-down is already a fact in `graphitron_type_minted`; the reader should join to it.
+
+## Reviewer findings
+
+### Round 1 (2026-10-06, Spec -> Ready, reviewer session 01QCg7kU9TcNVpYovihqLJ7E)
+
+Verdict: withhold. One blocking finding on question one (viability). The goal reads cleanly on its
+own: a federated subgraph's published SDL stops carrying a second synthesised `@key` on `@node`
+types and stops stamping carrier tags onto an author-declared `PageInfo`, which unblocks contract
+variants filtered on a tag. Both diagnoses hold against the tree, the doubled key is visible in the
+built sakila federated `schema.graphqls` today, and the tag fix (semi-join coinage to
+`graphitron_type_minted`) fits the store's existing author-wins fact rather than restating it. The
+blocker is the key fix: switching emission to the pre-synthesis handle makes the store the only
+source of a synthesised `@key`, and the store does not hold one for every build that gets one today.
+
+**Finding 1 (question one: viability). A build that opts into federation only through
+`<schemaInput tag>` loses its synthesised `@key` entirely under this plan.**
+
+`KeyNodeSynthesiser` runs whenever `LoadingRewrites` injected anything
+(`AttributedRegistry.load`, `if (!injectedNames.isEmpty())`). With `<schemaInput tag>` configured
+and no author-written federation `@link`, `TagLinkSynthesiser` adds
+`extend schema @link(url: FederationSpec.URL, import: ["@tag"])`, `FederationLinkApplier` injects
+from it, and synthesis fires. `ConnectionFederationTagPipelineTest` already relies on that link
+("<schemaInput tag> synthesises the federation @link, so emission takes the federation arm").
+
+The store's rule does not see that link. `graphitron_synthesized_federation_key` requires a
+`graphitron_link_entry` row whose url is the federation spec, and that relation is written by the
+decode in `ModelCapture`, which walks `GraphQLAssemblyCapture.AssemblyReading.merged()`: "the
+corpus as written ... neither the tag configuration nor the federation library reaches it." So for a
+tag-only graph the relation has no rows. Today such a build emits exactly one `@key` per node type,
+the one `KeyNodeSynthesiser` wrote into `attributed.registry()`; under the plan, `of` reads
+`preSynthesisRegistry()`, `applySynthesisedKeys` finds nothing to apply, and every node type ships
+without its entity key. That is a regression against RC39 and against the goal's own "both come out
+as they did on RC39", and none of the planned tests would catch it: the reporter's shape and the
+sakila federated fixture both carry an authored federation `@link`, and no sakila execution
+configures `<schemaInput tag>`.
+
+The two producers disagree about the federation opt-in predicate (the generator: anything injected,
+tag-synthesised link included; the store: an authored federation `@link`), and the post-synthesis
+handle currently masks that. What would satisfy this: the plan states how a tag-only build keeps its
+key once emission reads the pre-synthesis handle, which means deciding where the opt-in fact comes
+from (for example, the store capturing the configured-tag opt-in as a fact the relation's opt-in arm
+reads, or some other arm the author prefers), and the Tests section adds a tag-only `@node` case
+(no authored `@link`, one tagged `SchemaInput`) asserting exactly one `@key(fields: "id")` on the
+emitted node type. If the author concludes tag-only builds should not get a synthesised key, that is
+a behaviour change against RC39 and the goal needs to say so.
+
+Corrected in passing: the "Other solutions" count of mechanical test call sites is eight, not seven
+(six in `EmittedRegistryTest`, one each in `TestSchemaHelper` and `EmittedRegistryAgreementTest`).
+
+Non-blocking: `applyInheritedTags` has no javadoc of its own today; its prose sits as a dangling
+comment above `tagDirective`'s javadoc. The planned javadoc revision is the natural place to move it
+onto the method. And the pipeline test's "PageInfo carries no `@tag`" should be read as type-level:
+`TagApplier` tags the declared `PageInfo`'s fields with `stable` and never the type itself.
