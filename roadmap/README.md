@@ -56,8 +56,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R697` | Name matching is a stratum: side relations, match views, and folds nowhere else <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Spec | 2026-09-17 <sub>created 2026-08-17</sub> | [plan](name-matching-stratum.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec | 2026-08-06 | [plan](operation-driven-test-corpus.md) |
 | `R180` | Resolved accessors for record-parent column reads (recordColumnReadArgs) | Spec | 2026-07-15 <sub>created 2026-05-19</sub> | [plan](record-parent-column-read-helper.md) |
-| `R990` | A list @nodeId argument at a java.util.List producer parameter is refused by the store although the generator decodes it | Ready | 2026-10-06 | [plan](nodeid-decode-defect-peels-list-record-slot.md) |
 | `R684` | fact-model doctrine: consumers share relations, not queries | Ready | 2026-08-17 <sub>created 2026-08-16</sub> | [plan](consumers-share-relations-not-queries.md) |
+| `R990` | A list @nodeId argument at a java.util.List producer parameter is refused by the store although the generator decodes it | In Progress | 2026-10-06 | [plan](nodeid-decode-defect-peels-list-record-slot.md) |
 
 ---
 
@@ -500,7 +500,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R267` [**Replace deprecated-for-removal DataType.convert(Object) in NodeIdEncoder.decode<Type>**](nodeid-encoder-deprecated-convert.md) — Backlog, tech-debt
 - `R273` [**Land or retire R265's deferred compile-tier guard**](bare-scalar-id-arm-modernisation.md) — Backlog, architecture
 - `R24` [**Rooted-at-parent NodeId reference JOIN-projection emitter (ColumnBackedReferenceField, both arities)**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
-- `R990` [**A list @nodeId argument at a java.util.List producer parameter is refused by the store although the generator decodes it**](nodeid-decode-defect-peels-list-record-slot.md) — Ready, bug
+- `R990` [**A list @nodeId argument at a java.util.List producer parameter is refused by the store although the generator decodes it**](nodeid-decode-defect-peels-list-record-slot.md) — In Progress, bug
 - `R419` [**Reject list-valued @nodeId+@reference carriers on INSERT inputs at build time**](list-nodeid-reference-insert-rejection.md) — Backlog, validation
 - `R420` [**Support list-valued @nodeId+@reference on INSERT inputs (row fan-out)**](list-nodeid-reference-insert-fanout.md) — Backlog, feature
 
