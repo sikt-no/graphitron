@@ -1,7 +1,7 @@
 ---
 id: R989
 title: "A root @service whose only tenant carrier is a scalar input member cannot route under database-per-tenant"
-status: Ready
+status: In Progress
 bucket: feature
 theme: runtime-connection
 depends-on: []
