@@ -1,7 +1,7 @@
 ---
 id: R988
 title: "The tenant-context fold seeds a @key type no _entities call can dispatch, so its children reject under a bound root"
-status: Ready
+status: In Progress
 bucket: bug
 theme: runtime-connection
 depends-on: []
