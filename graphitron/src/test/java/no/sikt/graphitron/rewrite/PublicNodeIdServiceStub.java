@@ -6,7 +6,7 @@ import org.jooq.Result;
 
 /**
  * Service methods whose parameter is named for a {@code @nodeId} argument, for the fixtures whose
- * subject is the parameter a decoded node id lands in. Four spellings of one signature, differing
+ * subject is the parameter a decoded node id lands in. Several spellings of one signature, differing
  * only in the parameter's type, so a fixture picks the one whose type either agrees with the node
  * key or does not, and one whose return type binds no table at all.
  *
@@ -42,6 +42,27 @@ public class PublicNodeIdServiceStub {
      * whatever the key's arity.
      */
     public static Result<FilmRecord> getFilmsByInventoryKey(InventoryRecord key) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * A list of the node type's own record, which a list argument fills with one decoded tuple per
+     * id: the list decode hands over a {@code java.util.List}.
+     */
+    public static Result<FilmRecord> getFilmsByInventoryKeys(java.util.List<InventoryRecord> key) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** A list of the key column jOOQ binds, one decoded value per id. */
+    public static Result<FilmRecord> getFilmsByIntegerKeys(java.util.List<Integer> key) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * A {@code Set} of the node type's own record: the right element in a container the list decode
+     * does not build.
+     */
+    public static Result<FilmRecord> getFilmsByInventoryKeySet(java.util.Set<InventoryRecord> key) {
         throw new UnsupportedOperationException();
     }
 

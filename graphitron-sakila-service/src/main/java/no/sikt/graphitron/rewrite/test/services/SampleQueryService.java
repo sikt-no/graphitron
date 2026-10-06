@@ -47,6 +47,14 @@ public final class SampleQueryService {
     }
 
     /**
+     * A list {@code @nodeId(typeName: "Film")} argument at a {@code java.util.List} of the sole key
+     * column's type: each wire id arrives decoded to its {@code film_id}.
+     */
+    public static Result<FilmRecord> filmsByNodeIds(List<Integer> ids, DSLContext dsl) {
+        return filmsByService(dsl, ids);
+    }
+
+    /**
      * The key carrier taken literally: one {@code FilmRecord} per requested id, with the key set
      * and no query run at all. Two things this pins that {@link #filmsByService} cannot. A
      * service need not touch the database to answer a {@code @table}-bound field, which is the

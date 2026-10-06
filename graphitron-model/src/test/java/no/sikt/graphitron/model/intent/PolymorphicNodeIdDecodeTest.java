@@ -30,6 +30,7 @@ import static no.sikt.graphitron.model.test.SeededStore.seedField;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldNodeId;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedInputField;
+import static no.sikt.graphitron.model.test.SeededStore.seedListArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedMethod;
 import static no.sikt.graphitron.model.test.SeededStore.seedMethodParameter;
 import static no.sikt.graphitron.model.test.SeededStore.seedNode;
@@ -38,6 +39,7 @@ import static no.sikt.graphitron.model.test.SeededStore.seedOccurrencePath;
 import static no.sikt.graphitron.model.test.SeededStore.seedPrimaryKey;
 import static no.sikt.graphitron.model.test.SeededStore.seedRecordSupertypes;
 import static no.sikt.graphitron.model.test.SeededStore.seedService;
+import static no.sikt.graphitron.model.test.SeededStore.seedServiceArgmappingEntry;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedTable;
 import static no.sikt.graphitron.model.test.SeededStore.seedTableBinding;
@@ -49,7 +51,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * A {@code @nodeId(typeName:)} naming a multitable interface or union: the population it draws, the
  * candidate set it resolves, the destination it reaches at a slot typed as a record supertype, and
- * the five verdicts that refuse it.
+ * the six verdicts that refuse it.
  *
  * <p>Four relations are pinned together because each is defined against the others. The instruction
  * relation says which coordinates carry a container at all and admits every site deliberately; the
@@ -315,6 +317,69 @@ class PolymorphicNodeIdDecodeTest {
         });
     }
 
+    // ===== A list argument lands on the element =====
+
+    /**
+     * A list argument at a {@code java.util.List} of a record supertype: each decoded id lands on one
+     * element, and the element is what every member's record has to be. Admitted on the element,
+     * one destination per member, and no verdict.
+     */
+    @Test
+    void aListOfARecordSupertypeIsAssignableFromEveryMembersRecord() {
+        withCatalog(dsl -> {
+            seedUnion(dsl);
+            seedListArgument(dsl, GRAPH, "Query", "occupants", "occupant", "ID");
+            seedProducerSlot(dsl, "occupant", Map.of("", "java.util.List", "0", UPDATABLE));
+            seedArgumentNodeId(dsl, GRAPH, "Query", "occupants", "occupant", "AddressOccupant");
+
+            assertThat(destinations(dsl)).containsExactly(
+                "Query.occupants(occupant) Customer POLYMORPHIC_RECORD 1",
+                "Query.occupants(occupant) Staff POLYMORPHIC_RECORD 1");
+            assertThat(polymorphicDefects(dsl)).isEmpty();
+        });
+    }
+
+    /**
+     * The same reached through an {@code argMapping} pair, the mapped carrier this view also reads:
+     * the pair's parameter type relation carries the peel the named arm reads off the parameter row,
+     * so both carriers judge the slot on one fact.
+     */
+    @Test
+    void aMappedListOfARecordSupertypeIsAssignableFromEveryMembersRecord() {
+        withCatalog(dsl -> {
+            seedUnion(dsl);
+            seedListArgument(dsl, GRAPH, "Query", "occupants", "occupant", "ID");
+            seedProducerSlot(dsl, "keys", Map.of("", "java.util.List", "0", UPDATABLE));
+            seedServiceArgmappingEntry(dsl, GRAPH, "Query", "occupants", 0, "keys", "occupant");
+            seedArgumentNodeId(dsl, GRAPH, "Query", "occupants", "occupant", "AddressOccupant");
+
+            assertThat(destinations(dsl)).containsExactly(
+                "Query.occupants(occupant) Customer POLYMORPHIC_RECORD 1",
+                "Query.occupants(occupant) Staff POLYMORPHIC_RECORD 1");
+            assertThat(polymorphicDefects(dsl)).isEmpty();
+        });
+    }
+
+    /**
+     * A list argument at a {@code Set} of the same supertype is refused on the shape, by this view's
+     * own verdict, and not on the members: the supertype test stands aside where no decoded value
+     * reaches the landing type. The incumbent view draws nothing, so the two stay disjoint.
+     */
+    @Test
+    void aSetOfARecordSupertypeIsAShapeMismatch() {
+        withCatalog(dsl -> {
+            seedUnion(dsl);
+            seedListArgument(dsl, GRAPH, "Query", "occupants", "occupant", "ID");
+            seedProducerSlot(dsl, "occupant", Map.of("", "java.util.Set", "0", UPDATABLE));
+            seedArgumentNodeId(dsl, GRAPH, "Query", "occupants", "occupant", "AddressOccupant");
+
+            assertThat(destinations(dsl)).isEmpty();
+            assertThat(polymorphicDefects(dsl)).containsExactly(
+                "Query.occupants(occupant) AddressOccupant SLOT_SHAPE_MISMATCH -");
+            assertThat(incumbentDefects(dsl)).isEmpty();
+        });
+    }
+
     // ===== The five verdicts =====
 
     @Test
@@ -547,11 +612,16 @@ class PolymorphicNodeIdDecodeTest {
      * argument's own name and the given type: the whole classpath side of a slot in one call.
      */
     private static void seedProducerSlot(DSLContext dsl, String paramName, String paramClass) {
+        seedProducerSlot(dsl, paramName, Map.of("", paramClass));
+    }
+
+    /** The same over a parameter whose declared type the case states position by position. */
+    private static void seedProducerSlot(DSLContext dsl, String paramName,
+                                         Map<String, String> declaredType) {
         seedService(dsl, GRAPH, "Query", "occupants", SVC, "get");
         seedClass(dsl, CLASSES, SVC, "CLASS");
         seedMethod(dsl, CLASSES, SVC, "get", "()V");
-        seedMethodParameter(dsl, CLASSES, SVC, "get", "()V", 0, paramName,
-            Map.of("", paramClass));
+        seedMethodParameter(dsl, CLASSES, SVC, "get", "()V", 0, paramName, declaredType);
     }
 
     /**

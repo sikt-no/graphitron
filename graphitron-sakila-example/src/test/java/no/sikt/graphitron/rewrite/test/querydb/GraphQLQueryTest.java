@@ -7156,6 +7156,32 @@ class GraphQLQueryTest {
         assertThat(data).extractingByKey("assignFilmActorRecordList").isEqualTo("filmActors:1:2,2:4");
     }
 
+    @Test
+    void filmActorsByIds_decodesAListArgumentIntoAListOfRecords() {
+        // A root @service argument `[ID!]! @nodeId(typeName: "FilmActor")` at a
+        // List<FilmActorRecord> parameter: the list decode hands the service one composite-key
+        // record per wire id, and the rows come back in id order.
+        String fa12 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 1, 2);
+        String fa24 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 2, 4);
+        Map<String, Object> data = execute(
+            "{ filmActorsByIds(ids: [\"" + fa24 + "\", \"" + fa12 + "\"]) { actorId filmId } }");
+        assertThat((List<Map<String, Object>>) data.get("filmActorsByIds"))
+            .extracting(fa -> fa.get("actorId") + ":" + fa.get("filmId"))
+            .containsExactly("2:4", "1:2");
+    }
+
+    @Test
+    void filmsByNodeIdService_decodesAListArgumentIntoAListOfKeyValues() {
+        // The arity-one sibling: a List<Integer> parameter takes one decoded film_id per wire id.
+        String film1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1);
+        String film2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 2);
+        Map<String, Object> data = execute(
+            "{ filmsByNodeIdService(ids: [\"" + film2 + "\", \"" + film1 + "\"]) { title } }");
+        assertThat((List<Map<String, Object>>) data.get("filmsByNodeIdService"))
+            .extracting(f -> f.get("title"))
+            .containsExactly("ACADEMY DINOSAUR", "ACE GOLDFINGER");
+    }
+
     // ===== A polymorphic @nodeId at a @service slot (record-supertype destination) =====
 
     @Test

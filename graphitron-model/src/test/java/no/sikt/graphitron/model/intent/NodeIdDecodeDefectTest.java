@@ -22,6 +22,7 @@ import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldNodeId;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
+import static no.sikt.graphitron.model.test.SeededStore.seedListArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedMethod;
 import static no.sikt.graphitron.model.test.SeededStore.seedMethodParameter;
 import static no.sikt.graphitron.model.test.SeededStore.seedNode;
@@ -40,7 +41,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Why a decoding {@code @nodeId} instruction was not carried out where its value reaches a Java
  * parameter: {@code intent_node_id_decode_defect}, one row per refused instruction, in a closed
- * verdict vocabulary of two.
+ * verdict vocabulary of three.
  *
  * <p>Every case states the resolution beside the refusal, because this relation is defined as the
  * population the decode does not claim. A case asserting a verdict alone would pass equally well if
@@ -225,6 +226,127 @@ class NodeIdDecodeDefectTest {
         });
     }
 
+    // ===== A list argument lands on the element =====
+
+    /**
+     * A list argument at a {@code java.util.List} of the node type's own record: each decoded id
+     * lands on one element, and the element is the record, so the composite key is no defect. The
+     * shape the emitter's list decode fills, and the one the store used to refuse by comparing the
+     * container.
+     */
+    @Test
+    void aListOfTheNodeTypesOwnRecordIsNoDefectAtAnyArity() {
+        withCatalog(dsl -> {
+            seedNodeType(dsl, "FilmCategory", "film_category");
+            seedField(dsl, GRAPH, "Query", "pairings", "FilmCategory", true);
+            seedListArgument(dsl, GRAPH, "Query", "pairings", "ids", "ID");
+            seedArgumentNodeId(dsl, GRAPH, "Query", "pairings", "ids", "FilmCategory");
+            seedListProducer(dsl, "Query", "pairings", "ids", "java.util.List",
+                recordClass("film_category"));
+
+            assertThat(rows(dsl)).isEmpty();
+            assertThat(destinations(dsl))
+                .containsExactly("Query.pairings(ids) FilmCategory JOOQ_RECORD 2");
+        });
+    }
+
+    /** The same at one key column, the element typed as the column: the single-column decode. */
+    @Test
+    void aListOfTheSoleKeyColumnsTypeIsNoDefect() {
+        withCatalog(dsl -> {
+            seedNodeType(dsl, "Film", "film");
+            seedField(dsl, GRAPH, "Query", "films", "Film", true);
+            seedListArgument(dsl, GRAPH, "Query", "films", "ids", "ID");
+            seedArgumentNodeId(dsl, GRAPH, "Query", "films", "ids", "Film");
+            seedListProducer(dsl, "Query", "films", "ids", "java.util.List", "java.lang.String");
+
+            assertThat(rows(dsl)).isEmpty();
+            assertThat(destinations(dsl))
+                .containsExactly("Query.films(ids) Film SINGLE_KEY_COLUMN 1");
+        });
+    }
+
+    /**
+     * A list whose element the key column cannot take is refused on the element, and the row
+     * carries both: the root a message names as the container and the landing type it compared.
+     */
+    @Test
+    void aListWhoseElementDisagreesIsRefusedOnTheElement() {
+        withCatalog(dsl -> {
+            seedNodeType(dsl, "Film", "film");
+            seedField(dsl, GRAPH, "Query", "films", "Film", true);
+            seedListArgument(dsl, GRAPH, "Query", "films", "ids", "ID");
+            seedArgumentNodeId(dsl, GRAPH, "Query", "films", "ids", "Film");
+            seedListProducer(dsl, "Query", "films", "ids", "java.util.List", "java.lang.Long");
+
+            assertThat(shapes(dsl)).containsExactly(
+                "Query.films(ids) KEY_COLUMN_TYPE_DISAGREEMENT LIST slot java.util.List"
+                    + " landing java.lang.Long depth 1");
+            assertThat(destinations(dsl)).isEmpty();
+        });
+    }
+
+    /** A composite key at a list of single values is refused on the arity, per element. */
+    @Test
+    void aCompositeKeyAtAListOfSingleValuesIsRefusedOnTheArity() {
+        withCatalog(dsl -> {
+            seedNodeType(dsl, "FilmCategory", "film_category");
+            seedField(dsl, GRAPH, "Query", "pairings", "FilmCategory", true);
+            seedListArgument(dsl, GRAPH, "Query", "pairings", "ids", "ID");
+            seedArgumentNodeId(dsl, GRAPH, "Query", "pairings", "ids", "FilmCategory");
+            seedListProducer(dsl, "Query", "pairings", "ids", "java.util.List",
+                "java.lang.String");
+
+            assertThat(shapes(dsl)).containsExactly(
+                "Query.pairings(ids) KEY_ARITY_EXCEEDS_SLOT LIST slot java.util.List"
+                    + " landing java.lang.String depth 1");
+            assertThat(destinations(dsl)).isEmpty();
+        });
+    }
+
+    /**
+     * A list argument at a {@code Set} of the very record that would take each id: the element is
+     * right and the container is not, the emitter's list decode handing over a
+     * {@code java.util.List}. Refused on the shape, before any comparison, and with no destination.
+     */
+    @Test
+    void aSetOfTheRecordIsAShapeMismatch() {
+        withCatalog(dsl -> {
+            seedNodeType(dsl, "FilmCategory", "film_category");
+            seedField(dsl, GRAPH, "Query", "pairings", "FilmCategory", true);
+            seedListArgument(dsl, GRAPH, "Query", "pairings", "ids", "ID");
+            seedArgumentNodeId(dsl, GRAPH, "Query", "pairings", "ids", "FilmCategory");
+            seedListProducer(dsl, "Query", "pairings", "ids", "java.util.Set",
+                recordClass("film_category"));
+
+            assertThat(shapes(dsl)).containsExactly(
+                "Query.pairings(ids) SLOT_SHAPE_MISMATCH MISMATCH slot java.util.Set"
+                    + " landing java.util.Set depth 1");
+            assertThat(destinations(dsl)).isEmpty();
+        });
+    }
+
+    /**
+     * The other direction: one id at a {@code java.util.List} parameter, which a list argument
+     * would fill and a single one cannot. Refused rather than admitted on the element, which would
+     * hand a list parameter one record and fail at runtime.
+     */
+    @Test
+    void aSingleIdAtAListParameterIsAShapeMismatch() {
+        withCatalog(dsl -> {
+            seedNodeType(dsl, "FilmCategory", "film_category");
+            seedField(dsl, GRAPH, "Query", "pairings", "FilmCategory", true);
+            seedArgumentNodeId(dsl, GRAPH, "Query", "pairings", "id", "FilmCategory");
+            seedListProducer(dsl, "Query", "pairings", "id", "java.util.List",
+                recordClass("film_category"));
+
+            assertThat(shapes(dsl)).containsExactly(
+                "Query.pairings(id) SLOT_SHAPE_MISMATCH MISMATCH slot java.util.List"
+                    + " landing java.util.List depth 0");
+            assertThat(destinations(dsl)).isEmpty();
+        });
+    }
+
     // ===== The populations this relation may not judge =====
 
     /**
@@ -361,6 +483,19 @@ class NodeIdDecodeDefectTest {
     }
 
     /**
+     * The same producer whose parameter is a container of {@code element}, stated as the census
+     * states a parameterised type: the container at the root and the element at its argument.
+     */
+    private static void seedListProducer(DSLContext dsl, String typeName, String fieldName,
+                                         String paramName, String container, String element) {
+        seedService(dsl, GRAPH, typeName, fieldName, SVC, "get");
+        seedClass(dsl, CLASSES, SVC, "CLASS");
+        seedMethod(dsl, CLASSES, SVC, "get", "()V");
+        seedMethodParameter(dsl, CLASSES, SVC, "get", "()V", 0, paramName,
+            Map.of("", container, "0", element));
+    }
+
+    /**
      * The same producer whose parameter names no class at all, which is what the census records for
      * a primitive or a type variable: the parameter row is there and the type reference is not.
      */
@@ -401,6 +536,22 @@ class NodeIdDecodeDefectTest {
             + " column " + orNone(row.get(v.KEY_COLUMN_NAME))
             + " " + orNone(row.get(v.COLUMN_JAVA_TYPE))
             + " slot " + orNone(row.get(v.SLOT_JAVA_TYPE));
+    }
+
+    /** The shape a refusal was judged on: the verdict, the shape, both types and the depth. */
+    private static List<String> shapes(DSLContext dsl) {
+        derive(dsl);
+        var v = INTENT_NODE_ID_DECODE_DEFECT;
+        return dsl.select(v.USE_SITE, v.VERDICT, v.SLOT_SHAPE, v.SLOT_JAVA_TYPE,
+                v.LANDING_JAVA_TYPE, v.ARGUMENT_LIST_DEPTH)
+            .from(v)
+            .where(v.GRAPH_NAME.eq(GRAPH))
+            .orderBy(v.USE_SITE, v.NODE_TYPE_NAME)
+            .fetch()
+            .map(row -> row.get(v.USE_SITE) + " " + row.get(v.VERDICT) + " "
+                + orNone(row.get(v.SLOT_SHAPE)) + " slot " + orNone(row.get(v.SLOT_JAVA_TYPE))
+                + " landing " + orNone(row.get(v.LANDING_JAVA_TYPE))
+                + " depth " + orNone(row.get(v.ARGUMENT_LIST_DEPTH)));
     }
 
     private static String orNone(Object value) {

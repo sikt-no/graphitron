@@ -19,6 +19,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.derive.NodeIdDecodeDefects;
+import no.sikt.graphitron.model.derive.NodeIdPolymorphicDecodeDefects;
 
 /**
  * The store-backed home of the {@code @nodeId} decode rules at a producer parameter: real SDL
@@ -27,7 +28,7 @@ import no.sikt.graphitron.model.derive.NodeIdDecodeDefects;
  * relation in the shape the rules read, and that the report a consumer meets is minted from what it
  * finds.
  *
- * <p>What the view returns given rows is not asked here. That is the relation's own algebra, its two
+ * <p>What the view returns given rows is not asked here. That is the relation's own algebra, its three
  * verdicts and the three populations it excludes, and it lives in the module whose DDL declares it,
  * in {@code no.sikt.graphitron.model.intent.NodeIdDecodeDefectTest}, against a store seeded row by
  * row. What stands here is the decode: which {@link Rejection} arm each verdict becomes, the prose it
@@ -70,7 +71,7 @@ class NodeIdDecodeDefectsTest {
     @TempDir
     Path tmp;
 
-    // ===== The two verdicts =====
+    // ===== The three verdicts =====
 
     /**
      * A parameter typed as the wire format at a node type keyed on one column: the shape that used to
@@ -103,11 +104,26 @@ class NodeIdDecodeDefectsTest {
             "Field 'Query.films': argument 'key' carries the @nodeId(typeName: \"Inventory\") and the"
             + " producer method declares a parameter 'key' of that name, so the decoded key lands"
             + " there, but that key is 2 columns and one parameter takes one value; declare 'key' as"
-            + " the generated record of that node type's own table to receive the whole tuple, or"
-            + " bind one of its key columns to a parameter with argMapping: inventory_id, store_id");
+            + " InventoryRecord to receive the whole tuple, or bind one of its key columns to a"
+            + " parameter with argMapping: inventory_id, store_id");
     }
 
-    // ===== What the two arms deliberately leave alone =====
+    /**
+     * A list argument at a {@code Set} of the very record that would take each id. The element is
+     * right and the container is not: the list decode hands over a {@code java.util.List}, so the
+     * message names the container the parameter declares and the one it needs.
+     */
+    @Test
+    void aSetParameterAtAListArgumentIsRefusedNamingTheList() {
+        assertThat(messages(detect(listSchema("Inventory", "getFilmsByInventoryKeySet"))))
+            .containsExactly(
+                "Field 'Query.films': argument 'key' carries the @nodeId(typeName: \"Inventory\") and"
+                + " the producer method declares a parameter 'key' of that name, so the decoded key"
+                + " lands there, and the argument is a list, so the decoded ids are handed over as a"
+                + " java.util.List, but 'key' takes Set; declare 'key' as List<InventoryRecord>");
+    }
+
+    // ===== What the arms deliberately leave alone =====
 
     /**
      * The parameter typed as the key column jOOQ binds it as, which is the schema an author writes
@@ -159,6 +175,56 @@ class NodeIdDecodeDefectsTest {
         assertThat(messages(detect(schema("Inventory", "getFilmsByPrimitiveKey"))))
             .singleElement(InstanceOfAssertFactories.STRING)
             .contains("that key is 2 columns and one parameter takes one value");
+    }
+
+    /**
+     * A list argument at a {@code java.util.List} of the node type's own record: each id lands on one
+     * element, and the element takes the whole tuple. The shape the store used to refuse by
+     * comparing the container with the record.
+     */
+    @Test
+    void aListOfTheNodeTypesRecordTakesACompositeKey() {
+        assertThat(detect(listSchema("Inventory", "getFilmsByInventoryKeys")))
+            .as("the element is the record, so the arity refuses nothing")
+            .isEmpty();
+    }
+
+    /** The same at one key column, the element typed as the column jOOQ binds. */
+    @Test
+    void aListOfTheKeyColumnsOwnTypeIsNoDefect() {
+        assertThat(detect(listSchema("Film", "getFilmsByIntegerKeys")))
+            .as("each element takes exactly what the sole key column binds as")
+            .isEmpty();
+    }
+
+    // ===== The polymorphic sibling, over the same captured store =====
+
+    /**
+     * A list argument naming a union at a {@code java.util.List} of a record supertype every member's
+     * record is: the store half of the admitted polymorphic list shape. Neither view refuses it.
+     */
+    @Test
+    void aListArgumentAtAListOfARecordSupertypeIsNoDefect() {
+        String sdl = occupantSchema("[ID!]!", "getOccupantsByUpdatableRecords");
+        assertThat(detectPolymorphic(sdl)).as("the polymorphic view").isEmpty();
+        assertThat(detect(sdl)).as("and the node-type view").isEmpty();
+    }
+
+    /**
+     * One id at that same list parameter: the generator classifies the shape and picks the list
+     * helper, and the store refuses it by name before emission, on the polymorphic view's own shape
+     * verdict and not on the members, so the asymmetry cannot drift into a silent pass.
+     */
+    @Test
+    void aSingleIdAtAListOfARecordSupertypeIsAShapeMismatch() {
+        String sdl = occupantSchema("ID!", "getOccupantsByUpdatableRecords");
+        assertThat(messages(detectPolymorphic(sdl))).containsExactly(
+            "Field 'Query.films': @nodeId(typeName: \"AddressOccupant\") names a union, but parameter"
+            + " 'key' takes List, which a list argument fills with one decoded record per id. Declare"
+            + " the parameter as a type every implementation's record is (org.jooq.Record,"
+            + " TableRecord<?>, or UpdatableRecord<?> where every implementation's table has a"
+            + " primary key), or make the argument a list");
+        assertThat(detect(sdl)).as("the node-type view stays disjoint").isEmpty();
     }
 
     // ===== The population this consumer asks about =====
@@ -213,6 +279,41 @@ class NodeIdDecodeDefectsTest {
                     @service(service: {className: "%s", method: "%s"})
             }
             """.formatted(nodeType, SERVICE_STUB, method);
+    }
+
+    /** The same template with the argument a list, the shape a {@code java.util.List} parameter takes. */
+    private static String listSchema(String nodeType, String method) {
+        return schema(nodeType, method).replace("films(key: ID!", "films(key: [ID!]!");
+    }
+
+    /**
+     * The container sibling of the template: the {@code AddressOccupant} union over two node types,
+     * as {@code PolymorphicNodeIdSlotPipelineTest} declares it, with the argument's type the case's
+     * to state.
+     */
+    private static String occupantSchema(String argumentType, String method) {
+        return """
+            interface Node { id: ID! }
+            type Customer implements Node @table(name: "customer") @node(keyColumns: ["customer_id"]) {
+                id: ID! @nodeId
+            }
+            type Staff implements Node @table(name: "staff") @node(keyColumns: ["staff_id"]) {
+                id: ID! @nodeId
+            }
+            union AddressOccupant = Customer | Staff
+            type Film @table(name: "film") { title: String }
+            type Query {
+                films(key: %s @nodeId(typeName: "AddressOccupant")): [Film!]!
+                    @service(service: {className: "%s", method: "%s"})
+            }
+            """.formatted(argumentType, SERVICE_STUB, method);
+    }
+
+    /** Captures {@code sdl} against both corpora and runs the polymorphic sibling's detection. */
+    private List<ValidationError> detectPolymorphic(String sdl) {
+        try (var store = CapturedStore.ofCatalog(tmp, GRAPH, sdl, jooq, census)) {
+            return NodeIdPolymorphicDecodeDefects.detect(store.dsl(), GRAPH).violations();
+        }
     }
 
     /** Captures {@code sdl} against both corpora and runs the detection over what capture wrote. */

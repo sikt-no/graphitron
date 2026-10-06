@@ -297,6 +297,9 @@ public final class CodeRows {
         // peeling a parameter asks the same relation it asks of a return. After the type, which is
         // what it keys to.
         element(dsl, sourceName, typeName, positions, readAt);
+        // And on the parameter row itself, where real capture writes the same peel: a reader asking
+        // a parameter what one value of it is reads it there without the type's row.
+        String[] delivered = deliveredBy(positions);
         dsl.insertInto(CODE_METHOD_PARAMETER)
             .set(CODE_METHOD_PARAMETER.SOURCE_NAME, sourceName)
             .set(CODE_METHOD_PARAMETER.CLASS_NAME, className)
@@ -305,6 +308,8 @@ public final class CodeRows {
             .set(CODE_METHOD_PARAMETER.POSITION, position)
             .set(CODE_METHOD_PARAMETER.PARAMETER_NAME, parameterName)
             .set(CODE_METHOD_PARAMETER.PARAMETER_TYPE, typeName)
+            .set(CODE_METHOD_PARAMETER.ELEMENT_CLASS, delivered == null ? null : delivered[0])
+            .set(CODE_METHOD_PARAMETER.DELIVERY, delivered == null ? null : delivered[1])
             .set(CODE_METHOD_PARAMETER.ROLE, role)
             .set(CODE_METHOD_PARAMETER.EXTRACTION, "DIRECT")
             .set(CODE_METHOD_PARAMETER.TOUCHED_AT, readAt)

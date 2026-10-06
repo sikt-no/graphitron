@@ -692,6 +692,20 @@ type Query {
             className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
             method: "filmsByService"
         })
+    # A list @nodeId argument at a java.util.List producer parameter of the sole key column's
+    # type: the list decode hands the service one decoded film_id per wire id.
+    filmsByNodeIdService(ids: [ID!]! @nodeId(typeName: "Film")): [Film!]!
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+            method: "filmsByNodeIds"
+        })
+    # The same at a composite key: the parameter is a java.util.List of the node type's own
+    # record, and each decoded id arrives as one FilmActorRecord with both key columns set.
+    filmActorsByIds(ids: [ID!]! @nodeId(typeName: "FilmActor")): [FilmActor!]!
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmActorCarrierService",
+            method: "filmActorsByIds"
+        })
     # The key carrier taken literally: the service runs no query at all, just hands back one
     # FilmRecord per requested id with the key set. Pins that the re-select needs nothing but the
     # key, and that a key with no live row drops from the result.

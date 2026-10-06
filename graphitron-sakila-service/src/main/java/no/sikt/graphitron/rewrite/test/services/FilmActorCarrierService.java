@@ -64,4 +64,20 @@ public final class FilmActorCarrierService {
         }
         return ordered;
     }
+
+    /**
+     * A list {@code @nodeId} argument at a {@code java.util.List} of the node type's own record:
+     * each decoded composite id arrives as one {@code FilmActorRecord} with its key columns set, in
+     * the caller's id order. Reads the rows those keys name, in that order.
+     */
+    public static List<FilmActorRecord> filmActorsByIds(List<FilmActorRecord> ids, DSLContext dsl) {
+        if (ids == null || ids.isEmpty()) return List.of();
+        var actorIds = new ArrayList<Integer>(ids.size());
+        var filmIds = new ArrayList<Integer>(ids.size());
+        for (FilmActorRecord id : ids) {
+            actorIds.add(id.get(Tables.FILM_ACTOR.ACTOR_ID));
+            filmIds.add(id.get(Tables.FILM_ACTOR.FILM_ID));
+        }
+        return filmActorsByKeys(actorIds, filmIds, dsl);
+    }
 }

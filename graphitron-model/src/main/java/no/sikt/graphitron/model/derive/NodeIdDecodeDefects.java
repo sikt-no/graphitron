@@ -23,9 +23,15 @@ import static org.jooq.impl.DSL.selectOne;
  * The {@code @nodeId} decode rules at a producer parameter, projected from the store: an argument
  * carrying a decoding {@code @nodeId} whose value a producer method's parameter of that name
  * receives either has its decode carried out, with a row in {@code intent_node_id_decode}, or is one
- * of the two refusals below. The reduction lives in {@code intent_node_id_decode_defect}, which
- * picks between them on the node key's arity in one pass; what remains here is the decode of that
- * view's closed two-verdict vocabulary into {@link Rejection} arms and the prose they carry.
+ * of the three refusals below. The reduction lives in {@code intent_node_id_decode_defect}, which
+ * picks between them on the slot's shape and then the node key's arity in one pass; what remains
+ * here is the decode of that view's closed three-verdict vocabulary into {@link Rejection} arms and
+ * the prose they carry.
+ *
+ * <p>A {@code java.util.List} parameter at a list argument is judged on its element, which is where
+ * one decoded id lands: the emitter's list decode hands over a {@code java.util.List} with one
+ * decoded value per id. Every remedy is therefore spelled in the shape the slot needs, a
+ * {@code List} of the record where the argument is a list and the record itself where it is not.
  *
  * <p>These two arms close the last silence the directive had. An author annotated an argument
  * {@code @nodeId}, the schema walk's type gate stood aside because a decoded value and the
@@ -72,13 +78,22 @@ public final class NodeIdDecodeDefects {
          */
         KEY_ARITY_EXCEEDS_SLOT,
         /**
-         * One key column, and the Java type jOOQ binds it as is not the parameter's. The verdict
+         * One key column, and the Java type jOOQ binds it as is not the parameter's, or at a list
+         * slot not its element's. The verdict
          * whose two operands are both types, which is why it fires only where both are known: a
          * column no catalog could type and a parameter no census could type leave the decode to be
          * carried out on arity alone with javac as the backstop, refusing on an operand nobody could
          * read being a new silence rather than the closing of one.
          */
-        KEY_COLUMN_TYPE_DISAGREEMENT;
+        KEY_COLUMN_TYPE_DISAGREEMENT,
+        /**
+         * The argument's list-ness and the parameter's disagree on terms the emitter cannot fill: a
+         * list argument at a parameter that is not a {@code java.util.List}, which is the one
+         * container the list decode builds, a single id at a multi-valued parameter, or a list
+         * nested deeper than one level. Decided before arity or type, a mismatched slot having no
+         * place one decoded value goes.
+         */
+        SLOT_SHAPE_MISMATCH;
 
         /** The verdict a store row carries; an unknown value is vocabulary drift, a build bug. */
         static Verdict of(String verdict) {
@@ -140,7 +155,9 @@ public final class NodeIdDecodeDefects {
                 row.getArgumentName(), row.getParamName(), row.getNodeTypeName(),
                 rejectionOf(Verdict.of(row.getVerdict()), row.getArgumentName(),
                     row.getParamName(), row.getNodeTypeName(), row.getArity(),
-                    row.getKeyColumnName(), row.getColumnJavaType(), row.getSlotJavaType(),
+                    row.getKeyColumnName(), row.getColumnJavaType(), row.getRecordClass(),
+                    row.getSlotJavaType(), row.getLandingJavaType(),
+                    "LIST".equals(row.getSlotShape()), row.getArgumentListDepth(),
                     keyColumnsOf(dsl, graphName, row.getNodeTypeName())),
                 location(row.getSourceName(), row.getSourceLine(), row.getSourceColumn()))));
     }
@@ -158,32 +175,107 @@ public final class NodeIdDecodeDefects {
     }
 
     /**
-     * Decodes one verdict into the rejection the report carries. Both are structural: there is no
-     * closed name set to have missed here, the author having named no column for an editor to offer
-     * alternatives to, which is what distinguishes these two from the sibling family's typed
+     * Decodes one verdict into the rejection the report carries. All three are structural: there is
+     * no closed name set to have missed here, the author having named no column for an editor to
+     * offer alternatives to, which is what distinguishes these from the sibling family's typed
      * unknown-column arm.
      *
      * <p>Each message states the operands the view compared and nothing it did not: the arity arm
-     * quotes the count the join read, and the type arm quotes both types off the row rather than
-     * resolving them again here, so neither can describe a comparison other than the one that
-     * refused the instruction.
+     * quotes the count the join read, the type arm quotes both types off the row rather than
+     * resolving them again here, and the shape arm quotes the container the parameter declares, so
+     * none can describe a comparison other than the one that refused the instruction.
      */
     private static Rejection rejectionOf(Verdict verdict, String argumentName, String paramName,
                                          String nodeTypeName, int arity, String keyColumnName,
-                                         String columnJavaType, String slotJavaType,
+                                         String columnJavaType, String recordClass,
+                                         String slotJavaType, String landingJavaType,
+                                         boolean listSlot, Integer argumentListDepth,
                                          List<String> keyColumns) {
+        String lead = lead(argumentName, paramName, nodeTypeName);
         return switch (verdict) {
-            case KEY_ARITY_EXCEEDS_SLOT -> Rejection.structural(lead(argumentName, paramName,
-                nodeTypeName) + ", but that key is " + arity
-                + " columns and one parameter takes one value; declare '" + paramName
-                + "' as the generated record of that node type's own table to receive the whole"
-                + " tuple, or bind one of its key columns to a parameter with argMapping: "
+            case KEY_ARITY_EXCEEDS_SLOT -> Rejection.structural(lead + ", but that key is " + arity
+                + " columns and one " + (listSlot ? "list element" : "parameter")
+                + " takes one value; declare '" + paramName + "' as "
+                + shaped(recordOf(recordClass), listSlot) + " to receive the whole tuple, or bind"
+                + " one of its key columns to a parameter with argMapping: "
                 + String.join(", ", keyColumns));
-            case KEY_COLUMN_TYPE_DISAGREEMENT -> Rejection.structural(lead(argumentName, paramName,
-                nodeTypeName) + ", and its key column '" + keyColumnName + "' jOOQ binds as "
-                + simpleName(columnJavaType) + ", but '" + paramName + "' takes "
-                + simpleName(slotJavaType) + "; declare the parameter with the column's own type");
+            case KEY_COLUMN_TYPE_DISAGREEMENT -> Rejection.structural(lead + ", and its key column '"
+                + keyColumnName + "' jOOQ binds as " + simpleName(columnJavaType)
+                + (listSlot
+                    ? ", but the elements of '" + paramName + "' are " + simpleName(landingJavaType)
+                        + "; declare '" + paramName + "' as "
+                        + shaped(simpleName(columnJavaType), true)
+                    : ", but '" + paramName + "' takes " + simpleName(landingJavaType)
+                        + "; declare the parameter with the column's own type"));
+            case SLOT_SHAPE_MISMATCH -> Rejection.structural(lead
+                + shapeMismatch(paramName, slotJavaType, argumentListDepth, arity, recordClass,
+                    columnJavaType));
         };
+    }
+
+    /**
+     * The shape arm's clause after the lead, in the direction the argument and the parameter
+     * disagree. A list argument is handed over as one {@code java.util.List}, so a parameter declaring
+     * any other container cannot take it; a single id decodes to one value, so a multi-valued
+     * parameter is the wrong shape for it; and a list of lists has no decode at all.
+     */
+    private static String shapeMismatch(String paramName, String slotJavaType,
+                                        Integer argumentListDepth, int arity, String recordClass,
+                                        String columnJavaType) {
+        int depth = argumentListDepth == null ? 0 : argumentListDepth;
+        String takes = "'" + paramName + "' takes " + simpleName(slotJavaType);
+        if (depth > 1) {
+            return ", but the argument is a list of lists, and a list argument is decoded only one"
+                + " level deep; make the argument a list of IDs and declare "
+                + declaration(paramName, arity, recordClass, columnJavaType, true);
+        }
+        if (depth == 1) {
+            return ", and the argument is a list, so the decoded ids are handed over as a"
+                + " java.util.List, but " + takes + "; declare "
+                + declaration(paramName, arity, recordClass, columnJavaType, true);
+        }
+        return ", but " + takes + (LIST.equals(slotJavaType)
+                ? ", which a list argument fills with one decoded value per id"
+                : ", which holds many values where one id decodes to one")
+            + "; declare " + declaration(paramName, arity, recordClass, columnJavaType, false)
+            + ", or make the argument a list";
+    }
+
+    /** The one container the emitter's list decode builds. */
+    private static final String LIST = "java.util.List";
+
+    /**
+     * The declaration a remedy offers for the parameter: the node type's record above one key
+     * column, the sole column's own type at one with the record named as the alternative, each in
+     * the shape the slot needs. Where an operand is unknown the record is described rather than
+     * named.
+     */
+    private static String declaration(String paramName, int arity, String recordClass,
+                                      String columnJavaType, boolean list) {
+        String as = "'" + paramName + "' as ";
+        if (arity > 1 || columnJavaType == null) {
+            return as + shaped(recordOf(recordClass), list);
+        }
+        String column = as + shaped(simpleName(columnJavaType), list);
+        return recordClass == null ? column
+            : column + ", or as " + shaped(simpleName(recordClass), list);
+    }
+
+    /** The node type's generated record by its simple name, or described where none resolved. */
+    private static String recordOf(String recordClass) {
+        return recordClass == null ? "the generated record of that node type's own table"
+            : simpleName(recordClass);
+    }
+
+    /**
+     * {@code type} as the slot needs it: wrapped in {@code List<...>} at a list slot, or described as
+     * a list of it where {@code type} is itself a description rather than a name.
+     */
+    private static String shaped(String type, boolean list) {
+        if (!list) {
+            return type;
+        }
+        return type.indexOf(' ') < 0 ? "List<" + type + ">" : "a java.util.List of " + type;
     }
 
     /**

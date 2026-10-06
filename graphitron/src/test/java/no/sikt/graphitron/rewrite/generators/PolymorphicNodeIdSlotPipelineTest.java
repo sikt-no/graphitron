@@ -71,6 +71,20 @@ class PolymorphicNodeIdSlotPipelineTest {
             """.formatted(container, PRODUCER_STUB, method);
     }
 
+    /**
+     * The same producer field with a list argument, which is the shape a {@code java.util.List}
+     * producer parameter takes: the list decode hands over one decoded record per id.
+     */
+    private static String producerListSchema(String container, String method) {
+        return OCCUPANTS + """
+            type Film @table(name: "film") { title: String }
+            type Query {
+                films(key: [ID!]! @nodeId(typeName: "%s")): [Film!]!
+                    @service(service: {className: "%s", method: "%s"})
+            }
+            """.formatted(container, PRODUCER_STUB, method);
+    }
+
     // ===== The slot takes the container's members =====
 
     @Test
@@ -158,7 +172,7 @@ class PolymorphicNodeIdSlotPipelineTest {
     @Test
     void aProducerListParameterTakesTheListVariant() {
         var fetchers = findSpec("QueryFetchers",
-            producerSchema("AddressOccupant", "getOccupantsByUpdatableRecords"));
+            producerListSchema("AddressOccupant", "getOccupantsByUpdatableRecords"));
         assertThat(fetchers.methodSpecs())
             .extracting(MethodSpec::name)
             .contains("decodeAddressOccupantRecordList", "decodeAddressOccupantRecord");

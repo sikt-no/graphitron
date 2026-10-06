@@ -132,6 +132,13 @@ Execution tier, `graphitron-sakila-example`. This is the evidence the goal is de
 - **Peel on `code_type_element.delivery = 'MANY'` instead of `root_class = 'java.util.List'`.** That would read a `Set<XRecord>` as the record and admit a parameter the emitter cannot fill. The store has to agree with what is emitted, not with what the census calls multiplying.
 - **Peel on the parameter alone, ignoring the argument's list-ness.** That mirrors the generator more literally, but it turns `id: ID!` on `List<XRecord>`, refused today with the wrong message, into a pass that fails at runtime with a `ClassCastException`. A refusal with the right message is strictly better.
 
+## Implementation notes
+
+Two places the implementation departs from the Design above, each forced by what the tree turned out to hold:
+
+- **The peel is read off `code_type_element`, not off the parameter row.** The Design reads `code_method_parameter.element_class` / `delivery`. Under the pipeline-tier capture (`CapturedStore.ofCatalog` with a classpath census) those columns are NULL on every row, and so are `code_method.result_erased_class` / `result_element_class`, although `CodeCapture` writes them and `CodeCaptureTest` pins them equal to the per-type dictionary. `code_type_element` is populated on both paths, so the slot view's named arm and the classpath arm of `intent_argmapping_bound_parameter_type` LEFT JOIN it on the declared type instead. The answer is the same fact by `CodeCaptureTest`'s own assertion. Why the parameter row's copy is empty is not this item's question and is reported for a separate item. `CodeRows.parameter` now writes the two columns anyway, as the Tests section asked, so seeded stores match real capture's intent.
+- **The slot relation carries a third column, `argument_list_depth`.** A `MISMATCH` message has to say which way the argument and the parameter disagree (a list at a `Set`, a single id at a `List`, a list of lists), and `slot_shape` alone cannot: a single id at a `List` and a `[[ID]]` at a `List` share a root. Both defect views carry it beside `slot_shape` for the message, and the polymorphic view's `slot_java_type` is now the landing type, as the Messages section said.
+
 ## Reviewer findings
 
 ### Round 1 (2026-10-06, Spec -> Ready, reviewer session 01Gu5aQWsqrmC6MHSXDfMzqv)

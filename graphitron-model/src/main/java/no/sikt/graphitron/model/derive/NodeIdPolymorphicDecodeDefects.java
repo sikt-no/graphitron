@@ -23,18 +23,21 @@ import static org.jooq.impl.DSL.selectOne;
  * The polymorphic {@code @nodeId} rules, projected from the store: a {@code typeName:} naming a
  * multitable interface or union either reaches a {@code @service} slot whose declared Java type every
  * member's generated record is, in which case the decode is carried out and the store carries a
- * {@code POLYMORPHIC_RECORD} destination, or it is one of the five refusals below. The reduction
+ * {@code POLYMORPHIC_RECORD} destination, or it is one of the six refusals below. The reduction
  * lives in {@code intent_node_id_polymorphic_decode_defect}, which picks between them on the
- * coordinate, the member set and the slot's type; what remains here is the decode of that view's
- * closed five-verdict vocabulary into {@link Rejection} arms and the prose they carry.
+ * coordinate, the member set and the slot's type and shape; what remains here is the decode of that
+ * view's closed six-verdict vocabulary into {@link Rejection} arms and the prose they carry. At a
+ * list argument the slot is a {@code java.util.List} and its element is what every member's record
+ * has to be.
  *
  * <p>A sibling of {@link NodeIdDecodeDefects} rather than more arms on it, for the reason the two
- * views are siblings: that family's two verdicts are a function of the node key's arity, and these
- * five are decided on facts that relation does not read. The two populations are disjoint by
+ * views are siblings: that family's verdicts are a function of the slot's shape and the node key's
+ * arity, and these six are decided on facts that relation does not read. The shape verdict's name
+ * recurs in both vocabularies, each family composing its own remedy for its own population. The two populations are disjoint by
  * construction, the incumbent joining the key shape on the slot's resolved type and a container
  * resolving no key of its own.
  *
- * <p>Every arm is {@link Rejection.AuthorError.Structural} and none is a deferral. Each of the five
+ * <p>Every arm is {@link Rejection.AuthorError.Structural} and none is a deferral. Each of the six
  * is fixed in the author's own schema or signature: name a type instead of the container, annotate a
  * member with {@code @node}, declare the slot one rung wider, or move the directive to a coordinate
  * the rule reaches. No arm here fails while promising an emitter later.
@@ -86,7 +89,14 @@ public final class NodeIdPolymorphicDecodeDefects {
          * types the slot the author annotated, which is a producer parameter; at an input-field site
          * the slot relation types the bean and the walk refuses the member on its own.
          */
-        SLOT_NOT_SUPERTYPE_OF_MEMBER;
+        SLOT_NOT_SUPERTYPE_OF_MEMBER,
+        /**
+         * The argument's list-ness and the slot's disagree on terms the emitter cannot fill: a list
+         * argument at a parameter that is not a {@code java.util.List}, a single id at a
+         * multi-valued one, or a list nested deeper than one level. About the slot and not the
+         * container, so a container verdict on the same coordinate still fires beside it.
+         */
+        SLOT_SHAPE_MISMATCH;
 
         /** The verdict a store row carries; an unknown value is vocabulary drift, a build bug. */
         static Verdict of(String verdict) {
@@ -149,7 +159,8 @@ public final class NodeIdPolymorphicDecodeDefects {
                 row.getContainerName(), row.getMemberTypeName(),
                 rejectionOf(Verdict.of(row.getVerdict()), row.getContainerName(),
                     row.getContainerKind(), row.getMemberTypeName(), row.getMemberRecordClass(),
-                    row.getSlotJavaType(), row.getParamName(), row.getUseSite(),
+                    row.getSlotJavaType(), row.getArgumentListDepth(), row.getParamName(),
+                    row.getUseSite(),
                     memberNames(dsl, graphName, row.getContainerName())),
                 location(row.getSourceName(), row.getSourceLine(), row.getSourceColumn()))));
     }
@@ -191,10 +202,12 @@ public final class NodeIdPolymorphicDecodeDefects {
      */
     private static Rejection rejectionOf(Verdict verdict, String containerName, String containerKind,
                                          String memberTypeName, String memberRecordClass,
-                                         String slotJavaType, String paramName, String useSite,
-                                         List<String> members) {
+                                         String slotJavaType, Integer argumentListDepth,
+                                         String paramName, String useSite, List<String> members) {
         String lead = "@nodeId(typeName: \"" + containerName + "\") names "
             + ("UNION".equals(containerKind) ? "a union" : "an interface");
+        String supertypes = "org.jooq.Record, TableRecord<?>, or UpdatableRecord<?> where every"
+            + " implementation's table has a primary key";
         return switch (verdict) {
             case CONTAINER_NOT_AT_A_SLOT -> Rejection.structural(lead
                 + ", and a polymorphic node id is decoded into a @service slot typed as a record"
@@ -221,10 +234,38 @@ public final class NodeIdPolymorphicDecodeDefects {
                 + paramName + "' takes " + simpleName(slotJavaType) + ", which "
                 + simpleName(memberRecordClass) + " (implementation '" + memberTypeName + "') is"
                 + " not. Declare the parameter as a type every implementation's record is"
-                + " (org.jooq.Record, TableRecord<?>, or UpdatableRecord<?> where every"
-                + " implementation's table has a primary key), or point typeName: at one"
-                + " implementation instead of at '" + containerName + "'");
+                + " (" + supertypes + "), or point typeName: at one implementation instead of at '"
+                + containerName + "'");
+            case SLOT_SHAPE_MISMATCH -> Rejection.structural(lead
+                + shapeMismatch(paramName, slotJavaType, argumentListDepth, supertypes));
         };
+    }
+
+    /**
+     * The shape arm's clause after the lead, in the direction the argument and the slot disagree. A
+     * list argument is handed over as one {@code java.util.List}, so the slot has to be one whose
+     * element every implementation's record is; a single id decodes to one record, so a
+     * multi-valued slot is the wrong shape for it.
+     */
+    private static String shapeMismatch(String paramName, String slotJavaType,
+                                        Integer argumentListDepth, String supertypes) {
+        int depth = argumentListDepth == null ? 0 : argumentListDepth;
+        String takes = "parameter '" + paramName + "' takes " + simpleName(slotJavaType);
+        String listOf = "Declare the parameter as a java.util.List of a type every implementation's"
+            + " record is (" + supertypes + ")";
+        if (depth > 1) {
+            return ", but the argument is a list of lists, and a list argument is decoded only one"
+                + " level deep. Make the argument a list of IDs. " + listOf;
+        }
+        if (depth == 1) {
+            return ", and the argument is a list, so the decoded ids are handed over as a"
+                + " java.util.List, but " + takes + ". " + listOf;
+        }
+        return ", but " + takes + ("java.util.List".equals(slotJavaType)
+                ? ", which a list argument fills with one decoded record per id"
+                : ", which holds many values where one id decodes to one record")
+            + ". Declare the parameter as a type every implementation's record is (" + supertypes
+            + "), or make the argument a list";
     }
 
     /** The store's position columns as a graphql-java location; {@code null} when unpositioned. */
