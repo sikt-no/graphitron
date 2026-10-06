@@ -273,6 +273,53 @@ class TenantDivinedRoutingExecutionTest {
         assertThat(TENANT_1_OPENED.get()).isZero();
     }
 
+    // ===== @service routed on a @tenant-marked scalar: no row or id names the tenant =====
+
+    @Test
+    void service_routesOnATenantMarkedScalar_andHandsItDownToTheReturnedRows() {
+        var result = execute("mutation { rateFilmsByFilmId(in: [{ filmId: 1, rating: 5 }]) {"
+            + " ranOn films { title inventories { inventoryId } } } }");
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        var payload = (Map<String, Object>) ((Map<String, Object>) result.getData()).get("rateFilmsByFilmId");
+        assertThat(payload.get("ranOn")).as("the marked value names tenant 1").isEqualTo("tenant_1");
+        var films = (List<Map<String, Object>>) payload.get("films");
+        assertThat(films).extracting(f -> f.get("title")).containsExactly("Tenant One Film");
+        assertThat((List<?>) films.get(0).get("inventories"))
+            .as("the tenant-scoped child under the wrapper inherits tenant 1").hasSize(2);
+        assertThat(TENANT_2_OPENED.get()).isZero();
+    }
+
+    @Test
+    void service_batchOfMarkedScalarsNamingTwoTenants_isRefusedBeforeTheServiceRuns() {
+        var result = execute("mutation { rateFilmsByFilmId(in: [{ filmId: 1 }, { filmId: 2 }]) { ranOn } }");
+        assertThat(result.getErrors().toString()).contains("Tenant bindings disagree");
+        assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get())
+            .as("the service needs a connection, and none was acquired").isZero();
+    }
+
+    @Test
+    void service_markedScalarDisagreeingWithASiblingNodeId_isRefused() {
+        var refused = execute("mutation { rateFilmsByFilmIdAndFilm(in: [{ filmId: 1, film: \""
+            + NodeIdEncoder.encodeFilm(2) + "\" }]) { ranOn } }");
+        assertThat(refused.getErrors().toString()).contains("Tenant bindings disagree");
+        assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get()).isZero();
+
+        var agreeing = execute("mutation { rateFilmsByFilmIdAndFilm(in: [{ filmId: 1, film: \""
+            + NodeIdEncoder.encodeFilm(1) + "\" }]) { ranOn } }");
+        assertThat(agreeing.getErrors()).as("errors: " + agreeing.getErrors()).isEmpty();
+        assertThat(((Map<String, Object>) ((Map<String, Object>) agreeing.getData())
+                .get("rateFilmsByFilmIdAndFilm")).get("ranOn"))
+            .as("the marked Integer and the decoded key compare equal").isEqualTo("tenant_1");
+    }
+
+    @Test
+    void service_markedScalarOutsideTheRequestTenantSet_isRefused() {
+        var result = execute("mutation { rateFilmsByFilmId(in: [{ filmId: 1 }]) { ranOn } }", List.of(2));
+        assertThat(result.getErrors())
+            .anySatisfy(e -> assertThat(e.getMessage()).contains("'1' is not permitted for this request"));
+        assertThat(TENANT_1_OPENED.get()).as("no connection to a refused tenant is taken").isZero();
+    }
+
     @Test
     void connectionBindingChildServices_runOnTheParentsTenant() {
         var result = execute("{ films(filmId: 2) { servedBy servedByHolder } }");

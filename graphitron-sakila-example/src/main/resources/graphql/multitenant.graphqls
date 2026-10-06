@@ -172,6 +172,19 @@ input FilmActorRatingInput {
     id: ID! @nodeId(typeName: "FilmActor")
 }
 
+# A create-shaped input: no row or id exists yet, so the input names the tenant by value, and
+# @tenant marks that value as what routes the service.
+input RateByFilmIdInput {
+    filmId: Int! @tenant
+    rating: Int
+}
+
+# The marked value beside a decoded id: both name a tenant, and they must agree.
+input RateByFilmIdAndFilmInput {
+    filmId: Int! @tenant
+    film: ID! @nodeId(typeName: "Film")
+}
+
 # A non-table wrapper: ranOn is the database the service ran on, and films inherit the tenant.
 type RateFilmsPayload {
     ranOn: String
@@ -206,6 +219,12 @@ type Mutation {
     rateFilmsChecked(in: [FilmRatingInput!]!): RateFilmsCheckedPayload @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
         method: "rateFilmsChecked", argMapping: "ratings: in"})
+    rateFilmsByFilmId(in: [RateByFilmIdInput!]!): RateFilmsPayload @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
+        method: "rateFilmsByFilmId", argMapping: "ratings: in"})
+    rateFilmsByFilmIdAndFilm(in: [RateByFilmIdAndFilmInput!]!): RateFilmsPayload @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
+        method: "rateFilmsByFilmIdAndFilm", argMapping: "ratings: in"})
     rateFilmActors(in: [FilmActorRatingInput!]!): RateFilmsPayload @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
         method: "rateFilmActors", argMapping: "actors: in"})

@@ -41,12 +41,20 @@ public sealed interface TenantRouting {
      * coordinate. Totality over a relation's own rows is that relation's invariant to hold, not
      * this record's: what is covered differs per family, and a family that has not migrated onto
      * the seam covers none of it.
+     *
+     * <p>{@code tenantKeyTypeName} is the fully qualified name of the run's tenant key Java type,
+     * boxed, which every divined key local is declared with (generated sources never use
+     * {@code var}). One per run: a
+     * catalog-wide type disagreement on the tenant column is a rejection that fails the build
+     * before any producer runs.
      */
     record Routed(UnitRef connections,
+                  String tenantKeyTypeName,
                   Map<FieldCoordinates, TenantAcquisition> byCoordinate) implements TenantRouting {
 
         public Routed {
             Objects.requireNonNull(connections, "connections");
+            Objects.requireNonNull(tenantKeyTypeName, "tenantKeyTypeName");
             byCoordinate = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(byCoordinate));
         }
     }

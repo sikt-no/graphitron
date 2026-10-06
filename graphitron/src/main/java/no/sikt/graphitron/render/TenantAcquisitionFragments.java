@@ -5,6 +5,7 @@ import no.sikt.graphitron.command.TenantAcquisition;
 import no.sikt.graphitron.command.TenantRouting;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.TypeName;
 
 /**
  * Renders one entry point's {@code DSLContext dsl = ...;} declaration, and the routed-tenant
@@ -58,7 +59,8 @@ public final class TenantAcquisitionFragments {
                         + " back to the request context's connection would route a tenant-scoped"
                         + " read to the default source");
                 }
-                yield routed(acquisition, className(routed.connections()), contextRead);
+                yield routed(acquisition, ClassName.bestGuess(routed.tenantKeyTypeName()),
+                    className(routed.connections()), contextRead);
             }
         };
     }
@@ -72,8 +74,8 @@ public final class TenantAcquisitionFragments {
             CodeBlock.of(""));
     }
 
-    private static Declaration routed(TenantAcquisition acquisition, ClassName connections,
-            RequestContextRead contextRead) {
+    private static Declaration routed(TenantAcquisition acquisition, TypeName keyType,
+            ClassName connections, RequestContextRead contextRead) {
         return switch (acquisition) {
             case TenantAcquisition.Untenanted ignored -> new Declaration(
                 CodeBlock.builder()
@@ -88,7 +90,7 @@ public final class TenantAcquisitionFragments {
                 CodeBlock.of(""));
             case TenantAcquisition.ArgumentBound bound -> new Declaration(
                 CodeBlock.builder()
-                    .add(divinedKey(bound, connections, contextRead))
+                    .add(divinedKey(bound, keyType, connections, contextRead))
                     .addStatement("$T dsl = $T.dslFor(env, $L)",
                         DSL_CONTEXT, connections, TENANT_KEY_LOCAL)
                     .build(),
@@ -98,13 +100,11 @@ public final class TenantAcquisitionFragments {
 
     /**
      * The divined-key declaration: every bound slot's read folded through the carrier's agreement
-     * guard. Declared with the bound column's own Java type, boxed where the catalog reports a
-     * primitive, because generated sources never use {@code var}.
+     * guard. Declared with the run's {@link TenantRouting.Routed#tenantKeyTypeName()}, because
+     * generated sources never use {@code var}.
      */
-    private static CodeBlock divinedKey(TenantAcquisition.ArgumentBound bound, ClassName connections,
-            RequestContextRead contextRead) {
-        var columnType = CatalogRefs.columnType(bound.keyColumn());
-        var keyType = columnType.isPrimitive() ? columnType.box() : columnType;
+    private static CodeBlock divinedKey(TenantAcquisition.ArgumentBound bound, TypeName keyType,
+            ClassName connections, RequestContextRead contextRead) {
         var b = CodeBlock.builder()
             .add("$T $L = $T.divinedTenant(", keyType, TENANT_KEY_LOCAL, connections);
         var slots = bound.slots();

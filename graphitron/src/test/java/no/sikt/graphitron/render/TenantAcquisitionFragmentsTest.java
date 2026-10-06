@@ -5,8 +5,6 @@ import no.sikt.graphitron.command.TenantAcquisition;
 import no.sikt.graphitron.command.TenantRouting;
 import no.sikt.graphitron.command.UnitRef;
 import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
@@ -40,12 +38,16 @@ class TenantAcquisitionFragmentsTest {
     /** The host's helper seam, standing in for the fetcher class's: records nothing, emits the call. */
     private static final RequestContextRead CONTEXT_READ = () -> CodeBlock.of("graphitronContext(env)");
 
-    private static final ColumnRef TENANT_COLUMN =
-        new ColumnRef("customer_id", "CUSTOMER_ID", "java.lang.Integer");
+    private static final String TENANT_KEY = Integer.class.getName();
 
     private static TenantAcquisitionFragments.Declaration declare(TenantAcquisition acquisition) {
+        return declare(TENANT_KEY, acquisition);
+    }
+
+    private static TenantAcquisitionFragments.Declaration declare(String tenantKey,
+            TenantAcquisition acquisition) {
         return TenantAcquisitionFragments.declare(
-            new TenantRouting.Routed(CONNECTIONS, Map.of(RENT_FILM, acquisition)),
+            new TenantRouting.Routed(CONNECTIONS, tenantKey, Map.of(RENT_FILM, acquisition)),
             RENT_FILM, CONTEXT_READ);
     }
 
@@ -89,7 +91,7 @@ class TenantAcquisitionFragmentsTest {
     @Test
     void anArgumentBoundAcquisitionDivinesFromItsSlotsAndHandsTheKeyDown() {
         var declaration = declare(new TenantAcquisition.ArgumentBound(
-            List.of(new TenantAcquisition.SlotRead.TopLevelArg("customerId")), TENANT_COLUMN));
+            List.of(new TenantAcquisition.SlotRead.TopLevelArg("customerId"))));
 
         assertThat(declaration.statement().toString())
             .isEqualTo("java.lang.Integer _divinedTenant = com.example.generated.schema"
@@ -112,8 +114,7 @@ class TenantAcquisitionFragmentsTest {
             List.of(
                 new TenantAcquisition.SlotRead.TopLevelArg("customerId"),
                 new TenantAcquisition.SlotRead.NestedInput("input", List.of("owner", "customerId")),
-                new TenantAcquisition.SlotRead.ContextArg("tenant")),
-            TENANT_COLUMN));
+                new TenantAcquisition.SlotRead.ContextArg("tenant"))));
 
         assertThat(declaration.statement().toString())
             .isEqualTo("java.lang.Integer _divinedTenant = com.example.generated.schema"
@@ -125,14 +126,17 @@ class TenantAcquisitionFragmentsTest {
                 + ".dslFor(env, _divinedTenant);\n");
     }
 
-    /** Generated sources never use {@code var}, so a primitive tenant column declares boxed. */
+    /**
+     * Generated sources never use {@code var}, so the key local is declared with the run's tenant
+     * key type, whatever the slots read: a scalar marked {@code @tenant} binds no column to take a
+     * type from.
+     */
     @Test
-    void aPrimitiveTenantColumnDeclaresTheKeyLocalBoxed() {
-        var declaration = declare(new TenantAcquisition.ArgumentBound(
-            List.of(new TenantAcquisition.SlotRead.TopLevelArg("customerId")),
-            new ColumnRef("customer_id", "CUSTOMER_ID", "int")));
+    void theKeyLocalIsDeclaredWithTheRunsTenantKeyType() {
+        var declaration = declare(String.class.getName(), new TenantAcquisition.ArgumentBound(
+            List.of(new TenantAcquisition.SlotRead.TopLevelArg("institution"))));
 
-        assertThat(declaration.statement().toString()).startsWith("java.lang.Integer _divinedTenant");
+        assertThat(declaration.statement().toString()).startsWith("java.lang.String _divinedTenant");
     }
 
     /**
@@ -142,7 +146,7 @@ class TenantAcquisitionFragmentsTest {
      */
     @Test
     void aCoordinateTheRoutedAxisDoesNotCoverIsRefusedRatherThanDefaulted() {
-        var routing = new TenantRouting.Routed(CONNECTIONS, Map.of());
+        var routing = new TenantRouting.Routed(CONNECTIONS, TENANT_KEY, Map.of());
 
         assertThatThrownBy(() ->
                 TenantAcquisitionFragments.declare(routing, RENT_FILM, CONTEXT_READ))

@@ -5187,7 +5187,7 @@ class FieldBuilder {
         }
         // Project the resolved MethodRef.Service onto a ServiceMethodCall carrier.
         var walkerResult = new no.sikt.graphitron.rewrite.walker.ServiceMethodCallWalker()
-            .walk(fieldDef, (no.sikt.graphitron.rewrite.model.MethodRef.Service) method);
+            .walk(parentTypeName, fieldDef, (no.sikt.graphitron.rewrite.model.MethodRef.Service) method);
         return switch (walkerResult) {
             case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.ServiceMethodCall> ok ->
                 builder.apply(channel, ok.carrier());

@@ -109,9 +109,13 @@ public final class TestFixtures {
      * Stubs a {@link ServiceMethodCall} from a {@link MethodRef.Service} via the production
      * walker, for tests building the root sync {@code @service} permits. When the walker rejects
      * (multi-DSL invariant violation, etc.), tests should construct the carrier manually instead.
+     * The service field is a stub {@code Query.<methodName>} with no SDL arguments, which names a
+     * top-level argument's definition coordinate and nothing deeper.
      */
     public static ServiceMethodCall stubServiceCall(MethodRef.Service method) {
-        var result = new ServiceMethodCallWalker().walk(null, method);
+        var stubField = graphql.schema.GraphQLFieldDefinition.newFieldDefinition()
+            .name(method.methodName()).type(graphql.Scalars.GraphQLString).build();
+        var result = new ServiceMethodCallWalker().walk("Query", stubField, method);
         if (result instanceof WalkerResult.Ok<ServiceMethodCall> ok) {
             return ok.carrier();
         }

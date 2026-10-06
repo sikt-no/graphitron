@@ -39,7 +39,6 @@ class TenantBindingClassificationTest {
         var bound = (TenantBinding.ArgumentBound) binding;
         assertThat(bound.bindings()).hasSize(1);
         assertThat(bound.primary().slotName()).isEqualTo("filmId");
-        assertThat(bound.primary().column().sqlName()).isEqualTo("film_id");
         assertThat(schema.tenantBindings().rejections()).isEmpty();
     }
 
@@ -451,7 +450,6 @@ class TenantBindingClassificationTest {
         var bound = (TenantBinding.ArgumentBound) binding;
         assertThat(bound.bindings()).hasSize(1);
         assertThat(bound.primary().slotName()).isEqualTo("filmId");
-        assertThat(bound.primary().column().sqlName()).isEqualTo("film_id");
         assertThat(schema.tenantBindings().rejections()).isEmpty();
     }
 
@@ -619,7 +617,6 @@ class TenantBindingClassificationTest {
 
         var bound = (TenantBinding.ArgumentBound) schema.tenantBindingOf("Mutation", "deleteFilmActor");
         assertThat(bound.primary().slotName()).isEqualTo("id");
-        assertThat(bound.primary().column().sqlName()).isEqualTo("film_id");
         assertThat(bound.primary().read())
             .isEqualTo(new TenantBinding.SlotRead.NestedInput("in", List.of("id")));
         assertThat(bound.primary().projection())
@@ -704,7 +701,6 @@ class TenantBindingClassificationTest {
 
         var bound = (TenantBinding.ArgumentBound) schema.tenantBindingOf("Mutation", "createInventory");
         assertThat(bound.primary().slotName()).isEqualTo("filmRef");
-        assertThat(bound.primary().column().sqlName()).isEqualTo("film_id");
         assertThat(bound.primary().projection())
             .isInstanceOfSatisfying(TenantBinding.SlotProjection.DecodedKeySlot.class,
                 decoded -> assertThat(decoded.slot()).isZero());
@@ -852,7 +848,6 @@ class TenantBindingClassificationTest {
             assertThat(bound.bindings()).extracting(TenantBinding.BoundSlot::slotName)
                 .containsExactly("id", "parent");
             for (var slot : bound.bindings()) {
-                assertThat(slot.column().sqlName()).isEqualTo("film_id");
                 assertThat(slot.read())
                     .isEqualTo(new TenantBinding.SlotRead.NestedInput("in", List.of(slot.slotName())));
                 assertThat(slot.projection())
@@ -939,7 +934,6 @@ class TenantBindingClassificationTest {
 
         var bound = (TenantBinding.ArgumentBound) schema.tenantBindingOf("Mutation", "createFilm");
         assertThat(bound.primary().slotName()).isEqualTo("id");
-        assertThat(bound.primary().column().sqlName()).isEqualTo("film_id");
         assertThat(bound.primary().read())
             .isEqualTo(new TenantBinding.SlotRead.NestedInput("in", List.of("id")));
         assertThat(bound.primary().projection())
@@ -1039,7 +1033,6 @@ class TenantBindingClassificationTest {
         assertThat(binding).isInstanceOf(TenantBinding.ArgumentBound.class);
         var bound = (TenantBinding.ArgumentBound) binding;
         assertThat(bound.bindings()).hasSize(1);
-        assertThat(bound.primary().column().sqlName()).isEqualTo("film_id");
         return bound.primary();
     }
 
@@ -1330,7 +1323,6 @@ class TenantBindingClassificationTest {
                                           TenantBinding.SlotRead read, int position) {
         assertThat(slot.slotName()).isEqualTo(name);
         assertThat(slot.read()).isEqualTo(read);
-        assertThat(slot.column().sqlName()).isEqualTo("film_id");
         assertThat(slot.projection()).isInstanceOfSatisfying(
             TenantBinding.SlotProjection.DecodedKeySlot.class,
             decoded -> assertThat(decoded.slot()).isEqualTo(position));
@@ -1679,6 +1671,272 @@ class TenantBindingClassificationTest {
         assertThat(schema.tenantBindingOf("Film", "sessionLanguage"))
             .isEqualTo(TenantBinding.Untenanted.INSTANCE);
         assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    // ===== @tenant: a root service's plain scalar the author marks as the tenant =====
+
+    private static final String RATE_BY_FILM_ID = """
+        input RateByFilmIdInput { filmId: Int! @tenant  rating: Int }
+        """;
+
+    private static void assertRawSlot(TenantBinding.BoundSlot slot, String name,
+                                      TenantBinding.SlotRead read) {
+        assertThat(slot.slotName()).isEqualTo(name);
+        assertThat(slot.read()).isEqualTo(read);
+        assertThat(slot.projection()).isEqualTo(TenantBinding.SlotProjection.Raw.INSTANCE);
+    }
+
+    /**
+     * The marker sweep's rejection at {@code definition}, naming the use site and carrying
+     * {@code fragment}.
+     */
+    private static void assertTenantMarkerRejection(GraphitronSchema schema, String definition,
+                                                    String use, String fragment) {
+        assertThat(schema.tenantBindings().rejections())
+            .filteredOn(e -> e.coordinate().equals(definition))
+            .anySatisfy(e -> assertThat(e.rejection())
+                .isInstanceOfSatisfying(Rejection.InvalidSchema.DirectiveConflict.class, conflict -> {
+                    assertThat(conflict.directives()).containsExactly("tenant");
+                    assertThat(conflict.message())
+                        .contains("'" + definition + "' declares @tenant, but at '" + use + "'")
+                        .contains(fragment);
+                }));
+    }
+
+    @Test
+    void anUnmarkedScalarMemberHandedAConnectionRejectsAtTheRoot() {
+        var schema = build(SERVICE_TYPES + """
+            input RateByFilmIdInput { filmId: Int!  rating: Int }
+            type Mutation { rateByFilmId(in: RateByFilmIdInput!): RateFilmsPayload %s }
+            """.formatted(service("rateByFilmId")));
+
+        assertThat(schema.tenantBindingOf("Mutation", "rateByFilmId")).isNull();
+        var rejection = assertUnroutedWithoutDeclines(schema, "Mutation.rateByFilmId");
+        assertThat(rejection.message())
+            .contains("mark the scalar argument or input field that holds the tenant with @tenant");
+        assertRejects(schema, "RateFilmsPayload.films", "no ancestor established a tenant context");
+    }
+
+    @Test
+    void aTenantMarkedScalarMemberDivinesRawAndItsChildrenInherit() {
+        var schema = build(SERVICE_TYPES + RATE_BY_FILM_ID + """
+            type Mutation { rateByFilmId(in: RateByFilmIdInput!): RateFilmsPayload %s }
+            """.formatted(service("rateByFilmId")));
+
+        var bound = argumentBound(schema, "Mutation", "rateByFilmId");
+        assertThat(bound.bindings()).hasSize(1);
+        assertRawSlot(bound.primary(), "in.filmId",
+            new TenantBinding.SlotRead.NestedInput("in", List.of("filmId")));
+        assertThat(schema.tenantBindingOf("RateFilmsPayload", "films"))
+            .isEqualTo(new TenantBinding.Inherited("RateFilmsPayload"));
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aTenantMarkedTopLevelArgumentReadsTheArgument() {
+        var schema = build(SERVICE_TYPES + """
+            type Mutation { rateByFilmIdArgument(filmId: Int! @tenant): RateFilmsPayload %s }
+            """.formatted(service("rateByFilmIdArgument")));
+
+        assertRawSlot(argumentBound(schema, "Mutation", "rateByFilmIdArgument").primary(), "filmId",
+            TenantBinding.SlotRead.TopLevelArg.INSTANCE);
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aTenantMarkedJavaRecordMemberDivinesLikeTheBeans() {
+        var schema = build(SERVICE_TYPES + RATE_BY_FILM_ID + """
+            type Mutation { rateByFilmIdRecord(in: RateByFilmIdInput!): RateFilmsPayload %s }
+            """.formatted(service("rateByFilmIdRecord")));
+
+        assertRawSlot(argumentBound(schema, "Mutation", "rateByFilmIdRecord").primary(), "in.filmId",
+            new TenantBinding.SlotRead.NestedInput("in", List.of("filmId")));
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aTenantMarkedMemberOfAGroupingInputReadsEverySegment() {
+        var schema = build(SERVICE_TYPES + """
+            input FilmWhere { filmId: Int! @tenant }
+            input RateGroupedInput { where: FilmWhere!  rating: Int }
+            type Mutation { rateByFilmId(in: RateGroupedInput!): RateFilmsPayload %s }
+            """.formatted(service("rateByFilmId")));
+
+        assertRawSlot(argumentBound(schema, "Mutation", "rateByFilmId").primary(), "in.where.filmId",
+            new TenantBinding.SlotRead.NestedInput("in", List.of("where", "filmId")));
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aBatchOfMarkedBeansMintsOneSlotReadOffEveryElement() {
+        var schema = build(SERVICE_TYPES + RATE_BY_FILM_ID + """
+            type Mutation { rateByFilmIds(in: [RateByFilmIdInput!]!): RateFilmsPayload %s }
+            """.formatted(service("rateByFilmIds")));
+
+        var bound = argumentBound(schema, "Mutation", "rateByFilmIds");
+        assertThat(bound.bindings()).hasSize(1);
+        assertRawSlot(bound.primary(), "in.filmId",
+            new TenantBinding.SlotRead.NestedInput("in", List.of("filmId")));
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aMarkedScalarBesideANodeIdMemberMintsBothSlotsInDeclarationOrder() {
+        var schema = build(SERVICE_TYPES + """
+            input RateByFilmIdAndFilmInput {
+                filmId: Int! @tenant
+                film: ID! @nodeId(typeName: "Film")
+            }
+            type Mutation { rateByFilmIdAndFilm(in: RateByFilmIdAndFilmInput!): RateFilmsPayload %s }
+            """.formatted(service("rateByFilmIdAndFilm")));
+
+        var bindings = argumentBound(schema, "Mutation", "rateByFilmIdAndFilm").bindings();
+        assertThat(bindings).hasSize(2);
+        assertRawSlot(bindings.get(0), "in.filmId",
+            new TenantBinding.SlotRead.NestedInput("in", List.of("filmId")));
+        assertDecodedSlot(bindings.get(1), "in.film",
+            new TenantBinding.SlotRead.NestedInput("in", List.of("film")), 0);
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void globalDataOverATenantMarkedArgumentRejects() {
+        var schema = build(SERVICE_TYPES + RATE_BY_FILM_ID + """
+            type Mutation { rateByFilmId(in: RateByFilmIdInput!): RateFilmsPayload %s }
+            """.formatted(globalService("rateByFilmId")));
+
+        assertGlobalDataRejection(schema, "Mutation.rateByFilmId",
+            "the arguments name a tenant (in.filmId), which contradicts @globalData", "globalData");
+    }
+
+    @Test
+    void aMarkedValueNotOfTheTenantKeyTypeDeclinesAtTheFieldAndTheDefinition() {
+        for (String scalar : List.of("String!", "ID!")) {
+            var schema = build(SERVICE_TYPES + """
+                input RateByFilmCodeInput { filmId: %s @tenant }
+                type Mutation { rateByFilmCode(in: RateByFilmCodeInput!): RateFilmsPayload %s }
+                """.formatted(scalar, service("rateByFilmCode")));
+
+            assertThat(schema.tenantBindingOf("Mutation", "rateByFilmCode")).as(scalar).isNull();
+            var unrouted = schema.tenantBindings().rejections().stream()
+                .filter(e -> e.coordinate().equals("Mutation.rateByFilmCode"))
+                .map(e -> e.rejection())
+                .toList();
+            assertThat(unrouted).as(scalar).singleElement()
+                .isInstanceOfSatisfying(Rejection.AuthorError.UnroutedServiceCall.class, r ->
+                    assertThat(r.declines()).singleElement().asString()
+                        .contains("'RateByFilmCodeInput.filmId' is marked @tenant")
+                        .contains("arrives as java.lang.String")
+                        .contains("not the tenant key type java.lang.Integer"));
+            assertTenantMarkerRejection(schema, "RateByFilmCodeInput.filmId",
+                "Mutation.rateByFilmCode", "arrives as java.lang.String");
+        }
+    }
+
+    @Test
+    void aMarkerInASingleTenantBuildRejects() {
+        var schema = TestSchemaHelper.buildSchema(SERVICE_TYPES + RATE_BY_FILM_ID + """
+            type Mutation { rateByFilmId(in: RateByFilmIdInput!): RateFilmsPayload %s }
+            """.formatted(service("rateByFilmId")));
+
+        assertThat(schema.tenantBindings().rejections())
+            .anyMatch(e -> e.coordinate().equals("RateByFilmIdInput.filmId")
+                && e.rejection() instanceof Rejection.InvalidSchema.DirectiveConflict conflict
+                && conflict.directives().equals(List.of("tenant"))
+                && conflict.message().contains("no <tenantColumn>"));
+    }
+
+    @Test
+    void aMarkerOnAQueryFieldsArgumentRejectsNamingTheUseSite() {
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type Query { films(filmId: Int @field(name: "film_id") @tenant): [Film!]! }
+            """);
+
+        assertThat(schema.tenantBindingOf("Query", "films"))
+            .isInstanceOf(TenantBinding.ArgumentBound.class);
+        assertTenantMarkerRejection(schema, "Query.films(filmId:)", "Query.films",
+            "is not a root @service: a query or @mutation field binds the tenant through"
+                + " @field(name: \"film_id\")");
+    }
+
+    @Test
+    void aMarkerOnAChildServicesArgumentRejects() {
+        var schema = build(boundFilmWith(
+            "rating(scale: Int @tenant): String " + service("ratingWithDsl")));
+
+        assertTenantMarkerRejection(schema, "Film.rating(scale:)", "Film.rating",
+            "a child service runs on its parent's tenant");
+    }
+
+    @Test
+    void aMarkerOnAnInputObjectTypedFieldRejects() {
+        var schema = build(SERVICE_TYPES + """
+            input FilmWhere { filmId: Int! }
+            input RateGroupedInput { where: FilmWhere! @tenant  rating: Int }
+            type Mutation { rateByFilmId(in: RateGroupedInput!): RateFilmsPayload %s }
+            """.formatted(service("rateByFilmId")));
+
+        assertTenantMarkerRejection(schema, "RateGroupedInput.where", "Mutation.rateByFilmId",
+            "it is not a scalar");
+    }
+
+    @Test
+    void aMarkerBesideNodeIdRejects() {
+        var schema = build(SERVICE_TYPES + """
+            input MarkedRateFilmInput { film: ID! @nodeId(typeName: "Film") @tenant }
+            type Mutation { rateFilmWithDsl(in: MarkedRateFilmInput!): RateFilmsPayload %s }
+            """.formatted(service("rateFilmWithDsl")));
+
+        assertThat(schema.tenantBindingOf("Mutation", "rateFilmWithDsl"))
+            .isInstanceOf(TenantBinding.ArgumentBound.class);
+        assertTenantMarkerRejection(schema, "MarkedRateFilmInput.film", "Mutation.rateFilmWithDsl",
+            "it carries @nodeId");
+    }
+
+    @Test
+    void aMarkerOnAJooqRecordMemberRejects() {
+        var schema = build(SERVICE_TYPES + """
+            input ModifyFilmInput {
+                filmId: Int! @field(name: "film_id") @tenant
+                title: String @field(name: "title")
+            }
+            type Mutation { modifyFilms(in: [ModifyFilmInput!]!): RateFilmsPayload %s }
+            """.formatted(service("modifyFilms")));
+
+        assertThat(schema.tenantBindingOf("Mutation", "modifyFilms"))
+            .isInstanceOf(TenantBinding.ArgumentBound.class);
+        assertTenantMarkerRejection(schema, "ModifyFilmInput.filmId", "Mutation.modifyFilms",
+            "it is bound into a jOOQ record parameter");
+    }
+
+    @Test
+    void aMarkerOnAServiceReturningAGlobalTableRejects() {
+        var schema = build(SERVICE_TYPES + RATE_BY_FILM_ID + """
+            type Language @table(name: "language") { name: String }
+            type Mutation { languageByFilmId(in: RateByFilmIdInput!): Language %s }
+            """.formatted(service("languageByFilmId")));
+
+        assertThat(schema.tenantBindingOf("Mutation", "languageByFilmId"))
+            .isEqualTo(TenantBinding.Untenanted.INSTANCE);
+        assertTenantMarkerRejection(schema, "RateByFilmIdInput.filmId", "Mutation.languageByFilmId",
+            "the service returns global @table type 'Language'");
+    }
+
+    @Test
+    void oneInputTypeRoutesItsRootServiceAndRejectsAtAQueryUseSite() {
+        var schema = build(SERVICE_TYPES + RATE_BY_FILM_ID + """
+            type Mutation { rateByFilmId(in: RateByFilmIdInput!): RateFilmsPayload %s }
+            extend type Query { ratedFilms(in: RateByFilmIdInput): [Film!]! }
+            """.formatted(service("rateByFilmId")));
+
+        assertThat(schema.tenantBindingOf("Mutation", "rateByFilmId"))
+            .isInstanceOf(TenantBinding.ArgumentBound.class);
+        assertTenantMarkerRejection(schema, "RateByFilmIdInput.filmId", "Query.ratedFilms",
+            "is not a root @service");
+        assertThat(schema.tenantBindings().rejections())
+            .noneMatch(e -> e.coordinate().equals("RateByFilmIdInput.filmId")
+                && e.rejection().message().contains("at 'Mutation.rateByFilmId'"));
     }
 
     // ===== @globalData: a root service's statement that its data is global =====

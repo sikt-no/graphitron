@@ -386,7 +386,8 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
                     + " tenant column '" + tenantColumn + "', so it would run on the default"
                     + " database. Take the node table's jOOQ record with @nodeId(typeName:)"
                     + " (a bean member, a parameter, or a top-level argument), or bind a jOOQ"
-                    + " record field to '" + tenantColumn + "'.";
+                    + " record field to '" + tenantColumn + "', or mark the scalar argument or"
+                    + " input field that holds the tenant with @tenant.";
                 // Tenant evidence is what @globalData rejects, so the marker is suggested only
                 // where it would be accepted.
                 return evidence.isEmpty()

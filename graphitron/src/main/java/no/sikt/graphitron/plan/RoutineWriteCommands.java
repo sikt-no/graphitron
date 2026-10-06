@@ -78,7 +78,8 @@ public final class RoutineWriteCommands {
         for (var row : rows) {
             byCoordinate.put(row.coordinate(), acquisitionOf(schema, row.coordinate()));
         }
-        return new TenantRouting.Routed(units.tenantConnections(), byCoordinate);
+        return new TenantRouting.Routed(units.tenantConnections(),
+            schema.requestTenantKeyType().orElseThrow().toString(), byCoordinate);
     }
 
     /**
@@ -111,8 +112,7 @@ public final class RoutineWriteCommands {
             case TenantBinding.NodeIdBound ignored -> new TenantAcquisition.Inherited();
             case TenantBinding.EntityRepBound ignored -> new TenantAcquisition.Inherited();
             case TenantBinding.ArgumentBound bound -> new TenantAcquisition.ArgumentBound(
-                bound.bindings().stream().map(RoutineWriteCommands::slotReadOf).toList(),
-                bound.bindings().getFirst().column());
+                bound.bindings().stream().map(RoutineWriteCommands::slotReadOf).toList());
             case TenantBinding.FanOut ignored -> throw new IllegalStateException(
                 "the routine-write coordinate " + coordinate + " is classified as tenant fan-out;"
                 + " the fanned emission acquires per tenant through scatter and owns that"

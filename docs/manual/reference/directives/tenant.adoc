@@ -1,0 +1,50 @@
+= @tenant
+:description: Mark the scalar argument or input field that carries the tenant of a root @service field.
+:!toc:
+
+*`@tenant`* marks the argument or input field of a root xref:service.adoc[`@service`] field that carries the tenant, in a build with database-per-tenant routing (`<tenantColumn>`). The service runs on that tenant's connection, and the tenant-scoped fields under its result inherit it.
+
+[source,graphql]
+----
+input CreateStudentInput {
+  institution: String! @tenant
+  name: String!
+}
+type Mutation {
+  createStudents(input: [CreateStudentInput!]!): CreateStudentsPayload
+    @service(service: {className: "...StudentService", method: "createStudents"})
+}
+----
+
+== SDL signature
+
+[source,graphql]
+----
+directive @tenant on ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+----
+
+The directive carries no arguments. Put it on a scalar argument of the service field, or on a scalar field of an input object the service receives as a Java bean or record, at any depth and inside lists. It is the fix for a service that is handed a `DSLContext` or `$session` and has nothing else naming its tenant: a mutation that creates something has no row and no id yet, only the value that says where the row goes.
+
+== What the build checks
+
+The marker is your statement that the service uses the value as its tenant, which graphitron cannot see, since the service's own SQL is opaque. Everything around that statement is checked.
+
+The value is read as the client sent it, so its GraphQL type must arrive as your tenant key's Java type: `String` or `ID` for a `String` key, `Int` for an `Integer` key, a custom scalar whose Java type is the key type. Graphitron does not convert or normalise the value; one the request's tenant set does not contain fails the field with a client error. Every value in one call must name the same tenant, across the elements of a list and beside any id that carries a tenant, or the call is refused before the service runs.
+
+== Build-time rejections
+
+The build rejects the marker where it decides nothing, naming each field that reaches it:
+
+* in a build without `<tenantColumn>`;
+* anywhere the field it reaches is not a root `@service`: a query field binds the tenant through `@field(name:)` on the tenant column, and a child service inherits its parent's tenant;
+* on a field bound into a jOOQ record (bind it to the tenant column with `@field(name:)` instead);
+* beside xref:nodeId.adoc[`@nodeId`], since the id already carries its tenant;
+* on a field that is not a scalar;
+* on a service whose result is a global `@table` type, which runs on the default source;
+* on a value whose type is not the tenant key's.
+
+A field marked xref:globalData.adoc[`@globalData`] whose arguments carry a `@tenant` value is rejected too: the value names a tenant, which contradicts the statement that the data is global.
+
+See xref:../../how-to/tenant-scoping.adoc[How-to: Tenant scoping] for the other ways a service names its tenant.
+
+xref:index.adoc[← Directives index]

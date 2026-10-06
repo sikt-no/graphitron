@@ -31,7 +31,8 @@ class ServiceMethodCallEmitterTest {
     void emit_static_singleScalarFromArg_producesAssignmentAndFinalCall() {
         var stringType = ClassName.get(String.class);
         var entry = new MappingEntry.FromArg("title",
-            new ValueShape.Scalar(stringType, ArgPath.head("title"), new CallSiteExtraction.Direct()));
+            new ValueShape.Scalar(stringType, ArgPath.head("title"), new CallSiteExtraction.Direct(),
+                "Query.findByTitle(title:)"));
         var call = new ServiceMethodCall.Static(
             "com.example.Svc", "findByTitle", List.of(entry), stringType);
 
@@ -116,7 +117,7 @@ class ServiceMethodCallEmitterTest {
     void emit_instance_emitsDslPreludeAndNewServiceCtor() {
         var entry = new MappingEntry.FromArg("title",
             new ValueShape.Scalar(ClassName.get(String.class),
-                ArgPath.head("title"), new CallSiteExtraction.Direct()));
+                ArgPath.head("title"), new CallSiteExtraction.Direct(), "Query.findByTitle(title:)"));
         var call = new ServiceMethodCall.Instance(
             "com.example.Svc",
             List.of(new MappingEntry.FromDsl()),
@@ -184,7 +185,7 @@ class ServiceMethodCallEmitterTest {
             List.of("title"), "title",
             new ValueShape.Scalar(stringType,
                 new ArgPath("input", List.of(new ArgPath.Segment("title", false))),
-                new CallSiteExtraction.Direct())));
+                new CallSiteExtraction.Direct(), "FilmInput.title"), "FilmInput.title"));
         var entry = new MappingEntry.FromArg("input",
             new ValueShape.RecordInput(beanClass, fields));
         var call = new ServiceMethodCall.Static(
@@ -208,7 +209,7 @@ class ServiceMethodCallEmitterTest {
             List.of("title"), "title",
             new ValueShape.Scalar(stringType,
                 new ArgPath("input", List.of(new ArgPath.Segment("title", false))),
-                new CallSiteExtraction.Direct())));
+                new CallSiteExtraction.Direct(), "FilmInput.title"), "FilmInput.title"));
         var entry = new MappingEntry.FromArg("input",
             new ValueShape.JavaBeanInput(beanClass, fields));
         var call = new ServiceMethodCall.Static(
@@ -234,7 +235,7 @@ class ServiceMethodCallEmitterTest {
                 new ArgPath("input", List.of(
                     new ArgPath.Segment("items", false),
                     new ArgPath.Segment("id", false))),
-                new CallSiteExtraction.Direct()));
+                new CallSiteExtraction.Direct(), "Item.id"));
         var call = new ServiceMethodCall.Static(
             "com.example.Svc", "find", List.of(entry), intType);
 
@@ -268,7 +269,7 @@ class ServiceMethodCallEmitterTest {
                 new ArgPath("input", List.of(
                     new ArgPath.Segment("items", true),
                     new ArgPath.Segment("id", false))),
-                new CallSiteExtraction.Direct()));
+                new CallSiteExtraction.Direct(), "Item.id"));
         var call = new ServiceMethodCall.Static(
             "com.example.Svc", "find", List.of(entry), intType);
 
@@ -304,7 +305,7 @@ class ServiceMethodCallEmitterTest {
                     new ArgPath.Segment("groups", true),
                     new ArgPath.Segment("items", true),
                     new ArgPath.Segment("id", false))),
-                new CallSiteExtraction.Direct()));
+                new CallSiteExtraction.Direct(), "Item.id"));
         var call = new ServiceMethodCall.Static(
             "com.example.Svc", "find", List.of(entry), intType);
 
@@ -324,7 +325,7 @@ class ServiceMethodCallEmitterTest {
             List.of("title"), "title",
             new ValueShape.Scalar(stringType,
                 new ArgPath("inputs", List.of(new ArgPath.Segment("title", false))),
-                new CallSiteExtraction.Direct())));
+                new CallSiteExtraction.Direct(), "FilmInput.title"), "FilmInput.title"));
         var listShape = new ValueShape.ListOf(ArgPath.head("inputs"),
             new ValueShape.RecordInput(beanClass, fields));
         var entry = new MappingEntry.FromArg("inputs", listShape);

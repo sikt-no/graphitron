@@ -422,11 +422,19 @@ public sealed interface CallSiteExtraction
      * never a Java primitive literal: primitives are boxed to their wrapper FQN at the resolver
      * boundary so that the {@link no.sikt.graphitron.javapoet.ClassName#bestGuess(String)} consumers
      * in {@code InputBeanInstantiationEmitter} can rely on the string being a class name.
+     *
+     * <p>{@code definition} is the schema coordinate ({@code Input.field}) of the SDL input field
+     * the binding reads, which for a hoisted leaf is the field on the grouping input that declares
+     * it. Stamped where the resolver holds the field definition; the access path is a use-site
+     * path and does not name the declaring type.
      */
     record FieldBinding(List<String> accessPath, String javaFieldName,
                         CallSiteExtraction leaf, boolean list,
-                        String javaElementTypeName) {
+                        String javaElementTypeName, String definition) {
         public FieldBinding {
+            if (definition == null || definition.isEmpty()) {
+                throw new IllegalArgumentException("FieldBinding definition must be non-empty");
+            }
             if (accessPath == null || accessPath.isEmpty()) {
                 throw new IllegalArgumentException("FieldBinding accessPath must be non-empty");
             }

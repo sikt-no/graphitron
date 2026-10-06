@@ -10,6 +10,7 @@ import graphql.schema.GraphQLNonNull;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnOverlap;
@@ -665,7 +666,7 @@ final class InputBeanResolver {
      * type has a one-element path; a field hoisted out of a grouping input carries the group's field
      * names ahead of its own.
      */
-    private record IndexEntry(List<String> path, GraphQLInputObjectField field,
+    private record IndexEntry(List<String> path, GraphQLInputObjectField field, String definition,
                               ClassifyContext.UseSite at) {}
 
     /**
@@ -740,6 +741,7 @@ final class InputBeanResolver {
                 continue;
             }
             IndexEntry prior = out.put(key, new IndexEntry(path, f,
+                SchemaCoordinateSyntax.ofField(iot.getName(), f.getName()),
                 classifyCtx.useSite() == null
                     ? null
                     : classifyCtx.useSite().descending(iot.getName(), f.getName())));
@@ -837,7 +839,7 @@ final class InputBeanResolver {
                     + component + "\") to the field that should populate it"));
             }
             consumedKeys.add(component);
-            FieldResult r = bindField(entry.field(), entry.path(), ce.getValue(),
+            FieldResult r = bindField(entry.field(), entry.path(), entry.definition(), ce.getValue(),
                 paramName, methodName, className, visited, entry.at());
             if (r instanceof FieldResult.Fail f) {
                 return new Built.Fail(f.rejection());
@@ -889,7 +891,8 @@ final class InputBeanResolver {
             if (member == null) {
                 continue;
             }
-            FieldResult r = bindField(e.getValue().field(), e.getValue().path(), member,
+            FieldResult r = bindField(e.getValue().field(), e.getValue().path(),
+                e.getValue().definition(), member,
                 paramName, methodName, className, visited, e.getValue().at());
             if (r instanceof FieldResult.Fail f) {
                 return new Built.Fail(f.rejection());
@@ -924,7 +927,7 @@ final class InputBeanResolver {
      * flattening moves where the value is read from, not what is done to it.
      */
     private FieldResult bindField(GraphQLInputObjectField sdlField, List<String> accessPath,
-            JavaMember member,
+            String definition, JavaMember member,
             String paramName, String methodName, String className, Set<Class<?>> visited,
             ClassifyContext.UseSite at) {
         // Messages name the dotted access path, so a hoisted leaf points at the SDL the author
@@ -1012,7 +1015,7 @@ final class InputBeanResolver {
             }
         }
         return new FieldResult.Ok(new CallSiteExtraction.FieldBinding(
-            accessPath, member.javaName(), leaf, listShape, javaElementTypeName));
+            accessPath, member.javaName(), leaf, listShape, javaElementTypeName, definition));
     }
 
     /**

@@ -314,6 +314,20 @@ on fields whose arguments name a tenant or carry a tenant-scoped table's record,
 directive @globalData on FIELD_DEFINITION
 
 """
+Marks the argument or input field of a root `@service` field that carries the tenant, so the
+service runs on that tenant's connection and the tenant-scoped fields under its result inherit it.
+Multi-tenant builds only (`<tenantColumn>` must be configured). Put it on a scalar argument of the
+service field, or on a scalar field of an input object the service receives as a Java bean or
+record, at any depth and inside lists. The value is read as the client sent it, so its GraphQL
+type must arrive as the tenant key's Java type; every value in one call must name the same
+tenant, and the routed tenant must be in the request's tenant set. Rejected at build time where it
+decides nothing: anywhere the field it reaches is not a root `@service`, on a field bound into a
+jOOQ record, beside `@nodeId`, on a non-scalar field, on a service returning a global `@table`
+type, and on a value whose type is not the tenant key's.
+"""
+directive @tenant on ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+
+"""
 Define a graphitron-generated mutation field.
 
 `typeName`: the DML statement kind (INSERT / UPDATE / DELETE / UPSERT).

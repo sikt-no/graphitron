@@ -1,5 +1,10 @@
 package no.sikt.graphitron.rewrite.walker;
 
+import graphql.Scalars;
+import graphql.schema.GraphQLArgument;
+import graphql.schema.GraphQLFieldDefinition;
+import graphql.schema.GraphQLInputObjectField;
+import graphql.schema.GraphQLInputObjectType;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
@@ -34,13 +39,17 @@ class ServiceMethodCallWalkerTest {
 
     private final ServiceMethodCallWalker walker = new ServiceMethodCallWalker();
 
+    /** The service field the walk reads definition coordinates against: {@code Query.doThing}. */
+    private static final GraphQLFieldDefinition STUB_FIELD = GraphQLFieldDefinition.newFieldDefinition()
+        .name("doThing").type(Scalars.GraphQLString).build();
+
     @Test
     void walk_staticMethod_dslSlot_producesStaticCarrierWithFromDsl() {
         var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
             new MethodRef.CallShape.Static(true),
             param("dslCtx", ClassName.get("org.jooq", "DSLContext"), new ParamSource.DslContext()));
 
-        var result = walker.walk(null, method);
+        var result = walker.walk("Query", STUB_FIELD, method);
 
         assertThat(result).isInstanceOf(WalkerResult.Ok.class);
         ServiceMethodCall call = ((WalkerResult.Ok<ServiceMethodCall>) result).carrier();
@@ -53,7 +62,7 @@ class ServiceMethodCallWalkerTest {
         var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
             new MethodRef.CallShape.InstanceWithDslHolder());
 
-        var call = ok(walker.walk(null, method));
+        var call = ok(walker.walk("Query", STUB_FIELD, method));
 
         assertThat(call).isInstanceOf(ServiceMethodCall.Instance.class);
         var inst = (ServiceMethodCall.Instance) call;
@@ -72,7 +81,7 @@ class ServiceMethodCallWalkerTest {
             param("tenantId", stringType, new ParamSource.Context())));
         var method = service("com.example.Svc", "doThing", TypeName.OBJECT, holder);
 
-        var call = ok(walker.walk(null, method));
+        var call = ok(walker.walk("Query", STUB_FIELD, method));
 
         var inst = (ServiceMethodCall.Instance) call;
         assertThat(inst.ctorArgs()).hasSize(2);
@@ -92,7 +101,7 @@ class ServiceMethodCallWalkerTest {
             param("b", dslType, new ParamSource.DslContext())));
         var method = service("com.example.Svc", "doThing", TypeName.OBJECT, holder);
 
-        var result = walker.walk(null, method);
+        var result = walker.walk("Query", STUB_FIELD, method);
 
         assertThat(result).isInstanceOf(WalkerResult.Err.class);
         var err = (WalkerResult.Err<ServiceMethodCall>) result;
@@ -108,7 +117,7 @@ class ServiceMethodCallWalkerTest {
             new MethodRef.CallShape.Static(false),
             param("userId", stringType, new ParamSource.Context()));
 
-        var call = ok(walker.walk(null, method));
+        var call = ok(walker.walk("Query", STUB_FIELD, method));
 
         assertThat(call.methodArgs()).hasSize(1);
         var entry = (MappingEntry.FromContext) call.methodArgs().getFirst();
@@ -125,7 +134,7 @@ class ServiceMethodCallWalkerTest {
             new MethodRef.CallShape.Static(false),
             param("title", stringType, arg));
 
-        var call = ok(walker.walk(null, method));
+        var call = ok(walker.walk("Query", STUB_FIELD, method));
 
         var fromArg = (MappingEntry.FromArg) call.methodArgs().getFirst();
         assertThat(fromArg.javaName()).isEqualTo("title");
@@ -146,7 +155,7 @@ class ServiceMethodCallWalkerTest {
             new MethodRef.CallShape.Static(false),
             param("genre", enumType, arg));
 
-        var call = ok(walker.walk(null, method));
+        var call = ok(walker.walk("Query", STUB_FIELD, method));
 
         var scalar = (ValueShape.Scalar) ((MappingEntry.FromArg) call.methodArgs().getFirst()).shape();
         assertThat(scalar.leafTransform()).isInstanceOf(CallSiteExtraction.EnumValueOf.class);
@@ -161,13 +170,14 @@ class ServiceMethodCallWalkerTest {
         var bean = new CallSiteExtraction.InputBean(beanClass,
             CallSiteExtraction.InputBean.Target.RECORD,
             List.of(new CallSiteExtraction.FieldBinding(
-                List.of("name"), "name", new CallSiteExtraction.Direct(), false, String.class.getName())));
+                List.of("name"), "name", new CallSiteExtraction.Direct(), false, String.class.getName(),
+                "BeanInput.name")));
         var arg = new ParamSource.Arg(bean, new PathExpr.Head("beans"));
         var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
             new MethodRef.CallShape.Static(false),
             param("beans", listOfBean, arg));
 
-        var call = ok(walker.walk(null, method));
+        var call = ok(walker.walk("Query", STUB_FIELD, method));
 
         var shape = ((MappingEntry.FromArg) call.methodArgs().getFirst()).shape();
         assertThat(shape).isInstanceOf(ValueShape.ListOf.class);
@@ -180,13 +190,14 @@ class ServiceMethodCallWalkerTest {
         var bean = new CallSiteExtraction.InputBean(beanClass,
             CallSiteExtraction.InputBean.Target.RECORD,
             List.of(new CallSiteExtraction.FieldBinding(
-                List.of("name"), "name", new CallSiteExtraction.Direct(), false, String.class.getName())));
+                List.of("name"), "name", new CallSiteExtraction.Direct(), false, String.class.getName(),
+                "BeanInput.name")));
         var arg = new ParamSource.Arg(bean, new PathExpr.Head("input"));
         var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
             new MethodRef.CallShape.Static(false),
             param("input", beanClass, arg));
 
-        var call = ok(walker.walk(null, method));
+        var call = ok(walker.walk("Query", STUB_FIELD, method));
 
         var shape = ((MappingEntry.FromArg) call.methodArgs().getFirst()).shape();
         assertThat(shape).isInstanceOf(ValueShape.RecordInput.class);
@@ -199,13 +210,14 @@ class ServiceMethodCallWalkerTest {
         var bean = new CallSiteExtraction.InputBean(beanClass,
             CallSiteExtraction.InputBean.Target.JAVA_BEAN,
             List.of(new CallSiteExtraction.FieldBinding(
-                List.of("name"), "name", new CallSiteExtraction.Direct(), false, String.class.getName())));
+                List.of("name"), "name", new CallSiteExtraction.Direct(), false, String.class.getName(),
+                "BeanInput.name")));
         var arg = new ParamSource.Arg(bean, new PathExpr.Head("input"));
         var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
             new MethodRef.CallShape.Static(false),
             param("input", beanClass, arg));
 
-        var call = ok(walker.walk(null, method));
+        var call = ok(walker.walk("Query", STUB_FIELD, method));
 
         var shape = ((MappingEntry.FromArg) call.methodArgs().getFirst()).shape();
         assertThat(shape).isInstanceOf(ValueShape.JavaBeanInput.class);
@@ -219,7 +231,7 @@ class ServiceMethodCallWalkerTest {
             param("dsl1", dslType, new ParamSource.DslContext()),
             param("dsl2", dslType, new ParamSource.DslContext()));
 
-        var result = walker.walk(null, method);
+        var result = walker.walk("Query", STUB_FIELD, method);
 
         assertThat(result).isInstanceOf(WalkerResult.Err.class);
         var err = (WalkerResult.Err<ServiceMethodCall>) result;
@@ -234,7 +246,7 @@ class ServiceMethodCallWalkerTest {
         var method = service("com.example.Svc", "doThing", returnType,
             new MethodRef.CallShape.Static(false));
 
-        var call = ok(walker.walk(null, method));
+        var call = ok(walker.walk("Query", STUB_FIELD, method));
 
         assertThat(call.javaReturnType()).isEqualTo(returnType);
     }
@@ -253,7 +265,18 @@ class ServiceMethodCallWalkerTest {
             new MethodRef.CallShape.Static(false),
             param("id", stringType, arg));
 
-        var call = ok(walker.walk(null, method));
+        var where = GraphQLInputObjectType.newInputObject().name("Where")
+            .field(GraphQLInputObjectField.newInputObjectField().name("id").type(Scalars.GraphQLID))
+            .build();
+        var filter = GraphQLInputObjectType.newInputObject().name("Filter")
+            .field(GraphQLInputObjectField.newInputObjectField().name("where").type(where))
+            .build();
+        var fieldDef = GraphQLFieldDefinition.newFieldDefinition().name("doThing")
+            .type(Scalars.GraphQLString)
+            .argument(GraphQLArgument.newArgument().name("input").type(filter))
+            .build();
+
+        var call = ok(walker.walk("Query", fieldDef, method));
 
         var scalar = (ValueShape.Scalar) ((MappingEntry.FromArg) call.methodArgs().getFirst()).shape();
         assertThat(scalar.sdlPath().outerArgName()).isEqualTo("input");
@@ -262,6 +285,33 @@ class ServiceMethodCallWalkerTest {
         assertThat(scalar.sdlPath().hasListSegment())
             .as("non-list segments preserve liftsList=false from PathExpr.Step")
             .isFalse();
+        assertThat(scalar.definition())
+            .as("the leaf's definition is the input field its last segment names, on its declaring type")
+            .isEqualTo("Where.id");
+    }
+
+    @Test
+    void walk_topLevelArgAndBeanMember_carryTheirDefinitionCoordinates() {
+        var beanClass = ClassName.get("com.example", "Bean");
+        var bean = new CallSiteExtraction.InputBean(beanClass,
+            CallSiteExtraction.InputBean.Target.JAVA_BEAN,
+            List.of(new CallSiteExtraction.FieldBinding(
+                List.of("name"), "name", new CallSiteExtraction.Direct(), false, String.class.getName(),
+                "BeanInput.name")));
+        var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
+            new MethodRef.CallShape.Static(false),
+            param("id", ClassName.get(String.class),
+                new ParamSource.Arg(new CallSiteExtraction.Direct(), new PathExpr.Head("id"))),
+            param("input", beanClass, new ParamSource.Arg(bean, new PathExpr.Head("input"))));
+
+        var call = ok(walker.walk("Mutation", STUB_FIELD, method));
+
+        var top = (ValueShape.Scalar) ((MappingEntry.FromArg) call.methodArgs().get(0)).shape();
+        assertThat(top.definition()).isEqualTo("Mutation.doThing(id:)");
+        var member = (ValueShape.JavaBeanInput) ((MappingEntry.FromArg) call.methodArgs().get(1)).shape();
+        assertThat(member.fields().getFirst().definition()).isEqualTo("BeanInput.name");
+        assertThat(((ValueShape.Scalar) member.fields().getFirst().shape()).definition())
+            .isEqualTo("BeanInput.name");
     }
 
     // ===== helpers =====

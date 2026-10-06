@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
-import no.sikt.graphitron.model.jooq.ColumnRef;
 
 /**
  * The per-field tenant-binding axis: where a field's divined tenant key comes from, decided
@@ -25,9 +24,10 @@ import no.sikt.graphitron.model.jooq.ColumnRef;
 public sealed interface TenantBinding {
 
     /**
-     * One argument or input-object slot whose column mapping lands on the tenant column.
-     * {@code slotName} is the GraphQL argument or input-field name; {@code column} is the
-     * resolved tenant column the slot binds; {@code read} is the resolved runtime read for the
+     * One argument or input-object slot that names the tenant: a column mapping that lands on the
+     * tenant column, a decoded node id whose key embeds it, or a scalar the author marked
+     * {@code @tenant}. {@code slotName} is the GraphQL argument or input-field name (the
+     * dot-joined path for a nested one); {@code read} is the resolved runtime read for the
      * slot's value, minted where the slot is discovered so the routing emitter renders it
      * instead of re-walking the classifier's carriers (one traversal, one home, no
      * classification-versus-emission drift); {@code projection} is what turns that read value
@@ -40,7 +40,7 @@ public sealed interface TenantBinding {
      * cross-product. Both are resolved together at every minting site, so a site cannot read
      * one axis and drop the other.
      */
-    record BoundSlot(String slotName, ColumnRef column, SlotRead read, SlotProjection projection) {
+    record BoundSlot(String slotName, SlotRead read, SlotProjection projection) {
         public BoundSlot {
             java.util.Objects.requireNonNull(read, "read");
             java.util.Objects.requireNonNull(projection, "projection");

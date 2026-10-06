@@ -24,8 +24,20 @@ public sealed interface ValueShape permits ValueShape.Scalar, ValueShape.ListOf,
      * A scalar or enum leaf. {@code leafTransform} is one of {@link CallSiteExtraction}'s four
      * leaf arms ({@code Direct}, {@code EnumValueOf}, {@code JooqConvert}, {@code NodeIdDecodeKeys});
      * the walker enforces that restriction structurally.
+     *
+     * <p>{@code definition} is the schema coordinate of the SDL slot the leaf reads, spelled
+     * through {@link no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax}: {@code Input.field}
+     * for an input field, {@code Type.field(arg:)} for a top-level argument, and for a mapping that
+     * projects past the SDL (a key column of a decoded id) the last declared slot. {@code sdlPath} is
+     * where the value sits at this use site; {@code definition} is which declaration it is, which
+     * the path alone does not say once an input type is reached from more than one field.
      */
-    record Scalar(TypeName javaType, ArgPath sdlPath, CallSiteExtraction leafTransform) implements ValueShape {}
+    record Scalar(TypeName javaType, ArgPath sdlPath, CallSiteExtraction leafTransform,
+                  String definition) implements ValueShape {
+        public Scalar {
+            java.util.Objects.requireNonNull(definition, "definition");
+        }
+    }
 
     record ListOf(ArgPath sdlPath, ValueShape elementShape) implements ValueShape {
         @Override public TypeName javaType() {
@@ -66,10 +78,14 @@ public sealed interface ValueShape permits ValueShape.Scalar, ValueShape.ListOf,
      * carrying the same meaning as {@link CallSiteExtraction.FieldBinding#accessPath()}: the last
      * element is the {@code Map} key ({@link #mapKey()}), earlier elements are enclosing grouping
      * input fields the leaf was flattened out of. {@code javaFieldName} is the matching Java
-     * component/setter suffix; {@code shape} carries the value tree below.
+     * component/setter suffix; {@code shape} carries the value tree below; {@code definition} is
+     * the schema coordinate of the input field bound, as on
+     * {@link CallSiteExtraction.FieldBinding#definition()}.
      */
-    record FieldBinding(List<String> accessPath, String javaFieldName, ValueShape shape) {
+    record FieldBinding(List<String> accessPath, String javaFieldName, ValueShape shape,
+                        String definition) {
         public FieldBinding {
+            java.util.Objects.requireNonNull(definition, "definition");
             if (accessPath == null || accessPath.isEmpty()) {
                 throw new IllegalArgumentException("FieldBinding accessPath must be non-empty");
             }

@@ -48,6 +48,20 @@ public final class FilmRatingService {
         return payload(dsl, actors.stream().map(FilmActorRecord::getFilmId).toList());
     }
 
+    /**
+     * Rates films named by a plain {@code filmId} the schema marks {@code @tenant}: the call is
+     * routed on that value, so the rows come back from the tenant it names.
+     */
+    public static RateFilmsPayload rateFilmsByFilmId(DSLContext dsl, List<FilmIdRating> ratings) {
+        return payload(dsl, ratings.stream().map(FilmIdRating::getFilmId).toList());
+    }
+
+    /** The same with a decoded film beside the marked value; both name the tenant. */
+    public static RateFilmsPayload rateFilmsByFilmIdAndFilm(DSLContext dsl,
+                                                            List<FilmIdAndFilmRating> ratings) {
+        return payload(dsl, ratings.stream().map(FilmIdAndFilmRating::filmId).toList());
+    }
+
     /** A root over global data only, marked {@code @globalData}: reports the database it ran on. */
     public static String globalServedBy(DSLContext dsl) {
         return database(dsl);

@@ -1976,7 +1976,8 @@ public class TypeFetcherGenerator {
                 : vfb.shape();
             String javaElementTypeName = innerElementTypeNameOf(inner);
             fieldBindings.add(new CallSiteExtraction.FieldBinding(
-                vfb.accessPath(), vfb.javaFieldName(), leafCarrier, isList, javaElementTypeName));
+                vfb.accessPath(), vfb.javaFieldName(), leafCarrier, isList, javaElementTypeName,
+                vfb.definition()));
         }
         var ib = new CallSiteExtraction.InputBean(beanClass, target, fieldBindings);
         out.put(beanClass, ib);
@@ -2232,7 +2233,8 @@ public class TypeFetcherGenerator {
                 : vfb.shape();
             out.add(new CallSiteExtraction.FieldBinding(
                 vfb.accessPath(), vfb.javaFieldName(),
-                leafForFieldBinding(vfb.shape()), isList, innerElementTypeNameOf(inner)));
+                leafForFieldBinding(vfb.shape()), isList, innerElementTypeNameOf(inner),
+                vfb.definition()));
         }
         return out;
     }

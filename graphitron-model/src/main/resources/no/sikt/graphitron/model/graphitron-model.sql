@@ -2630,9 +2630,9 @@ COMMENT ON COLUMN graphitron_ast_routine_column_mapping_pair_entry.column_ref IS
 -- The input-value site's decode. One writer over the three parents the parser treats alike, a
 -- field's argument, an input object's field and a directive definition's own argument, every
 -- relation below keyed by the position of the @ token, which is
--- graphql_ast_input_value_directive_entry's key. Three of the site's eight directive names get no
--- relation: @lookupKey, @orderBy and @asFacet declare no argument at all, so a row would carry its
--- key and repeat what the applied-directive row says. @reference's only argument is its path, so
+-- graphql_ast_input_value_directive_entry's key. Four of the site's nine directive names get no
+-- relation: @lookupKey, @orderBy, @asFacet and @tenant declare no argument at all, so a row would
+-- carry its key and repeat what the applied-directive row says. @reference's only argument is its path, so
 -- the steps get the relation and the application does not, the shape @error's handlers take at the
 -- type site.
 CREATE TABLE graphitron_ast_input_value_binding_entry (

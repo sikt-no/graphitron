@@ -119,6 +119,41 @@ class TenantServiceStub {
         throw new UnsupportedOperationException();
     }
 
+    /** A bean whose tenant carrier is a plain scalar, handed a connection. */
+    public static TenantFilmsPayload rateByFilmId(DSLContext dsl, RateByFilmIdBean in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** {@link #rateByFilmId} over the Java record twin. */
+    public static TenantFilmsPayload rateByFilmIdRecord(DSLContext dsl, RateByFilmIdRecord in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** {@link #rateByFilmId}'s batch shape. */
+    public static TenantFilmsPayload rateByFilmIds(DSLContext dsl, List<RateByFilmIdBean> in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** The tenant carrier as a top-level scalar argument. */
+    public static TenantFilmsPayload rateByFilmIdArgument(DSLContext dsl, Integer filmId) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** A {@code String} scalar against the {@code Integer} tenant key. */
+    public static TenantFilmsPayload rateByFilmCode(DSLContext dsl, RateByFilmCodeBean in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** A plain scalar beside a decoded {@code @nodeId} member. */
+    public static TenantFilmsPayload rateByFilmIdAndFilm(DSLContext dsl, RateByFilmIdAndFilmBean in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** A table-returning root over a global table, taking a plain scalar. */
+    public static LanguageRecord languageByFilmId(DSLContext dsl, RateByFilmIdBean in) {
+        throw new UnsupportedOperationException();
+    }
+
     /** Child: a static method taking a {@code DSLContext}. */
     public static Map<Row1<Integer>, String> ratingWithDsl(Set<Row1<Integer>> keys, DSLContext dsl) {
         throw new UnsupportedOperationException();

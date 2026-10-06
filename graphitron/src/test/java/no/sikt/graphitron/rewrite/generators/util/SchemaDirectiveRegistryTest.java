@@ -24,7 +24,7 @@ class SchemaDirectiveRegistryTest {
             "field", "globalData", "index", "lookupKey", "multitableReference", "mutation", "node",
             "nodeId", "notGenerated", "order", "orderBy", "pivot", "record", "reference",
             "referenceFor", "routine", "scalarType", "service", "sourceRow", "splitQuery",
-            "table", "tenantFanOut"
+            "table", "tenant", "tenantFanOut"
         );
     }
 

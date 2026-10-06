@@ -52,9 +52,10 @@ import static org.jooq.impl.DSL.val;
  * carries no graphitron directive in any corpus we read, though it is not empty: the bundled
  * vocabulary deprecates {@code @asConnection(connectionName:)}.
  *
- * <p>Eight directive names reach this site and five get a relation. {@code @lookupKey},
- * {@code @orderBy} and {@code @asFacet} declare no argument at all, so a row for any of them would
- * carry its key and nothing else, which is what the applied-directive row already says.
+ * <p>Nine directive names reach this site and five get a relation. {@code @lookupKey},
+ * {@code @orderBy}, {@code @asFacet} and {@code @tenant} declare no argument at all, so a row for
+ * any of them would carry its key and nothing else, which is what the applied-directive row
+ * already says.
  * {@code @reference} has only its path, so its steps get a relation and the application does not.
  * Neither repeatable directive carries an ordinal, each application standing at its own at sign.
  *

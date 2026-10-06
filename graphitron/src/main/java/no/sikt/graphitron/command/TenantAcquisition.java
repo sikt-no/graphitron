@@ -1,9 +1,6 @@
 package no.sikt.graphitron.command;
 
-import no.sikt.graphitron.model.jooq.ColumnRef;
-
 import java.util.List;
-import java.util.Objects;
 
 /**
  * How one coordinate's emitted entry point acquires the {@code DSLContext} it runs against, in a
@@ -49,15 +46,13 @@ public sealed interface TenantAcquisition {
      * divined key is additionally handed down the subtree, which is what {@link Inherited} reads.
      *
      * <p>{@code slots} is non-empty and in the classifier's declaration order, whose first entry
-     * is the documented-precedence primary. {@code keyColumn} is that primary's resolved tenant
-     * column, carried because the emitted key local is declared with the column's own Java type
-     * (generated sources never use {@code var}); every co-bound slot's column agrees with it by
-     * validation, a catalog-wide type disagreement on the tenant column being a rejection that
-     * fails the build before any producer runs.
+     * is the documented-precedence primary. The emitted key local is declared with the run's
+     * tenant key type, {@link TenantRouting.Routed#tenantKeyTypeName()}, a run-wide fact rather than
+     * one carried per slot: a slot need not bind a column at all (a scalar marked
+     * {@code @tenant} has none).
      */
-    record ArgumentBound(List<SlotRead> slots, ColumnRef keyColumn) implements TenantAcquisition {
+    record ArgumentBound(List<SlotRead> slots) implements TenantAcquisition {
         public ArgumentBound {
-            Objects.requireNonNull(keyColumn, "keyColumn");
             if (slots.isEmpty()) {
                 throw new IllegalArgumentException(
                     "an argument-bound acquisition divines the tenant from at least one slot;"

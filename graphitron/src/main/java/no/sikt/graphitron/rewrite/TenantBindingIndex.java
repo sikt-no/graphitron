@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.schema.FieldCoordinates;
 import graphql.schema.GraphQLFieldDefinition;
+import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLInterfaceType;
 import graphql.schema.GraphQLNamedType;
 import graphql.schema.GraphQLObjectType;
@@ -31,6 +32,7 @@ import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ServiceField;
 import no.sikt.graphitron.rewrite.model.UpdateRows;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.model.jooq.TableRef;
 import no.sikt.graphitron.rewrite.model.TargetShape;
@@ -128,6 +130,12 @@ public record TenantBindingIndex(
                                  java.util.function.UnaryOperator<String> withoutTenancy,
                                  java.util.function.UnaryOperator<String> unreached) {}
 
+    /**
+     * One use of a {@code @tenant} application: the output field whose arguments reach it, and
+     * the schema coordinate of the marked argument or input field.
+     */
+    private record TenantMarkerUse(FieldCoordinates field, String definition) {}
+
     private static final List<TenancyMarker> TENANCY_MARKERS = List.of(
         new TenancyMarker(BuildContext.DIR_TENANT_FAN_OUT,
             coordinate -> "'" + coordinate + "' declares @tenantFanOut, but this build configures no"
@@ -182,7 +190,45 @@ public record TenantBindingIndex(
         var rejections = new ArrayList<ValidationError>();
         forEachMarkerApplication(sdl, (marker, coordinate) -> rejections.add(markerRejection(
             List.of(marker.directive()), coordinate, marker.withoutTenancy().apply(coordinate))));
+        for (String definition : tenantMarkedDefinitions(sdl).keySet()) {
+            rejections.add(markerRejection(List.of(BuildContext.DIR_TENANT), definition,
+                "'" + definition + "' declares @tenant, but this build configures no"
+                    + " <tenantColumn>: there is no tenant to route on. Remove the directive."));
+        }
         return rejections;
+    }
+
+    /**
+     * Every {@code @tenant} application, keyed by the schema coordinate of the argument or input
+     * field carrying it, in schema order: the arguments of every object and interface field, and
+     * the fields of every input object. The marker is legal on {@code ARGUMENT_DEFINITION}, which
+     * also covers a directive definition's own arguments; those are no use site of a value and are
+     * not read.
+     */
+    private static Map<String, graphql.schema.GraphQLInputValueDefinition> tenantMarkedDefinitions(
+            GraphQLSchema sdl) {
+        var marked = new LinkedHashMap<String, graphql.schema.GraphQLInputValueDefinition>();
+        for (var type : sdl.getAllTypesAsList()) {
+            if (type.getName().startsWith("__")) continue;
+            if (type instanceof graphql.schema.GraphQLFieldsContainer container) {
+                for (GraphQLFieldDefinition field : container.getFieldDefinitions()) {
+                    for (var argument : field.getArguments()) {
+                        if (argument.hasAppliedDirective(BuildContext.DIR_TENANT)) {
+                            marked.put(SchemaCoordinateSyntax.ofArgument(container.getName(),
+                                field.getName(), argument.getName()), argument);
+                        }
+                    }
+                }
+            } else if (type instanceof GraphQLInputObjectType input) {
+                for (var field : input.getFieldDefinitions()) {
+                    if (field.hasAppliedDirective(BuildContext.DIR_TENANT)) {
+                        marked.put(SchemaCoordinateSyntax.ofField(input.getName(), field.getName()),
+                            field);
+                    }
+                }
+            }
+        }
+        return marked;
     }
 
     /**
@@ -231,6 +277,15 @@ public record TenantBindingIndex(
         /** Per tenancy marker, the coordinates that reached its ladder: the sweep's verdict set. */
         private final Map<String, Set<String>> markerVerdicts = new HashMap<>();
 
+        /** Every {@code @tenant} application, by the coordinate of the argument or input field. */
+        private final Map<String, graphql.schema.GraphQLInputValueDefinition> tenantMarked;
+        /** The {@code @tenant} uses the fold minted a slot from: the marker sweep's verdict set. */
+        private final Set<TenantMarkerUse> consumedTenantMarkers = new HashSet<>();
+        /** The {@code @tenant} uses the fold found bound into a jOOQ record parameter. */
+        private final Set<TenantMarkerUse> jooqBoundTenantMarkers = new HashSet<>();
+        /** The {@code @tenant} uses the type rung declined, with the rung's text. */
+        private final Map<TenantMarkerUse, String> mistypedTenantMarkers = new HashMap<>();
+
         Fold(GraphQLSchema sdl,
              Set<String> domain,
              Map<FieldCoordinates, GraphitronField> fields,
@@ -263,6 +318,7 @@ public record TenantBindingIndex(
             }
             this.columnBindings = columnBindings;
             this.mutationRootName = sdl.getMutationType() == null ? null : sdl.getMutationType().getName();
+            this.tenantMarked = tenantMarkedDefinitions(sdl);
             recordRoot(sdl.getQueryType());
             recordRoot(sdl.getMutationType());
             recordRoot(sdl.getSubscriptionType());
@@ -287,6 +343,7 @@ public record TenantBindingIndex(
                 }
             }
             sweepUnreachedMarkers();
+            sweepTenantMarkers();
             return new TenantBindingIndex(byCoordinate, byEntityType, rejections);
         }
 
@@ -304,6 +361,127 @@ public record TenantBindingIndex(
                         marker.unreached().apply(coordinate)));
                 }
             });
+        }
+
+        /**
+         * The {@code @tenant} completeness sweep, per use site: every output field whose argument
+         * trees reach a marked argument or input field is one use of it, and every use the fold
+         * did not mint a slot from is rejected at the definition, naming the use. Per use rather
+         * than per definition because one input type is consumed by many fields: a definition
+         * that routes one root service and is silently ignored at a child service or a query
+         * input would leave the second site running on a tenant the marked value never had to
+         * agree with. The reasons are checked in order, the first that applies wins.
+         */
+        private void sweepTenantMarkers() {
+            if (tenantMarked.isEmpty()) return;
+            var uses = tenantMarkerUses();
+            // armOf can leave a coordinate before reading its direct binding (a marker ladder, a
+            // cross-scope reach), and the binding is what consumes a marked use; read it here so
+            // the verdict does not depend on which rung the field stopped at.
+            uses.stream().map(TenantMarkerUse::field).distinct()
+                .filter(c -> fields.get(c) instanceof ServiceField)
+                .forEach(c -> directBinding(c, operationMembers.membersOf(c)));
+            for (TenantMarkerUse use : uses) {
+                if (consumedTenantMarkers.contains(use)) continue;
+                rejections.add(markerRejection(List.of(BuildContext.DIR_TENANT), use.definition(),
+                    "'" + use.definition() + "' declares @tenant, but at '"
+                        + use.field().getTypeName() + "." + use.field().getFieldName() + "' "
+                        + unconsumedTenantMarkerReason(use)));
+            }
+        }
+
+        private String unconsumedTenantMarkerReason(TenantMarkerUse use) {
+            FieldCoordinates coord = use.field();
+            var field = fields.get(coord);
+            if (!(field instanceof ServiceField && field instanceof OutputField out)) {
+                GraphQLFieldDefinition def = fieldDefinition(coord);
+                if (roots.contains(coord.getTypeName()) && def != null
+                        && def.hasAppliedDirective(BuildContext.DIR_SERVICE)
+                        && !(field instanceof OutputField)) {
+                    return "the field did not classify (see its own error), so nothing reads the"
+                        + " marked value.";
+                }
+                return "it is read by a field that is not a root @service:"
+                    + " a query or @mutation field binds the tenant through @field(name: \""
+                    + scopes.columnName() + "\") on the tenant column, and a child service runs on"
+                    + " its parent's tenant. Remove the directive.";
+            }
+            var definition = tenantMarked.get(use.definition());
+            var named = GraphQLTypeUtil.unwrapAll(definition.getType());
+            if (!(named instanceof graphql.schema.GraphQLScalarType)) {
+                return "it is not a scalar: @tenant marks the one value that names the tenant, so"
+                    + " put it on the scalar argument or input field that holds it.";
+            }
+            if (definition.hasAppliedDirective(BuildContext.DIR_NODE_ID)) {
+                return "it carries @nodeId, whose decoded id already names its tenant. Remove"
+                    + " @tenant.";
+            }
+            if (jooqBoundTenantMarkers.contains(use)) {
+                return "it is bound into a jOOQ record parameter, where a field names a column:"
+                    + " bind it to the tenant column with @field(name: \"" + scopes.columnName()
+                    + "\") instead, which routes the call.";
+            }
+            var global = reachedTables(out).stream().filter(t -> !tenantScoped(t)).findFirst();
+            if (global.isPresent()) {
+                return "the service returns global @table type '"
+                    + GraphQLTypeUtil.unwrapAll(fieldDefinition(coord).getType()).getName()
+                    + "' (table '" + global.get().tableName() + "'), which runs on the default"
+                    + " source, so there is no tenant to route. Remove the directive.";
+            }
+            String mistyped = mistypedTenantMarkers.get(use);
+            if (mistyped != null) {
+                return mistyped;
+            }
+            return "the service's parameters do not read it as a plain value. Mark a scalar the"
+                + " service receives as a parameter, or as a member of a Java bean or record"
+                + " parameter, or remove the directive.";
+        }
+
+        /**
+         * Every use of a {@code @tenant} application: for each field of every object and interface
+         * type, the marked arguments and the marked input fields its argument trees reach.
+         * Cycle-safe, since input types can recurse.
+         */
+        private Set<TenantMarkerUse> tenantMarkerUses() {
+            var uses = new java.util.LinkedHashSet<TenantMarkerUse>();
+            for (var type : sdl.getAllTypesAsList()) {
+                if (type.getName().startsWith("__")
+                        || !(type instanceof graphql.schema.GraphQLFieldsContainer container)) continue;
+                for (GraphQLFieldDefinition field : container.getFieldDefinitions()) {
+                    var use = FieldCoordinates.coordinates(container.getName(), field.getName());
+                    var visited = new HashSet<String>();
+                    for (var argument : field.getArguments()) {
+                        String coordinate = SchemaCoordinateSyntax.ofArgument(container.getName(),
+                            field.getName(), argument.getName());
+                        if (tenantMarked.containsKey(coordinate)) {
+                            uses.add(new TenantMarkerUse(use, coordinate));
+                        }
+                        if (GraphQLTypeUtil.unwrapAll(argument.getType()) instanceof GraphQLInputObjectType input) {
+                            forEachInputField(input, visited, definition -> {
+                                if (tenantMarked.containsKey(definition)) {
+                                    uses.add(new TenantMarkerUse(use, definition));
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+            return uses;
+        }
+
+        /**
+         * The coordinate of every field of {@code input} and of the input objects below it, each
+         * input type visited once.
+         */
+        private static void forEachInputField(GraphQLInputObjectType input, Set<String> visited,
+                                              java.util.function.Consumer<String> action) {
+            if (!visited.add(input.getName())) return;
+            for (var field : input.getFieldDefinitions()) {
+                action.accept(SchemaCoordinateSyntax.ofField(input.getName(), field.getName()));
+                if (GraphQLTypeUtil.unwrapAll(field.getType()) instanceof GraphQLInputObjectType nested) {
+                    forEachInputField(nested, visited, action);
+                }
+            }
         }
 
         private void recordMarkerVerdict(String directive, String coordinate) {
@@ -507,7 +685,8 @@ public record TenantBindingIndex(
                     + " values (" + String.join(", ", direct.evidence()) + "), so the service"
                     + " works on tenant data. Take the node table's jOOQ record with"
                     + " @nodeId(typeName:), or bind a jOOQ record field to '" + scopes.columnName()
-                    + "', and remove the directive.");
+                    + "', or mark the scalar argument or input field that holds the tenant with"
+                    + " @tenant, and remove the directive.");
             }
             return TenantBinding.Untenanted.INSTANCE;
         }
@@ -825,12 +1004,11 @@ public record TenantBindingIndex(
             private final List<String> evidence = new ArrayList<>();
             private final Set<String> seenNames = new HashSet<>();
 
-            void add(String slotName, ColumnRef column, SlotAccess access) {
+            void add(String slotName, SlotAccess access) {
                 switch (access) {
                     case SlotAccess.Resolved r -> {
                         if (seenNames.add(slotName)) {
-                            slots.add(new TenantBinding.BoundSlot(slotName, column, r.read(),
-                                r.projection()));
+                            slots.add(new TenantBinding.BoundSlot(slotName, r.read(), r.projection()));
                         }
                     }
                     case SlotAccess.Declined d -> decline(d.detail());
@@ -907,7 +1085,7 @@ public record TenantBindingIndex(
             for (var slot : slots) {
                 for (int i = 0; i < slot.columns().size(); i++) {
                     if (matchesTenantColumn(slot.columns().get(i))) {
-                        collector.add(slot.slotName(), slot.columns().get(i), accessOf(slot.extraction(),
+                        collector.add(slot.slotName(), accessOf(slot.extraction(),
                             TenantBinding.SlotRead.TopLevelArg.INSTANCE, i));
                     }
                 }
@@ -967,14 +1145,14 @@ public record TenantBindingIndex(
                 switch (arg) {
                     case LookupMapping.ColumnMapping.LookupArg.ScalarLookupArg s -> {
                         if (matchesTenantColumn(s.targetColumn())) {
-                            collector.add(s.argName(), s.targetColumn(), accessOf(s.extraction(),
+                            collector.add(s.argName(), accessOf(s.extraction(),
                                 TenantBinding.SlotRead.TopLevelArg.INSTANCE, 0));
                         }
                     }
                     case LookupMapping.ColumnMapping.LookupArg.MapInput mi -> {
                         for (InputColumnBinding.MapBinding b : mi.bindings()) {
                             if (matchesTenantColumn(b.targetColumn())) {
-                                collector.add(b.fieldName(), b.targetColumn(), accessOf(b.extraction(),
+                                collector.add(b.fieldName(), accessOf(b.extraction(),
                                     new TenantBinding.SlotRead.NestedInput(mi.argName(),
                                         List.of(b.fieldName())),
                                     b.decodeSlot()));
@@ -1002,7 +1180,7 @@ public record TenantBindingIndex(
         private void collectFromWhereKeys(OperationMember.Write.Dml dml, SlotCollector collector) {
             for (var key : dml.whereKeyColumns()) {
                 if (!matchesTenantColumn(key.targetColumn())) continue;
-                collector.add(key.sdlFieldName(), key.targetColumn(), accessOf(key.extraction(),
+                collector.add(key.sdlFieldName(), accessOf(key.extraction(),
                     new TenantBinding.SlotRead.NestedInput(dml.outerArgName(),
                         List.of(key.sdlFieldName())),
                     key.decodeSlot()));
@@ -1011,7 +1189,7 @@ public record TenantBindingIndex(
                 for (var set : update.updateRows().setColumns()) {
                     if (!matchesTenantColumn(set.targetColumn())) continue;
                     if (update.updateRows().isAgreementChecked(set)) {
-                        collector.add(set.sdlFieldName(), set.targetColumn(), accessOf(set.extraction(),
+                        collector.add(set.sdlFieldName(), accessOf(set.extraction(),
                             new TenantBinding.SlotRead.NestedInput(dml.outerArgName(),
                                 List.of(set.sdlFieldName())),
                             set.decodeSlot()));
@@ -1052,23 +1230,106 @@ public record TenantBindingIndex(
             // Constructor rounds carry no argument-sourced entry (the walker refuses one there).
             for (MappingEntry entry : structured.call().methodArgs()) {
                 if (entry instanceof MappingEntry.FromArg arg) {
-                    collectFromValueShape(arg.shape(), collector);
+                    collectFromValueShape(arg.shape(), coord, collector);
                 }
             }
         }
 
-        private void collectFromValueShape(ValueShape shape, SlotCollector collector) {
+        private void collectFromValueShape(ValueShape shape, FieldCoordinates use,
+                                           SlotCollector collector) {
             switch (shape) {
-                case ValueShape.ListOf list -> collectFromValueShape(list.elementShape(), collector);
+                case ValueShape.ListOf list -> collectFromValueShape(list.elementShape(), use, collector);
                 case ValueShape.RecordInput record -> {
-                    for (var field : record.fields()) collectFromValueShape(field.shape(), collector);
+                    for (var field : record.fields()) collectFromValueShape(field.shape(), use, collector);
                 }
                 case ValueShape.JavaBeanInput bean -> {
-                    for (var field : bean.fields()) collectFromValueShape(field.shape(), collector);
+                    for (var field : bean.fields()) collectFromValueShape(field.shape(), use, collector);
                 }
-                case ValueShape.JooqRecordInput jr -> collectFromJooqRecord(jr, collector);
-                case ValueShape.Scalar scalar ->
-                    collectFromServiceLeaf(scalar.leafTransform(), pathOf(scalar.sdlPath()), collector);
+                case ValueShape.JooqRecordInput jr -> collectFromJooqRecord(jr, use, collector);
+                case ValueShape.Scalar scalar -> {
+                    var path = pathOf(scalar.sdlPath());
+                    if (scalar.leafTransform() instanceof CallSiteExtraction.Direct
+                            && tenantMarked.containsKey(scalar.definition())) {
+                        collectFromMarkedScalar(scalar.definition(), path, use, collector);
+                    } else {
+                        collectFromServiceLeaf(scalar.leafTransform(), path, collector);
+                    }
+                }
+            }
+        }
+
+        /**
+         * A scalar the author marked {@code @tenant}, read as the client sent it: the read's value
+         * is the tenant, so the slot projects {@link TenantBinding.SlotProjection.Raw}. The
+         * marker is the author's statement that the opaque service uses the value as its tenant;
+         * what the build checks is the type, since the generated agreement fold compares
+         * candidates with {@code equals} before anything is coerced, so a value of any other type
+         * than the key's would disagree with a decoded sibling naming the same tenant. A mismatch
+         * declines, so nothing routes on a value the fold might misjudge. Only a
+         * {@link CallSiteExtraction.Direct} leaf reaches here; a marked value read through any
+         * other leaf mints what that leaf mints and is left for the marker sweep.
+         */
+        private void collectFromMarkedScalar(String definition, List<String> path,
+                                             FieldCoordinates use, SlotCollector collector) {
+            var marked = new TenantMarkerUse(use, definition);
+            String typeMismatch = tenantKeyTypeMismatch(definition);
+            if (typeMismatch != null) {
+                mistypedTenantMarkers.put(marked, typeMismatch);
+                collector.decline("'" + definition + "' is marked @tenant, but " + typeMismatch);
+                return;
+            }
+            consumedTenantMarkers.add(marked);
+            collector.add(slotNameOf(path),
+                new SlotAccess.Resolved(readOf(path), TenantBinding.SlotProjection.Raw.INSTANCE));
+        }
+
+        /**
+         * The type rung: {@code null} when the marked value arrives as the tenant key's Java type,
+         * otherwise the decline's reason, phrased to follow "but". The wire type is the one forward mapping graphql-java's
+         * argument coercion follows ({@link ScalarTypeResolver#coercionOutputType}), read over the
+         * definition's own scalar (the element type for a list), not the Java member's declared
+         * type, which the wire-coercion check lets through unjudged for a scalar it does not know.
+         */
+        private String tenantKeyTypeMismatch(String definition) {
+            var named = GraphQLTypeUtil.unwrapAll(tenantMarked.get(definition).getType());
+            var wire = ScalarTypeResolver.coercionOutputType(named.getName(), types.values());
+            var key = scopes.tenantType() == null ? null
+                : scopes.tenantType().isPrimitive() ? scopes.tenantType().box() : scopes.tenantType();
+            if (wire != null && wire.equals(key)) {
+                return null;
+            }
+            String arrives = wire == null
+                ? "arrives as a Java type graphitron cannot determine"
+                : "arrives as " + wire;
+            return "its scalar '" + named.getName() + "' " + arrives + ", not the tenant key type " + key + " of tenant column '"
+                + scopes.columnName() + "'. Graphitron does not convert a marked value, so it must"
+                + " arrive as the key's own type: declare it with a scalar that does.";
+        }
+
+        /**
+         * Records every {@code @tenant} application inside the input a jOOQ record parameter
+         * binds, at {@code base}, as bound into a record: a field there names a column, and the
+         * record field bound to the tenant column already routes the call, so the marker decides
+         * nothing and the sweep says which binding to write instead.
+         */
+        private void declineMarkersInJooqRecord(FieldCoordinates use, List<String> base) {
+            if (tenantMarked.isEmpty()) return;
+            var argument = fieldDefinition(use) == null ? null
+                : fieldDefinition(use).getArgument(base.get(0));
+            if (argument == null) return;
+            var type = GraphQLTypeUtil.unwrapAll(argument.getType());
+            for (String segment : base.subList(1, base.size())) {
+                if (!(type instanceof GraphQLInputObjectType input) || input.getField(segment) == null) {
+                    return;
+                }
+                type = GraphQLTypeUtil.unwrapAll(input.getField(segment).getType());
+            }
+            if (type instanceof GraphQLInputObjectType input) {
+                forEachInputField(input, new HashSet<>(), definition -> {
+                    if (tenantMarked.containsKey(definition)) {
+                        jooqBoundTenantMarkers.add(new TenantMarkerUse(use, definition));
+                    }
+                });
             }
         }
 
@@ -1079,15 +1340,17 @@ public record TenantBindingIndex(
          * record's own input, so they extend the parameter's argument path. A tenant-scoped
          * table's record that binds neither is tenant evidence.
          */
-        private void collectFromJooqRecord(ValueShape.JooqRecordInput jr, SlotCollector collector) {
+        private void collectFromJooqRecord(ValueShape.JooqRecordInput jr, FieldCoordinates use,
+                                           SlotCollector collector) {
             List<String> base = pathOf(jr.sdlPath());
+            declineMarkersInJooqRecord(use, base);
             boolean bound = false;
             for (var binding : jr.carrier().columnBindings()) {
                 if (!matchesTenantColumn(binding.column())) continue;
                 for (List<String> path : binding.paths()) {
                     var full = concat(base, path);
                     bound = true;
-                    collector.add(slotNameOf(full), binding.column(), new SlotAccess.Resolved(
+                    collector.add(slotNameOf(full), new SlotAccess.Resolved(
                         readOf(full), TenantBinding.SlotProjection.Raw.INSTANCE));
                 }
             }
@@ -1100,7 +1363,7 @@ public record TenantBindingIndex(
                 if (slot < 0) continue;
                 var full = concat(base, keyDecode.path());
                 bound = true;
-                collector.add(slotNameOf(full), decode.outputColumnShape().get(slot), new SlotAccess.Resolved(
+                collector.add(slotNameOf(full), new SlotAccess.Resolved(
                     readOf(full), new TenantBinding.SlotProjection.DecodedKeySlot(decode, slot)));
             }
             if (!bound && tenantScoped(jr.carrier().table())) {
@@ -1127,7 +1390,7 @@ public record TenantBindingIndex(
                         }
                         return;
                     }
-                    collector.add(slotNameOf(path), decode.outputColumnShape().get(slot), new SlotAccess.Resolved(
+                    collector.add(slotNameOf(path), new SlotAccess.Resolved(
                         readOf(path), new TenantBinding.SlotProjection.DecodedKeySlot(decode, slot)));
                 }
                 case CallSiteExtraction.NodeIdDecodeKeys keys -> {
@@ -1140,7 +1403,7 @@ public record TenantBindingIndex(
                         }
                         return;
                     }
-                    collector.add(slotNameOf(path), shape.get(slot), accessOf(keys, readOf(path), slot));
+                    collector.add(slotNameOf(path), accessOf(keys, readOf(path), slot));
                 }
                 // The service-side twin of PruneOnMismatch. Minting nothing would leave the id
                 // unchecked beside a divining sibling, and the service would be handed a record
@@ -1229,7 +1492,7 @@ public record TenantBindingIndex(
                 if (!(group instanceof InputColumnBindingGroup.MapGroup mg)) continue;
                 for (InputColumnBinding.MapBinding b : mg.bindings()) {
                     if (matchesTenantColumn(b.targetColumn())) {
-                        collector.add(b.fieldName(), b.targetColumn(), accessOf(b.extraction(),
+                        collector.add(b.fieldName(), accessOf(b.extraction(),
                             new TenantBinding.SlotRead.NestedInput(input.name(),
                                 List.of(b.fieldName())),
                             b.decodeSlot()));
@@ -1289,7 +1552,7 @@ public record TenantBindingIndex(
                 if (!matchesTenantColumn(columns.get(i))) continue;
                 var keys = new ArrayList<>(path);
                 keys.add(name);
-                collector.add(name, columns.get(i),
+                collector.add(name,
                     accessOf(extraction, new TenantBinding.SlotRead.NestedInput(argName, keys), i));
             }
         }

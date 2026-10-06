@@ -1,9 +1,13 @@
 package no.sikt.graphitron.rewrite.walker;
 
 import graphql.schema.GraphQLFieldDefinition;
+import graphql.schema.GraphQLInputObjectType;
+import graphql.schema.GraphQLType;
+import graphql.schema.GraphQLTypeUtil;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.PathExpr;
 import no.sikt.graphitron.rewrite.model.ArgPath;
@@ -45,13 +49,16 @@ public final class ServiceMethodCallWalker {
     private static final ClassName DSL_CONTEXT = ClassName.get("org.jooq", "DSLContext");
 
     /**
-     * Translates a resolved {@link MethodRef.Service} into a {@link ServiceMethodCall};
-     * {@code fieldDef} is part of the walk signature but unread by the translation.
-     * Returns {@link WalkerResult.Ok} on success or {@link WalkerResult.Err} carrying
-     * typed {@link ServiceMethodCallError} arms.
+     * Translates a resolved {@link MethodRef.Service} into a {@link ServiceMethodCall}.
+     * {@code parentTypeName} and {@code fieldDef} name the service field; they are read only to
+     * stamp each {@link ValueShape.Scalar} leaf with the schema coordinate of the SDL slot it
+     * reads ({@link ValueShape.Scalar#definition()}). Returns {@link WalkerResult.Ok} on success
+     * or {@link WalkerResult.Err} carrying typed {@link ServiceMethodCallError} arms.
      */
-    public WalkerResult<ServiceMethodCall> walk(GraphQLFieldDefinition fieldDef, MethodRef.Service method) {
+    public WalkerResult<ServiceMethodCall> walk(String parentTypeName, GraphQLFieldDefinition fieldDef,
+                                                MethodRef.Service method) {
         List<Rejection.AuthorError> errors = new ArrayList<>();
+        var site = new Site(parentTypeName, fieldDef);
 
         List<MappingEntry> methodArgs = new ArrayList<>();
         int dslSlotsInMethod = 0;
@@ -60,7 +67,7 @@ public final class ServiceMethodCallWalker {
                 // Param.Sourced (DataLoader batch keys) does not appear on root @service paths.
                 continue;
             }
-            MappingEntry entry = projectParam(typed, method, errors);
+            MappingEntry entry = projectParam(typed, method, site, errors);
             if (entry == null) {
                 continue;
             }
@@ -82,7 +89,7 @@ public final class ServiceMethodCallWalker {
             case MethodRef.CallShape.InstanceWithDslHolder holder ->
                 new ServiceMethodCall.Instance(
                     method.className(),
-                    ctorArgs(holder, method, errors),
+                    ctorArgs(holder, method, site, errors),
                     method.methodName(),
                     methodArgs,
                     method.returnType());
@@ -105,6 +112,7 @@ public final class ServiceMethodCallWalker {
     private List<MappingEntry> ctorArgs(
         MethodRef.CallShape.InstanceWithDslHolder holder,
         MethodRef.Service method,
+        Site site,
         List<Rejection.AuthorError> errors
     ) {
         List<MappingEntry> entries = new ArrayList<>();
@@ -113,7 +121,7 @@ public final class ServiceMethodCallWalker {
             if (!(p instanceof MethodRef.Param.Typed typed)) {
                 continue;
             }
-            MappingEntry entry = projectParam(typed, method, errors);
+            MappingEntry entry = projectParam(typed, method, site, errors);
             if (entry == null) {
                 continue;
             }
@@ -132,6 +140,7 @@ public final class ServiceMethodCallWalker {
     private MappingEntry projectParam(
         MethodRef.Param.Typed param,
         MethodRef.Service method,
+        Site site,
         List<Rejection.AuthorError> errors
     ) {
         return switch (param.source()) {
@@ -139,7 +148,7 @@ public final class ServiceMethodCallWalker {
             case ParamSource.Context ignored ->
                 new MappingEntry.FromContext(param.name(), param.javaType(), param.name());
             case ParamSource.Arg arg -> new MappingEntry.FromArg(param.name(),
-                deriveValueShape(arg, param.javaType(), method, errors));
+                deriveValueShape(arg, param.javaType(), site, errors));
             case ParamSource.SessionHandle ignored ->
                 new MappingEntry.FromSessionHandle(param.name(), param.javaType());
             // Table / SourceTable / SourceColumn / Sources / SessionSeam / SessionTenant don't appear on root
@@ -156,7 +165,7 @@ public final class ServiceMethodCallWalker {
     private ValueShape deriveValueShape(
         ParamSource.Arg arg,
         TypeName javaType,
-        MethodRef.Service method,
+        Site site,
         List<Rejection.AuthorError> errors
     ) {
         ArgPath path = toArgPath(arg.path());
@@ -167,7 +176,7 @@ public final class ServiceMethodCallWalker {
         if (extraction instanceof CallSiteExtraction.NestedInputField nested) {
             CallSiteExtraction leaf = nested.leaf();
             if (isLeaf(leaf)) {
-                return new ValueShape.Scalar(javaType, path, leaf);
+                return new ValueShape.Scalar(javaType, path, leaf, site.definitionOf(path));
             }
             // A non-leaf inside a NestedInputField at @service is not produced by the
             // existing classifier; record as parameter-unbindable and fall through with a Direct.
@@ -175,7 +184,8 @@ public final class ServiceMethodCallWalker {
                 arg.path().headName(),
                 List.of(),
                 "nested input-field with non-leaf transform"));
-            return new ValueShape.Scalar(javaType, path, new CallSiteExtraction.Direct());
+            return new ValueShape.Scalar(javaType, path, new CallSiteExtraction.Direct(),
+                site.definitionOf(path));
         }
 
         if (extraction instanceof CallSiteExtraction.InputBean bean) {
@@ -200,7 +210,7 @@ public final class ServiceMethodCallWalker {
         }
 
         if (isLeaf(extraction)) {
-            return new ValueShape.Scalar(javaType, path, extraction);
+            return new ValueShape.Scalar(javaType, path, extraction, site.definitionOf(path));
         }
 
         // ContextArg at @service Arg slot is not produced by the current resolver; defensive.
@@ -208,7 +218,8 @@ public final class ServiceMethodCallWalker {
             arg.path().headName(),
             List.of(),
             "unexpected extraction shape " + extraction.getClass().getSimpleName()));
-        return new ValueShape.Scalar(javaType, path, new CallSiteExtraction.Direct());
+        return new ValueShape.Scalar(javaType, path, new CallSiteExtraction.Direct(),
+            site.definitionOf(path));
     }
 
     private ValueShape inputBeanToValueShape(CallSiteExtraction.InputBean bean, ArgPath path) {
@@ -224,7 +235,8 @@ public final class ServiceMethodCallWalker {
                 leafPath = leafPath.append(segment);
             }
             ValueShape childShape = fieldBindingShape(fb, leafPath);
-            fields.add(new ValueShape.FieldBinding(fb.accessPath(), fb.javaFieldName(), childShape));
+            fields.add(new ValueShape.FieldBinding(fb.accessPath(), fb.javaFieldName(), childShape,
+                fb.definition()));
         }
         return switch (bean.target()) {
             case RECORD -> new ValueShape.RecordInput(bean.beanClass(), fields);
@@ -252,12 +264,13 @@ public final class ServiceMethodCallWalker {
             // members. Carry the leaf through unchanged so the create<Bean> helper emits the decode
             // call; downgrading to Direct would pass the wire String where a record is expected and
             // throw ClassCastException at runtime.
-            inner = new ValueShape.Scalar(elementType, path, leaf);
+            inner = new ValueShape.Scalar(elementType, path, leaf, fb.definition());
         } else if (isLeaf(leaf)) {
-            inner = new ValueShape.Scalar(elementType, path, leaf);
+            inner = new ValueShape.Scalar(elementType, path, leaf, fb.definition());
         } else {
             // Non-leaf, non-bean shapes are validator-rejected upstream; fall back to Direct.
-            inner = new ValueShape.Scalar(elementType, path, new CallSiteExtraction.Direct());
+            inner = new ValueShape.Scalar(elementType, path, new CallSiteExtraction.Direct(),
+                fb.definition());
         }
 
         if (fb.list()) {
@@ -290,6 +303,39 @@ public final class ServiceMethodCallWalker {
                 && ptn.typeArguments().getFirst().equals(elementClass);
         }
         return false;
+    }
+
+    /**
+     * The service field being walked, as the definition coordinates of its leaves need it: the
+     * deepest declared SDL slot the leaf's path reaches. A top-level argument's coordinate is
+     * {@code Type.field(arg:)}; a leaf an argument mapping reaches inside a nested input is the
+     * input field its last segment names, found by walking the argument's input type down the
+     * path. A mapping that continues past the SDL (a key column projected out of a decoded id)
+     * reads a projection of the last declared slot, so that slot is its definition; whether such a
+     * path is legal is the resolver's verdict, not this walk's. A bean member's leaf does not come
+     * here: the resolver stamped its coordinate on the {@link CallSiteExtraction.FieldBinding}
+     * where it held the input field.
+     */
+    private record Site(String parentTypeName, GraphQLFieldDefinition fieldDef) {
+
+        String definitionOf(ArgPath path) {
+            String definition = SchemaCoordinateSyntax.ofArgument(parentTypeName, fieldDef.getName(),
+                path.outerArgName());
+            var argument = fieldDef.getArgument(path.outerArgName());
+            if (argument == null) {
+                return definition;
+            }
+            GraphQLType type = GraphQLTypeUtil.unwrapAll(argument.getType());
+            for (var segment : path.deeperSegments()) {
+                if (!(type instanceof GraphQLInputObjectType input)
+                        || input.getField(segment.name()) == null) {
+                    break;
+                }
+                definition = SchemaCoordinateSyntax.ofField(input.getName(), segment.name());
+                type = GraphQLTypeUtil.unwrapAll(input.getField(segment.name()).getType());
+            }
+            return definition;
+        }
     }
 
     private static ArgPath toArgPath(PathExpr expr) {
