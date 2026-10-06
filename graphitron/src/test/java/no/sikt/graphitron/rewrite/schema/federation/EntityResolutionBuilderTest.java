@@ -93,6 +93,9 @@ class EntityResolutionBuilderTest {
         assertThat(resolution.alternatives())
             .as("a non-NodeType @key type carries no NodeId alternative")
             .noneMatch(a -> a instanceof KeyAlternative.NodeId);
+        assertThat(resolution.resolvable())
+            .as("a resolvable alternative makes the entity resolvable by this subgraph")
+            .isTrue();
     }
 
     @Test
@@ -140,6 +143,9 @@ class EntityResolutionBuilderTest {
             .isInstanceOf(KeyAlternative.NodeId.class);
         assertThat(alt.resolvable())
             .as("consumer's resolvable: false carries through, dispatcher will skip this alt")
+            .isFalse();
+        assertThat(resolution.resolvable())
+            .as("the opted-out id key is the only alternative, so neither _entities nor Query.node dispatches it")
             .isFalse();
     }
 
@@ -195,6 +201,9 @@ class EntityResolutionBuilderTest {
         assertThat(resolution.alternatives()).hasSize(1);
         assertThat(resolution.alternatives().get(0).resolvable())
             .as("@key(resolvable: false) carries through; dispatcher will skip this alt at match time")
+            .isFalse();
+        assertThat(resolution.resolvable())
+            .as("no resolvable alternative, so this subgraph does not resolve the entity")
             .isFalse();
     }
 

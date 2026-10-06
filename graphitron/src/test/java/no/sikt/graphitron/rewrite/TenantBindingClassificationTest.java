@@ -261,6 +261,92 @@ class TenantBindingClassificationTest {
         assertRejects(schema, "Language.films", "no ancestor established a tenant context");
     }
 
+    // ===== Dispatch entries: no resolvable alternative, no dispatch =====
+
+    /**
+     * {@link #anUntenantedEntityUnderABindingRootDeniesItsChildrenAContext}'s fixture with
+     * {@code Language}'s key directives swapped in.
+     */
+    private static String languageUnderFilms(String languageKeys) {
+        return KEY_DIRECTIVE + """
+            type Film @table(name: "film") {
+                title: String
+                language: Language @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Language @table(name: "language") %s {
+                languageId: Int @field(name: "language_id")
+                films: [LanguageFilm!]! @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type LanguageFilm @table(name: "film") { title: String }
+            type Query {
+                films(filmId: Int @field(name: "film_id")): [Film!]!
+            }
+            """.formatted(languageKeys);
+    }
+
+    @Test
+    void aNonResolvableUntenantedEntityUnderABindingRootLetsItsChildrenInherit() {
+        // _entities never dispatches a type with no resolvable key, so Query.films is the only
+        // way in and its tenant reaches Language.films.
+        var schema = build(languageUnderFilms(
+            "@key(fields: \"languageId\", resolvable: false)"));
+
+        assertInherited(schema, "Language", "films");
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aNonResolvableTenantScopedEntityUnderABindingRootLetsItsChildrenInherit() {
+        var schema = build(KEY_DIRECTIVE + """
+            type Film @table(name: "film") @key(fields: "title", resolvable: false) {
+                title: String
+                inventories: [Inventory!]!
+            }
+            type Inventory @table(name: "inventory") { inventoryId: Int }
+            type Query {
+                films(filmId: Int @field(name: "film_id")): [Film!]!
+            }
+            """);
+
+        assertInherited(schema, "Film", "inventories");
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void anEntityWithOneResolvableAlternativeStillDeniesItsChildrenAContext() {
+        // Any resolvable alternative lets _entities dispatch the type, with no tenant.
+        var schema = build(languageUnderFilms(
+            "@key(fields: \"languageId\", resolvable: false) @key(fields: \"name\")")
+            .replace("languageId: Int @field(name: \"language_id\")",
+                "languageId: Int @field(name: \"language_id\")\n    name: String"));
+
+        assertRejects(schema, "Language.films", "no ancestor established a tenant context");
+    }
+
+    @Test
+    void aNonResolvableNodeTypeUnderABindingRootLetsItsChildrenInherit() {
+        // An explicit non-resolvable id key opts the node type out of Query.node dispatch too,
+        // which reaches it only through the same per-alternative skip as _entities.
+        var schema = build(KEY_DIRECTIVE + """
+            type Film @table(name: "film") {
+                title: String
+                language: Language @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Language implements Node @table(name: "language") @node
+                    @key(fields: "id", resolvable: false) {
+                id: ID! @nodeId
+                films: [LanguageFilm!]! @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type LanguageFilm @table(name: "film") { title: String }
+            type Query {
+                films(filmId: Int @field(name: "film_id")): [Film!]!
+            }
+            """);
+
+        assertInherited(schema, "Language", "films");
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
     @Test
     void sessionBoundServiceChildUnderTenantContext_yieldsInherited() {
         // A $session-bound service call reads per-connection state (the mounted handle), so

@@ -1464,12 +1464,19 @@ public record TenantBindingIndex(
 
         /**
          * Batched dispatch surfaces reach the type outside the field-edge graph, whatever else
-         * reaches it, and hand it a tenant only when routable: a tenant-scoped node type whose
+         * reaches it, but only when this subgraph resolves it: an entity with no resolvable
+         * alternative ({@link EntityResolution#resolvable}) is entered by neither
+         * {@code _entities} nor {@code Query.node}, which share one dispatch core. A surface that
+         * does enter hands the type a tenant only when routable: a tenant-scoped node type whose
          * key does not embed the tenant column enters with none, and so does an entity type with
          * no {@link TenantBinding.EntityRepBound}. That includes every untenanted entity, node
          * types among them, which entity and node dispatch serve from the default source.
          */
         private boolean unboundDispatchEntry(String typeName) {
+            var resolution = entitiesByType.get(typeName);
+            if (resolution != null && !resolution.resolvable()) {
+                return false;
+            }
             if (types.get(typeName) instanceof GraphitronType.NodeType nt
                     && tenantScoped(nt.table())
                     && (!nodeDispatchRoutable || !nodePositions.containsKey(typeName))) {
