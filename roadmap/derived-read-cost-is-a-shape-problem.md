@@ -270,7 +270,8 @@ a derivation over either corpus alone, and `graphitron_` already does this again
         the rule of a site that calls one method, `@service`, `@externalField` and `@sourceRow`.
     * **`@enum` resolves to a class** `open`, when a consumer asks. A class reference names no
       method, so its resolution is to `code_class` and is its own relation.
-    * **The per-site copies go** `blocked`, on each consumer being answered. The twins lose
+    * **The per-site copies go** `blocked`, on each consumer being answered and on the seeding
+      branch's code-reference subject, twenty-nine classes seeding them. The twins lose
       `class_name`, `method` and `argmapping`, a twin left with nothing goes, and the gate's set
       goes with them.
   * **The walk's unknown-method rejections go** `blocked`, on entry defects failing validate.
@@ -283,7 +284,8 @@ a derivation over either corpus alone, and `graphitron_` already does this again
     new relations and the view goes with its tests. The oracle is the consumer's own test, stated
     as SDL, which passes before and after; a consumer with none gets one first, and a departure is
     an edit to that test. One child per consumer, grown as each is tried.
-  * **The old shape is gone** `blocked`, on each consumer being answered from the new model. The
+  * **The old shape is gone** `blocked`, on each consumer being answered from the new model and on
+    the seeding branch's code-reference subject. The
     two producer views, the unused views and their tests, and the coordinate-keyed entries with
     their writers in `GraphitronAnchor`.
 * **A routine result joins its target on the target's key, matched by name** `open`. A routine's
@@ -675,6 +677,12 @@ Seeding is the fallout of the module boundary this item already moved, and the f
 shape the root condemns, still in the tree. Evidence in
 `roadmap/audits/2026-09-27-seeding-dissolution.md`.
 
+It is also what holds every subtraction in the graph. A seeded test writes a relation's columns, so
+a relation cannot go while a test seeds it, and a reshape breaks every test that wrote the old
+shape whether or not the behaviour it asserts changed. So this branch is a prerequisite of the
+subtraction nodes elsewhere, not a cleanup beside them, and a subject is taken first when its
+conversion frees one.
+
 * The corpora are reachable `done`. All three families have one and two are modules the tests already
   depend on: the fact documents, `graphitron-sakila-db`, `graphitron-sakila-service`.
 * A document states what a fixture stated `done`. Seven documents replaced four test classes, at
@@ -690,6 +698,14 @@ shape the root condemns, still in the tree. Evidence in
   own javadoc asks a fixture to call it instead. They open `ThreadConfinedStore` and anchor their
   graph through capture now, so what the gate counts is cases that fabricate facts, plus
   `CodeRows`, which is the fixture's own machinery and goes with it.
+* **The code-reference subject converts** `open`, and first, because it frees the producer
+  branch's subtraction. Twenty-nine classes seed the per-site copies of a code reference, through
+  `seedService`, `seedFieldCondition`, `seedArgumentCondition`, `seedExternalField` and their
+  argMapping variants; three of them are the node-id subject's and wait with it. Of the other
+  twenty-six, seventeen need no corpus change; the rest wait on a gap each, eight catalog shapes
+  and ten classpath ones, two of which want a second classpath entry rather than a class. Every
+  class and gap, and the cases no capture reaches, in
+  `roadmap/audits/2026-10-03-code-reference-subject-gaps.md`.
 * **The code half converts** `open`, and is the larger half: 54 classes and 717 tests against the
   SDL half's 50 and 354. Taken first because the prerequisites are here. A seeded `code_method` row
   is a claim about a method; a method in `graphitron-sakila-service` is one.
