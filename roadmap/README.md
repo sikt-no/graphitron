@@ -57,7 +57,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec | 2026-08-06 | [plan](operation-driven-test-corpus.md) |
 | `R180` | Resolved accessors for record-parent column reads (recordColumnReadArgs) | Spec | 2026-07-15 <sub>created 2026-05-19</sub> | [plan](record-parent-column-read-helper.md) |
 | `R684` | fact-model doctrine: consumers share relations, not queries | Ready | 2026-08-17 <sub>created 2026-08-16</sub> | [plan](consumers-share-relations-not-queries.md) |
-| `R989` | A root @service whose only tenant carrier is a scalar input member cannot route under database-per-tenant | In Progress | 2026-10-06 <sub>created 2026-10-05</sub> | [plan](scalar-tenant-carrier-on-service-input.md) |
+| `R989` | A root @service whose only tenant carrier is a scalar input member cannot route under database-per-tenant | In Review | 2026-10-06 <sub>created 2026-10-05</sub> | [plan](scalar-tenant-carrier-on-service-input.md) |
 
 ---
 
@@ -582,7 +582,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R460` [**Targeted read-only enforcement for query paths graphitron does not control (@routine, @service)**](query-read-only-enforcement.md) — Backlog, architecture
 - `R505` [**Tenant-index tables: per-row tenant routing off an index parent**](tenant-index-parent-row-routing.md) — Backlog, architecture
 - `R517` [**Client narrowing of the fan-out domain: a tenant-column list argument intersects the request set**](tenant-fanout-argument-narrowing.md) — Backlog, architecture
-- `R989` [**A root @service whose only tenant carrier is a scalar input member cannot route under database-per-tenant**](scalar-tenant-carrier-on-service-input.md) — In Progress, feature
+- `R989` [**A root @service whose only tenant carrier is a scalar input member cannot route under database-per-tenant**](scalar-tenant-carrier-on-service-input.md) — In Review, feature
 
 ### search
 

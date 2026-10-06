@@ -1,7 +1,7 @@
 ---
 id: R989
 title: "A root @service whose only tenant carrier is a scalar input member cannot route under database-per-tenant"
-status: In Progress
+status: In Review
 bucket: feature
 theme: runtime-connection
 depends-on: []
@@ -112,6 +112,17 @@ Completeness rests on the classification pair, the four execution cases, and the
 ## Retired vocabulary
 
 `BoundSlot.column`, `TenantAcquisition.ArgumentBound.keyColumn`, and the javadoc phrase "the bound column's own Java type". The retirement sweep greps for `keyColumn` within `command/`, `plan/` and `render/`, and for `.column()` on a `BoundSlot` across the tenant tests.
+
+## Implementation notes
+
+Landed at `cdd2716`. The plan above held; where the code differs, it is here.
+
+- `ValueShape.FieldBinding` carries `definition` as well as `ValueShape.Scalar`. `TypeFetcherGenerator` rebuilds each `CallSiteExtraction.FieldBinding` from the value shape when it collects the bean helpers, and the round trip has to keep the coordinate.
+- `ServiceMethodCallWalker.walk` now takes the service field's parent type name beside its definition, which the top-level argument coordinate needs. An argument mapping can project past the SDL (`in.inventoryId.inventry_id`, a key column of a decoded id); the walk stops at the deepest declared slot and stamps that, rather than throwing before the resolver reports the mapping's own rejection (`ArgmappingProjectionRejectionPipelineTest` caught the first version).
+- `TenantRouting.Routed` carries `tenantKeyTypeName`, the boxed key type's fully qualified name, not a `TypeName`: the command package may not import the emit library (`PackageImportDirectionTest`), and its records carry Java types as names, as `CatalogColumn.javaTypeName` does. The renderer turns it into a `ClassName`.
+- The sweep reads the direct binding of every root `@service` use site itself before judging, since `armOf` can leave a coordinate (a marker ladder, a cross-scope reach) before reading it. It has two reasons beyond the plan's list: a root `@service` field that failed classification ("did not classify (see its own error)"), and a fallback for a use the service's parameters never read (a bean with no member for the field, or a top-level argument the method does not take).
+- Registries that enumerate directives: `SchemaDirectiveRegistryTest` pins `tenant`, `supported-directives.adoc` is regenerated, and the input-value site's javadoc in `GraphitronInputValueEntries` and its DDL comment now count `@tenant` among the argumentless directives. The `UnroutedServiceCall` paragraph in `docs/architecture/explanation/typed-rejection.adoc` names the new fix.
+- Test names. The pair is `anUnmarkedScalarMemberHandedAConnectionRejectsAtTheRoot` and `aTenantMarkedScalarMemberDivinesRawAndItsChildrenInherit`. The top-level argument case uses `rateByFilmIdArgument`, since `rateById` already names the decoded-record stub. The type rung's `String!` and `ID!` cases share `aMarkedValueNotOfTheTenantKeyTypeDeclinesAtTheFieldAndTheDefinition`. The sweep cases are `aMarkerInASingleTenantBuildRejects`, `aMarkerOnAQueryFieldsArgumentRejectsNamingTheUseSite`, `aMarkerOnAChildServicesArgumentRejects`, `aMarkerOnAnInputObjectTypedFieldRejects`, `aMarkerBesideNodeIdRejects`, `aMarkerOnAJooqRecordMemberRejects` and `aMarkerOnAServiceReturningAGlobalTableRejects`; the per-use-site case is `oneInputTypeRoutesItsRootServiceAndRejectsAtAQueryUseSite`. The execution fixture's fields are `rateFilmsByFilmId` and `rateFilmsByFilmIdAndFilm`, and the four execution cases carry the names the Tests section gives.
 
 ## Other solutions we've considered
 
