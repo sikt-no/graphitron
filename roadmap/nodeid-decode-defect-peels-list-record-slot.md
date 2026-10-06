@@ -1,7 +1,7 @@
 ---
 id: R990
 title: "A list @nodeId argument at a java.util.List producer parameter is refused by the store although the generator decodes it"
-status: Spec
+status: Ready
 bucket: bug
 theme: nodeid
 depends-on: []
@@ -106,7 +106,7 @@ Store tier, `graphitron-model`:
   - `aListOfTheSoleKeyColumnsTypeIsNoDefect`: no row, `SINGLE_KEY_COLUMN 1`.
   - `aListWhoseElementDisagreesIsRefusedOnTheElement`: `KEY_COLUMN_TYPE_DISAGREEMENT` with `landing_java_type` the element and `slot_java_type` `java.util.List`.
   - `aSetOfTheRecordIsAShapeMismatch` and `aSingleIdAtAListParameterIsAShapeMismatch`: `SLOT_SHAPE_MISMATCH`, no destination.
-  - The existing cases unchanged. `seedArgumentNodeId` seeds its argument through `seedArgument`, which writes a non-list `graphql_argument` row, so they are already `SINGLE`. The list cases seed the argument list-typed first (a `SeededStore.seedArgument` overload taking the list shape), which `seedArgumentNodeId` then leaves alone.
+  - The existing cases unchanged. `seedArgumentNodeId` seeds its argument through `seedArgument`, which writes a non-list `graphql_argument` row, so they are already `SINGLE`. The list cases seed the argument list-typed first (the existing `SeededStore.seedListArgument`), which `seedArgumentNodeId` then leaves alone.
 - `NodeIdDecodeDestinationTest` asserts on `slots(dsl)`. Extend its rendering with `slot_shape` / `landing_type` only if a case there needs them, and leave the existing expectations alone.
 - `PolymorphicNodeIdDecodeTest`: `aListOfARecordSupertypeIsAssignableFromEveryMembersRecord` (no defect, two `POLYMORPHIC_RECORD` destinations), the same through an `argMapping` pair (the mapped carrier this view also reads), and a `Set` case drawing the polymorphic view's own `SLOT_SHAPE_MISMATCH` and no `SLOT_NOT_SUPERTYPE_OF_MEMBER`, with no row for it in `intent_node_id_decode_defect`, so the two views stay disjoint.
 
@@ -117,7 +117,7 @@ Pipeline tier, `graphitron` (`NodeIdDecodeDefectsTest`, which captures real SDL 
 - `aSetParameterAtAListArgumentIsRefusedNamingTheList`: the exact message.
 - `aCompositeKeyAtASingleValuedParameterIsRejectedNamingTheCountAndTheColumns`: expectation updated to the record-naming remedy.
 - Polymorphic cases in the same class, over a container sibling of the template (the `AddressOccupant` union over `Customer` and `Staff`, as `PolymorphicNodeIdSlotPipelineTest` declares it) and a sibling of `detect` that runs `NodeIdPolymorphicDecodeDefects.detect` over the same captured store:
-  - `aListArgumentAtAListOfARecordSupertypeIsNoDefect`: `ids: [ID!]!` on `getOccupantsByUpdatableRecords`, empty detection from both views. This is the store half of the admitted polymorphic list shape.
+  - `aListArgumentAtAListOfARecordSupertypeIsNoDefect`: `key: [ID!]!` on `getOccupantsByUpdatableRecords`, empty detection from both views. This is the store half of the admitted polymorphic list shape.
   - `aSingleIdAtAListOfARecordSupertypeIsAShapeMismatch`: `key: ID!` on the same method, the polymorphic view's `SLOT_SHAPE_MISMATCH` message exactly, and no `SLOT_NOT_SUPERTYPE_OF_MEMBER`. This pins the asymmetry "What this item does not change" accepts (the generator classifies the shape, the store refuses it by name), so it cannot drift into a silent pass.
 - `PolymorphicNodeIdSlotPipelineTest.producerSchema` gains a list-argument sibling (`key: [ID!]!`), and `aProducerListParameterTakesTheListVariant` moves onto it, the shape its name means. Its assertion on the emitted helper names is unchanged. The two fixtures then agree: what the generator test pins as the list variant is what the store tier above admits.
 
