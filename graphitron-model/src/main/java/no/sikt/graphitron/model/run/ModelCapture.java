@@ -25,29 +25,9 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * The gatherers a run runs, against a store somebody else opened.
- *
- * <p>Each finds its own inputs from {@code config}, except the two that read compiled code, which
- * configuration cannot carry: a classpath is assembled by the build tool rather than declared by an
- * author. They want different things of it. The census reads bytes, so {@code classpath} is
- * directories and jars parsed as classfiles with nothing loaded. The catalog cannot be read that
- * way, jOOQ building its tables and keys in static initialisers rather than declaring them in the
- * bytes, so it arrives already built and carries the loader it was built through.
- *
- * <p>One of them reads no input at all. The configuration is not a source to be gathered from, it
- * is the run's own declaration about itself, and it is transcribed for the reader who cannot ask
- * the run: a sibling module, a maintenance surface, a later session looking at a graph whose build
- * has exited.
- *
- * <p>Absence is per input: no classpath is no census, no catalog is no catalog facts, and neither
- * touches the schema.
- *
- * <p>The classpath arrives classified rather than as bare paths. How an entry reached the classpath
- * is a decision its producer took and no consumer can recover from a path, and it is what a reader
- * scopes by to ask about the reactor rather than about the world.
- *
- * <p>Takes a {@link DSLContext} rather than a store, so a caller already holding one open for more
- * than this captures into the store its own readers are on.
+ * The gatherers a run runs, against a store somebody else opened. Each reads its inputs from
+ * {@code config}, except the classpath and the jOOQ catalog, which the build tool assembles and so
+ * arrive as arguments.
  */
 public final class ModelCapture {
 
@@ -56,8 +36,8 @@ public final class ModelCapture {
     /**
      * Writes what {@code graph}'s inputs now say.
      *
-     * <p>One instant per reading: every relation these fill sweeps by it, so two readings sharing
-     * one could not tell each other's rows apart and what the second no longer finds would stay.
+     * @param readAt one instant per reading: every relation sweeps by it, so two readings sharing
+     *     one could not tell each other's rows apart
      */
     public static void capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
                                List<ClasspathEntry> classpath, JooqCatalog jooq,
@@ -67,16 +47,9 @@ public final class ModelCapture {
 
     /**
      * {@link #capture(DSLContext, GraphIdentity, SubjectConfig, List, JooqCatalog, LocalDateTime)}
-     * reporting the derivations to {@code progress} rather than to the log.
-     *
-     * <p>Same store either way, so this changes nothing a reader can ask the rows. It exists
-     * because the derivations pick their cadence from the store's own state, and which cadence
-     * they picked is only observable from inside the pass: both leave the same rows behind. A
-     * caller with somewhere better to put those events than a log supplies one.
-     *
-     * @param progress what the derivations report to, or null for the log
+     * reporting the derivations to {@code progress}, or to the log where it is null.
      */
-    @SuppressWarnings("deprecation")  // drives the decode until it reads the written entries
+    @SuppressWarnings("deprecation")
     public static void capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
                                List<ClasspathEntry> classpath, JooqCatalog jooq,
                                LocalDateTime readAt, StageProgress progress) {
@@ -84,81 +57,37 @@ public final class ModelCapture {
         StoreEntries.write(dsl, graph.name(), config, readAt);
 
         JooqFactCapture.capture(dsl, graph.name(), jooq, readAt);
-        // The catalog's own closure, over the rows just written. A stage of the catalog rather
-        // than a derivation: it reads no graph and no directive, and the resolution stages
-        // resolve against it.
         NameMatchedKeys.derive(dsl);
-        // The classpath read once, by the gatherer that owns the store's record of what was
-        // read, and the gatherer after it handed the reading rather than the configuration. The
-        // same shape the corpus has, and for the same reason: two readings of one corpus are two
-        // answers that have to agree, with nothing to notice when they stop.
         var classes = ClasspathSourceCapture.capture(dsl, graph.name(), classpath,
             config.jooqPackage().orElse(null), readAt);
         CodeCapture.capture(dsl, classes, jooq == null ? null : jooq.codegenLoader(), readAt);
 
-        // The corpus is read once, by the gatherer that owns the store's record of what was read,
-        // and every gatherer after it is handed the documents rather than the configuration.
         var reading = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
         var documents = reading.documents();
-        // The assembly's verdict is written down rather than returned onwards: nothing here needs
-        // the executable schema, and a capture whose corpus did not assemble still has every fact
-        // to record. The assembly is handed the whole reading, inputs and all, because it
-        // composes the corpus as the generator does and the composition is configured.
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
         var assembled = GraphQLAssemblyCapture.capture(dsl, graph, reading, readAt);
-        // Once the transcription has been told what the dropped documents no longer say. The
-        // source row is the provenance its rows hang on, so forgetting it before they were swept
-        // would orphan them rather than remove them. The graphitron decode hangs nothing on the
-        // source row: its rows hang on the transcription's and went with them.
         GraphQLSourceCapture.reclaim(dsl, documents);
 
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);
-        // The decode of what the author wrote at each directive, driven here rather than by a
-        // second pass over the same corpus. The walk it rides is all that is left of the incumbent
-        // one: it writes no relation of its own, and every family it used to hold is written by
-        // the gatherers that read the documents. It walks the merged corpus the assembly's
-        // composition started from, the corpus as written: the decode is a function of the
-        // documents alone, so neither the tag configuration nor the federation library reaches it.
         var decode = new FactSink(dsl, graph.name(), readAt);
         GraphitronFactCapture.clear(dsl, graph.name());
         SdlFactCapture.capture(decode, assembled.merged());
         decode.flush();
         GraphitronAssemblyCapture.capture(dsl, graph.name(), readAt);
-        // The statistics the derivations below are planned against, stated here rather than left
-        // to H2. The store opens with ANALYZE_AUTO=0, so nothing analyses itself: without this
-        // call every column carries the unanalysed placeholder, and with H2's default a table
-        // would be analysed only once it passed two thousand changes, which makes a plan a
-        // function of how large the captured graph happens to be rather than of anything anyone
-        // chose. One statement over every table this pass has just filled, the derivations' own
-        // included: on a warm store those hold the previous capture's rows, which is what the steps
-        // below plan against, and on a cold one they are empty, which is what makes the derivations
-        // commit and analyse each step instead.
-        //
-        // ANALYZE commits, which moves the pass's first commit ahead of the derivations. The one
-        // commit that would corrupt a store is one between a step's delete and its inserts, and
-        // this is before the derivations rather than inside them.
+        // The store does not analyse itself, and ANALYZE commits: it runs outside the derivations,
+        // never between a step's delete and its inserts.
         dsl.execute("ANALYZE");
-        // The derivations the incumbent pass still owns, at the tail because every one of them
-        // reads what this pass has just written. It captures nothing of its own any more.
         if (progress == null) {
             FactCapture.derive(dsl, graph, assembled.assembly());
         } else {
             FactCapture.derive(dsl, graph, assembled.assembly(), progress);
         }
-        // And again at the end, so what a capture leaves is a store whose statistics describe the
-        // rows it holds rather than the rows it held partway through. The call above states what
-        // the derivations plan against; this one states what every reader after them plans
-        // against, the relations those derivations wrote included.
         dsl.execute("ANALYZE");
     }
 
     /**
-     * The row every other relation this run writes hangs a foreign key on: which graph, where it
-     * was read from, and when it was last read.
-     *
-     * <p>Public because a caller running these gatherers itself, rather than through
-     * {@link #capture}, still owes the anchor before any of them: a fixture reproducing this
-     * method's prefix should call this rather than spell the upsert a second time.
+     * The row every relation this run writes hangs a foreign key on. Public because a fixture
+     * running the gatherers itself still owes it first.
      */
     public static void writeGraph(DSLContext dsl, GraphIdentity graph, LocalDateTime readAt) {
         var t = STORE_GRAPH;
