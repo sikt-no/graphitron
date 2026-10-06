@@ -42,6 +42,8 @@ class FieldTableLinksTest {
           title: String
           actors: [FilmActor!]! @reference(path: [{key: "film_actor_film_id_fkey"}])
           language: Language @reference(path: [{table: "language"}])
+          languageByConstant: Language @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
+          languageQualified: Language @reference(path: [{key: "public.film_language_id_fkey"}])
           junction: [FilmActor!]! @reference(path: [{condition: {
               className: "no.sikt.graphitron.rewrite.TestConditionRoutes",
               method: "filmToFilmActor"
@@ -136,6 +138,26 @@ class FieldTableLinksTest {
         withCaptured(dsl -> assertThat(links(dsl, "Category", "children"))
             .containsExactly("[category] 0 KEY category -> category"
                 + " via category.category_parent_category_id_fkey, fk_on_from=false"));
+    }
+
+    /**
+     * The key name's three resolutions, each its own arm of the reading: the bare SQL name, which
+     * every other key case here spells; the generated {@code Keys} constant, eligible because no SQL
+     * constraint answers that spelling; and a schema-qualified SQL name, which is a SQL name too, no
+     * constant carrying a qualifier. All three name one key, so they resolve to one link.
+     */
+    @Test
+    @DisplayName("a key resolves by SQL name, by generated constant and by qualified SQL name alike")
+    void eachKeyNamespaceResolvesTheSameLink() {
+        withCaptured(dsl -> {
+            var expected = "[language] 0 KEY film -> language"
+                + " via film.film_language_id_fkey, fk_on_from=true";
+            assertThat(links(dsl, "Film", "languageByConstant")).containsExactly(expected);
+            assertThat(links(dsl, "Film", "languageQualified")).containsExactly(expected);
+            assertThat(matchedBy(dsl, "Film", "languageByConstant")).containsExactly("JOOQ_NAME");
+            assertThat(matchedBy(dsl, "Film", "languageQualified")).containsExactly("SQL_NAME");
+            assertThat(matchedBy(dsl, "Category", "parent")).containsExactly("SQL_NAME");
+        });
     }
 
     /**
@@ -400,6 +422,17 @@ class FieldTableLinksTest {
                 + (r.value4() == null ? "(none)" : r.value4()) + " -> " + r.value5()
                 + (r.value7() == null ? ""
                    : " via " + r.value6() + "." + r.value7() + ", fk_on_from=" + r.value8()));
+    }
+
+    private static List<String> matchedBy(DSLContext dsl, String typeName, String fieldName) {
+        var t = GRAPHITRON_FIELD_TABLE_LINK;
+        return dsl.select(t.KEY_MATCHED_BY)
+            .from(t)
+            .where(t.GRAPH_NAME.eq(CapturedStore.GRAPH))
+            .and(t.TYPE_NAME.eq(typeName))
+            .and(t.FIELD_NAME.eq(fieldName))
+            .orderBy(t.POSITION)
+            .fetch(t.KEY_MATCHED_BY);
     }
 
     /**

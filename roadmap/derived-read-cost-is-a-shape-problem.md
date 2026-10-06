@@ -7,7 +7,7 @@ priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-10-01
+last-updated: 2026-10-06
 ---
 
 # Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject
@@ -134,9 +134,21 @@ are gone.
     vote in the survivor question below.
   * **The rule is examined, not only its storage** `open`. `broken` drives a correlated `NOT EXISTS`
     over `routes`; restate it as an anti-join and record the figure beside the storage ones.
-  * **The reading's KEY arm is an equi-join** `open`. A three-way `OR` against `sql_constraint` is
+  * **The reading's KEY arm is an equi-join** `done`. A three-way `OR` against `sql_constraint` was
     most of the reading's cost; a `UNION ALL` of two equi-joins matched it by `EXCEPT` on a schema
-    that never exercised the jOOQ-name branch.
+    that never exercised the jOOQ-name branch. Landed as three arms, qualified, SQL name and jOOQ
+    name, disjoint by the resolver's precedence, and the same split applied to
+    `FieldReferenceStepHops.namedKey`, which carried the identical `OR`. Not yet re-timed on sis:
+    the 2026-10-06 `graphitron:dev` profile put the hops and the resolution together at about 25 s
+    before it, the resolution alone about 23 s.
+  * **The reading is stored, so the walk reads it once** `open`. The resolution rule names
+    `graphitron_field_chain_link_reading` four times, each walk's seed and step, and the entry
+    defect rule a fifth, and H2 evaluates a view at every naming. Storing the reading alone took a
+    reader of the walk from 30 s to 0.08 s in the storage audit, so the stage's cost is the
+    reading's evaluations and not the walk. Convert it the cheap way: the view keeps its text as
+    `graphitron_field_chain_link_reading_rule`, a table takes the name both readers spell, and a
+    clear-and-insert stage fills it ahead of `FieldChainLinkResolutions`. Two readers, so the write
+    is earned; time the stage on the sis store before and after, the KEY arm change above first.
   * **The defects agree with the generator on a consumer schema** `open`. On sis the four chain
     codes report 161 coordinates the generator accepts. Each child is a reading that is wrong
     rather than a rule that is, and evidence is in

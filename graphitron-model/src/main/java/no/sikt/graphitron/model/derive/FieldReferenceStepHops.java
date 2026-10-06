@@ -22,7 +22,6 @@ import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.val;
-import static org.jooq.impl.DSL.when;
 
 /**
  * The capture-cadence writer of the two field-site hop relations: every table-to-table hop one
@@ -66,8 +65,10 @@ public final class FieldReferenceStepHops {
         // Clear before insert. The relation carries no reading instant and a second capture of one
         // graph is the ordinary case, so appending would fail on the key rather than reconcile.
         dsl.deleteFrom(t).where(t.GRAPH_NAME.eq(graphName)).execute();
-        insertKeyed(dsl, namedKey(dsl, graphName, true));
-        insertKeyed(dsl, namedKey(dsl, graphName, false));
+        for (var match : KeyMatch.values()) {
+            insertKeyed(dsl, namedKey(dsl, graphName, match, true));
+            insertKeyed(dsl, namedKey(dsl, graphName, match, false));
+        }
         insertKeyed(dsl, discoveredKey(dsl, graphName, true));
         insertKeyed(dsl, discoveredKey(dsl, graphName, false));
     }
@@ -99,11 +100,20 @@ public final class FieldReferenceStepHops {
     }
 
     /**
+     * The three ways a written key resolves, in the resolver's precedence: a leading qualifier binds
+     * the constraint's table schema and its SQL name together; unqualified, the SQL name answers
+     * first; and the generated constant is eligible only where no SQL name in the graph's sources
+     * does. Disjoint by construction, so one statement each writes every row once, where the
+     * precedence stated as one join condition was an {@code OR} no index serves.
+     */
+    private enum KeyMatch { QUALIFIED, SQL_NAME, JOOQ_NAME }
+
+    /**
      * The {@code KEY} arm: the element names a constraint, and the hop is the pair that constraint
-     * connects, read in one orientation.
+     * connects, read in one orientation, for the constraints one {@link KeyMatch} resolves.
      */
     private static Select<? extends Record> namedKey(DSLContext dsl, String graphName,
-                                                     boolean fkOnFrom) {
+                                                     KeyMatch match, boolean fkOnFrom) {
         var s = GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY;
         var m = STORE_GRAPH_SOURCE;
         var c = SQL_CONSTRAINT;
@@ -111,28 +121,24 @@ public final class FieldReferenceStepHops {
         var other = SQL_CONSTRAINT.as("c2");
         var otherSource = STORE_GRAPH_SOURCE.as("m2");
 
-        // The resolver's namespace precedence, stated as one condition: a qualifier binds the
-        // constraint's table schema and its name together; unqualified, the SQL name answers
-        // first, and the generated constant is eligible only where no SQL name in this graph's
-        // sources does.
-        Condition matched = s.KEY_REF_NAMESPACE_PART.isNotNull()
-            .and(c.TABLE_SCHEMA_UPPER.eq(s.KEY_REF_NAMESPACE_PART_UPPER))
-            .and(c.CONSTRAINT_NAME_UPPER.eq(s.KEY_REF_NAME_PART_UPPER))
-            .or(s.KEY_REF_NAMESPACE_PART.isNull()
-                .and(c.CONSTRAINT_NAME_UPPER.eq(s.KEY_REF_NAME_PART_UPPER)
-                    .or(c.JOOQ_NAME_UPPER.eq(s.KEY_REF_NAME_PART_UPPER)
-                        .and(notExists(selectOne()
-                            .from(other)
-                            .join(otherSource).on(otherSource.SOURCE_NAME.eq(other.SOURCE_NAME))
-                            .where(otherSource.GRAPH_NAME.eq(s.GRAPH_NAME))
-                            .and(other.CONSTRAINT_NAME_UPPER
-                                .eq(s.KEY_REF_NAME_PART_UPPER)))))));
+        Condition matched = switch (match) {
+            case QUALIFIED -> c.TABLE_SCHEMA_UPPER.eq(s.KEY_REF_NAMESPACE_PART_UPPER)
+                .and(c.CONSTRAINT_NAME_UPPER.eq(s.KEY_REF_NAME_PART_UPPER));
+            case SQL_NAME -> c.CONSTRAINT_NAME_UPPER.eq(s.KEY_REF_NAME_PART_UPPER)
+                .and(s.KEY_REF_NAMESPACE_PART.isNull());
+            case JOOQ_NAME -> c.JOOQ_NAME_UPPER.eq(s.KEY_REF_NAME_PART_UPPER)
+                .and(s.KEY_REF_NAMESPACE_PART.isNull())
+                .and(notExists(selectOne()
+                    .from(other)
+                    .join(otherSource).on(otherSource.SOURCE_NAME.eq(other.SOURCE_NAME))
+                    .where(otherSource.GRAPH_NAME.eq(s.GRAPH_NAME))
+                    .and(other.CONSTRAINT_NAME_UPPER.eq(s.KEY_REF_NAME_PART_UPPER))));
+        };
 
         var select = dsl
             .select(s.GRAPH_NAME, s.TYPE_NAME, s.FIELD_NAME, s.ORDINAL, s.POSITION,
                 inline("KEY"),
-                when(c.CONSTRAINT_NAME_UPPER.eq(s.KEY_REF_NAME_PART_UPPER), inline("SQL_NAME"))
-                    .otherwise(inline("JOOQ_NAME")),
+                inline(match == KeyMatch.JOOQ_NAME ? "JOOQ_NAME" : "SQL_NAME"),
                 fkOnFrom ? rc.SOURCE_NAME : rc.REFERENCED_SOURCE_NAME,
                 fkOnFrom ? rc.TABLE_SCHEMA : rc.REFERENCED_SCHEMA,
                 fkOnFrom ? rc.TABLE_NAME : rc.REFERENCED_TABLE,

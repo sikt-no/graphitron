@@ -6438,10 +6438,15 @@ link (graph_name, type_name, field_name, position, last_position,
   UNION ALL
   -- An element naming a key is a route, and the catalog says a key is two hops, so this is two
   -- readings. Which one the author meant is the one the chain reaches, and the walk below decides.
+  --
+  -- Three arms, one per way a written key resolves, because the resolver's precedence stated as
+  -- one join condition is an OR no index serves and was most of this view's cost on a consumer
+  -- schema. The three cannot overlap: a qualified spelling binds the table's schema and the SQL
+  -- name together; an unqualified one matches the SQL name; and only where no SQL constraint in
+  -- the graph's sources answers it does the generated constant become eligible.
   SELECT l.graph_name, l.type_name, l.field_name,
          l.target_source_name, l.target_schema, l.target_table,
-         l.position, l.last_position, 'KEY',
-         CASE WHEN c.constraint_name_upper = ks.name_upper THEN 'SQL_NAME' ELSE 'JOOQ_NAME' END,
+         l.position, l.last_position, 'KEY', 'SQL_NAME',
          h.source_name, h.table_schema, h.table_name, h.constraint_name, h.fk_on_from,
          h.from_source_name, h.from_schema, h.from_table,
          h.to_source_name, h.to_schema, h.to_table
@@ -6452,22 +6457,62 @@ link (graph_name, type_name, field_name, position, last_position,
     JOIN store_graph_source m ON m.graph_name = l.graph_name
     JOIN sql_constraint c
       ON c.source_name = m.source_name
-     AND (ks.namespace_upper IS NOT NULL
-          AND c.table_schema_upper = ks.namespace_upper
-          AND c.constraint_name_upper = ks.name_upper
-       OR ks.namespace_upper IS NULL
-          AND (c.constraint_name_upper = ks.name_upper
-            OR c.jooq_name_upper = ks.name_upper
-           AND NOT EXISTS (SELECT 1 FROM sql_constraint c2
-                             JOIN store_graph_source m2 ON m2.source_name = c2.source_name
-                            WHERE m2.graph_name = l.graph_name
-                              AND c2.constraint_name_upper = ks.name_upper)))
+     AND c.table_schema_upper = ks.namespace_upper
+     AND c.constraint_name_upper = ks.name_upper
     JOIN sql_constraint_hop h
       ON h.source_name = c.source_name AND h.table_schema = c.table_schema
      AND h.table_name = c.table_name AND h.constraint_name = c.constraint_name
-   WHERE NOT (h.from_source_name = h.to_source_name AND h.from_schema = h.to_schema
-              AND h.from_table = h.to_table)
-      OR h.fk_on_from = l.single_valued
+   WHERE (NOT (h.from_source_name = h.to_source_name AND h.from_schema = h.to_schema
+               AND h.from_table = h.to_table)
+          OR h.fk_on_from = l.single_valued)
+  UNION ALL
+  SELECT l.graph_name, l.type_name, l.field_name,
+         l.target_source_name, l.target_schema, l.target_table,
+         l.position, l.last_position, 'KEY', 'SQL_NAME',
+         h.source_name, h.table_schema, h.table_name, h.constraint_name, h.fk_on_from,
+         h.from_source_name, h.from_schema, h.from_table,
+         h.to_source_name, h.to_schema, h.to_table
+    FROM link l
+    JOIN key_spelling ks
+      ON ks.graph_name = l.graph_name AND ks.source_name = l.source_name
+     AND ks.source_line = l.source_line AND ks.source_column = l.source_column
+    JOIN store_graph_source m ON m.graph_name = l.graph_name
+    JOIN sql_constraint c
+      ON c.source_name = m.source_name
+     AND c.constraint_name_upper = ks.name_upper
+     AND ks.namespace_upper IS NULL
+    JOIN sql_constraint_hop h
+      ON h.source_name = c.source_name AND h.table_schema = c.table_schema
+     AND h.table_name = c.table_name AND h.constraint_name = c.constraint_name
+   WHERE (NOT (h.from_source_name = h.to_source_name AND h.from_schema = h.to_schema
+               AND h.from_table = h.to_table)
+          OR h.fk_on_from = l.single_valued)
+  UNION ALL
+  SELECT l.graph_name, l.type_name, l.field_name,
+         l.target_source_name, l.target_schema, l.target_table,
+         l.position, l.last_position, 'KEY', 'JOOQ_NAME',
+         h.source_name, h.table_schema, h.table_name, h.constraint_name, h.fk_on_from,
+         h.from_source_name, h.from_schema, h.from_table,
+         h.to_source_name, h.to_schema, h.to_table
+    FROM link l
+    JOIN key_spelling ks
+      ON ks.graph_name = l.graph_name AND ks.source_name = l.source_name
+     AND ks.source_line = l.source_line AND ks.source_column = l.source_column
+    JOIN store_graph_source m ON m.graph_name = l.graph_name
+    JOIN sql_constraint c
+      ON c.source_name = m.source_name
+     AND c.jooq_name_upper = ks.name_upper
+     AND ks.namespace_upper IS NULL
+     AND NOT EXISTS (SELECT 1 FROM sql_constraint c2
+                       JOIN store_graph_source m2 ON m2.source_name = c2.source_name
+                      WHERE m2.graph_name = l.graph_name
+                        AND c2.constraint_name_upper = ks.name_upper)
+    JOIN sql_constraint_hop h
+      ON h.source_name = c.source_name AND h.table_schema = c.table_schema
+     AND h.table_name = c.table_name AND h.constraint_name = c.constraint_name
+   WHERE (NOT (h.from_source_name = h.to_source_name AND h.from_schema = h.to_schema
+               AND h.from_table = h.to_table)
+          OR h.fk_on_from = l.single_valued)
   UNION ALL
   -- An element naming a table alone arrives there, and the route is a hop of some key that lands
   -- on it. Each such hop is a reading; the chain picks the one whose departure it reaches.
