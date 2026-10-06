@@ -1,7 +1,7 @@
 ---
 id: R988
 title: "The tenant-context fold seeds a @key type no _entities call can dispatch, so its children reject under a bound root"
-status: In Progress
+status: In Review
 bucket: bug
 theme: runtime-connection
 depends-on: []
@@ -82,6 +82,10 @@ In `TenantBindingClassificationTest`, in the "Dispatch entries" section beside `
 In `EntityResolutionBuilderTest`, assert the new `EntityResolution.resolvable()` in three existing cases. It is `false` in `keyNotResolvable_carriesResolvableFalseThrough`. It is also `false` in `nodeTypeWithExplicitIdKey_dedupes`: a `@node` type with an explicit `@key(fields: "id", resolvable: false)` dedups to that one non-resolvable alternative. It is `true` in the plain resolvable-key case at the top of the class.
 
 That `@node` case also shows what the fold change covers: a `@node` type that opts out with `@key(fields: "id", resolvable: false)` stops being seeded. That is correct, because `Query.node` reaches it only through `resolveByReps`, and `resolveByReps` skips the alternative. Pin it with a fourth `TenantBindingClassificationTest` case beside `anUntenantedNodeTypeReachedThroughQueryNodeDeniesItsChildrenAContext`: `aNonResolvableNodeTypeUnderABindingRootLetsItsChildrenInherit`. Its fixture is that test's `Language` with the explicit `@key(fields: "id", resolvable: false)`, reached through a `Film.language` edge under `Query.films(filmId:)` rather than through `Query.node`. `Language.films` is `Inherited`.
+
+## Implementation notes
+
+Landed as planned, no deviation from the sections above. The four `TenantBindingClassificationTest` cases sit under a "no resolvable alternative, no dispatch" subheading after the existing dispatch-entry cases; the two `Language` entity fixtures share a `languageUnderFilms` helper. "The plain resolvable-key case" in `EntityResolutionBuilderTest` is `tableType_withExplicitKey_getsDirectAlternative`. With the guard disabled, exactly the three `LetsItsChildrenInherit` cases fail, and `anEntityWithOneResolvableAlternativeStillDeniesItsChildrenAContext` passes either way, which is its job.
 
 ## Out of scope
 

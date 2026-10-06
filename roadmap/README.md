@@ -57,7 +57,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R180` | Resolved accessors for record-parent column reads (recordColumnReadArgs) | Spec | 2026-07-15 <sub>created 2026-05-19</sub> | [plan](record-parent-column-read-helper.md) |
 | `R989` | A root @service whose only tenant carrier is a scalar input member cannot route under database-per-tenant | Ready | 2026-10-06 <sub>created 2026-10-05</sub> | [plan](scalar-tenant-carrier-on-service-input.md) |
 | `R684` | fact-model doctrine: consumers share relations, not queries | Ready | 2026-08-17 <sub>created 2026-08-16</sub> | [plan](consumers-share-relations-not-queries.md) |
-| `R988` | The tenant-context fold seeds a @key type no _entities call can dispatch, so its children reject under a bound root | In Progress | 2026-10-06 <sub>created 2026-10-05</sub> | [plan](tenant-dispatch-seed-counts-unresolvable-keys.md) |
+| `R988` | The tenant-context fold seeds a @key type no _entities call can dispatch, so its children reject under a bound root | In Review | 2026-10-06 <sub>created 2026-10-05</sub> | [plan](tenant-dispatch-seed-counts-unresolvable-keys.md) |
 
 ---
 
@@ -584,7 +584,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R505` [**Tenant-index tables: per-row tenant routing off an index parent**](tenant-index-parent-row-routing.md) — Backlog, architecture
 - `R517` [**Client narrowing of the fan-out domain: a tenant-column list argument intersects the request set**](tenant-fanout-argument-narrowing.md) — Backlog, architecture
 - `R989` [**A root @service whose only tenant carrier is a scalar input member cannot route under database-per-tenant**](scalar-tenant-carrier-on-service-input.md) — Ready, feature
-- `R988` [**The tenant-context fold seeds a @key type no _entities call can dispatch, so its children reject under a bound root**](tenant-dispatch-seed-counts-unresolvable-keys.md) — In Progress, bug
+- `R988` [**The tenant-context fold seeds a @key type no _entities call can dispatch, so its children reject under a bound root**](tenant-dispatch-seed-counts-unresolvable-keys.md) — In Review, bug
 
 ### search
 
