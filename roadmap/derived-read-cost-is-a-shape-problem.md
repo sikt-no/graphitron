@@ -108,6 +108,12 @@ are gone.
   dollar sign is illegal in a GraphQL name, so it cannot collide with a type an author declares.
 * The enclosing declaration is a fact `done`. `graphql_ast_element_declaration` walks the parent chain
   once, where the ordering it supplies was about to be a join per site.
+* The specification is a document `done`. A built-in with no entry needed a patch for every authored
+  form that touched one; bundled as SDL that sorts after every file, it is a declaration the ranks
+  already know how to lose, and an `extend scalar String` merges onto it like any other extension.
+  * A fact document states an absence and a reading at a stated instant `done`. A redeclaration
+    that wins is a row that must not be there, and what a later reading kept is a row still carrying
+    an earlier reading's mark.
 
 ### The classpath family affords what its readers ask `done`
 
@@ -846,7 +852,11 @@ MCP schema tool's `demand` slot; `MacroCapture.expandConnections` (now `expand`)
 and `MultiRowWritesAreChunkedTest` (now `WritesBindPerRowTest`); `SdlCapture` with `captureFacts`,
 `captureEntries` and `captureGraphitronAnchors`; `SdlAnchor` and `SdlAnchorTest` (now
 `GraphQLAnchorTest`); `SourceDocument.parsed()` and its `changed` component; `reclaimVanished` (now
-`reclaim`). Renamed: `SdlEntries` to `GraphQLAstEntries`, `SdlSchemaProblems` to
+`reclaim`). The specification's built-ins as constants beside the entries:
+`GraphQLAstCapture.SPECIFIED_SCALARS`, `SPECIFIED_DIRECTIVES` with its three column fields and
+`specifiedDirectivesUndeclared`, `SdlFactCapture.SPECIFIED_DIRECTIVES`, and the transcription's
+filter by built-in name; `GraphQLAstCapture.BEFORE_EVERY_FILE` moved to `GraphQLSourceCapture`,
+which now stores it rather than the anchors coalescing to it. Renamed: `SdlEntries` to `GraphQLAstEntries`, `SdlSchemaProblems` to
 `GraphQLSchemaProblems`, `GraphitronEntries` to `GraphitronAstEntries`, and with them
 `SdlEntriesTest` and `SdlSchemaProblemsTest`. The
 gatherer roster row `document` is now `graphql-source`, `graphql-ast`, `graphitron-ast` and

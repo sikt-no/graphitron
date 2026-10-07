@@ -988,12 +988,11 @@ public final class GraphQLAstEntries {
      * The scalars the document declared.
      *
      * <p>{@code scalars()} is the only accessor in this file that hands back a node no document
-     * wrote. It prepends the five specification scalars to what the document declared, and the
-     * declared ones live in a map graphql-java keeps to itself, so there is no accessor that answers
-     * this question alone. They are removed here, by the name that makes them built in, rather than
-     * by a property they happen to have: a built-in is a built-in because the specification names
-     * it, and testing instead for the absence of a position would reach the same conclusion from
-     * weaker evidence.
+     * wrote. It prepends the engine's own definitions of the five specification scalars to what the
+     * document declared, and the declared ones live in a map graphql-java keeps to itself, so there
+     * is no accessor that answers this question alone. The engine's nodes are removed here by
+     * identity, being the engine's own instances: an author's {@code scalar String} replaces the
+     * engine's under the same name and is kept, as is the specification document's.
      *
      * <p>Measured rather than assumed. Across a corpus and the bundled vocabulary, every other
      * declaration accessor and every value node reachable from one came back positioned; these five
@@ -1001,7 +1000,8 @@ public final class GraphQLAstEntries {
      */
     private static Stream<ScalarTypeDefinition> scalars(TypeDefinitionRegistry document) {
         List<ScalarTypeDefinition> nodes = document.scalars().values().stream()
-            .filter(scalar -> !ScalarInfo.isGraphqlSpecifiedScalar(scalar.getName()))
+            .filter(scalar ->
+                ScalarInfo.GRAPHQL_SPECIFICATION_SCALARS_DEFINITIONS.get(scalar.getName()) != scalar)
             .collect(Collectors.toCollection(ArrayList::new));
         nodes.addAll(flat(document.scalarTypeExtensions()));
         return nodes.stream();

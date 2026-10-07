@@ -68,6 +68,14 @@ public final class SchemaLoader {
      */
     public static final String DIRECTIVES_SOURCE_NAME = DIRECTIVES_RESOURCE;
 
+    /**
+     * The source name of the bundled {@code specification.graphqls}: the scalars and directives the
+     * GraphQL specification gives every schema, written down as the document the specification
+     * states them in. A resource name rather than a path, on {@link #DIRECTIVES_SOURCE_NAME}'s
+     * terms, so no editor opens it and no position in it is an author's.
+     */
+    public static final String SPECIFICATION_SOURCE_NAME = "specification.graphqls";
+
     /** The lead graphql-java puts on its explained shapes, which our own attribution states. */
     private static final String REDUNDANT_LEAD = "Invalid syntax encountered. ";
 
@@ -448,6 +456,28 @@ public final class SchemaLoader {
                 new InputStreamReader(stream, StandardCharsets.UTF_8));
         } catch (InvalidSyntaxException e) {
             throw new IllegalStateException("bundled " + DIRECTIVES_RESOURCE + " does not parse", e);
+        }
+    }
+
+    /**
+     * Parses the bundled {@code specification.graphqls}, failing on {@link #parseDirectives}'
+     * terms: a broken resource is this module's fault, not an author's.
+     *
+     * <p>Never offered to a registry the schema is built from. The engine supplies these to every
+     * schema already, and a corpus that redeclares one would meet a second declaration it did not
+     * write. The store transcribes it so a built-in has a declaration like any other type.
+     */
+    public static TypeDefinitionRegistry parseSpecification() {
+        var stream = SchemaLoader.class.getResourceAsStream(SPECIFICATION_SOURCE_NAME);
+        if (stream == null) {
+            throw new IllegalStateException(SPECIFICATION_SOURCE_NAME + " not found on classpath");
+        }
+        try {
+            return new SchemaParser().buildRegistry(parseSource(SPECIFICATION_SOURCE_NAME,
+                new InputStreamReader(stream, StandardCharsets.UTF_8)));
+        } catch (InvalidSyntaxException | SchemaProblem e) {
+            throw new IllegalStateException(
+                "bundled " + SPECIFICATION_SOURCE_NAME + " does not parse", e);
         }
     }
 

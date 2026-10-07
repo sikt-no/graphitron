@@ -1,0 +1,46 @@
+# A document redeclaring a specified directive holds the directive in its place. The specification's
+# declaration sorts after every file, so the authored one wins the name, and its locations and
+# arguments are the authored declaration's alone: none of what only the specification grants.
+
+directive @oneOf on INPUT_OBJECT
+directive @deprecated(reason: String) on FIELD_DEFINITION | ARGUMENT_DEFINITION
+directive @include(if: Boolean) on FIELD
+input FilmOneOfFilter @oneOf { filmId: Int title: String }
+
+extend schema @assertAbsent(relation: "graphql_directive", rows: """
+  directive_name, source_name
+  oneOf,          specification.graphqls
+  deprecated,     specification.graphqls
+  include,        specification.graphqls
+  """)
+
+extend schema @assertContains(relation: "graphql_directive", rows: """
+  directive_name, source_name
+  skip,           specification.graphqls
+  specifiedBy,    specification.graphqls
+  """)
+
+extend schema @assertContains(relation: "graphql_directive_location", rows: """
+  directive_name, location
+  oneOf,          INPUT_OBJECT
+  deprecated,     FIELD_DEFINITION
+  include,        FIELD
+  """)
+
+extend schema @assertAbsent(relation: "graphql_directive_location", rows: """
+  directive_name, location
+  deprecated,     ENUM_VALUE
+  include,        FRAGMENT_SPREAD
+  include,        INLINE_FRAGMENT
+  """)
+
+extend schema @assertContains(relation: "graphql_directive_argument", rows: """
+  directive_name, argument_name, type_sdl, default_value_sdl
+  deprecated,     reason,        String,
+  include,        if,            Boolean,
+  """)
+
+extend schema @assertAbsent(relation: "graphql_directive_argument", rows: """
+  directive_name, argument_name, type_sdl
+  include,        if,            Boolean!
+  """)

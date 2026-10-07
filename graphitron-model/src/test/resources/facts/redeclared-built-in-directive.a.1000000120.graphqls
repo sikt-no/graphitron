@@ -1,0 +1,27 @@
+# The third reading rewrites the redeclaring file without them: the specification's declarations
+# stand again, with the locations and arguments only they grant.
+
+input FilmOneOfFilter @oneOf { filmId: Int title: String }
+
+extend schema @assertContains(relation: "graphql_directive", rows: """
+  directive_name, source_name
+  oneOf,          specification.graphqls
+  deprecated,     specification.graphqls
+  include,        specification.graphqls
+  """)
+
+extend schema @assertContains(relation: "graphql_directive_location", rows: """
+  directive_name, location
+  deprecated,     ENUM_VALUE
+  include,        INLINE_FRAGMENT
+  """)
+
+extend schema @assertContains(relation: "graphql_directive_argument", rows: """
+  directive_name, argument_name, type_sdl
+  include,        if,            Boolean!
+  """)
+
+extend schema @assertAbsent(relation: "graphql_directive_argument", rows: """
+  directive_name, argument_name, type_sdl, default_value_sdl
+  deprecated,     reason,        String,
+  """)

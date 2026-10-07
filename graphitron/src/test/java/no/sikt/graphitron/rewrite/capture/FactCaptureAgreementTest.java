@@ -1827,6 +1827,9 @@ class FactCaptureAgreementTest {
         registry.enumTypeExtensions().values().forEach(sites -> sites.forEach(node -> addSourceName(names, node)));
         registry.scalarTypeExtensions().values().forEach(sites -> sites.forEach(node -> addSourceName(names, node)));
         registry.inputObjectTypeExtensions().values().forEach(sites -> sites.forEach(node -> addSourceName(names, node)));
+        // Every capture reads the specification's document too, and no registry holds it, the
+        // schema not being composed from it.
+        names.add(no.sikt.graphitron.model.schema.SchemaLoader.SPECIFICATION_SOURCE_NAME);
         return names;
     }
 

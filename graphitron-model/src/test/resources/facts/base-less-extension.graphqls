@@ -1,0 +1,17 @@
+# An extension of a type nothing declares. That is an author error a detection reports, never a
+# constraint, so the chain still anchors its type: the first extension holds merge ordinal zero
+# and the type exists in the graph for the detection to report on.
+
+extend type Phantom {
+  ghost: String
+}
+
+extend schema @assertContains(relation: "graphql_type_declaration", rows: """
+  type_name, is_extension, merge_ordinal
+  Phantom,   TRUE,         0
+  """)
+
+extend schema @assertContains(relation: "graphql_field", rows: """
+  type_name, field_name
+  Phantom,   ghost
+  """)

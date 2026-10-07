@@ -5,7 +5,6 @@ import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.vocabulary.EntryKind;
 import org.jooq.DSLContext;
 import org.jooq.Field;
-import org.jooq.Record1;
 import org.jooq.Table;
 
 import java.time.LocalDateTime;
@@ -58,21 +57,14 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_UNION_MEMBER;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.jooq.impl.DSL.castNull;
 import static org.jooq.impl.DSL.choose;
-import static org.jooq.impl.DSL.coalesce;
-import static org.jooq.impl.DSL.concat;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.name;
-import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.partitionBy;
-import static org.jooq.impl.DSL.row;
 import static org.jooq.impl.DSL.rowNumber;
-import static org.jooq.impl.DSL.select;
-import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.upper;
 import static org.jooq.impl.DSL.val;
-import static org.jooq.impl.DSL.values;
 import static org.jooq.impl.DSL.when;
 
 /**
@@ -176,6 +168,9 @@ public final class GraphQLAstCapture {
                 case GraphQLSourceCapture.SourceDocument.Changed changed ->
                     GraphQLAstEntries.write(dsl, graph.name(), changed.sourceName(),
                         changed.registry(), readAt);
+                case GraphQLSourceCapture.SourceDocument.Specification specification ->
+                    GraphQLAstEntries.write(dsl, graph.name(), specification.sourceName(),
+                        specification.registry(), readAt);
                 case GraphQLSourceCapture.SourceDocument.Unchanged _ -> { }
                 case GraphQLSourceCapture.SourceDocument.Unparsable _,
                      GraphQLSourceCapture.SourceDocument.Dropped _ ->
@@ -274,7 +269,7 @@ public final class GraphQLAstCapture {
         var ranked = dsl
             .select(candidates.field(COORDINATE), candidates.field(ELEMENT_KIND),
                 rowNumber().over(partitionBy(candidates.field(COORDINATE)).orderBy(
-                    coalesce(s.MTIME, val(BEFORE_EVERY_FILE, s.MTIME)).asc(),
+                    s.MTIME.asc(),
                     candidates.field(SITE_NAME).asc(), candidates.field(SITE_LINE).asc(),
                     candidates.field(SITE_COLUMN).asc())).as(RANK))
             .from(candidates)
@@ -285,20 +280,7 @@ public final class GraphQLAstCapture {
             .select(dsl
                 .select(val(graph, t.GRAPH_NAME), ranked.field(COORDINATE),
                     ranked.field(ELEMENT_KIND), val(touchedAt, t.TOUCHED_AT))
-                .from(ranked).where(ranked.field(RANK).eq(1))
-                // Outside the rank, because a specified scalar has no site to rank by: the five
-                // are one coordinate each and cannot collide with a declared one, because the
-                // transcription filters an authored scalar String out before any of this.
-                .unionAll(dsl
-                    .select(val(graph, t.GRAPH_NAME), SPECIFIED_SCALAR_NAME,
-                        val("NAMED_TYPE", t.ELEMENT_KIND), val(touchedAt, t.TOUCHED_AT))
-                    .from(SPECIFIED_SCALARS))
-                // Outside the rank too, but a document can declare a specified directive, so only
-                // the ones none declares: a redeclared @oneOf is the authored candidate alone.
-                .unionAll(dsl
-                    .select(val(graph, t.GRAPH_NAME), SPECIFIED_DIRECTIVE_COORDINATE,
-                        val("DIRECTIVE", t.ELEMENT_KIND), val(touchedAt, t.TOUCHED_AT))
-                    .from(specifiedDirectivesUndeclared(graph))))
+                .from(ranked).where(ranked.field(RANK).eq(1)))
             .onDuplicateKeyUpdate()
             .set(t.ELEMENT_KIND, excluded(t.ELEMENT_KIND))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -357,11 +339,7 @@ public final class GraphQLAstCapture {
                 .from(d).join(ef).on(ef.GRAPH_NAME.eq(d.GRAPH_NAME),
                     ef.SOURCE_NAME.eq(d.SOURCE_NAME), ef.SOURCE_LINE.eq(d.SOURCE_LINE),
                     ef.SOURCE_COLUMN.eq(d.SOURCE_COLUMN))
-                .where(d.GRAPH_NAME.eq(graph))
-                .unionAll(dsl
-                    .select(val(graph, t.GRAPH_NAME), SPECIFIED_SCALAR_NAME,
-                        SPECIFIED_SCALAR_NAME, val(touchedAt, t.TOUCHED_AT))
-                    .from(SPECIFIED_SCALARS)))
+                .where(d.GRAPH_NAME.eq(graph)))
             .onDuplicateKeyUpdate()
             .set(t.COORDINATE, excluded(t.COORDINATE))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -405,14 +383,7 @@ public final class GraphQLAstCapture {
                 .from(d).join(ef).on(ef.GRAPH_NAME.eq(d.GRAPH_NAME),
                     ef.SOURCE_NAME.eq(d.SOURCE_NAME), ef.SOURCE_LINE.eq(d.SOURCE_LINE),
                     ef.SOURCE_COLUMN.eq(d.SOURCE_COLUMN))
-                .where(d.GRAPH_NAME.eq(graph))
-                // On the specified scalars' terms: no entry holds these, and the anchor carries them
-                // because an author can apply one. Only the ones no document declares, so a
-                // redeclared name arrives once, from the arm above.
-                .unionAll(dsl
-                    .select(val(graph, t.GRAPH_NAME), SPECIFIED_DIRECTIVE_NAME,
-                        SPECIFIED_DIRECTIVE_COORDINATE, val(touchedAt, t.TOUCHED_AT))
-                    .from(specifiedDirectivesUndeclared(graph))))
+                .where(d.GRAPH_NAME.eq(graph)))
             .onDuplicateKeyUpdate()
             .set(t.COORDINATE, excluded(t.COORDINATE))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -490,77 +461,6 @@ public final class GraphQLAstCapture {
     private static final Field<String> DESCRIPTION = field(name("description"), String.class);
     private static final Field<Integer> MERGE_ORDINAL = field(name("merge_ordinal"), Integer.class);
 
-    /**
-     * The scalars the specification gives every schema, which no document declares and the entries
-     * therefore do not hold. A transcription records what an author wrote and these were not
-     * written; they have no position to key a row by and no file to hang one on. They are still
-     * types a field can name, so the anchors carry them: an anchor is the authored fact met with
-     * reality, and the engine's own vocabulary is part of that reality on the same terms the
-     * catalog is.
-     *
-     * <p>An existence row and no declaration site, which is the shape the walk gave them too. They
-     * declare no members, so nothing needs a site to hang on.
-     */
-    private static final Table<Record1<String>> SPECIFIED_SCALARS = values(
-        row("Boolean"), row("Float"), row("ID"), row("Int"), row("String"))
-        .as("specified_scalar", "type_name");
-
-    /** The one column of {@link #SPECIFIED_SCALARS}, as the arms below select it. */
-    private static final Field<String> SPECIFIED_SCALAR_NAME =
-        field(name("specified_scalar", "type_name"), String.class);
-
-    /**
-     * The directives the specification gives every schema, on {@link #SPECIFIED_SCALARS}' terms and
-     * for its reasons: the entries do not hold them, and they are still names an author can apply.
-     * None is repeatable and none has a position.
-     *
-     * <p>Unlike a specified scalar, a document can declare one, and the transcription keeps that
-     * declaration. The anchors read these through {@link #specifiedDirectivesUndeclared}, so one
-     * stands only where no document of the graph declares its name and an authored declaration
-     * replaces it. That is what graphql-java does for every specified directive but the executable
-     * {@code @include} and {@code @skip}: for those its built schema reverts to the built-in, while
-     * its SDL validation checks applications against the authored declaration, and the store keeps
-     * the authored one, agreeing with the validation.
-     *
-     * <p>What made them necessary is an application that had nowhere to land until the applications
-     * collapsed onto the coordinate. Graphitron applies {@code @deprecated} to a formal argument of
-     * one of its own directive definitions, which was the one site the per-site relations had no
-     * relation for, so the gate holding every application's name to a captured definition never saw
-     * it. The transcription claimed to be total and was not, and the hole was invisible because the
-     * row it would have failed on was not being written.
-     *
-     * <p>They get a coordinate too, which is not a choice this made: the store already holds
-     * {@code graphql_directive_element} and {@code graphql_directive} to the same population, and a
-     * gate says so. Adding one without the other is the shape that gate exists to refuse.
-     */
-    private static final Table<Record1<String>> SPECIFIED_DIRECTIVES = values(
-        row("deprecated"), row("include"), row("oneOf"), row("skip"), row("specifiedBy"))
-        .as("specified_directive", "directive_name");
-
-    /** The one column of {@link #SPECIFIED_DIRECTIVES}, as the arms below select it. */
-    private static final Field<String> SPECIFIED_DIRECTIVE_NAME =
-        field(name("specified_directive", "directive_name"), String.class);
-
-    /** The same as a coordinate, which for a directive is the at sign and the name. */
-    private static final Field<String> SPECIFIED_DIRECTIVE_COORDINATE =
-        concat(inline("@"), SPECIFIED_DIRECTIVE_NAME);
-
-    /**
-     * The {@link #SPECIFIED_DIRECTIVES} no document of the graph declares, under the same alias and
-     * column so {@link #SPECIFIED_DIRECTIVE_NAME} and {@link #SPECIFIED_DIRECTIVE_COORDINATE} read
-     * it unchanged. Every arm that appends the specified directives to the authored ones reads this,
-     * which is what leaves each key one candidate: without it a redeclared {@code @oneOf} arrived
-     * twice and the key refused the second, on a cold store and a warm one alike.
-     */
-    private static Table<Record1<String>> specifiedDirectivesUndeclared(String graph) {
-        var d = GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY;
-        return select(SPECIFIED_DIRECTIVE_NAME)
-            .from(SPECIFIED_DIRECTIVES)
-            .where(notExists(selectOne().from(d)
-                .where(d.GRAPH_NAME.eq(graph), d.NAME.eq(SPECIFIED_DIRECTIVE_NAME))))
-            .asTable("specified_directive", "directive_name");
-    }
-
     /** Which arm a root-operation candidate came from, spelled sorting before assumed. */
     private static final Field<Integer> PRECEDENCE = field(name("precedence"), Integer.class);
     /**
@@ -588,18 +488,6 @@ public final class GraphQLAstCapture {
     private static final Field<Integer> SITE_COLUMN = field(name("site_column"), Integer.class);
 
     /**
-     * Where a source with no modification time sorts, which is before every source that has one.
-     *
-     * <p>The bundled directive vocabulary is the case and the only one: it is a classpath resource
-     * rather than a file, so nothing can stat it and its {@code store_source.mtime} is null. The
-     * reader offers it before any authored document, so sorting it first is the reading order
-     * written down rather than a convention invented here. Coalesced rather than left null because
-     * where a null sorts is a dialect's opinion, and this ordering decides which declaration of a
-     * name the corpus honours.
-     */
-    private static final LocalDateTime BEFORE_EVERY_FILE = LocalDateTime.of(1, 1, 1, 0, 0);
-
-    /**
      * Every declaration of a named type, ranked in the order the corpus merges them.
      *
      * <p>The merge order is stated once, here, and nothing downstream recomputes it: a type's kind
@@ -624,7 +512,7 @@ public final class GraphQLAstCapture {
                     d.SOURCE_COLUMN,
                     rowNumber().over(partitionBy(d.NAME).orderBy(
                         d.IS_EXTENSION.asc(),
-                        coalesce(s.MTIME, val(BEFORE_EVERY_FILE, s.MTIME)).asc(),
+                        s.MTIME.asc(),
                         d.SOURCE_NAME.asc(), d.SOURCE_LINE.asc(), d.SOURCE_COLUMN.asc()))
                         .minus(inline(1)),
                     d.IS_EXTENSION, d.KIND, val(touchedAt, t.TOUCHED_AT))
@@ -665,12 +553,7 @@ public final class GraphQLAstCapture {
                 // Zero, because merge order is 0-based: the base declaration leads the chain and
                 // a base-less chain's first extension holds 0, which the column's own comment and
                 // the density gate both state.
-                .and(m.MERGE_ORDINAL.eq(0))
-                .unionAll(dsl
-                    .select(val(graph, t.GRAPH_NAME), SPECIFIED_SCALAR_NAME,
-                        val("SCALAR", t.KIND), castNull(t.DESCRIPTION),
-                        val(touchedAt, t.TOUCHED_AT))
-                    .from(SPECIFIED_SCALARS)))
+                .and(m.MERGE_ORDINAL.eq(0)))
             .onDuplicateKeyUpdate()
             .set(t.KIND, excluded(t.KIND))
             .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
@@ -1002,7 +885,7 @@ public final class GraphQLAstCapture {
             .select(d.NAME, d.REPEATABLE, d.DESCRIPTION, d.SOURCE_NAME, d.SOURCE_LINE,
                 d.SOURCE_COLUMN,
                 rowNumber().over(partitionBy(d.NAME).orderBy(
-                    coalesce(s.MTIME, val(BEFORE_EVERY_FILE, s.MTIME)).asc(),
+                    s.MTIME.asc(),
                     d.SOURCE_NAME.asc(), d.SOURCE_LINE.asc(), d.SOURCE_COLUMN.asc())).as(RANK))
             .from(d).join(s).on(s.SOURCE_NAME.eq(d.SOURCE_NAME))
             .where(d.GRAPH_NAME.eq(graph))
@@ -1015,16 +898,7 @@ public final class GraphQLAstCapture {
                     ranked.field(d.DESCRIPTION), ranked.field(d.SOURCE_NAME),
                     ranked.field(d.SOURCE_LINE), ranked.field(d.SOURCE_COLUMN),
                     val(touchedAt, t.TOUCHED_AT))
-                .from(ranked).where(ranked.field(RANK).eq(1))
-                // Outside the rank, for the reason the specified scalars are: these have no site
-                // to rank by. A document that declares one replaces it, so only the ones no
-                // document declares, and a redeclared name is its ranked declaration alone.
-                .unionAll(dsl
-                    .select(val(graph, t.GRAPH_NAME), SPECIFIED_DIRECTIVE_NAME,
-                        val(false, t.REPEATABLE), val((String) null, t.DESCRIPTION),
-                        val((String) null, t.SOURCE_NAME), val((Integer) null, t.SOURCE_LINE),
-                        val((Integer) null, t.SOURCE_COLUMN), val(touchedAt, t.TOUCHED_AT))
-                    .from(specifiedDirectivesUndeclared(graph))))
+                .from(ranked).where(ranked.field(RANK).eq(1)))
             .onDuplicateKeyUpdate()
             .set(t.REPEATABLE, excluded(t.REPEATABLE))
             .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
@@ -1149,7 +1023,7 @@ public final class GraphQLAstCapture {
             .select(upper(o.OPERATION).as(OPERATION), o.TYPE_NAME.as(TYPE_NAME),
                 o.SOURCE_NAME.as(SITE_NAME), o.SOURCE_LINE.as(SITE_LINE),
                 o.SOURCE_COLUMN.as(SITE_COLUMN), inline(0).as(PRECEDENCE),
-                coalesce(s.MTIME, val(BEFORE_EVERY_FILE, s.MTIME)).as(MTIME))
+                s.MTIME.as(MTIME))
             .from(o).join(s).on(s.SOURCE_NAME.eq(o.SOURCE_NAME))
             .where(o.GRAPH_NAME.eq(graph))
             .and(upper(o.OPERATION).in(CONVENTION_ROOTS.keySet()));
@@ -1159,7 +1033,7 @@ public final class GraphQLAstCapture {
         var byConvention = dsl
             .select(operationOf(d.NAME).as(OPERATION), d.NAME, castNull(t.SOURCE_NAME),
                 castNull(t.SOURCE_LINE), castNull(t.SOURCE_COLUMN), inline(1).as(PRECEDENCE),
-                coalesce(s.MTIME, val(BEFORE_EVERY_FILE, s.MTIME)).as(MTIME))
+                s.MTIME.as(MTIME))
             .from(d).join(s).on(s.SOURCE_NAME.eq(d.SOURCE_NAME))
             .where(d.GRAPH_NAME.eq(graph))
             .and(d.KIND.eq(inline("OBJECT")))
@@ -1258,7 +1132,7 @@ public final class GraphQLAstCapture {
                 a.SOURCE_NAME.as(SITE_NAME), a.SOURCE_LINE.as(SITE_LINE),
                 a.SOURCE_COLUMN.as(SITE_COLUMN),
                 m.MERGE_ORDINAL.as(MERGE_ORDINAL),
-                coalesce(s.MTIME, val(BEFORE_EVERY_FILE, s.MTIME)).as(MTIME))
+                s.MTIME.as(MTIME))
             .from(a)
             // The application's own entry row, for the parent hop that names the site it was
             // written on. The application relation carries the name and nothing else, the parent

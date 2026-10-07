@@ -179,24 +179,13 @@ public final class SdlFactCapture {
 
     // ---------------------------------------------------------------- directive definitions
 
-    /** The directives the specification gives every schema; see {@link #captureDirectiveDefinitions}. */
-    private static final List<String> SPECIFIED_DIRECTIVES =
-        List.of("deprecated", "include", "oneOf", "skip", "specifiedBy");
-
     /**
-     * Records what each directive <em>is</em>, for every definition the registry holds and for the
-     * five the specification gives every schema. Graphitron's own bundled definitions are rows too,
-     * so an application's directive name always resolves to a definition and reading a repeatable
-     * flag or an argument default stays a join. Which definitions an emitter re-declares is a
+     * Records what each directive <em>is</em>, for every definition the registry holds. Graphitron's
+     * own bundled definitions are rows too, so an application's directive name always resolves to a
+     * definition and reading a repeatable flag or an argument default stays a join. Which definitions an emitter re-declares is a
      * question about their {@code source_name}, answered where the emitting happens.
      */
     private void captureDirectiveDefinitions() {
-        // The five the specification gives every schema, which no document declares and the
-        // registry therefore does not list. They are claimed because an author can apply them and
-        // the anchor writes an existence row for each; graphitron applies one of them itself.
-        for (String specified : SPECIFIED_DIRECTIVES) {
-            sink.claim(GRAPHQL_DIRECTIVE, specified);
-        }
         for (DirectiveDefinition definition : registry.getDirectiveDefinitions().values()) {
             String name = definition.getName();
             if (!sink.claim(GRAPHQL_DIRECTIVE, name)) {

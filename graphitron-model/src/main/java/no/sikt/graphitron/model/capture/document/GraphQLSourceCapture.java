@@ -118,6 +118,18 @@ public final class GraphQLSourceCapture {
          * being a source another graph may hold.
          */
         record Dropped(String sourceName) implements SourceDocument {}
+
+        /**
+         * The specification's own document: the scalars and directives every schema has, declared
+         * where the specification declares them.
+         *
+         * <p>Transcribed like a {@link Changed} source, so a built-in has entries, a position and a
+         * declaration the anchors rank like any other. Not {@link Stated}, because the schema is
+         * not composed from it: the engine supplies the built-ins itself, and a corpus redeclaring
+         * one would otherwise meet a second declaration no author wrote.
+         */
+        record Specification(String sourceName, TypeDefinitionRegistry registry)
+            implements SourceDocument {}
     }
 
     /**
@@ -180,6 +192,8 @@ public final class GraphQLSourceCapture {
                 documents.add(new SourceDocument.Dropped(name));
             }
         }
+        documents.add(readSpecification(dsl, graph.name(), readAt));
+        configured.add(SchemaLoader.SPECIFICATION_SOURCE_NAME);
         dropMembership(dsl, graph.name(), configured);
         GraphQLSchemaProblems.writeParsed(dsl, graph.name(), parse.failures(), readAt);
         documents.sort(OLDEST_FIRST);
@@ -204,8 +218,8 @@ public final class GraphQLSourceCapture {
 
     /**
      * The order the list comes back in: by modification time, then by name where two files share
-     * one. A source with no file on disk sorts first, which is where the bundled directive
-     * vocabulary belongs: it is older than anything an author wrote, being not written at all.
+     * one. A source whose time could not be read sorts first; the two bundled documents never do,
+     * {@link #modifiedAt} giving each the instant that places it.
      */
     private static final Comparator<SourceDocument> OLDEST_FIRST =
         Comparator.<SourceDocument, LocalDateTime>comparing(
@@ -221,17 +235,8 @@ public final class GraphQLSourceCapture {
     private static SourceDocument read(DSLContext dsl, String graph, String sourceName,
                                        TypeDefinitionRegistry registry,
                                        Map<String, String> held, LocalDateTime readAt) {
-        var t = STORE_SOURCE;
         String stamp = SourceStamp.ofFile(Path.of(sourceName));
-        var mtime = modifiedAt(sourceName);
-        dsl.insertInto(t, t.SOURCE_NAME, t.SOURCE_KIND, t.STAMP, t.MTIME, t.LAST_SEEN, t.READ_AT)
-            .values(sourceName, "SCHEMA_FILE", stamp, mtime, readAt, readAt)
-            .onDuplicateKeyUpdate()
-            .set(t.STAMP, stamp)
-            .set(t.MTIME, mtime)
-            .set(t.LAST_SEEN, readAt)
-            .set(t.READ_AT, readAt)
-            .execute();
+        recordSource(dsl, sourceName, stamp, readAt);
         // A file that would not parse records no stamp, so the next reading meets it as changed
         // and attempts it again rather than reading a still-broken file as a settled one. The
         // claim is still made: this reading is about to empty the scope, which is a transcription
@@ -249,6 +254,33 @@ public final class GraphQLSourceCapture {
         }
         claimMembership(dsl, graph, sourceName, stamp, readAt);
         return new SourceDocument.Changed(sourceName, registry);
+    }
+
+    /**
+     * The specification's document, recorded and claimed on the terms a source with no stamp gets:
+     * it has no file to hash, so every reading transcribes it again, which costs ten declarations.
+     */
+    private static SourceDocument readSpecification(DSLContext dsl, String graph,
+                                                    LocalDateTime readAt) {
+        String sourceName = SchemaLoader.SPECIFICATION_SOURCE_NAME;
+        recordSource(dsl, sourceName, null, readAt);
+        claimMembership(dsl, graph, sourceName, null, readAt);
+        return new SourceDocument.Specification(sourceName, SchemaLoader.parseSpecification());
+    }
+
+    /** One source's row in the shared relation, dated by this reading. */
+    private static void recordSource(DSLContext dsl, String sourceName, String stamp,
+                                     LocalDateTime readAt) {
+        var t = STORE_SOURCE;
+        var mtime = modifiedAt(sourceName);
+        dsl.insertInto(t, t.SOURCE_NAME, t.SOURCE_KIND, t.STAMP, t.MTIME, t.LAST_SEEN, t.READ_AT)
+            .values(sourceName, "SCHEMA_FILE", stamp, mtime, readAt, readAt)
+            .onDuplicateKeyUpdate()
+            .set(t.STAMP, stamp)
+            .set(t.MTIME, mtime)
+            .set(t.LAST_SEEN, readAt)
+            .set(t.READ_AT, readAt)
+            .execute();
     }
 
     /**
@@ -298,9 +330,9 @@ public final class GraphQLSourceCapture {
      * provenance out from under rows that had not yet been told to go.
      *
      * <p>Not the sources this reading did not read. The relation is shared and ungraphed, so only
-     * absence from the filesystem says a schema file has stopped being one; the bundled directive
-     * vocabulary is a source with a row and no file, and a rule reading the filesystem alone would
-     * reclaim it every run.
+     * absence from the filesystem says a schema file has stopped being one; the two bundled
+     * documents are sources with a row and no file, and a rule reading the filesystem alone would
+     * reclaim them every run.
      */
     public static void reclaim(DSLContext dsl, List<SourceDocument> documents) {
         var t = STORE_SOURCE;
@@ -321,8 +353,30 @@ public final class GraphQLSourceCapture {
         }
     }
 
-    /** When the file was last written, or null for a source that is not a file on disk. */
+    /**
+     * Where the bundled directive vocabulary sorts: before every file, so it wins any name it
+     * shares with an authored document, as it did while the reader offered it first.
+     */
+    public static final LocalDateTime BEFORE_EVERY_FILE = LocalDateTime.of(1, 1, 1, 0, 0);
+
+    /**
+     * Where the specification's document sorts: after every file, so any declaration an author
+     * writes of a name it declares wins, and the result is the same on every reading.
+     */
+    public static final LocalDateTime AFTER_EVERY_FILE = LocalDateTime.of(9999, 12, 31, 0, 0);
+
+    /**
+     * When the file was last written, or null where that cannot be read. The two bundled documents
+     * are no file, and each carries the instant that places it at its end of the order, so a rank
+     * reads one column.
+     */
     private static LocalDateTime modifiedAt(String sourceName) {
+        if (SchemaLoader.DIRECTIVES_SOURCE_NAME.equals(sourceName)) {
+            return BEFORE_EVERY_FILE;
+        }
+        if (SchemaLoader.SPECIFICATION_SOURCE_NAME.equals(sourceName)) {
+            return AFTER_EVERY_FILE;
+        }
         try {
             return LocalDateTime.ofInstant(
                 Files.getLastModifiedTime(Path.of(sourceName)).toInstant(),

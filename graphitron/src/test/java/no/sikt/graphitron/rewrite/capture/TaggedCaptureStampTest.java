@@ -55,7 +55,7 @@ class TaggedCaptureStampTest {
                         .from(STORE_SOURCE)
                         .where(STORE_SOURCE.SOURCE_KIND.eq("SCHEMA_FILE"))
                         .fetch())
-                    .as("the schema file is stamped, and the two generator-injected names are "
+                    .as("the schema file is stamped, and the generator-injected names are "
                         + "recorded unstamped rather than stamped or refused")
                     .anySatisfy(row -> {
                         assertThat(row.value1()).isEqualTo(
@@ -67,7 +67,8 @@ class TaggedCaptureStampTest {
                             .toAbsolutePath().normalize().toString())) {
                             assertThat(row.value1()).isIn(
                                 TagLinkSynthesiser.SYNTHESISED_SOURCE_NAME,
-                                no.sikt.graphitron.model.schema.SchemaLoader.DIRECTIVES_SOURCE_NAME);
+                                no.sikt.graphitron.model.schema.SchemaLoader.DIRECTIVES_SOURCE_NAME,
+                                no.sikt.graphitron.model.schema.SchemaLoader.SPECIFICATION_SOURCE_NAME);
                             assertThat(row.value2()).isNull();
                         }
                     });

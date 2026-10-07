@@ -1,0 +1,26 @@
+# A second reading that writes only this file, leaving the redeclarations' bytes as they were:
+# nothing about it changes which declaration holds the name. The redeclaring file's entries keep the
+# first reading's mark; the specification has no file to compare and is transcribed again, and the
+# anchor is derived again, both under this reading's.
+
+extend schema @assertAbsent(relation: "graphql_directive", rows: """
+  directive_name, source_name
+  oneOf,          specification.graphqls
+  deprecated,     specification.graphqls
+  include,        specification.graphqls
+  """)
+
+extend schema @assertContains(relation: "graphql_ast_directive_definition_entry", rows: """
+  name,  source_name,            touched_at
+  oneOf, specification.graphqls, 1000000060
+  """)
+
+extend schema @assertContains(relation: "graphql_ast_directive_definition_entry", rows: """
+  name,  touched_at
+  oneOf, 1000000000
+  """)
+
+extend schema @assertContains(relation: "graphql_directive", rows: """
+  directive_name, touched_at
+  oneOf,          1000000060
+  """)

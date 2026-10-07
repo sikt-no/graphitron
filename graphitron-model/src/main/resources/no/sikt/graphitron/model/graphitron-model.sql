@@ -320,11 +320,10 @@ COMMENT ON COLUMN store_stamp.generator_version IS 'the capturing generator''s i
 -- ==== SDL existence facts =========================================================
 -- One row per element the SDL declares. Capture is total: built-in scalars, @oneOf, federation
 -- definitions arriving via @link, and user-authored directives are ordinary rows. Source
--- positions follow the 1-based graphql-java convention and are NULL only for engine-provided
--- elements no SDL line declares (built-in scalars). Elements contributed by the bundled
--- directives.graphqls are stamped with that resource name as source_name (for a type, the
--- stamp sits on its declaration rows); consumers wanting user-authored declarations filter on
--- it.
+-- positions follow the 1-based graphql-java convention. Elements contributed by the bundled
+-- directives.graphqls and the specification's own specification.graphqls are stamped with that
+-- resource name as source_name (for a type, the stamp sits on its declaration rows); consumers
+-- wanting user-authored declarations filter on it.
 --
 -- The family splits an element's existence from its attributes, and the reference web anchors on
 -- the existence half. The graphql_*_element relations carry a key and nothing else, and every
@@ -505,7 +504,7 @@ CREATE TABLE graphql_type_declaration (
   FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name) ON DELETE CASCADE,
   CHECK (kind IN ('OBJECT', 'INTERFACE', 'UNION', 'ENUM', 'INPUT_OBJECT', 'SCALAR'))
 );
-COMMENT ON TABLE graphql_type_declaration IS 'A declaration site of a type: the base definition or one extension. All five extension kinds are live today, so a type''s effective shape may be assembled from several files; this relation records who contributed what and indexes the incremental-refresh unit ("which types does this file touch"). Engine-provided types (built-in scalars) have no declaration rows.';
+COMMENT ON TABLE graphql_type_declaration IS 'A declaration site of a type: the base definition or one extension. All five extension kinds are live today, so a type''s effective shape may be assembled from several files; this relation records who contributed what and indexes the incremental-refresh unit ("which types does this file touch"). The built-in scalars are declared in the bundled specification.graphqls, which sorts after every file, so an author''s declaration of one is the base and an authored extension merges after it.';
 COMMENT ON COLUMN graphql_type_declaration.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_type_declaration.type_name IS 'the type this site declares or extends';
 COMMENT ON COLUMN graphql_type_declaration.source_name IS 'the site''s file; a site is a syntactic occurrence, so its location is its identity';
@@ -13916,12 +13915,13 @@ CREATE VIEW lint_violation
   (graph_name, lint_rule, source_name, source_line, source_column,
    subject, subject_parent, subject_kind, subject_at_position) AS
 WITH
--- Positions the author owns: the two source names the generator injects itself are the bundled
--- directive vocabulary and the tag-link synthesiser's, and an author can neither rename nor
--- document what either of them wrote.
+-- Positions the author owns: the source names the generator injects itself are the bundled
+-- directive vocabulary, the specification's own document and the tag-link synthesiser's, and an
+-- author can neither rename nor document what any of them wrote.
 authored (source_name) AS (
   SELECT source_name FROM store_source
-   WHERE source_name NOT IN ('directives.graphqls', '<graphitron-synthesised:tag-link>')
+   WHERE source_name NOT IN ('directives.graphqls', 'specification.graphqls',
+                             '<graphitron-synthesised:tag-link>')
 ),
 -- The consumer's excludedTypes globs as LIKE patterns. The escape runs before the translation, so
 -- a glob writing a literal % means that character rather than becoming a wildcard nobody asked for.

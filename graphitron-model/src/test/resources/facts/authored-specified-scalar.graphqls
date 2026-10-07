@@ -1,0 +1,23 @@
+# An author may declare a specification scalar themselves. Their file is older than the
+# specification's document, which sorts after every file, so the authored declaration is the base
+# and the specification's is a second one behind it; the type is the authored one, description and
+# all. The transcription keeps it: what it drops is the engine's own nodes, by identity, never a
+# declaration by its name.
+
+"""an authored String"""
+scalar String
+
+extend schema @assertContains(relation: "graphql_type_declaration", rows: """
+  type_name, source_name,            merge_ordinal, is_extension
+  String,    specification.graphqls, 1,             FALSE
+  """)
+
+extend schema @assertAbsent(relation: "graphql_type_declaration", rows: """
+  type_name, source_name,            merge_ordinal
+  String,    specification.graphqls, 0
+  """)
+
+extend schema @assertContains(relation: "graphql_type", rows: """
+  type_name, kind,   description
+  String,    SCALAR, an authored String
+  """)
