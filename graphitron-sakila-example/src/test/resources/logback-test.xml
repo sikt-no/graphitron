@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Logback with no configuration logs everything at DEBUG, and jOOQ's LoggerListener writes every
+  statement it executes at DEBUG with its bind values. Test output is redirected to
+  target/surefire-reports (redirectTestOutputToFile in the parent pom) and surefire also embeds it
+  in each TEST-*.xml, so an unconfigured module wrote every capture's SQL twice: about 7 GB a build
+  in the graphitron module alone. The root sits at INFO, as graphitron-mcp's does, so the captured
+  file keeps the info, warn and error context that diagnoses a failing test and nothing below it.
+-->
+<configuration>
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+    <root level="INFO">
+        <appender-ref ref="STDOUT"/>
+    </root>
+</configuration>
