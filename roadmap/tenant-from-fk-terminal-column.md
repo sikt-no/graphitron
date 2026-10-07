@@ -1,7 +1,7 @@
 ---
 id: R992
 title: "A reference whose FK lands on the tenant column routes on the parent row value"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 4
 theme: runtime-connection
