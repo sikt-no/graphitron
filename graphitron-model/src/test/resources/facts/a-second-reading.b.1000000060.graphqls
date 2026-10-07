@@ -1,0 +1,22 @@
+# The second reading rewrites this file and not the other. The rewritten file's entries carry this
+# reading's mark, the untouched file's keep the first reading's, the sweep takes the type no file
+# declares any more, and the anchors are derived again under this reading's mark.
+
+type Replacement { note: String }
+
+extend schema @assertAbsent(relation: "graphql_type", rows: """
+  type_name, kind
+  Ephemeral, OBJECT
+  """)
+
+extend schema @assertContains(relation: "graphql_ast_type_declaration_entry", rows: """
+  name,        touched_at
+  Kept,        1000000000
+  Replacement, 1000000060
+  """)
+
+extend schema @assertContains(relation: "graphql_type", rows: """
+  type_name,   kind,   touched_at
+  Kept,        OBJECT, 1000000060
+  Replacement, OBJECT, 1000000060
+  """)

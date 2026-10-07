@@ -1,0 +1,8 @@
+# The second file of the first reading.
+
+type Ephemeral { note: String }
+
+extend schema @assertContains(relation: "graphql_type", rows: """
+  type_name, kind,   touched_at
+  Ephemeral, OBJECT, 1000000000
+  """)

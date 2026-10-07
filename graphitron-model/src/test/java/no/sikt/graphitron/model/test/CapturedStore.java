@@ -24,7 +24,10 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
@@ -461,6 +464,45 @@ public final class CapturedStore implements AutoCloseable {
         return this;
     }
 
+    /**
+     * A reading of {@code graph} over several files, at a stated instant. The files in
+     * {@code written} are written, dated at {@code at}, and the graph is captured over every file in
+     * {@code files} at that instant, so a file this reading did not write keeps its bytes and its
+     * rows keep the mark an earlier reading gave them. What a case about the sweep needs: which
+     * reading last wrote a row is the only thing that tells a row kept from one written again.
+     *
+     * <p>The reading's instant is {@code at} as a UTC wall time. A file's own time is the instant
+     * itself, which the store records in the JVM's zone, so the two agree only where that zone is
+     * UTC.
+     *
+     * @param written the files this reading writes, by name, and what each now says
+     * @param files   every file the graph reads, by name, the written ones among them
+     * @return the source name each file in {@code files} is captured under, by name
+     */
+    public Map<String, String> andCatalogGraphReadAt(String graph, Map<String, String> written,
+                                                     java.util.Collection<String> files,
+                                                     Instant at, JooqCatalog jooq,
+                                                     List<CompletionData.ExternalReference> census,
+                                                     List<ClasspathEntry> classpath) {
+        for (var file : written.entrySet()) {
+            Path path = write(directory, graph + "." + file.getKey(), file.getValue());
+            try {
+                Files.setLastModifiedTime(path, FileTime.from(at));
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        }
+        var paths = files.stream()
+            .map(name -> fixtureFile(directory, graph + "." + name))
+            .toList();
+        captureFiles(store.dsl(), paths, directory, graph, null, jooq, census, false, classpath,
+            LocalDateTime.ofEpochSecond(at.getEpochSecond(), 0, ZoneOffset.UTC));
+        var sourceNames = new java.util.LinkedHashMap<String, String>();
+        files.forEach(name -> sourceNames.put(name,
+            SchemaSource.file(fixtureFile(directory, graph + "." + name)).sourceName()));
+        return sourceNames;
+    }
+
     /** {@link #andCatalogGraphWith} for a caller with paths and no opinion. */
     public CapturedStore andCatalogGraph(String otherGraph, String sdl, JooqCatalog jooq,
                                          List<CompletionData.ExternalReference> census,
@@ -575,13 +617,21 @@ public final class CapturedStore implements AutoCloseable {
      * as it goes, so a code row written after it is invisible to everything derived during it, and a
      * fixture would read a resolved route beside a chain that never saw it.
      */
-    @SuppressWarnings("removal")  // states a census while fixtures without a classpath do
     private static void captureFiles(DSLContext dsl, List<Path> files, Path directory,
                                      String graphName, TypeDefinitionRegistry registry, JooqCatalog jooq,
                                      List<CompletionData.ExternalReference> census, boolean warm,
                                      List<ClasspathEntry> classpath) {
+        captureFiles(dsl, files, directory, graphName, registry, jooq, census, warm, classpath,
+            LocalDateTime.now());
+    }
+
+    /** The same capture at an instant the caller states, which every row it marks then carries. */
+    @SuppressWarnings("removal")  // states a census while fixtures without a classpath do
+    private static void captureFiles(DSLContext dsl, List<Path> files, Path directory,
+                                     String graphName, TypeDefinitionRegistry registry, JooqCatalog jooq,
+                                     List<CompletionData.ExternalReference> census, boolean warm,
+                                     List<ClasspathEntry> classpath, LocalDateTime readAt) {
         FactStores.countCapture();
-        var readAt = LocalDateTime.now();
         // The graph's own row, before anything that keys into it. The pass writes it first thing,
         // but the stated census below runs ahead of the pass and claims sources against it.
         ModelCapture.writeGraph(dsl, new GraphIdentity(graphName, directory), readAt);

@@ -12,8 +12,19 @@
 # CorpusAnchor bound to a table, because a verdict needs something to be a verdict about. A fact
 # example needs a query root and no more, so what a document contains is what the example is about
 # and a reader can hold the whole population in their head.
+#
+# A document named name.<file>.<epoch>.graphqls is one version of one file of a graph read in steps.
+# The file is a short name that only tells the files apart; the epoch is the second that version is
+# read at. The graph is read once per epoch any of its files names: the files with a version at it
+# are written and dated at it, the graph is captured over every file it has met so far at that
+# instant, and the assertions written at it are checked against what it leaves. A file the reading
+# did not write keeps its bytes, so its rows keep an earlier reading's mark. A timestamp column is
+# compared as epoch seconds, so a mark column reads as the reading that last wrote the row, which is
+# how a document tells what a reading swept, what it kept and what it wrote again. The prelude is
+# the stepped graph's own file, written at its first epoch.
 
 directive @expectEquals(relation: String!, rows: String!) repeatable on SCHEMA
 directive @assertContains(relation: String!, rows: String!) repeatable on SCHEMA
+directive @assertAbsent(relation: String!, rows: String!) repeatable on SCHEMA
 
 type Query { ping: String }

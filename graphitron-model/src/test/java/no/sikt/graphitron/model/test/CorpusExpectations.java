@@ -73,12 +73,21 @@ public final class CorpusExpectations {
      */
     public static final String CONTAINS_DIRECTIVE = "assertContains";
 
-    /** What a block claims about the relation: all of its rows, or some of them. */
+    /**
+     * The absence directive's name: these rows are not among the relation's. The claim containment
+     * cannot make, and the one a relation that is total by design needs when the point is a row
+     * that must not be there, a declaration that lost or a location nobody granted.
+     */
+    public static final String ABSENT_DIRECTIVE = "assertAbsent";
+
+    /** What a block claims about the relation: all of its rows, some of them, or none of them. */
     public enum Mode {
         /** The relation's rows are exactly the declared ones. */
         EQUALS,
         /** The declared rows are among the relation's, which may hold others. */
-        CONTAINS
+        CONTAINS,
+        /** None of the declared rows is among the relation's. */
+        ABSENT
     }
 
     /** The column every expectation carries and no document spells: the document's own identity. */
@@ -138,7 +147,9 @@ public final class CorpusExpectations {
             /** A block declares the row and the relation does not hold it. */
             NOT_PRODUCED,
             /** The relation holds the row and no block declares it. */
-            NOT_DECLARED
+            NOT_DECLARED,
+            /** A block declares the row absent and the relation holds it. */
+            PRESENT
         }
 
         @Override
@@ -154,6 +165,18 @@ public final class CorpusExpectations {
      * thing that distinguishes them once they are rows.
      */
     public static List<Block> blocks(DSLContext dsl) {
+        return blocks(dsl, DSL.noCondition());
+    }
+
+    /**
+     * The assertion applications written in the files named, which is what a reading checks when
+     * the files it did not write still hold an earlier reading's claims.
+     */
+    public static List<Block> blocksWrittenIn(DSLContext dsl, Set<String> sourceNames) {
+        return blocks(dsl, DSL.field(id("d", "source_name"), String.class).in(sourceNames));
+    }
+
+    private static List<Block> blocks(DSLContext dsl, Condition written) {
         var arguments = dsl
             .select(DSL.field(id("d", "graph_name"), String.class),
                 DSL.field(id("d", "ordinal"), Integer.class),
@@ -174,7 +197,9 @@ public final class CorpusExpectations {
             // on: one relation holds every site now, and the coordinate is what selects this one.
             .where(DSL.field(id("d", "coordinate"), String.class)
                 .eq(SchemaCoordinateSyntax.ofSchema()))
-            .and(DSL.field(id("d", "directive_name"), String.class).in(DIRECTIVE, CONTAINS_DIRECTIVE))
+            .and(DSL.field(id("d", "directive_name"), String.class)
+                .in(DIRECTIVE, CONTAINS_DIRECTIVE, ABSENT_DIRECTIVE))
+            .and(written)
             .orderBy(DSL.field(id("d", "graph_name")), DSL.field(id("d", "ordinal")))
             .fetch();
 
@@ -197,12 +222,19 @@ public final class CorpusExpectations {
                     + "makes impossible: " + entry.getValue().keySet());
             }
             var block = decode(dsl, entry.getKey().graph(), relation.strip(), csv);
-            blocks.add(CONTAINS_DIRECTIVE.equals(entry.getKey().directive())
-                ? new Block(block.graph(), block.relation(), block.columns(), block.rows(),
-                    block.raggedLines(), Mode.CONTAINS)
-                : block);
+            blocks.add(new Block(block.graph(), block.relation(), block.columns(), block.rows(),
+                block.raggedLines(), mode(entry.getKey().directive())));
         }
         return List.copyOf(blocks);
+    }
+
+    /** The mode an assertion directive's name carries. */
+    private static Mode mode(String directive) {
+        return switch (directive) {
+            case CONTAINS_DIRECTIVE -> Mode.CONTAINS;
+            case ABSENT_DIRECTIVE -> Mode.ABSENT;
+            default -> Mode.EQUALS;
+        };
     }
 
     /**
@@ -231,12 +263,14 @@ public final class CorpusExpectations {
                     stringArgument(directive, "relation").strip(),
                     stringArgument(directive, "rows")));
             }
-            for (var directive : extension.getDirectives(CONTAINS_DIRECTIVE)) {
-                var block = decode(csvReader, graph,
-                    stringArgument(directive, "relation").strip(),
-                    stringArgument(directive, "rows"));
-                blocks.add(new Block(block.graph(), block.relation(), block.columns(), block.rows(),
-                    block.raggedLines(), Mode.CONTAINS));
+            for (var name : List.of(CONTAINS_DIRECTIVE, ABSENT_DIRECTIVE)) {
+                for (var directive : extension.getDirectives(name)) {
+                    var block = decode(csvReader, graph,
+                        stringArgument(directive, "relation").strip(),
+                        stringArgument(directive, "rows"));
+                    blocks.add(new Block(block.graph(), block.relation(), block.columns(),
+                        block.rows(), block.raggedLines(), mode(name)));
+                }
             }
         }
         return List.copyOf(blocks);
@@ -318,8 +352,11 @@ public final class CorpusExpectations {
         allColumns.addAll(columns);
 
         Table<Record> produced = DSL.table(id(relation)).as("PRODUCED");
+        var instants = timestampColumns(dsl, relation);
         List<Field<String>> producedFields = allColumns.stream()
-            .map(column -> DSL.field(id("produced", column)).cast(String.class))
+            .map(column -> instants.contains(column.toUpperCase(java.util.Locale.ROOT))
+                ? epochSeconds(DSL.field(id("produced", column)))
+                : DSL.field(id("produced", column)).cast(String.class))
             .toList();
 
         var divergences = new ArrayList<Divergence>();
@@ -334,6 +371,15 @@ public final class CorpusExpectations {
                 .map(column -> DSL.field(id("expected", column), String.class))
                 .toList();
 
+            if (mode == Mode.ABSENT) {
+                dsl.select(expectedFields)
+                    .from(expected)
+                    .whereExists(dsl.selectOne().from(produced)
+                        .where(match(producedFields, expectedFields)))
+                    .fetch()
+                    .forEach(row -> divergences.add(divergence(relation, row, Divergence.Side.PRESENT)));
+                return divergences;
+            }
             dsl.select(expectedFields)
                 .from(expected)
                 .whereNotExists(dsl.selectOne().from(produced).where(match(producedFields, expectedFields)))
@@ -358,6 +404,25 @@ public final class CorpusExpectations {
                 .forEach(row -> divergences.add(divergence(relation, row, Divergence.Side.NOT_DECLARED)));
         }
         return divergences;
+    }
+
+    /**
+     * The relation's timestamp columns, upper-cased, asked of the catalog on {@link #partitioned}'s
+     * terms. A document spells an instant as epoch seconds, the number a stepped document's name
+     * carries and the instant its reading ran at, so a mark column reads as the step that wrote it.
+     */
+    private static Set<String> timestampColumns(DSLContext dsl, String relation) {
+        return Set.copyOf(dsl.select(DSL.field(id("COLUMN_NAME"), String.class))
+            .from(DSL.table(id("INFORMATION_SCHEMA", "COLUMNS")))
+            .where(DSL.field(id("TABLE_NAME"), String.class).equalIgnoreCase(relation))
+            .and(DSL.field(id("DATA_TYPE"), String.class).eq("TIMESTAMP"))
+            .fetch(DSL.field(id("COLUMN_NAME"), String.class)));
+    }
+
+    /** An instant as whole epoch seconds, its wall time read as UTC, which is how a step writes one. */
+    private static Field<String> epochSeconds(Field<?> instant) {
+        return DSL.field("DATEDIFF(SECOND, TIMESTAMP '1970-01-01 00:00:00', {0})", Long.class, instant)
+            .cast(String.class);
     }
 
     /**
