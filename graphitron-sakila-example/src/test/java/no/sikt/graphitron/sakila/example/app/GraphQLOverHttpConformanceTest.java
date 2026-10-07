@@ -267,7 +267,9 @@ class GraphQLOverHttpConformanceTest {
             // None of the thrown exception's internals leak: no class name, no host/port, no message.
             .body(not(containsString("IllegalStateException")))
             .body(not(containsString("db-fault-host")))
-            .body(not(containsString("5432")))
+            // The port as the fault spells it: a reference is hex and dashes, so four digits alone
+            // turn up in one now and then, and a colon never does.
+            .body(not(containsString(":5432")))
             .body(not(containsString("no.sikt.graphitron.internal")));
     }
 
@@ -285,7 +287,7 @@ class GraphQLOverHttpConformanceTest {
             .statusCode(200)
             .body("errors[0].message", matchesPattern(REFERENCE_MESSAGE))
             .body(not(containsString("db-fault-host")))
-            .body(not(containsString("5432")))
+            .body(not(containsString(":5432")))
             .body(not(containsString("IllegalStateException")));
     }
 
