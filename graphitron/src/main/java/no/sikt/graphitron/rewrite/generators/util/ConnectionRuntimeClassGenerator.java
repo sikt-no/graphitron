@@ -1363,6 +1363,7 @@ public final class ConnectionRuntimeClassGenerator {
                 .addMethod(tenantSlot())
                 .addMethod(loaderName())
                 .addMethod(tenantLoaderName())
+                .addMethod(tenantLoaderNameFor())
                 .addType(outcomeType(self, tenantKey))
                 .addType(fanOutFailureType());
         }
@@ -1950,12 +1951,33 @@ public final class ConnectionRuntimeClassGenerator {
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(String.class)
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
-            .addStatement("return loaderName(env) + $S + env.getLocalContext()", " tenant:")
+            .addStatement("return tenantLoaderName(env, env.getLocalContext())")
             .addJavadoc("The tenant-partitioned DataLoader name for a field inheriting a divined tenant:\n"
-                + "{@link #loaderName} plus an opaque tenant segment (never parsed back), so each\n"
-                + "loader batch stays tenant-homogeneous and its captured environment routes the\n"
-                + "right source. The separator contains characters no GraphQL path segment can,\n"
-                + "so the segment cannot collide with a path suffix.\n")
+                + "{@link #tenantLoaderName(DataFetchingEnvironment, Object)} over the handed-down\n"
+                + "tenant.\n")
+            .build();
+    }
+
+    /**
+     * {@code static String tenantLoaderName(DataFetchingEnvironment env, Object tenant)}: the
+     * naming recipe's one home. The one-argument form passes the handed-down tenant; a field that
+     * reads its tenant off the parent row passes that value, so its loaders partition per parent
+     * tenant the same way.
+     */
+    private static MethodSpec tenantLoaderNameFor() {
+        return MethodSpec.methodBuilder("tenantLoaderName")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(String.class)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addParameter(Object.class, "tenant")
+            .addStatement("return loaderName(env) + $S + tenant", " tenant:")
+            .addJavadoc("The tenant-partitioned DataLoader name: {@link #loaderName} plus an opaque\n"
+                + "tenant segment (never parsed back), so each loader batch stays tenant-homogeneous\n"
+                + "and its captured environment routes the right source. The separator contains\n"
+                + "characters no GraphQL path segment can, so the segment cannot collide with a path\n"
+                + "suffix.\n"
+                + "@param env the field's {@code DataFetchingEnvironment}\n"
+                + "@param tenant the tenant the loader's batch runs against\n")
             .build();
     }
 

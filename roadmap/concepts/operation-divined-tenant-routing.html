@@ -93,7 +93,7 @@
       <div class="body">
         <p><strong><code>NodeIdBound</code></strong>: resolved by node id; the tenant is a decoded-column position of the batch key. Each id carries its own tenant.</p>
         <p><strong><code>EntityRepBound</code></strong>: federation <code>_entities</code>; the tenant is a decoded position of each representation.</p>
-        <p><strong><code>ParentRowBound</code></strong>: a child under a <em>tenant-index</em> parent; each parent row names its own tenant. Extracted to R505; R45's first iteration classifies tables two-way (tenant-scoped or global) and this arm arrives with the index scope.</p>
+        <p><strong><code>ParentRowBound</code></strong>: a batched child whose foreign key lands on the tenant column; each parent row names its own tenant at the paired column. R992 landed it for global parents; R505 extends it to children of a declared <em>tenant-index</em> parent, which arrives with the index scope.</p>
       </div>
     </div>
   </div>

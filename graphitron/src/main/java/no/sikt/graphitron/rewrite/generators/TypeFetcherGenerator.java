@@ -6061,6 +6061,36 @@ public class TypeFetcherGenerator {
         CodeBlock prelude;
         CodeBlock keyExtraction;
         var envSource = CodeBlock.of("env.getSource()");
+        var parentRow = TenantDslEmitter.parentRowBinding(ctx, field.name());
+        if (parentRow != null) {
+            // The parent row names the tenant: the key extraction reads every key column into a
+            // local (a null one means the reference points nowhere, so it answers the empty value
+            // without creating a loader or taking a connection), the tenant is declared from the
+            // slot's local, and the loader name partitions on it, so it follows the extraction.
+            if (!(parentSource instanceof ParentSourceBinding.TableRow)) {
+                throw new IllegalStateException(
+                    "Graphitron generator bug (tenant routing): '" + field.parentTypeName() + "."
+                    + field.name() + "' is ParentRowBound but its parent is not a table row");
+            }
+            int slotIndex = sourceKey.columns().indexOf(parentRow.slot().sourceSide());
+            var handDown = TenantDslEmitter.parentRowHandDown(
+                ctx, GeneratorUtils.keyColumnLocal(slotIndex), outputPackage);
+            keyExtraction = CodeBlock.builder()
+                .add(GeneratorUtils.buildKeyExtractionThroughLocals(sourceKey, parentTable,
+                    GeneratorUtils.SOURCE_FROM_ENV, emptyBatchedResult(row, resultValueType)))
+                .add(handDown.declaration())
+                .build();
+            return DataLoaderFetcherEmitter.buildKeyFirst(
+                field.name(),
+                keyType, valueType, asyncResultType(resultValueType),
+                registration,
+                RowsMethodCall.batchLoaderLambda(rowsMethodName, keyType, registration),
+                CodeBlock.of(""),
+                keyExtraction,
+                asyncWrapTail(resultValueType, outputPackage, Optional.empty(), handDown.localContextTail()),
+                dataLoaderSyncCatchBody(resultValueType, outputPackage, Optional.empty()),
+                TenantDslEmitter.loaderNameDeclaration(ctx, field.name(), "name", outputPackage));
+        }
         if (parentSource instanceof ParentSourceBinding.TableRow) {
             prelude = CodeBlock.of("");
             keyExtraction = isList
@@ -6089,6 +6119,34 @@ public class TypeFetcherGenerator {
                 : asyncWrapTail(resultValueType, outputPackage, Optional.empty()),
             dataLoaderSyncCatchBody(resultValueType, outputPackage, Optional.empty()),
             TenantDslEmitter.loaderNameDeclaration(ctx, field.name(), "name", outputPackage));
+    }
+
+    /**
+     * The completed future a batched fetcher answers when its key cannot match: the field's empty
+     * value, read off the launcher row's result shape. {@code null} for a single record, an empty
+     * list for a record list, and an empty page for a connection. The empty page carries no count
+     * source, so its {@code totalCount} reads {@code null}, like any carrier the count query does
+     * not cover.
+     */
+    private static CodeBlock emptyBatchedResult(no.sikt.graphitron.command.LauncherCommand row,
+                                                TypeName resultValueType) {
+        CodeBlock empty = switch (row.result()) {
+            case no.sikt.graphitron.command.ResultShape.SingleRecord ignored -> null;
+            case no.sikt.graphitron.command.ResultShape.RecordList ignored -> CodeBlock.of("$T.of()", LIST);
+            case no.sikt.graphitron.command.ResultShape.Connection conn -> CodeBlock.of(
+                "new $T($T.of(), $L, null, null, false, $T.of(), null, null, null)",
+                ClassName.get(conn.carrier().packageName(), conn.carrier().simpleName()),
+                LIST, conn.defaultPageSize(), LIST);
+            case no.sikt.graphitron.command.ResultShape.LoaderDelegated ignored ->
+                throw new IllegalStateException(
+                    "Graphitron generator bug (batched fetcher): a table-batched launcher row"
+                    + " carries the service arms' LoaderDelegated result");
+        };
+        if (empty == null) {
+            return CodeBlock.of("$T.completedFuture(null)", COMPLETABLE_FUTURE);
+        }
+        return CodeBlock.of("$T.completedFuture($T.<$T>newResult().data($L).build())",
+            COMPLETABLE_FUTURE, DATA_FETCHER_RESULT, boxed(resultValueType), empty);
     }
 
     /**
@@ -6360,9 +6418,19 @@ public class TypeFetcherGenerator {
      */
     private static CodeBlock asyncWrapTail(TypeName valueType, String outputPackage,
                                            Optional<ErrorChannel.RouterDispatched> errorChannel) {
+        return asyncWrapTail(valueType, outputPackage, errorChannel, CodeBlock.of(""));
+    }
+
+    /**
+     * {@link #asyncWrapTail(TypeName, String, Optional)} with {@code localContextTail} riding the
+     * result, so a fetcher that divined a tenant hands it down to the loaded value's subtree.
+     */
+    private static CodeBlock asyncWrapTail(TypeName valueType, String outputPackage,
+                                           Optional<ErrorChannel.RouterDispatched> errorChannel,
+                                           CodeBlock localContextTail) {
         return CodeBlock.builder()
-            .add(".thenApply(payload -> $T.<$T>newResult().data(payload).build())\n",
-                DATA_FETCHER_RESULT, boxed(valueType))
+            .add(".thenApply(payload -> $T.<$T>newResult().data(payload)$L.build())\n",
+                DATA_FETCHER_RESULT, boxed(valueType), localContextTail)
             .add(".exceptionally(t -> ").add(asyncRouterCall(outputPackage, errorChannel, "t")).add(")")
             .build();
     }

@@ -117,6 +117,10 @@ public final class RoutineWriteCommands {
                 "the routine-write coordinate " + coordinate + " is classified as tenant fan-out;"
                 + " the fanned emission acquires per tenant through scatter and owns that"
                 + " coordinate itself, so no entry point of this family declares its connection");
+            case TenantBinding.ParentRowBound ignored -> throw new IllegalStateException(
+                "the routine-write coordinate " + coordinate + " is classified as parent-row"
+                + " bound; only a batched @table child carries that arm, so a routine write"
+                + " reaching it is drift between the classifier and this producer");
         };
     }
 

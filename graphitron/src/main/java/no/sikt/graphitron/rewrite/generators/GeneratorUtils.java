@@ -432,6 +432,30 @@ class GeneratorUtils {
                 "buildKeyExtractionWithNullCheck supports SourceKey.Wrap.Row only, got "
                 + sourceKey.wrap().getClass().getSimpleName());
         }
+        return buildKeyExtractionThroughLocals(sourceKey, parentTable, sourceExpr,
+            CodeBlock.of("$T.completedFuture(null)", ClassName.get("java.util.concurrent", "CompletableFuture")));
+    }
+
+    /**
+     * The local {@link #buildKeyExtractionThroughLocals} reads key column {@code index} into.
+     * One home for the name, so a site reading one key column's value (the parent-row tenant
+     * read) names the local the extraction declared.
+     */
+    static String keyColumnLocal(int index) {
+        return "fkVal" + index;
+    }
+
+    /**
+     * Reads each key column off {@code sourceExpr} into a typed local ({@link #keyColumnLocal}),
+     * returns {@code emptyFuture} if any of them is {@code null}, then declares {@code key}. A
+     * {@code NULL} key component can never match the correlation under ANSI semantics, so the
+     * short-circuit answers what the loader round-trip would have. Every {@link SourceKey.Wrap}
+     * arm is served: the {@link SourceKey.Wrap.Row} key builds from the locals, the other two
+     * through {@link #buildKeyExtraction(SourceKey, TableRef, CodeBlock)}'s own read, after the
+     * locals have vetted the values.
+     */
+    static CodeBlock buildKeyExtractionThroughLocals(SourceKey sourceKey, TableRef parentTable,
+                                                     CodeBlock sourceExpr, CodeBlock emptyFuture) {
         var tablesClass = CatalogRefs.constantsClass(parentTable);
         String tableField = parentTable.javaFieldName();
         List<ColumnRef> pkCols = sourceKey.columns();
@@ -442,7 +466,7 @@ class GeneratorUtils {
         for (int i = 0; i < pkCols.size(); i++) {
             ColumnRef col = pkCols.get(i);
             TypeName colType = CatalogRefs.columnType(col);
-            String local = "fkVal" + i;
+            String local = keyColumnLocal(i);
             out.addStatement("$T $L = (($T) $L).get($T.$L.$L)",
                 colType, local, RECORD, sourceExpr, tablesClass, tableField, col.javaName());
             if (i > 0) {
@@ -453,10 +477,13 @@ class GeneratorUtils {
             rowArgs.add("$L", local);
         }
         out.beginControlFlow("if ($L)", nullCheck.build());
-        out.addStatement("return $T.completedFuture(null)",
-            ClassName.get("java.util.concurrent", "CompletableFuture"));
+        out.addStatement("return $L", emptyFuture);
         out.endControlFlow();
-        out.addStatement("$T key = $T.row($L)", keyType, DSL, rowArgs.build());
+        if (sourceKey.wrap() instanceof SourceKey.Wrap.Row) {
+            out.addStatement("$T key = $T.row($L)", keyType, DSL, rowArgs.build());
+        } else {
+            out.add(buildKeyExtraction(sourceKey, parentTable, sourceExpr));
+        }
         return out.build();
     }
 

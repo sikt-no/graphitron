@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * The per-field tenant-binding axis: where a field's divined tenant key comes from, decided
@@ -15,6 +16,12 @@ import java.util.List;
  * federation representations both decode at the DataFetcher boundary, and the model carries
  * the decoded position, never a reference into the raw id string or representation map (wire
  * format stays a boundary concern).
+ *
+ * <p>{@link ParentRowBound} reads the tenant off the parent row: the field's first join hop
+ * lands on the tenant column, so the paired parent column names the tenant that holds the child
+ * row. It divines and hands down like {@link ArgumentBound}, and partitions its loader per tenant
+ * like {@link Inherited}; it is not part of the per-row family above, which a dispatch surface
+ * partitions and the generic DSL sites read as an inherited value.
  *
  * <p>A field reaching a tenant-scoped table with no binding in scope classifies to no arm at
  * all; it is the typed {@code noTenantBinding} rejection, because routing tenant data through
@@ -170,6 +177,22 @@ public sealed interface TenantBinding {
      * execution context, which is per-path.
      */
     record Inherited(String parentTypeName) implements TenantBinding {}
+
+    /**
+     * A batched child of a global {@code @table} parent whose first join hop pairs a parent
+     * column with the child's tenant column: the parent row's value at {@code slot.sourceSide()}
+     * is the tenant that holds the child row, so each parent row's child is fetched from that
+     * tenant's database. {@code parentTable} is the hop's origin (the global parent) and
+     * {@code slot} is the first-hop slot whose target side is the tenant column; its source side
+     * is one of the field's batch key columns, which is what lets the fetcher read the tenant
+     * off the key extraction it already performs.
+     */
+    record ParentRowBound(TableRef parentTable, JoinSlot.FkSlot slot) implements TenantBinding {
+        public ParentRowBound {
+            java.util.Objects.requireNonNull(parentTable, "parentTable");
+            java.util.Objects.requireNonNull(slot, "slot");
+        }
+    }
 
     /** The field touches only global tables; it runs on the default DataSource. */
     record Untenanted() implements TenantBinding {

@@ -2178,4 +2178,98 @@ class TenantBindingClassificationTest {
         assertThat(schema.tenantBindings()).isSameAs(TenantBindingIndex.EMPTY);
         assertThat(schema.tenantBindingOf("Query", "allFilms")).isNull();
     }
+
+    // ===== A reference whose foreign key lands on the tenant column routes on the parent row =====
+
+    /**
+     * {@code film_endorsement} is global and its foreign key {@code endorsed_film} lands on
+     * {@code film.film_id}, the tenant column: each endorsement row names the tenant holding its
+     * film. {@code %s} is the directive text on {@code FilmEndorsement.film}.
+     */
+    private static final String ENDORSEMENTS = """
+        type FilmEndorsement @table(name: "film_endorsement") {
+            note: String
+            film: Film%s
+        }
+        type Film @table(name: "film") {
+            title: String
+            inventories: [Inventory!]! @splitQuery%s
+        }
+        type Inventory @table(name: "inventory") { inventoryId: Int }
+        type FilmCategory @table(name: "film_category") { categoryId: Int }
+        type Query { endorsements: [FilmEndorsement!]! }
+        """;
+
+    private static GraphitronSchema endorsements(String filmDirectives, String filmFields) {
+        return build(ENDORSEMENTS.formatted(filmDirectives, filmFields));
+    }
+
+    @Test
+    void aBatchedReferenceLandingOnTheTenantColumnRoutesOnTheParentRow() {
+        var schema = endorsements(" @splitQuery", "");
+
+        var binding = schema.tenantBindingOf("FilmEndorsement", "film");
+        assertThat(binding).isInstanceOf(TenantBinding.ParentRowBound.class);
+        var parentRow = (TenantBinding.ParentRowBound) binding;
+        assertThat(parentRow.parentTable().tableName()).isEqualToIgnoringCase("film_endorsement");
+        assertThat(parentRow.slot().sourceSide().sqlName()).isEqualToIgnoringCase("endorsed_film");
+        assertThat(parentRow.slot().targetSide().sqlName()).isEqualToIgnoringCase("film_id");
+
+        // The mint invariant the fetcher emission reads: the arm's slot is the field's own
+        // first-hop slot, and its source side is a batch key column.
+        var field = (no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField) schema.fields()
+            .get(graphql.schema.FieldCoordinates.coordinates("FilmEndorsement", "film"));
+        var correlation = (no.sikt.graphitron.rewrite.model.ParentCorrelation.OnFkSlots)
+            field.parentCorrelation();
+        assertThat(correlation.slots().slots()).anyMatch(slot -> slot == parentRow.slot());
+        assertThat(field.sourceKey().columns()).contains(parentRow.slot().sourceSide());
+
+        assertInherited(schema, "Film", "inventories");
+        assertThat(schema.tenantBindingOf("Query", "endorsements"))
+            .isEqualTo(TenantBinding.Untenanted.INSTANCE);
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void anInlineReferenceLandingOnTheTenantColumnNamesSplitQueryInItsRejection() {
+        var schema = endorsements("", "");
+
+        assertThat(schema.tenantBindingOf("FilmEndorsement", "film")).isNull();
+        assertRejects(schema, "FilmEndorsement.film", "Mark it @splitQuery");
+    }
+
+    @Test
+    void theParentRowDecidesEvenWhereEveryPathIsBound() {
+        var schema = build("""
+            type FilmEndorsement @table(name: "film_endorsement") {
+                note: String
+                film: Film @splitQuery
+            }
+            type Film @table(name: "film") {
+                title: String
+                endorsements: [FilmEndorsement!]! @splitQuery
+            }
+            type Query { films(filmId: Int @field(name: "film_id")): [Film!]! }
+            """);
+
+        assertThat(schema.tenantBindingOf("FilmEndorsement", "film"))
+            .isInstanceOf(TenantBinding.ParentRowBound.class);
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aConditionJoinedReferenceKeepsNoTenantBinding() {
+        var schema = endorsements(" @splitQuery @reference(path: [{condition: {className: "
+            + "\"no.sikt.graphitron.rewrite.TestConditionStub\", method: \"join\"}}])", "");
+
+        assertThat(schema.tenantBindingOf("FilmEndorsement", "film")).isNull();
+        assertRejects(schema, "FilmEndorsement.film", "no ancestor established a tenant context");
+    }
+
+    @Test
+    void aFanOutBelowTheParentRowEdgeSitsUnderATenantBoundAncestor() {
+        var schema = endorsements(" @splitQuery", "\n    categories: [FilmCategory!]! @tenantFanOut");
+
+        assertFanOutRejects(schema, "Film.categories", "sits under a tenant-bound ancestor");
+    }
 }

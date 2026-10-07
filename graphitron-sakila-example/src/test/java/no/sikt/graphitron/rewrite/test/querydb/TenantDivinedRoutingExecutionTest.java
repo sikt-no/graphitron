@@ -54,6 +54,9 @@ class TenantDivinedRoutingExecutionTest {
     static final AtomicInteger TENANT_2_OPENED = new AtomicInteger();
     static GraphQL graphql;
 
+    static final String ENDORSEMENT_NOTE =
+        no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures.TENANT_ENDORSEMENT_NOTE;
+
     @BeforeAll
     static void startDatabase() {
         var localUrl = System.getProperty("test.db.url");
@@ -104,6 +107,12 @@ class TenantDivinedRoutingExecutionTest {
             t2.execute("insert into film_scene (film_id, scene_no) values (2, 1), (2, 2), (2, 3)");
         }
 
+        // Global endorsements on the default source, one of each tenant's film, told apart from
+        // concurrent classes' rows by the fixture note.
+        dsl.execute("delete from film_endorsement where note = ?", ENDORSEMENT_NOTE);
+        dsl.execute("insert into film_endorsement (endorsed_film, note) values (1, ?), (2, ?)",
+            ENDORSEMENT_NOTE, ENDORSEMENT_NOTE);
+
         // Typed tenant key: Map<Integer, DataSource> compiles against the generated constructor
         // because the catalog's film_id column types every tenant-keyed surface.
         Map<Integer, DataSource> byTenant = Map.of(
@@ -117,6 +126,7 @@ class TenantDivinedRoutingExecutionTest {
     @AfterAll
     static void stopDatabase() {
         if (dsl != null) {
+            dsl.execute("delete from film_endorsement where note = ?", ENDORSEMENT_NOTE);
             dsl.execute("drop database if exists tenant_1 with (force)");
             dsl.execute("drop database if exists tenant_2 with (force)");
         }
@@ -376,6 +386,87 @@ class TenantDivinedRoutingExecutionTest {
         assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get())
             .as("a @globalData service acquires only the default source")
             .isZero();
+    }
+
+    // ===== ParentRowBound: the parent row names the tenant of the row it references =====
+
+    private static final String ENDORSED_FILMS = "{ endorsements(note: \"" + ENDORSEMENT_NOTE + "\")"
+        + " { film { title inventories { inventoryId } } } }";
+
+    private static List<Map<String, Object>> endorsedFilms(ExecutionResult result) {
+        return ((List<Map<String, Object>>) ((Map<String, Object>) result.getData()).get("endorsements"))
+            .stream().map(e -> (Map<String, Object>) e.get("film")).toList();
+    }
+
+    @Test
+    void parentRowBound_eachEndorsementsFilmComesFromTheTenantItsRowNames() {
+        var result = execute(ENDORSED_FILMS);
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        var films = endorsedFilms(result);
+        assertThat(films).extracting(f -> f.get("title"))
+            .containsExactlyInAnyOrder("Tenant One Film", "Tenant Two Film");
+        assertThat(films).anySatisfy(f -> {
+            assertThat(f.get("title")).isEqualTo("Tenant One Film");
+            assertThat((List<?>) f.get("inventories"))
+                .as("the film's child inherits the tenant its endorsement named").hasSize(2);
+        });
+        assertThat(films).anySatisfy(f -> {
+            assertThat(f.get("title")).isEqualTo("Tenant Two Film");
+            assertThat((List<?>) f.get("inventories")).as("tenant 2 holds no inventory").isEmpty();
+        });
+        assertThat(TENANT_1_OPENED.get()).as("one acquisition for tenant 1's batch").isEqualTo(1);
+        assertThat(TENANT_2_OPENED.get()).as("one acquisition for tenant 2's batch").isEqualTo(1);
+    }
+
+    @Test
+    void parentRowBound_aRowNamingATenantOutsideTheSet_failsThatElementOnly() {
+        var result = execute(ENDORSED_FILMS, List.of(1));
+        assertThat(result.getErrors())
+            .anySatisfy(e -> assertThat(e.getMessage()).contains("'2' is not permitted for this request"));
+        assertThat(endorsedFilms(result))
+            .as("tenant 1's endorsement resolves; tenant 2's film is the refused element")
+            .anySatisfy(f -> assertThat(f).isNotNull().containsEntry("title", "Tenant One Film"))
+            .anySatisfy(f -> assertThat(f).isNull());
+        assertThat(TENANT_2_OPENED.get()).as("no connection to a refused tenant is taken").isZero();
+    }
+
+    private static final String ENDORSED_FILMS_UNDER_TENANT_1 = "{ films(filmId: 1) { inventories {"
+        + " store { endorsements { film { title } } } } } }";
+
+    /** Every endorsed film title reached below the tenant-1-bound root, null for a refused one. */
+    private static List<Object> titlesUnderTenant1(ExecutionResult result) {
+        var titles = new java.util.ArrayList<Object>();
+        for (var film : (List<Map<String, Object>>) ((Map<String, Object>) result.getData()).get("films")) {
+            for (var inventory : (List<Map<String, Object>>) film.get("inventories")) {
+                var store = (Map<String, Object>) inventory.get("store");
+                for (var endorsement : (List<Map<String, Object>>) store.get("endorsements")) {
+                    var endorsed = (Map<String, Object>) endorsement.get("film");
+                    titles.add(endorsed == null ? null : endorsed.get("title"));
+                }
+            }
+        }
+        return titles;
+    }
+
+    @Test
+    void parentRowBound_theRowDecidesUnderAnotherBoundTenant() {
+        // Reached under tenant 1, the endorsement of film 2 still finds film 2 in tenant 2's
+        // database: tenant 1's database holds only rows carrying tenant 1.
+        var result = execute(ENDORSED_FILMS_UNDER_TENANT_1);
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        assertThat(titlesUnderTenant1(result))
+            .contains("Tenant One Film", "Tenant Two Film")
+            .doesNotContainNull();
+        assertThat(TENANT_2_OPENED.get()).as("the row named tenant 2, so tenant 2 serves it").isEqualTo(1);
+    }
+
+    @Test
+    void parentRowBound_underAnotherBoundTenant_aRowNamingATenantOutsideTheSetIsRefused() {
+        var result = execute(ENDORSED_FILMS_UNDER_TENANT_1, List.of(1));
+        assertThat(result.getErrors())
+            .anySatisfy(e -> assertThat(e.getMessage()).contains("'2' is not permitted for this request"));
+        assertThat(titlesUnderTenant1(result)).contains("Tenant One Film").containsNull();
+        assertThat(TENANT_2_OPENED.get()).isZero();
     }
 
     // ===== Unknown divined tenant: request-level error before any SQL =====

@@ -114,4 +114,20 @@ public final class ReferencePathConditionFixtures {
     public static Condition splitFilterParentIncluded(SplitFilterParent parent, SplitFilterTarget target) {
         return parent.INCLUDE.isTrue();
     }
+
+    /**
+     * The note the multi-tenant fixture's endorsements carry, so a condition path and a root
+     * filter both read only the rows that fixture inserted into the shared default database.
+     */
+    public static final String TENANT_ENDORSEMENT_NOTE = "parent-row tenant fixture";
+
+    /**
+     * Every fixture endorsement, whatever the store: the multi-tenant schema's
+     * {@code Store.endorsements} path, which reaches endorsements of films in other tenants from
+     * below a tenant-bound root. Store and endorsement are both global, so the statement stays on
+     * the default source.
+     */
+    public static Condition everyTenantFixtureEndorsement(Table<?> storeTable, Table<?> endorsementTable) {
+        return endorsementTable.field("note", String.class).eq(TENANT_ENDORSEMENT_NOTE);
+    }
 }

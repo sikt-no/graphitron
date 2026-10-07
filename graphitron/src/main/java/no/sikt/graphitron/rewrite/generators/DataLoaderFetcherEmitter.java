@@ -108,6 +108,49 @@ public final class DataLoaderFetcherEmitter {
             CodeBlock asyncWrapTail,
             CodeBlock syncCatchBody,
             CodeBlock loaderNameDeclaration) {
+        return build(fieldName, keyType, loaderValueType, outerReturnType, registration,
+            batchLoaderLambda, preRegistrationPrelude, keyExtraction, asyncWrapTail, syncCatchBody,
+            loaderNameDeclaration, false);
+    }
+
+    /**
+     * The key-first form, for a loader name that reads a value the key extraction declares: a
+     * field whose tenant is the parent row's value partitions its loader on that value, so the
+     * name follows the extraction. Both move inside the {@code try} rather than hoisting the
+     * extraction out of it, so a throw out of the key read still routes through the field's
+     * error disposition; the extraction's own early return (a null key short-circuit) then
+     * leaves before any loader is created.
+     */
+    public static MethodSpec buildKeyFirst(
+            String fieldName,
+            TypeName keyType,
+            TypeName loaderValueType,
+            TypeName outerReturnType,
+            LoaderRegistration registration,
+            CodeBlock batchLoaderLambda,
+            CodeBlock preRegistrationPrelude,
+            CodeBlock keyExtraction,
+            CodeBlock asyncWrapTail,
+            CodeBlock syncCatchBody,
+            CodeBlock loaderNameDeclaration) {
+        return build(fieldName, keyType, loaderValueType, outerReturnType, registration,
+            batchLoaderLambda, preRegistrationPrelude, keyExtraction, asyncWrapTail, syncCatchBody,
+            loaderNameDeclaration, true);
+    }
+
+    private static MethodSpec build(
+            String fieldName,
+            TypeName keyType,
+            TypeName loaderValueType,
+            TypeName outerReturnType,
+            LoaderRegistration registration,
+            CodeBlock batchLoaderLambda,
+            CodeBlock preRegistrationPrelude,
+            CodeBlock keyExtraction,
+            CodeBlock asyncWrapTail,
+            CodeBlock syncCatchBody,
+            CodeBlock loaderNameDeclaration,
+            boolean keyFirst) {
 
         TypeName loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, loaderValueType);
         String factoryMethod = registration.container() == LoaderRegistration.Container.MAPPED_SET
@@ -122,19 +165,27 @@ public final class DataLoaderFetcherEmitter {
         // The preRegistrationPrelude (Outcome narrowing) stays outside the guard: its early
         // return is deliberate control flow, not a failure path. keyExtraction's own early
         // returns (single-cardinality null-FK short-circuit) stay legal inside the try.
+        var registrationCode = CodeBlock.builder()
+            .add(loaderNameDeclaration)
+            .add(
+                "$T loader = env.getDataLoaderRegistry()\n" +
+                "    .computeIfAbsent(name, k -> $T.$L($L));\n",
+                loaderType, DATA_LOADER_FACTORY, factoryMethod, batchLoaderLambda)
+            .build();
         var b = MethodSpec.methodBuilder(fieldName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(outerReturnType)
             .addParameter(ENV, "env")
-            .addCode(preRegistrationPrelude)
-            .addCode(loaderNameDeclaration)
-            .addCode(
-                "$T loader = env.getDataLoaderRegistry()\n" +
-                "    .computeIfAbsent(name, k -> $T.$L($L));\n",
-                loaderType, DATA_LOADER_FACTORY, factoryMethod, batchLoaderLambda)
-            .beginControlFlow("try")
-            .addCode(keyExtraction)
-            .addCode(dispatchCall(registration.dispatch()))
+            .addCode(preRegistrationPrelude);
+        if (!keyFirst) {
+            b.addCode(registrationCode);
+        }
+        b.beginControlFlow("try")
+            .addCode(keyExtraction);
+        if (keyFirst) {
+            b.addCode(registrationCode);
+        }
+        b.addCode(dispatchCall(registration.dispatch()))
             .addCode(CodeBlock.builder().add("    ").add(asyncWrapTail).add(";\n").build())
             .nextControlFlow("catch ($T e)", ClassName.get(Throwable.class))
             .addCode(syncCatchBody)

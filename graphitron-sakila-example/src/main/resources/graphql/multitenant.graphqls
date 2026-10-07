@@ -41,6 +41,28 @@ type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
 
 type Inventory @table(name: "inventory") {
     inventoryId: Int @field(name: "inventory_id")
+    # Untenanted batched child of a tenant-scoped parent: store is global, so its batch runs on
+    # the default source whatever tenant the inventory came from.
+    store: Store @splitQuery @reference(path: [{key: "inventory_store_id_fkey"}])
+}
+
+# Global reference data reached from below a tenant-bound root. Its endorsements path is a
+# condition join between two global tables that returns every fixture endorsement, so an
+# endorsement of another tenant's film is reachable under a bound tenant.
+type Store @table(name: "store") {
+    storeId: Int @field(name: "store_id")
+    endorsements: [FilmEndorsement!]! @splitQuery @reference(path: [{condition: {
+        className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+        method: "everyTenantFixtureEndorsement"}}])
+}
+
+# ParentRowBound arm: film_endorsement is global, and its foreign key endorsed_film lands on
+# film.film_id, the tenant column. Each endorsement row names the tenant that holds its film, so
+# the batched film child routes per parent row, partitions its loader per tenant, and hands the
+# tenant down to the film's own children.
+type FilmEndorsement @table(name: "film_endorsement") {
+    note: String
+    film: Film @splitQuery
 }
 
 # Untenanted arm: global reference data on the default source.
@@ -110,6 +132,8 @@ type Query {
         [Film!]! @asConnection @defaultOrder(primaryKey: true)
     # Untenanted root: acquires dslDefault(), never consults the divined context.
     languages: [Language!]!
+    # Untenanted root over the global endorsements, whose film child routes on each row.
+    endorsements(note: String! @field(name: "note")): [FilmEndorsement!]!
     # @globalData: a root service handed a connection whose arguments name no tenant. Unmarked
     # it would be a build error; the marker states its SQL touches only global data, so it runs on
     # the default source.

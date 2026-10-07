@@ -29,6 +29,11 @@ import java.util.List;
  *       down as {@code localContext}; the field re-acquires the same tenant's connection through
  *       {@code dslFor}. Within a tenant-homogeneous execution context this is a value hand-down,
  *       not a per-row re-read.</li>
+ *   <li>{@link TenantBinding.ParentRowBound}: the parent row names the tenant at the first
+ *       hop's slot. The fetcher declares the divined key from the key extraction's local for
+ *       that column ({@link #parentRowHandDown}), partitions its loader on it and hands it down;
+ *       the rows method re-reads the same column off its batch's environment
+ *       ({@link #resolve}), which the partitioned loader makes agree across the batch.</li>
  *   <li>{@link TenantBinding.Untenanted}: global reference data; acquires the default source
  *       via {@code dslDefault()}, and deliberately never consults {@code localContext} (a global
  *       table under a bound ancestor still lives on the default source).</li>
@@ -52,6 +57,7 @@ final class TenantDslEmitter {
         no.sikt.graphitron.render.TenantAcquisitionFragments.TENANT_KEY_LOCAL;
 
     private static final ClassName DSL_CONTEXT = ClassName.get("org.jooq", "DSLContext");
+    private static final ClassName RECORD = ClassName.get("org.jooq", "Record");
 
     private TenantDslEmitter() {}
 
@@ -106,6 +112,7 @@ final class TenantDslEmitter {
             case TenantBinding.Inherited ignored -> inheritedRead(tenantConnections);
             case TenantBinding.NodeIdBound ignored -> inheritedRead(tenantConnections);
             case TenantBinding.EntityRepBound ignored -> inheritedRead(tenantConnections);
+            case TenantBinding.ParentRowBound parentRow -> parentRowRead(parentRow, tenantConnections);
         };
     }
 
@@ -175,6 +182,7 @@ final class TenantDslEmitter {
             case TenantBinding.Inherited ignored -> inheritedReadExpression(tenantConnections);
             case TenantBinding.NodeIdBound ignored -> inheritedReadExpression(tenantConnections);
             case TenantBinding.EntityRepBound ignored -> inheritedReadExpression(tenantConnections);
+            case TenantBinding.ParentRowBound ignored -> throw parentRowUnreachable(ctx, fieldName);
         };
     }
 
@@ -233,7 +241,54 @@ final class TenantDslEmitter {
             case TenantBinding.NodeIdBound ignored -> none;
             case TenantBinding.EntityRepBound ignored -> none;
             case TenantBinding.Untenanted ignored -> none;
+            case TenantBinding.ParentRowBound ignored -> throw parentRowUnreachable(ctx, field.name());
         };
+    }
+
+    /**
+     * The field's {@link TenantBinding.ParentRowBound} arm in a multi-tenant build, or
+     * {@code null}. The batched fetcher forks its framing on this: the arm's loader name reads
+     * the tenant the key extraction declares, so the extraction moves ahead of the name.
+     */
+    static TenantBinding.ParentRowBound parentRowBinding(TypeFetcherEmissionContext ctx, String fieldName) {
+        var schema = ctx.graphitronSchema();
+        if (schema == null
+                || !(schema.tenantScopes() instanceof TenantScopes.Configured)
+                || ctx.parentTypeName() == null) {
+            return null;
+        }
+        return schema.tenantBindingOf(ctx.parentTypeName(), fieldName)
+            instanceof TenantBinding.ParentRowBound parentRow ? parentRow : null;
+    }
+
+    /**
+     * The fetch-site resolution of a {@link TenantBinding.ParentRowBound} field: declares
+     * {@value #TENANT_KEY_LOCAL} from {@code keyLocal}, the local the key extraction read the
+     * slot's source column into, so the parent row is read once. Hands the key down, which is
+     * what the field's {@link TenantBinding.Inherited} children read.
+     */
+    static Resolution parentRowHandDown(TypeFetcherEmissionContext ctx, String keyLocal,
+                                        String outputPackage) {
+        var scopes = (TenantScopes.Configured) ctx.graphitronSchema().tenantScopes();
+        var keyType = scopes.tenantType().isPrimitive() ? scopes.tenantType().box() : scopes.tenantType();
+        return new Resolution(
+            CodeBlock.builder()
+                .addStatement("$T $L = $T.divinedTenant($L)", keyType, TENANT_KEY_LOCAL,
+                    tenantConnectionsClass(outputPackage), keyLocal)
+                .build(),
+            true);
+    }
+
+    /**
+     * Only a batched {@code @table} child carries {@link TenantBinding.ParentRowBound}, and its
+     * fetcher and rows method go through {@link #parentRowHandDown} and {@link #resolve}; any
+     * other site reaching the arm is a generator bug.
+     */
+    private static IllegalStateException parentRowUnreachable(TypeFetcherEmissionContext ctx, String fieldName) {
+        return new IllegalStateException(
+            "Field '" + ctx.parentTypeName() + "." + fieldName + "' classified as tenant "
+                + "ParentRowBound reached a DSL site other than the batched table fetcher and its "
+                + "rows method; only a batched @table child carries the arm.");
     }
 
     /**
@@ -242,7 +297,8 @@ final class TenantDslEmitter {
      * generated carrier's single naming seam: {@link TenantBinding.Inherited} fields read the
      * tenant-partitioned name (the handed-down tenant joins the path as an opaque segment, so
      * every loader batch is tenant-homogeneous and its captured environment routes the right
-     * source), every other arm the bare path name.
+     * source), {@link TenantBinding.ParentRowBound} fields the same name over the tenant their
+     * parent row names, every other arm the bare path name.
      */
     static CodeBlock loaderNameDeclaration(TypeFetcherEmissionContext ctx, String fieldName,
                                            String localName, String outputPackage) {
@@ -267,6 +323,12 @@ final class TenantDslEmitter {
             .build();
         return switch (binding) {
             case TenantBinding.Inherited ignored -> tenantPartitioned;
+            // The tenant is the parent row's value, declared by the key extraction ahead of the
+            // name (the fetcher's key-first framing), so each loader batch is one tenant's.
+            case TenantBinding.ParentRowBound ignored -> CodeBlock.builder()
+                .addStatement("$T $L = $T.tenantLoaderName(env, $L)",
+                    String.class, localName, tenantConnections, TENANT_KEY_LOCAL)
+                .build();
             // A fanned field's own loader batches its (untenanted) parents; the fan-out happens
             // inside the batch load, and children partition per tenant through the per-element
             // localContext stamping, not through this field's own loader name.
@@ -308,6 +370,24 @@ final class TenantDslEmitter {
             CodeBlock.builder()
                 .addStatement("$T dsl = $T.dslFor(env, $T.divinedTenant(env.<Object>getLocalContext()))",
                     DSL_CONTEXT, tenantConnections, tenantConnections)
+                .build(),
+            false);
+    }
+
+    /**
+     * The rows-method read for {@link TenantBinding.ParentRowBound}: the slot's source column off
+     * the batch's environment, which is the first key's. The fetcher partitions its loader on
+     * the same value, so every key in the batch names this tenant.
+     */
+    private static Resolution parentRowRead(TenantBinding.ParentRowBound parentRow,
+                                            ClassName tenantConnections) {
+        var parent = parentRow.parentTable();
+        return new Resolution(
+            CodeBlock.builder()
+                .addStatement("$T dsl = $T.dslFor(env, $T.divinedTenant((($T) env.getSource()).get($T.$L.$L)))",
+                    DSL_CONTEXT, tenantConnections, tenantConnections, RECORD,
+                    no.sikt.graphitron.render.CatalogRefs.constantsClass(parent),
+                    parent.javaFieldName(), parentRow.slot().sourceSide().javaName())
                 .build(),
             false);
     }

@@ -23,13 +23,17 @@ import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
+import no.sikt.graphitron.rewrite.model.JoinSlot;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.OutputField;
+import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ServiceField;
+import no.sikt.graphitron.rewrite.model.SourceShape;
 import no.sikt.graphitron.rewrite.model.UpdateRows;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
@@ -584,6 +588,14 @@ public record TenantBindingIndex(
                     ? TenantBinding.Untenanted.INSTANCE
                     : TenantBinding.NodeIdBound.INSTANCE;
             }
+            // Ahead of both Inherited checks: the parent row names the tenant that holds the
+            // child row, so it decides even when an ancestor handed a tenant down. In a
+            // database-per-tenant deployment an inherited tenant finds the child only when the
+            // parent row names that same tenant.
+            var parentRow = parentRowBinding(coord);
+            if (parentRow != null) {
+                return parentRow;
+            }
             // A method call handed a connection-bound value (a DSLContext, or the $session handle
             // its connection's mount returned) runs on whichever connection it is handed, so which
             // connection serves it is semantics, not plumbing: under a tenant context the call runs
@@ -610,16 +622,103 @@ public record TenantBindingIndex(
                     graphql.language.SourceLocation.EMPTY));
                 return null;
             }
+            String detail = "no argument or input field maps to tenant column '"
+                + scopes.columnName() + "', and no ancestor established a tenant context.";
+            if (out instanceof ChildField.TableField inline
+                    && parentRowTenantSlot(inline.parentCorrelation(), inline.joinPath()) != null) {
+                detail += " Its foreign key lands on the tenant column, so the parent row names the"
+                    + " tenant, but an inline reference runs inside its parent's statement on the"
+                    + " parent's connection. Mark it @" + BuildContext.DIR_SPLIT_QUERY
+                    + " to fetch each parent row's child from the tenant the row names.";
+            }
             rejections.add(new ValidationError(
                 coordinate,
                 Rejection.noTenantBinding(
                     coordinate,
                     reach.stream().filter(this::tenantScoped).findFirst().orElseThrow().tableName(),
-                    "no argument or input field maps to tenant column '"
-                        + scopes.columnName() + "', and no ancestor established a tenant"
-                        + " context."),
+                    detail),
                 graphql.language.SourceLocation.EMPTY));
             return null;
+        }
+
+        // ===== The parent-row binding =====
+
+        /**
+         * The first-hop slot through which a global parent row names the tenant of the child row
+         * it references, or {@code null}. Matches when the correlation joins on column pairs
+         * ({@link ParentCorrelation.OnFkSlots}, so the batch key is the first hop's parent-side
+         * columns), the parent's rows live on the default source, every hop lands on a
+         * tenant-scoped table (so the whole statement runs in one tenant database), and one
+         * first-hop slot has the tenant column as its target side. A condition hop or a hop-0
+         * filter names no column whose value equals the tenant by construction, and a tenant
+         * column first paired on a later hop pairs with an intermediate table, not the parent
+         * row; none of those match.
+         *
+         * <p>Reads only the field's own correlation and path plus the configured scopes, never
+         * ancestor context, so the ancestor fold can call it before any arm is assigned. Serves
+         * both the batched arm and the inline rejection's {@code @splitQuery} hint, so the two
+         * cannot drift.
+         */
+        private JoinSlot.FkSlot parentRowTenantSlot(ParentCorrelation correlation,
+                                                    List<JoinStep> joinPath) {
+            if (!(correlation instanceof ParentCorrelation.OnFkSlots fk)) {
+                return null;
+            }
+            TableRef parent = fk.parentKeyOwnerTable();
+            if (parent == null || tenantScoped(parent)) {
+                return null;
+            }
+            for (JoinStep step : joinPath) {
+                if (!(step instanceof JoinStep.Hop hop)
+                        || hop.targetTable() == null || !tenantScoped(hop.targetTable())) {
+                    return null;
+                }
+            }
+            return fk.slots().slots().stream()
+                .filter(slot -> matchesTenantColumn(slot.targetSide()))
+                .findFirst()
+                .orElse(null);
+        }
+
+        /**
+         * The {@link TenantBinding.ParentRowBound} arm for {@code coord}, or {@code null}: a
+         * table-sourced {@link ChildField.BatchedTableField} (its own statement on its own
+         * connection) carrying no tenancy marker and binding no tenant itself, whose correlation
+         * {@link #parentRowTenantSlot} matches. Shared by {@link #armOf} and the two edge
+         * predicates, so the arm and the context it establishes derive from one test.
+         */
+        private TenantBinding.ParentRowBound parentRowBinding(FieldCoordinates coord) {
+            if (!(fields.get(coord) instanceof ChildField.BatchedTableField field)
+                    || field.sourceShape() != SourceShape.Table
+                    || fanMarked(coord) || globalMarked(coord)) {
+                return null;
+            }
+            var direct = directBinding(coord, operationMembers.membersOf(coord));
+            if (!direct.slots().isEmpty() || !direct.declines().isEmpty()) {
+                return null;
+            }
+            var slot = parentRowTenantSlot(field.parentCorrelation(), field.joinPath());
+            return slot == null ? null : mintParentRowBound(field, slot);
+        }
+
+        /**
+         * The one mint of {@link TenantBinding.ParentRowBound}, projected off the field's
+         * {@link ParentCorrelation.OnFkSlots}. Pins the invariant the fetcher emission depends
+         * on: the slot is one of the first hop's own slots, and its source side is a batch key
+         * column, so the key extraction already reads the tenant value.
+         */
+        private static TenantBinding.ParentRowBound mintParentRowBound(ChildField.BatchedTableField field,
+                                                                       JoinSlot.FkSlot slot) {
+            var fk = (ParentCorrelation.OnFkSlots) field.parentCorrelation();
+            boolean firstHopSlot = fk.slots().slots().stream().anyMatch(s -> s == slot);
+            if (!firstHopSlot || !field.sourceKey().columns().contains(slot.sourceSide())) {
+                throw new IllegalStateException(
+                    "Graphitron generator bug (tenant routing): the parent-row tenant slot of '"
+                    + field.parentTypeName() + "." + field.name() + "' must be one of its first"
+                    + " hop's slots with its source side among the batch key columns "
+                    + field.sourceKey().columns() + "; got " + slot);
+            }
+            return new TenantBinding.ParentRowBound(fk.parentKeyOwnerTable(), slot);
         }
 
         // ===== The @globalData arm =====
@@ -833,8 +932,8 @@ public record TenantBindingIndex(
         }
 
         /**
-         * Whether the edge's own field divines a tenant: the direct-binding and routable
-         * node-dispatch facts behind {@link #anyBoundAncestor}.
+         * Whether the edge's own field divines a tenant: the direct-binding, routable
+         * node-dispatch and parent-row facts behind {@link #anyBoundAncestor}.
          */
         private boolean edgeDivinesTenant(FieldCoordinates edge) {
             if (fields.get(edge) instanceof OutputField) {
@@ -844,6 +943,9 @@ public record TenantBindingIndex(
                 }
                 if (hasKind(members, OperationMember.Kind.NODE_RESOLVE)) {
                     return nodeDispatchRoutable && !nodePositions.isEmpty();
+                }
+                if (parentRowBinding(edge) != null) {
+                    return true;
                 }
             }
             return false;
@@ -1777,6 +1879,11 @@ public record TenantBindingIndex(
                 }
                 if (hasKind(members, OperationMember.Kind.NODE_RESOLVE)) {
                     return nodeDispatchRoutable;
+                }
+                // The parent row names the tenant per row, so the subtree below the edge is
+                // tenant-homogeneous per parent row and its children inherit.
+                if (parentRowBinding(edge) != null) {
+                    return true;
                 }
             }
             return false;
