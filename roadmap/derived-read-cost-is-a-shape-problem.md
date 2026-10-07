@@ -390,6 +390,15 @@ new one.
   `StageProgress` and `StageOrderGateTest` go, the order they kept being the gatherer order and the
   order inside one anchor phase.
 
+### `capture` runs against the model alone `done`
+
+* **The goal captures and nothing else** `done`. A second pass through the generator re-read every
+  corpus the gatherers had just written, kept nothing, and could fail the goal over a schema the
+  store already held; the goal now opens the store, captures and closes it from the plugin, and
+  fails only where it cannot capture.
+  * A schema extending a built-in captures `done`, by "The specification is a document": an
+    extension merges onto the specification's declaration instead of adding the type twice.
+
 ### A capture reads only what changed
 
 * A directory can be compared at all `done`
@@ -796,6 +805,9 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   The field carrying `@routine` binds the type, which is what the directive used to repeat.
 * **Removed: the MCP schema tool's `demand` slot** ("the demand relations go"). A tool reading it gets no slot; it
   restated directives the same entry shows.
+* **Changed: `graphitron:capture` never fails over the schema it read** ("capture captures, and
+  nothing else"). A schema that will not parse, assemble or classify is still captured, and what
+  refused it is in the store as `graphql_schema_problem` rows rather than in the build's exit code.
 
 ## Retired vocabulary
 

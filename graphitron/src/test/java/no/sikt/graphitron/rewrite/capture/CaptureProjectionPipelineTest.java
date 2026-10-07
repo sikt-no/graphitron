@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Stream;
 
+import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -24,8 +25,7 @@ import static org.jooq.impl.DSL.name;
 import static org.jooq.impl.DSL.table;
 
 /**
- * The capture-only projection behind {@code mvn graphitron:capture}: a run that fills the store
- * and stops.
+ * What {@code mvn graphitron:capture} does: the gatherers fill the store and nothing else runs.
  *
  * <p>The property worth pinning is the one the command exists for. {@code validate} also fills a
  * store, but on its way to failing the build, so the only command that produced one refused to
@@ -54,6 +54,18 @@ class CaptureProjectionPipelineTest {
     private static final String REJECTED = """
         type Film @table(name: "film") {
           languageName: String @reference(path: [{key: "no_such_fk"}])
+        }
+        type Query { film: Film }
+        """;
+
+    /**
+     * A document no schema can be made of: {@code Film.language} names a type nothing declares.
+     * Assembly refuses it, which is further than the checks ever get, so this is the case a capture
+     * that ran a pass would have failed on outright.
+     */
+    private static final String UNASSEMBLABLE = """
+        type Film @table(name: "film") {
+          language: NoSuchType
         }
         type Query { film: Film }
         """;
@@ -92,6 +104,27 @@ class CaptureProjectionPipelineTest {
             assertThat(tree.filter(p -> p.toString().endsWith(".java")).toList())
                 .as("a capture run emits nothing")
                 .isEmpty();
+        }
+    }
+
+    /**
+     * Capture fails only where it cannot capture. A schema assembly refuses is still read, its
+     * declarations are still transcribed, and what assembly said about it is a row, which is the
+     * state a developer debugging that schema wants a store in.
+     */
+    @Test
+    @DisplayName("a schema that will not assemble is captured, and its problem is a row")
+    void captureFillsTheStoreOnASchemaThatWillNotAssemble(@TempDir Path tmp) {
+        try (var captured = BuiltStore.captured(tmp, GRAPH, UNASSEMBLABLE, JOOQ)) {
+            assertThat(captured.dsl().select(GRAPHQL_TYPE.TYPE_NAME).from(GRAPHQL_TYPE)
+                .fetchSet(0, String.class))
+                .as("the declarations are transcribed whatever assembly made of them")
+                .contains("Query", "Film");
+            assertThat(captured.dsl()
+                .select(GRAPHQL_SCHEMA_PROBLEM.STAGE, GRAPHQL_SCHEMA_PROBLEM.MESSAGE)
+                .from(GRAPHQL_SCHEMA_PROBLEM).fetch(r -> r.value1() + " " + r.value2()))
+                .as("and the refusal is in the store rather than in the build's exit code")
+                .anyMatch(row -> row.startsWith("ASSEMBLY") && row.contains("NoSuchType"));
         }
     }
 

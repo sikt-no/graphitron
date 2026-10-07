@@ -79,19 +79,15 @@ public final class BuiltStore implements AutoCloseable {
     }
 
     /**
-     * Captures {@code sdl} under {@code graphName} and stops: the {@code graphitron:capture}
-     * projection, which runs no checks, no plan and no renderers. The fixture a test about the
-     * capture-only command takes, and the one to compare a {@link #run} fixture's store against
-     * when the question is whether the two projections populate a store alike.
+     * Captures {@code sdl} under {@code graphName} and stops, which is what {@code graphitron:capture}
+     * does: the gatherers fill the store and no generator is constructed. The fixture a test about
+     * the capture-only command takes, and the one to compare a {@link #run} fixture's store against
+     * when the question is whether a pass writes anything a capture does not.
      *
      * <p>{@link #output()} on this arm throws, there being no products for it to return.
      */
     public static BuiltStore captured(Path tmp, String graphName, String sdl, String jooqPackage) {
-        return build(tmp, graphName, sdl, LintConfig.empty(), jooqPackage, List.of(),
-            generator -> {
-                generator.capture();
-                return null;
-            });
+        return build(tmp, graphName, sdl, LintConfig.empty(), jooqPackage, List.of(), null);
     }
 
     /**
@@ -107,9 +103,10 @@ public final class BuiltStore implements AutoCloseable {
     }
 
     /**
-     * The one body both arms run: it lays the fixture out, builds the context, and hands the
-     * generator to {@code pass}, which is the entry point the arm is named for. One body rather
-     * than two, so the two arms cannot come to differ in anything but that call.
+     * The one body both arms run: it lays the fixture out, builds the context, captures, and hands
+     * a generator to {@code pass} where there is one, which is the entry point the arm is named for.
+     * One body rather than two, so the two arms cannot come to differ in anything but that call. A
+     * null pass is the capture-only arm, which constructs no generator at all.
      */
     private static BuiltStore build(Path tmp, String graphName, String sdl, LintConfig lintConfig,
                                     String jooqPackage, List<Path> classpathRoots,
@@ -138,7 +135,7 @@ public final class BuiltStore implements AutoCloseable {
             var store = GraphitronStore.captured(storeHome, new GraphIdentity(graphName, tmp),
                 SubjectConfig.of(ctx), ctx.classpathRoots(),
                 new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()));
-            var output = pass.apply(new GraphQLRewriteGenerator(ctx,
+            var output = pass == null ? null : pass.apply(new GraphQLRewriteGenerator(ctx,
                 new StoreHandle(store.dsl(), graphName)));
             return new BuiltStore(store, graphName, schemaFile, storeHome, output);
         } catch (IOException e) {

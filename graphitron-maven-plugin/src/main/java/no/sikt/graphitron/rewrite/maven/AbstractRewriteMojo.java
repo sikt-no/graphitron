@@ -1163,6 +1163,28 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     }
 
     /**
+     * Opens the store, captures into it and closes it, and nothing else: the whole of what
+     * {@code graphitron:capture} does. No pass runs, so nothing here can refuse the author's
+     * document; what fails is only what stops a capture, a store that will not open or a corpus
+     * that cannot be read at all.
+     *
+     * <p>Returns the context for the same reason {@link #runGenerator} does, its paths outliving
+     * the loader the scope closes.
+     */
+    protected final RunContext runCapture() throws MojoExecutionException {
+        var holder = new RunContext[1];
+        withCodegenScope(ctx -> {
+            holder[0] = ctx;
+            try (var store = GraphitronModelStore.openAt(ctx.storeDirectory())) {
+                captureModel(ctx, store);
+            } catch (RuntimeException e) {
+                throw new MojoExecutionException(e.getMessage(), e);
+            }
+        });
+        return holder[0];
+    }
+
+    /**
      * Writes the families the gatherers fill from the run's own configuration, into the store the
      * pass is about to use.
      *
