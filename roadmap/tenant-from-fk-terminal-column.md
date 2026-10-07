@@ -1,7 +1,7 @@
 ---
 id: R992
 title: "A reference whose FK lands on the tenant column routes on the parent row value"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 4
 theme: runtime-connection
@@ -137,6 +137,22 @@ Landed as specified, in one commit. Where the build departs from or settles some
 - **`Query.endorsements` takes a `note` filter.** The default database is shared with concurrently running execution classes that insert their own endorsements of films 2 and 3; the filter keeps this class's reads to its own rows.
 
 Coverage, by the plan's test list: `TenantBindingClassificationTest` (the five classification cases, under "A reference whose foreign key lands on the tenant column routes on the parent row"), `TenantRoutedFetcherPipelineTest` (`parentRowBound*`: single and list short-circuits, key-first framing, hand-down, rows-method slot read, inherited child), and `TenantDivinedRoutingExecutionTest` (`parentRowBound_*`, four cases against database-per-tenant PostgreSQL, compiled at `<release>17</release>` with the rest of `multitenant.graphqls`).
+
+## Reviewer findings
+
+### In Review → Ready (rework), reviewing `1707b1c` on trunk at `318d547`
+
+The verification build (`mvn install -Plocal-db`) is green, and question 1 holds. The classification, the precedence ahead of `Inherited`, the single mint and its invariant, the key-first framing, the loader partition, the hand-down, the rows-method slot read and the unreachable arms all match the plan. The fixture substitution and the `note` filter are disclosed above, and they are sound. The manual paragraph contains no roadmap markers. No retired vocabulary is declared. What sends the item back is question 2, together with the test-tier precondition.
+
+1. **The new pipeline tests are code-string assertions on generated method bodies.** `parentRowBoundFetcherPartitionsOnTheRowsTenantAndHandsItDown`, `parentRowBoundRowsMethodAcquiresThroughTheSlotRead` and `parentRowBoundChildInheritsTheHandedDownTenant` render `MethodSpec.toString()` and match emitted Java text, including two `indexOf` ordering checks. `development-principles.adoc` bans this at every tier, and this gate holds it as an approval precondition. The rest of `TenantRoutedFetcherPipelineTest` already follows that pattern, but that does not license new cases. The Tests section's "in the style of its existing `Inherited` batched case" steered the implementation here, so it is a plan defect as well as a delivery defect. Amend that bullet too. The behaviours these strings pin belong in the compile and execution tiers. Execution already covers what they show about partitioning, hand-down and the slot read. A pipeline case that stays should assert classification or `TypeSpec` shape, not body text.
+
+2. **Two promised behaviours have no evidence other than those strings.**
+   - *A null tenant-carrying column answers the empty value and takes no connection.* The plan states this, and the manual promises it to users ("A parent with no value at that column has no child"). No execution case exercises it, and the fixture cannot: `film_endorsement.endorsed_film` is `NOT NULL`. A nullable reference from a global table onto `film.film_id` is needed. That can be a nullable column or a small global table in `init.sql`, whichever disturbs the catalog least. It also needs an execution case asserting `null` (single) and `[]` (list), with no acquisition on either tenant's counting source.
+   - *List cardinality, and the connection arm of the empty value.* The only `ParentRowBound` field `graphitron-sakila-example` compiles is the single-valued `FilmEndorsement.film`. So the list fetcher, the non-`Row` branch of `GeneratorUtils.buildKeyExtractionThroughLocals` that a list key takes, and the new empty-`ConnectionResult` arm never compile or run in any tier. (I checked by hand that the connection constructor's arity matches the multi-tenant 9-argument form.) Add a list-shaped `ParentRowBound` field to `multitenant.graphqls`; the pipeline fixture's two-key `FilmEndorsement.inventories` path fits. Add an execution case asserting each endorsement's inventories come from the tenant its row names. Also add a connection-shaped one, which at least gives the empty-connection arm its compile proof at `<release>17</release>`.
+
+3. **Spec bookkeeping (non-blocking on its own, but due at the next pass).** "Landed as specified, in one commit" should name the landing SHA, and the Tests section should describe the evidence that ships after items 1 and 2.
+
+What satisfies this: items 1 and 2 delivered, the Tests section amended to match, and a green verification build.
 
 ## Siblings
 
