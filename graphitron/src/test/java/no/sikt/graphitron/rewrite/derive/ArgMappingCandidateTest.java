@@ -232,6 +232,30 @@ class ArgMappingCandidateTest {
         }
     }
 
+    /**
+     * A field coordinate carries no value of its own, which the carrier reads off the element kind
+     * capture stamped rather than off the declaring type. The input field of the same name is the
+     * spelling a carrier at the field coordinate would have opened onto, so a carrier there would
+     * show up as a {@code films} root beside the argument. No argMapping is written: the candidates
+     * are the coordinate's whatever directive later reads them.
+     */
+    @Test
+    @DisplayName("a field coordinate gets no carrier, even named like an input field it reaches")
+    void aFieldCoordinateGetsNoCarrier() {
+        String sdl = """
+            input Filter { films: String }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { films(filter: Filter): [Film!]! }
+            """;
+        try (var store = CapturedStore.ofCatalog(tmp, sdl, jooq())) {
+            assertThat(at(store.dsl(), "Query.films"))
+                .as("the field's arguments and their descent, and no row naming the field itself")
+                .containsExactlyInAnyOrder(
+                    "filter|<none>|filter|Filter|0|false|false",
+                    "filter.films|filter|films|String|1|false|false");
+        }
+    }
+
     private static final String NESTED = """
         input Inner { code: String }
         input Outer { inner: Inner }

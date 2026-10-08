@@ -8,13 +8,20 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_CANDIDATE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_ELEMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import no.sikt.graphitron.model.tables.GraphitronArgmappingCandidate;
+import no.sikt.graphitron.model.tables.GraphqlArgument;
+import no.sikt.graphitron.model.tables.GraphqlArgumentElement;
+import no.sikt.graphitron.model.tables.GraphqlElement;
+import no.sikt.graphitron.model.tables.GraphqlField;
+import no.sikt.graphitron.model.tables.GraphqlFieldElement;
 import org.jooq.Condition;
 import org.jooq.Field;
-import org.jooq.Table;
+import org.jooq.Record;
+import org.jooq.SelectJoinStep;
 
 import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.concat;
@@ -117,37 +124,54 @@ public final class ArgMappingCandidates {
      * argument at an argument coordinate, an input field at an input-field coordinate. A field
      * coordinate is not here, its members being the field's arguments rather than one value of its
      * own, and that absence is what keeps a field coordinate out of every rule stated over this.
+     *
+     * <p>Reached from the coordinate's {@code graphql_element} row, whose kind capture already
+     * decided, by a flat chain of left joins on keys: the argument arm and the input-field arm side
+     * by side, the four columns a coalesce over the two. At most one arm matches, the element's key
+     * admitting one kind per coordinate. Flat rather than a union in a derived table because H2
+     * seeks into neither a union nor a derived table, and a reader arriving with one coordinate
+     * then re-runs the whole of it once per row.
      */
-    private static Table<?> carrier(DSLContext dsl) {
-        var a = GRAPHQL_ARGUMENT;
-        var ac = GRAPHQL_ARGUMENT_ELEMENT;
-        var f = GRAPHQL_FIELD;
-        var fc = GRAPHQL_FIELD_ELEMENT;
-        return dsl.select(a.GRAPH_NAME.as("graph_name"), ac.COORDINATE.as("coordinate"),
-                    a.ARGUMENT_NAME.as("carrier_name"), a.NAMED_TYPE.as("carrier_type"),
-                    a.IS_LIST.as("carrier_is_list"), inline((String) null).as("declaring_type"))
-                .from(a)
-                .join(ac).on(ac.GRAPH_NAME.eq(a.GRAPH_NAME)
-                    .and(ac.TYPE_NAME.eq(a.TYPE_NAME)).and(ac.FIELD_NAME.eq(a.FIELD_NAME))
-                    .and(ac.ARGUMENT_NAME.eq(a.ARGUMENT_NAME)))
-            .unionAll(
-                dsl.select(f.GRAPH_NAME, fc.COORDINATE, f.FIELD_NAME, f.NAMED_TYPE, f.IS_LIST,
-                        f.TYPE_NAME)
-                .from(f)
-                .join(GRAPHQL_TYPE).on(GRAPHQL_TYPE.GRAPH_NAME.eq(f.GRAPH_NAME)
-                    .and(GRAPHQL_TYPE.TYPE_NAME.eq(f.TYPE_NAME))
-                    .and(GRAPHQL_TYPE.KIND.eq("INPUT_OBJECT")))
-                .join(fc).on(fc.GRAPH_NAME.eq(f.GRAPH_NAME)
-                    .and(fc.TYPE_NAME.eq(f.TYPE_NAME)).and(fc.FIELD_NAME.eq(f.FIELD_NAME))))
-            .asTable("carrier");
-    }
+    private record Carrier(GraphqlElement element, GraphqlArgumentElement argumentElement,
+                           GraphqlArgument argument, GraphqlFieldElement fieldElement,
+                           GraphqlField inputField) {
 
-    private static Field<String> carrierGraph(Table<?> t) { return t.field("graph_name", String.class); }
-    private static Field<String> carrierCoordinate(Table<?> t) { return t.field("coordinate", String.class); }
-    private static Field<String> carrierName(Table<?> t) { return t.field("carrier_name", String.class); }
-    private static Field<String> carrierType(Table<?> t) { return t.field("carrier_type", String.class); }
-    private static Field<Boolean> carrierIsList(Table<?> t) { return t.field("carrier_is_list", Boolean.class); }
-    private static Field<String> declaringType(Table<?> t) { return t.field("declaring_type", String.class); }
+        /** The chain hanging off {@code element}, under aliases no reader of this class uses. */
+        static Carrier of(GraphqlElement element) {
+            return new Carrier(element, GRAPHQL_ARGUMENT_ELEMENT.as("carrier_argument_element"),
+                GRAPHQL_ARGUMENT.as("carrier_argument"),
+                GRAPHQL_FIELD_ELEMENT.as("carrier_field_element"),
+                GRAPHQL_FIELD.as("carrier_field"));
+        }
+
+        /** The element kinds that carry a value of their own. */
+        static Condition carries(GraphqlElement element) {
+            return element.ELEMENT_KIND.in(inline("FIELD_ARGUMENT"), inline("INPUT_FIELD"));
+        }
+
+        /** Appends the two arms to a join tree that already holds {@link #element}. */
+        <R extends Record> SelectJoinStep<R> appendTo(SelectJoinStep<R> tree) {
+            var e = element;
+            var ae = argumentElement;
+            var a = argument;
+            var fe = fieldElement;
+            var f = inputField;
+            return tree
+                .leftJoin(ae).on(ae.GRAPH_NAME.eq(e.GRAPH_NAME).and(ae.COORDINATE.eq(e.COORDINATE)))
+                .leftJoin(a).on(a.GRAPH_NAME.eq(ae.GRAPH_NAME).and(a.TYPE_NAME.eq(ae.TYPE_NAME))
+                    .and(a.FIELD_NAME.eq(ae.FIELD_NAME)).and(a.ARGUMENT_NAME.eq(ae.ARGUMENT_NAME)))
+                .leftJoin(fe).on(fe.GRAPH_NAME.eq(e.GRAPH_NAME).and(fe.COORDINATE.eq(e.COORDINATE)))
+                .leftJoin(f).on(f.GRAPH_NAME.eq(fe.GRAPH_NAME).and(f.TYPE_NAME.eq(fe.TYPE_NAME))
+                    .and(f.FIELD_NAME.eq(fe.FIELD_NAME)));
+        }
+
+        Field<String> name() { return coalesce(argument.ARGUMENT_NAME, inputField.FIELD_NAME); }
+        Field<String> type() { return coalesce(argument.NAMED_TYPE, inputField.NAMED_TYPE); }
+        Field<Boolean> isList() { return coalesce(argument.IS_LIST, inputField.IS_LIST); }
+
+        /** The input type declaring the carried field; null for an argument, which no type declares. */
+        Field<String> declaringType() { return inputField.TYPE_NAME; }
+    }
 
     /**
      * One root per argument at the coordinate of the field declaring it: what a directive on that
@@ -176,19 +200,21 @@ public final class ArgMappingCandidates {
      * repeating spelling below hangs from.
      */
     private static void seedCarrierItself(DSLContext dsl, String graphName) {
-        var k = carrier(dsl);
+        var e = GRAPHQL_ELEMENT;
+        var k = Carrier.of(e);
         dsl.insertInto(GRAPHITRON_ARGMAPPING_CANDIDATE, columns())
-            .select(dsl.select(carrierGraph(k), carrierCoordinate(k), carrierName(k),
-                    inline((String) null), carrierName(k),
+            .select(k.appendTo(dsl.select(e.GRAPH_NAME, e.COORDINATE, k.name(),
+                    inline((String) null), k.name(),
                     // An argument coordinate carries an argument and declares no type; an
                     // input-field coordinate carries a field the input type above it declares.
                     // One column answers both, so the two arms of the carrier need no
                     // discriminator of their own.
-                    when(declaringType(k).isNull(), val("ARGUMENT")).otherwise(val("INPUT_FIELD")),
-                    declaringType(k), carrierType(k), carrierIsList(k), val(0),
+                    when(k.declaringType().isNull(), val("ARGUMENT")).otherwise(val("INPUT_FIELD")),
+                    k.declaringType(), k.type(), k.isList(), val(0),
                     val(false), val(false), val(false))
-                .from(k)
-                .where(carrierGraph(k).eq(graphName)))
+                .from(e))
+                .where(e.GRAPH_NAME.eq(graphName)).and(Carrier.carries(e))
+                .and(k.name().isNotNull()))
             .execute();
     }
 
@@ -199,20 +225,21 @@ public final class ArgMappingCandidates {
      * so the loser's absence is not silent.
      */
     private static void seedCarrierChildren(DSLContext dsl, String graphName) {
-        var k = carrier(dsl);
+        var e = GRAPHQL_ELEMENT;
+        var k = Carrier.of(e);
         var x = GRAPHQL_FIELD.as("child");
         dsl.insertInto(GRAPHITRON_ARGMAPPING_CANDIDATE, columns())
-            .select(dsl.select(carrierGraph(k), carrierCoordinate(k), x.FIELD_NAME,
+            .select(k.appendTo(dsl.select(e.GRAPH_NAME, e.COORDINATE, x.FIELD_NAME,
                     inline((String) null), x.FIELD_NAME, val("INPUT_FIELD"),
-                    carrierType(k), x.NAMED_TYPE, x.IS_LIST, val(0),
-                    field(x.NAMED_TYPE.eq(carrierType(k))), val(false), val(false))
-                .from(k)
-                .join(GRAPHQL_TYPE).on(GRAPHQL_TYPE.GRAPH_NAME.eq(carrierGraph(k))
-                    .and(GRAPHQL_TYPE.TYPE_NAME.eq(carrierType(k)))
+                    k.type(), x.NAMED_TYPE, x.IS_LIST, val(0),
+                    field(x.NAMED_TYPE.eq(k.type())), val(false), val(false))
+                .from(e))
+                .join(GRAPHQL_TYPE).on(GRAPHQL_TYPE.GRAPH_NAME.eq(e.GRAPH_NAME)
+                    .and(GRAPHQL_TYPE.TYPE_NAME.eq(k.type()))
                     .and(GRAPHQL_TYPE.KIND.eq("INPUT_OBJECT")))
-                .join(x).on(x.GRAPH_NAME.eq(carrierGraph(k)).and(x.TYPE_NAME.eq(carrierType(k))))
-                .where(carrierGraph(k).eq(graphName))
-                .and(x.FIELD_NAME.ne(carrierName(k))))
+                .join(x).on(x.GRAPH_NAME.eq(e.GRAPH_NAME).and(x.TYPE_NAME.eq(k.type())))
+                .where(e.GRAPH_NAME.eq(graphName)).and(Carrier.carries(e))
+                .and(x.FIELD_NAME.ne(k.name())))
             .execute();
     }
 
@@ -224,16 +251,18 @@ public final class ArgMappingCandidates {
      */
     private static void markContestedCarrierName(DSLContext dsl, String graphName) {
         var c = GRAPHITRON_ARGMAPPING_CANDIDATE;
-        var k = carrier(dsl);
+        var e = GRAPHQL_ELEMENT;
+        var k = Carrier.of(e);
         var x = GRAPHQL_FIELD.as("child");
         dsl.update(c).set(c.AMBIGUOUS, true)
             .where(c.GRAPH_NAME.eq(graphName)).and(c.DEPTH.eq(0))
-            .and(exists(dsl.selectOne().from(k)
-                .join(x).on(x.GRAPH_NAME.eq(carrierGraph(k)).and(x.TYPE_NAME.eq(carrierType(k)))
-                    .and(x.FIELD_NAME.eq(carrierName(k))))
-                .where(carrierGraph(k).eq(c.GRAPH_NAME))
-                .and(carrierCoordinate(k).eq(c.COORDINATE))
-                .and(carrierName(k).eq(c.PATH))))
+            .and(exists(k.appendTo(dsl.selectOne().from(e))
+                .join(x).on(x.GRAPH_NAME.eq(e.GRAPH_NAME).and(x.TYPE_NAME.eq(k.type()))
+                    .and(x.FIELD_NAME.eq(k.name())))
+                .where(e.GRAPH_NAME.eq(c.GRAPH_NAME))
+                .and(e.COORDINATE.eq(c.COORDINATE))
+                .and(Carrier.carries(e))
+                .and(k.name().eq(c.PATH))))
             .execute();
     }
 
@@ -277,7 +306,8 @@ public final class ArgMappingCandidates {
      */
     private static int expand(DSLContext dsl, String graphName, int depth) {
         var c = GRAPHITRON_ARGMAPPING_CANDIDATE;
-        var k = carrier(dsl);
+        var e = GRAPHQL_ELEMENT;
+        var k = Carrier.of(e);
 
         // The ancestry this shape does not store, recovered one parent link per level. It is built
         // before the projection because what it decides is a column of the new row: whether the
@@ -291,18 +321,18 @@ public final class ArgMappingCandidates {
             ancestors.add(GRAPHITRON_ARGMAPPING_CANDIDATE.as("ancestor_" + level));
         }
         Condition closesCycle = GRAPHQL_FIELD.NAMED_TYPE.eq(c.NAMED_TYPE)
-            .or(GRAPHQL_FIELD.NAMED_TYPE.eq(carrierType(k)));
+            .or(GRAPHQL_FIELD.NAMED_TYPE.eq(k.type()));
         for (var ancestor : ancestors) {
             closesCycle = closesCycle.or(GRAPHQL_FIELD.NAMED_TYPE.eq(ancestor.NAMED_TYPE));
         }
 
-        var from = dsl.select(
+        var from = k.appendTo(dsl.select(
                 c.GRAPH_NAME, c.COORDINATE,
                 concat(c.PATH, val("."), GRAPHQL_FIELD.FIELD_NAME),
                 c.PATH, GRAPHQL_FIELD.FIELD_NAME, val("INPUT_FIELD"),
                 c.NAMED_TYPE, GRAPHQL_FIELD.NAMED_TYPE, GRAPHQL_FIELD.IS_LIST,
                 val(depth + 1), coalesce(field(closesCycle), inline(false)),
-                coalesce(field(c.DEPRECATED.isTrue().or(c.PATH.eq(carrierName(k)))), inline(false)),
+                coalesce(field(c.DEPRECATED.isTrue().or(c.PATH.eq(k.name()))), inline(false)),
                 val(false))
             .from(c)
             .join(GRAPHQL_TYPE).on(GRAPHQL_TYPE.GRAPH_NAME.eq(c.GRAPH_NAME)
@@ -310,8 +340,8 @@ public final class ArgMappingCandidates {
                 .and(GRAPHQL_TYPE.KIND.eq("INPUT_OBJECT")))
             .join(GRAPHQL_FIELD).on(GRAPHQL_FIELD.GRAPH_NAME.eq(c.GRAPH_NAME)
                 .and(GRAPHQL_FIELD.TYPE_NAME.eq(c.NAMED_TYPE)))
-            .leftJoin(k).on(carrierGraph(k).eq(c.GRAPH_NAME)
-                .and(carrierCoordinate(k).eq(c.COORDINATE)));
+            .leftJoin(e).on(e.GRAPH_NAME.eq(c.GRAPH_NAME).and(e.COORDINATE.eq(c.COORDINATE))
+                .and(Carrier.carries(e))));
 
         var previous = c;
         for (var ancestor : ancestors) {
