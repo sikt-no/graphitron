@@ -46,11 +46,11 @@ public final class EntryDefects {
         dsl.insertInto(target)
             .columns(
                 target.GRAPH_NAME, target.SOURCE_NAME, target.SOURCE_LINE, target.SOURCE_COLUMN,
-                target.CODE, target.TYPE_NAME, target.FIELD_NAME, target.DETAIL)
+                target.CODE, target.DETAIL)
             .select(dsl
                 .select(
                     rule.GRAPH_NAME, rule.SOURCE_NAME, rule.SOURCE_LINE, rule.SOURCE_COLUMN,
-                    rule.CODE, rule.TYPE_NAME, rule.FIELD_NAME, rule.DETAIL)
+                    rule.CODE, rule.DETAIL)
                 .from(rule)
                 .where(rule.GRAPH_NAME.eq(graphName)))
             .execute();

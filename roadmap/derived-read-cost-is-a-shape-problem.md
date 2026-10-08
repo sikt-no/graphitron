@@ -413,8 +413,9 @@ and the emitters read, and it goes when nothing reads what it builds.
   * **The defect model is designed as a whole** `done`. One vocabulary of rules and one relation of
     violations located at an AST entry, where six families stood. Evidence in
     `roadmap/audits/2026-10-08-defect-model.md`.
-  * **A defect rests on a basis and sits at an AST entry** `open`. `basis` in place of `fault`, and
-    the position a foreign key into `graphql_ast_entry`, the element a view's fixed hops away.
+  * **A defect rests on a basis and sits at an AST entry** `done`. `basis` in place of `fault`, the
+    twelve codes `GRAPHITRON`, and the position a foreign key into `graphql_ast_entry`, the element
+    `graphitron_entry_defect_site`'s fixed hops away.
   * **`source` and `target` are stated for every coordinate** `open`. The two total facts no relation
     states whole, and totality is what the defect model's gate checks.
 * **`validate` reads only the store** `open`, as "Validate is a query over the store". Second to

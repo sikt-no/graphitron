@@ -45,7 +45,7 @@ extend schema @expectEquals(relation: "graphitron_code_reference", rows: """
   no.sikt.graphitron.rewrite.test.extensions.FilmExtensions,  isEnglish
   """)
 
-extend schema @expectEquals(relation: "graphitron_entry_defect", rows: """
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
   code,                            type_name, field_name, detail
   CODE_REFERENCE_METHOD_NOT_FOUND, City,      misspelt,   no.sikt.graphitron.rewrite.test.services.CityService.cityUpercase
   CODE_REFERENCE_CLASS_NOT_READ,   City,      unread,     no.example.Absent

@@ -440,16 +440,16 @@ class DiagnosticFactsTest {
             assertThat(row.getSeverity()).as("the defect type's own severity, already the wire's word")
                 .isEqualTo("error");
             assertThat(row.getActionable())
-                .as("a GENERATOR fault is a shape the generator owes an emitter, which an author"
-                    + " works around rather than fixes, so it is not actionable")
-                .isFalse();
+                .as("a GRAPHITRON basis is a combination the directives give no meaning, which an"
+                    + " author fixes by changing them, so it is actionable")
+                .isTrue();
             assertThat(row.getKind())
                 .as("RejectionKind's spelling, which this arm has no value in")
                 .isNull();
             assertThat(row.getVariant()).isNull();
             assertThat(row.getLintRule()).isNull();
             assertThat(row.getCoordinate())
-                .as("the coordinate the entry was written at, rendered from the pair the view carries")
+                .as("the element the defect's position is about, which the defect site reaches")
                 .isEqualTo("Mutation.insertFilms");
             assertThat(row.getMessage())
                 .as("the defect type's statement, which is where a defect's prose lives")

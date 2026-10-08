@@ -14,6 +14,7 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_SITE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.test.CapturedStore.withCapturedStore;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
@@ -339,8 +340,9 @@ class EntryDefectTest {
             }
             """, dsl -> {
             assertThat(codes(dsl)).containsExactly("TABLE_NAMES_ROUTINE");
-            var row = dsl.select(GRAPHITRON_ENTRY_DEFECT.TYPE_NAME, GRAPHITRON_ENTRY_DEFECT.DETAIL)
-                .from(GRAPHITRON_ENTRY_DEFECT)
+            var row = dsl.select(GRAPHITRON_ENTRY_DEFECT_SITE.TYPE_NAME,
+                    GRAPHITRON_ENTRY_DEFECT_SITE.DETAIL)
+                .from(GRAPHITRON_ENTRY_DEFECT_SITE)
                 .fetchOne();
             assertThat(row.value1() + " " + row.value2())
                 .as("at the type, quoting the spelling")
