@@ -431,6 +431,11 @@ public class DevMojo extends AbstractRewriteMojo {
 
     @Override
     public void execute() throws MojoExecutionException {
+        // First, ahead of the store open below: a plugin classloader holding a jOOQ graphitron was
+        // not compiled against is refused here, in the consumer's pom terms, before anything runs
+        // on it. Any failure inside the open would reach the author reworded by openAt's fallback
+        // as another process holding the store.
+        checkPluginRealm();
         // Before anything opens a store, because this is the earliest point the goal can reach and
         // H2 reads the property once, when its first class initialises. It confines every H2 server
         // this JVM starts (the fact-store console below is the only one) to loopback.

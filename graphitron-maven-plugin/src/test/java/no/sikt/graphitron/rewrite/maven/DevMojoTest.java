@@ -59,6 +59,35 @@ class DevMojoTest {
         assertThat(DevMojo.LOOPBACK_HOST).isEqualTo("127.0.0.1");
     }
 
+    /**
+     * The realm check runs before the session store opens: a plugin classloader holding a jOOQ
+     * graphitron was not compiled against is refused in the pom's terms, and nothing has been
+     * written to the store's home by then. Opened first, a failure inside the open would reach the
+     * author reworded as another process holding the store.
+     */
+    @Test
+    void aRefusedRealmFailsBeforeTheStoreOpens(@TempDir Path basedir) throws Exception {
+        var home = basedir.resolve("store-home");
+        var stray = basedir.resolve("second-jooq.jar");
+        var mojo = new DevMojo() {
+            @Override
+            RealmEvidence realmEvidence() {
+                return new RealmEvidence(PluginRealm.empty(), List.of(basedir.resolve("ours.jar"), stray),
+                    COMPILED_JOOQ_VERSION);
+            }
+        };
+        var project = new MavenProject();
+        project.setFile(basedir.resolve("pom.xml").toFile());
+        mojo.project = project;
+        mojo.storeDirectory = home.toString();
+
+        assertThatThrownBy(mojo::execute)
+            .isInstanceOf(MojoExecutionException.class)
+            .hasMessageContaining("also holds " + stray)
+            .hasMessageContaining("Two jOOQs in the plugin classloader");
+        assertThat(home).as("the store is opened only after the realm check passes").doesNotExist();
+    }
+
     @Test
     void bindToTakenPortFailsWithOverrideHint(@TempDir Path basedir) throws Exception {
         // Occupy a port so the Mojo's bind path hits BindException.

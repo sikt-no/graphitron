@@ -73,6 +73,14 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      */
     private static final long MAX_CHECKSUM_SIDECAR_BYTES = 256;
 
+    /**
+     * The jOOQ version graphitron was compiled against. {@code org.jooq.Constants.VERSION} is a
+     * compile-time constant, so javac inlines the literal here and reading this field loads no jOOQ
+     * class: it states what graphitron was built against whatever the plugin classloader holds at
+     * run time, which is what lets {@link #checkPluginRealm} compare the two.
+     */
+    static final String COMPILED_JOOQ_VERSION = org.jooq.Constants.VERSION;
+
     @Parameter(defaultValue = "${project}", readonly = true)
     MavenProject project;
 
@@ -80,13 +88,14 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     MavenSession session;
 
     /**
-     * This plugin's own resolved dependency graph, the reference side of the
-     * dependency-currency nudge. {@code graphitron-maven-plugin} depends on {@code graphitron},
-     * whose pom declares graphql-java and jOOQ at compile scope, so the realm carries the exact
-     * versions graphitron was built against with no property promotion, no resource filtering, and
-     * no new build wiring. A consumer who overrides {@code <plugin><dependencies>} moves the
+     * This plugin's own resolved dependency graph, decoded once by {@link PluginRealm}: the
+     * reference side of the dependency-currency nudge and the rows the realm check attributes a
+     * stray jOOQ by. {@code graphitron-maven-plugin} depends on {@code graphitron}, whose pom
+     * declares graphql-java and jOOQ at compile scope, so the realm carries the versions graphitron
+     * was built against with no property promotion, no resource filtering, and no new build wiring.
+     * A consumer who overrides graphql-java under {@code <plugin><dependencies>} moves that
      * reference, which is self-consistent: the advisory then reports the version the plugin
-     * actually ran with.
+     * actually ran with. jOOQ is not overridable that way: {@link #checkPluginRealm} refuses it.
      */
     @Parameter(defaultValue = "${plugin}", readonly = true)
     PluginDescriptor pluginDescriptor;
@@ -334,6 +343,42 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     }
 
     /**
+     * Refuses to run when the plugin classloader's jOOQ is not exactly the one graphitron was
+     * compiled against: a second jOOQ beside it, or another version in its place, both of which a
+     * consumer's {@code <plugin><dependencies>} entry can bring in. The decision is
+     * {@link PluginRealm#refusal}'s; this supplies the loader's evidence and throws.
+     *
+     * <p>Called once per execution, before the execution's first store open, since the realm is
+     * fixed for the life of the execution: at the start of {@link #runGenerator} and
+     * {@link #runCapture}, and at the top of {@code DevMojo.execute}. Not inside
+     * {@link #withCodegenScope}, which the dev loop rebuilds on every save. A precondition rather
+     * than an advisory, so not a lint rule: nothing suppresses it.
+     */
+    protected final void checkPluginRealm() throws MojoExecutionException {
+        var evidence = realmEvidence();
+        var refusal = evidence.realm().refusal(evidence.jooqRoots(), evidence.runtimeVersion(),
+            COMPILED_JOOQ_VERSION);
+        if (refusal.isPresent()) {
+            throw new MojoExecutionException(refusal.get());
+        }
+    }
+
+    /** What {@link #checkPluginRealm} decides on: the realm's rows and its loader's jOOQ evidence. */
+    record RealmEvidence(PluginRealm realm, List<Path> jooqRoots, String runtimeVersion) {}
+
+    /**
+     * The plugin realm decoded off this execution's descriptor, plus the evidence read off this
+     * plugin's own classloader. Package-private and overridable so the dev-ordering test can hand
+     * {@code execute} a realm that fails without building one.
+     */
+    RealmEvidence realmEvidence() {
+        ClassLoader pluginLoader = AbstractRewriteMojo.class.getClassLoader();
+        return new RealmEvidence(PluginRealm.decode(pluginDescriptor),
+            PluginRealm.rootsProviding(pluginLoader, PluginRealm.JOOQ_MARKER),
+            PluginRealm.runtimeJooqVersion(pluginLoader));
+    }
+
+    /**
      * The dependency scopes a watched coordinate is observed on. Deliberately an allow-list rather
      * than a deny-list of {@code test}, because the goals resolve different scope sets:
      * {@code generate} and {@code validate} declare {@link org.apache.maven.plugins.annotations.ResolutionScope#COMPILE},
@@ -370,7 +415,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
         return new DependencyVersions(
             observedVersionsOf(projectArtifacts,
                 scope -> scope != null && GENERATED_CODE_SCOPES.contains(scope)),
-            referenceVersionsOf(pluginArtifacts));
+            pluginArtifacts == null ? Map.of() : referenceVersionsOf(PluginRealm.rows(pluginArtifacts)));
     }
 
     /**
@@ -402,25 +447,22 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     }
 
     /**
-     * The resolved version of each {@link WatchedDependency} in graphitron's own plugin realm. First
-     * occurrence wins, which is unambiguous here in a way it is not on the consumer side: the realm is
-     * graphitron's own build, resolving one of each. No coordinate is reported from this side, so none
-     * is carried.
+     * The version of each {@link WatchedDependency} graphitron was built against, projected off the
+     * {@link PluginRealm} rows. jOOQ's is {@link #COMPILED_JOOQ_VERSION}, the one notion of "the
+     * jOOQ graphitron is built against" that {@link #checkPluginRealm} also holds the realm to, not
+     * whichever jOOQ row comes first: a realm holding two is refused before any advisory runs. For
+     * the rest, first occurrence wins, the realm resolving one of each. No coordinate is reported
+     * from this side, so none is carried.
      *
      * <p>Unscoped on purpose. The plugin realm's scopes are a fact of graphitron's own build and do
      * not vary by goal, so filtering them would only risk dropping the reference version for no gain.
      */
-    private static Map<WatchedDependency, String> referenceVersionsOf(Collection<Artifact> artifacts) {
-        if (artifacts == null) {
-            return Map.of();
-        }
+    private static Map<WatchedDependency, String> referenceVersionsOf(List<PluginRealm.Row> rows) {
         var versions = new EnumMap<WatchedDependency, String>(WatchedDependency.class);
-        for (Artifact artifact : artifacts) {
-            if (artifact == null || artifact.getVersion() == null) {
-                continue;
-            }
-            WatchedDependency.of(artifact.getGroupId(), artifact.getArtifactId())
-                .ifPresent(dep -> versions.putIfAbsent(dep, artifact.getVersion()));
+        versions.put(WatchedDependency.JOOQ, COMPILED_JOOQ_VERSION);
+        for (PluginRealm.Row row : rows) {
+            WatchedDependency.of(row.groupId(), row.artifactId())
+                .ifPresent(dep -> versions.putIfAbsent(dep, row.version()));
         }
         return versions;
     }
@@ -1126,6 +1168,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * valid.
      */
     protected final RunContext runGenerator(GeneratorCall call) throws MojoExecutionException {
+        checkPluginRealm();
         var holder = new RunContext[1];
         withCodegenScope(ctx -> {
             holder[0] = ctx;
@@ -1172,6 +1215,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * the loader the scope closes.
      */
     protected final RunContext runCapture() throws MojoExecutionException {
+        checkPluginRealm();
         var holder = new RunContext[1];
         withCodegenScope(ctx -> {
             holder[0] = ctx;
@@ -1227,18 +1271,44 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * e.g. graphql-java / jOOQ / consumer-class static initializers). The previous TCCL is
      * restored and the loader closed to release JAR file descriptors, which matters for the
      * dev-mode loop that rebuilds the loader on every regeneration cycle.
+     *
+     * <p>A {@link LinkageError} escaping {@code body} is the backstop's: it is rethrown as a
+     * {@link MojoExecutionException} rendered by {@link #unlinkableMessage}, never swallowed and
+     * the round never continued. The typed {@code ReflectionError.ClassUnlinkable} rejection is
+     * the located answer for the classes graphitron reflects; this keeps whatever that does not
+     * classify from escaping {@code DevMojo}'s round handling as a raw stack trace.
      */
     protected final void withCodegenScope(CodegenScopeBody body) throws MojoExecutionException {
         var previousTccl = Thread.currentThread().getContextClassLoader();
         try (URLClassLoader codegenLoader = buildCodegenLoader()) {
             Thread.currentThread().setContextClassLoader(codegenLoader);
             var ctx = buildContext(codegenLoader);
-            body.run(ctx);
+            try {
+                body.run(ctx);
+            } catch (LinkageError e) {
+                throw new MojoExecutionException(unlinkableMessage(e, codegenLoader), e);
+            }
         } catch (IOException e) {
             throw new MojoExecutionException("Failed to close codegen classloader", e);
         } finally {
             Thread.currentThread().setContextClassLoader(previousTccl);
         }
+    }
+
+    /**
+     * The backstop's message: the error decoded by the same cause decode the typed rejection uses,
+     * then every root the codegen classloader can read {@code org/jooq/Constants.class} from, with
+     * coordinates off the plugin realm's rows and the project's artifacts joined by file. More than
+     * one root there is the usual story behind a linkage failure between jOOQ classes.
+     */
+    final String unlinkableMessage(LinkageError error, ClassLoader codegenLoader) {
+        var cause = no.sikt.graphitron.model.diagnostics.ReflectionError.ClassUnlinkable.Cause.of(error);
+        var roots = PluginRealm.rootsProviding(codegenLoader, PluginRealm.JOOQ_MARKER);
+        return "a class could not be linked while graphitron ran: " + cause.render()
+            + "\n\njOOQ jars visible to graphitron's codegen classloader (graphitron runs on"
+            + " org.jooq:jooq:" + COMPILED_JOOQ_VERSION + "):\n"
+            + PluginRealm.decode(pluginDescriptor).describeRoots(roots,
+                project == null ? null : project.getArtifacts());
     }
 
     /**

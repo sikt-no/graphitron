@@ -169,6 +169,12 @@
                     <cloneProjectsTo>${project.build.directory}/it</cloneProjectsTo>
                     <settingsFile>src/it/settings.xml</settingsFile>
                     <postBuildHookScript>verify.groovy</postBuildHookScript>
+                    <!-- Setup projects install the stub jOOQ jars the plugin-block-*-jooq ITs list
+                         under <plugin><dependencies>; invoker runs them first and excludes them from
+                         the ordinary project scan. -->
+                    <setupIncludes>
+                        <setupInclude>setup-*/pom.xml</setupInclude>
+                    </setupIncludes>
                     <showErrors>true</showErrors>
                     <!--
                       No store pin here, and that is the assertion rather than an omission. Every IT

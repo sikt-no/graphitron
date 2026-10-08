@@ -314,6 +314,31 @@ isolation `DevQueryExecutor` already uses for dev execution (platform parent, co
 it works there because nothing crosses back but strings; codegen hands jOOQ objects across, so it is
 not available here.
 
+## Implementation notes
+
+What landed, against the plan above, for the Done-gate reviewer.
+
+* **Trails are populated.** The one fact the plan asked to verify at pickup: under Maven 3.9.11,
+  `pluginDescriptor.getArtifacts()` carries dependency trails rooted at the plugin, so the
+  `plugin-block-*-jooq` ITs see the attribution arm (`declared under <plugin><dependencies>`), not
+  the candidate-list fallback. The fallback and the transitive "brought in by" form are pinned in
+  `PluginRealmTest` over hand-built rows; no IT stages a wrapper jar depending on a stub.
+* **The decode is `PluginRealm`** (mojo module): rows of `(groupId, artifactId, version, file,
+  trail)`, the consumer-added entries, and the pure `refusal`. `referenceVersionsOf` projects off its
+  rows with jOOQ's reference fixed at `AbstractRewriteMojo.COMPILED_JOOQ_VERSION`;
+  `checkPluginRealm` reads the loader evidence through an overridable `realmEvidence()`, which is
+  the seam `DevMojoTest.aRefusedRealmFailsBeforeTheStoreOpens` uses.
+* **The class-load decode is `ConsumerClassLoad`** (`graphitron`), with `load`, `reflect` (load plus
+  a forced `getDeclaredMethods()`, used by the four `ServiceCatalog` reflect sites) and
+  `loadSignatureType` (generic strip and `$` retry, used by `InputBeanResolver.tryLoad` and the
+  polymorphic slot admission, which gained an `Unlinkable` arm in place of the removed
+  `BuildContext.loadForSlot`). The cause decode is `ReflectionError.ClassUnlinkable.Cause.of`, in
+  `graphitron-model`, which the mojo backstop calls too.
+* **Tier deviation.** The symptom-two test, `ConsumerClassLinkageTest`, is `@UnitTier`, not pipeline
+  tier as planned: it drives `ServiceCatalog` directly, as `SessionHookResolutionTest` does, with no
+  SDL in and no TypeSpec out, which is the unit rubric in `testing.adoc`. Its staged split
+  reproduces the real `IllegalAccessError` against the open-source `AbstractStore`.
+
 ## Reviewer findings
 
 ### Round 1: Spec → Ready, request revisions (session_01MuRsGbZ7TsJp4FSVoh9FyD, 2026-10-08)

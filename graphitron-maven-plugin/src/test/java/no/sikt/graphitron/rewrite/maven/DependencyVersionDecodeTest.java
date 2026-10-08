@@ -139,8 +139,21 @@ class DependencyVersionDecodeTest {
         assertThat(versions.reference())
             .as("the plugin realm's scopes are a fact of graphitron's own build and are not filtered")
             .containsOnly(
-                entry(WatchedDependency.JOOQ, "3.20.11"),
+                entry(WatchedDependency.JOOQ, org.jooq.Constants.VERSION),
                 entry(WatchedDependency.GRAPHQL_JAVA, "25.0"));
+    }
+
+    @Test
+    void theJooqReferenceIsTheCompiledAgainstVersionNotTheFirstRealmRow() {
+        // A realm holding a second jOOQ is refused by the realm check before any advisory runs, but
+        // the reference does not lean on that: it is the version graphitron was compiled against,
+        // so whichever row a realm happens to list first cannot move it.
+        var versions = AbstractRewriteMojo.decodeDependencyVersions(
+            List.of(),
+            List.of(artifact("org.jooq.pro", "jooq", "3.19.18", "runtime"), jooq("3.20.11", "runtime")));
+
+        assertThat(versions.reference())
+            .containsEntry(WatchedDependency.JOOQ, org.jooq.Constants.VERSION);
     }
 
     @Test

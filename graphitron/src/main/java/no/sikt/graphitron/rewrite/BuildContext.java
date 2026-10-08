@@ -3569,6 +3569,9 @@ class BuildContext {
         record Admitted(no.sikt.graphitron.rewrite.model.CallSiteExtraction.AdmittedSlotType slotType)
                 implements PolymorphicSlotAdmission {}
         record Refused(String message) implements PolymorphicSlotAdmission {}
+        /** The slot's declared type is on the classpath but cannot be linked; the typed rejection says why. */
+        record Unlinkable(no.sikt.graphitron.model.diagnostics.ReflectionError.ClassUnlinkable rejection)
+                implements PolymorphicSlotAdmission {}
     }
 
     /**
@@ -3592,7 +3595,13 @@ class BuildContext {
      */
     PolymorphicSlotAdmission admitPolymorphicSlotType(NodeIdRecordDecode.Polymorphic poly,
                                                       String slotTypeName) {
-        Class<?> slotClass = loadForSlot(slotTypeName);
+        var slotLoad = slotTypeName == null ? null
+            // nameability: exempt (a declared Java type read off a signature, not a name anyone wrote)
+            : ConsumerClassLoad.loadSignatureType(slotTypeName, codegenLoader());
+        if (slotLoad instanceof ConsumerClassLoad.Unlinkable unlinkable) {
+            return new PolymorphicSlotAdmission.Unlinkable(unlinkable.rejection());
+        }
+        Class<?> slotClass = slotLoad == null ? null : slotLoad.loadedOrNull();
         if (slotClass == null) {
             // Refused rather than resolved on some weaker fact, and this is where the polymorphic
             // slot parts from the one-column projection: that destination stands aside on an
@@ -3729,37 +3738,6 @@ class BuildContext {
      */
     private static boolean isJooqRecordClass(Class<?> cls) {
         return ancestorsOf(cls).stream().anyMatch(c -> c.getName().equals("org.jooq.Record"));
-    }
-
-    /**
-     * The slot's declared element type as a live class, or {@code null} when the codegen classpath
-     * does not hold it. Loaded without initialising: the class is inspected, never used.
-     *
-     * <p>The declared name arrives as a signature spells it, so a generic argument is stripped
-     * ({@code org.jooq.UpdatableRecord<?>} is the raw {@code UpdatableRecord}) and a nested class is
-     * retried with the JVM's {@code $}: the same two normalisations {@code InputBeanResolver.tryLoad}
-     * performs on the member types it reads off the very same signatures.
-     */
-    private Class<?> loadForSlot(String slotTypeName) {
-        if (slotTypeName == null) {
-            return null;
-        }
-        int lt = slotTypeName.indexOf('<');
-        String candidate = lt < 0 ? slotTypeName : slotTypeName.substring(0, lt);
-        while (true) {
-            try {
-                // nameability: exempt (a declared Java type read off a signature, not a name anyone wrote)
-                return Class.forName(candidate, false, codegenLoader());
-            } catch (ClassNotFoundException e) {
-                int lastDot = candidate.lastIndexOf('.');
-                if (lastDot < 0) {
-                    return null;
-                }
-                candidate = candidate.substring(0, lastDot) + '$' + candidate.substring(lastDot + 1);
-            } catch (LinkageError e) {
-                return null;
-            }
-        }
     }
 
     /**

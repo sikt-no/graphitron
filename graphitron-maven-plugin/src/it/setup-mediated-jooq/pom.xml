@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <!-- Setup project: org.jooq:jooq at a version graphitron is not built against. Listed under <plugin><dependencies> it is nearer than graphitron's own jOOQ, so Maven mediates to it and the realm holds this one jar in place of graphitron's. Installed for plugin-block-mediated-jooq. -->
+  <groupId>org.jooq</groupId>
+  <artifactId>jooq</artifactId>
+  <version>3.19.99-it</version>
+  <packaging>jar</packaging>
+
+  <properties>
+    <maven.compiler.release>17</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+</project>

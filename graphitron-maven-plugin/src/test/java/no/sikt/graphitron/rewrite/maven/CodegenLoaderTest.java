@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.maven;
 
 import org.apache.maven.model.Build;
+import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -9,6 +10,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.jar.JarEntry;
+import java.util.jar.JarOutputStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -80,16 +83,53 @@ class CodegenLoaderTest {
     }
 
     /**
+     * The backstop: a {@link LinkageError} escaping the scope's body is rethrown as a
+     * {@link MojoExecutionException} rendered by the same cause decode the typed rejection uses,
+     * listing every jOOQ jar the codegen classloader can see, here graphitron's own (through the
+     * parent) and a second one staged on the project's compile classpath.
+     */
+    @Test
+    void aLinkageErrorEscapingTheScopeIsRenderedWithTheJooqJarsInSight(@TempDir Path basedir) throws Exception {
+        Path stagedClasses = writeMarkerClass(basedir.resolve("staged-classes"));
+        Path secondJooq = basedir.resolve("edition-jooq.jar");
+        try (var jar = new JarOutputStream(Files.newOutputStream(secondJooq))) {
+            jar.putNextEntry(new JarEntry("org/jooq/Constants.class"));
+            jar.write(new byte[] {(byte) 0xCA, (byte) 0xFE});
+            jar.closeEntry();
+        }
+        var mojo = mojo(basedir, stagedClasses, secondJooq);
+
+        assertThatThrownBy(() -> mojo.withCodegenScope(ctx -> {
+                throw new IllegalAccessError("class org.jooq.impl.ArrayRecordImpl cannot access its"
+                    + " abstract superclass org.jooq.impl.AbstractStore (org.jooq.impl.ArrayRecordImpl is"
+                    + " in unnamed module of loader java.net.URLClassLoader @1; org.jooq.impl.AbstractStore"
+                    + " is in unnamed module of loader 'app')");
+            }))
+            .isInstanceOf(MojoExecutionException.class)
+            .hasCauseInstanceOf(IllegalAccessError.class)
+            .hasMessageContaining("'org.jooq.impl.ArrayRecordImpl'")
+            .hasMessageContaining("package 'org.jooq.impl' ends up split across two classloaders")
+            .hasMessageContaining("  - " + secondJooq.toAbsolutePath().normalize())
+            .hasMessageContaining(PluginRealm.rootsProviding(
+                CodegenLoaderTest.class.getClassLoader(), PluginRealm.JOOQ_MARKER).get(0).toString());
+    }
+
+    /**
      * Constructs a {@link GenerateMojo} backed by a {@link MavenProject} whose
      * {@code getCompileClasspathElements()} returns the staged directory. This is the same
      * call {@link AbstractRewriteMojo#withCodegenScope} makes to build the URLClassLoader.
      */
-    private static GenerateMojo mojo(Path basedir, Path stagedClasses) {
+    private static GenerateMojo mojo(Path basedir, Path stagedClasses, Path... moreElements) {
         var mojo = new GenerateMojo();
+        var elements = new java.util.ArrayList<String>();
+        elements.add(stagedClasses.toAbsolutePath().toString());
+        for (Path element : moreElements) {
+            elements.add(element.toAbsolutePath().toString());
+        }
         var project = new MavenProject() {
             @Override
             public List<String> getCompileClasspathElements() {
-                return List.of(stagedClasses.toAbsolutePath().toString());
+                return List.copyOf(elements);
             }
         };
         project.setFile(basedir.resolve("pom.xml").toFile());

@@ -127,7 +127,11 @@ final class InputBeanResolver {
                 continue;
             }
             JavaElement elt = peelJavaListSet(p.typeName());
-            Class<?> elementClass = tryLoad(elt.elementTypeName());
+            var elementLoad = tryLoad(elt.elementTypeName());
+            if (elementLoad instanceof ConsumerClassLoad.Unlinkable unlinkable) {
+                return new Result.Failed(unlinkable.rejection());
+            }
+            Class<?> elementClass = elementLoad.loadedOrNull();
             if (elementClass == null) {
                 return new Result.Failed(Rejection.structural(
                     "parameter '" + p.name() + "' on method '" + method.methodName()
@@ -939,7 +943,11 @@ final class InputBeanResolver {
         String javaElementTypeName = member.elementTypeName();
         CallSiteExtraction leaf;
         if (sdlElt.elementType() instanceof GraphQLInputObjectType nestedIot) {
-            Class<?> nestedClass = tryLoad(javaElementTypeName);
+            var nestedLoad = tryLoad(javaElementTypeName);
+            if (nestedLoad instanceof ConsumerClassLoad.Unlinkable unlinkable) {
+                return new FieldResult.Fail(unlinkable.rejection());
+            }
+            Class<?> nestedClass = nestedLoad.loadedOrNull();
             if (nestedClass == null || !looksLikeBeanCandidate(nestedClass)) {
                 return new FieldResult.Fail(Rejection.structural(
                     "parameter '" + paramName + "' on method '" + methodName + "' in class '"
@@ -954,14 +962,14 @@ final class InputBeanResolver {
             }
             leaf = ((Built.Ok) nested).bean();
         } else if (sdlElt.elementType() instanceof GraphQLEnumType enumSdl
-                && tryLoad(javaElementTypeName) != null
-                && tryLoad(javaElementTypeName).isEnum()) {
+                && tryLoad(javaElementTypeName).loadedOrNull() != null
+                && tryLoad(javaElementTypeName).loadedOrNull().isEnum()) {
             // The declared type IS the enum and assignment succeeds, but
             // Enum.valueOf((String) ...) throws IllegalArgumentException when an SDL enum value
             // name diverges from the Java constant names. Route through the single enum-constant
             // parity home (EnumMappingResolver) so a divergence rejects loudly rather than
             // emitting a valueOf that crashes at runtime.
-            var parity = new EnumMappingResolver(ctx).checkEnumConstants(enumSdl.getName(), tryLoad(javaElementTypeName));
+            var parity = new EnumMappingResolver(ctx).checkEnumConstants(enumSdl.getName(), tryLoad(javaElementTypeName).loadedOrNull());
             if (parity instanceof EnumMappingResolver.EnumConstantParity.Divergence d) {
                 return new FieldResult.Fail(new WireCoercionError.EnumConstantDivergence(
                     javaElementTypeName,
@@ -975,7 +983,11 @@ final class InputBeanResolver {
             // Scalar SDL field. A jOOQ-record-typed member never lands on Direct: a wire ID
             // String cast to a *Record throws ClassCastException at the first request. Branch
             // to a @nodeId-decode leaf, or reject loudly.
-            Class<?> memberClass = tryLoad(javaElementTypeName);
+            var memberLoad = tryLoad(javaElementTypeName);
+            if (memberLoad instanceof ConsumerClassLoad.Unlinkable unlinkable) {
+                return new FieldResult.Fail(unlinkable.rejection());
+            }
+            Class<?> memberClass = memberLoad.loadedOrNull();
             if (memberClass != null && isJooqRecord(memberClass)) {
                 RecordLeaf recordLeaf = buildJooqRecordLeaf(sdlField, fieldPath,
                     javaElementTypeName, nonNull, paramName, methodName, className);
@@ -1124,6 +1136,9 @@ final class InputBeanResolver {
         if (admission instanceof BuildContext.PolymorphicSlotAdmission.Refused refused) {
             return new RecordLeaf.Fail(Rejection.structural(where + ": " + refused.message()));
         }
+        if (admission instanceof BuildContext.PolymorphicSlotAdmission.Unlinkable unlinkable) {
+            return new RecordLeaf.Fail(unlinkable.rejection());
+        }
         var admitted = (BuildContext.PolymorphicSlotAdmission.Admitted) admission;
         return new RecordLeaf.Ok(polymorphicLeaf(poly, admitted.slotType(), nonNull));
     }
@@ -1244,35 +1259,15 @@ final class InputBeanResolver {
     }
 
     /**
-     * Loads a class from the codegen classloader. Returns {@code null} when the type can't be
-     * resolved; never swallows {@code Error}s beyond {@link LinkageError} (an unloadable type the
-     * caller treats the same as a missing one).
-     *
-     * <p>Handles two name-shape concerns:
-     * <ul>
-     *   <li>Strips generic parameters: {@code List<Foo>} → {@code List}.</li>
-     *   <li>Translates nested-class dots to {@code $} on retry. {@link java.lang.reflect.Type#getTypeName()}
-     *       emits {@code com.example.Outer.Inner}, but {@link Class#forName(String, boolean, ClassLoader)}
-     *       needs {@code com.example.Outer$Inner}. The retry walks the trailing dots one at a
-     *       time, so multi-nested classes ({@code Outer.Mid.Inner}) also resolve.</li>
-     * </ul>
+     * Loads a type named the way a signature spells it from the codegen classloader, through
+     * {@link ConsumerClassLoad#loadSignatureType}, which strips generic arguments and retries a
+     * nested class with {@code $}. A type that is there but cannot be linked comes back
+     * {@link ConsumerClassLoad.Unlinkable}, which callers surface as its typed rejection rather
+     * than reading it as a missing type.
      */
-    private Class<?> tryLoad(String typeName) {
-        int lt = typeName.indexOf('<');
-        String raw = lt < 0 ? typeName : typeName.substring(0, lt);
-        String candidate = raw;
-        while (true) {
-            try {
-                // nameability: exempt (signature-derived type name, not a name anyone wrote)
-                return Class.forName(candidate, false, ctx.codegenLoader());
-            } catch (ClassNotFoundException e) {
-                int lastDot = candidate.lastIndexOf('.');
-                if (lastDot < 0) return null;
-                candidate = candidate.substring(0, lastDot) + '$' + candidate.substring(lastDot + 1);
-            } catch (LinkageError e) {
-                return null;
-            }
-        }
+    private ConsumerClassLoad tryLoad(String typeName) {
+        // nameability: exempt (signature-derived type name, not a name anyone wrote)
+        return ConsumerClassLoad.loadSignatureType(typeName, ctx.codegenLoader());
     }
 
     // ===== Java/SDL list peeling =====

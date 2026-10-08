@@ -279,50 +279,50 @@ class ServiceCatalog {
                 instanceof ClasspathNameability.Verdict.Rejected rejected) {
             return new DecodeResult(null, Rejection.structural("@service " + rejected.reason()));
         }
-        try {
-            // nameability: checked (author-written @service className, gated above)
-            Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
-            MethodPick pick = pickMethod(cls, className, methodName);
-            if (pick instanceof MethodPick.Rejected rejected) {
-                return new DecodeResult(null, rejected.rejection());
-            }
-            var javaMethod = ((MethodPick.Picked) pick).method();
-            boolean isStatic = java.lang.reflect.Modifier.isStatic(javaMethod.getModifiers());
-            List<MethodRef.Param> ctorParams = List.of();
-            Rejection unconstructible = null;
-            if (!isStatic) {
-                InstanceHolderResolution holder = resolveInstanceHolder(cls, methodName, className, ctxKeys);
-                if (holder.rejection() != null) {
-                    unconstructible = holder.rejection();
-                    ctorParams = null;
-                } else {
-                    ctorParams = holder.ctorParams();
-                }
-            }
-            if (Arrays.stream(javaMethod.getParameters()).anyMatch(p -> !p.isNamePresent())) {
-                emitParametersWarning();
-            }
-            var decoded = new ArrayList<DecodedParam>();
-            for (var p : javaMethod.getParameters()) {
-                boolean isDsl = org.jooq.DSLContext.class.isAssignableFrom(p.getType());
-                String pName = p.isNamePresent() ? p.getName() : null;
-                String displayName = pName != null
-                    ? pName
-                    : (isDsl ? "dsl" : p.getType().getSimpleName());
-                decoded.add(new DecodedParam(pName, displayName,
-                    p.getParameterizedType().getTypeName(),
-                    TypeName.get(p.getParameterizedType()),
-                    isDsl,
-                    isDsl ? null : classifySourcesType(p.getParameterizedType()).orElse(null),
-                    isDsl ? null : dtoSourcesRejectionReason(p.getParameterizedType())));
-            }
-            return new DecodeResult(new ServiceSignature(className, methodName,
-                TypeName.get(javaMethod.getGenericReturnType()), isStatic,
-                declaredExceptionFqns(javaMethod), ctorParams, unconstructible,
-                List.copyOf(decoded)), null);
-        } catch (ClassNotFoundException e) {
-            return new DecodeResult(null, new ReflectionError.ClassNotLoaded(className));
+        // nameability: checked (author-written @service className, gated above)
+        var load = ConsumerClassLoad.reflect(className, ctx.codegenLoader());
+        if (!(load instanceof ConsumerClassLoad.Loaded loaded)) {
+            return new DecodeResult(null, load.rejection());
         }
+        Class<?> cls = loaded.cls();
+        MethodPick pick = pickMethod(cls, className, methodName);
+        if (pick instanceof MethodPick.Rejected rejected) {
+            return new DecodeResult(null, rejected.rejection());
+        }
+        var javaMethod = ((MethodPick.Picked) pick).method();
+        boolean isStatic = java.lang.reflect.Modifier.isStatic(javaMethod.getModifiers());
+        List<MethodRef.Param> ctorParams = List.of();
+        Rejection unconstructible = null;
+        if (!isStatic) {
+            InstanceHolderResolution holder = resolveInstanceHolder(cls, methodName, className, ctxKeys);
+            if (holder.rejection() != null) {
+                unconstructible = holder.rejection();
+                ctorParams = null;
+            } else {
+                ctorParams = holder.ctorParams();
+            }
+        }
+        if (Arrays.stream(javaMethod.getParameters()).anyMatch(p -> !p.isNamePresent())) {
+            emitParametersWarning();
+        }
+        var decoded = new ArrayList<DecodedParam>();
+        for (var p : javaMethod.getParameters()) {
+            boolean isDsl = org.jooq.DSLContext.class.isAssignableFrom(p.getType());
+            String pName = p.isNamePresent() ? p.getName() : null;
+            String displayName = pName != null
+                ? pName
+                : (isDsl ? "dsl" : p.getType().getSimpleName());
+            decoded.add(new DecodedParam(pName, displayName,
+                p.getParameterizedType().getTypeName(),
+                TypeName.get(p.getParameterizedType()),
+                isDsl,
+                isDsl ? null : classifySourcesType(p.getParameterizedType()).orElse(null),
+                isDsl ? null : dtoSourcesRejectionReason(p.getParameterizedType())));
+        }
+        return new DecodeResult(new ServiceSignature(className, methodName,
+            TypeName.get(javaMethod.getGenericReturnType()), isStatic,
+            declaredExceptionFqns(javaMethod), ctorParams, unconstructible,
+            List.copyOf(decoded)), null);
     }
 
     /**
@@ -1086,80 +1086,80 @@ class ServiceCatalog {
                 instanceof ClasspathNameability.Verdict.Rejected rejected) {
             return new ServiceReflectionResult(null, Rejection.structural("@condition " + rejected.reason()));
         }
-        try {
-            // nameability: checked (author-written @condition className, gated above)
-            Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
-            var candidates = candidateMethods(cls, className, methodName);
-            if (candidates instanceof MethodCandidates.Rejected notFound) {
-                return new ServiceReflectionResult(null, notFound.rejection());
-            }
-            var declarations = ((MethodCandidates.Named) candidates).declarations();
-            var admission = admitConditionShape(declarations);
-            if (admission instanceof ConditionAdmission.Refused refused) {
-                return new ServiceReflectionResult(null,
-                    new ReflectionError.AmbiguousMethod(className, methodName,
-                        declarations.stream().map(ServiceCatalog::renderSignature).toList(),
-                        refused.ambiguity()));
-            }
-            var shape = ((ConditionAdmission.Admitted) admission).shape();
-            if (!shape.allStatic()) {
-                return new ServiceReflectionResult(null,
-                    Rejection.structural("method '" + methodName + "' in class '" + className
-                    + "' must be declared 'static' — instance condition methods are not supported;"
-                    + " the call site emits 'ClassName.method(...)' which requires a static method"));
-            }
-            if (!shape.allParameterNamesPresent()) {
-                emitParametersWarning();
-            }
-            String tableTypoGuard = checkConditionOverrideTargets(argByJavaName,
-                shape.bindableParamNames(), shape.reservedTableSlotNames(), methodName, className);
-            if (tableTypoGuard != null) {
-                return new ServiceReflectionResult(null, Rejection.structural(tableTypoGuard));
-            }
-            argByJavaName = inferBindingsByType(shape, argByJavaName, ctxKeys, slotTypes);
-            var params = new ArrayList<MethodRef.Param>();
-            for (var slot : shape.slots()) {
-                if (slot instanceof ShapeSlot.TableSlot table) {
-                    params.add(new MethodRef.Param.Typed(table.name(), table.typeName(),
-                        table.javaType(), new ParamSource.Table(table.decided())));
-                    continue;
-                }
-                var bindable = (ShapeSlot.Bindable) slot;
-                String pName = bindable.name();
-                if (pName == null) {
-                    return new ServiceReflectionResult(null,
-                        new ReflectionError.ParameterNamesMissing(className, methodName));
-                }
-                String typeName = bindable.typeName();
-                TypeName javaType = bindable.javaType();
-                PathExpr resolvedPath = argByJavaName.get(pName);
-                if (resolvedPath != null) {
-                    // No wire-coercion check on this path: @condition arguments
-                    // use legacyArgExtraction; only the @service caller rejects, via
-                    // argExtraction.
-                    params.add(new MethodRef.Param.Typed(pName, typeName, javaType,
-                        new ParamSource.Arg(legacyArgExtraction(typeName, ctx.codegenLoader()), resolvedPath)));
-                } else if (ctxKeys.contains(pName)) {
-                    params.add(new MethodRef.Param.Typed(pName, typeName, javaType, new ParamSource.Context()));
-                } else {
-                    return new ServiceReflectionResult(null,
-                        Rejection.structural("parameter '" + pName + "' in method '" + methodName
-                        + "' is not a GraphQL argument and not a context key"));
-                }
-            }
-            if (!shape.hasTableSlot()) {
-                return new ServiceReflectionResult(null,
-                    Rejection.structural("method '" + methodName + "' in class '" + className
-                    + "' has no Table<?> parameter — the directive requires exactly one Table<?> parameter"));
-            }
-            return new ServiceReflectionResult(
-                new MethodRef.StaticOnly(className, methodName,
-                    ClassName.get(shape.returnType()), List.copyOf(params),
-                    shape.declaredExceptions()),
-                null);
-        } catch (ClassNotFoundException e) {
-            return new ServiceReflectionResult(null, new ReflectionError.ClassNotLoaded(className));
+        // nameability: checked (author-written @condition className, gated above)
+        var load = ConsumerClassLoad.reflect(className, ctx.codegenLoader());
+        if (!(load instanceof ConsumerClassLoad.Loaded loaded)) {
+            return new ServiceReflectionResult(null, load.rejection());
         }
+        Class<?> cls = loaded.cls();
+        var candidates = candidateMethods(cls, className, methodName);
+        if (candidates instanceof MethodCandidates.Rejected notFound) {
+            return new ServiceReflectionResult(null, notFound.rejection());
+        }
+        var declarations = ((MethodCandidates.Named) candidates).declarations();
+        var admission = admitConditionShape(declarations);
+        if (admission instanceof ConditionAdmission.Refused refused) {
+            return new ServiceReflectionResult(null,
+                new ReflectionError.AmbiguousMethod(className, methodName,
+                    declarations.stream().map(ServiceCatalog::renderSignature).toList(),
+                    refused.ambiguity()));
+        }
+        var shape = ((ConditionAdmission.Admitted) admission).shape();
+        if (!shape.allStatic()) {
+            return new ServiceReflectionResult(null,
+                Rejection.structural("method '" + methodName + "' in class '" + className
+                + "' must be declared 'static' — instance condition methods are not supported;"
+                + " the call site emits 'ClassName.method(...)' which requires a static method"));
+        }
+        if (!shape.allParameterNamesPresent()) {
+            emitParametersWarning();
+        }
+        String tableTypoGuard = checkConditionOverrideTargets(argByJavaName,
+            shape.bindableParamNames(), shape.reservedTableSlotNames(), methodName, className);
+        if (tableTypoGuard != null) {
+            return new ServiceReflectionResult(null, Rejection.structural(tableTypoGuard));
+        }
+        argByJavaName = inferBindingsByType(shape, argByJavaName, ctxKeys, slotTypes);
+        var params = new ArrayList<MethodRef.Param>();
+        for (var slot : shape.slots()) {
+            if (slot instanceof ShapeSlot.TableSlot table) {
+                params.add(new MethodRef.Param.Typed(table.name(), table.typeName(),
+                    table.javaType(), new ParamSource.Table(table.decided())));
+                continue;
+            }
+            var bindable = (ShapeSlot.Bindable) slot;
+            String pName = bindable.name();
+            if (pName == null) {
+                return new ServiceReflectionResult(null,
+                    new ReflectionError.ParameterNamesMissing(className, methodName));
+            }
+            String typeName = bindable.typeName();
+            TypeName javaType = bindable.javaType();
+            PathExpr resolvedPath = argByJavaName.get(pName);
+            if (resolvedPath != null) {
+                // No wire-coercion check on this path: @condition arguments
+                // use legacyArgExtraction; only the @service caller rejects, via
+                // argExtraction.
+                params.add(new MethodRef.Param.Typed(pName, typeName, javaType,
+                    new ParamSource.Arg(legacyArgExtraction(typeName, ctx.codegenLoader()), resolvedPath)));
+            } else if (ctxKeys.contains(pName)) {
+                params.add(new MethodRef.Param.Typed(pName, typeName, javaType, new ParamSource.Context()));
+            } else {
+                return new ServiceReflectionResult(null,
+                    Rejection.structural("parameter '" + pName + "' in method '" + methodName
+                    + "' is not a GraphQL argument and not a context key"));
+            }
+        }
+        if (!shape.hasTableSlot()) {
+            return new ServiceReflectionResult(null,
+                Rejection.structural("method '" + methodName + "' in class '" + className
+                + "' has no Table<?> parameter — the directive requires exactly one Table<?> parameter"));
+        }
+        return new ServiceReflectionResult(
+            new MethodRef.StaticOnly(className, methodName,
+                ClassName.get(shape.returnType()), List.copyOf(params),
+                shape.declaredExceptions()),
+            null);
     }
 
     /**
@@ -1208,66 +1208,66 @@ class ServiceCatalog {
                 instanceof ClasspathNameability.Verdict.Rejected rejected) {
             return new ServiceReflectionResult(null, Rejection.structural("@externalField " + rejected.reason()));
         }
-        try {
-            // nameability: checked (author-written @externalField className, gated above)
-            Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
-            MethodPick pick = pickMethod(cls, className, methodName);
-            if (pick instanceof MethodPick.Rejected rejected) {
-                return new ServiceReflectionResult(null, rejected.rejection());
-            }
-            var javaMethod = ((MethodPick.Picked) pick).method();
-            int mods = javaMethod.getModifiers();
-            if (!java.lang.reflect.Modifier.isStatic(mods) || !java.lang.reflect.Modifier.isPublic(mods)) {
-                return new ServiceReflectionResult(null,
-                    Rejection.structural("method '" + methodName + "' in class '" + className
-                    + "' must be public static"));
-            }
-            if (javaMethod.getParameterCount() != 1) {
-                return new ServiceReflectionResult(null,
-                    Rejection.structural("method '" + methodName + "' in class '" + className
-                    + "' must take exactly one Table<?> parameter — got "
-                    + javaMethod.getParameterCount() + " parameter(s)"));
-            }
-            var p = javaMethod.getParameters()[0];
-            if (!org.jooq.Table.class.isAssignableFrom(p.getType())) {
-                return new ServiceReflectionResult(null,
-                    Rejection.structural("method '" + methodName + "' in class '" + className
-                    + "' parameter must be a jOOQ Table<?> subtype — got '"
-                    + p.getType().getSimpleName() + "'"));
-            }
-            Rejection parentTableMismatch = checkExternalFieldParentTable(p, parentTable, className, methodName);
-            if (parentTableMismatch != null) {
-                return new ServiceReflectionResult(null, parentTableMismatch);
-            }
-            if (!org.jooq.Field.class.equals(javaMethod.getReturnType())) {
-                return new ServiceReflectionResult(null,
-                    Rejection.structural("method '" + methodName + "' in class '" + className
-                    + "' must return org.jooq.Field<X> — got '"
-                    + javaMethod.getReturnType().getSimpleName() + "'"));
-            }
-            var genericReturn = javaMethod.getGenericReturnType();
-            if (!(genericReturn instanceof java.lang.reflect.ParameterizedType)) {
-                return new ServiceReflectionResult(null,
-                    Rejection.structural("method '" + methodName + "' in class '" + className
-                    + "' must return parameterized Field<X>, not raw Field"));
-            }
-            if (!p.isNamePresent()) {
-                emitParametersWarning();
-            }
-            String paramName = p.isNamePresent() ? p.getName() : "table";
-            List<MethodRef.Param> params = List.of(new MethodRef.Param.Typed(
-                paramName, p.getParameterizedType().getTypeName(),
-                TypeName.get(p.getParameterizedType()),
-                // A singleton set: this coordinate resolves one declaration, and the decided fact is
-                // the same catalog lookup layer 1 above already performs on the very same parameter.
-                new ParamSource.Table(decideTableSlot(List.of(javaMethod), 0))));
-            TypeName returnTypeName = TypeName.get(genericReturn);
-            return new ServiceReflectionResult(
-                new MethodRef.StaticOnly(className, methodName, returnTypeName, params, List.of()),
-                null);
-        } catch (ClassNotFoundException e) {
-            return new ServiceReflectionResult(null, new ReflectionError.ClassNotLoaded(className));
+        // nameability: checked (author-written @externalField className, gated above)
+        var load = ConsumerClassLoad.reflect(className, ctx.codegenLoader());
+        if (!(load instanceof ConsumerClassLoad.Loaded loaded)) {
+            return new ServiceReflectionResult(null, load.rejection());
         }
+        Class<?> cls = loaded.cls();
+        MethodPick pick = pickMethod(cls, className, methodName);
+        if (pick instanceof MethodPick.Rejected rejected) {
+            return new ServiceReflectionResult(null, rejected.rejection());
+        }
+        var javaMethod = ((MethodPick.Picked) pick).method();
+        int mods = javaMethod.getModifiers();
+        if (!java.lang.reflect.Modifier.isStatic(mods) || !java.lang.reflect.Modifier.isPublic(mods)) {
+            return new ServiceReflectionResult(null,
+                Rejection.structural("method '" + methodName + "' in class '" + className
+                + "' must be public static"));
+        }
+        if (javaMethod.getParameterCount() != 1) {
+            return new ServiceReflectionResult(null,
+                Rejection.structural("method '" + methodName + "' in class '" + className
+                + "' must take exactly one Table<?> parameter — got "
+                + javaMethod.getParameterCount() + " parameter(s)"));
+        }
+        var p = javaMethod.getParameters()[0];
+        if (!org.jooq.Table.class.isAssignableFrom(p.getType())) {
+            return new ServiceReflectionResult(null,
+                Rejection.structural("method '" + methodName + "' in class '" + className
+                + "' parameter must be a jOOQ Table<?> subtype — got '"
+                + p.getType().getSimpleName() + "'"));
+        }
+        Rejection parentTableMismatch = checkExternalFieldParentTable(p, parentTable, className, methodName);
+        if (parentTableMismatch != null) {
+            return new ServiceReflectionResult(null, parentTableMismatch);
+        }
+        if (!org.jooq.Field.class.equals(javaMethod.getReturnType())) {
+            return new ServiceReflectionResult(null,
+                Rejection.structural("method '" + methodName + "' in class '" + className
+                + "' must return org.jooq.Field<X> — got '"
+                + javaMethod.getReturnType().getSimpleName() + "'"));
+        }
+        var genericReturn = javaMethod.getGenericReturnType();
+        if (!(genericReturn instanceof java.lang.reflect.ParameterizedType)) {
+            return new ServiceReflectionResult(null,
+                Rejection.structural("method '" + methodName + "' in class '" + className
+                + "' must return parameterized Field<X>, not raw Field"));
+        }
+        if (!p.isNamePresent()) {
+            emitParametersWarning();
+        }
+        String paramName = p.isNamePresent() ? p.getName() : "table";
+        List<MethodRef.Param> params = List.of(new MethodRef.Param.Typed(
+            paramName, p.getParameterizedType().getTypeName(),
+            TypeName.get(p.getParameterizedType()),
+            // A singleton set: this coordinate resolves one declaration, and the decided fact is
+            // the same catalog lookup layer 1 above already performs on the very same parameter.
+            new ParamSource.Table(decideTableSlot(List.of(javaMethod), 0))));
+        TypeName returnTypeName = TypeName.get(genericReturn);
+        return new ServiceReflectionResult(
+            new MethodRef.StaticOnly(className, methodName, returnTypeName, params, List.of()),
+            null);
     }
 
     /**
@@ -1511,6 +1511,9 @@ class ServiceCatalog {
             if (admission instanceof BuildContext.PolymorphicSlotAdmission.Refused refused) {
                 return new ArgExtraction.Rejected(
                     Rejection.structural(site + ": " + refused.message()));
+            }
+            if (admission instanceof BuildContext.PolymorphicSlotAdmission.Unlinkable unlinkable) {
+                return new ArgExtraction.Rejected(unlinkable.rejection());
             }
             var admitted = (BuildContext.PolymorphicSlotAdmission.Admitted) admission;
             return new ArgExtraction.Resolved(InputBeanResolver.polymorphicLeaf(poly,
@@ -2395,14 +2398,13 @@ class ServiceCatalog {
             boolean isMount, TypeName boxedTenant, List<Rejection> rejections) {
         String className = ref.className();
         String methodName = ref.methodName();
-        Class<?> cls;
-        try {
-            // nameability: exempt (<sessionState> mount/unmount target is plugin configuration, not schema text)
-            cls = Class.forName(className, false, ctx.codegenLoader());
-        } catch (ClassNotFoundException e) {
-            rejections.add(new ReflectionError.ClassNotLoaded(className));
+        // nameability: exempt (<sessionState> mount/unmount target is plugin configuration, not schema text)
+        var load = ConsumerClassLoad.reflect(className, ctx.codegenLoader());
+        if (!(load instanceof ConsumerClassLoad.Loaded loaded)) {
+            rejections.add(load.rejection());
             return null;
         }
+        Class<?> cls = loaded.cls();
         MethodPick pick = pickMethod(cls, className, methodName, SeamFilter.SESSION_HOOK);
         if (pick instanceof MethodPick.Rejected rejected) {
             rejections.add(rejected.rejection());

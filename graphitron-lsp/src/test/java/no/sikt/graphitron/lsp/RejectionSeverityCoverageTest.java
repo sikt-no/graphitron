@@ -325,6 +325,11 @@ class RejectionSeverityCoverageTest {
         if (permit == no.sikt.graphitron.model.diagnostics.ReflectionError.ClassNotLoaded.class) {
             return new no.sikt.graphitron.model.diagnostics.ReflectionError.ClassNotLoaded("com.example.Missing");
         }
+        if (permit == no.sikt.graphitron.model.diagnostics.ReflectionError.ClassUnlinkable.class) {
+            return new no.sikt.graphitron.model.diagnostics.ReflectionError.ClassUnlinkable("com.example.Mount",
+                new no.sikt.graphitron.model.diagnostics.ReflectionError.ClassUnlinkable.Cause.SplitPackage(
+                    "org.jooq.impl.ArrayRecordImpl", "org.jooq.impl"));
+        }
         if (permit == no.sikt.graphitron.model.diagnostics.ReflectionError.ReturnTypeMismatch.class) {
             return new no.sikt.graphitron.model.diagnostics.ReflectionError.ReturnTypeMismatch(
                 "com.example.Svc", "getFilm", "FilmRecord", "String");
