@@ -5,9 +5,10 @@ import no.sikt.graphitron.model.diagnostics.Rejection;
 
 /**
  * The one decode of a consumer class read off the codegen classloader: {@link Loaded},
- * {@link NotLoaded}, or {@link Unlinkable}. Every site that loads a consumer class goes through
- * here rather than catching {@link ClassNotFoundException} beside a {@code Class.forName}, so a
- * class that is found but cannot be linked becomes a typed
+ * {@link NotLoaded}, or {@link Unlinkable}. The sites that load a consumer class to reflect on it,
+ * or a type read off its signatures, go through here rather than catching
+ * {@link ClassNotFoundException} beside a {@code Class.forName}, so a class that is found but
+ * cannot be linked becomes a typed
  * {@link ReflectionError.ClassUnlinkable} instead of a raw {@link LinkageError} escaping the
  * build, or a {@code null} its caller reads as "no such type".
  *
