@@ -44,13 +44,16 @@ public enum LintRule {
     REDUNDANT_RECORD_DIRECTIVE("redundant-record-directive", Source.CLASSIFIER),
     ASCONNECTION_SAME_TABLE_PK_IN("asconnection-same-table-pk-in", Source.CLASSIFIER),
 
-    // Codegen advisories: whole-build facts folded in at report assembly, not derived from the AST
-    // and not from a per-field classifier verdict, so neither an engine visitor nor a
-    // classifier-tagged advisory. Emitted from GraphQLRewriteGenerator via SessionStateWarnings (the
-    // <sessionState> identity posture) and DependencyVersionWarnings (the resolved dependency graph).
+    // Codegen advisories: facts the generator's own producers state, folded in at report assembly,
+    // not derived from the AST and not from a per-field classifier verdict, so neither an engine
+    // visitor nor a classifier-tagged advisory. Emitted from GraphQLRewriteGenerator via
+    // SessionStateWarnings (the <sessionState> identity posture), DependencyVersionWarnings (the
+    // resolved dependency graph) and the emitted registry's federation-directive fold (a generated
+    // type whose carriers disagree on their tags).
     NO_SESSION_STATE("no-session-state", Source.CODEGEN),
     GRAPHQL_JAVA_VERSION_LAG("graphql-java-version-lag", Source.CODEGEN),
     JOOQ_VERSION_LAG("jooq-version-lag", Source.CODEGEN),
+    SHARED_TYPE_TAGS_NARROWED("shared-type-tags-narrowed", Source.CODEGEN),
 
     // Derived-relation producers: a set reduction over one derived view, folded in at report
     // assembly beside the codegen advisories. Not an engine visitor, because the view is a
@@ -64,7 +67,7 @@ public enum LintRule {
         ENGINE,
         /** A classifier verdict tagged at its existing emit site; never registered to a visitor. */
         CLASSIFIER,
-        /** A whole-build fact with no SDL coordinate, folded in at report assembly; no visitor, no classifier site. */
+        /** A fact one of the generator's own producers states, folded in at report assembly; no visitor, no classifier site. */
         CODEGEN,
         /**
          * A set reduction over the store's derived relations, minted by a producer in

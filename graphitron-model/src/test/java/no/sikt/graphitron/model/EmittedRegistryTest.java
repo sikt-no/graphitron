@@ -132,6 +132,27 @@ class EmittedRegistryTest {
         }
         """;
 
+    /**
+     * Two carriers that agree on one tag and disagree on another, and one of them
+     * {@code @shareable}. The connection and edge each carrier mints are its own; the one
+     * {@code PageInfo} is shared, so it carries only the tag both carry and is shareable because
+     * one of them is.
+     */
+    private static final String DISAGREEING_CARRIERS_SCHEMA = """
+        directive @tag(name: String!) repeatable on FIELD_DEFINITION | OBJECT | INTERFACE | UNION \
+        | ARGUMENT_DEFINITION | SCALAR | ENUM | ENUM_VALUE | INPUT_OBJECT | INPUT_FIELD_DEFINITION
+        directive @shareable repeatable on OBJECT | FIELD_DEFINITION
+
+        type Query {
+          films: [Film!] @asConnection @tag(name: "public") @tag(name: "stable") @shareable
+          shorts: [Film!] @asConnection @tag(name: "public") @tag(name: "experimental")
+        }
+
+        type Film {
+          title: String!
+        }
+        """;
+
     /** {@link #NODE_SCHEMA} as it stands after key synthesis, which is not what emission starts from. */
     private static final String SYNTHESISED_KEY_SCHEMA = """
         interface Node { id: ID! }
@@ -316,6 +337,60 @@ class EmittedRegistryTest {
                 assertThat(typeDirectives(emitted, "QueryFilmsConnectionEdge"))
                     .containsExactly("@tag(name: \"experimental\")");
             });
+    }
+
+    /**
+     * A type several carriers mint carries the tags they all carry and not the ones only some do,
+     * so a contract excluding one carrier's tag keeps it for the other. {@code @shareable} is the
+     * other way round: one shareable carrier makes the shared type shareable. Each carrier's own
+     * connection is the control, keeping exactly its carrier's directives.
+     */
+    @Test
+    @DisplayName("a shared minted type carries the tags every carrier carries, and @shareable if any carrier is")
+    void aSharedMintedTypeCarriesTheIntersection() {
+        CapturedStore.withCapturedStore(tmp.resolve("disagreeing-carriers"),
+            DISAGREEING_CARRIERS_SCHEMA, dsl -> {
+                var emitted = EmittedRegistry.derive(attributed(parse(DISAGREEING_CARRIERS_SCHEMA)),
+                    new StoreHandle(dsl, CapturedStore.GRAPH));
+                var registry = emitted.registry();
+
+                assertThat(typeDirectives(registry, "PageInfo"))
+                    .containsExactly("@shareable", "@tag(name: \"public\")");
+                assertThat(typeDirectives(registry, "QueryFilmsConnection"))
+                    .containsExactly("@shareable", "@tag(name: \"public\")", "@tag(name: \"stable\")");
+                assertThat(typeDirectives(registry, "QueryFilmsConnectionEdge"))
+                    .containsExactly("@shareable", "@tag(name: \"public\")", "@tag(name: \"stable\")");
+                assertThat(typeDirectives(registry, "QueryShortsConnection"))
+                    .containsExactly("@tag(name: \"public\")", "@tag(name: \"experimental\")");
+
+                assertThat(emitted.narrowings())
+                    .as("only the shared type was narrowed")
+                    .singleElement()
+                    .satisfies(n -> {
+                        assertThat(n.typeName()).isEqualTo("PageInfo");
+                        assertThat(n.kept()).containsExactly("public");
+                        assertThat(n.dropped()).containsExactly("stable", "experimental");
+                        assertThat(n.carriers()).extracting(EmittedRegistry.Carrier::coordinate)
+                            .containsExactly("Query.films", "Query.shorts");
+                    });
+            });
+    }
+
+    /**
+     * Under the intersection a carrier read as untagged strips every tag from the type it coined,
+     * so a coordinate the registry does not declare is a defect to end the run on rather than a
+     * carrier with no tags. Provoked here by deriving against a registry that disagrees with the
+     * store about what {@code Query} is, which no real run does.
+     */
+    @Test
+    @DisplayName("a coining coordinate the registry does not declare ends the run")
+    void aCarrierTheRegistryLacksIsADefect() {
+        CapturedStore.withCapturedStore(tmp.resolve("missing-carrier"), CONNECTION_SCHEMA, dsl ->
+            assertThatThrownBy(() -> EmittedRegistry.of(
+                    attributed(parse("scalar Query\n\ntype Film { title: String! }")),
+                    new StoreHandle(dsl, CapturedStore.GRAPH)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Query.films"));
     }
 
     // ===== The keys the rule derives =====

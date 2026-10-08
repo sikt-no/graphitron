@@ -44,9 +44,10 @@ class LintRuleCatalogueTest {
 
     @Test
     void everyCodegenAdvisoryRuleExists() {
-        // The codegen advisories are emitted at report assembly from whole-build facts: the
-        // <sessionState> config (SessionStateWarnings) and the resolved dependency versions
-        // (DependencyVersionWarnings). Neither a visitor nor a classifier site; this pins the CODEGEN
+        // The codegen advisories are emitted at report assembly from the generator's own producers:
+        // the <sessionState> config (SessionStateWarnings), the resolved dependency versions
+        // (DependencyVersionWarnings) and the emitted registry's federation-directive fold (a
+        // generated type whose carriers disagree on their tags). Neither a visitor nor a classifier site; this pins the CODEGEN
         // set so a new one is a deliberate registry edit, mirroring the classifier assertion above.
         var codegen = Arrays.stream(LintRule.values())
             .filter(r -> r.source() == LintRule.Source.CODEGEN)
@@ -55,7 +56,8 @@ class LintRuleCatalogueTest {
         assertThat(codegen).containsExactlyInAnyOrder(
             "no-session-state",
             "graphql-java-version-lag",
-            "jooq-version-lag");
+            "jooq-version-lag",
+            "shared-type-tags-narrowed");
     }
 
     @Test

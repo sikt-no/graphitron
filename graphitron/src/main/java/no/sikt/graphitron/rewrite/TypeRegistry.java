@@ -6,6 +6,8 @@ import graphql.schema.GraphQLObjectType;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.FacetValueType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.FacetsType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
 import no.sikt.graphitron.model.diagnostics.Rejection;
@@ -97,15 +99,19 @@ public final class TypeRegistry {
     }
 
     /**
-     * Reconciles two same-kind registrations of a tag-bearing synthesised arm by unioning their
-     * federation {@code @tag} applications (and OR-ing {@code shareable}); every other same-kind
-     * repeat keeps the incoming value (plain enrich). This is the single home of the connection
-     * tag-union: carriers sharing a connection name, and every carrier feeding the one shared
-     * {@code PageInfo}, contribute the union of their tags regardless of visit order, so the
-     * merge is commutative. Structural /
-     * SDL-declared entries reference the same assembled-schema form on every registration, so they
-     * compare equal and never reach here; only the directive-driven synthesised forms (whose only
-     * applied directives are {@code @tag} and {@code @shareable}) are merged.
+     * Reconciles two same-kind registrations of a synthesised arm that inherits federation
+     * directives from its carriers: the {@code @tag}s both carry, and {@code @shareable} when
+     * either is (the {@code shareable} flag OR-ed alongside). Every other same-kind repeat keeps
+     * the incoming value (plain enrich). This is the walk's home of the rule
+     * {@code EmittedRegistry} applies on the store side: a type several carriers mint (a Connection
+     * and Edge shared through {@code connectionName:}, the one {@code PageInfo}, a facet value type)
+     * carries the tags every carrier carries, since a contract excluding one carrier's tag must
+     * keep the type for the others, and is shareable when any carrier is, which is a composition
+     * requirement rather than a filter. Both are commutative and associative, so the merge is
+     * independent of visit order. Structural / SDL-declared entries reference the same
+     * assembled-schema form on every registration, so they compare equal and never reach here;
+     * only the directive-driven synthesised forms (whose only applied directives are {@code @tag}
+     * and {@code @shareable}) are merged. The first registration's location is kept.
      */
     private static GraphitronType mergeSynthesisedTags(GraphitronType existing, GraphitronType incoming) {
         return switch (existing) {
@@ -113,41 +119,70 @@ public final class TypeRegistry {
                 var i = (ConnectionType) incoming;
                 yield new ConnectionType(e.name(), e.location(), e.elementTypeName(), e.edgeTypeName(),
                     e.itemNullable(), e.shareable() || i.shareable(), e.facets(),
-                    unionDirectives(e.schemaType(), i.schemaType()));
+                    mergeDirectives(e.schemaType(), i.schemaType()));
             }
             case EdgeType e -> {
                 var i = (EdgeType) incoming;
                 yield new EdgeType(e.name(), e.location(), e.elementTypeName(),
                     e.itemNullable(), e.shareable() || i.shareable(),
-                    unionDirectives(e.schemaType(), i.schemaType()));
+                    mergeDirectives(e.schemaType(), i.schemaType()));
             }
             case PageInfoType e -> {
                 var i = (PageInfoType) incoming;
                 yield new PageInfoType(e.name(), e.location(), e.shareable() || i.shareable(),
-                    unionDirectives(e.schemaType(), i.schemaType()));
+                    mergeDirectives(e.schemaType(), i.schemaType()));
+            }
+            case FacetsType e -> {
+                var i = (FacetsType) incoming;
+                yield new FacetsType(e.name(), e.location(), e.connectionName(),
+                    mergeDirectives(e.schemaType(), i.schemaType()));
+            }
+            case FacetValueType e -> {
+                var i = (FacetValueType) incoming;
+                yield new FacetValueType(e.name(), e.location(), e.valueTypeName(), e.valueNullable(),
+                    mergeDirectives(e.schemaType(), i.schemaType()));
             }
             default -> incoming;
         };
     }
 
     /**
-     * Returns {@code existing} with every applied directive from {@code incoming} it does not already
-     * carry appended. Identity is the directive name plus its {@code name} argument (so repeatable
-     * {@code @tag(name:)} dedups per value while non-repeatable markers like {@code @shareable} dedup
-     * by name). Returns {@code existing} unchanged when there is nothing to add.
+     * Returns {@code existing} carrying the {@code @tag} applications both forms carry and every
+     * other applied directive either carries: the other directives first, in the order
+     * {@code existing} then {@code incoming} carries them, then the kept tags in {@code existing}'s
+     * order, which is the order the synthesised builders apply them in. Identity is the directive
+     * name plus its {@code name} argument (so repeatable {@code @tag(name:)} matches per value while
+     * non-repeatable markers like {@code @shareable} match by name). Returns {@code existing}
+     * unchanged when the merge changes nothing.
      */
-    private static GraphQLObjectType unionDirectives(GraphQLObjectType existing, GraphQLObjectType incoming) {
+    private static GraphQLObjectType mergeDirectives(GraphQLObjectType existing, GraphQLObjectType incoming) {
         if (existing == null) return incoming;
         if (incoming == null) return existing;
-        var present = new HashSet<Object>();
-        for (var d : existing.getAppliedDirectives()) present.add(directiveKey(d));
-        var toAdd = new ArrayList<GraphQLAppliedDirective>();
+        var incomingTags = new HashSet<Object>();
         for (var d : incoming.getAppliedDirectives()) {
-            if (present.add(directiveKey(d))) toAdd.add(d);
+            if (TAG_DIRECTIVE.equals(d.getName())) incomingTags.add(directiveKey(d));
         }
-        if (toAdd.isEmpty()) return existing;
-        return existing.transform(b -> toAdd.forEach(b::withAppliedDirective));
+        var others = new ArrayList<GraphQLAppliedDirective>();
+        var tags = new ArrayList<GraphQLAppliedDirective>();
+        var present = new HashSet<Object>();
+        for (var d : existing.getAppliedDirectives()) {
+            if (!TAG_DIRECTIVE.equals(d.getName())) {
+                if (present.add(directiveKey(d))) others.add(d);
+            } else if (incomingTags.contains(directiveKey(d)) && present.add(directiveKey(d))) {
+                tags.add(d);
+            }
+        }
+        for (var d : incoming.getAppliedDirectives()) {
+            if (!TAG_DIRECTIVE.equals(d.getName()) && present.add(directiveKey(d))) others.add(d);
+        }
+        var merged = new ArrayList<>(others);
+        merged.addAll(tags);
+        if (merged.equals(existing.getAppliedDirectives())) return existing;
+        return existing.transform(b -> b.replaceAppliedDirectives(merged));
     }
+
+    /** The federation {@code @tag} directive name; matches {@code TagApplier.TAG_DIRECTIVE_NAME}. */
+    private static final String TAG_DIRECTIVE = "tag";
 
     private static Object directiveKey(GraphQLAppliedDirective directive) {
         var nameArg = directive.getArgument("name");

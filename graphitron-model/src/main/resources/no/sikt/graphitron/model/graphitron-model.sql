@@ -13907,7 +13907,7 @@ CREATE TABLE lint_rule (
 );
 COMMENT ON TABLE lint_rule IS 'One lint rule the generator declares: its identity, which producer mints its findings, and how severe a finding of it is. For example field-names-camel-case is an engine rule and a warning.';
 COMMENT ON COLUMN lint_rule.rule_id IS 'the rule''s stable kebab-case identity, which is LintRule.id() and the only string form of a rule that crosses a wire. Not partitioned by graph: a rule exists because the generator declares it, not because a consumer''s schema does, so the same row serves every graph in the store';
-COMMENT ON COLUMN lint_rule.source IS 'which producer mints this rule''s findings: an engine statement, a classifier verdict tagged at its emit site, a whole-build codegen advisory, or a reduction over a derived relation. The axis the engine''s completeness gate turns on, and about the producer rather than about what the finding is derived from, so a rule reading store rows is an engine rule like any other';
+COMMENT ON COLUMN lint_rule.source IS 'which producer mints this rule''s findings: an engine statement, a classifier verdict tagged at its emit site, an advisory one of the generator''s own producers states, or a reduction over a derived relation. The axis the engine''s completeness gate turns on, and about the producer rather than about what the finding is derived from, so a rule reading store rows is an engine rule like any other';
 COMMENT ON COLUMN lint_rule.severity IS 'how severe a finding of this rule is. A column of the rule and not of the finding, per this family''s charter: severity follows from the rule, so two findings of one rule cannot disagree and nothing has to decide which of them is right. Every rule is a warning today, which is a fact about the rules rather than a limit of the column';
 
 INSERT INTO lint_rule VALUES
@@ -13927,6 +13927,7 @@ INSERT INTO lint_rule VALUES
   ('no-session-state', 'CODEGEN', 'WARNING'),
   ('graphql-java-version-lag', 'CODEGEN', 'WARNING'),
   ('jooq-version-lag', 'CODEGEN', 'WARNING'),
+  ('shared-type-tags-narrowed', 'CODEGEN', 'WARNING'),
   ('reference-path-fans-out', 'DERIVED', 'WARNING');
 
 CREATE VIEW lint_violation

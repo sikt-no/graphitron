@@ -64,7 +64,7 @@ class TypeRegistryTest {
     @Test
     void register_mergesSameKindSynthArm_oringShareable() {
         // A tag-bearing synth arm (Connection / Edge / PageInfo) is merged, not replaced: shareable
-        // ORs across registrations (the @tag union is covered end-to-end by ConnectionPromoterTest).
+        // ORs across registrations (the @tag intersection is covered end-to-end by ConnectionPromoterTest).
         var registry = new TypeRegistry();
         registry.register("PageInfo", new GraphitronType.PageInfoType("PageInfo", null, false, null));
         registry.register("PageInfo", new GraphitronType.PageInfoType("PageInfo", null, true, null));

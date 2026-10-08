@@ -1,0 +1,50 @@
+directive @tag(name: String!) repeatable on FIELD_DEFINITION | OBJECT | INTERFACE | UNION | ARGUMENT_DEFINITION | SCALAR | ENUM | ENUM_VALUE | INPUT_OBJECT | INPUT_FIELD_DEFINITION
+directive @shareable repeatable on OBJECT | FIELD_DEFINITION
+
+type Film @table(name: "film") { title: String }
+input FilmFilter {
+    title: [String!] @field(name: "title") @asFacet
+}
+extend type Query {
+    "One of two carriers sharing a connection name, tagged for a stable contract and shareable. The shared types carry only the tag both carriers carry, and are shareable because this one is."
+    stableFilms(filter: FilmFilter): [Film!]! @asConnection(connectionName: "FilmConnection") @defaultOrder(primaryKey: true)
+        @tag(name: "public") @tag(name: "stable") @shareable
+        @classified(source: Query, operations: [OnReturnTable, OrderBy, Paginate, Select], target: Single, targetShape: Connection)
+
+        @synthesises(mints: [
+            {name: "FilmConnection", as: ConnectionType},
+            {name: "FilmConnectionEdge", as: EdgeType},
+            {name: "FilmConnectionFacets", as: FacetsType},
+            {name: "StringFacetValue", as: FacetValueType},
+            {name: "PageInfo", as: PageInfoType}])
+    "The other carrier, tagged for an experimental contract and not shareable."
+    experimentalFilms(filter: FilmFilter): [Film!]! @asConnection(connectionName: "FilmConnection") @defaultOrder(primaryKey: true)
+        @tag(name: "public") @tag(name: "experimental")
+        @classified(source: Query, operations: [OnReturnTable, OrderBy, Paginate, Select], target: Single, targetShape: Connection)
+
+        @synthesises(mints: [
+            {name: "FilmConnection", as: ConnectionType},
+            {name: "FilmConnectionEdge", as: EdgeType},
+            {name: "FilmConnectionFacets", as: FacetsType},
+            {name: "StringFacetValue", as: FacetValueType},
+            {name: "PageInfo", as: PageInfoType}])
+}
+
+extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
+  type_name,    field_name, classifier,   tier
+  CorpusAnchor, name,       TABLE_COLUMN, INFERRED
+  Film,         title,      TABLE_COLUMN, INFERRED
+  """)
+
+extend schema @expectEquals(relation: "intent_bound_table", rows: """
+  type_name,    table_name
+  CorpusAnchor, category
+  Film,         film
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name, field_name,        source,      result
+  Query,     corpusAnchor,      AnchorTable, SingleRecord
+  Query,     experimentalFilms, AnchorTable, Connection
+  Query,     stableFilms,       AnchorTable, Connection
+  """)

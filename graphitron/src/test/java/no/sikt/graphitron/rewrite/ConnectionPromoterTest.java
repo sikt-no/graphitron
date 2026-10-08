@@ -388,6 +388,9 @@ class ConnectionPromoterTest {
     private static final String TAG_DIRECTIVE_DECL =
         "directive @tag(name: String!) repeatable on FIELD_DEFINITION | OBJECT\n";
 
+    private static final String SHAREABLE_DIRECTIVE_DECL =
+        "directive @shareable repeatable on FIELD_DEFINITION | OBJECT\n";
+
     @Test
     void directiveDrivenWithTag_synthesisedConnectionEdgePageInfoInheritTag() {
         String sdl = TAG_DIRECTIVE_DECL + """
@@ -426,29 +429,86 @@ class ConnectionPromoterTest {
     }
 
     @Test
-    void sharedConnectionName_synthesisedTypesCarryTagUnion() {
+    void sharedConnectionName_synthesisedTypesCarryTagIntersection() {
+        // A type several carriers mint carries only the tags every one of them carries, so a
+        // contract excluding one carrier's tag keeps the shared type for the other.
         String sdl = TAG_DIRECTIVE_DECL + """
             type Customer { id: ID! }
             type Query {
-                first: [Customer!]! @asConnection(connectionName: "CustomerConnection") @tag(name: "a")
-                second: [Customer!]! @asConnection(connectionName: "CustomerConnection") @tag(name: "b")
+                first: [Customer!]! @asConnection(connectionName: "CustomerConnection") @tag(name: "public") @tag(name: "a")
+                second: [Customer!]! @asConnection(connectionName: "CustomerConnection") @tag(name: "public") @tag(name: "b")
             }
             """;
         var bctx = buildBuildContext(sdl);
 
         promoteAll(bctx);
 
-        assertThat(tagNames(connSchema(bctx, "CustomerConnection"))).containsExactlyInAnyOrder("a", "b");
-        assertThat(tagNames(edgeSchema(bctx, "CustomerConnectionEdge"))).containsExactlyInAnyOrder("a", "b");
-        assertThat(tagNames(pageInfoSchema(bctx))).containsExactlyInAnyOrder("a", "b");
+        assertThat(tagNames(connSchema(bctx, "CustomerConnection"))).containsExactly("public");
+        assertThat(tagNames(edgeSchema(bctx, "CustomerConnectionEdge"))).containsExactly("public");
+        assertThat(tagNames(pageInfoSchema(bctx))).containsExactly("public");
     }
 
     @Test
-    void structuralTaggedConnectionWithNoSdlPageInfo_synthesisedPageInfoCarriesTag() {
+    void sharedConnectionName_oneShareableCarrierMakesTheSharedTypesShareable() {
+        // @shareable is a composition requirement, not a contract filter, so it is the union over
+        // the carriers even though the tags beside it are intersected; neither carrier's order of
+        // visit decides it.
+        String sdl = TAG_DIRECTIVE_DECL + SHAREABLE_DIRECTIVE_DECL + """
+            type Customer { id: ID! }
+            type Query {
+                first: [Customer!]! @asConnection(connectionName: "CustomerConnection") @tag(name: "a")
+                second: [Customer!]! @asConnection(connectionName: "CustomerConnection") @tag(name: "b") @shareable
+            }
+            """;
+        var bctx = buildBuildContext(sdl);
+
+        promoteAll(bctx);
+
+        assertThat(connSchema(bctx, "CustomerConnection").hasAppliedDirective("shareable")).isTrue();
+        assertThat(((ConnectionType) bctx.types.get("CustomerConnection")).shareable()).isTrue();
+        assertThat(edgeSchema(bctx, "CustomerConnectionEdge").hasAppliedDirective("shareable")).isTrue();
+        assertThat(pageInfoSchema(bctx).hasAppliedDirective("shareable")).isTrue();
+        assertThat(tagNames(connSchema(bctx, "CustomerConnection"))).isEmpty();
+        assertThat(connSchema(bctx, "CustomerConnection").getAppliedDirectives())
+            .as("@shareable once, not once per carrier")
+            .hasSize(1);
+    }
+
+    @Test
+    void sharedFacetValueType_carriesTagIntersectionAndShareableUnion() {
+        // <Scalar>FacetValue is schema-wide, shared across carriers exactly as PageInfo is, so it
+        // follows the same two rules; each carrier's own Facets container keeps its carrier's.
+        String sdl = TAG_DIRECTIVE_DECL + SHAREABLE_DIRECTIVE_DECL + """
+            type Film { id: ID! }
+            input FilmFilter {
+                title: [String!] @field(name: "title") @asFacet
+            }
+            type Query {
+                films(filter: FilmFilter): [Film!]! @asConnection @tag(name: "public") @tag(name: "stable") @shareable
+                shorts(filter: FilmFilter): [Film!]! @asConnection @tag(name: "public") @tag(name: "experimental")
+            }
+            """;
+        var bctx = buildBuildContext(sdl);
+
+        promoteAll(bctx);
+
+        var facetValue = ((FacetValueType) bctx.types.get("StringFacetValue")).schemaType();
+        assertThat(tagNames(facetValue)).containsExactly("public");
+        assertThat(facetValue.hasAppliedDirective("shareable")).isTrue();
+        var filmsFacets = ((FacetsType) bctx.types.get("QueryFilmsConnectionFacets")).schemaType();
+        assertThat(tagNames(filmsFacets)).containsExactly("public", "stable");
+        assertThat(filmsFacets.hasAppliedDirective("shareable")).isTrue();
+        var shortsFacets = ((FacetsType) bctx.types.get("QueryShortsConnectionFacets")).schemaType();
+        assertThat(tagNames(shortsFacets)).containsExactly("public", "experimental");
+        assertThat(shortsFacets.hasAppliedDirective("shareable")).isFalse();
+    }
+
+    @Test
+    void structuralConnectionWithNoPageInfoField_registersNoPageInfo() {
         // isConnectionType only requires edges -> node; a structural Connection without a
-        // pageInfo field builds (no unresolved PageInfo reference) and still triggers PageInfo
-        // synthesis. The structural arm reads the Connection type's own @tag and feeds it into
-        // the synthesised PageInfo union.
+        // pageInfo field builds and returns no PageInfo, so it mints none: a type that returns no
+        // PageInfo has no say in its tags. One with a pageInfo field forces PageInfo to be
+        // declared, so a structural carrier never reaches the synthesised arm.
         String sdl = TAG_DIRECTIVE_DECL + """
             type Customer { id: ID! }
             type CustomerEdge {
@@ -466,11 +526,14 @@ class ConnectionPromoterTest {
             """;
         var bctx = buildBuildContext(sdl);
 
-        promoteAll(bctx);
+        var relation = promoteAll(bctx);
 
-        // The author-declared Connection keeps its own tag; the synthesised PageInfo inherits it.
+        // The author-declared Connection keeps its own tag; nothing mints a PageInfo for it.
         assertThat(tagNames(connSchema(bctx, "CustomerConnection"))).containsExactly("x");
-        assertThat(tagNames(pageInfoSchema(bctx))).containsExactly("x");
+        assertThat(bctx.types.get("PageInfo")).isNull();
+        assertThat(relation.sharedMinted())
+            .extracting(ConnectionSynthesis.MintedName::name)
+            .doesNotContain("PageInfo");
     }
 
     @Test

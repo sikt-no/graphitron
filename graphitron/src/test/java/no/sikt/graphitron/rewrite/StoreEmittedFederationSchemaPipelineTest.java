@@ -5,6 +5,9 @@ import graphql.language.ObjectTypeDefinition;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.lint.LintConfig;
+import no.sikt.graphitron.model.lint.LintRule;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.run.GraphitronStore;
 import no.sikt.graphitron.model.schema.SchemaLoader;
@@ -23,6 +26,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
@@ -41,6 +45,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * declaration untagged, and the connection types nobody declared take the carrier's tag. And a graph
  * federated only through a configured tag, with no {@code @link} in any document, still gets its
  * synthesised key, which is the opt-in arm no document states.
+ *
+ * <p>The types several carriers share carry the tags every carrier carries, which is Apollo's
+ * contract rule that a type's tags appear on every field returning it: a contract excluding one
+ * carrier's tag keeps the shared type for the others. {@code @shareable} is the other way round,
+ * a shared type being shareable when any carrier is. Where carriers disagree on a tag the build
+ * says so, under a rule an exclude-based subgraph disables.
  */
 @PipelineTier
 class StoreEmittedFederationSchemaPipelineTest {
@@ -80,6 +90,19 @@ class StoreEmittedFederationSchemaPipelineTest {
         }
         """;
 
+    /** The reporter's shape: one carrier per feature file, each tagged by its input, and no declared PageInfo. */
+    private static final String STABLE_CARRIER = """
+        extend type Query {
+          stableFilms: [Film!]! @asConnection @defaultOrder(primaryKey: true)
+        }
+        """;
+
+    private static final String EXPERIMENTAL_CARRIER = """
+        extend type Query {
+          experimentalFilms: [Film!]! @asConnection @defaultOrder(primaryKey: true)
+        }
+        """;
+
     @Test
     @DisplayName("a stable node, a declared PageInfo and an experimental connection emit as written")
     void theStableFileEmitsAsWritten(@TempDir Path tmp) throws IOException {
@@ -109,6 +132,141 @@ class StoreEmittedFederationSchemaPipelineTest {
         var emitted = generate(ctx);
 
         assertThat(tags(emitted, "PageInfo")).containsExactly("experimental");
+    }
+
+    @Test
+    @DisplayName("a PageInfo two differently tagged carriers share is untagged, and each connection keeps its own tag")
+    void aSharedPageInfoCarriesNoDisagreeingTag(@TempDir Path tmp) throws IOException {
+        var ctx = context(tmp,
+            input(tmp, "stable.graphqls", LINK + NODE + STABLE_CARRIER, "stable"),
+            input(tmp, "experimental.graphqls", EXPERIMENTAL_CARRIER, "experimental"));
+
+        var emitted = generate(ctx);
+
+        assertThat(tags(emitted, "PageInfo"))
+            .as("a contract excluding either tag keeps PageInfo for the other carrier")
+            .isEmpty();
+        assertThat(tags(emitted, "QueryStableFilmsConnection")).containsExactly("stable");
+        assertThat(tags(emitted, "QueryStableFilmsConnectionEdge")).containsExactly("stable");
+        assertThat(tags(emitted, "QueryExperimentalFilmsConnection")).containsExactly("experimental");
+        assertThat(tags(emitted, "QueryExperimentalFilmsConnectionEdge")).containsExactly("experimental");
+    }
+
+    @Test
+    @DisplayName("a connection shared through connectionName carries the tag its carriers agree on, and only that")
+    void aSharedConnectionCarriesTheTagsItsCarriersAgreeOn(@TempDir Path tmp) throws IOException {
+        var ctx = context(tmp,
+            input(tmp, "stable.graphqls", LINK + NODE + """
+                extend type Query {
+                  stableFilms: [Film!]! @asConnection(connectionName: "FilmConnection")
+                    @defaultOrder(primaryKey: true) @tag(name: "public")
+                }
+                """, "stable"),
+            input(tmp, "experimental.graphqls", """
+                extend type Query {
+                  experimentalFilms: [Film!]! @asConnection(connectionName: "FilmConnection")
+                    @defaultOrder(primaryKey: true) @tag(name: "public")
+                }
+                """, "experimental"));
+
+        var emitted = generate(ctx);
+
+        assertThat(tags(emitted, "FilmConnection")).containsExactly("public");
+        assertThat(tags(emitted, "FilmConnectionEdge")).containsExactly("public");
+        assertThat(tags(emitted, "PageInfo")).containsExactly("public");
+    }
+
+    /**
+     * A declared Connection with no {@code pageInfo} field returns no {@code PageInfo}, so its tag
+     * has no say in the minted one's: {@code PageInfo} takes the {@code @asConnection} carrier's
+     * tag alone.
+     */
+    @Test
+    @DisplayName("a declared connection with no pageInfo field leaves PageInfo to the generated connection's carrier")
+    void aDeclaredConnectionWithoutPageInfoDoesNotNarrowIt(@TempDir Path tmp) throws IOException {
+        var ctx = context(tmp,
+            input(tmp, "stable.graphqls", LINK + NODE + STABLE_CARRIER, "stable"),
+            input(tmp, "experimental.graphqls", """
+                type FilmLinkConnection @tag(name: "experimental") {
+                  edges: [FilmLinkEdge!]!
+                  nodes: [Film]!
+                  totalCount: Int
+                }
+                type FilmLinkEdge {
+                  cursor: String!
+                  node: Film
+                }
+                extend type Query {
+                  linkedFilms: FilmLinkConnection! @defaultOrder(primaryKey: true)
+                }
+                """, "experimental"));
+
+        var emitted = generate(ctx);
+
+        assertThat(tags(emitted, "PageInfo")).containsExactly("stable");
+        assertThat(tags(emitted, "FilmLinkConnection"))
+            .as("the declared connection, as written")
+            .containsExactly("experimental");
+    }
+
+    @Test
+    @DisplayName("@shareable on a carrier reaches its connection, its edge and the shared PageInfo")
+    void aShareableCarrierMakesItsGeneratedTypesShareable(@TempDir Path tmp) throws IOException {
+        var ctx = context(tmp,
+            input(tmp, "stable.graphqls", LINK + NODE + """
+                extend type Query {
+                  stableFilms: [Film!]! @asConnection @defaultOrder(primaryKey: true) @shareable
+                }
+                """, "stable"),
+            input(tmp, "experimental.graphqls", EXPERIMENTAL_CARRIER, "experimental"));
+
+        var emitted = generate(ctx);
+
+        assertThat(shareable(emitted, "QueryStableFilmsConnection")).isTrue();
+        assertThat(shareable(emitted, "QueryStableFilmsConnectionEdge")).isTrue();
+        assertThat(shareable(emitted, "PageInfo"))
+            .as("shareable when any carrier is")
+            .isTrue();
+        assertThat(shareable(emitted, "QueryExperimentalFilmsConnection")).isFalse();
+        assertThat(shareable(emitted, "QueryExperimentalFilmsConnectionEdge")).isFalse();
+    }
+
+    // ===== The narrowing warning =====
+
+    @Test
+    @DisplayName("carriers disagreeing on a tag raise one shared-type-tags-narrowed finding, at a carrier")
+    void disagreeingCarriersAreReported(@TempDir Path tmp) throws IOException {
+        var ctx = context(tmp,
+            input(tmp, "stable.graphqls", LINK + NODE + STABLE_CARRIER, "stable"),
+            input(tmp, "experimental.graphqls", EXPERIMENTAL_CARRIER, "experimental"));
+
+        assertThat(narrowedFindings(ctx)).singleElement().satisfies(finding -> {
+            assertThat(finding.message()).contains("'PageInfo'");
+            assertThat(finding.location()).as("located at a carrier").isNotNull();
+            assertThat(finding.location().getSourceName()).endsWith(".graphqls");
+        });
+    }
+
+    @Test
+    @DisplayName("the narrowing finding is suppressed by disabling its rule")
+    void theNarrowingFindingIsSuppressible(@TempDir Path tmp) throws IOException {
+        var ctx = context(tmp,
+            input(tmp, "stable.graphqls", LINK + NODE + STABLE_CARRIER, "stable"),
+            input(tmp, "experimental.graphqls", EXPERIMENTAL_CARRIER, "experimental"))
+            .withLintConfig(LintConfig.validated(
+                Set.of(LintRule.SHARED_TYPE_TAGS_NARROWED.id()), List.of()));
+
+        assertThat(narrowedFindings(ctx)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a single carrier narrows nothing and raises no finding")
+    void aSingleCarrierIsNotReported(@TempDir Path tmp) throws IOException {
+        var ctx = context(tmp,
+            input(tmp, "stable.graphqls", LINK + NODE, "stable"),
+            input(tmp, "experimental.graphqls", CONNECTION, "experimental"));
+
+        assertThat(narrowedFindings(ctx)).isEmpty();
     }
 
     /**
@@ -197,6 +355,24 @@ class StoreEmittedFederationSchemaPipelineTest {
             .filter(path -> path.getFileName().toString().equals("schema.graphqls"))
             .findFirst().orElseThrow();
         return new SchemaParser().parse(Files.readString(schema, StandardCharsets.UTF_8));
+    }
+
+    /** The {@code shared-type-tags-narrowed} findings in the report the build assembles. */
+    private static List<BuildWarning.LintFinding> narrowedFindings(RunContext ctx) {
+        ValidationReport report;
+        try (var store = GraphitronStore.captured(ctx)) {
+            report = new GraphQLRewriteGenerator(ctx, new StoreHandle(store.dsl(), ctx.graphName()))
+                .buildOutput().report();
+        }
+        return report.warnings().stream()
+            .filter(BuildWarning.LintFinding.class::isInstance)
+            .map(BuildWarning.LintFinding.class::cast)
+            .filter(f -> f.rule() == LintRule.SHARED_TYPE_TAGS_NARROWED)
+            .toList();
+    }
+
+    private static boolean shareable(TypeDefinitionRegistry registry, String type) {
+        return typeDirectives(registry, type).contains("@shareable");
     }
 
     private static List<String> typeDirectives(TypeDefinitionRegistry registry, String type) {

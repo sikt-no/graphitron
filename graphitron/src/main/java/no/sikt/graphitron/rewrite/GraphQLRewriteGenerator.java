@@ -408,8 +408,9 @@ public class GraphQLRewriteGenerator {
     private Captured capturedFrom(Projection projection, GraphitronSchema schema,
                                   AttributedRegistry attributed, GraphitronSchemaBuilder.Bundle bundle,
                                   boolean federationLink, String outputPackage,
-                                  StoreDetections storeFacts) {
-        var warnings = withLintFindings(schema, attributed, store);
+                                  StoreDetections storeFacts,
+                                  List<EmittedRegistry.TagNarrowing> narrowings) {
+        var warnings = withLintFindings(schema, attributed, store, narrowings);
         var walkErrors = List.copyOf(new GraphitronSchemaValidator().validate(schema));
         var fused = new ArrayList<>(walkErrors);
         fused.addAll(storeFacts.violations());
@@ -489,6 +490,10 @@ public class GraphQLRewriteGenerator {
     private record Captured(List<ValidationError> walkErrors, List<ValidationError> errors,
                             EmitPlan plan, List<BuildWarning> warnings) {}
 
+    /** The emitted schema, and the generated types whose inherited tags deriving it narrowed. */
+    private record EmittedSchema(graphql.schema.GraphQLSchema schema,
+                                 List<EmittedRegistry.TagNarrowing> narrowings) {}
+
     /**
      * The schema this run emits, derived from the facts rather than synthesised beside the model.
      *
@@ -499,11 +504,16 @@ public class GraphQLRewriteGenerator {
      * <p>A rejection here is not an author error. The authored corpus already assembled upstream,
      * so a registry that will not assemble after patching is this derivation disagreeing with
      * itself, which is a defect in the generator and is raised as one.
+     *
+     * <p>The narrowings ride out beside the schema because deriving it is what found them: a
+     * generated type whose carriers disagree on their {@code @tag}s, which report assembly turns
+     * into a warning.
      */
-    private graphql.schema.GraphQLSchema emittedSchema(AttributedRegistry attributed) {
-        var assembly = SchemaAssembly.of(EmittedRegistry.of(attributed, store));
+    private EmittedSchema emittedSchema(AttributedRegistry attributed) {
+        var emitted = EmittedRegistry.derive(attributed, store);
+        var assembly = SchemaAssembly.of(emitted.registry());
         if (assembly instanceof SchemaAssembly.Assembled assembled) {
-            return assembled.schema();
+            return new EmittedSchema(assembled.schema(), emitted.narrowings());
         }
         var rejected = (SchemaAssembly.Rejected) assembly;
         throw new IllegalStateException("the emitted registry derived from the store did not "
@@ -537,7 +547,8 @@ public class GraphQLRewriteGenerator {
         // printed schemas over every corpus document, and the two defects that comparison found
         // were capture's rather than this one's. What the walk still owns is the classified model
         // above, which nothing compares yet, so it stays where it is.
-        var assembled = emittedSchema(attributed);
+        var emitted = emittedSchema(attributed);
+        var assembled = emitted.schema();
 
         var catalog = projection.catalog()
             ? CatalogBuilder.build(jooq, assembled, ctx, census)
@@ -557,7 +568,7 @@ public class GraphQLRewriteGenerator {
         // and nothing to hand back at the end of.
         var storeFacts = StoreDetections.over(store.dsl(), store.graphName(), ClassifiedRun.present());
         var captured = capturedFrom(projection, schema, attributed, bundle, federationLink,
-            outputPackage, storeFacts);
+            outputPackage, storeFacts, emitted.narrowings());
 
         var warnings = captured.warnings();
         if (captured.plan() == null) {
@@ -785,7 +796,8 @@ public class GraphQLRewriteGenerator {
      */
     private List<BuildWarning> withLintFindings(GraphitronSchema schema,
                                                 AttributedRegistry attributed,
-                                                no.sikt.graphitron.model.read.StoreHandle store) {
+                                                no.sikt.graphitron.model.read.StoreHandle store,
+                                                List<EmittedRegistry.TagNarrowing> narrowings) {
         LintConfig lintConfig = ctx.lintConfig();
         var all = new java.util.ArrayList<BuildWarning>(schema.warnings());
         // The nine rules, read off this run's rows. Both things the walk was handed here are gone
@@ -802,6 +814,11 @@ public class GraphQLRewriteGenerator {
         // mojo decoded off both dependency graphs. Same channel and same reason: a whole-build fact
         // with no SDL coordinate, suppressible by rule id like every other finding.
         all.addAll(no.sikt.graphitron.rewrite.dependency.DependencyVersionWarnings.forVersions(ctx.dependencyVersions()));
+        // The generated types whose carriers disagree on their @tags, found while deriving the
+        // emitted schema: each carries only the tags every carrier carries, which an include-based
+        // contract may not want. The finding is about a type no author declared, so excludedTypes
+        // has nothing to match; an exclude-based build that wants the outcome disables the rule.
+        narrowings.forEach(n -> all.add(n.finding()));
         // The @reference fan-out advisory, reduced from this run's rows by a store-reading
         // producer. Folded in here rather than run as a lint visitor because it drives one
         // statement from a recursive view; a per-node visitor would correlate that view once per

@@ -56,8 +56,9 @@ import no.sikt.graphitron.model.grammar.FacetNaming;
  * <p>Two entry points, both field-first. {@link #synthesiseForField} is called once
  * per visited field during the classification walk: when the field is an {@code @asConnection} or
  * structural connection carrier it registers the supporting types through
- * {@code ctx.typeRegistry.register} (the accumulator owns dedup and the {@code @tag} union across
- * carriers) and adds one {@link ConnectionSynthesis} row to the relation, carrying the minted
+ * {@code ctx.typeRegistry.register} (the accumulator owns dedup and the reconciliation of the
+ * carriers' federation directives: the {@code @tag}s every carrier carries, {@code @shareable}
+ * when any carrier is) and adds one {@link ConnectionSynthesis} row to the relation, carrying the minted
  * names with their absent-from-assembled discriminators and, on the directive-driven arm, the
  * carrier-rewrite facts. {@link #rebuildAssembledForConnections} then folds the finished
  * {@link ConnectionSynthesisRelation} to produce a {@link GraphQLSchema} whose carriers point
@@ -115,9 +116,10 @@ final class ConnectionPromoter {
      *
      * <p>Each type is registered through {@code ctx.typeRegistry.register}, which owns reconciliation:
      * a second carrier reaching the same connection name, and every carrier feeding the one shared
-     * {@code PageInfo}, accumulates the union of their {@code @tag} applications there rather than
-     * here. So this method neither dedups nor unions; it just registers what the current carrier
-     * implies. The synthesised type's {@code location} pins to the first carrier that registers it
+     * {@code PageInfo} or a shared facet value type, narrows it there to the {@code @tag}
+     * applications they all carry (and makes it {@code @shareable} if any of them is) rather than
+     * here. So this method neither dedups nor reconciles; it just registers what the current
+     * carrier implies. The synthesised type's {@code location} pins to the first carrier that registers it
      * (register keeps the existing structural fields on a merge). The synthesised {@code PageInfo}'s
      * {@code location} is deliberately {@code null}: a single PageInfo serves every connection, so no
      * carrier site is the actionable one.
@@ -188,7 +190,9 @@ final class ConnectionPromoter {
      * facet-free carrier. {@code FacetValue} types are reusable across the whole schema (one per
      * (scalar, nullability) pair, named by {@link FacetNaming}), so they land on the relation's
      * schema-grain pool rather than the row; repeat registration from another carrier reconciles
-     * in {@code TypeRegistry.register} like every other synthesised arm.
+     * in {@code TypeRegistry.register} like every other synthesised arm. Both carry the carrier's
+     * {@code @tag}s and {@code @shareable} on the applied-directive list of their form, as the
+     * Connection and Edge do.
      */
     private static MintedName registerFacetTypes(
             BuildContext ctx, ConnectionPromotion promotion,
@@ -198,12 +202,13 @@ final class ConnectionPromoter {
         String facetsName = FacetNaming.facetsTypeName(promotion.connectionName());
         var facetsMinted = registerSynthesised(ctx, facetsName, new FacetsType(
             facetsName, carrierLocation, promotion.connectionName(),
-            buildSynthesisedFacets(facetsName, promotion.facets())));
+            buildSynthesisedFacets(facetsName, promotion.facets(), promotion.shareable(),
+                promotion.tags())));
         for (var spec : promotion.facets()) {
             relation.addShared(registerSynthesised(ctx, spec.facetValueTypeName(), new FacetValueType(
                 spec.facetValueTypeName(), carrierLocation, spec.valueTypeName(),
                 spec.valueNullable(),
-                buildSynthesisedFacetValue(spec))));
+                buildSynthesisedFacetValue(spec, promotion.shareable(), promotion.tags()))));
         }
         return facetsMinted;
     }
@@ -211,9 +216,16 @@ final class ConnectionPromoter {
     /**
      * The single {@code PageInfo} every connection shares, a schema-grain slot on the relation.
      * When the SDL declares {@code PageInfo} it is registered verbatim (author-owned, never
-     * tagged by promotion); otherwise a synthesised form carrying this carrier's
-     * {@code shareable} flag and {@code @tag} applications is registered, and {@code register}
-     * unions across carriers. Idempotent across repeated carriers either way.
+     * tagged by promotion); otherwise a directive-driven carrier registers a synthesised form
+     * carrying its {@code shareable} flag and {@code @tag} applications, and {@code register}
+     * reconciles across carriers. Idempotent across repeated carriers either way.
+     *
+     * <p>A structural carrier mints no {@code PageInfo}. Its declared Connection returns one only
+     * through a {@code pageInfo} field, and the author's schema assembles before anything is
+     * minted, so such a Connection forces {@code PageInfo} to be declared; one with no
+     * {@code pageInfo} field returns none, and a type that returns no {@code PageInfo} has no say
+     * in its tags. The store reads it the same way: its mint draws only on {@code @asConnection}
+     * carriers.
      *
      * <p>Both arms route through {@link #registerSynthesised}, which derives the same
      * {@link MintedName} either arm would state by hand (an SDL-declared {@code PageInfo} is by
@@ -230,7 +242,7 @@ final class ConnectionPromoter {
             boolean shareable = sdlPageInfo.hasAppliedDirective("shareable");
             relation.addShared(registerSynthesised(ctx, "PageInfo",
                 new PageInfoType("PageInfo", null, shareable, sdlPageInfo)));
-        } else {
+        } else if (promotion.directiveDriven()) {
             relation.addShared(registerSynthesised(ctx, "PageInfo", new PageInfoType("PageInfo", null,
                 promotion.shareable(),
                 buildSynthesisedPageInfo(promotion.shareable(), promotion.tags()))));
@@ -488,14 +500,12 @@ final class ConnectionPromoter {
                 connSchema.getFieldDefinition("edges").getType());
             String edgeName = edgeSchema.getName();
             boolean shareable = connSchema.hasAppliedDirective("shareable");
-            // Structural arm: the SDL-declared Connection type is the tag source. Its own
-            // @tag applications already ride on connSchema (the referenced SDL type), so they are
-            // not re-applied here; they feed the synthesised PageInfo union below.
-            var tags = connSchema.getAppliedDirectives(TAG_DIRECTIVE);
+            // Structural arm: the SDL-declared Connection and Edge are author-owned and inherit
+            // nothing, and the arm mints no PageInfo (see registerPageInfo), so no tags are read.
             // Facet synthesis applies only to directive-driven carriers: a structural Connection's
             // shape is author-owned, so the promoter never appends a facets field to it.
             return new ConnectionPromotion(false, typeName, edgeName, elementTypeName,
-                itemNullable, shareable, tags, List.of(), connSchema, edgeSchema);
+                itemNullable, shareable, List.of(), List.of(), connSchema, edgeSchema);
         }
         return null;
     }
@@ -580,7 +590,8 @@ final class ConnectionPromoter {
      * times out degrades to null on its own field, never propagating through GraphQL non-null
      * bubbling to the connection.
      */
-    private static GraphQLObjectType buildSynthesisedFacets(String facetsName, List<FacetSpec> facets) {
+    private static GraphQLObjectType buildSynthesisedFacets(String facetsName, List<FacetSpec> facets,
+            boolean shareable, List<GraphQLAppliedDirective> tags) {
         var builder = GraphQLObjectType.newObject()
             .name(facetsName)
             .description(DESC_FACETS_TYPE);
@@ -592,6 +603,8 @@ final class ConnectionPromoter {
                     GraphQLTypeReference.typeRef(spec.facetValueTypeName()))))
                 .build());
         }
+        if (shareable) builder.withAppliedDirective(GraphQLAppliedDirective.newDirective().name("shareable").build());
+        for (var tag : tags) builder.withAppliedDirective(tag);
         return builder.build();
     }
 
@@ -599,11 +612,12 @@ final class ConnectionPromoter {
      * The synthesised {@code <Scalar>FacetValue} form: {@code value} mirrors the filter element's
      * scalar and nullability exactly, {@code count} is a non-null {@code Int}.
      */
-    private static GraphQLObjectType buildSynthesisedFacetValue(FacetSpec spec) {
+    private static GraphQLObjectType buildSynthesisedFacetValue(FacetSpec spec, boolean shareable,
+            List<GraphQLAppliedDirective> tags) {
         GraphQLOutputType valueType = spec.valueNullable()
             ? GraphQLTypeReference.typeRef(spec.valueTypeName())
             : GraphQLNonNull.nonNull(GraphQLTypeReference.typeRef(spec.valueTypeName()));
-        return GraphQLObjectType.newObject()
+        var builder = GraphQLObjectType.newObject()
             .name(spec.facetValueTypeName())
             .description(DESC_FACET_VALUE_TYPE)
             .field(GraphQLFieldDefinition.newFieldDefinition()
@@ -615,8 +629,10 @@ final class ConnectionPromoter {
                 .name("count")
                 .description(DESC_FACET_COUNT)
                 .type(GraphQLNonNull.nonNull(GraphQLTypeReference.typeRef("Int")))
-                .build())
-            .build();
+                .build());
+        if (shareable) builder.withAppliedDirective(GraphQLAppliedDirective.newDirective().name("shareable").build());
+        for (var tag : tags) builder.withAppliedDirective(tag);
+        return builder.build();
     }
 
     private static GraphQLObjectType buildSynthesisedConnection(String connName, String edgeName,
@@ -726,7 +742,7 @@ final class ConnectionPromoter {
     /**
      * The federation {@code @tag} directive name; matches {@code TagApplier.TAG_DIRECTIVE_NAME}.
      * Read by {@link #promotionFor} to seed the synthesised forms; the cross-carrier {@code @tag}
-     * union itself lives in {@code TypeRegistry.register}.
+     * intersection itself lives in {@code TypeRegistry.register}.
      */
     private static final String TAG_DIRECTIVE = "tag";
 }

@@ -5,15 +5,19 @@ import graphql.language.BooleanValue;
 import graphql.language.Description;
 import graphql.language.Directive;
 import graphql.language.FieldDefinition;
+import graphql.language.ImplementingTypeDefinition;
 import graphql.language.InputValueDefinition;
 import graphql.language.ObjectTypeDefinition;
 import graphql.language.ObjectTypeExtensionDefinition;
 import graphql.language.SDLDefinition;
+import graphql.language.SourceLocation;
 import graphql.language.StringValue;
 import graphql.language.Type;
 import graphql.language.TypeDefinition;
 import graphql.parser.Parser;
 import graphql.schema.idl.TypeDefinitionRegistry;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.lint.LintRule;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.schema.federation.FederationKeyFieldsParser;
 
@@ -107,6 +111,7 @@ public final class EmittedRegistry {
 
     private static final String TAG_DIRECTIVE = "tag";
     private static final String TAG_NAME_ARG = "name";
+    private static final String SHAREABLE_DIRECTIVE = "shareable";
     private static final String KEY_DIRECTIVE = "key";
     private static final String KEY_FIELDS_ARG = "fields";
     private static final String KEY_RESOLVABLE_ARG = "resolvable";
@@ -123,8 +128,89 @@ public final class EmittedRegistry {
      * @param store      the graph's own partition of the fact store
      */
     public static TypeDefinitionRegistry of(AttributedRegistry attributed, StoreHandle store) {
+        return derive(attributed, store).registry();
+    }
+
+    /**
+     * The emitted registry together with what deriving it narrowed, for a caller that reports on
+     * it. {@link #of} is this with the narrowings dropped.
+     *
+     * @param attributed the run's registry, as {@link #of} takes it
+     * @param store      the graph's own partition of the fact store
+     */
+    public static Emitted derive(AttributedRegistry attributed, StoreHandle store) {
         Objects.requireNonNull(attributed, "attributed");
-        return of(attributed.preSynthesisRegistry(), store);
+        return derive(attributed.preSynthesisRegistry(), store);
+    }
+
+    /**
+     * The emitted registry, and every minted type whose inherited tags the carriers' disagreement
+     * narrowed, in type-name order.
+     */
+    public record Emitted(TypeDefinitionRegistry registry, List<TagNarrowing> narrowings) {
+        public Emitted {
+            Objects.requireNonNull(registry, "registry");
+            narrowings = List.copyOf(narrowings);
+        }
+    }
+
+    /**
+     * One field whose expansion minted a type, as the registry holds it: the {@code @tag} names
+     * applied to it in order, whether it is {@code @shareable}, and where it was written.
+     */
+    public record Carrier(String coordinate, List<String> tags, boolean shareable,
+                          SourceLocation location) {
+        public Carrier {
+            Objects.requireNonNull(coordinate, "coordinate");
+            tags = List.copyOf(tags);
+        }
+    }
+
+    /**
+     * A minted type that carries fewer tags than its carriers do between them: {@code kept} is the
+     * tags every carrier carries, which the type was given, and {@code dropped} the rest, which
+     * some carrier carries and the type was not given. {@code carriers} are all of the type's
+     * carriers, in coinage order.
+     */
+    public record TagNarrowing(String typeName, List<String> kept, List<String> dropped,
+                               List<Carrier> carriers) {
+        public TagNarrowing {
+            Objects.requireNonNull(typeName, "typeName");
+            kept = List.copyOf(kept);
+            dropped = List.copyOf(dropped);
+            carriers = List.copyOf(carriers);
+        }
+
+        /**
+         * The {@link LintRule#SHARED_TYPE_TAGS_NARROWED} finding for this narrowing, located at
+         * the first carrier carrying a tag the type was not given.
+         */
+        public BuildWarning.LintFinding finding() {
+            var dropping = carriers.stream()
+                .filter(c -> c.tags().stream().anyMatch(dropped::contains))
+                .toList();
+            var location = dropping.isEmpty() ? null : dropping.getFirst().location();
+            String message = "Generated type '" + typeName + "' carries "
+                + (kept.isEmpty()
+                    ? "no @tag, since no tag is on every field it was generated for"
+                    : "only " + tagList(kept) + ", the tags on every field it was generated for")
+                + ", and not " + tagList(dropped) + ", which only some of those fields carry ("
+                + carriers.stream()
+                    .map(c -> c.coordinate() + (c.tags().isEmpty() ? " untagged" : " " + tagList(c.tags())))
+                    .collect(Collectors.joining(", "))
+                + "). A contract built by excluding tags keeps '" + typeName + "' wherever it keeps"
+                + " one of those fields, which is what it wants; disable this rule ("
+                + LintRule.SHARED_TYPE_TAGS_NARROWED.id() + ") if that is how your contracts are"
+                + " built. A contract built by including tags drops '" + typeName + "' unless it"
+                + " carries one of them; declare the type in your schema with the tags it should"
+                + " have, and graphitron uses it as written.";
+            return BuildWarning.LintFinding.of(message, location, LintRule.SHARED_TYPE_TAGS_NARROWED);
+        }
+
+        private static String tagList(List<String> tags) {
+            return tags.stream().map(t -> "@tag(name: \"" + t + "\")")
+                .collect(Collectors.joining(", "));
+        }
     }
 
     /**
@@ -133,7 +219,7 @@ public final class EmittedRegistry {
      * @param transcribed the registry capture wrote its facts from, which is the pre-synthesis one
      * @param store       the graph's own partition of the fact store
      */
-    private static TypeDefinitionRegistry of(TypeDefinitionRegistry transcribed, StoreHandle store) {
+    private static Emitted derive(TypeDefinitionRegistry transcribed, StoreHandle store) {
         Objects.requireNonNull(transcribed, "transcribed");
         Objects.requireNonNull(store, "store");
 
@@ -149,9 +235,9 @@ public final class EmittedRegistry {
             }
         }
         apply(patched, replacements);
-        applyInheritedTags(patched, store);
+        var narrowings = applyInheritedFederationDirectives(patched, store);
         applySynthesisedKeys(patched, store);
-        return patched;
+        return new Emitted(patched, narrowings);
     }
 
     // ---------------------------------------------------------------------------------------
@@ -391,39 +477,55 @@ public final class EmittedRegistry {
     // ---------------------------------------------------------------------------------------
 
     /**
-     * The federation tags a minted type inherits from the coordinate that coined it.
+     * The federation directives a minted type inherits from the fields that coined it, its
+     * carriers: the {@code @tag}s every carrier carries, and {@code @shareable} when any carrier
+     * is. Returns each type the tag rule narrowed, for the build to report.
      *
-     * <p>A {@code @tag} on a carrier reaches the types the expansion synthesises for it, so a
-     * gateway filtering on that tag sees the connection, its edge and the page info the same way it
-     * sees the field. The store names the coining coordinate; the tags themselves are read off the
-     * registry being patched, which is the same place every other authored detail on a patched node
-     * comes from.
+     * <h4>Tags: the intersection over the carriers</h4>
+     *
+     * <p>For a minted type {@code T} with carriers {@code C(T)}, {@code T} carries
+     * {@code ⋂ { tags(c) : c ∈ C(T) }}. That is Apollo's contract rule, that a tag on a type also
+     * belongs on every field returning it, read over the carriers: a minted Connection is returned
+     * only by its carriers, its Edge only by the Connection's {@code edges}, and {@code PageInfo}
+     * and the facet types only by fields on minted types whose tags are their carriers'. So a
+     * contract that excludes one carrier's tag keeps a shared type for every carrier it keeps, and
+     * a type with one carrier takes that carrier's tags exactly. The cost falls on a contract that
+     * includes by tag, which drops a type its carriers disagree about; the narrowing returned here
+     * is what tells that author to declare the type themselves. Ordered by the first carrier's tag
+     * order, so emission is deterministic.
+     *
+     * <p>{@code @shareable} is a composition requirement rather than a contract filter, so it is
+     * the union instead: a type two subgraphs may both resolve for any one carrier is shareable.
+     * The two are folded here together and kept apart in the arithmetic, since intersecting
+     * {@code @shareable} would drop it whenever carriers disagree.
+     *
+     * <h4>Only minted types, and where the directives are read from</h4>
      *
      * <p>Only a type the store says was minted inherits. Coinage is written for every carrier
      * whether or not its mint wins, so a {@code PageInfo} the author declared has coinage rows
-     * like any other, and stamping their tags on it would publish a type the author put in one
-     * feature as belonging to every feature with a connection. Whether the mint stood down is
+     * like any other, and stamping their directives on it would publish a type the author wrote
+     * as something they did not write. Whether the mint stood down is
      * {@code graphitron_type_minted}'s to say, which is where the author-wins rule already lives,
      * so the coinage is joined to it rather than checked against the registry here: a second
      * statement of precedence, and one whose answer would depend on which registry was passed.
      *
-     * <p>That is not a shortcut around the store, and the alternative was tried. A tag reaches an
-     * element two ways: an author writes it, or a schema input carries one and the tag applier
-     * stamps it on everything that input declared. Only the first is captured: the applier's tags
-     * reach the store's assembly but no relation transcribes them, so a store-sourced inheritance
-     * silently drops the second and a
-     * federated build configuring {@code <schemaInput tag>} emits synthesised types a gateway can
-     * no longer filter. The registry has both by the time this runs, because the applier has
-     * already rewritten it.
+     * <p>The store names the coining coordinates; the directives themselves are read off the
+     * registry being patched. That is not a shortcut around the store, and the alternative was
+     * tried. A tag reaches an element two ways: an author writes it, or a schema input carries one
+     * and the tag applier stamps it on everything that input declared. Only the first is captured:
+     * the applier's tags reach the store's assembly but no relation transcribes them, so a
+     * store-sourced inheritance silently drops the second and a federated build configuring
+     * {@code <schemaInput tag>} emits synthesised types a gateway can no longer filter. The
+     * registry has both by the time this runs, because the applier has already rewritten it.
+     * {@code @shareable} is read from the same place so that the one fold has one source.
      *
      * <p>The store owing those tags is a real gap and it is not this method's to close. It is a
      * relation transcribing them, which is a fact arriving earlier rather than a reader
-     * compensating.
-     *
-     * <p>Distinct by name, because shared machinery is minted once per carrier: two tagged carriers
-     * state the same {@code PageInfo}, and it carries each tag once rather than twice.
+     * compensating; the intersection above is then a relational division over (type, carrier,
+     * tag).
      */
-    private static void applyInheritedTags(TypeDefinitionRegistry patched, StoreHandle store) {
+    private static List<TagNarrowing> applyInheritedFederationDirectives(
+            TypeDefinitionRegistry patched, StoreHandle store) {
         var m = GRAPHITRON_MINTED_COINAGE;
         // Which application coined each minted name, asked of the relation that states it. The
         // arms are not enumerated here: a mint arm added to the schema is one this fold already
@@ -440,62 +542,98 @@ public final class EmittedRegistry {
             .orderBy(m.TYPE_NAME, m.COORDINATE)
             .fetch();
 
-        var byType = new LinkedHashMap<String, LinkedHashSet<String>>();
+        var byType = new LinkedHashMap<String, List<Carrier>>();
         for (var row : coined) {
-            byType.computeIfAbsent(row.get(m.TYPE_NAME), ignored -> new LinkedHashSet<>())
-                .addAll(tagsAt(patched, row.get(m.COORDINATE)));
+            byType.computeIfAbsent(row.get(m.TYPE_NAME), ignored -> new ArrayList<>())
+                .add(carrierAt(patched, row.get(m.COORDINATE)));
         }
 
         var replacements = new ArrayList<Replacement>();
-        byType.forEach((typeName, tags) -> {
-            if (tags.isEmpty()
-                || !(patched.getTypeOrNull(typeName) instanceof ObjectTypeDefinition object)) {
+        var narrowings = new ArrayList<TagNarrowing>();
+        byType.forEach((typeName, carriers) -> {
+            if (!(patched.getTypeOrNull(typeName) instanceof ObjectTypeDefinition object)) {
+                return;
+            }
+            var kept = new LinkedHashSet<>(carriers.getFirst().tags());
+            var union = new LinkedHashSet<String>();
+            for (var carrier : carriers) {
+                kept.retainAll(carrier.tags());
+                union.addAll(carrier.tags());
+            }
+            union.removeAll(kept);
+            if (!union.isEmpty()) {
+                narrowings.add(new TagNarrowing(typeName, List.copyOf(kept), List.copyOf(union),
+                    carriers));
+            }
+            boolean shareable = carriers.stream().anyMatch(Carrier::shareable)
+                && object.getDirectives(SHAREABLE_DIRECTIVE).isEmpty();
+            if (kept.isEmpty() && !shareable) {
                 return;
             }
             var directives = new ArrayList<>(object.getDirectives());
-            tags.forEach(tag -> directives.add(tagDirective(tag)));
+            if (shareable) {
+                directives.add(Directive.newDirective().name(SHAREABLE_DIRECTIVE).build());
+            }
+            kept.forEach(tag -> directives.add(tagDirective(tag)));
             replacements.add(new Replacement(object,
                 object.transform(b -> b.directives(directives))));
         });
         apply(patched, replacements);
+        return narrowings;
     }
 
     /**
-     * The tag names applied at one field coordinate, as the registry holds them.
+     * The carrier at one field coordinate, as the registry holds it.
      *
      * <p>A coining coordinate is a field, every expansion being a rewrite of one, so this resolves
      * {@code Type.field} against the declaration sites of that type. Extensions are searched
      * beside the base definition: a carrier an extension declared is as much a carrier as one the
-     * base did.
+     * base did. Interface sites are searched as well as object ones, the carrier relation not
+     * asking which kind declared the field.
+     *
+     * <p>A coordinate no site declares is a defect in this lookup and ends the run. Coinage is
+     * written from fields that exist, and under the intersection a carrier read as untagged
+     * strips every tag from the type it coined, which is not a failure to have quietly.
      */
-    private static List<String> tagsAt(TypeDefinitionRegistry patched, String coordinate) {
+    private static Carrier carrierAt(TypeDefinitionRegistry patched, String coordinate) {
         int dot = coordinate.indexOf('.');
-        if (dot < 0) {
-            return List.of();
-        }
-        String typeName = coordinate.substring(0, dot);
-        String fieldName = coordinate.substring(dot + 1);
-        var sites = new ArrayList<ObjectTypeDefinition>();
-        if (patched.getTypeOrNull(typeName) instanceof ObjectTypeDefinition base) {
+        String typeName = dot < 0 ? coordinate : coordinate.substring(0, dot);
+        String fieldName = dot < 0 ? "" : coordinate.substring(dot + 1);
+        var sites = new ArrayList<ImplementingTypeDefinition<?>>();
+        if (patched.getTypeOrNull(typeName) instanceof ImplementingTypeDefinition<?> base) {
             sites.add(base);
         }
         sites.addAll(patched.objectTypeExtensions().getOrDefault(typeName, List.of()));
+        sites.addAll(patched.interfaceTypeExtensions().getOrDefault(typeName, List.of()));
 
+        FieldDefinition found = null;
         var names = new ArrayList<String>();
+        boolean shareable = false;
         for (var site : sites) {
             for (var field : site.getFieldDefinitions()) {
                 if (!field.getName().equals(fieldName)) {
                     continue;
                 }
+                if (found == null) {
+                    found = field;
+                }
+                shareable |= !field.getDirectives(SHAREABLE_DIRECTIVE).isEmpty();
                 for (var directive : field.getDirectives(TAG_DIRECTIVE)) {
                     var argument = directive.getArgument(TAG_NAME_ARG);
-                    if (argument != null && argument.getValue() instanceof StringValue value) {
+                    if (argument != null && argument.getValue() instanceof StringValue value
+                            && !names.contains(value.getValue())) {
                         names.add(value.getValue());
                     }
                 }
             }
         }
-        return names;
+        if (found == null) {
+            throw new IllegalStateException("The store names '" + coordinate + "' as the field"
+                + " that coined a generated type, and no declaration of that field is in the"
+                + " registry being patched. This is a defect in graphitron, not in the schema:"
+                + " coinage is written from fields that exist.");
+        }
+        return new Carrier(coordinate, names, shareable, found.getSourceLocation());
     }
 
     /** One {@code @tag} application, with the name the relation holds. */

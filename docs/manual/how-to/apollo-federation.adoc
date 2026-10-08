@@ -91,6 +91,8 @@ The Maven plugin's `<schemaInput><tag>...</tag></schemaInput>` configuration emi
 
 This is the one place where federation-relevant state lives outside the SDL itself; the rest of the federation surface is SDL-driven.
 
+A layout with one tagged input per feature is where generated types meet fields that disagree on their tags: two `@asConnection` fields in differently tagged files share one generated `PageInfo`. How a shared generated type's tags are chosen, and the build warning that flags it, are described under federation directives in xref:../reference/directives/asConnection.adoc[`@asConnection`].
+
 == Constraints
 
 * The build-time opt-in is the SDL `@link`. `Graphitron.buildSchema(...)` returns a federation-wrapped schema *iff* one of your schema files declares the `@link`; without it, no federation surface gets wired.
