@@ -399,6 +399,71 @@ new one.
   * A schema extending a built-in captures `done`, by "The specification is a document": an
     extension merges onto the specification's declaration instead of adding the type twice.
 
+### The classified model dissolves into the store
+
+The store is the model. The walk resolves the same schema a second time into records the validator
+and the emitters read, and it goes when nothing reads what it builds.
+
+* **What the store states of R333's facts is counted** `done`. Of the walk's 465 rejection calls, 411
+  are constraints on a fact, in about 95 rules of which about 15 have a code; per fact, a leaf being
+  a denormalized view over them. Evidence in `roadmap/audits/2026-10-08-fact-census.md`.
+* **Every coordinate carries R333's facts, and a constraint a fact breaks is a located defect**
+  `open`. The facts are what `generate` reads and their constraints are what `validate` reports, so
+  neither needs a classification.
+  * **The defect model is designed as a whole** `done`. One vocabulary of rules and one relation of
+    violations located at an AST entry, where six families stood. Evidence in
+    `roadmap/audits/2026-10-08-defect-model.md`.
+  * **A defect rests on a basis and sits at an AST entry** `open`. `basis` in place of `fault`, and
+    the position a foreign key into `graphql_ast_entry`, the element a view's fixed hops away.
+  * **`source` and `target` are stated for every coordinate** `open`. The two total facts no relation
+    states whole, and totality is what the defect model's gate checks.
+* **`validate` reads only the store** `open`, as "Validate is a query over the store". Second to
+  last, a verdict being a narrower read than an emission.
+* **`generate` and `dev` read only the store** `blocked`, on the node above. The last step: the
+  emitters read rows where they read classified records, and the walk and its model go.
+
+### Validate is a query over the store, and runs against the model alone
+
+`validate` opens the store, captures, reads its verdict from the store and closes it, which is what
+`capture` does with a verdict added, and names nothing in the `graphitron` module. The verdict's
+types and its formatter are already model-side, so what stands between here and there is the walk.
+
+* **Each rule the walk enforces is a defect** `open`. A rule becomes a `graphitron_defect_type` code
+  and an arm of `graphitron_entry_defect_rule`, which reaches the editor and stops no build, so the
+  arms land ahead of the flip. The fact census lists the rules per fact.
+  * **The `operation` rules** `open`. 170 sites: `serviceCall` 52, DML 47, `condition` 28, lookup 16,
+    `paginate` 12, `orderBy` 10, `select` 5.
+    * **A list with no ordering source is a defect** `open`. Three anti-joins, no `@defaultOrder`,
+      no `@orderBy` and no primary key on the target table; the population, which list fields
+      generate SQL, is a generator classification the store does not state yet.
+  * **The `joinPath` rules** `open`. 55 sites; three of them already codes.
+  * **The `node` rules** `open`. 53 sites.
+  * **The `tableExpr` rules** `open`. 24 sites.
+  * **The `sourceObject` rules** `open`. 23 sites.
+  * **The `reference` rules** `open`. 20 sites.
+  * **The `accessor` rules** `open`. 19 sites.
+  * **The `errorGuard` rules** `open`. 16 sites, over a fact only `intent_` states.
+  * **The `discrimination`, `source`, `referencedTable`, `target`, `enum` and `resolvedTable`
+    rules** `open`. 31 sites between them.
+  * **The rules on directives R333's catalog names no fact for** `open`. `@scalarType` binding,
+    tenancy and federation, 25 sites; rules all the same, over the relations that state them.
+    * **A `@scalarType` on a specification scalar is a defect** `open`. The case is written as an
+      extension of the scalar, which a capture takes since the specification became its base.
+  * **A name the generated code needs unique is a rule like any other** `open`. Type names folding
+    to one file name, colliding launcher and projection-unit names: `GRAPHITRON`, an author renames.
+* **A consequential rejection is not a rule** `done`, by the defect model. A violation sits once,
+  on the fact that broke, and an arm reads only coordinates whose upstream facts hold.
+* **What the generator cannot emit is judged as the schema** `done`, by the defect model's basis. A
+  generated name colliding is `GRAPHITRON`, an emission not written yet `UNSUPPORTED`; nothing is the
+  generator's fault, the generator running only on a schema that validates.
+* **Node-id decode coverage is stated from the store** `open`. It is the one verdict that subtracts
+  the walk's ledger from the store's census, so it is restated over store facts or it goes.
+* **The verdict reads what the editor reads** `blocked`, on the rules being defects and on "Entry
+  defects fail validate", without which entry defects fail builds the generator accepts.
+* **`validate` reads as its steps** `blocked`, on the verdict. `GraphQLRewriteGenerator.validate`
+  and the `VALIDATE` projection go, and with them the plugin's last use of the generator outside
+  `generate` and `dev`.
+
 ### A capture reads only what changed
 
 * A directory can be compared at all `done`
