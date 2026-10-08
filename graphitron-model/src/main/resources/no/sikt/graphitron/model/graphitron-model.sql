@@ -1718,6 +1718,13 @@ COMMENT ON COLUMN graphql_directive_application.source_name IS 'the file the app
 COMMENT ON COLUMN graphql_directive_application.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_directive_application.source_column IS 'source column, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_directive_application.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total. The sweep is what collects an application an author deleted from a coordinate that still stands; a coordinate the author deleted takes its applications with it through the cascade above';
+-- The position of the at sign, which is what GraphQLAstCapture.directiveApplicationArguments joins
+-- an argument entry to its application by. The position is no prefix of the key, so without this
+-- every entry scans every application. touched_at stays out: it is a residual on the rows the
+-- seek finds, not a dimension of it. The columns are nullable for a synthesised application,
+-- which an index admits.
+CREATE INDEX graphql_directive_application_position_ix
+  ON graphql_directive_application (graph_name, source_name, source_line, source_column);
 
 CREATE TABLE graphql_directive_application_arg (
   graph_name              VARCHAR NOT NULL,
