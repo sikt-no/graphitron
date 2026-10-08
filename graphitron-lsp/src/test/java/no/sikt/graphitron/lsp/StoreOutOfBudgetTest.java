@@ -25,18 +25,18 @@ import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.ShowMessageRequestParams;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 
 import static no.sikt.graphitron.model.test.StoreAnswers.answered;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 /**
  * What the language server does when a store read runs out of its budget, and which reader each
@@ -53,6 +53,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * cases turn on which reader answered, read off a session setting where a door can be called
  * directly and off the budget the boundary's own warning names where only the surface can.
  * {@code RunawayRelation} carries the reasoning.
+ *
+ * <p>The cases that make a relation runaway guard the read under test against escaping its budget,
+ * and guard that read alone: a guard around the whole case would time the fixture's capture too,
+ * which a loaded runner can spend most of a minute on before the read starts. The guarded read
+ * runs on the guard's own thread, which a {@link StoreFixture#held()} fixture permits, its store
+ * being its own rather than the test thread's.
  */
 class StoreOutOfBudgetTest {
 
@@ -69,6 +75,9 @@ class StoreOutOfBudgetTest {
      */
     private static final ReadBudget ANNOTATION = new ReadBudget.Bounded(900);
 
+    /** How long a read against a runaway relation may run before the case calls it a hang. */
+    private static final Duration HANG_GUARD = Duration.ofSeconds(60);
+
     /** How H2 reports the statement budget of the session a read is running on. */
     private static final String QUERY_TIMEOUT =
         "SELECT setting_value FROM information_schema.settings WHERE setting_name = 'QUERY_TIMEOUT'";
@@ -83,7 +92,6 @@ class StoreOutOfBudgetTest {
      * could not have avoided.
      */
     @Test
-    @Timeout(value = 60, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     void aDrainThatRunsOutOfBudgetLeavesThePreviousPublishStanding() {
         try (var fixture = StoreFixture.held().of(tmp, SDL);
              var access = fixture.access(INTERACTIVE, SESSION_WIDE)) {
@@ -109,7 +117,7 @@ class StoreOutOfBudgetTest {
             // The drain resolves each queued document's graph membership before it reads a fact, so
             // this is the first statement of every drain from here on.
             fixture.makeRunaway("store_graph_source");
-            workspace.markAllForRecalculation();
+            assertTimeoutPreemptively(HANG_GUARD, workspace::markAllForRecalculation);
 
             assertThat(client.published)
                 .as("nothing at all on the wire, so the client keeps rendering what it has; an "
@@ -124,7 +132,6 @@ class StoreOutOfBudgetTest {
      * surface for every file until the next build, silently.
      */
     @Test
-    @Timeout(value = 60, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     void aVocabularyReloadThatRunsOutOfBudgetKeepsTheLastGoodOne() {
         try (var fixture = StoreFixture.held().of(tmp, SDL);
              var access = fixture.access(INTERACTIVE, SESSION_WIDE)) {
@@ -138,7 +145,7 @@ class StoreOutOfBudgetTest {
 
             // The relation the directive surface is read from.
             fixture.makeRunaway("graphql_directive");
-            workspace.markAllForRecalculation();
+            assertTimeoutPreemptively(HANG_GUARD, workspace::markAllForRecalculation);
 
             assertThat(workspace.vocabulary())
                 .as("the same instance, not an empty replacement")
@@ -156,7 +163,6 @@ class StoreOutOfBudgetTest {
      * rewording the phrase does not break this while dropping the name does.
      */
     @Test
-    @Timeout(value = 60, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     void theWarningNamesTheReadAndTheStatementDropsToDebug() {
         try (var fixture = StoreFixture.held().of(tmp, SDL);
              var access = fixture.access(INTERACTIVE, SESSION_WIDE)) {
@@ -169,8 +175,8 @@ class StoreOutOfBudgetTest {
             boundary.setLevel(Level.DEBUG);
             boundary.addAppender(recorded);
             try {
-                var answer = access.answeringAll(StoreRead.DIAGNOSTICS,
-                    List.of(fixture.sourceName()), handles -> "unreached");
+                var answer = assertTimeoutPreemptively(HANG_GUARD, () -> access.answeringAll(
+                    StoreRead.DIAGNOSTICS, List.of(fixture.sourceName()), handles -> "unreached"));
                 String sql = switch (answer) {
                     case StoreAnswer.OutOfBudget<String> expired -> expired.sql();
                     case StoreAnswer.Answered<String> unexpected -> throw new AssertionError(
@@ -216,7 +222,6 @@ class StoreOutOfBudgetTest {
      * resolution runs on whichever reader the routing chose, and the relation it reads never returns.
      */
     @Test
-    @Timeout(value = 60, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     void theInlayRequestIsRoutedThroughTheAnnotationDoor() throws Exception {
         try (var fixture = StoreFixture.held().of(tmp, SDL);
              var access = fixture.access(INTERACTIVE, ANNOTATION, SESSION_WIDE)) {
@@ -238,7 +243,7 @@ class StoreOutOfBudgetTest {
                 var params = new InlayHintParams(new TextDocumentIdentifier(uri),
                     new Range(new Position(0, 0), new Position(SDL.split("\n").length, 0)));
 
-                assertThat(service.inlayHint(params).get())
+                assertThat(assertTimeoutPreemptively(HANG_GUARD, () -> service.inlayHint(params).get()))
                     .as("no hints, the read having been aborted before it annotated anything")
                     .isEmpty();
 

@@ -376,8 +376,12 @@ public final class ThreadConfinedStore {
         }
     }
 
-    /** Every base table in the store's schema, upper-cased as the catalog spells them. */
-    static List<String> baseTables(DSLContext dsl) {
+    /**
+     * Every base table in the store's schema, upper-cased as the catalog spells them. Public, with
+     * {@link #census} and {@link #counts}, for a fixture outside this module that snapshots a store
+     * it shares across cases and checks the snapshot still holds when the cases are done.
+     */
+    public static List<String> baseTables(DSLContext dsl) {
         return dsl.fetch("SELECT table_name FROM information_schema.tables "
                 + "WHERE table_schema = 'PUBLIC' AND table_type = 'BASE TABLE' ORDER BY table_name")
             .getValues(0, String.class);
@@ -387,7 +391,7 @@ public final class ThreadConfinedStore {
      * One statement returning a row count per base table, in one round trip. {@link CorpusStore}
      * reads the same census as its unwritten-store check.
      */
-    static String census(List<String> baseTables) {
+    public static String census(List<String> baseTables) {
         List<String> terms = new ArrayList<>(baseTables.size());
         for (String relation : baseTables) {
             terms.add("SELECT '%s' AS relation, count(*) AS row_count FROM \"%s\""
@@ -396,7 +400,8 @@ public final class ThreadConfinedStore {
         return String.join(" UNION ALL ", terms);
     }
 
-    static Map<String, Integer> counts(DSLContext dsl, String census) {
+    /** The row count per base table that a {@link #census} statement returns, keyed upper-case. */
+    public static Map<String, Integer> counts(DSLContext dsl, String census) {
         Map<String, Integer> counts = new LinkedHashMap<>();
         for (Record row : dsl.fetch(census)) {
             counts.put(row.get(0, String.class).toUpperCase(Locale.ROOT), row.get(1, Integer.class));

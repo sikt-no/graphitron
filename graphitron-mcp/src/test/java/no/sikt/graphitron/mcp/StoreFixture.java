@@ -6,15 +6,26 @@ import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.test.RunawayRelation;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.FactWriters;
+import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.classpath.ClasspathScanner;
 import no.sikt.graphitron.model.classpath.CompletionData;
+import org.junit.jupiter.api.extension.AfterAllCallback;
+import org.junit.jupiter.api.extension.BeforeAllCallback;
+import org.junit.jupiter.api.extension.ExtensionContext;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Stream;
 
 /**
  * A booted fact store with a graph captured into it, for the tools whose answer is a census read.
@@ -37,8 +48,14 @@ import java.util.List;
  * reading.
  *
  * <p>In memory, so the store dies with the fixture and nothing lands on disk.
+ *
+ * <p>Borrows by default: the ordinary arms capture into the store the test thread keeps and clears
+ * between borrows, so a case pays for a truncate rather than a boot, and the next borrow on the
+ * thread empties it. A fixture that outlives its case, or one that issues DDL, owns its store
+ * instead, through {@link #held()}; and a fixture a class shares across its cases is reachable
+ * only from that side, as a {@link Shared} extension.
  */
-public final class StoreFixture implements AutoCloseable {
+public final class StoreFixture implements AutoCloseable, FixtureView {
 
     /**
      * The graph a fixture captures under unless a test names a second one, which is the capture
@@ -64,10 +81,19 @@ public final class StoreFixture implements AutoCloseable {
     private static final String PLACEHOLDER_SDL = "type Query { placeholder: Int }\n";
 
     private final CapturedStore captured;
+
+    /** Whether this fixture booted its own store rather than borrowing the thread's. */
+    private final boolean owned;
+
     private StoreReader reader;
 
     private StoreFixture(CapturedStore captured) {
+        this(captured, false);
+    }
+
+    private StoreFixture(CapturedStore captured, boolean owned) {
         this.captured = captured;
+        this.owned = owned;
     }
 
     /** The catalog shape: the single-schema generated model captured under {@link #GRAPH}. */
@@ -124,8 +150,12 @@ public final class StoreFixture implements AutoCloseable {
      * is a class the store knows and no source positions, which is what a dependency jar is.
      */
     public static StoreFixture ofCodeFixtures(Path directory) {
-        var fixture = new StoreFixture(
-            CapturedStore.of(directory, GRAPH, PLACEHOLDER_SDL, codeFixtureCensus()));
+        return withCode(new StoreFixture(
+            CapturedStore.of(directory, GRAPH, PLACEHOLDER_SDL, codeFixtureCensus())));
+    }
+
+    /** The code and declaration families {@link #ofCodeFixtures} adds after its capture. */
+    private static StoreFixture withCode(StoreFixture fixture) {
         // The condition kind reads the code family, which the walk does not write, so the arm runs
         // over the same entry the census was scanned from. The same entry and not the fixture
         // package below it: the tool correlates an admitted method to its census class on the
@@ -149,6 +179,57 @@ public final class StoreFixture implements AutoCloseable {
     public static StoreFixture ofSchema(Path directory, String sdl) {
         return new StoreFixture(CapturedStore.ofCatalog(directory, GRAPH, sdl,
             new JooqCatalog(JOOQ_PACKAGE), codeFixtureCensus()));
+    }
+
+    /**
+     * The same shapes on a store of the fixture's own, for a fixture that outlives the case that
+     * opened it and for a case that issues DDL through {@link #makeRunaway}. Either would otherwise
+     * leave the thread's store cleared under it or reshaped for every later case on the thread.
+     * Such a fixture pays for a boot, which is the honest price of a store nobody else may clear.
+     */
+    public static Held held() {
+        return Held.INSTANCE;
+    }
+
+    /** The owning arms behind {@link #held()}. */
+    public static final class Held {
+
+        private static final Held INSTANCE = new Held();
+
+        private Held() {}
+
+        /** {@link StoreFixture#ofCatalog(Path)} on a store of its own. */
+        public StoreFixture ofCatalog(Path directory) {
+            return new StoreFixture(CapturedStore.ownStoreOfCatalog(directory, PLACEHOLDER_SDL,
+                new JooqCatalog(JOOQ_PACKAGE)), true);
+        }
+
+        /** {@link StoreFixture#ofSchema(Path, String)} on a store of its own. */
+        public StoreFixture ofSchema(Path directory, String sdl) {
+            return new StoreFixture(CapturedStore.ownStoreOfCatalog(directory, GRAPH, sdl,
+                new JooqCatalog(JOOQ_PACKAGE), codeFixtureCensus()), true);
+        }
+
+        /** {@link StoreFixture#ofCodeFixtures(Path)} on a store of its own. */
+        public StoreFixture ofCodeFixtures(Path directory) {
+            return withCode(new StoreFixture(
+                CapturedStore.ownStore(directory, GRAPH, PLACEHOLDER_SDL, codeFixtureCensus()), true));
+        }
+
+        /** {@link #ofCatalog} captured once for a whole test class; see {@link Shared}. */
+        public Shared sharedCatalog() {
+            return new Shared(this::ofCatalog);
+        }
+
+        /** {@link #ofSchema} captured once for a whole test class; see {@link Shared}. */
+        public Shared sharedSchema(String sdl) {
+            return new Shared(directory -> ofSchema(directory, sdl));
+        }
+
+        /** {@link #ofCodeFixtures} captured once for a whole test class; see {@link Shared}. */
+        public Shared sharedCodeFixtures() {
+            return new Shared(this::ofCodeFixtures);
+        }
     }
 
     /**
@@ -239,26 +320,29 @@ public final class StoreFixture implements AutoCloseable {
         return this;
     }
 
-    /** The graph this fixture captured under. */
+    @Override
     public String graphName() {
         return captured.graphName();
     }
 
-    /** The scoped query surface a single-query tool takes. */
+    @Override
     public StoreHandle handle() {
         return new StoreHandle(captured.dsl(), captured.graphName());
     }
 
-    /** The same store seen as another graph, for asserting one graph cannot read another's rows. */
+    @Override
     public StoreHandle handleFor(String otherGraph) {
         return new StoreHandle(captured.dsl(), otherGraph);
     }
 
     /**
-     * The reader a tool whose answer is several queries takes, minted on first use and closed with this
-     * fixture, which is the dev session's arrangement with no session in play. One per fixture rather
-     * than one per call, reads through a reader serializing.
+     * {@inheritDoc}
+     *
+     * <p>Minted on first use and closed with this fixture, which is the dev session's arrangement
+     * with no session in play. One per fixture rather than one per call, reads through a reader
+     * serializing.
      */
+    @Override
     public StoreReader reader() {
         if (reader == null) {
             reader = captured.reader();
@@ -277,9 +361,14 @@ public final class StoreFixture implements AutoCloseable {
     /**
      * Makes every read of {@code relation} non-terminating, so a bounded reader touching it runs out
      * of budget through the real query rather than through a threshold a case picked.
-     * {@link RunawayRelation} carries the reasoning.
+     * {@link RunawayRelation} carries the reasoning. DDL, so only on a {@link #held()} fixture.
      */
     public void makeRunaway(String relation) {
+        if (!owned) {
+            throw new IllegalStateException("makeRunaway installs a relation, and DDL on the thread's"
+                + " store would change the schema every later case on this thread borrows; open this"
+                + " fixture through StoreFixture.held()");
+        }
         RunawayRelation.install(captured.dsl(), relation);
     }
 
@@ -289,5 +378,175 @@ public final class StoreFixture implements AutoCloseable {
             reader.close();
         }
         captured.close();
+    }
+
+    /**
+     * One captured store for a whole test class, as a JUnit extension, on the model of
+     * {@link no.sikt.graphitron.model.test.FactStores#perClass()}: captured before the class's first
+     * case and closed after its last, so no case spells the store type and the close cannot be
+     * forgotten.
+     *
+     * <pre>{@code
+     * @RegisterExtension
+     * static final StoreFixture.Shared CATALOG = StoreFixture.held().sharedCatalog();
+     *
+     * @Test void aClaim() {
+     *     var result = GraphitronMcpServer.catalogTablesResult(CATALOG.handle(), Map.of());
+     *     ...
+     * }
+     * }</pre>
+     *
+     * <p>Two facts are in play and this ties them together. Ownership is whether the store can be
+     * cleared under you: a borrowed store is emptied by the next borrow on the thread, so a fixture
+     * outliving its case must own one. Sharing is whether other cases see what a case did to it.
+     * This is reachable only from {@link #held()}, so sharing implies ownership by construction.
+     *
+     * <p>A case reads it through {@link FixtureView}, which keeps the mutators out of reach. That
+     * does not stop a write through {@link StoreHandle#dsl()}, so the guarantee is a check instead:
+     * the base tables and their row counts are snapshotted after the capture and must be unchanged
+     * when the class ends, which catches an insert, a delete and the rename
+     * {@link RunawayRelation#install} performs alike. The check fails the class rather than a case,
+     * which is as close to the write as an end-of-class check can get; the snapshot is the same
+     * census {@link ThreadConfinedStore} verifies its clear with.
+     *
+     * <p>Each shared fixture captures into its own subdirectory of one temporary directory per
+     * class: every shape captures under {@link #GRAPH}, so two in one directory would overwrite each
+     * other's schema file.
+     */
+    public static final class Shared implements BeforeAllCallback, AfterAllCallback, FixtureView {
+
+        private static final ExtensionContext.Namespace NAMESPACE =
+            ExtensionContext.Namespace.create(Shared.class);
+
+        private final Function<Path, StoreFixture> opener;
+        private StoreFixture fixture;
+        private List<String> tables;
+        private String census;
+        private Map<String, Integer> counts;
+
+        private Shared(Function<Path, StoreFixture> opener) {
+            this.opener = opener;
+        }
+
+        @Override
+        public void beforeAll(ExtensionContext context) throws IOException {
+            Path root = context.getStore(NAMESPACE)
+                .computeIfAbsent(ClassDirectory.class, key -> ClassDirectory.create(), ClassDirectory.class)
+                .path();
+            open(Files.createTempDirectory(root, "shared-"));
+        }
+
+        @Override
+        public void afterAll(ExtensionContext context) {
+            close();
+        }
+
+        /** Captures and snapshots; {@link #beforeAll} with the directory chosen by the caller. */
+        void open(Path directory) {
+            if (fixture != null) {
+                throw new IllegalStateException("this shared fixture is already open");
+            }
+            fixture = opener.apply(directory);
+            var dsl = fixture.captured.dsl();
+            tables = ThreadConfinedStore.baseTables(dsl);
+            census = ThreadConfinedStore.census(tables);
+            counts = ThreadConfinedStore.counts(dsl, census);
+        }
+
+        /** Checks the store is as captured, then closes it whatever the check found. */
+        void close() {
+            if (fixture == null) {
+                return;
+            }
+            try {
+                verifyUnchanged();
+            } finally {
+                fixture.close();
+                fixture = null;
+            }
+        }
+
+        /**
+         * Fails if a case changed the store: a table created, dropped or renamed, or a row count
+         * that moved. Run by {@link #afterAll}, and reachable on its own so the check itself can be
+         * pinned.
+         */
+        void verifyUnchanged() {
+            var dsl = fixture().captured.dsl();
+            var now = ThreadConfinedStore.baseTables(dsl);
+            if (!now.equals(tables)) {
+                var created = new ArrayList<>(now);
+                created.removeAll(tables);
+                var dropped = new ArrayList<>(tables);
+                dropped.removeAll(now);
+                throw new IllegalStateException(("a case changed the tables of a store its class"
+                    + " shares: created %s, dropped %s. Every later case in the class reads a"
+                    + " different schema; a case that needs DDL wants a store of its own, from"
+                    + " StoreFixture.held().").formatted(created, dropped));
+            }
+            var found = ThreadConfinedStore.counts(dsl, census);
+            var changed = counts.entrySet().stream()
+                .filter(entry -> !entry.getValue().equals(found.get(entry.getKey())))
+                .map(entry -> "%s (%d rows, captured with %d)".formatted(
+                    entry.getKey(), found.get(entry.getKey()), entry.getValue()))
+                .toList();
+            if (!changed.isEmpty()) {
+                throw new IllegalStateException(("a case changed the rows of a store its class"
+                    + " shares: %s. Every later case in the class reads them; a case that writes"
+                    + " wants a store of its own.").formatted(changed));
+            }
+        }
+
+        private StoreFixture fixture() {
+            if (fixture == null) {
+                throw new IllegalStateException("the shared fixture is not open; declare it"
+                    + " @RegisterExtension on a static field");
+            }
+            return fixture;
+        }
+
+        @Override
+        public String graphName() {
+            return fixture().graphName();
+        }
+
+        @Override
+        public StoreHandle handle() {
+            return fixture().handle();
+        }
+
+        @Override
+        public StoreHandle handleFor(String otherGraph) {
+            return fixture().handleFor(otherGraph);
+        }
+
+        @Override
+        public StoreReader reader() {
+            return fixture().reader();
+        }
+    }
+
+    /**
+     * The temporary directory a class's shared fixtures capture under, kept in the class's
+     * extension store so JUnit deletes it once the class and every {@code afterAll} are done.
+     */
+    private record ClassDirectory(Path path) implements AutoCloseable {
+
+        static ClassDirectory create() {
+            try {
+                return new ClassDirectory(Files.createTempDirectory("graphitron-mcp-shared-"));
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        }
+
+        @Override
+        public void close() throws IOException {
+            try (Stream<Path> walk = Files.walk(path)) {
+                for (Path p : walk.sorted(Comparator.reverseOrder()).toList()) {
+                    Files.deleteIfExists(p);
+                }
+            }
+        }
     }
 }

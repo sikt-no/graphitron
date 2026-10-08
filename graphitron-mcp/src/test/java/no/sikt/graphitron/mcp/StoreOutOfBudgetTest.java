@@ -2,14 +2,14 @@ package no.sikt.graphitron.mcp;
 
 import no.sikt.graphitron.model.boot.ReadBudget;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 /**
  * What this server does when a store read runs out of its budget: it fails the call.
@@ -23,12 +23,21 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>The overrun is provoked by making a relation the production query reads non-terminating, so
  * each case turns on the response rather than on a clock. The timeouts are hang guards against that
- * shape escaping its budget, not assertions about it.
+ * shape escaping its budget, not assertions about it, and they surround the read under test alone:
+ * a guard around the whole case would time the fixture's capture too, which a loaded runner can
+ * spend most of a minute on before the read starts.
+ *
+ * <p>Each fixture owns its store, for two reasons. The runaway relation is DDL, which must not reach
+ * the store the test thread lends to every later case; and the guarded read runs on the guard's own
+ * thread, where a borrowed store would no longer be this fixture's.
  */
 class StoreOutOfBudgetTest {
 
     /** Asserted against never; the response has to name it, which is the only claim made about it. */
     private static final ReadBudget BOUNDED = new ReadBudget.Bounded(500);
+
+    /** How long the read under test may run before the case calls it a hang. */
+    private static final Duration HANG_GUARD = Duration.ofSeconds(60);
 
     @TempDir
     Path tmp;
@@ -38,13 +47,13 @@ class StoreOutOfBudgetTest {
      * instead of paging one.
      */
     @Test
-    @Timeout(value = 60, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     void theSchemaToolFailsRatherThanPagingNoTypes() {
-        try (var fixture = StoreFixture.ofSchema(tmp, "type Query { films: Int }\n");
+        try (var fixture = StoreFixture.held().ofSchema(tmp, "type Query { films: Int }\n");
              var reader = fixture.reader(BOUNDED)) {
             fixture.makeRunaway("graphql_type");
 
-            var result = SchemaView.schemaResult(fixture.handle(), reader, Map.of());
+            var result = assertTimeoutPreemptively(HANG_GUARD,
+                () -> SchemaView.schemaResult(fixture.handle(), reader, Map.of()));
 
             assertThat(result.isError())
                 .as("an error, never a page with no types on it")
@@ -61,14 +70,13 @@ class StoreOutOfBudgetTest {
      * read that never finished said nothing about whether it is there.
      */
     @Test
-    @Timeout(value = 60, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     void theCatalogDescribeToolFailsRatherThanReportingNotFound() {
-        try (var fixture = StoreFixture.ofCatalog(tmp);
+        try (var fixture = StoreFixture.held().ofCatalog(tmp);
              var reader = fixture.reader(BOUNDED)) {
             fixture.makeRunaway("sql_table");
 
-            var result = GraphitronMcpServer.catalogDescribeResult(
-                fixture.handle(), reader, Map.of("table", "public.film"));
+            var result = assertTimeoutPreemptively(HANG_GUARD, () ->
+                GraphitronMcpServer.catalogDescribeResult(fixture.handle(), reader, Map.of("table", "public.film")));
 
             assertThat(result.isError())
                 .as("an error, never the notFound arm")

@@ -13,6 +13,7 @@ import no.sikt.graphitron.model.classpath.ClasspathCensus;
 import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreConsole;
 import no.sikt.graphitron.model.boot.StoreReader;
+import no.sikt.graphitron.model.boot.UserCacheRoot;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.capture.java.JavaSourceFacts;
 import no.sikt.graphitron.model.sources.Observation;
@@ -181,7 +182,7 @@ public class DevMojo extends AbstractRewriteMojo {
             var home = Path.of(configured.trim());
             return (home.isAbsolute() ? home : basedir.resolve(home)).normalize();
         }
-        return userCacheRoot()
+        return UserCacheRoot.resolve()
             .resolve("graphitron")
             .resolve("model")
             .resolve(workspaceSegment(workspaceRoot(basedir)));
@@ -200,31 +201,6 @@ public class DevMojo extends AbstractRewriteMojo {
      */
     @Parameter(property = "graphitron.store.directory")
     String storeDirectory;
-
-    /**
-     * The platform's cache convention for per-user tool state: {@code $XDG_CACHE_HOME} (falling
-     * back to {@code ~/.cache}) on Linux, {@code ~/Library/Caches} on macOS,
-     * {@code %LOCALAPPDATA%} on Windows. The cache convention rather than the data one because
-     * the store is a cache by nature: rebuildable from sources, no state of record, always safe
-     * to delete.
-     */
-    static Path userCacheRoot() {
-        Path home = Path.of(System.getProperty("user.home"));
-        String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
-        if (os.contains("win")) {
-            String localAppData = System.getenv("LOCALAPPDATA");
-            return localAppData != null && !localAppData.isBlank()
-                ? Path.of(localAppData)
-                : home.resolve("AppData").resolve("Local");
-        }
-        if (os.contains("mac")) {
-            return home.resolve("Library").resolve("Caches");
-        }
-        String xdg = System.getenv("XDG_CACHE_HOME");
-        return xdg != null && !xdg.isBlank() && Path.of(xdg).isAbsolute()
-            ? Path.of(xdg)
-            : home.resolve(".cache");
-    }
 
     /**
      * The root directory's leaf name plus a hash of its absolute normalized path: filesystem-safe,

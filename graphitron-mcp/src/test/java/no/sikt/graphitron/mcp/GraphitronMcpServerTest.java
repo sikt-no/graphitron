@@ -15,6 +15,7 @@ import no.sikt.graphitron.mcp.rag.docs.DocsRag;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.test.FactStores;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayInputStream;
@@ -330,7 +331,10 @@ class GraphitronMcpServerTest {
 
     // These read the census alone, so they capture it directly rather than running a build for it: the
     // catalog walk is a function of the generated jOOQ model, and no SDL the cases could declare would
-    // change which tables it writes.
+    // change which tables it writes. One capture serves the class, catalog.search's cases included.
+
+    @RegisterExtension
+    static final StoreFixture.Shared CATALOG = StoreFixture.held().sharedCatalog();
 
     /**
      * The wire fields are the shipped ones; what changed is where they come from and the order they
@@ -345,59 +349,55 @@ class GraphitronMcpServerTest {
      * fixture declares through the jOOQ crawler to the wire.
      */
     @Test
-    void catalogTablesListsTheGraphsCensusOrderedBySchemaThenName(@TempDir Path tmp) {
-        try (var census = StoreFixture.ofCatalog(tmp)) {
-            var structured = structured(
-                GraphitronMcpServer.catalogTablesResult(census.handle(), Map.of()));
+    void catalogTablesListsTheGraphsCensusOrderedBySchemaThenName() {
+        var structured = structured(
+            GraphitronMcpServer.catalogTablesResult(CATALOG.handle(), Map.of()));
 
-            @SuppressWarnings("unchecked")
-            var tables = (List<Map<String, Object>>) structured.get("tables");
-            assertThat(tables).isNotEmpty();
-            assertThat(tables).extracting(t -> t.get("schema")).containsOnly("public");
+        @SuppressWarnings("unchecked")
+        var tables = (List<Map<String, Object>>) structured.get("tables");
+        assertThat(tables).isNotEmpty();
+        assertThat(tables).extracting(t -> t.get("schema")).containsOnly("public");
 
-            var names = tables.stream().map(t -> (String) t.get("name")).toList();
-            assertThat(names)
-                .as("the census, in the ordering the page is keyed by")
-                .contains("actor", "film", "project_note")
-                .isSorted();
-            assertThat(tables).filteredOn(t -> "film".equals(t.get("name")))
-                .as("a table whose DDL declares a comment carries it")
-                .singleElement()
-                .satisfies(t -> assertThat(t)
-                    .containsEntry("comment", "One film in the rental catalogue."));
-            assertThat(tables).filteredOn(t -> "actor".equals(t.get("name")))
-                .as("a table whose DDL declares none omits the slot rather than sending null")
-                .singleElement()
-                .satisfies(t -> assertThat(t).doesNotContainKey("comment"));
-        }
+        var names = tables.stream().map(t -> (String) t.get("name")).toList();
+        assertThat(names)
+            .as("the census, in the ordering the page is keyed by")
+            .contains("actor", "film", "project_note")
+            .isSorted();
+        assertThat(tables).filteredOn(t -> "film".equals(t.get("name")))
+            .as("a table whose DDL declares a comment carries it")
+            .singleElement()
+            .satisfies(t -> assertThat(t)
+                .containsEntry("comment", "One film in the rental catalogue."));
+        assertThat(tables).filteredOn(t -> "actor".equals(t.get("name")))
+            .as("a table whose DDL declares none omits the slot rather than sending null")
+            .singleElement()
+            .satisfies(t -> assertThat(t).doesNotContainKey("comment"));
     }
 
     @Test
-    void catalogTablesFiltersBySchemaAndNameSubstring(@TempDir Path tmp) {
-        try (var census = StoreFixture.ofCatalog(tmp)) {
-            // The schema filter is exact and case-insensitive; every test table lives in public.
-            var bySchema = structured(GraphitronMcpServer.catalogTablesResult(
-                census.handle(), Map.of("schema", "PUBLIC")));
-            @SuppressWarnings("unchecked")
-            var inPublic = (List<Map<String, Object>>) bySchema.get("tables");
-            assertThat(inPublic).isNotEmpty();
-            assertThat(inPublic).extracting(t -> t.get("schema")).containsOnly("public");
+    void catalogTablesFiltersBySchemaAndNameSubstring() {
+        // The schema filter is exact and case-insensitive; every test table lives in public.
+        var bySchema = structured(GraphitronMcpServer.catalogTablesResult(
+            CATALOG.handle(), Map.of("schema", "PUBLIC")));
+        @SuppressWarnings("unchecked")
+        var inPublic = (List<Map<String, Object>>) bySchema.get("tables");
+        assertThat(inPublic).isNotEmpty();
+        assertThat(inPublic).extracting(t -> t.get("schema")).containsOnly("public");
 
-            var noSuchSchema = structured(GraphitronMcpServer.catalogTablesResult(
-                census.handle(), Map.of("schema", "other")));
-            @SuppressWarnings("unchecked")
-            var elsewhere = (List<Map<String, Object>>) noSuchSchema.get("tables");
-            assertThat(elsewhere).isEmpty();
+        var noSuchSchema = structured(GraphitronMcpServer.catalogTablesResult(
+            CATALOG.handle(), Map.of("schema", "other")));
+        @SuppressWarnings("unchecked")
+        var elsewhere = (List<Map<String, Object>>) noSuchSchema.get("tables");
+        assertThat(elsewhere).isEmpty();
 
-            // The name filter is a case-insensitive substring, so it reaches every table carrying it.
-            var byName = structured(GraphitronMcpServer.catalogTablesResult(
-                census.handle(), Map.of("name", "ACT")));
-            @SuppressWarnings("unchecked")
-            var actTables = (List<Map<String, Object>>) byName.get("tables");
-            assertThat(actTables.stream().map(t -> (String) t.get("name")))
-                .contains("actor", "film_actor")
-                .allSatisfy(n -> assertThat(n).contains("act"));
-        }
+        // The name filter is a case-insensitive substring, so it reaches every table carrying it.
+        var byName = structured(GraphitronMcpServer.catalogTablesResult(
+            CATALOG.handle(), Map.of("name", "ACT")));
+        @SuppressWarnings("unchecked")
+        var actTables = (List<Map<String, Object>>) byName.get("tables");
+        assertThat(actTables.stream().map(t -> (String) t.get("name")))
+            .contains("actor", "film_actor")
+            .allSatisfy(n -> assertThat(n).contains("act"));
     }
 
     /**
@@ -410,39 +410,37 @@ class GraphitronMcpServerTest {
      * which is what tells an agent whether paging is worth starting.
      */
     @Test
-    void catalogTablesPagesByKeysetAndVisitsEveryTableOnce(@TempDir Path tmp) {
-        try (var census = StoreFixture.ofCatalog(tmp)) {
-            var unpaged = structured(GraphitronMcpServer.catalogTablesResult(census.handle(), Map.of()));
+    void catalogTablesPagesByKeysetAndVisitsEveryTableOnce() {
+        var unpaged = structured(GraphitronMcpServer.catalogTablesResult(CATALOG.handle(), Map.of()));
+        @SuppressWarnings("unchecked")
+        var all = (List<Map<String, Object>>) unpaged.get("tables");
+        var expected = all.stream().map(t -> (String) t.get("name")).toList();
+        assertThat(unpaged).doesNotContainKey("nextCursor");
+
+        var walked = new java.util.ArrayList<String>();
+        Optional<String> cursor = Optional.empty();
+        int pages = 0;
+        do {
+            var args = new LinkedHashMap<String, Object>();
+            args.put("limit", 2);
+            cursor.ifPresent(c -> args.put("cursor", c));
+            var result = GraphitronMcpServer.catalogTablesResult(CATALOG.handle(), args);
+            var page = structured(result);
+
+            assertThat(firstLine(result))
+                .as("the total is the whole filtered census on every page, not the remainder")
+                .startsWith("catalog.tables: " + expected.size() + " table(s)");
+
             @SuppressWarnings("unchecked")
-            var all = (List<Map<String, Object>>) unpaged.get("tables");
-            var expected = all.stream().map(t -> (String) t.get("name")).toList();
-            assertThat(unpaged).doesNotContainKey("nextCursor");
+            var entries = (List<Map<String, Object>>) page.get("tables");
+            assertThat(entries).hasSizeBetween(1, 2);
+            entries.forEach(e -> walked.add((String) e.get("name")));
+            cursor = Optional.ofNullable((String) page.get("nextCursor"));
+        } while (cursor.isPresent() && ++pages < expected.size());
 
-            var walked = new java.util.ArrayList<String>();
-            Optional<String> cursor = Optional.empty();
-            int pages = 0;
-            do {
-                var args = new LinkedHashMap<String, Object>();
-                args.put("limit", 2);
-                cursor.ifPresent(c -> args.put("cursor", c));
-                var result = GraphitronMcpServer.catalogTablesResult(census.handle(), args);
-                var page = structured(result);
-
-                assertThat(firstLine(result))
-                    .as("the total is the whole filtered census on every page, not the remainder")
-                    .startsWith("catalog.tables: " + expected.size() + " table(s)");
-
-                @SuppressWarnings("unchecked")
-                var entries = (List<Map<String, Object>>) page.get("tables");
-                assertThat(entries).hasSizeBetween(1, 2);
-                entries.forEach(e -> walked.add((String) e.get("name")));
-                cursor = Optional.ofNullable((String) page.get("nextCursor"));
-            } while (cursor.isPresent() && ++pages < expected.size());
-
-            assertThat(walked)
-                .as("keyset paging visits the census once, in order, with nothing skipped or repeated")
-                .containsExactlyElementsOf(expected);
-        }
+        assertThat(walked)
+            .as("keyset paging visits the census once, in order, with nothing skipped or repeated")
+            .containsExactlyElementsOf(expected);
     }
 
     /**
@@ -472,48 +470,46 @@ class GraphitronMcpServerTest {
      */
     @Test
     @SuppressWarnings("unchecked")
-    void catalogDescribeReadsOneTablesWholeDescriptionFromTheCensus(@TempDir Path tmp) {
-        try (var census = StoreFixture.ofCatalog(tmp)) {
-            var structured = structured(GraphitronMcpServer.catalogDescribeResult(
-                census.handle(), census.reader(), Map.of("table", "public.film")));
+    void catalogDescribeReadsOneTablesWholeDescriptionFromTheCensus() {
+        var structured = structured(GraphitronMcpServer.catalogDescribeResult(
+            CATALOG.handle(), CATALOG.reader(), Map.of("table", "public.film")));
 
-            assertThat(structured).containsEntry("resolution", "resolved")
-                .containsEntry("schema", "public").containsEntry("name", "film")
-                .containsEntry("comment", "One film in the rental catalogue.");
+        assertThat(structured).containsEntry("resolution", "resolved")
+            .containsEntry("schema", "public").containsEntry("name", "film")
+            .containsEntry("comment", "One film in the rental catalogue.");
 
-            var columns = (List<Map<String, Object>>) structured.get("columns");
-            assertThat(columns).extracting(c -> (String) c.get("sqlName"))
-                .as("the table definition's order, which is what sql_column.ordinal states")
-                .startsWith("film_id", "title", "description", "release_year", "language_id");
-            assertThat(columns.getFirst())
-                .containsEntry("javaName", "FILM_ID").containsEntry("sqlType", "integer")
-                .containsEntry("nullable", false)
-                .containsEntry("comment", "Surrogate key, stable across catalogue imports.");
-            assertThat(columnNamed(columns, "title"))
-                .containsEntry("comment", "Display title, as printed on the distributor's case.");
-            assertThat(columnNamed(columns, "description"))
-                .as("a column named description carries its own comment, not its name")
-                .containsEntry("comment", "Free-text synopsis shown to renters.");
-            assertThat(columnNamed(columns, "release_year"))
-                .as("the database declares no comment here, so the slot is absent rather than blank")
-                .doesNotContainKey("comment")
-                .containsEntry("nullable", true);
+        var columns = (List<Map<String, Object>>) structured.get("columns");
+        assertThat(columns).extracting(c -> (String) c.get("sqlName"))
+            .as("the table definition's order, which is what sql_column.ordinal states")
+            .startsWith("film_id", "title", "description", "release_year", "language_id");
+        assertThat(columns.getFirst())
+            .containsEntry("javaName", "FILM_ID").containsEntry("sqlType", "integer")
+            .containsEntry("nullable", false)
+            .containsEntry("comment", "Surrogate key, stable across catalogue imports.");
+        assertThat(columnNamed(columns, "title"))
+            .containsEntry("comment", "Display title, as printed on the distributor's case.");
+        assertThat(columnNamed(columns, "description"))
+            .as("a column named description carries its own comment, not its name")
+            .containsEntry("comment", "Free-text synopsis shown to renters.");
+        assertThat(columnNamed(columns, "release_year"))
+            .as("the database declares no comment here, so the slot is absent rather than blank")
+            .doesNotContainKey("comment")
+            .containsEntry("nullable", true);
 
-            assertThat((Map<String, Object>) structured.get("primaryKey"))
-                .containsEntry("constraintName", "film_pkey")
-                .containsEntry("columns", List.of("film_id"));
+        assertThat((Map<String, Object>) structured.get("primaryKey"))
+            .containsEntry("constraintName", "film_pkey")
+            .containsEntry("columns", List.of("film_id"));
 
-            var foreignKeys = (Map<String, Object>) structured.get("foreignKeys");
-            var outgoing = (List<Map<String, Object>>) foreignKeys.get("outgoing");
-            assertThat(outgoing)
-                .as("both language references, each naming its target by the full table id")
-                .allSatisfy(fk -> assertThat(fk).containsEntry("targetTable", "public.language"))
-                .extracting(fk -> fk.get("columns"))
-                .contains(List.of("language_id"), List.of("original_language_id"));
-            var incoming = (List<Map<String, Object>>) foreignKeys.get("incoming");
-            assertThat(incoming).extracting(fk -> (String) fk.get("sourceTable"))
-                .contains("public.film_actor", "public.inventory");
-        }
+        var foreignKeys = (Map<String, Object>) structured.get("foreignKeys");
+        var outgoing = (List<Map<String, Object>>) foreignKeys.get("outgoing");
+        assertThat(outgoing)
+            .as("both language references, each naming its target by the full table id")
+            .allSatisfy(fk -> assertThat(fk).containsEntry("targetTable", "public.language"))
+            .extracting(fk -> fk.get("columns"))
+            .contains(List.of("language_id"), List.of("original_language_id"));
+        var incoming = (List<Map<String, Object>>) foreignKeys.get("incoming");
+        assertThat(incoming).extracting(fk -> (String) fk.get("sourceTable"))
+            .contains("public.film_actor", "public.inventory");
     }
 
     /**
@@ -525,21 +521,19 @@ class GraphitronMcpServerTest {
      */
     @Test
     @SuppressWarnings("unchecked")
-    void catalogDescribeReportsAUniqueKeyThePrimaryKeyAlreadyCovers(@TempDir Path tmp) {
-        try (var census = StoreFixture.ofCatalog(tmp)) {
-            var structured = structured(GraphitronMcpServer.catalogDescribeResult(
-                census.handle(), census.reader(), Map.of("table", "redundant_unique_key")));
+    void catalogDescribeReportsAUniqueKeyThePrimaryKeyAlreadyCovers() {
+        var structured = structured(GraphitronMcpServer.catalogDescribeResult(
+            CATALOG.handle(), CATALOG.reader(), Map.of("table", "redundant_unique_key")));
 
-            assertThat((Map<String, Object>) structured.get("primaryKey"))
-                .containsEntry("constraintName", "redundant_unique_key_pkey")
-                .containsEntry("columns", List.of("entry_id"));
-            assertThat((List<Map<String, Object>>) structured.get("uniqueKeys"))
-                .as("the covered constraint is a declaration, not a duplicate to be filtered")
-                .singleElement()
-                .satisfies(key -> assertThat(key)
-                    .containsEntry("constraintName", "redundant_unique_key_entry_id_uk")
-                    .containsEntry("columns", List.of("entry_id")));
-        }
+        assertThat((Map<String, Object>) structured.get("primaryKey"))
+            .containsEntry("constraintName", "redundant_unique_key_pkey")
+            .containsEntry("columns", List.of("entry_id"));
+        assertThat((List<Map<String, Object>>) structured.get("uniqueKeys"))
+            .as("the covered constraint is a declaration, not a duplicate to be filtered")
+            .singleElement()
+            .satisfies(key -> assertThat(key)
+                .containsEntry("constraintName", "redundant_unique_key_entry_id_uk")
+                .containsEntry("columns", List.of("entry_id")));
     }
 
     /**
@@ -552,20 +546,18 @@ class GraphitronMcpServerTest {
      */
     @Test
     @SuppressWarnings("unchecked")
-    void catalogDescribePairsAMultiColumnForeignKeyByPosition(@TempDir Path tmp) {
-        try (var census = StoreFixture.ofCatalog(tmp)) {
-            var structured = structured(GraphitronMcpServer.catalogDescribeResult(
-                census.handle(), census.reader(), Map.of("table", "public.project_note")));
+    void catalogDescribePairsAMultiColumnForeignKeyByPosition() {
+        var structured = structured(GraphitronMcpServer.catalogDescribeResult(
+            CATALOG.handle(), CATALOG.reader(), Map.of("table", "public.project_note")));
 
-            var foreignKeys = (Map<String, Object>) structured.get("foreignKeys");
-            assertThat((List<Map<String, Object>>) foreignKeys.get("outgoing"))
-                .singleElement()
-                .satisfies(fk -> assertThat(fk)
-                    .containsEntry("constraintName", "project_note_project_fkey")
-                    .containsEntry("targetTable", "public.project")
-                    .containsEntry("columns", List.of("org_id", "project_id"))
-                    .containsEntry("targetColumns", List.of("org_id", "project_id")));
-        }
+        var foreignKeys = (Map<String, Object>) structured.get("foreignKeys");
+        assertThat((List<Map<String, Object>>) foreignKeys.get("outgoing"))
+            .singleElement()
+            .satisfies(fk -> assertThat(fk)
+                .containsEntry("constraintName", "project_note_project_fkey")
+                .containsEntry("targetTable", "public.project")
+                .containsEntry("columns", List.of("org_id", "project_id"))
+                .containsEntry("targetColumns", List.of("org_id", "project_id")));
     }
 
     /**
@@ -578,52 +570,50 @@ class GraphitronMcpServerTest {
      */
     @Test
     @SuppressWarnings("unchecked")
-    void catalogDescribeCorrelatesEveryNestedListToItsOwnParent(@TempDir Path tmp) {
-        try (var census = StoreFixture.ofCatalog(tmp)) {
-            var structured = structured(GraphitronMcpServer.catalogDescribeResult(
-                census.handle(), census.reader(), Map.of("table", "public.describe_hub")));
+    void catalogDescribeCorrelatesEveryNestedListToItsOwnParent() {
+        var structured = structured(GraphitronMcpServer.catalogDescribeResult(
+            CATALOG.handle(), CATALOG.reader(), Map.of("table", "public.describe_hub")));
 
-            assertThat(structured).containsEntry("resolution", "resolved");
-            assertThat((List<Map<String, Object>>) structured.get("columns"))
-                .extracting(c -> (String) c.get("sqlName"))
-                .containsExactly("hub_id", "hub_code", "org_id", "project_id", "label");
+        assertThat(structured).containsEntry("resolution", "resolved");
+        assertThat((List<Map<String, Object>>) structured.get("columns"))
+            .extracting(c -> (String) c.get("sqlName"))
+            .containsExactly("hub_id", "hub_code", "org_id", "project_id", "label");
 
-            assertThat((Map<String, Object>) structured.get("primaryKey"))
-                .containsEntry("constraintName", "describe_hub_pkey")
-                .containsEntry("columns", List.of("hub_id"));
-            assertThat((List<Map<String, Object>>) structured.get("uniqueKeys"))
-                .as("the unique constraint carries its own column, not the primary key's beside it")
-                .singleElement()
-                .satisfies(key -> assertThat(key)
-                    .containsEntry("constraintName", "describe_hub_hub_code_uk")
-                    .containsEntry("columns", List.of("hub_code")));
+        assertThat((Map<String, Object>) structured.get("primaryKey"))
+            .containsEntry("constraintName", "describe_hub_pkey")
+            .containsEntry("columns", List.of("hub_id"));
+        assertThat((List<Map<String, Object>>) structured.get("uniqueKeys"))
+            .as("the unique constraint carries its own column, not the primary key's beside it")
+            .singleElement()
+            .satisfies(key -> assertThat(key)
+                .containsEntry("constraintName", "describe_hub_hub_code_uk")
+                .containsEntry("columns", List.of("hub_code")));
 
-            assertThat((List<Map<String, Object>>) structured.get("indexes"))
-                .as("the two declared indexes, each with its own columns in index order, and neither "
-                    + "constraint's backing index")
-                .containsExactly(
-                    Map.of("name", "describe_hub_label_idx", "columns", List.of("label")),
-                    Map.of("name", "describe_hub_org_label_idx",
-                        "columns", List.of("org_id", "label")));
+        assertThat((List<Map<String, Object>>) structured.get("indexes"))
+            .as("the two declared indexes, each with its own columns in index order, and neither "
+                + "constraint's backing index")
+            .containsExactly(
+                Map.of("name", "describe_hub_label_idx", "columns", List.of("label")),
+                Map.of("name", "describe_hub_org_label_idx",
+                    "columns", List.of("org_id", "label")));
 
-            var foreignKeys = (Map<String, Object>) structured.get("foreignKeys");
-            assertThat((List<Map<String, Object>>) foreignKeys.get("outgoing"))
-                .as("the key this table declares, and not the leaf's key beside it")
-                .singleElement()
-                .satisfies(fk -> assertThat(fk)
-                    .containsEntry("constraintName", "describe_hub_project_fkey")
-                    .containsEntry("targetTable", "public.project")
-                    .containsEntry("columns", List.of("org_id", "project_id"))
-                    .containsEntry("targetColumns", List.of("org_id", "project_id")));
-            assertThat((List<Map<String, Object>>) foreignKeys.get("incoming"))
-                .as("the key the leaf declares against this table, reported by what declares it")
-                .singleElement()
-                .satisfies(fk -> assertThat(fk)
-                    .containsEntry("constraintName", "describe_hub_leaf_hub_fkey")
-                    .containsEntry("sourceTable", "public.describe_hub_leaf")
-                    .containsEntry("columns", List.of("hub_id"))
-                    .containsEntry("targetColumns", List.of("hub_id")));
-        }
+        var foreignKeys = (Map<String, Object>) structured.get("foreignKeys");
+        assertThat((List<Map<String, Object>>) foreignKeys.get("outgoing"))
+            .as("the key this table declares, and not the leaf's key beside it")
+            .singleElement()
+            .satisfies(fk -> assertThat(fk)
+                .containsEntry("constraintName", "describe_hub_project_fkey")
+                .containsEntry("targetTable", "public.project")
+                .containsEntry("columns", List.of("org_id", "project_id"))
+                .containsEntry("targetColumns", List.of("org_id", "project_id")));
+        assertThat((List<Map<String, Object>>) foreignKeys.get("incoming"))
+            .as("the key the leaf declares against this table, reported by what declares it")
+            .singleElement()
+            .satisfies(fk -> assertThat(fk)
+                .containsEntry("constraintName", "describe_hub_leaf_hub_fkey")
+                .containsEntry("sourceTable", "public.describe_hub_leaf")
+                .containsEntry("columns", List.of("hub_id"))
+                .containsEntry("targetColumns", List.of("hub_id")));
     }
 
     /**
@@ -655,18 +645,16 @@ class GraphitronMcpServerTest {
     }
 
     @Test
-    void catalogDescribeReturnsNotFoundForUnknownName(@TempDir Path tmp) {
-        try (var census = StoreFixture.ofCatalog(tmp)) {
-            assertThat(structured(GraphitronMcpServer.catalogDescribeResult(
-                census.handle(), census.reader(), Map.of("table", "nope"))))
-                .containsEntry("resolution", "notFound").containsEntry("table", "nope");
+    void catalogDescribeReturnsNotFoundForUnknownName() {
+        assertThat(structured(GraphitronMcpServer.catalogDescribeResult(
+            CATALOG.handle(), CATALOG.reader(), Map.of("table", "nope"))))
+            .containsEntry("resolution", "notFound").containsEntry("table", "nope");
 
-            // A spelling with an empty half names nothing the census could hold, and is answered
-            // without opening a transaction to find that out.
-            assertThat(structured(GraphitronMcpServer.catalogDescribeResult(
-                census.handle(), census.reader(), Map.of("table", "public."))))
-                .containsEntry("resolution", "notFound");
-        }
+        // A spelling with an empty half names nothing the census could hold, and is answered
+        // without opening a transaction to find that out.
+        assertThat(structured(GraphitronMcpServer.catalogDescribeResult(
+            CATALOG.handle(), CATALOG.reader(), Map.of("table", "public."))))
+            .containsEntry("resolution", "notFound");
     }
 
     /**
@@ -675,15 +663,13 @@ class GraphitronMcpServerTest {
      * {@code catalog.tables} refuses: an empty answer reads as a fact about the database.
      */
     @Test
-    void catalogDescribeRefusesWithoutAStoreToRead(@TempDir Path tmp) {
-        try (var census = StoreFixture.ofCatalog(tmp)) {
-            assertThat(GraphitronMcpServer.catalogDescribeResult(
-                census.handle(), null, Map.of("table", "film")).isError()).isTrue();
-            assertThat(firstLine(GraphitronMcpServer.catalogDescribeResult(
-                null, census.reader(), Map.of("table", "film"))))
-                .startsWith("catalog.describe:")
-                .contains("holds no fact store handle");
-        }
+    void catalogDescribeRefusesWithoutAStoreToRead() {
+        assertThat(GraphitronMcpServer.catalogDescribeResult(
+            CATALOG.handle(), null, Map.of("table", "film")).isError()).isTrue();
+        assertThat(firstLine(GraphitronMcpServer.catalogDescribeResult(
+            null, CATALOG.reader(), Map.of("table", "film"))))
+            .startsWith("catalog.describe:")
+            .contains("holds no fact store handle");
     }
 
     /** The entry for one column by its SQL name, the census's order being the table definition's. */
@@ -693,6 +679,9 @@ class GraphitronMcpServerTest {
     }
 
     // ---- code ----
+
+    @RegisterExtension
+    static final StoreFixture.Shared CODE = StoreFixture.held().sharedCodeFixtures();
 
     // One census, three predicates over it. Every case below reads a store captured from this module's
     // own fixture sources: a real classfile scan for the census and a real parse for the declaration
@@ -711,43 +700,41 @@ class GraphitronMcpServerTest {
      */
     @Test
     @SuppressWarnings("unchecked")
-    void codeServiceKindListsAClassWithItsMethodsAndItsDeclaration(@TempDir Path tmp) {
-        try (var fixture = StoreFixture.ofCodeFixtures(tmp)) {
-            var entry = onlyClass(fixture, "service", FILM_SERVICE);
+    void codeServiceKindListsAClassWithItsMethodsAndItsDeclaration() {
+        var entry = onlyClass(CODE, "service", FILM_SERVICE);
 
-            assertThat(entry).containsEntry("classRef", FILM_SERVICE).containsEntry("className", FILM_SERVICE);
-            assertThat((String) entry.get("description"))
-                .as("the doc comment the parse retained, off the declaration the location came from")
-                .startsWith("A service host the code tool reads.");
-            assertThat((Map<String, Object>) entry.get("location"))
-                .containsEntry("uri", fixtureUri("FilmService.java"))
-                .containsEntry("line", fixtureLine("FilmService.java", "public class FilmService"));
+        assertThat(entry).containsEntry("classRef", FILM_SERVICE).containsEntry("className", FILM_SERVICE);
+        assertThat((String) entry.get("description"))
+            .as("the doc comment the parse retained, off the declaration the location came from")
+            .startsWith("A service host the code tool reads.");
+        assertThat((Map<String, Object>) entry.get("location"))
+            .containsEntry("uri", fixtureUri("FilmService.java"))
+            .containsEntry("line", fixtureLine("FilmService.java", "public class FilmService"));
 
-            var methods = (List<Map<String, Object>>) entry.get("methods");
-            assertThat(methods).extracting(m -> m.get("methodRef"))
-                .as("every public method, condition ones included, ordered by name then descriptor")
-                .containsExactly(
-                    FILM_SERVICE + "#activeFilms/0",
-                    FILM_SERVICE + "#describe/1",
-                    FILM_SERVICE + "#describe/1",
-                    FILM_SERVICE + "#search/1",
-                    FILM_SERVICE + "#summarise/1",
-                    FILM_SERVICE + "#titles/1");
+        var methods = (List<Map<String, Object>>) entry.get("methods");
+        assertThat(methods).extracting(m -> m.get("methodRef"))
+            .as("every public method, condition ones included, ordered by name then descriptor")
+            .containsExactly(
+                FILM_SERVICE + "#activeFilms/0",
+                FILM_SERVICE + "#describe/1",
+                FILM_SERVICE + "#describe/1",
+                FILM_SERVICE + "#search/1",
+                FILM_SERVICE + "#summarise/1",
+                FILM_SERVICE + "#titles/1");
 
-            assertThat(methodNamed(methods, "titles")).satisfies(m -> {
-                assertThat(m).containsEntry("returnType", "List<String>");
-                var parameters = (List<Map<String, Object>>) m.get("parameters");
-                assertThat(parameters).singleElement().satisfies(p -> assertThat(p)
-                    .containsEntry("type", "int")
-                    .doesNotContainKey("name"));
-                assertThat((String) m.get("description"))
-                    .startsWith("The titles of at most the given number of films.");
-                assertThat((Map<String, Object>) m.get("location"))
-                    .containsEntry("line", fixtureLine("FilmService.java", "public List<String> titles"));
-            });
+        assertThat(methodNamed(methods, "titles")).satisfies(m -> {
+            assertThat(m).containsEntry("returnType", "List<String>");
+            var parameters = (List<Map<String, Object>>) m.get("parameters");
+            assertThat(parameters).singleElement().satisfies(p -> assertThat(p)
+                .containsEntry("type", "int")
+                .doesNotContainKey("name"));
+            assertThat((String) m.get("description"))
+                .startsWith("The titles of at most the given number of films.");
+            assertThat((Map<String, Object>) m.get("location"))
+                .containsEntry("line", fixtureLine("FilmService.java", "public List<String> titles"));
+        });
 
-            assertThat((List<Map<String, Object>>) entry.get("components")).isEmpty();
-        }
+        assertThat((List<Map<String, Object>>) entry.get("components")).isEmpty();
     }
 
     /**
@@ -760,21 +747,19 @@ class GraphitronMcpServerTest {
      */
     @Test
     @SuppressWarnings("unchecked")
-    void codeConditionKindNarrowsTheMethodListToTheConditionMethods(@TempDir Path tmp) {
-        try (var fixture = StoreFixture.ofCodeFixtures(tmp)) {
-            var entry = onlyClass(fixture, "condition", FILM_SERVICE);
+    void codeConditionKindNarrowsTheMethodListToTheConditionMethods() {
+        var entry = onlyClass(CODE, "condition", FILM_SERVICE);
 
-            var methods = (List<Map<String, Object>>) entry.get("methods");
-            assertThat(methods).singleElement().satisfies(m -> {
-                assertThat(m).containsEntry("methodRef", FILM_SERVICE + "#activeFilms/0")
-                    .containsEntry("name", "activeFilms")
-                    .containsEntry("returnType", "Condition");
-                assertThat((String) m.get("description")).startsWith("Films still on the shelf.");
-                assertThat((Map<String, Object>) m.get("location"))
-                    .containsEntry("uri", fixtureUri("FilmService.java"))
-                    .containsEntry("line", fixtureLine("FilmService.java", "public Condition activeFilms"));
-            });
-        }
+        var methods = (List<Map<String, Object>>) entry.get("methods");
+        assertThat(methods).singleElement().satisfies(m -> {
+            assertThat(m).containsEntry("methodRef", FILM_SERVICE + "#activeFilms/0")
+                .containsEntry("name", "activeFilms")
+                .containsEntry("returnType", "Condition");
+            assertThat((String) m.get("description")).startsWith("Films still on the shelf.");
+            assertThat((Map<String, Object>) m.get("location"))
+                .containsEntry("uri", fixtureUri("FilmService.java"))
+                .containsEntry("line", fixtureLine("FilmService.java", "public Condition activeFilms"));
+        });
     }
 
     /**
@@ -785,18 +770,16 @@ class GraphitronMcpServerTest {
      */
     @Test
     @SuppressWarnings("unchecked")
-    void codeReportsAClassWithNoWalkedSourceAsNotIndexed(@TempDir Path tmp) {
-        try (var fixture = StoreFixture.ofCodeFixtures(tmp)) {
-            var entry = onlyClass(fixture, "service", REMOTE_LOOKUP);
+    void codeReportsAClassWithNoWalkedSourceAsNotIndexed() {
+        var entry = onlyClass(CODE, "service", REMOTE_LOOKUP);
 
-            assertThat(entry).containsEntry("locationStatus", "notIndexed")
-                .doesNotContainKey("location")
-                .doesNotContainKey("description");
-            var methods = (List<Map<String, Object>>) entry.get("methods");
-            assertThat(methods).singleElement().satisfies(m -> assertThat(m)
-                .containsEntry("methodRef", REMOTE_LOOKUP + "#lookup/0")
-                .containsEntry("locationStatus", "notIndexed"));
-        }
+        assertThat(entry).containsEntry("locationStatus", "notIndexed")
+            .doesNotContainKey("location")
+            .doesNotContainKey("description");
+        var methods = (List<Map<String, Object>>) entry.get("methods");
+        assertThat(methods).singleElement().satisfies(m -> assertThat(m)
+            .containsEntry("methodRef", REMOTE_LOOKUP + "#lookup/0")
+            .containsEntry("locationStatus", "notIndexed"));
     }
 
     /**
@@ -807,34 +790,30 @@ class GraphitronMcpServerTest {
      */
     @Test
     @SuppressWarnings("unchecked")
-    void codeReportsASameArityOverloadPairAsAmbiguousRatherThanPickingOne(@TempDir Path tmp) {
-        try (var fixture = StoreFixture.ofCodeFixtures(tmp)) {
-            var entry = onlyClass(fixture, "service", FILM_SERVICE);
-            var methods = (List<Map<String, Object>>) entry.get("methods");
+    void codeReportsASameArityOverloadPairAsAmbiguousRatherThanPickingOne() {
+        var entry = onlyClass(CODE, "service", FILM_SERVICE);
+        var methods = (List<Map<String, Object>>) entry.get("methods");
 
-            assertThat(methods).filteredOn(m -> "describe".equals(m.get("name")))
-                .hasSize(2)
-                .allSatisfy(m -> assertThat(m)
-                    .containsEntry("locationStatus", "ambiguous")
-                    .doesNotContainKey("location"));
-            assertThat(methods).filteredOn(m -> "describe".equals(m.get("name")))
-                .as("the census still tells the overloads apart, the descriptor keying them")
-                .extracting(m -> m.get("returnType")).containsOnly("String");
-        }
+        assertThat(methods).filteredOn(m -> "describe".equals(m.get("name")))
+            .hasSize(2)
+            .allSatisfy(m -> assertThat(m)
+                .containsEntry("locationStatus", "ambiguous")
+                .doesNotContainKey("location"));
+        assertThat(methods).filteredOn(m -> "describe".equals(m.get("name")))
+            .as("the census still tells the overloads apart, the descriptor keying them")
+            .extracting(m -> m.get("returnType")).containsOnly("String");
     }
 
     /** A kind the census has no population for is an argument error naming what it accepts. */
     @Test
-    void codeRefusesAnAbsentOrUnknownKind(@TempDir Path tmp) {
-        try (var fixture = StoreFixture.ofCodeFixtures(tmp)) {
-            var missing = GraphitronMcpServer.codeResult(fixture.handle(), fixture.reader(), Map.of());
-            assertThat(missing.isError()).isTrue();
-            assertThat(firstLine(missing)).startsWith("code:").contains("service, condition");
+    void codeRefusesAnAbsentOrUnknownKind() {
+        var missing = GraphitronMcpServer.codeResult(CODE.handle(), CODE.reader(), Map.of());
+        assertThat(missing.isError()).isTrue();
+        assertThat(firstLine(missing)).startsWith("code:").contains("service, condition");
 
-            var unknown = GraphitronMcpServer.codeResult(
-                fixture.handle(), fixture.reader(), Map.of("kind", "conditions"));
-            assertThat(unknown.isError()).isTrue();
-        }
+        var unknown = GraphitronMcpServer.codeResult(
+            CODE.handle(), CODE.reader(), Map.of("kind", "conditions"));
+        assertThat(unknown.isError()).isTrue();
     }
 
     /** A store-less server refuses rather than answering an empty classpath, as the catalog tools do. */
@@ -849,34 +828,32 @@ class GraphitronMcpServerTest {
     /** Paging is keyset on the class name, so following the cursor visits the census once, in order. */
     @Test
     @SuppressWarnings("unchecked")
-    void codePagesByKeysetAndVisitsEveryClassOnce(@TempDir Path tmp) {
-        try (var fixture = StoreFixture.ofCodeFixtures(tmp)) {
-            var expected = codeClasses(fixture, Map.of("kind", "service")).stream()
-                .map(c -> (String) c.get("className")).toList();
-            assertThat(expected).hasSizeGreaterThan(1).isSorted();
+    void codePagesByKeysetAndVisitsEveryClassOnce() {
+        var expected = codeClasses(CODE, Map.of("kind", "service")).stream()
+            .map(c -> (String) c.get("className")).toList();
+        assertThat(expected).hasSizeGreaterThan(1).isSorted();
 
-            var walked = new java.util.ArrayList<String>();
-            Optional<String> cursor = Optional.empty();
-            int pages = 0;
-            do {
-                var args = new LinkedHashMap<String, Object>();
-                args.put("kind", "service");
-                args.put("limit", 1);
-                cursor.ifPresent(c -> args.put("cursor", c));
-                var result = GraphitronMcpServer.codeResult(fixture.handle(), fixture.reader(), args);
-                assertThat(firstLine(result))
-                    .as("the total is the whole census on every page, not the remainder")
-                    .startsWith("code: " + expected.size() + " service class(es)");
+        var walked = new java.util.ArrayList<String>();
+        Optional<String> cursor = Optional.empty();
+        int pages = 0;
+        do {
+            var args = new LinkedHashMap<String, Object>();
+            args.put("kind", "service");
+            args.put("limit", 1);
+            cursor.ifPresent(c -> args.put("cursor", c));
+            var result = GraphitronMcpServer.codeResult(CODE.handle(), CODE.reader(), args);
+            assertThat(firstLine(result))
+                .as("the total is the whole census on every page, not the remainder")
+                .startsWith("code: " + expected.size() + " service class(es)");
 
-                var page = structured(result);
-                var entries = (List<Map<String, Object>>) page.get("classes");
-                assertThat(entries).hasSize(1);
-                walked.add((String) entries.getFirst().get("className"));
-                cursor = Optional.ofNullable((String) page.get("nextCursor"));
-            } while (cursor.isPresent() && ++pages < expected.size());
+            var page = structured(result);
+            var entries = (List<Map<String, Object>>) page.get("classes");
+            assertThat(entries).hasSize(1);
+            walked.add((String) entries.getFirst().get("className"));
+            cursor = Optional.ofNullable((String) page.get("nextCursor"));
+        } while (cursor.isPresent() && ++pages < expected.size());
 
-            assertThat(walked).containsExactlyElementsOf(expected);
-        }
+        assertThat(walked).containsExactlyElementsOf(expected);
     }
 
     // ---- code fixture helpers ----
@@ -891,14 +868,14 @@ class GraphitronMcpServerTest {
      * through the name filter rather than by position, so a fixture class added later cannot shift a
      * case onto a different entry.
      */
-    private static Map<String, Object> onlyClass(StoreFixture fixture, String kind, String className) {
+    private static Map<String, Object> onlyClass(FixtureView fixture, String kind, String className) {
         var classes = codeClasses(fixture, Map.of("kind", kind, "name", className));
         assertThat(classes).as("%s under kind=%s", className, kind).hasSize(1);
         return classes.getFirst();
     }
 
     @SuppressWarnings("unchecked")
-    private static List<Map<String, Object>> codeClasses(StoreFixture fixture, Map<String, Object> args) {
+    private static List<Map<String, Object>> codeClasses(FixtureView fixture, Map<String, Object> args) {
         var structured = structured(
             GraphitronMcpServer.codeResult(fixture.handle(), fixture.reader(), args));
         return (List<Map<String, Object>>) structured.get("classes");
@@ -976,246 +953,228 @@ class GraphitronMcpServerTest {
         }
         """.formatted(SCHEMA_FIXTURES);
 
+    /** {@link #SCHEMA_SDL} captured once for the class; after it, so the SDL is initialized. */
+    @RegisterExtension
+    static final StoreFixture.Shared SCHEMA = StoreFixture.held().sharedSchema(SCHEMA_SDL);
+
     @Test
     @SuppressWarnings("unchecked")
-    void schemaReportsATableBoundTypesClaimBindingRecordClassAndColumnMatchedField(@TempDir Path tmp) {
-        try (var fixture = StoreFixture.ofSchema(tmp, SCHEMA_SDL)) {
-            var film = onlyType(fixture, "Film");
-            assertThat(film).containsEntry("kind", "OBJECT");
+    void schemaReportsATableBoundTypesClaimBindingRecordClassAndColumnMatchedField() {
+        var film = onlyType(SCHEMA, "Film");
+        assertThat(film).containsEntry("kind", "OBJECT");
 
-            var claims = (List<Map<String, Object>>) film.get("claims");
-            assertThat(claims).singleElement().satisfies(claim -> assertThat(claim)
-                .containsEntry("classifier", "TABLE")
-                .containsEntry("trigger", "@table")
-                .containsEntry("decoded", true));
+        var claims = (List<Map<String, Object>>) film.get("claims");
+        assertThat(claims).singleElement().satisfies(claim -> assertThat(claim)
+            .containsEntry("classifier", "TABLE")
+            .containsEntry("trigger", "@table")
+            .containsEntry("decoded", true));
 
-            // The binding carries the table's full key and the arity of the reference that reached it.
-            assertThat((List<Map<String, Object>>) film.get("tables"))
-                .containsExactly(Map.of("table", "public.film", "candidates", 1));
+        // The binding carries the table's full key and the arity of the reference that reached it.
+        assertThat((List<Map<String, Object>>) film.get("tables"))
+            .containsExactly(Map.of("table", "public.film", "candidates", 1));
 
-            // The @table arm of the coalescing backing view: the table's own generated record. Its
-            // members are empty because the classpath census deliberately never scans generated jOOQ
-            // records, which is the silence that view's comment names rather than a missing read.
-            assertThat((List<Map<String, Object>>) film.get("backing")).singleElement()
-                .satisfies(backing -> {
-                    assertThat(backing).containsEntry("declaredVia", "BOUND_TABLE");
-                    assertThat((String) backing.get("class")).endsWith(".FilmRecord");
-                    assertThat(backing).doesNotContainKey("members");
-                });
+        // The @table arm of the coalescing backing view: the table's own generated record. Its
+        // members are empty because the classpath census deliberately never scans generated jOOQ
+        // records, which is the silence that view's comment names rather than a missing read.
+        assertThat((List<Map<String, Object>>) film.get("backing")).singleElement()
+            .satisfies(backing -> {
+                assertThat(backing).containsEntry("declaredVia", "BOUND_TABLE");
+                assertThat((String) backing.get("class")).endsWith(".FilmRecord");
+                assertThat(backing).doesNotContainKey("members");
+            });
 
-            var title = fieldNamed(film, "Film.title");
-            assertThat((List<Map<String, Object>>) title.get("claims")).singleElement()
-                .satisfies(claim -> assertThat(claim)
-                    .containsEntry("classifier", "TABLE_COLUMN")
-                    .containsEntry("tier", "INFERRED")
-                    // An inferred claim has no directive, so neither slot is emitted as null.
-                    .doesNotContainKey("trigger").doesNotContainKey("decoded"));
-            assertThat((Map<String, Object>) title.get("column"))
-                .containsEntry("table", "public.film")
-                .containsEntry("column", "title")
-                .containsEntry("matchedName", "title")
-                .containsEntry("matchedBy", "JOOQ_NAME");
-        }
+        var title = fieldNamed(film, "Film.title");
+        assertThat((List<Map<String, Object>>) title.get("claims")).singleElement()
+            .satisfies(claim -> assertThat(claim)
+                .containsEntry("classifier", "TABLE_COLUMN")
+                .containsEntry("tier", "INFERRED")
+                // An inferred claim has no directive, so neither slot is emitted as null.
+                .doesNotContainKey("trigger").doesNotContainKey("decoded"));
+        assertThat((Map<String, Object>) title.get("column"))
+            .containsEntry("table", "public.film")
+            .containsEntry("column", "title")
+            .containsEntry("matchedName", "title")
+            .containsEntry("matchedBy", "JOOQ_NAME");
     }
 
     @Test
     @SuppressWarnings("unchecked")
-    void schemaReportsEveryDeclarationSiteOfAnExtendedType(@TempDir Path tmp) {
+    void schemaReportsEveryDeclarationSiteOfAnExtendedType() {
         // The delta the declaration relation buys: the retired projection reduced a type's sites to the
         // one canonical location, where an author of an extended type needs every file the shape comes
         // from. A type declared once answers identically, so the extension is where it is visible.
-        try (var fixture = StoreFixture.ofSchema(tmp, SCHEMA_SDL)) {
-            var declarations = (List<Map<String, Object>>) onlyType(fixture, "Film").get("declarations");
-            assertThat(declarations).hasSize(2);
-            assertThat(declarations).extracting(d -> d.get("isExtension"))
-                .containsExactly(false, true);
-            assertThat(declarations).allSatisfy(declaration -> assertThat(declaration)
-                .containsEntry("kind", "OBJECT")
-                .containsKeys("uri", "line", "column"));
-        }
+        var declarations = (List<Map<String, Object>>) onlyType(SCHEMA, "Film").get("declarations");
+        assertThat(declarations).hasSize(2);
+        assertThat(declarations).extracting(d -> d.get("isExtension"))
+            .containsExactly(false, true);
+        assertThat(declarations).allSatisfy(declaration -> assertThat(declaration)
+            .containsEntry("kind", "OBJECT")
+            .containsKeys("uri", "line", "column"));
     }
 
     @Test
     @SuppressWarnings("unchecked")
-    void schemaReportsAServiceBackedFieldsMethodRefCarryingItsArity(@TempDir Path tmp) {
-        try (var fixture = StoreFixture.ofSchema(tmp, SCHEMA_SDL)) {
-            var summary = fieldNamed(onlyType(fixture, "Film"), "Film.summary");
+    void schemaReportsAServiceBackedFieldsMethodRefCarryingItsArity() {
+        var summary = fieldNamed(onlyType(SCHEMA, "Film"), "Film.summary");
 
-            assertThat((List<Map<String, Object>>) summary.get("claims")).singleElement()
-                .satisfies(claim -> assertThat(claim)
-                    .containsEntry("classifier", "SERVICE")
-                    .containsEntry("tier", "AUTHORED")
-                    .containsEntry("trigger", "@service")
-                    .containsEntry("decoded", true)
-                    .containsKey("location"));
-            assertThat((List<Map<String, Object>>) summary.get("methods")).containsExactly(Map.of(
-                "methodRef", SCHEMA_FIXTURES + "CardService#summary/1",
-                "declaredVia", "SERVICE",
-                "candidates", 1));
-            assertThat(summary).doesNotContainKey("column");
-        }
+        assertThat((List<Map<String, Object>>) summary.get("claims")).singleElement()
+            .satisfies(claim -> assertThat(claim)
+                .containsEntry("classifier", "SERVICE")
+                .containsEntry("tier", "AUTHORED")
+                .containsEntry("trigger", "@service")
+                .containsEntry("decoded", true)
+                .containsKey("location"));
+        assertThat((List<Map<String, Object>>) summary.get("methods")).containsExactly(Map.of(
+            "methodRef", SCHEMA_FIXTURES + "CardService#summary/1",
+            "declaredVia", "SERVICE",
+            "candidates", 1));
+        assertThat(summary).doesNotContainKey("column");
     }
 
     @Test
     @SuppressWarnings("unchecked")
-    void schemaMasksTheColumnBindingOfAFieldAnAuthoredDirectiveClaims(@TempDir Path tmp) {
+    void schemaMasksTheColumnBindingOfAFieldAnAuthoredDirectiveClaims() {
         // Film.description is named after a column of film, so the structural classifier reads it as a
         // table column and its own relation keeps that row on purpose, which is what lets a diagnostic
         // say "would classify as a table column; @service overrides it". The resolution is where the
         // store says which reading won, and reporting a column binding here would tell an agent the
         // field's value comes from a column when it comes from a method.
-        try (var fixture = StoreFixture.ofSchema(tmp, SCHEMA_SDL)) {
-            var description = fieldNamed(onlyType(fixture, "Film"), "Film.description");
+        var description = fieldNamed(onlyType(SCHEMA, "Film"), "Film.description");
 
-            assertThat((List<Map<String, Object>>) description.get("claims")).singleElement()
-                .satisfies(claim -> assertThat(claim)
-                    .containsEntry("classifier", "SERVICE")
-                    .containsEntry("tier", "AUTHORED"));
-            assertThat(description).doesNotContainKey("column");
-        }
+        assertThat((List<Map<String, Object>>) description.get("claims")).singleElement()
+            .satisfies(claim -> assertThat(claim)
+                .containsEntry("classifier", "SERVICE")
+                .containsEntry("tier", "AUTHORED"));
+        assertThat(description).doesNotContainKey("column");
     }
 
     @Test
     @SuppressWarnings("unchecked")
-    void schemaReportsAConditionsMethodTheStoresProducerViewDoesNotCarry(@TempDir Path tmp) {
+    void schemaReportsAConditionsMethodTheStoresProducerViewDoesNotCarry() {
         // The second method population. The producer view is scoped to @service and @externalField, so
         // reading only it would leave this coordinate's method slot empty with nothing on the wire to
         // say a slot had been dropped rather than found absent.
-        try (var fixture = StoreFixture.ofSchema(tmp, SCHEMA_SDL)) {
-            var title = fieldNamed(onlyType(fixture, "FilmFilter"), "FilmFilter.title");
+        var title = fieldNamed(onlyType(SCHEMA, "FilmFilter"), "FilmFilter.title");
 
-            assertThat((List<Map<String, Object>>) title.get("methods")).containsExactly(Map.of(
-                "methodRef", SCHEMA_FIXTURES + "FilmConditions#titled/1",
-                "declaredVia", "CONDITION",
-                "candidates", 1));
-            // @condition claims no classification, so the structural reading still wins the coordinate
-            // and the column binding stands beside the method rather than being masked by it.
-            assertThat((List<Map<String, Object>>) title.get("claims")).singleElement()
-                .satisfies(claim -> assertThat(claim).containsEntry("classifier", "TABLE_COLUMN"));
-            assertThat((Map<String, Object>) title.get("column"))
-                .containsEntry("table", "public.film").containsEntry("column", "title");
-        }
+        assertThat((List<Map<String, Object>>) title.get("methods")).containsExactly(Map.of(
+            "methodRef", SCHEMA_FIXTURES + "FilmConditions#titled/1",
+            "declaredVia", "CONDITION",
+            "candidates", 1));
+        // @condition claims no classification, so the structural reading still wins the coordinate
+        // and the column binding stands beside the method rather than being masked by it.
+        assertThat((List<Map<String, Object>>) title.get("claims")).singleElement()
+            .satisfies(claim -> assertThat(claim).containsEntry("classifier", "TABLE_COLUMN"));
+        assertThat((Map<String, Object>) title.get("column"))
+            .containsEntry("table", "public.film").containsEntry("column", "title");
     }
 
     @Test
     @SuppressWarnings("unchecked")
-    void schemaReportsAReferencingFieldsHopWithBothEndpointsQualified(@TempDir Path tmp) {
+    void schemaReportsAReferencingFieldsHopWithBothEndpointsQualified() {
         // The delta over the retired projection, which held a bare target table name and a key name:
         // both endpoints come back schema-qualified, and the two arities say how certain the hop is.
-        try (var fixture = StoreFixture.ofSchema(tmp, SCHEMA_SDL)) {
-            var language = fieldNamed(onlyType(fixture, "Film"), "Film.language");
+        var language = fieldNamed(onlyType(SCHEMA, "Film"), "Film.language");
 
-            assertThat((List<Map<String, Object>>) language.get("joinPath")).containsExactly(Map.of(
-                "ordinal", 0, "position", 0,
-                "via", "KEY", "keyMatchedBy", "SQL_NAME",
-                "fromTable", "public.film", "toTable", "public.language",
-                "constraint", "film_language_id_fkey", "fkOnFrom", true,
-                "targets", 1, "candidates", 1));
-        }
+        assertThat((List<Map<String, Object>>) language.get("joinPath")).containsExactly(Map.of(
+            "ordinal", 0, "position", 0,
+            "via", "KEY", "keyMatchedBy", "SQL_NAME",
+            "fromTable", "public.film", "toTable", "public.language",
+            "constraint", "film_language_id_fkey", "fkOnFrom", true,
+            "targets", 1, "candidates", 1));
     }
 
     @Test
     @SuppressWarnings("unchecked")
-    void schemaReportsAClosureBackedTypesClassAndTheMemberNamesItOffers(@TempDir Path tmp) {
+    void schemaReportsAClosureBackedTypesClassAndTheMemberNamesItOffers() {
         // The closure's own reachability is derived and tested on the store side; what this asserts is
         // the rendering, which is the class, its provenance and the slots the class offers an author.
-        try (var fixture = StoreFixture.ofSchema(tmp, SCHEMA_SDL)) {
-            var summary = onlyType(fixture, "FilmSummary");
+        var summary = onlyType(SCHEMA, "FilmSummary");
 
-            assertThat((List<Map<String, Object>>) summary.get("backing")).singleElement()
-                .satisfies(backing -> {
-                    assertThat(backing)
-                        .containsEntry("class", SCHEMA_FIXTURES + "FilmSummary")
-                        .containsEntry("declaredVia", "BACKING_CLOSURE");
-                    // Both accessor prefixes the bean rule accepts, each with the slot name the rule
-                    // derives and the declaration it resolves back to.
-                    assertThat((List<Map<String, Object>>) backing.get("members")).containsExactly(
-                        Map.of("name", "released", "type", "boolean",
-                            "origin", "BEAN_ACCESSOR", "accessorMethodName", "isReleased"),
-                        Map.of("name", "title", "type", "String",
-                            "origin", "BEAN_ACCESSOR", "accessorMethodName", "getTitle"));
-                });
-            // Nothing the author wrote claims or binds this type; the producer is what reaches it.
-            assertThat(summary).doesNotContainKeys("claims", "tables");
-        }
+        assertThat((List<Map<String, Object>>) summary.get("backing")).singleElement()
+            .satisfies(backing -> {
+                assertThat(backing)
+                    .containsEntry("class", SCHEMA_FIXTURES + "FilmSummary")
+                    .containsEntry("declaredVia", "BACKING_CLOSURE");
+                // Both accessor prefixes the bean rule accepts, each with the slot name the rule
+                // derives and the declaration it resolves back to.
+                assertThat((List<Map<String, Object>>) backing.get("members")).containsExactly(
+                    Map.of("name", "released", "type", "boolean",
+                        "origin", "BEAN_ACCESSOR", "accessorMethodName", "isReleased"),
+                    Map.of("name", "title", "type", "String",
+                        "origin", "BEAN_ACCESSOR", "accessorMethodName", "getTitle"));
+            });
+        // Nothing the author wrote claims or binds this type; the producer is what reaches it.
+        assertThat(summary).doesNotContainKeys("claims", "tables");
     }
 
     @Test
     @SuppressWarnings("unchecked")
-    void schemaReportsBothBackingsOfAContestedTypeRatherThanApplyingThePrecedence(@TempDir Path tmp) {
+    void schemaReportsBothBackingsOfAContestedTypeRatherThanApplyingThePrecedence() {
         // The walk resolves this pair by reading the table and never consulting the class. That is a
         // defensible reading and a consumer may still apply it by filtering on declaredVia; what the
         // tool may not do is report the precedence as agreement, so both rows cross the wire.
-        try (var fixture = StoreFixture.ofSchema(tmp, SCHEMA_SDL)) {
-            var contested = onlyType(fixture, "Contested");
+        var contested = onlyType(SCHEMA, "Contested");
 
-            var backing = (List<Map<String, Object>>) contested.get("backing");
-            assertThat(backing).hasSize(2);
-            assertThat(backing).extracting(b -> b.get("declaredVia"))
-                .containsExactlyInAnyOrder("BOUND_TABLE", "BACKING_CLOSURE");
-            assertThat(backing).extracting(b -> b.get("class"))
-                .contains(SCHEMA_FIXTURES + "FilmSummary");
+        var backing = (List<Map<String, Object>>) contested.get("backing");
+        assertThat(backing).hasSize(2);
+        assertThat(backing).extracting(b -> b.get("declaredVia"))
+            .containsExactlyInAnyOrder("BOUND_TABLE", "BACKING_CLOSURE");
+        assertThat(backing).extracting(b -> b.get("class"))
+            .contains(SCHEMA_FIXTURES + "FilmSummary");
 
-            assertThat((Map<String, Object>) contested.get("backingConflict"))
-                .containsEntry("candidates", 2);
-        }
+        assertThat((Map<String, Object>) contested.get("backingConflict"))
+            .containsEntry("candidates", 2);
     }
 
     @Test
     @SuppressWarnings("unchecked")
-    void schemaReportsAnAbstractTypesParticipantsUnderTheSdlMechanismThatDeclaresThem(@TempDir Path tmp) {
-        try (var fixture = StoreFixture.ofSchema(tmp, SCHEMA_SDL)) {
-            var named = onlyType(fixture, "Named");
-            assertThat(named).containsEntry("kind", "INTERFACE")
-                .containsEntry("implementors", List.of("Language"))
-                .doesNotContainKey("unionMembers");
+    void schemaReportsAnAbstractTypesParticipantsUnderTheSdlMechanismThatDeclaresThem() {
+        var named = onlyType(SCHEMA, "Named");
+        assertThat(named).containsEntry("kind", "INTERFACE")
+            .containsEntry("implementors", List.of("Language"))
+            .doesNotContainKey("unionMembers");
 
-            var searchable = onlyType(fixture, "Searchable");
-            assertThat(searchable).containsEntry("kind", "UNION")
-                .containsEntry("unionMembers", List.of("Film", "Language"))
-                .doesNotContainKey("implementors");
-        }
+        var searchable = onlyType(SCHEMA, "Searchable");
+        assertThat(searchable).containsEntry("kind", "UNION")
+            .containsEntry("unionMembers", List.of("Film", "Language"))
+            .doesNotContainKey("implementors");
     }
 
     @Test
     @SuppressWarnings("unchecked")
-    void schemaNarrowsToOneTypeAndReportsAnUndeclaredNameAsNotFound(@TempDir Path tmp) {
-        try (var fixture = StoreFixture.ofSchema(tmp, SCHEMA_SDL)) {
-            var found = schemaResult(fixture, Map.of("type", "Film"));
-            assertThat((List<Map<String, Object>>) structured(found).get("types")).hasSize(1);
-            assertThat(firstLine(found)).contains("type 'Film'");
+    void schemaNarrowsToOneTypeAndReportsAnUndeclaredNameAsNotFound() {
+        var found = schemaResult(SCHEMA, Map.of("type", "Film"));
+        assertThat((List<Map<String, Object>>) structured(found).get("types")).hasSize(1);
+        assertThat(firstLine(found)).contains("type 'Film'");
 
-            var missing = schemaResult(fixture, Map.of("type", "Nonexistent"));
-            assertThat(structured(missing))
-                .containsEntry("types", List.of())
-                .containsEntry("notFound", "Nonexistent");
-        }
+        var missing = schemaResult(SCHEMA, Map.of("type", "Nonexistent"));
+        assertThat(structured(missing))
+            .containsEntry("types", List.of())
+            .containsEntry("notFound", "Nonexistent");
     }
 
     @Test
     @SuppressWarnings("unchecked")
-    void schemaPagesByKeysetAndVisitsEveryTypeOnce(@TempDir Path tmp) {
-        try (var fixture = StoreFixture.ofSchema(tmp, SCHEMA_SDL)) {
-            var whole = schemaTypeRefs(fixture, Map.of("limit", 1_000));
-            assertThat(whole).doesNotHaveDuplicates().isSorted().hasSizeGreaterThan(3);
+    void schemaPagesByKeysetAndVisitsEveryTypeOnce() {
+        var whole = schemaTypeRefs(SCHEMA, Map.of("limit", 1_000));
+        assertThat(whole).doesNotHaveDuplicates().isSorted().hasSizeGreaterThan(3);
 
-            var walked = new ArrayList<String>();
-            Optional<String> cursor = Optional.empty();
-            for (int page = 0; page <= whole.size(); page++) {
-                var args = new LinkedHashMap<String, Object>();
-                args.put("limit", 2);
-                cursor.ifPresent(c -> args.put("cursor", c));
-                var result = structured(schemaResult(fixture, args));
-                walked.addAll(typeRefs(result));
-                // The unpaged total rides every page, so an agent never counts the pages to learn it.
-                assertThat(firstLine(schemaResult(fixture, args)))
-                    .startsWith("schema: " + whole.size() + " type(s)");
-                cursor = Optional.ofNullable((String) result.get("nextCursor"));
-                if (cursor.isEmpty()) break;
-            }
-            assertThat(walked).as("keyset paging visits every type exactly once, in order")
-                .isEqualTo(whole);
+        var walked = new ArrayList<String>();
+        Optional<String> cursor = Optional.empty();
+        for (int page = 0; page <= whole.size(); page++) {
+            var args = new LinkedHashMap<String, Object>();
+            args.put("limit", 2);
+            cursor.ifPresent(c -> args.put("cursor", c));
+            var result = structured(schemaResult(SCHEMA, args));
+            walked.addAll(typeRefs(result));
+            // The unpaged total rides every page, so an agent never counts the pages to learn it.
+            assertThat(firstLine(schemaResult(SCHEMA, args)))
+                .startsWith("schema: " + whole.size() + " type(s)");
+            cursor = Optional.ofNullable((String) result.get("nextCursor"));
+            if (cursor.isEmpty()) break;
         }
+        assertThat(walked).as("keyset paging visits every type exactly once, in order")
+            .isEqualTo(whole);
     }
 
     @Test
@@ -1230,7 +1189,7 @@ class GraphitronMcpServerTest {
     // ---- schema helpers ----
 
     private static McpSchema.CallToolResult schemaResult(
-        StoreFixture fixture, Map<String, Object> args
+        FixtureView fixture, Map<String, Object> args
     ) {
         return SchemaView.schemaResult(fixture.handle(), fixture.reader(), args);
     }
@@ -1239,7 +1198,7 @@ class GraphitronMcpServerTest {
      * The one entry the tool returns for {@code typeName}, reached through the narrow rather than by
      * position, so a fixture type added later cannot shift a case onto a different entry.
      */
-    private static Map<String, Object> onlyType(StoreFixture fixture, String typeName) {
+    private static Map<String, Object> onlyType(FixtureView fixture, String typeName) {
         return onlyType(structured(schemaResult(fixture, Map.of("type", typeName))), typeName);
     }
 
@@ -1260,7 +1219,7 @@ class GraphitronMcpServerTest {
             .orElseThrow(() -> new AssertionError("no field entry for " + fieldRef));
     }
 
-    private static List<String> schemaTypeRefs(StoreFixture fixture, Map<String, Object> args) {
+    private static List<String> schemaTypeRefs(FixtureView fixture, Map<String, Object> args) {
         return typeRefs(structured(schemaResult(fixture, args)));
     }
 
@@ -1381,20 +1340,18 @@ class GraphitronMcpServerTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void methodRefIdsCarryTheArityTheDeclarationFamilyIsMatchedOn(@TempDir Path tmp) {
+    void methodRefIdsCarryTheArityTheDeclarationFamilyIsMatchedOn() {
         // The methodRef a tool emits is exactly fqcn#method/arity over the triple the java_ family is
         // matched on, arity being the only ground it and the census share. Pinned against the tool's own
         // parameter list rather than a second spelling of the grammar, so the id and the arity it
         // promises cannot drift apart: an id claiming an arity the entry does not carry is the failure.
-        try (var fixture = StoreFixture.ofCodeFixtures(tmp)) {
-            var entry = onlyClass(fixture, "service", FILM_SERVICE);
+        var entry = onlyClass(CODE, "service", FILM_SERVICE);
 
-            assertThat((List<Map<String, Object>>) entry.get("methods")).allSatisfy(m -> {
-                int arity = ((List<?>) m.get("parameters")).size();
-                assertThat(m).containsEntry("methodRef",
-                    FILM_SERVICE + "#" + m.get("name") + "/" + arity);
-            });
-        }
+        assertThat((List<Map<String, Object>>) entry.get("methods")).allSatisfy(m -> {
+            int arity = ((List<?>) m.get("parameters")).size();
+            assertThat(m).containsEntry("methodRef",
+                FILM_SERVICE + "#" + m.get("name") + "/" + arity);
+        });
     }
 
     // ---- docs.search (semantic retrieval over the bundled manual) ----
@@ -1548,14 +1505,13 @@ class GraphitronMcpServerTest {
      */
     @Test
     @SuppressWarnings("unchecked")
-    void catalogSearchReturnsRankedTableIdsWhoseTopFeedsCatalogDescribe(@TempDir Path tmp) throws Exception {
+    void catalogSearchReturnsRankedTableIdsWhoseTopFeedsCatalogDescribe() throws Exception {
         // The shared embedder warm carries a fake (no ONNX); BM25 over the descriptors carries the
         // ranking. The server kicks the index warm at bind; awaitRagWarm() waits it out deterministically.
         var embedderWarm = startedAwaited(new AsyncWarm<Embedder>("e", () -> new FakeEmbedder(384)));
-        try (var census = StoreFixture.ofCatalog(tmp);
-             var server = new GraphitronMcpServer(
+        try (var server = new GraphitronMcpServer(
                 loopback(0), embedderWarm, null, RagConfig.temporary(),
-                null, census.handle(), census.reader());
+                null, CATALOG.handle(), CATALOG.reader());
              var client = connect(server.port())) {
             client.initialize();
             server.awaitRagWarm();
@@ -1581,15 +1537,14 @@ class GraphitronMcpServerTest {
     }
 
     @Test
-    void catalogSearchReportsWarmingWhileTheIndexIsStillBuilding(@TempDir Path tmp) throws Exception {
+    void catalogSearchReportsWarmingWhileTheIndexIsStillBuilding() throws Exception {
         // A blocking embedder pins the index in Warming; the first search reports the degradation. The
         // store is present, which is what separates this arm from the refusal below: the corpus reads,
         // and what is missing is the embedding of it.
         var embedderWarm = startedAwaited(new AsyncWarm<Embedder>("e", () -> new BlockingEmbedder(384)));
-        try (var census = StoreFixture.ofCatalog(tmp);
-             var server = new GraphitronMcpServer(
+        try (var server = new GraphitronMcpServer(
                 loopback(0), embedderWarm, null, RagConfig.temporary(),
-                null, census.handle(), census.reader());
+                null, CATALOG.handle(), CATALOG.reader());
              var client = connect(server.port())) {
             client.initialize();
 

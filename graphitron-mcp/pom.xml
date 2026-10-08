@@ -24,6 +24,13 @@
           the repo root alongside the /docs tree, so the /docs tree is one level up.
         -->
         <docs.source.dir>${project.basedir}/../docs</docs.source.dir>
+        <!--
+          Where the docs-index generator keeps embedded bundles across `mvn clean`, keyed by
+          everything a bundle is a function of. Empty means graphitron/docs-index under the platform's
+          per-user cache root; set it to pin the cache elsewhere. DocsIndexBuilder's javadoc says why
+          this build state, unlike the rest, lives outside target/.
+        -->
+        <graphitron.docsIndex.cacheDir></graphitron.docsIndex.cacheDir>
     </properties>
 
     <!--
@@ -196,9 +203,11 @@
               <docs.source.dir> into a pre-embedded bundle written to ${project.build.outputDirectory},
               so it is packaged in the jar and async-loaded at server warm. Bound to process-classes
               (after this module's own classes compile, before package) so it runs against the freshly
-              compiled BgeEmbedder + AdocChunker. The ONNX embed cost is gated by a content-hash stamp
-              the generator writes beside the bundle: an unchanged manual skips the re-embed, so a plain
-              `mvn install` inner loop does not pay it twice.
+              compiled BgeEmbedder + AdocChunker. The ONNX embed cost is gated twice by one key over the
+              manual, the chunking and embedding code, and the model version: a stamp beside the bundle,
+              so a plain `mvn install` inner loop does not pay it twice, and a per-user cache of bundles
+              (graphitron.docsIndex.cacheDir), so a `mvn clean install` over inputs already embedded
+              does not pay it either.
 
               Forked, not in-process (exec:exec rather than exec:java), because the embed loads a
               native library the JVM binds to one class loader for its lifetime: langchain4j's
@@ -230,6 +239,7 @@
                                 <argument>no.sikt.graphitron.mcp.rag.docs.DocsIndexBuilder</argument>
                                 <argument>${docs.source.dir}</argument>
                                 <argument>${project.build.outputDirectory}/mcp/docs-index</argument>
+                                <argument>--cache-dir=${graphitron.docsIndex.cacheDir}</argument>
                             </arguments>
                         </configuration>
                     </execution>
