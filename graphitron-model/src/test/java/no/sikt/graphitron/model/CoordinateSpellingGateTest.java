@@ -96,9 +96,8 @@ class CoordinateSpellingGateTest {
                 .where(t.GRAPH_NAME.eq(GRAPH), t.COORDINATE.eq("Film.rating")).fetchOne();
             assertThat(row).isNotNull();
             row.delete();
-            row.changed(true);
             row.setFieldName("year");
-            assertRefused(row::insert);
+            assertRefused(() -> dsl.insertInto(t).set(row.intoMap()).execute());
         });
     }
 
@@ -111,9 +110,8 @@ class CoordinateSpellingGateTest {
                 .where(t.GRAPH_NAME.eq(GRAPH), t.COORDINATE.eq("Query.films(last:)")).fetchOne();
             assertThat(row).isNotNull();
             row.delete();
-            row.changed(true);
             row.setArgumentName("after");
-            assertRefused(row::insert);
+            assertRefused(() -> dsl.insertInto(t).set(row.intoMap()).execute());
         });
     }
 
