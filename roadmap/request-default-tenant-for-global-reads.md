@@ -1,7 +1,7 @@
 ---
 id: R1005
 title: "Request default tenant: route global reads to a caller-named tenant"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 6
 theme: runtime-connection
