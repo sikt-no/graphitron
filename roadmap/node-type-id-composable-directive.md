@@ -1,7 +1,7 @@
 ---
 id: R1002
 title: "Publish each node type's typeId as a composable directive so the supergraph can map type IDs to type names"
-status: Ready
+status: In Progress
 bucket: feature
 priority: 4
 theme: nodeid
