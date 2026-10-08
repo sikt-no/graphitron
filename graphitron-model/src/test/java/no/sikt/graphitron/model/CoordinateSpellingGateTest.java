@@ -1,24 +1,21 @@
 package no.sikt.graphitron.model;
 
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
-import org.jooq.DSLContext;
 import org.jooq.exception.IntegrityConstraintViolationException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.file.Path;
+import java.time.LocalDateTime;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_ELEMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
-import static no.sikt.graphitron.model.test.SeededStore.SEEDED_READING;
-import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
-import static no.sikt.graphitron.model.test.SeededStore.seedDeclaredType;
-import static no.sikt.graphitron.model.test.SeededStore.seedField;
-import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
-import static org.assertj.core.api.Assertions.assertThatCode;
+import static no.sikt.graphitron.model.test.CapturedStore.GRAPH;
+import static no.sikt.graphitron.model.test.CapturedStore.withCapturedStore;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -34,145 +31,98 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>A capture table may carry this check where it may not carry an invariant an author can reach.
  * The writer computes the coordinate from the strings it computes the key from, in the same call, so
  * no document produces a row that fails it, and a failure here is a writer defect rather than a
- * schema the store has to be able to record.
+ * schema the store has to be able to record. The capture below is the legal half of every case: it
+ * writes all four relations under the check, and a check refusing the writers' own spelling fails
+ * it before any refusal is tried.
  *
- * <p>Each refusal names a coordinate an element row does exist for, so the reference into the
- * element relation holds and the only thing a refused row breaks is the check. The legal row beside
- * each is the seeders' own spelling, which is the case to look at first if the class fails whole.
+ * <p>Each refusal takes one captured row out and writes it back under another key. The coordinate's
+ * element row stays, so the reference into the element relation holds, and the coordinate is free
+ * again, so the unique holds; the only thing the row breaks is the check.
  */
 class CoordinateSpellingGateTest {
 
-    private static final String GRAPH = "spelling";
+    private static final String SDL = """
+        type Query {
+          films(first: Int, last: Int): [Film]
+        }
+        type Film {
+          title: String
+          rating: String
+        }
+        """;
 
     @Test
     @DisplayName("a captured field element's coordinate is its type and field name")
-    void aCapturedFieldElementSpellsItsKey() {
-        withSeededStore(GRAPH, dsl -> {
-            assertThatCode(() -> seedField(dsl, GRAPH, "Film", "title"))
-                .doesNotThrowAnyException();
-            anchor(dsl, "Film.rating", "FIELD");
-            assertRefused(() -> dsl.insertInto(GRAPHQL_FIELD_ELEMENT)
-                .set(GRAPHQL_FIELD_ELEMENT.GRAPH_NAME, GRAPH)
-                .set(GRAPHQL_FIELD_ELEMENT.TYPE_NAME, "Film")
-                .set(GRAPHQL_FIELD_ELEMENT.FIELD_NAME, "year")
-                .set(GRAPHQL_FIELD_ELEMENT.COORDINATE, "Film.rating")
-                .set(GRAPHQL_FIELD_ELEMENT.TOUCHED_AT, SEEDED_READING)
+    void aCapturedFieldElementSpellsItsKey(@TempDir Path directory) {
+        withCapturedStore(directory, SDL, dsl -> {
+            var t = GRAPHQL_FIELD_ELEMENT;
+            assertThat(dsl.deleteFrom(t)
+                .where(t.GRAPH_NAME.eq(GRAPH), t.COORDINATE.eq("Film.rating")).execute()).isOne();
+            assertRefused(() -> dsl.insertInto(t)
+                .set(t.GRAPH_NAME, GRAPH)
+                .set(t.TYPE_NAME, "Film")
+                .set(t.FIELD_NAME, "year")
+                .set(t.COORDINATE, "Film.rating")
+                .set(t.TOUCHED_AT, LocalDateTime.now())
                 .execute());
         });
     }
 
     @Test
     @DisplayName("a captured argument element's coordinate is its field and argument name")
-    void aCapturedArgumentElementSpellsItsKey() {
-        withSeededStore(GRAPH, dsl -> {
-            seedField(dsl, GRAPH, "Query", "films");
-            assertThatCode(() -> seedArgument(dsl, GRAPH, "Query", "films", "first", "Int"))
-                .doesNotThrowAnyException();
-            anchor(dsl, "Query.films(last:)", "FIELD_ARGUMENT");
-            assertRefused(() -> dsl.insertInto(GRAPHQL_ARGUMENT_ELEMENT)
-                .set(GRAPHQL_ARGUMENT_ELEMENT.GRAPH_NAME, GRAPH)
-                .set(GRAPHQL_ARGUMENT_ELEMENT.TYPE_NAME, "Query")
-                .set(GRAPHQL_ARGUMENT_ELEMENT.FIELD_NAME, "films")
-                .set(GRAPHQL_ARGUMENT_ELEMENT.ARGUMENT_NAME, "after")
-                .set(GRAPHQL_ARGUMENT_ELEMENT.COORDINATE, "Query.films(last:)")
-                .set(GRAPHQL_ARGUMENT_ELEMENT.TOUCHED_AT, SEEDED_READING)
+    void aCapturedArgumentElementSpellsItsKey(@TempDir Path directory) {
+        withCapturedStore(directory, SDL, dsl -> {
+            var t = GRAPHQL_ARGUMENT_ELEMENT;
+            assertThat(dsl.deleteFrom(t)
+                .where(t.GRAPH_NAME.eq(GRAPH), t.COORDINATE.eq("Query.films(last:)")).execute())
+                .isOne();
+            assertRefused(() -> dsl.insertInto(t)
+                .set(t.GRAPH_NAME, GRAPH)
+                .set(t.TYPE_NAME, "Query")
+                .set(t.FIELD_NAME, "films")
+                .set(t.ARGUMENT_NAME, "after")
+                .set(t.COORDINATE, "Query.films(last:)")
+                .set(t.TOUCHED_AT, LocalDateTime.now())
                 .execute());
         });
     }
 
     @Test
     @DisplayName("an emitted field's coordinate is its type and field name")
-    void anEmittedFieldSpellsItsKey() {
-        withSeededStore(GRAPH, dsl -> {
-            emittedType(dsl, "Film");
-            emittedElement(dsl, "Film.rating", "FIELD");
-            emittedElement(dsl, "Film.title", "FIELD");
-            assertThatCode(() -> emittedField(dsl, "Film", "title", "Film.title"))
-                .doesNotThrowAnyException();
-            assertRefused(() -> emittedField(dsl, "Film", "year", "Film.rating"));
+    void anEmittedFieldSpellsItsKey(@TempDir Path directory) {
+        withCapturedStore(directory, SDL, dsl -> {
+            var t = GRAPHITRON_FIELD;
+            var row = dsl.selectFrom(t)
+                .where(t.GRAPH_NAME.eq(GRAPH), t.COORDINATE.eq("Film.rating")).fetchOne();
+            assertThat(row).isNotNull();
+            row.delete();
+            row.changed(true);
+            row.setFieldName("year");
+            assertRefused(row::insert);
         });
     }
 
     @Test
     @DisplayName("an emitted argument's coordinate is its field and argument name")
-    void anEmittedArgumentSpellsItsKey() {
-        withSeededStore(GRAPH, dsl -> {
-            emittedType(dsl, "Query");
-            emittedElement(dsl, "Query.films", "FIELD");
-            emittedField(dsl, "Query", "films", "Query.films");
-            emittedElement(dsl, "Query.films(first:)", "FIELD_ARGUMENT");
-            emittedElement(dsl, "Query.films(last:)", "FIELD_ARGUMENT");
-            assertThatCode(() -> emittedArgument(dsl, "first", "Query.films(first:)"))
-                .doesNotThrowAnyException();
-            assertRefused(() -> emittedArgument(dsl, "after", "Query.films(last:)"));
+    void anEmittedArgumentSpellsItsKey(@TempDir Path directory) {
+        withCapturedStore(directory, SDL, dsl -> {
+            var t = GRAPHITRON_ARGUMENT;
+            var row = dsl.selectFrom(t)
+                .where(t.GRAPH_NAME.eq(GRAPH), t.COORDINATE.eq("Query.films(last:)")).fetchOne();
+            assertThat(row).isNotNull();
+            row.delete();
+            row.changed(true);
+            row.setArgumentName("after");
+            assertRefused(row::insert);
         });
     }
 
     private static void assertRefused(ThrowingCallable insert) {
         assertThatThrownBy(insert)
-            .as("the coordinate names an element that exists, so the reference holds and only the "
-                + "check can refuse a coordinate that does not spell the row's key")
+            .as("the coordinate names an element that exists and no other row holds, so the "
+                + "reference and the unique both hold and only the check can refuse a coordinate "
+                + "that does not spell the row's key")
             .isInstanceOf(IntegrityConstraintViolationException.class)
             .hasMessageContaining("Check constraint");
-    }
-
-    /** A captured element at {@code coordinate}, so a reference into the element relation holds. */
-    private static void anchor(DSLContext dsl, String coordinate, String kind) {
-        seedDeclaredType(dsl, GRAPH, coordinate.substring(0, coordinate.indexOf('.')), "OBJECT");
-        dsl.insertInto(GRAPHQL_ELEMENT)
-            .set(GRAPHQL_ELEMENT.GRAPH_NAME, GRAPH)
-            .set(GRAPHQL_ELEMENT.COORDINATE, coordinate)
-            .set(GRAPHQL_ELEMENT.ELEMENT_KIND, kind)
-            .set(GRAPHQL_ELEMENT.TOUCHED_AT, SEEDED_READING)
-            .execute();
-    }
-
-    private static void emittedElement(DSLContext dsl, String coordinate, String kind) {
-        dsl.insertInto(GRAPHITRON_ELEMENT)
-            .set(GRAPHITRON_ELEMENT.GRAPH_NAME, GRAPH)
-            .set(GRAPHITRON_ELEMENT.COORDINATE, coordinate)
-            .set(GRAPHITRON_ELEMENT.ELEMENT_KIND, kind)
-            .set(GRAPHITRON_ELEMENT.TOUCHED_AT, SEEDED_READING)
-            .execute();
-    }
-
-    private static void emittedType(DSLContext dsl, String typeName) {
-        emittedElement(dsl, typeName, "NAMED_TYPE");
-        dsl.insertInto(GRAPHITRON_TYPE)
-            .set(GRAPHITRON_TYPE.GRAPH_NAME, GRAPH)
-            .set(GRAPHITRON_TYPE.TYPE_NAME, typeName)
-            .set(GRAPHITRON_TYPE.COORDINATE, typeName)
-            .set(GRAPHITRON_TYPE.KIND, "OBJECT")
-            .execute();
-    }
-
-    private static int emittedField(DSLContext dsl, String typeName, String fieldName,
-                                    String coordinate) {
-        return dsl.insertInto(GRAPHITRON_FIELD)
-            .set(GRAPHITRON_FIELD.GRAPH_NAME, GRAPH)
-            .set(GRAPHITRON_FIELD.TYPE_NAME, typeName)
-            .set(GRAPHITRON_FIELD.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_FIELD.COORDINATE, coordinate)
-            .set(GRAPHITRON_FIELD.ORDINAL, 0)
-            .set(GRAPHITRON_FIELD.TYPE_SDL, "String")
-            .set(GRAPHITRON_FIELD.NAMED_TYPE, "String")
-            .set(GRAPHITRON_FIELD.NON_NULL, false)
-            .set(GRAPHITRON_FIELD.IS_LIST, false)
-            .execute();
-    }
-
-    private static int emittedArgument(DSLContext dsl, String argumentName, String coordinate) {
-        return dsl.insertInto(GRAPHITRON_ARGUMENT)
-            .set(GRAPHITRON_ARGUMENT.GRAPH_NAME, GRAPH)
-            .set(GRAPHITRON_ARGUMENT.TYPE_NAME, "Query")
-            .set(GRAPHITRON_ARGUMENT.FIELD_NAME, "films")
-            .set(GRAPHITRON_ARGUMENT.ARGUMENT_NAME, argumentName)
-            .set(GRAPHITRON_ARGUMENT.COORDINATE, coordinate)
-            .set(GRAPHITRON_ARGUMENT.ORDINAL, 0)
-            .set(GRAPHITRON_ARGUMENT.TYPE_SDL, "Int")
-            .set(GRAPHITRON_ARGUMENT.NAMED_TYPE, "Int")
-            .set(GRAPHITRON_ARGUMENT.NON_NULL, false)
-            .set(GRAPHITRON_ARGUMENT.IS_LIST, false)
-            .execute();
     }
 }
