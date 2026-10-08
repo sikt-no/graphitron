@@ -1,7 +1,7 @@
 ---
 id: R1006
 title: "MCP test suite: share read-only store fixtures, time only the read under test, cache the docs index across clean"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 1
 theme: testing
@@ -58,3 +58,30 @@ On a hit the cached bundle is copied to the output directory and the stamp writt
 - **Lower CI concurrency (`-T`) or stop the test-jar leaking `junit-platform.properties` into mcp.** Both bear on the contention, and the leak is worth its own decision, but neither fixes a guard that times setup, and either changes the whole reactor's wall clock.
 - **Hand-written `@BeforeAll` / `@AfterAll` fields.** Works, but leaves "shared implies owned" and the close to each class's author; `FactStores.perClass()` is the reactor's declared shape for a class-lifetime store and states why.
 - **Keep the docs index under `target/`, as the build's other state is.** `mojo-configuration.adoc` § "Where the fact store lives" keeps build-goal state under `target/` so `mvn clean` removes it, for hermetic CI and containers that discard `$HOME`, and `RagConfig` says the same of the runtime catalog index. This case differs: it is the repo's own build rather than a consumer's, the bundle is a pure function of inputs the key names, and losing the cache costs only the embed it saves. A CI runner that discards `$HOME` simply misses. A gitignored directory in the module, or excluding the directory from `maven-clean-plugin`, would survive `clean` by accident of location or make `clean` mean less than it says.
+
+## Implementation notes
+
+Landed in one commit (`6cc6ad8`), on the plan's shape. Where it differs or adds, so the Done reviewer can weigh it:
+
+- **Where the pieces live.** The owning arms are `StoreFixture.held()` (`ofCatalog`, `ofSchema`, `ofCodeFixtures`), mirroring the LSP fixture's `held()`. The shared form is `StoreFixture.Shared`, minted only by `held().sharedCatalog()` / `sharedSchema(sdl)` / `sharedCodeFixtures()`, and its constructor is private, so sharing implies ownership by construction. The narrow view is a package-private interface, `FixtureView`, which `StoreFixture` and `Shared` both implement; the server test's helpers take it. The class-owned temporary directory is kept in the class's JUnit extension store and deleted after every `afterAll`; each shared fixture captures into its own subdirectory.
+- **The end-of-class check is reachable on its own.** `Shared` has package-private `open` / `close` / `verifyUnchanged`, which `beforeAll` / `afterAll` call. `StoreFixtureTest` drives them directly to pin that an insert and a `RunawayRelation.install` both fail the check, since the reactor has no JUnit engine test kit to run a whole class under. `CorpusStore` in `graphitron-model` already ran the same snapshot over the same three `ThreadConfinedStore` instruments, which were package-private as the spec says; they are now public.
+- **What the hang guard surrounds.** mcp: the tool call. LSP: `markAllForRecalculation` in the drain and vocabulary cases, `answeringAll` in the logging case, and `inlayHint(...).get()` in the routing case. Each statement after it is an assertion.
+- **The platform cache root moved to `graphitron-model`.** `graphitron-maven-plugin` depends on `graphitron-mcp`, not the other way round, so the shared resolution is `no.sikt.graphitron.model.boot.UserCacheRoot`, and `DevMojo.userCacheRoot` is gone in its favour.
+- **One key, both gates.** The in-`target` stamp now holds the full cache key rather than the docs hash alone, so an incremental build also re-embeds after a chunker or model change, which the old stamp missed. The embedder seam is a package-private `DocsIndexBuilder.Toolchain(classesRoot, modelIdentity, embedder)`. The model identity is read from the bge jar's own `META-INF/maven/.../pom.properties`; if it cannot be read, the build embeds and neither reads nor writes the cache. The cache directory reaches the builder as `--cache-dir=${graphitron.docsIndex.cacheDir}`, with the property empty by default. Bundles are about 3 MB rather than the 1 MB estimated; pruning keeps five.
+
+## Verification results
+
+Measured 2026-10-08 on the 4-core web sandbox. "Before" is a worktree of trunk `db925c4`, "after" is `6cc6ad8`; both resolve the same installed upstream artifacts. Arms interleaved, plain `mvn`, `-Plocal-db`, on `graphitron-mcp` only. The first test pair is a warm-up and not counted.
+
+[cols="2,3,3",options="header"]
+|===
+| Measure | Before | After
+| `mvn test`, wall clock (s) | 45.2 / 43.5 / 44.6 / 43.1 | 29.9 / 30.4 / 29.0 / 29.4
+| `mvn clean verify`, wall clock (s) | 69.5 / 69.8 / 68.3 | 36.7 / 36.1 / 36.2
+| `GraphitronMcpServerTest`, captures / boots | 35 / 2 | 9 / 5
+| `GraphitronMcpServerTest`, reported elapsed (s) | 38.4 | 24.4
+|===
+
+About 14 s (32%) off the module's test phase and 33 s (48%) off its clean verify, the latter being the test saving plus the embed the cache skips (`[docs-index] reused the bundle cached for 298cb99f68fe...`). The capture count is 3 shared plus 6 one-offs, with boots up by the 3 owned stores, as the plan predicted. In the before arm the store-cost line attributes `StoreOutOfBudgetTest` 0 captures, because `@Timeout(SEPARATE_THREAD)` ran each capture on a throwaway thread the per-thread tally does not reach. In the after arm its 2 captures and 2 boots land on the class.
+
+Still owed: the next trunk CI run green.
