@@ -1,7 +1,7 @@
 ---
 id: R1002
 title: "Publish each node type's typeId as a composable directive so the supergraph can map type IDs to type names"
-status: Spec
+status: Ready
 bucket: feature
 priority: 4
 theme: nodeid
@@ -136,3 +136,11 @@ Round 2 is resolved. Following `@key`'s three parts (build-time synthesiser belo
    *Response:* withdrawn with its cause. With no walk-side producer there are not two node sets to reconcile: the population is `graphitron_node`'s, table-bound by its key, and a `@node` with no `@table` has no row. The corpus document for that shape is in `KNOWN_DISAGREEMENTS` beside the others, since the walk emits nothing for any of them. The reviewer's non-blocking note on the store's own assembly stays a pickup check in Implementation.
 
 Verdict: request revisions. Status stays Spec. Both findings are about what the synthesiser computes and over which population; neither reopens the architecture. Not blocking: whether the store's own assembly (which judges the corpus as written, without synthesis) tolerates a `@composeDirective(name: "@nodeType")` whose directive it has not yet been given is worth one line at pickup, since the spike defined `@nodeType` locally.
+
+### Round 4: Spec → Ready, sign off (session_01Dm8pThf7s3WudRiDie9JaJ, 2026-10-08)
+
+Both gate questions pass. The goal is one a consumer can state: compose `@nodeType` once per subgraph and every node type publishes its effective `typeId`, so the supergraph carries the mapping. The plan is now one shape in the tree rather than a new one: the generator emits from `EmittedRegistry` over the store (`GraphQLRewriteGenerator.emittedSchema` assembles it and the per-type generators take that schema), so a view beside `graphitron_synthesized_federation_key`, a captured `@composeDirective` decode in the manner of `graphitron_ast_link_entry`, and a step beside `applySynthesisedKeys` reach `_service { sdl }` with no walk-side producer. The id and the node population are `graphitron_node`'s, so nothing restates the three-tier rule. The pickup check on the store's own assembly is cheap: `SchemaAssembly` is plain graphql-java `SchemaGenerator`, no federation transform, and `composeDirective` is not declared in `directives.graphqls`, so it is not stripped.
+
+Non-blocking, for the implementer at pickup: the agreement-gate bullet lists the `@node`-with-no-`@table` document in `KNOWN_DISAGREEMENTS`, but that document has no `graphitron_node` row, so neither producer emits `@nodeType` for it and the two printings agree; the ratchet fails a listed document that does not differ. That case belongs in the pipeline tier as a control, and only documents with at least one node type that has a row belong in the set.
+
+Verdict: sign off.
