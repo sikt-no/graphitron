@@ -9505,7 +9505,19 @@ SELECT f.graph_name, COALESCE(fb.source_name, f.source_name), COALESCE(fb.source
                     WHERE c.source_name = sc.table_source_name AND c.table_schema = sc.table_schema
                       AND c.table_name = sc.table_name
                       AND (c.column_name_upper = UPPER(COALESCE(fb.name_ref, f.field_name))
-                           OR c.jooq_name_upper = UPPER(COALESCE(fb.name_ref, f.field_name))));
+                           OR c.jooq_name_upper = UPPER(COALESCE(fb.name_ref, f.field_name))))
+UNION ALL
+-- A field on the subscription root, at the field's own declaration. Meaningful under the
+-- specification and under the directives alike: graphitron generates no subscription resolver
+-- yet, so an author works around it rather than fixing it. Keyed on the root operation and not on
+-- a type's name, a schema block binding the subscription root under another name being the same
+-- schema.
+SELECT f.graph_name, f.source_name, f.source_line, f.source_column,
+       'SUBSCRIPTION_FIELD', CAST(NULL AS VARCHAR)
+  FROM graphql_ast_field_definition_entry f
+  JOIN graphql_root_operation ro
+    ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name
+   AND ro.operation = 'SUBSCRIPTION';
 COMMENT ON VIEW graphitron_entry_defect_rule IS 'One row the entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
 COMMENT ON COLUMN graphitron_entry_defect_rule.graph_name IS 'the owning graph''s partition, carried from the entry; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_entry_defect_rule.source_name IS 'the file the offending directive was written in, the first of the three columns naming its position; with them a reference into graphql_ast_entry, which is the supertype that makes a @routine application and a path element the same kind of thing to point at';
@@ -15608,7 +15620,9 @@ INSERT INTO graphitron_defect_type VALUES
   ('TYPE_NAME_CASE_COLLISION', 'error', 'GRAPHITRON', 'GRAPHITRON_TYPE_NAME_CASE_COLLISION',
    'Two types the generator writes a file for have names that differ only in case, which on a filesystem that folds case is one file; rename one of them.'),
   ('COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_COLUMN_UNRESOLVED',
-   'A field reads a column the table it reads from does not have, its parent''s or the one its @reference path arrives at, under its own name or the one @field(name:) gives it, so there is nothing to select: the name is misspelt, or the column lives on another table.');
+   'A field reads a column the table it reads from does not have, its parent''s or the one its @reference path arrives at, under its own name or the one @field(name:) gives it, so there is nothing to select: the name is misspelt, or the column lives on another table.'),
+  ('SUBSCRIPTION_FIELD', 'error', 'UNSUPPORTED', 'GRAPHITRON_SUBSCRIPTION_FIELD',
+   'A field on the subscription root is a subscription, and graphitron generates no subscription resolver yet.');
 
 INSERT INTO meta_relation VALUES
   ('graphql_schema_problem', 'graph-schema-problem', 'graphql-assembly',

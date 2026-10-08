@@ -520,6 +520,9 @@ types and its formatter are already model-side, so what stands between here and 
   * **The `errorGuard` rules** `open`. 16 sites, over a fact only `intent_` states.
   * **The `discrimination`, `source`, `referencedTable`, `target`, `enum` and `resolvedTable`
     rules** `open`. 31 sites between them.
+    * **A field on the subscription root is a defect** `done`. `SUBSCRIPTION_FIELD`, the first code
+      resting on `UNSUPPORTED`, at the field's own declaration and keyed on the root operation; the
+      diagnostic surface reports it as not actionable. Stated by `facts/subscription-field.graphqls`.
   * **The rules on directives R333's catalog names no fact for** `open`. `@scalarType` binding,
     tenancy and federation, 25 sites; rules all the same, over the relations that state them.
     * **A `@scalarType` naming no constant is a defect** `done`. `SCALAR_TYPE_REFERENCE_MALFORMED`,
