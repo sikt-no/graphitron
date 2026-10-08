@@ -1,6 +1,6 @@
 ---
 id: R951
-title: "A consumer pom that adds a dependency to the plugin realm can shadow the jOOQ graphitron parses with, and the store will not open"
+title: "A second jOOQ where graphitron can see it fails the build far from its cause, naming neither the jar nor the pom entry that brought it"
 status: Spec
 bucket: dx
 priority: 1
@@ -10,15 +10,17 @@ created: 2026-09-15
 last-updated: 2026-10-08
 ---
 
-# A consumer pom that adds a dependency to the plugin realm can shadow the jOOQ graphitron parses with, and the store will not open
+# A second jOOQ where graphitron can see it fails the build far from its cause, naming neither the jar nor the pom entry that brought it
 
 ## Goal
 
 A consumer whose build puts a second jOOQ where graphitron can see it gets told so, in their own
 terms, before anything else fails: which jar, which pom entry brought it, and what to change. Today
-the same mistake surfaces as a fact-store view that "did not parse" or as an `IllegalAccessError`
-between two jOOQ internals, neither of which mentions jOOQ editions, Maven, or the author's pom, so
-the first reading an author reaches for is that their schema broke the generator.
+the same mistake surfaces as a `NoSuchMethodError` or an `IllegalAccessError` between jOOQ
+internals, thrown from whichever class happened to link first, or, when the versions happen to line
+up, as no error at all while graphitron runs on a jOOQ it was not compiled against. None of these
+mentions jOOQ editions, Maven, or the author's pom, so the first reading an author reaches for is
+that their schema broke the generator.
 
 Two places can carry the second jOOQ, and they get different answers. The *plugin realm* (the
 classloader Maven builds for graphitron from graphitron's own dependencies plus anything the
@@ -39,28 +41,38 @@ reading signatures from classfiles. This item delivers the legible failure that 
 
 ## What happens
 
-### Symptom one: a second jOOQ in the plugin realm, the store will not open
+### Symptom one: a second jOOQ in the plugin realm
 
-Found while pricing the refresh pass on the `sis` consumer. The module's pom adds `sis-service` to
-the plugin block's `<dependencies>`. That dependency brings `org.jooq.pro:jooq:3.19.18` into the
-plugin realm, where graphitron's own `org.jooq:jooq:3.20.11` already is. The two artifacts carry the
-same package and class names under different group ids, so Maven's version mediation never compares
-them, both land in the realm, and which one answers a given class load is URL order.
+Found on the `sis` consumer, whose pom listed `sis-service` under the plugin block's
+`<dependencies>`. That dependency brought `org.jooq.pro:jooq:3.19.18` into the plugin realm, where
+graphitron's own `org.jooq:jooq:3.20.11` already is. The two artifacts carry the same package and
+class names under different group ids, so Maven's version mediation never compares them and both land
+in the realm. Which one answers is not an accident of ordering: on Maven 3.9.11 the realm lists the
+plugin block's entries directly after the plugin's own jar and ahead of graphitron's declared
+dependencies, so the consumer's jOOQ answers every `org.jooq` class load.
 
-When the older one answers, the failure is this:
+Reproduced on trunk (2026-10-08) with the `basic-generate` invoker IT and jOOQ 3.19.24 added under
+`<plugin><dependencies>`, once at a foreign coordinate (two jars; the added one at realm `urls[1]`,
+graphitron's at `urls[13]`) and once as `org.jooq:jooq` (Maven mediates to the one added jar). Both
+runs fail identically:
 
 ```
-graphitron: could not open the fact store at <cache>/...-dev:
-the stored definition of view intent_field_scope_table_live did not parse,
-and a definition walk reads it: Token ')' expected: [69:9]
+Execution rewrite-generate of goal no.sikt:graphitron-maven-plugin:10-SNAPSHOT:generate failed:
+An API incompatibility was encountered while executing ...:generate:
+java.lang.NoSuchMethodError: 'org.jooq.Domain org.jooq.impl.Internal.createDomain(org.jooq.Schema,
+org.jooq.Name, org.jooq.Comment, org.jooq.DataType, org.jooq.Check[])'
+    at no.sikt.graphitron.rewrite.test.jooq.Domains.<clinit>
+    ...
+    at no.sikt.graphitron.model.jooq.JooqCatalog.loadDefaultCatalog
 ```
 
-`ViewReferences.parse` reads each registered rule's stored definition back with
-`dsl.parser().parseQuery` so `MaterializeDependencies.populate` can derive the refresh order, and
-H2 renders that view's derived table with its `UNION ALL` arms parenthesised. jOOQ 3.20.11 parses
-that; 3.19.18 does not. The parse is only the first casualty: with the older jar answering, the whole
-fact store (graphitron's internal H2 database of captured facts, driven through jOOQ) runs on a jOOQ
-graphitron was not compiled against, and any 3.20-only call fails the same way later.
+The fact store (graphitron's internal H2 database of captured facts, driven through jOOQ) opens
+without complaint on the older jar; the first thing to break is the consumer's own generated
+catalog, compiled against 3.20, linking through the codegen loader's parent-first delegation to the
+realm's 3.19. Where the consumer's catalog was generated by the same older jOOQ the realm now
+answers with, that link succeeds and the run proceeds on a jOOQ graphitron was not compiled against:
+what fails then, and where, is whichever 3.20-only call is reached first, and nothing guarantees one
+is. The check below therefore stands on the invariant, not on any one downstream failure.
 
 The `<plugin><dependencies>` route for service jars is already withdrawn in the manual
 (`docs/manual/how-to/external-code.adoc` § Make the class nameable, and `mojo-configuration.adoc`
@@ -274,9 +286,12 @@ backstop keeps an unclassified `Error` from escaping `DevMojo.regenerate`'s
 
 ## Other solutions we've considered
 
-**Derive the view read sets at build time instead of parsing at boot.** The parse is the first thing
-symptom one breaks, not the cause; with a 3.19 jar answering, the store's every jOOQ call runs on a
-version graphitron was not compiled against. Removing the parse would move the failure, not fix it.
+**Let the codegen backstop cover symptom one too.** The reproduced `NoSuchMethodError` escapes from
+`JooqCatalog.loadDefaultCatalog` inside `withCodegenScope`, so the backstop below would catch it and
+list the jOOQ jars. It would still fire only after the store has opened and capture has started,
+it would describe the realm's problem as a codegen-loader one, and it says nothing at all when the
+consumer's catalog was generated by the realm's foreign jOOQ and nothing throws. The realm check is
+the only arm that holds in that silent case.
 
 **Make a second realm jOOQ work.** Maven gives a plugin no way to exclude what the consumer adds to
 its realm. A self-isolating launcher (the mojo rebuilding its own classloader from its declared
@@ -333,3 +348,14 @@ first paragraph and the item's title rest on it.
    trunk. Either give the failure a second realm jOOQ now produces, or state that it is now silent
    or unobserved and argue the check from the invariant. Retitle the item to match. Then drop the
    "derive the view read sets" alternative, or reframe it as already landed.
+
+   *Author response (session_01MuRsGbZ7TsJp4FSVoh9FyD, 2026-10-08):* reproduced on trunk with the
+   `basic-generate` IT and jOOQ 3.19.24 under `<plugin><dependencies>`, at a foreign coordinate and
+   as `org.jooq:jooq`. The store opens; both runs fail with `NoSuchMethodError` on
+   `Internal.createDomain` from the consumer's generated catalog in `JooqCatalog.loadDefaultCatalog`.
+   Symptom one and the goal's "Today" sentence now state that, plus the case where the versions line
+   up and nothing throws; the check is argued from the invariant. The realm URL order observed
+   (plugin-block entries first) replaces "URL order". Retitled. The "derive the view read sets"
+   alternative is replaced by "let the codegen backstop cover symptom one too", the alternative that
+   reproduction makes live. This session wrote round 1 and this revision, so the next pass needs a
+   different reviewer session.
