@@ -56,8 +56,8 @@ final class HandleMethodBody {
     /**
      * The dispatch surface's tenant routing for one entity type. {@code null} for a
      * single-tenant build. {@code bound} carries the per-alternative decoded tenant
-     * positions for a tenant-scoped entity, or {@code null} for a global entity (which
-     * acquires the default source). {@code tenantKey} is the boxed tenant column type, the type
+     * positions for a tenant-scoped entity, or {@code null} for a global entity (a global
+     * read, acquired through {@code dslGlobal}). {@code tenantKey} is the boxed tenant column type, the type
      * each tenant group's decoded key is held in.
      */
     record TenantRouting(ClassName tenantConnections, TenantBinding.EntityRepBound bound, TypeName tenantKey) {}
@@ -239,8 +239,9 @@ final class HandleMethodBody {
         b.addStatement("Object[] first = bindings.get(0)");
         b.addStatement("$T groupEnv = ($T) first[2]", ENV, ENV);
         if (routing != null) {
-            // Multi-tenant build, global entity table: every group reads the default source.
-            b.addStatement("$T dsl = $T.dslDefault(groupEnv)",
+            // Multi-tenant build, global entity table: every group is a global read, served by
+            // the request's default tenant when it names one, else by the default source.
+            b.addStatement("$T dsl = $T.dslGlobal(groupEnv)",
                 DSL_CONTEXT, routing.tenantConnections());
         } else {
             b.addStatement("$T dsl = graphitronContext(groupEnv).getDslContext(groupEnv)", DSL_CONTEXT);

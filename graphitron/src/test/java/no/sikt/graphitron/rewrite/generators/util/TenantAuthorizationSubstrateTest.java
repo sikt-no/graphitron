@@ -37,7 +37,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * taken, ahead of the hosting check so an unauthorized caller cannot probe which tenants are
  * hosted; and a mount declaring the tenant slot receives the key it is mounting for, or
  * {@code Optional.empty()} for the default source, one mount per key even when keys share a
- * {@code DataSource}.
+ * {@code DataSource}. A request's default tenant serves {@code dslGlobal()} through the same
+ * entry {@code dslFor} uses for that tenant, and leaves {@code dslDefault()} on the default source.
  */
 @UnitTier
 class TenantAuthorizationSubstrateTest {
@@ -48,6 +49,7 @@ class TenantAuthorizationSubstrateTest {
     private static EmittedCodeHarness harness;
     private static Class<?> runtimeClass;
     private static Class<?> tenantConnectionsClass;
+    private static Class<?> requestTenantsClass;
     private static Class<?> commitPolicyClass;
     private static Class<?> clientExceptionClass;
     private static Object commitPolicyCommit;
@@ -74,6 +76,7 @@ class TenantAuthorizationSubstrateTest {
         harness = EmittedCodeHarness.compile(units);
         runtimeClass = harness.load(SCHEMA_PACKAGE + ".GraphitronRuntime");
         tenantConnectionsClass = harness.load(SCHEMA_PACKAGE + ".TenantConnections");
+        requestTenantsClass = harness.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.REQUEST_TENANTS_CLASS_NAME);
         clientExceptionClass = harness.load(SCHEMA_PACKAGE + "." + GraphitronClientExceptionClassGenerator.CLASS_NAME);
         Class<?> providerClass = harness.load(SCHEMA_PACKAGE + ".GraphitronTransactionProvider");
         commitPolicyClass = java.util.Arrays.stream(providerClass.getDeclaredClasses())
@@ -161,6 +164,66 @@ class TenantAuthorizationSubstrateTest {
         releaseAll(tc);
     }
 
+    // --- the request's default tenant ------------------------------------------------------------
+
+    @Test
+    void aDefaultTenantOutsideTheSet_isRefusedBeforeAnyCarrierExists() {
+        assertThatThrownBy(() -> withDefault(Set.of("A"), "B"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("'B'")
+            .hasMessageContaining("not in the request tenant set");
+        assertThat(events).isEmpty();
+    }
+
+    @Test
+    void dslGlobal_pinsTheDefaultTenantsSource_andMountsForIt() throws Throwable {
+        Object tc = newTenantConnections(newRuntime(Map.of("A", fakeDataSource("A"), "B", fakeDataSource("B"))),
+            withDefault(Set.of("A", "B"), "B"));
+
+        dslGlobal(tc);
+
+        assertThat(events).containsExactly("getConnection:B");
+        assertThat(RecordingHookFixture.MOUNTED_TENANTS).containsExactly(Optional.of("B"));
+        releaseAll(tc);
+    }
+
+    @Test
+    void dslGlobalThenDslForTheSameTenant_takesOneConnectionAndRunsOneMount() throws Throwable {
+        Object tc = newTenantConnections(newRuntime(Map.of("A", fakeDataSource("A"))),
+            withDefault(Set.of("A"), "A"));
+
+        Object global = dslGlobal(tc);
+        Object routed = dslFor(tc, "A");
+
+        assertThat(routed).as("one entry per tenant key, shared by both acquisitions").isSameAs(global);
+        assertThat(events).containsExactly("getConnection:A");
+        assertThat(RecordingHookFixture.MOUNTED_TENANTS).containsExactly(Optional.of("A"));
+        releaseAll(tc);
+    }
+
+    @Test
+    void dslDefault_staysOnTheDefaultSource_whenTheRequestNamesADefaultTenant() throws Throwable {
+        Object tc = newTenantConnections(newRuntime(Map.of("A", fakeDataSource("A"))),
+            withDefault(Set.of("A"), "A"));
+
+        invoke(() -> tenantConnectionsClass.getMethod("dslDefault").invoke(tc));
+
+        assertThat(events).containsExactly("getConnection:default");
+        assertThat(RecordingHookFixture.MOUNTED_TENANTS).containsExactly(Optional.empty());
+        releaseAll(tc);
+    }
+
+    @Test
+    void dslGlobal_withoutADefaultTenant_pinsTheDefaultSource() throws Throwable {
+        Object tc = newTenantConnections(newRuntime(Map.of("A", fakeDataSource("A"))), Set.of("A"));
+
+        dslGlobal(tc);
+
+        assertThat(events).containsExactly("getConnection:default");
+        assertThat(RecordingHookFixture.MOUNTED_TENANTS).containsExactly(Optional.empty());
+        releaseAll(tc);
+    }
+
     // --- driving helpers -------------------------------------------------------------------------
 
     private Object newRuntime(Map<String, DataSource> tenantSources) throws Throwable {
@@ -170,8 +233,22 @@ class TenantAuthorizationSubstrateTest {
     }
 
     private Object newTenantConnections(Object runtime, Set<String> tenants) throws Throwable {
-        return tenantConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, Set.class, String.class)
-            .newInstance(runtime, commitPolicyCommit, tenants, "{}");
+        return newTenantConnections(runtime,
+            invoke(() -> requestTenantsClass.getMethod("of", java.util.Collection.class).invoke(null, tenants)));
+    }
+
+    private Object newTenantConnections(Object runtime, Object requestTenants) throws Throwable {
+        return tenantConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, requestTenantsClass, String.class)
+            .newInstance(runtime, commitPolicyCommit, requestTenants, "{}");
+    }
+
+    private static Object withDefault(Set<String> tenants, String defaultTenant) throws Throwable {
+        return invoke(() -> requestTenantsClass.getMethod("withDefault", java.util.Collection.class, String.class)
+            .invoke(null, tenants, defaultTenant));
+    }
+
+    private Object dslGlobal(Object tc) throws Throwable {
+        return invoke(() -> tenantConnectionsClass.getMethod("dslGlobal").invoke(tc));
     }
 
     private Object dslFor(Object tc, Object key) throws Throwable {

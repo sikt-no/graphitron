@@ -261,6 +261,7 @@ public final class PlanCompileGraph {
                     var runtime = runtimeUnit("GraphitronRuntime");
                     var tenantConnections = runtimeUnit("TenantConnections");
                     var hookImpl = runtimeUnit("GraphitronSessionHook");
+                    var requestTenants = runtimeUnit("RequestTenants");
                     pinned.ifPresent(p -> hookImpl.ifPresent(h -> declared(p, h)));
                     runtime.ifPresent(r -> {
                         pinned.ifPresent(p -> declared(r, p));
@@ -269,6 +270,7 @@ public final class PlanCompileGraph {
                     tenantConnections.ifPresent(t -> {
                         runtime.ifPresent(r -> declared(t, r));
                         pinned.ifPresent(p -> declared(t, p));
+                        requestTenants.ifPresent(rt -> declared(t, rt));
                         refOf(GlobalUnitKind.TRANSACTION_PROVIDER).ifPresent(tp -> declared(t, tp));
                     });
                 }
@@ -281,6 +283,7 @@ public final class PlanCompileGraph {
                     // Lazy acquisition on every path: the instrumentation publishes the
                     // per-operation carrier on both topologies.
                     runtimeUnit("TenantConnections").ifPresent(t -> declared(instrumentation, t));
+                    runtimeUnit("RequestTenants").ifPresent(rt -> declared(instrumentation, rt));
                     refOf(GlobalUnitKind.TRANSACTION_PROVIDER).ifPresent(tp -> declared(instrumentation, tp));
                 }
                 case SCHEMA_CLASS -> {
@@ -302,6 +305,8 @@ public final class PlanCompileGraph {
                     // contextArguments and the singleton, so the facade references the runtime
                     // (Graphitron.runtime(...)) but never the instrumentation class.
                     runtimeUnit("GraphitronRuntime").ifPresent(r -> precise(facade, r));
+                    // A <tenantColumn> build's factories take or wrap the RequestTenants value.
+                    runtimeUnit("RequestTenants").ifPresent(rt -> precise(facade, rt));
                 }
                 case DEV_EXECUTOR -> {
                     var devExecutor = fixed.units().get(0);

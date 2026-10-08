@@ -117,6 +117,11 @@ public final class ConnectionRuntimeClassGenerator {
     public static final String SESSION_HOOK_IMPL_CLASS_NAME = "GraphitronSessionHook";
     /** The per-operation tenant-keyed connection carrier. */
     public static final String TENANT_CONNECTIONS_CLASS_NAME = "TenantConnections";
+    /**
+     * The request-tenancy value the factory takes in {@code <tenantColumn>} builds: the request
+     * tenant set and an optional default tenant that is a member of it.
+     */
+    public static final String REQUEST_TENANTS_CLASS_NAME = "RequestTenants";
     /** The runtime's nested source triple ({@code DataSource}, dialect, jOOQ {@code Settings}). */
     public static final String SOURCE_CLASS_NAME = "Source";
 
@@ -211,6 +216,7 @@ public final class ConnectionRuntimeClassGenerator {
         var pinnedConnection = ClassName.get(schemaPackage, PINNED_CONNECTION_CLASS_NAME);
         var runtime = ClassName.get(schemaPackage, RUNTIME_CLASS_NAME);
         var tenantConnections = ClassName.get(schemaPackage, TENANT_CONNECTIONS_CLASS_NAME);
+        var requestTenants = ClassName.get(schemaPackage, REQUEST_TENANTS_CLASS_NAME);
         var instrumentation = ClassName.get(schemaPackage, GraphitronConnectionInstrumentationGenerator.CLASS_NAME);
         var provider = ClassName.get(schemaPackage, GraphitronTransactionProviderGenerator.CLASS_NAME);
         var commitPolicy = provider.nestedClass(GraphitronTransactionProviderGenerator.COMMIT_POLICY_ENUM_NAME);
@@ -221,7 +227,10 @@ public final class ConnectionRuntimeClassGenerator {
         units.add(pinnedConnection(pinnedConnection, sessionHookImpl, sessionHooks, tenantKey, multiTenant));
         units.add(runtime(runtime, pinnedConnection, instrumentation, sessionHooks, tenantKey, multiTenant));
         units.add(tenantConnections(tenantConnections, runtime, pinnedConnection, provider, commitPolicy, tenantKey,
-            multiTenant, sessionHooks));
+            multiTenant, sessionHooks, requestTenants));
+        if (multiTenant) {
+            units.add(requestTenants(requestTenants, tenantKey));
+        }
         if (sessionHooks.emitsHookImplementation()) {
             units.add(sessionHookImpl(sessionHooks, tenantKey, multiTenant));
         }
@@ -1007,7 +1016,8 @@ public final class ConnectionRuntimeClassGenerator {
      */
     private static TypeSpec tenantConnections(ClassName self, ClassName runtime, ClassName pinnedConnection,
                                               ClassName provider, ClassName commitPolicy, TypeName tenantKey,
-                                              boolean multiTenant, SessionHooks sessionHooks) {
+                                              boolean multiTenant, SessionHooks sessionHooks,
+                                              ClassName requestTenants) {
         var payload = payloadParams(sessionHooks);
         TypeName handleType = sessionHooks instanceof SessionHooks.Handled h ? h.handleType() : null;
         boolean handled = handleType != null;
@@ -1061,12 +1071,17 @@ public final class ConnectionRuntimeClassGenerator {
                 + "acquisition is checked against it in {@link #entryFor} before a connection is taken,\n"
                 + "and it bounds {@link #fanOutDomain}, so routing and fan-out read one fact.\n")
             .build();
+        var defaultTenantField = FieldSpec.builder(optionalKey, "defaultTenant", Modifier.PRIVATE, Modifier.FINAL)
+            .addJavadoc("The request's default tenant, the member of {@link #tenants} that serves global reads\n"
+                + "({@link #dslGlobal()}), or empty when the request names none and global reads take the\n"
+                + "default source.\n")
+            .build();
         var constructorBuilder = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
             .addParameter(runtime, "runtime")
             .addParameter(commitPolicy, "commitPolicy");
         if (multiTenant) {
-            constructorBuilder.addParameter(tenantSetType, "tenants");
+            constructorBuilder.addParameter(requestTenants, "requestTenants");
         }
         for (var p : payload) {
             constructorBuilder.addParameter(p.javaType(), p.name());
@@ -1075,7 +1090,10 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("this.runtime = runtime")
             .addStatement("this.commitPolicy = commitPolicy");
         if (multiTenant) {
-            constructorBuilder.addStatement("this.tenants = $T.requireNonNull(tenants, $S)", OBJECTS, "tenants");
+            constructorBuilder
+                .addStatement("$T.requireNonNull(requestTenants, $S)", OBJECTS, "requestTenants")
+                .addStatement("this.tenants = requestTenants.tenants()")
+                .addStatement("this.defaultTenant = requestTenants.defaultTenant()");
         }
         for (var p : payload) {
             constructorBuilder.addStatement("this.$L = $L", p.name(), p.name());
@@ -1086,8 +1104,9 @@ public final class ConnectionRuntimeClassGenerator {
                     + "operation. Concurrency is confined to {@link #scatter}'s bounded workers, each owning\n"
                     + "one keyed connection single-threaded through {@link #dslFor}, with the dispatch thread\n"
                     + "blocked on the join for the scatter's whole duration; every other access runs serially\n"
-                    + "on the dispatch thread. {@code tenants} is the request tenant set, the only tenants\n"
-                    + "this carrier will acquire a connection for.\n"
+                    + "on the dispatch thread. {@code requestTenants} carries the request tenant set, the\n"
+                    + "only tenants this carrier will acquire a connection for, and the default tenant that\n"
+                    + "serves global reads when the request names one.\n"
                 : "Builds a per-operation carrier over {@code runtime} for one request. One instance per\n"
                     + "operation; entries are pinned on first demand.\n")
                 + (payload.isEmpty() ? ""
@@ -1202,8 +1221,21 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("return entryFor($T.empty()).dsl", ClassName.get("java.util", "Optional"))
             .addJavadoc("Returns the provider-bound {@code DSLContext} for the default source, pinning and\n"
                 + "mounting one connection on first use and reusing it thereafter. The untenanted\n"
-                + "sibling of {@link #dslFor}; the single-tenant path resolves every context through\n"
+                + "sibling of {@link #dslFor}, and always the fixed default source, whatever default\n"
+                + "tenant the request names; the single-tenant path resolves every context through\n"
                 + "this, as the one-key case.\n")
+            .build();
+
+        var dslGlobal = MethodSpec.methodBuilder("dslGlobal")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(DSL_CONTEXT)
+            .addException(SQL_EXCEPTION)
+            .addStatement("return entryFor(defaultTenant).dsl")
+            .addJavadoc("Returns the provider-bound {@code DSLContext} for graphitron's own reads of global\n"
+                + "tables: the request's default tenant when it names one, else the default source. A\n"
+                + "present default tenant resolves through {@link #entryFor} like any routed key, so it\n"
+                + "shares the entry {@link #dslFor} uses for that tenant: one connection and one mount.\n"
+                + "Writes and service calls keep {@link #dslDefault()}.\n")
             .build();
 
         var releaseAllBuilder = MethodSpec.methodBuilder("releaseAll")
@@ -1311,7 +1343,8 @@ public final class ConnectionRuntimeClassGenerator {
         carrier.addField(runtimeField)
             .addField(policyField);
         if (multiTenant) {
-            carrier.addField(tenantsField);
+            carrier.addField(tenantsField)
+                .addField(defaultTenantField);
         }
         for (var p : payload) {
             carrier.addField(FieldSpec.builder(p.javaType(), p.name(), Modifier.PRIVATE, Modifier.FINAL)
@@ -1357,6 +1390,8 @@ public final class ConnectionRuntimeClassGenerator {
                 .addMethod(collapseFanOut(self))
                 .addMethod(logFanOutFailure(self))
                 .addMethod(staticDslFor(self, tenantKey))
+                .addMethod(dslGlobal)
+                .addMethod(staticDslGlobal(self))
                 .addMethod(divinedTenant(tenantKey))
                 .addMethod(divinedTenantAgree(clientException))
                 .addMethod(permits(self, tenantKey))
@@ -1900,6 +1935,134 @@ public final class ConnectionRuntimeClassGenerator {
                 + "with the checked acquisition failure wrapped unchecked.\n"
                 + "@param env the field's {@code DataFetchingEnvironment}\n"
                 + "@param tenantKey the divined tenant value\n")
+            .build();
+    }
+
+    /** The global-read sibling of {@link #staticDslDefault}, emitted in multi-tenant builds only. */
+    private static MethodSpec staticDslGlobal(ClassName self) {
+        return MethodSpec.methodBuilder("dslGlobal")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(DSL_CONTEXT)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .beginControlFlow("try")
+            .addStatement("return of(env).dslGlobal()")
+            .nextControlFlow("catch ($T e)", SQL_EXCEPTION)
+            .addStatement("throw new $T($S, e)", DATA_ACCESS_EXCEPTION,
+                "Acquiring the connection for a global read failed")
+            .endControlFlow()
+            .addJavadoc("Global-read acquisition for emitted fetcher sites: {@link #of} +\n"
+                + "{@link #dslGlobal()}, with the checked acquisition failure wrapped unchecked.\n"
+                + "@param env the field's {@code DataFetchingEnvironment}\n")
+            .build();
+    }
+
+    /**
+     * {@code RequestTenants}: the request tenant set and an optional default tenant, one value so
+     * the membership invariant lives in its constructor rather than spread over the factory, the
+     * instrumentation and the carrier. A final value class with record-style accessors rather than
+     * a Java record, because the project's JavaPoet fork does not expose a record builder; the
+     * consumer-facing surface (canonical constructor, {@code tenants()}, {@code defaultTenant()},
+     * value equality) is the same. {@code tenantKey} is the boxed tenant key type, so the class is
+     * not generic. Valid Java 17.
+     */
+    private static TypeSpec requestTenants(ClassName self, TypeName tenantKey) {
+        var setType = ParameterizedTypeName.get(SET, tenantKey);
+        var optionalKey = ParameterizedTypeName.get(OPTIONAL, tenantKey);
+        var collectionType = ParameterizedTypeName.get(COLLECTION, tenantKey);
+        var constructor = MethodSpec.constructorBuilder()
+            .addModifiers(Modifier.PUBLIC)
+            .addParameter(setType, "tenants")
+            .addParameter(optionalKey, "defaultTenant")
+            .addStatement("$T<$T> copy = $T.copyOf($T.requireNonNull(tenants, $S))",
+                SET, tenantKey, SET, OBJECTS, "tenants")
+            .addStatement("$T.requireNonNull(defaultTenant, $S)", OBJECTS, "defaultTenant")
+            .beginControlFlow("if (defaultTenant.isPresent() && !copy.contains(defaultTenant.get()))")
+            .addStatement("throw new $T($S + defaultTenant.get() + $S)", IllegalArgumentException.class,
+                "Default tenant '", "' is not in the request tenant set.")
+            .endControlFlow()
+            .addStatement("this.tenants = copy")
+            .addStatement("this.defaultTenant = defaultTenant")
+            .addJavadoc("@param tenants the tenants this request may touch in this deployment; copied\n"
+                + "@param defaultTenant the member of {@code tenants} that serves global reads, or empty\n"
+                + "@throws IllegalArgumentException when {@code defaultTenant} is present and not in\n"
+                + "{@code tenants}\n")
+            .build();
+        var of = MethodSpec.methodBuilder("of")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(self)
+            .addParameter(collectionType, "tenants")
+            .addStatement("return new $T($T.copyOf($T.requireNonNull(tenants, $S)), $T.empty())",
+                self, SET, OBJECTS, "tenants", OPTIONAL)
+            .addJavadoc("A request tenant set with no default tenant: global tables read the default\n"
+                + "source.\n"
+                + "@param tenants the tenants this request may touch in this deployment\n")
+            .build();
+        var withDefault = MethodSpec.methodBuilder("withDefault")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(self)
+            .addParameter(collectionType, "tenants")
+            .addParameter(tenantKey, "defaultTenant")
+            .addStatement("return new $T($T.copyOf($T.requireNonNull(tenants, $S)), $T.of(defaultTenant))",
+                self, SET, OBJECTS, "tenants", OPTIONAL)
+            .addJavadoc("A request tenant set whose member {@code defaultTenant} serves graphitron's reads\n"
+                + "of global tables, on that tenant's connection and under its session mount.\n"
+                + "@param tenants the tenants this request may touch in this deployment\n"
+                + "@param defaultTenant the tenant whose database answers global reads; must be in\n"
+                + "{@code tenants}\n"
+                + "@throws IllegalArgumentException when {@code defaultTenant} is not in {@code tenants}\n")
+            .build();
+        var tenantsAccessor = MethodSpec.methodBuilder("tenants")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(setType)
+            .addStatement("return tenants")
+            .addJavadoc("The request tenant set, immutable.\n")
+            .build();
+        var defaultTenantAccessor = MethodSpec.methodBuilder("defaultTenant")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(optionalKey)
+            .addStatement("return defaultTenant")
+            .addJavadoc("The default tenant, or empty when the request names none.\n")
+            .build();
+        var equals = MethodSpec.methodBuilder("equals")
+            .addAnnotation(Override.class)
+            .addModifiers(Modifier.PUBLIC)
+            .returns(boolean.class)
+            .addParameter(Object.class, "other")
+            .addStatement("return other instanceof $T that && tenants.equals(that.tenants)"
+                + " && defaultTenant.equals(that.defaultTenant)", self)
+            .build();
+        var hashCode = MethodSpec.methodBuilder("hashCode")
+            .addAnnotation(Override.class)
+            .addModifiers(Modifier.PUBLIC)
+            .returns(int.class)
+            .addStatement("return $T.hash(tenants, defaultTenant)", OBJECTS)
+            .build();
+        var toString = MethodSpec.methodBuilder("toString")
+            .addAnnotation(Override.class)
+            .addModifiers(Modifier.PUBLIC)
+            .returns(String.class)
+            .addStatement("return $S + tenants + $S + defaultTenant + $S",
+                REQUEST_TENANTS_CLASS_NAME + "[tenants=", ", defaultTenant=", "]")
+            .build();
+        return TypeSpec.classBuilder(self)
+            .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
+            .addJavadoc("The request's tenancy, passed to {@code Graphitron.newOwnedExecutionInput}: the request\n"
+                + "tenant set, the tenants the request may touch in this deployment, and optionally a\n"
+                + "<em>default tenant</em>, one member of the set whose database answers graphitron's reads\n"
+                + "of global tables (tables without the tenant column) on that tenant's connection and\n"
+                + "under its session mount. Writes to global tables and {@code @service} calls keep the\n"
+                + "runtime's default source either way. Build one with {@link #of} or\n"
+                + "{@link #withDefault}; a default tenant outside the set is refused here.\n")
+            .addField(FieldSpec.builder(setType, "tenants", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(optionalKey, "defaultTenant", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addMethod(constructor)
+            .addMethod(of)
+            .addMethod(withDefault)
+            .addMethod(tenantsAccessor)
+            .addMethod(defaultTenantAccessor)
+            .addMethod(equals)
+            .addMethod(hashCode)
+            .addMethod(toString)
             .build();
     }
 

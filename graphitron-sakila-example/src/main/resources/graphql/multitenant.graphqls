@@ -3,7 +3,8 @@
 # proof that operation-divined tenant routing emits valid Java 17 for every TenantBinding arm.
 # The sakila catalog's film_id plays the tenant id: film, inventory and film_actor classify
 # tenant-scoped; language (no film_id column) classifies global and serves as the default-source
-# reference data. Kept deliberately slim: one field per arm, nothing else.
+# reference data, or the request's default tenant's when it names one. Kept deliberately slim: one
+# field per arm, nothing else.
 
 interface Node { id: ID! }
 
@@ -41,8 +42,8 @@ type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
 
 type Inventory @table(name: "inventory") {
     inventoryId: Int @field(name: "inventory_id")
-    # Untenanted batched child of a tenant-scoped parent: store is global, so its batch runs on
-    # the default source whatever tenant the inventory came from.
+    # Global-read batched child of a tenant-scoped parent: store is global, so its batch runs on
+    # the request's default tenant, else the default source, whatever tenant the inventory came from.
     store: Store @splitQuery @reference(path: [{key: "inventory_store_id_fkey"}])
 }
 
@@ -65,9 +66,13 @@ type FilmEndorsement @table(name: "film_endorsement") {
     film: Film @splitQuery
 }
 
-# Untenanted arm: global reference data on the default source.
+# Global-read arm: global reference data on the request's default tenant, else the default source.
 type Language @table(name: "language") {
     name: String
+    # Default-source arm: a child service on a global parent runs on the default source whatever
+    # default tenant the request names, since its SQL is opaque to the build.
+    servedBy: String @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService", method: "languageServedBy"})
     # FanOut batched form: a fanned child of an untenanted parent. The marker itself forces the
     # fetcher boundary (no @splitQuery needed), and the rows method runs one batch statement per
     # tenant per parent batch through the scatter helper.
@@ -130,8 +135,18 @@ type Query {
     # divined tenant source as the page query instead of re-acquiring by environment.
     filmsConnectionScoped(filmId: Int! @field(name: "film_id"), first: Int, after: String):
         [Film!]! @asConnection @defaultOrder(primaryKey: true)
-    # Untenanted root: acquires dslDefault(), never consults the divined context.
+    # Global-read root: acquires dslGlobal(), the request's default tenant when it names one,
+    # never the divined context.
     languages: [Language!]!
+    # Global-read connection: the page and its totalCount ride one carrier on the default tenant.
+    languagesConnection: [Language!]! @asConnection @defaultOrder(primaryKey: true)
+    # Global-read multi-table polymorphic root.
+    globalThings: [GlobalThing!]!
+    # A root service returning a global @table: the service's SQL is opaque, so it runs on the
+    # default source, and graphitron re-reads its rows on that same connection.
+    languagesOnConnection: [Language!]! @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
+        method: "languagesOnConnection"})
     # Untenanted root over the global endorsements, whose film child routes on each row.
     endorsements(note: String! @field(name: "note")): [FilmEndorsement!]!
     # @globalData: a root service handed a connection whose arguments name no tenant. Unmarked
@@ -140,6 +155,10 @@ type Query {
     globalServedBy: String @globalData @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
         method: "globalServedBy"})
+    # A @globalData producer whose payload re-projects a global row on its own coordinate.
+    globalLanguage: GlobalLanguagePayload @globalData @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
+        method: "globalLanguage"})
     node(id: ID!): Node
     nodes(ids: [ID!]!): [Node]!
 }
@@ -215,6 +234,41 @@ type RateFilmsPayload {
     films: [Film!]!
 }
 
+# The same beside a global row: language re-projects the service's record on its own coordinate,
+# a global read, so the request's default tenant answers it whatever tenant the service ran on.
+# Typed GlobalLanguage rather than Language: Language.films is @tenantFanOut, and fan-out refuses a
+# field reachable below a tenant-bound ancestor on any path.
+type RatedFilmsLanguagePayload {
+    ranOn: String
+    films: [Film!]!
+    language: GlobalLanguage
+}
+
+# The language table again, slim and with no fanned child, so it can sit below tenant-bound edges:
+# the tenant-routed payload above, and node dispatch, which divines a tenant for the tenant-scoped
+# node types. A node type, so node dispatch over a global type follows the default tenant too.
+type GlobalLanguage implements Node @table(name: "language") @node(keyColumns: ["language_id"]) {
+    id: ID! @nodeId
+    name: String
+}
+
+# A default-source producer's payload: servedBy is the database the @globalData service ran on,
+# and language is a global read like any other, so it reads the request's default tenant.
+type GlobalLanguagePayload {
+    servedBy: String
+    language: Language
+}
+
+# A polymorphic root over global participants only.
+union GlobalThing = Language | Store
+
+# A global write: film_endorsement has no tenant column, so the insert runs on the default source
+# whatever default tenant the request names.
+input FilmEndorsementCreateInput {
+    endorsedFilm: Int! @field(name: "endorsed_film")
+    note: String! @field(name: "note")
+}
+
 # The same wrapper on the error channel: the stamped return is the Outcome-wrapped payload.
 type RateFilmsCheckedPayload {
     ranOn: String
@@ -237,6 +291,10 @@ type Mutation {
         method: "rateFilms", argMapping: "ratings: in"})
     # Binds no DSLContext, so the call needs no connection, yet the divined tenant still rides
     # down to the returned rows.
+    # A tenant-routed producer whose payload re-projects a global row on its own coordinate.
+    rateFilmsWithLanguage(in: [FilmRatingInput!]!): RatedFilmsLanguagePayload @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
+        method: "rateFilmsWithLanguage", argMapping: "ratings: in"})
     rateFilmsOffline(in: [FilmRatingInput!]!): RateFilmsPayload @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
         method: "rateFilmsOffline", argMapping: "ratings: in"})
@@ -253,6 +311,7 @@ type Mutation {
         className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
         method: "rateFilmActors", argMapping: "actors: in"})
     createInventory(in: InventoryCreateInput!): Inventory @mutation(typeName: INSERT)
+    createEndorsement(in: FilmEndorsementCreateInput!): FilmEndorsement @mutation(typeName: INSERT, table: "film_endorsement")
     createInventoryByFilmRef(in: InventoryCreateByFilmRefInput!): Inventory @mutation(typeName: INSERT, table: "inventory")
     # Single and bulk: the bulk form is where the agreement guard earns its keep, refusing a
     # batch whose ids decode to two tenants before any SQL runs.

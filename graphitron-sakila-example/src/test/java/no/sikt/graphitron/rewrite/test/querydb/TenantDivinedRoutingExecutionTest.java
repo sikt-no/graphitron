@@ -5,6 +5,7 @@ import graphql.ExecutionResult;
 import graphql.GraphQL;
 import no.sikt.graphitron.generated.multitenant.Graphitron;
 import no.sikt.graphitron.generated.multitenant.schema.GraphitronRuntime;
+import no.sikt.graphitron.generated.multitenant.schema.RequestTenants;
 import no.sikt.graphitron.generated.multitenant.util.NodeIdEncoder;
 import no.sikt.graphitron.rewrite.test.services.SakilaTenantSessionIdentity;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
@@ -35,7 +36,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * behind counting {@code DataSource}s keyed by the <em>typed</em> tenant key (the
  * {@code Map<Integer, DataSource>} below compiling against the generated constructor is itself
  * the typed-key proof); the container's main database is the default source, serving the global
- * {@code language} reference data.
+ * {@code language} reference data. Each tenant database also carries slim {@code language} and
+ * {@code store} tables whose rows tell the databases apart (languages named after their database,
+ * a different row count per database), so a request naming a default tenant can be seen reading
+ * its global tables there.
  *
  * <p>The sibling {@code TenantRoutingExecutionTest} proved routing given a caller-known tenant
  * (test-supplied keys, no divination); this class proves the divined bindings: the tenant is
@@ -52,10 +56,13 @@ class TenantDivinedRoutingExecutionTest {
 
     static final AtomicInteger TENANT_1_OPENED = new AtomicInteger();
     static final AtomicInteger TENANT_2_OPENED = new AtomicInteger();
+    static final AtomicInteger DEFAULT_OPENED = new AtomicInteger();
     static GraphQL graphql;
 
     static final String ENDORSEMENT_NOTE =
         no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures.TENANT_ENDORSEMENT_NOTE;
+    /** The note this class's global-write case writes under, told apart from the read fixture's. */
+    static final String WRITTEN_ENDORSEMENT_NOTE = ENDORSEMENT_NOTE + " (global write)";
 
     @BeforeAll
     static void startDatabase() {
@@ -91,6 +98,12 @@ class TenantDivinedRoutingExecutionTest {
                     + " parent_scene_no int, label varchar(100), primary key (film_id, scene_no),"
                     + " constraint film_scene_parent_fk foreign key (film_id, parent_scene_no)"
                     + " references film_scene (film_id, scene_no))");
+                // Slim copies of the global tables a default tenant serves, keyed like the
+                // default source's so the generated statements resolve unchanged.
+                tenant.execute("create table language (language_id int primary key,"
+                    + " name varchar(20) not null, last_update timestamp not null default now())");
+                tenant.execute("create table store (store_id int primary key, address_id int,"
+                    + " last_update timestamp not null default now())");
                 TenantSessionFixture.installSessionObjects(tenant);
             }
         }
@@ -99,17 +112,23 @@ class TenantDivinedRoutingExecutionTest {
             t1.execute("insert into inventory (film_id, store_id) values (1, 1), (1, 2)");
             t1.execute("insert into film_actor values (10, 1)");
             t1.execute("insert into film_scene (film_id, scene_no) values (1, 1)");
+            t1.execute("insert into language (language_id, name) values (1, 'tenant_1')");
+            t1.execute("insert into store (store_id) values (1), (2)");
         }
         try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
             t2.execute("insert into film values (2, 'Tenant Two Film')");
             t2.execute("insert into film_actor values (20, 2)");
             t2.execute("insert into film_actor_note values (20, 2, 'nob', 'Before')");
             t2.execute("insert into film_scene (film_id, scene_no) values (2, 1), (2, 2), (2, 3)");
+            t2.execute("insert into language (language_id, name) values (1, 'tenant_2'), (2, 'tenant_2')");
+            // Store 2 only on tenant 1 and the default source, so a store read from tenant 2
+            // answers null for it.
+            t2.execute("insert into store (store_id) values (1)");
         }
 
         // Global endorsements on the default source, one of each tenant's film, told apart from
         // concurrent classes' rows by the fixture note.
-        dsl.execute("delete from film_endorsement where note = ?", ENDORSEMENT_NOTE);
+        dsl.execute("delete from film_endorsement where note in (?, ?)", ENDORSEMENT_NOTE, WRITTEN_ENDORSEMENT_NOTE);
         dsl.execute("insert into film_endorsement (endorsed_film, note) values (1, ?), (2, ?)",
             ENDORSEMENT_NOTE, ENDORSEMENT_NOTE);
 
@@ -119,14 +138,15 @@ class TenantDivinedRoutingExecutionTest {
             1, countingDataSource("tenant_1", TENANT_1_OPENED),
             2, countingDataSource("tenant_2", TENANT_2_OPENED));
         var runtime = new GraphitronRuntime(
-            countingDataSource(null, null), byTenant, SQLDialect.POSTGRES);
+            countingDataSource(null, DEFAULT_OPENED), byTenant, SQLDialect.POSTGRES);
         graphql = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
     }
 
     @AfterAll
     static void stopDatabase() {
         if (dsl != null) {
-            dsl.execute("delete from film_endorsement where note = ?", ENDORSEMENT_NOTE);
+            dsl.execute("delete from film_endorsement where note in (?, ?)", ENDORSEMENT_NOTE,
+                WRITTEN_ENDORSEMENT_NOTE);
             dsl.execute("drop database if exists tenant_1 with (force)");
             dsl.execute("drop database if exists tenant_2 with (force)");
         }
@@ -137,6 +157,7 @@ class TenantDivinedRoutingExecutionTest {
     void resetCounters() {
         TENANT_1_OPENED.set(0);
         TENANT_2_OPENED.set(0);
+        DEFAULT_OPENED.set(0);
     }
 
     @AfterEach
@@ -160,6 +181,28 @@ class TenantDivinedRoutingExecutionTest {
     private static ExecutionResult executeAs(String query, java.util.Collection<Integer> tenants, String sub) {
         return graphql.execute(Graphitron.newOwnedExecutionInput(tenants, "{\"sub\":\"" + sub + "\"}")
             .query(query).build());
+    }
+
+    /** Executes under a request tenant set that names {@code defaultTenant} as its default tenant. */
+    private static ExecutionResult executeWithDefault(String query, java.util.Collection<Integer> tenants,
+                                                      int defaultTenant) {
+        return executeWithDefaultAs(query, tenants, defaultTenant, "test-user");
+    }
+
+    private static ExecutionResult executeWithDefaultAs(String query, java.util.Collection<Integer> tenants,
+                                                        int defaultTenant, String sub) {
+        return graphql.execute(Graphitron.newOwnedExecutionInput(
+                RequestTenants.withDefault(tenants, defaultTenant), "{\"sub\":\"" + sub + "\"}")
+            .query(query).build());
+    }
+
+    private static Object data(ExecutionResult result, String field) {
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        return ((Map<String, Object>) result.getData()).get(field);
+    }
+
+    private static String defaultDatabase() {
+        return dsl.fetchValue(DSL.field("current_database()", String.class));
     }
 
     /** The tenants this test's own mounts received, told apart from concurrent classes by {@code sub}. */
@@ -364,7 +407,7 @@ class TenantDivinedRoutingExecutionTest {
             .isZero();
     }
 
-    // ===== Untenanted: global reference data stays on the default source =====
+    // ===== Global reads without a default tenant: the default source =====
 
     @Test
     void untenanted_readsTheDefaultSource_touchingNoTenantDatabase() {
@@ -374,6 +417,7 @@ class TenantDivinedRoutingExecutionTest {
         assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get())
             .as("global reference data acquires only the default source")
             .isZero();
+        assertThat(DEFAULT_OPENED.get()).isEqualTo(1);
     }
 
     @Test
@@ -386,6 +430,173 @@ class TenantDivinedRoutingExecutionTest {
         assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get())
             .as("a @globalData service acquires only the default source")
             .isZero();
+    }
+
+    // ===== The request's default tenant: graphitron's global reads follow it =====
+
+    @Test
+    void defaultTenant_globalRoot_readsTheDefaultTenantsDatabase_mountedForIt() {
+        String sub = "default-tenant-" + java.util.UUID.randomUUID();
+        var result = executeWithDefaultAs("{ languages { name } }", List.of(1, 2), 2, sub);
+        assertThat((List<Map<String, Object>>) data(result, "languages"))
+            .as("tenant 2's two language rows, not the default source's three")
+            .extracting(m -> m.get("name"))
+            .containsExactly("tenant_2", "tenant_2");
+        assertThat(TENANT_2_OPENED.get()).isEqualTo(1);
+        assertThat(TENANT_1_OPENED.get() + DEFAULT_OPENED.get()).isZero();
+        assertThat(mountedTenants(sub))
+            .as("the global read rides tenant 2's connection and mount")
+            .containsExactly(java.util.Optional.of(2));
+    }
+
+    @Test
+    void defaultTenant_globalBatchedChildOfTheSameTenantsRow_sharesOneConnectionAndOneMount() {
+        String sub = "default-tenant-" + java.util.UUID.randomUUID();
+        var result = executeWithDefaultAs(
+            "{ films(filmId: 1) { inventories { store { storeId } } } }", List.of(1, 2), 1, sub);
+        var films = (List<Map<String, Object>>) data(result, "films");
+        assertThat((List<Map<String, Object>>) films.get(0).get("inventories"))
+            .extracting(i -> ((Map<String, Object>) i.get("store")).get("storeId"))
+            .containsExactlyInAnyOrder(1, 2);
+        assertThat(TENANT_1_OPENED.get()).as("one connection serves the films and the stores").isEqualTo(1);
+        assertThat(TENANT_2_OPENED.get() + DEFAULT_OPENED.get()).isZero();
+        assertThat(mountedTenants(sub)).containsExactly(java.util.Optional.of(1));
+    }
+
+    @Test
+    void defaultTenant_globalBatchedChildOfAnotherTenantsRow_readsTheDefaultTenant() {
+        var result = executeWithDefault(
+            "{ films(filmId: 1) { inventories { inventoryId store { storeId } } } }", List.of(1, 2), 2);
+        var inventories = (List<Map<String, Object>>)
+            ((List<Map<String, Object>>) data(result, "films")).get(0).get("inventories");
+        assertThat(inventories).as("the inventories come from tenant 1").hasSize(2);
+        assertThat(inventories)
+            .as("the stores come from tenant 2, which holds store 1 only")
+            .extracting(i -> i.get("store") == null ? null : ((Map<String, Object>) i.get("store")).get("storeId"))
+            .containsExactlyInAnyOrder(1, null);
+        assertThat(TENANT_1_OPENED.get()).isEqualTo(1);
+        assertThat(TENANT_2_OPENED.get()).isEqualTo(1);
+        assertThat(DEFAULT_OPENED.get()).isZero();
+    }
+
+    @Test
+    void defaultTenant_globalConnection_countsTheDefaultTenantsRows() {
+        var result = executeWithDefault("{ languagesConnection(first: 10) { totalCount } }", List.of(1, 2), 2);
+        assertThat(((Map<String, Object>) data(result, "languagesConnection")).get("totalCount"))
+            .as("tenant 2 holds two languages, the default source three")
+            .isEqualTo(2);
+        assertThat(DEFAULT_OPENED.get() + TENANT_1_OPENED.get()).isZero();
+    }
+
+    @Test
+    void defaultTenant_globalPolymorphicRoot_readsTheDefaultTenantsDatabase() {
+        var result = executeWithDefault("{ globalThings { __typename"
+            + " ... on Language { name } ... on Store { storeId } } }", List.of(1, 2), 2);
+        assertThat((List<Map<String, Object>>) data(result, "globalThings"))
+            .as("tenant 2's two languages and one store")
+            .extracting(m -> m.get("__typename") + ":" + (m.containsKey("name") ? m.get("name") : m.get("storeId")))
+            .containsExactlyInAnyOrder("Language:tenant_2", "Language:tenant_2", "Store:1");
+        assertThat(DEFAULT_OPENED.get() + TENANT_1_OPENED.get()).isZero();
+    }
+
+    @Test
+    void defaultTenant_nodeOfAGlobalType_resolvesInTheDefaultTenantsDatabase() {
+        var result = executeWithDefault("{ node(id: \"" + NodeIdEncoder.encodeGlobalLanguage(1)
+            + "\") { ... on GlobalLanguage { name } } }", List.of(1, 2), 2);
+        assertThat((Map<String, Object>) data(result, "node")).containsEntry("name", "tenant_2");
+        assertThat(DEFAULT_OPENED.get() + TENANT_1_OPENED.get()).isZero();
+    }
+
+    @Test
+    void defaultTenant_servicesKeepTheDefaultSource() {
+        var result = executeWithDefault("{ languages { servedBy } globalServedBy }", List.of(1, 2), 2);
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        var data = (Map<String, Object>) result.getData();
+        assertThat((List<Map<String, Object>>) data.get("languages"))
+            .as("the child service on a global parent is handed the default source")
+            .isNotEmpty()
+            .allSatisfy(l -> assertThat(l.get("servedBy")).isEqualTo(defaultDatabase()));
+        assertThat(data.get("globalServedBy"))
+            .as("@globalData keeps the default source too")
+            .isEqualTo(defaultDatabase());
+        assertThat(TENANT_1_OPENED.get()).isZero();
+        assertThat(TENANT_2_OPENED.get()).as("only the languages themselves read tenant 2").isEqualTo(1);
+    }
+
+    @Test
+    void defaultTenant_aServiceReturningGlobalRows_isReReadOnItsOwnConnection() {
+        var result = executeWithDefault("{ languagesOnConnection { name } }", List.of(1, 2), 2);
+        assertThat((List<Map<String, Object>>) data(result, "languagesOnConnection"))
+            .as("the default source's languages, not tenant 2's")
+            .isNotEmpty()
+            .noneSatisfy(l -> assertThat((String) l.get("name")).startsWith("tenant_"));
+        assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get()).isZero();
+    }
+
+    @Test
+    void defaultTenant_payloadReprojectionUnderATenantRoutedService_readsTheDefaultTenant() {
+        var result = executeWithDefault("mutation { rateFilmsWithLanguage(in: [{ film: \""
+            + NodeIdEncoder.encodeFilm(1) + "\" }]) { ranOn films { title } language { name } } }",
+            List.of(1, 2), 2);
+        var payload = (Map<String, Object>) data(result, "rateFilmsWithLanguage");
+        assertThat(payload.get("ranOn")).as("the service runs on the tenant its ids name").isEqualTo("tenant_1");
+        assertThat((List<Map<String, Object>>) payload.get("films"))
+            .extracting(f -> f.get("title")).containsExactly("Tenant One Film");
+        assertThat((Map<String, Object>) payload.get("language"))
+            .as("the payload's global row is its own coordinate, a global read")
+            .containsEntry("name", "tenant_2");
+        assertThat(DEFAULT_OPENED.get()).isZero();
+    }
+
+    @Test
+    void defaultTenant_payloadReprojectionUnderADefaultSourceProducer_readsTheDefaultTenant() {
+        // The documented consequence, pinned so a change to it is deliberate: the producer runs on
+        // the default source, its payload's global row is read from the default tenant.
+        var result = executeWithDefault("{ globalLanguage { servedBy language { name } } }", List.of(1, 2), 2);
+        var payload = (Map<String, Object>) data(result, "globalLanguage");
+        assertThat(payload.get("servedBy")).isEqualTo(defaultDatabase());
+        assertThat((Map<String, Object>) payload.get("language")).containsEntry("name", "tenant_2");
+    }
+
+    @Test
+    void defaultTenant_aWriteToAGlobalTable_keepsTheDefaultSource() {
+        // The tenant databases hold no film_endorsement table, so a write routed there would fail.
+        var result = executeWithDefault("mutation { createEndorsement(in: { endorsedFilm: 1, note: \""
+            + WRITTEN_ENDORSEMENT_NOTE + "\" }) { note } }", List.of(1, 2), 2);
+        try {
+            assertThat((Map<String, Object>) data(result, "createEndorsement"))
+                .containsEntry("note", WRITTEN_ENDORSEMENT_NOTE);
+            assertThat(dsl.fetchCount(DSL.table("film_endorsement"),
+                    DSL.field("note").eq(WRITTEN_ENDORSEMENT_NOTE)))
+                .as("the row landed on the default source").isEqualTo(1);
+            assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get()).isZero();
+        } finally {
+            dsl.execute("delete from film_endorsement where note = ?", WRITTEN_ENDORSEMENT_NOTE);
+        }
+    }
+
+    @Test
+    void defaultTenant_notHostedByThisRuntime_failsBeforeAnyDatabaseIsOpened() {
+        Throwable failure = null;
+        ExecutionResult result = null;
+        try {
+            result = executeWithDefault("{ languages { name } }", List.of(1, 2, 99), 99);
+        } catch (RuntimeException e) {
+            failure = e;
+        }
+        if (failure != null) {
+            assertThat(failure).hasStackTraceContaining("Default tenant '99' has no DataSource");
+        } else {
+            assertThat(result.getErrors().toString()).contains("Default tenant '99' has no DataSource");
+        }
+        assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get() + DEFAULT_OPENED.get()).isZero();
+    }
+
+    @Test
+    void defaultTenant_outsideTheSet_isRefusedWhereTheValueIsBuilt() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> RequestTenants.withDefault(List.of(1), 2))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("Default tenant '2' is not in the request tenant set");
     }
 
     // ===== ParentRowBound: the parent row names the tenant of the row it references =====

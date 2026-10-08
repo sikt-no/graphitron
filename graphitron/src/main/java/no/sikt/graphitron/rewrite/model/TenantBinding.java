@@ -10,6 +10,9 @@ import no.sikt.graphitron.model.jooq.TableRef;
  * computed only when {@code <tenantColumn>} is configured; in single-tenant builds the axis is
  * absent (an empty index), not "everything {@link Untenanted}".
  *
+ * <p>{@link Untenanted} is the one arm with a sub-axis: both of its leaves touch only global
+ * tables, and they differ only in whether the request's default tenant may serve them.
+ *
  * <p>{@link NodeIdBound} and {@link EntityRepBound} form the per-row family: a single batch
  * spans tenants, so their consumers partition per tenant rather than hand one value down. The
  * two arms share the "positional slot in a decoded key" shape deliberately: node ids and
@@ -194,9 +197,28 @@ public sealed interface TenantBinding {
         }
     }
 
-    /** The field touches only global tables; it runs on the default DataSource. */
-    record Untenanted() implements TenantBinding {
-        public static final Untenanted INSTANCE = new Untenanted();
+    /**
+     * The field touches only global tables. The two leaves differ only in which connection
+     * serves it: {@link GlobalRead} follows the request's default tenant when one is named,
+     * {@link DefaultSource} stays on the default DataSource whatever the request names.
+     */
+    sealed interface Untenanted extends TenantBinding permits Untenanted.GlobalRead, Untenanted.DefaultSource {
+
+        /**
+         * Graphitron's own SQL over global tables: acquired from the request's default tenant
+         * when one is named, else from the default DataSource.
+         */
+        record GlobalRead() implements Untenanted {
+            public static final GlobalRead INSTANCE = new GlobalRead();
+        }
+
+        /**
+         * The statement writes or calls a service, whose SQL the build cannot see, so it runs on
+         * the default DataSource in every request.
+         */
+        record DefaultSource() implements Untenanted {
+            public static final DefaultSource INSTANCE = new DefaultSource();
+        }
     }
 
     /**

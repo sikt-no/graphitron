@@ -43,16 +43,18 @@ class TenantFanOutFetcherPipelineTest {
                     + spec.methodSpecs().stream().map(MethodSpec::name).toList()));
     }
 
-    /** The facade's factory methods, each rendered as its parameter list ({@code type name}). */
-    private static java.util.Map<String, java.util.List<String>> factoryParameters(GraphitronSchema schema) {
+    /** The facade's factory methods by name, each overload rendered as its parameter list ({@code type name}). */
+    private static java.util.Map<String, java.util.List<java.util.List<String>>> factoryParameters(GraphitronSchema schema) {
         TypeSpec facade = GraphitronFacadeGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> GraphitronFacadeGenerator.CLASS_NAME.equals(t.name()))
             .findFirst()
             .orElseThrow();
         return facade.methodSpecs().stream()
             .filter(m -> m.name().equals("newExecutionInput") || m.name().equals("newOwnedExecutionInput"))
-            .collect(java.util.stream.Collectors.toMap(MethodSpec::name,
-                m -> m.parameters().stream().map(p -> p.type() + " " + p.name()).toList()));
+            .collect(java.util.stream.Collectors.groupingBy(MethodSpec::name,
+                java.util.stream.Collectors.mapping(
+                    m -> m.parameters().stream().map(p -> p.type() + " " + p.name()).toList(),
+                    java.util.stream.Collectors.toList())));
     }
 
     @Test
@@ -133,12 +135,15 @@ class TenantFanOutFetcherPipelineTest {
 
         for (var schema : java.util.List.of(fanned, routedOnly)) {
             // Both factory forms carry the dedicated typed slot, so a missing or mis-typed set is
-            // a compile error at the call site.
-            assertThat(factoryParameters(schema))
-                .containsEntry("newExecutionInput", java.util.List.of(
-                    "org.jooq.DSLContext defaultDsl", "java.util.Collection<java.lang.Integer> tenants"))
-                .containsEntry("newOwnedExecutionInput", java.util.List.of(
-                    "java.util.Collection<java.lang.Integer> tenants"));
+            // a compile error at the call site. The owned form also takes the typed
+            // RequestTenants value, which can name a default tenant; the escape hatch, which has
+            // no carrier to read one, does not.
+            var factories = factoryParameters(schema);
+            assertThat(factories.get("newExecutionInput")).containsExactly(java.util.List.of(
+                "org.jooq.DSLContext defaultDsl", "java.util.Collection<java.lang.Integer> tenants"));
+            assertThat(factories.get("newOwnedExecutionInput")).containsExactlyInAnyOrder(
+                java.util.List.of("java.util.Collection<java.lang.Integer> tenants"),
+                java.util.List.of(DEFAULT_OUTPUT_PACKAGE + ".schema.RequestTenants requestTenants"));
         }
     }
 
@@ -148,8 +153,9 @@ class TenantFanOutFetcherPipelineTest {
             type Film @table(name: "film") { title: String }
             type Query { allFilms: [Film!]! }
             """);
-        assertThat(factoryParameters(singleTenant))
-            .containsEntry("newExecutionInput", java.util.List.of("org.jooq.DSLContext defaultDsl"))
-            .containsEntry("newOwnedExecutionInput", java.util.List.of());
+        var factories = factoryParameters(singleTenant);
+        assertThat(factories.get("newExecutionInput"))
+            .containsExactly(java.util.List.of("org.jooq.DSLContext defaultDsl"));
+        assertThat(factories.get("newOwnedExecutionInput")).containsExactly(java.util.List.of());
     }
 }

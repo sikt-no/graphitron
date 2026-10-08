@@ -417,14 +417,14 @@ class TenantBindingClassificationTest {
     }
 
     @Test
-    void globalTableFieldYieldsUntenanted() {
+    void globalTableFieldYieldsAGlobalRead() {
         var schema = build("""
             type Language @table(name: "language") { name: String }
             type Query { languages: [Language!]! }
             """);
 
         assertThat(schema.tenantBindingOf("Query", "languages"))
-            .isEqualTo(TenantBinding.Untenanted.INSTANCE);
+            .isEqualTo(TenantBinding.Untenanted.GlobalRead.INSTANCE);
         assertThat(schema.tenantBindings().rejections()).isEmpty();
     }
 
@@ -507,8 +507,72 @@ class TenantBindingClassificationTest {
                 && r.detail().contains("cross-scope"));
     }
 
+    // ===== The Untenanted leaves: a global read follows the default tenant, a write or service does not =====
+
     @Test
-    void polymorphicRootOverGlobalParticipantsYieldsUntenanted() {
+    void aGlobalBatchedChildOfATenantRowIsAGlobalRead() {
+        var schema = build("""
+            type Film @table(name: "film") { inventories: [Inventory!]! }
+            type Inventory @table(name: "inventory") {
+                inventoryId: Int @field(name: "inventory_id")
+                store: Store @splitQuery
+            }
+            type Store @table(name: "store") { storeId: Int @field(name: "store_id") }
+            type Query { films(filmId: Int @field(name: "film_id")): [Film!]! }
+            """);
+
+        assertThat(schema.tenantBindingOf("Inventory", "store"))
+            .isEqualTo(TenantBinding.Untenanted.GlobalRead.INSTANCE);
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aDmlWriteToAGlobalTableKeepsTheDefaultSource() {
+        var schema = build("""
+            type Language @table(name: "language") { name: String }
+            input LanguageCreateInput { name: String! @field(name: "name") }
+            type Query { languages: [Language!]! }
+            type Mutation {
+                createLanguage(in: LanguageCreateInput!): Language @mutation(typeName: INSERT)
+            }
+            """);
+
+        assertThat(schema.tenantBindingOf("Mutation", "createLanguage"))
+            .isEqualTo(TenantBinding.Untenanted.DefaultSource.INSTANCE);
+        assertThat(schema.tenantBindingOf("Query", "languages"))
+            .isEqualTo(TenantBinding.Untenanted.GlobalRead.INSTANCE);
+    }
+
+    @Test
+    void aChildServiceOnAGlobalParentKeepsTheDefaultSource() {
+        var schema = build("""
+            type Language @table(name: "language") {
+                name: String
+                rating: String @service(service: {className: "no.sikt.graphitron.rewrite.TenantServiceStub",
+                    method: "ratingWithDsl"})
+            }
+            type Query { languages: [Language!]! }
+            """);
+
+        assertThat(schema.tenantBindingOf("Language", "rating"))
+            .isEqualTo(TenantBinding.Untenanted.DefaultSource.INSTANCE);
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void nodeDispatchOverOnlyGlobalNodeTypesIsAGlobalRead() {
+        var schema = build("""
+            interface Node { id: ID! }
+            type Language implements Node @table(name: "language") @node { id: ID! @nodeId }
+            type Query { node(id: ID!): Node }
+            """);
+
+        assertThat(schema.tenantBindingOf("Query", "node"))
+            .isEqualTo(TenantBinding.Untenanted.GlobalRead.INSTANCE);
+    }
+
+    @Test
+    void polymorphicRootOverGlobalParticipantsYieldsAGlobalRead() {
         var schema = build("""
             type Language @table(name: "language") { name: String }
             type Address @table(name: "address") { postalCode: String @field(name: "postal_code") }
@@ -517,7 +581,7 @@ class TenantBindingClassificationTest {
             """);
 
         assertThat(schema.tenantBindingOf("Query", "references"))
-            .isEqualTo(TenantBinding.Untenanted.INSTANCE);
+            .isEqualTo(TenantBinding.Untenanted.GlobalRead.INSTANCE);
         assertThat(schema.tenantBindings().rejections()).isEmpty();
     }
 
@@ -1452,7 +1516,7 @@ class TenantBindingClassificationTest {
             """.formatted(service("rateByRawId")));
 
         assertThat(schema.tenantBindingOf("Mutation", "rateByRawId"))
-            .isEqualTo(TenantBinding.Untenanted.INSTANCE);
+            .isEqualTo(TenantBinding.Untenanted.DefaultSource.INSTANCE);
         assertRejects(schema, "RateFilmsPayload.films", "no ancestor established a tenant context");
     }
 
@@ -1634,11 +1698,11 @@ class TenantBindingClassificationTest {
     }
 
     @Test
-    void aChildServiceBindingNoConnectionStaysUntenanted() {
+    void aChildServiceBindingNoConnectionKeepsTheDefaultSource() {
         var schema = build(boundFilmWith("rating: String " + service("ratingPlain")));
 
         assertThat(schema.tenantBindingOf("Film", "rating"))
-            .isEqualTo(TenantBinding.Untenanted.INSTANCE);
+            .isEqualTo(TenantBinding.Untenanted.DefaultSource.INSTANCE);
     }
 
     @Test
@@ -1654,7 +1718,7 @@ class TenantBindingClassificationTest {
             """.formatted(service("languageOfFilm")));
 
         assertThat(schema.tenantBindingOf("Mutation", "languageOfFilm"))
-            .isEqualTo(TenantBinding.Untenanted.INSTANCE);
+            .isEqualTo(TenantBinding.Untenanted.DefaultSource.INSTANCE);
         assertRejects(schema, "Language.films", "no ancestor established a tenant context");
     }
 
@@ -1667,9 +1731,9 @@ class TenantBindingClassificationTest {
             """.formatted(service("languageWithDsl"), TENANT_SERVICE)));
 
         assertThat(schema.tenantBindingOf("Film", "language"))
-            .isEqualTo(TenantBinding.Untenanted.INSTANCE);
+            .isEqualTo(TenantBinding.Untenanted.DefaultSource.INSTANCE);
         assertThat(schema.tenantBindingOf("Film", "sessionLanguage"))
-            .isEqualTo(TenantBinding.Untenanted.INSTANCE);
+            .isEqualTo(TenantBinding.Untenanted.DefaultSource.INSTANCE);
         assertThat(schema.tenantBindings().rejections()).isEmpty();
     }
 
@@ -1918,7 +1982,7 @@ class TenantBindingClassificationTest {
             """.formatted(service("languageByFilmId")));
 
         assertThat(schema.tenantBindingOf("Mutation", "languageByFilmId"))
-            .isEqualTo(TenantBinding.Untenanted.INSTANCE);
+            .isEqualTo(TenantBinding.Untenanted.DefaultSource.INSTANCE);
         assertTenantMarkerRejection(schema, "RateByFilmIdInput.filmId", "Mutation.languageByFilmId",
             "the service returns global @table type 'Language'");
     }
@@ -1937,6 +2001,24 @@ class TenantBindingClassificationTest {
         assertThat(schema.tenantBindings().rejections())
             .noneMatch(e -> e.coordinate().equals("RateByFilmIdInput.filmId")
                 && e.rejection().message().contains("at 'Mutation.rateByFilmId'"));
+    }
+
+    /**
+     * A payload's re-projection of a global table is its own coordinate and a global read, whatever
+     * connection its producer ran on: here a tenant-routed service.
+     */
+    @Test
+    void aPayloadsGlobalReprojectionUnderATenantRoutedServiceIsAGlobalRead() {
+        var schema = build(SERVICE_TYPES + """
+            type Language @table(name: "language") { name: String }
+            type RatedFilmsLanguagePayload { films: [Film!]! language: Language }
+            type Mutation { rateFilmsWithLanguage(ratings: [RateFilmInput!]!): RatedFilmsLanguagePayload %s }
+            """.formatted(service("rateFilmsWithLanguage")));
+
+        argumentBound(schema, "Mutation", "rateFilmsWithLanguage");
+        assertThat(schema.tenantBindingOf("RatedFilmsLanguagePayload", "language"))
+            .isEqualTo(TenantBinding.Untenanted.GlobalRead.INSTANCE);
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
     }
 
     // ===== @globalData: a root service's statement that its data is global =====
@@ -1980,7 +2062,26 @@ class TenantBindingClassificationTest {
             """);
 
         assertThat(schema.tenantBindingOf("Query", "sessionPrincipal"))
-            .isEqualTo(TenantBinding.Untenanted.INSTANCE);
+            .isEqualTo(TenantBinding.Untenanted.DefaultSource.INSTANCE);
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    /**
+     * The same re-projection below a default-source producer is still a global read: the
+     * read-after-write consequence the user documentation states, pinned so a change is deliberate.
+     */
+    @Test
+    void aPayloadsGlobalReprojectionUnderAGlobalDataServiceIsAGlobalRead() {
+        var schema = build("""
+            type Language @table(name: "language") { name: String }
+            type GlobalLanguagePayload { servedBy: String language: Language }
+            type Query { globalLanguage: GlobalLanguagePayload %s }
+            """.formatted(globalService("globalLanguage")));
+
+        assertThat(schema.tenantBindingOf("Query", "globalLanguage"))
+            .isEqualTo(TenantBinding.Untenanted.DefaultSource.INSTANCE);
+        assertThat(schema.tenantBindingOf("GlobalLanguagePayload", "language"))
+            .isEqualTo(TenantBinding.Untenanted.GlobalRead.INSTANCE);
         assertThat(schema.tenantBindings().rejections()).isEmpty();
     }
 
@@ -1991,7 +2092,7 @@ class TenantBindingClassificationTest {
             """.formatted(globalService("refreshLanguages")));
 
         assertThat(schema.tenantBindingOf("Mutation", "refreshLanguages"))
-            .isEqualTo(TenantBinding.Untenanted.INSTANCE);
+            .isEqualTo(TenantBinding.Untenanted.DefaultSource.INSTANCE);
         assertThat(schema.tenantBindings().rejections())
             .noneMatch(e -> e.coordinate().equals("Mutation.refreshLanguages"));
     }
@@ -2226,7 +2327,7 @@ class TenantBindingClassificationTest {
 
         assertInherited(schema, "Film", "inventories");
         assertThat(schema.tenantBindingOf("Query", "endorsements"))
-            .isEqualTo(TenantBinding.Untenanted.INSTANCE);
+            .isEqualTo(TenantBinding.Untenanted.GlobalRead.INSTANCE);
         assertThat(schema.tenantBindings().rejections()).isEmpty();
     }
 

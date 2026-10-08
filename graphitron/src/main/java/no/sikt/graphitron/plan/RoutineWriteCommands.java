@@ -88,13 +88,14 @@ public final class RoutineWriteCommands {
      * inherited read: a mutation root is not a per-row dispatch surface, so what reaches it is the
      * value an ancestor divined.
      *
-     * <p>Two arms are refused rather than translated. A missing binding is the classifier's typed
-     * {@code noTenantBinding} finding, which the validator turns into a located build error before
+     * <p>Some arms are refused rather than translated. A missing binding is the classifier's
+     * typed {@code noTenantBinding} finding, which the validator turns into a located build error before
      * the plan runs, so reaching it here means production ran on a schema validation would have
      * rejected; the refusal restates that rather than acquiring the default source, which is the
      * cross-tenant read the axis exists to prevent. A fanned binding is refused because the fanned
      * emission owns its coordinate's acquisition; a routine write is not a fannable shape, so
-     * reaching it here is drift rather than a deferred feature.
+     * reaching it here is drift rather than a deferred feature. A global-read binding is drift
+     * too: a write always classifies as running on the default source.
      */
     private static TenantAcquisition acquisitionOf(GraphitronSchema schema, FieldCoordinates coordinate) {
         var binding = schema.tenantBindingOf(coordinate);
@@ -107,7 +108,11 @@ public final class RoutineWriteCommands {
                 + " tenant's rows");
         }
         return switch (binding) {
-            case TenantBinding.Untenanted ignored -> new TenantAcquisition.Untenanted();
+            case TenantBinding.Untenanted.DefaultSource ignored -> new TenantAcquisition.DefaultSource();
+            case TenantBinding.Untenanted.GlobalRead ignored -> throw new IllegalStateException(
+                "Graphitron generator bug (tenant routing): the routine-write coordinate " + coordinate
+                + " is classified as a global read; a write always classifies as running on the"
+                + " default source, so this producer and the classifier have drifted");
             case TenantBinding.Inherited ignored -> new TenantAcquisition.Inherited();
             case TenantBinding.NodeIdBound ignored -> new TenantAcquisition.Inherited();
             case TenantBinding.EntityRepBound ignored -> new TenantAcquisition.Inherited();

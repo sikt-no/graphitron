@@ -89,6 +89,16 @@ class TenantServiceStub {
         throw new UnsupportedOperationException();
     }
 
+    /** {@link #rateFilms} whose payload also carries a global row, re-projected on its own coordinate. */
+    public static TenantFilmsLanguagePayload rateFilmsWithLanguage(List<TestNodeIdRecordBean> ratings) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** A connection-bound root over global data whose payload carries a global row. */
+    public static GlobalLanguagePayload globalLanguage(DSLContext dsl) {
+        throw new UnsupportedOperationException();
+    }
+
     /** A root handed a connection with no arguments at all, as a service over global data is. */
     public static Boolean refreshLanguages(DSLContext dsl) {
         throw new UnsupportedOperationException();

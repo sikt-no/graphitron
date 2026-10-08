@@ -34,9 +34,12 @@ import java.util.List;
  *       that column ({@link #parentRowHandDown}), partitions its loader on it and hands it down;
  *       the rows method re-reads the same column off its batch's environment
  *       ({@link #resolve}), which the partitioned loader makes agree across the batch.</li>
- *   <li>{@link TenantBinding.Untenanted}: global reference data; acquires the default source
- *       via {@code dslDefault()}, and deliberately never consults {@code localContext} (a global
- *       table under a bound ancestor still lives on the default source).</li>
+ *   <li>{@link TenantBinding.Untenanted.GlobalRead}: graphitron's own read of global reference
+ *       data; acquires via {@code dslGlobal()}, the request's default tenant when it names one and
+ *       the default source otherwise, and deliberately never consults {@code localContext} (a
+ *       global table under a bound ancestor reads the default tenant, not the ancestor's).</li>
+ *   <li>{@link TenantBinding.Untenanted.DefaultSource}: a global statement that writes or calls a
+ *       service; acquires the fixed default source via {@code dslDefault()} in every request.</li>
  * </ul>
  *
  * <p>The per-row family ({@link TenantBinding.NodeIdBound}, {@link TenantBinding.EntityRepBound})
@@ -83,8 +86,9 @@ final class TenantDslEmitter {
      * method whose {@code env} parameter is the field's own {@code DataFetchingEnvironment}.
      * Falls back to the single-tenant form whenever the emission context carries no classified
      * schema, no tenant scopes are configured, or the coordinate has no binding (out-of-band
-     * emission); the fallback reads the escape-hatch {@code DSLContext} and therefore fails
-     * loudly under owned multi-tenant acquisition instead of routing anywhere.
+     * emission); the fallback reads {@code getDslContext(env)}, which under owned multi-tenant
+     * acquisition is the fixed default source, never a routed tenant nor the request's default
+     * tenant.
      */
     static Resolution resolve(TypeFetcherEmissionContext ctx, OutputField field, String outputPackage) {
         var schema = ctx.graphitronSchema();
@@ -99,7 +103,12 @@ final class TenantDslEmitter {
         }
         var tenantConnections = tenantConnectionsClass(outputPackage);
         return switch (binding) {
-            case TenantBinding.Untenanted ignored -> new Resolution(
+            case TenantBinding.Untenanted.GlobalRead ignored -> new Resolution(
+                CodeBlock.builder()
+                    .addStatement("$T dsl = $T.dslGlobal(env)", DSL_CONTEXT, tenantConnections)
+                    .build(),
+                false);
+            case TenantBinding.Untenanted.DefaultSource ignored -> new Resolution(
                 CodeBlock.builder()
                     .addStatement("$T dsl = $T.dslDefault(env)", DSL_CONTEXT, tenantConnections)
                     .build(),
@@ -118,8 +127,9 @@ final class TenantDslEmitter {
 
     /**
      * The single-tenant declaration on its own, for emission paths whose field carrier is not
-     * statically an {@link OutputField} (they cannot classify, so they keep the escape-hatch
-     * read; under owned multi-tenant acquisition that fails loudly rather than routing).
+     * statically an {@link OutputField} (they cannot classify, so they keep the
+     * {@code getDslContext(env)} read, which under owned multi-tenant acquisition is the fixed
+     * default source).
      */
     static CodeBlock singleTenantDeclaration(TypeFetcherEmissionContext ctx) {
         return singleTenant(ctx).declaration();
@@ -166,7 +176,9 @@ final class TenantDslEmitter {
         }
         var tenantConnections = tenantConnectionsClass(outputPackage);
         return switch (binding) {
-            case TenantBinding.Untenanted ignored ->
+            case TenantBinding.Untenanted.GlobalRead ignored ->
+                CodeBlock.of("$T.dslGlobal(env)", tenantConnections);
+            case TenantBinding.Untenanted.DefaultSource ignored ->
                 CodeBlock.of("$T.dslDefault(env)", tenantConnections);
             case TenantBinding.ArgumentBound ignored -> throw new IllegalStateException(
                 "Field '" + ctx.parentTypeName() + "." + fieldName + "' classified as tenant "
@@ -192,7 +204,8 @@ final class TenantDslEmitter {
      * {@code handDown}'s declaration (the {@code _divinedTenant} local for a divining field, empty
      * otherwise) ahead of the call, and this expression reads that local when it was declared,
      * else it is {@link #dslExpression}'s arm-forked source ({@code dslDefault} for
-     * {@link TenantBinding.Untenanted}, the handed-down read for {@link TenantBinding.Inherited}).
+     * {@link TenantBinding.Untenanted.DefaultSource}, the handed-down read for
+     * {@link TenantBinding.Inherited}).
      *
      * @param handDown the {@link #handDownOnly} resolution the site already pasted
      */

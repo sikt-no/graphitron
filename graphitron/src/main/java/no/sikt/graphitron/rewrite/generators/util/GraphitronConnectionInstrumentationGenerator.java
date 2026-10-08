@@ -22,16 +22,18 @@ import java.util.List;
  *
  * <h2>Per-operation sequence ({@code beginExecuteOperation})</h2>
  * <ol>
- *   <li>In a {@code <tenantColumn>} build, decode the request tenant set the factory wrote under
- *       {@code TenantConnections.TENANTS_KEY} into an immutable {@code Set}, failing the
- *       operation before any fetcher runs when it is absent (an {@code ExecutionInput} built
- *       without the generated factory): the set has no "unrestricted" meaning.</li>
+ *   <li>In a {@code <tenantColumn>} build, read the {@code RequestTenants} value the factory
+ *       wrote under {@code TenantConnections.TENANTS_KEY}, failing the operation before any
+ *       fetcher runs when it is absent (an {@code ExecutionInput} built without the generated
+ *       factory), since the set has no "unrestricted" meaning, and when it names a default
+ *       tenant this runtime has no {@code DataSource} for.</li>
  *   <li>Read each mount payload contextArgument off the {@code graphQLContext} (the name-keyed
  *       entries the {@code Graphitron.newOwnedExecutionInput(...)} factory writes, the same
  *       per-request extraction {@code @service} call sites use).</li>
  *   <li>Publish the per-operation {@code TenantConnections} carrier under its own class key, on
  *       both topologies. Acquisition is lazy on every path: fetchers resolve contexts through
- *       the carrier ({@code getDslContext(env)} / {@code dslFor} / {@code dslDefault}), which
+ *       the carrier ({@code getDslContext(env)} / {@code dslFor} / {@code dslDefault} /
+ *       {@code dslGlobal}), which
  *       pins and mounts one connection per key on first demand, so an operation that touches no
  *       database never pins and never mounts. Nothing is published under the typed
  *       {@code DSLContext.class} key: that key belongs to the escape-hatch factory alone, so the
@@ -92,15 +94,16 @@ public final class GraphitronConnectionInstrumentationGenerator {
         var self = ClassName.get(schemaPackage, CLASS_NAME);
         var runtime = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
         var tenantConnections = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+        var requestTenants = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.REQUEST_TENANTS_CLASS_NAME);
         var provider = ClassName.get(schemaPackage, GraphitronTransactionProviderGenerator.CLASS_NAME);
         var commitPolicy = provider.nestedClass(GraphitronTransactionProviderGenerator.COMMIT_POLICY_ENUM_NAME);
         var state = self.nestedClass("State");
-        return List.of(instrumentation(self, runtime, tenantConnections, commitPolicy, state, tenantKey,
-            sessionHooks));
+        return List.of(instrumentation(self, runtime, tenantConnections, requestTenants, commitPolicy, state,
+            tenantKey, sessionHooks));
     }
 
     private static TypeSpec instrumentation(
-            ClassName self, ClassName runtime, ClassName tenantConnections,
+            ClassName self, ClassName runtime, ClassName tenantConnections, ClassName requestTenants,
             ClassName commitPolicy, ClassName state, TypeName tenantKey, SessionHooks sessionHooks) {
 
         var runtimeField = FieldSpec.builder(runtime, "runtime", Modifier.PRIVATE, Modifier.FINAL).build();
@@ -156,23 +159,29 @@ public final class GraphitronConnectionInstrumentationGenerator {
             .endControlFlow()
             .addCode("\n");
         if (tenantKey != null) {
-            var collection = ClassName.get("java.util", "Collection");
-            var set = ClassName.get("java.util", "Set");
             beginExecuteOperationBuilder
-                .addComment("The request tenant set, written by the generated factory. Decoded once, here, into an")
-                .addComment("immutable Set so membership is well defined and O(1) whatever collection the caller")
-                .addComment("passed; the carrier owns it from here on. Absent means the ExecutionInput was not")
+                .addComment("The request's tenancy, written by the generated factory as one RequestTenants value,")
+                .addComment("whose constructor already copied the set and checked that a default tenant is a")
+                .addComment("member; the carrier owns it from here on. Absent means the ExecutionInput was not")
                 .addComment("built by the generated factory, and the set has no unrestricted meaning, so fail")
                 .addComment("before any fetcher runs.")
-                .addStatement("$T<$T> requestedTenants = graphQLContext.get($T.$L)", collection, tenantKey,
+                .addStatement("$T requestTenants = graphQLContext.get($T.$L)", requestTenants,
                     tenantConnections, ConnectionRuntimeClassGenerator.TENANTS_KEY_FIELD)
-                .beginControlFlow("if (requestedTenants == null)")
+                .beginControlFlow("if (requestTenants == null)")
                 .addStatement("throw new $T($S)", IllegalStateException.class,
                     "No request tenant set in the GraphQL context: a <tenantColumn> build's generated"
                         + " factories (newOwnedExecutionInput / newExecutionInput) take the set of tenants"
                         + " the request may touch; build the request through one of them.")
                 .endControlFlow()
-                .addStatement("$T<$T> tenants = $T.copyOf(requestedTenants)", set, tenantKey, set)
+                .addComment("The default tenant is the consumer's choice, never the client's, so there is no")
+                .addComment("hosting probe to hide: refuse an unhosted one before any fetcher runs rather than")
+                .addComment("fail every global read in the request one by one.")
+                .beginControlFlow("if (requestTenants.defaultTenant().isPresent()"
+                    + " && !runtime.tenantKeys().contains(requestTenants.defaultTenant().get()))")
+                .addStatement("throw new $T($S + requestTenants.defaultTenant().get() + $S)",
+                    IllegalStateException.class, "Default tenant '",
+                    "' has no DataSource in this runtime; name a default tenant this runtime hosts.")
+                .endControlFlow()
                 .addCode("\n");
         }
         if (!payload.isEmpty()) {
@@ -187,7 +196,7 @@ public final class GraphitronConnectionInstrumentationGenerator {
         }
         var carrierArgs = new StringBuilder("runtime, commitPolicy");
         if (tenantKey != null) {
-            carrierArgs.append(", tenants");
+            carrierArgs.append(", requestTenants");
         }
         for (var p : payload) {
             carrierArgs.append(", ").append(p.name());

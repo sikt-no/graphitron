@@ -64,8 +64,8 @@ class TenantAcquisitionFragmentsTest {
     }
 
     @Test
-    void anUntenantedAcquisitionTakesTheDefaultSource() {
-        var declaration = declare(new TenantAcquisition.Untenanted());
+    void aDefaultSourceAcquisitionTakesTheDefaultSource() {
+        var declaration = declare(new TenantAcquisition.DefaultSource());
 
         assertThat(declaration.statement().toString())
             .isEqualTo("org.jooq.DSLContext dsl = "

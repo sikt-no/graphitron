@@ -546,7 +546,7 @@ public record TenantBindingIndex(
             // A root service handed a connection runs its own SQL on that connection, and that SQL
             // is opaque, so it needs a tenant whatever graphitron's own reach says. Not where the
             // reach holds a global table: graphitron re-reads that return on the same connection,
-            // and global tables live on the default source, so the structure decides the field.
+            // and a global service runs on the default source, so the structure decides the field.
             boolean connectionService = roots.contains(coord.getTypeName())
                 && out instanceof ServiceField && bindsConnection(out) && !anyGlobal;
             boolean needsTenant = anyTenant || connectionService;
@@ -583,9 +583,9 @@ public record TenantBindingIndex(
                 // Node dispatch spans types; the arm exists iff every tenant-scoped node
                 // type's key embeds the tenant column (rejections fired once in
                 // classifyNodeDispatch). No tenant-scoped node types at all means node
-                // dispatch never leaves the default source.
+                // dispatch reads only global tables, which is a global read.
                 return nodePositions.isEmpty()
-                    ? TenantBinding.Untenanted.INSTANCE
+                    ? TenantBinding.Untenanted.GlobalRead.INSTANCE
                     : TenantBinding.NodeIdBound.INSTANCE;
             }
             // Ahead of both Inherited checks: the parent row names the tenant that holds the
@@ -602,13 +602,13 @@ public record TenantBindingIndex(
             // on the inherited tenant's connection. Decided ahead of the reach-derived Untenanted
             // arm, whose "touches no tables" reading is about graphitron's SQL only, a service's
             // own SQL being opaque. Not where the field's own reach is global: graphitron re-reads
-            // that global return table on the same connection, and global tables live on the
-            // default source, so the field keeps the Untenanted arm below.
+            // that global return table on the same connection, and a global service runs on the
+            // default source, so the field keeps the Untenanted.DefaultSource leaf below.
             if (!anyGlobal && bindsConnection(out) && tenantContextOf(coord.getTypeName())) {
                 return new TenantBinding.Inherited(coord.getTypeName());
             }
             if (!needsTenant) {
-                return TenantBinding.Untenanted.INSTANCE;
+                return untenantedLeaf(members);
             }
             if (tenantContextOf(coord.getTypeName())) {
                 return new TenantBinding.Inherited(coord.getTypeName());
@@ -731,7 +731,7 @@ public record TenantBindingIndex(
 
         /**
          * The {@code @globalData} rejection ladder, closed and validate-time: a marked field
-         * either survives every rung and classifies {@link TenantBinding.Untenanted}, or rejects
+         * either survives every rung and classifies {@link TenantBinding.Untenanted.DefaultSource}, or rejects
          * with a marker-specific message; the first rung that applies wins. The marker is
          * accepted exactly where an unrouted connection-binding root service would otherwise
          * reject. The reach and argument rungs refuse it wherever the build can see tenant data,
@@ -787,7 +787,7 @@ public record TenantBindingIndex(
                     + "', or mark the scalar argument or input field that holds the tenant with"
                     + " @tenant, and remove the directive.");
             }
-            return TenantBinding.Untenanted.INSTANCE;
+            return TenantBinding.Untenanted.DefaultSource.INSTANCE;
         }
 
         private TenantBinding rejectGlobalData(String coordinate, String reason) {
@@ -1169,6 +1169,22 @@ public record TenantBindingIndex(
             // A @routine write contributes nothing here: its only member is the routine call,
             // which carries no filter, lookup or input surface, so it mints no slot at all.
             return collector.result();
+        }
+
+        /**
+         * Which {@link TenantBinding.Untenanted} leaf a field touching only global tables takes,
+         * read off its own operation members: a statement that writes or calls a service runs on
+         * the default source in every request, since the build cannot see what that SQL touches;
+         * anything else is graphitron's own read, which may follow the request's default tenant.
+         * {@code REENTRY} is deliberately not in the test: on a producing coordinate it rides
+         * beside the {@code WRITE} or {@code SERVICE_CALL} that already decides the leaf, and on
+         * a record-sourced child it marks a payload re-projection, which is a global read.
+         */
+        private static TenantBinding.Untenanted untenantedLeaf(List<OperationMember> members) {
+            return hasKind(members, OperationMember.Kind.WRITE)
+                    || hasKind(members, OperationMember.Kind.SERVICE_CALL)
+                ? TenantBinding.Untenanted.DefaultSource.INSTANCE
+                : TenantBinding.Untenanted.GlobalRead.INSTANCE;
         }
 
         private static boolean hasKind(List<OperationMember> members, OperationMember.Kind kind) {

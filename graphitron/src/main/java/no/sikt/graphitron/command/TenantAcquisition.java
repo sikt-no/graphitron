@@ -10,7 +10,7 @@ import java.util.List;
  * than aesthetics, which {@link TenantStrategy}'s own javadoc records; a fanned coordinate still
  * acquires, once per tenant, through the scatter carrier its strategy names.
  *
- * <p>Three arms, one per shape the generated {@code TenantConnections} carrier offers. They are
+ * <p>Three arms, each a shape the generated {@code TenantConnections} carrier offers. They are
  * a reduction of the classifier's binding arms rather than a copy of them: the per-row family
  * (a node id's or a federation representation's decoded tenant slot) reaches an entry point of
  * this kind only as an inherited value, so it folds onto {@link Inherited} at the one place the
@@ -26,11 +26,11 @@ import java.util.List;
 public sealed interface TenantAcquisition {
 
     /**
-     * Global reference data: the entry point acquires the default source. Deliberately never
-     * consults the handed-down tenant, a global table under a bound ancestor still living on the
-     * default source.
+     * The fixed default source: the entry point acquires the {@code DataSource} the runtime is
+     * constructed with beside its per-tenant map, whatever the request names, and never the
+     * request's default tenant. Deliberately never consults the handed-down tenant either.
      */
-    record Untenanted() implements TenantAcquisition {}
+    record DefaultSource() implements TenantAcquisition {}
 
     /**
      * The binding ancestor divined the tenant and handed it down; this entry point re-acquires

@@ -15,7 +15,7 @@ Point the plugin at the column that scopes your tables:
 </configuration>
 ----
 
-Tables carrying the column are tenant-scoped; tables without it are global reference data served from the default source. The tenant key's Java type is read off the catalog (all tables must agree), and it types every tenant-keyed runtime surface, so wiring a map keyed with the wrong type is a compile error.
+Tables carrying the column are tenant-scoped; tables without it are global reference data served from the default source, or from a request's default tenant (see §2). The tenant key's Java type is read off the catalog (all tables must agree), and it types every tenant-keyed runtime surface, so wiring a map keyed with the wrong type is a compile error.
 
 == 2. Wire one DataSource per tenant
 
@@ -55,9 +55,22 @@ public static RasHandle mount(Configuration cfg, Optional<Long> tenant, Claims c
 }
 ----
 
-A connection routed to a tenant receives that tenant; the default source, which serves your global tables, receives `Optional.empty()`. The parameter is not part of the payload and does not appear on the factory. Graphitron recognises it by type alone, so any other `Optional` parameter on a multi-tenant mount is a build error, and a plain `Long tenant` parameter is ordinary payload that your factory will ask for. Tenant keys that share one `DataSource` still get one connection and one mount each, each with its own key. A mount that throws fails the request closed and evicts the connection, so it is also the place for any per-tenant check the tenant set cannot express. Your unmount does not receive the tenant; if it needs it, put it in the handle your mount returns.
+A connection routed to a tenant receives that tenant; a connection to the default source receives `Optional.empty()`. The parameter is not part of the payload and does not appear on the factory. Graphitron recognises it by type alone, so any other `Optional` parameter on a multi-tenant mount is a build error, and a plain `Long tenant` parameter is ordinary payload that your factory will ask for. Tenant keys that share one `DataSource` still get one connection and one mount each, each with its own key. A mount that throws fails the request closed and evicts the connection, so it is also the place for any per-tenant check the tenant set cannot express. Your unmount does not receive the tenant; if it needs it, put it in the handle your mount returns.
 
-Routing is divined from the operation: an argument bound to the tenant column routes the statement and hands the tenant down its subtree; global tables read the default source. A tenant-scoped field that nothing routes is a build error, never a silent read of the wrong database.
+*Reading global tables from a tenant database.* If your global tables are present in every tenant database (for example as views over shared reference data), a request can name one of its tenants as its _default tenant_, and graphitron then reads global tables for that request from that tenant's database instead of from the default source:
+
+[source,java]
+----
+ExecutionInput input = Graphitron.newOwnedExecutionInput(
+        RequestTenants.withDefault(permitted, lowestInstitution(permitted)), claims)
+    .query(query).build();
+----
+
+The default tenant must be in the request's tenant set, or `RequestTenants.withDefault` throws, and it must be one this runtime has a `DataSource` for, or the request fails before any field runs. Global reads then use the same connection, and the same session mount, as any field routed to that tenant, so your mount receives the tenant rather than `Optional.empty()`, and a request that routes to its default tenant anyway takes no extra connection. This covers root fields over global tables, `@splitQuery` fields over global tables (also below a tenant row: they read the default tenant, not the row's), and `node`, `nodes` and `_entities` for global types. Fields that name a tenant are routed exactly as before.
+
+Writes to global tables and `@service` fields, `@globalData` among them, still run on the default source, because graphitron cannot see what their SQL touches. A global read therefore sees a global write made earlier in the same request only if your tenant databases show the default source's committed data. This shows up in the payload of such a write or service: the field's own columns are read with the write and see it, but every field below it that graphitron fetches separately over a global table, whether a `@splitQuery` field or a `@table` field filled from the records your service returned, reads the default tenant's database. The same holds for a payload returned by a service that runs on a tenant, which is what lets its global fields resolve at all. Which tenant to name is your policy; graphitron never picks one. A request built without a default tenant, through the `Collection` form of the factory or `RequestTenants.of(permitted)`, reads global tables from the default source, as before.
+
+Routing is divined from the operation: an argument bound to the tenant column routes the statement and hands the tenant down its subtree; global tables read the default source, unless the request names a default tenant (above). A tenant-scoped field that nothing routes is a build error, never a silent read of the wrong database.
 
 A reference from a global table into tenant data can route on the parent row. When the foreign key a field follows lands on the tenant column, the parent row's value at the paired column names the tenant that holds the child row, so each parent row's child is fetched from that tenant's database. The field must be xref:../reference/directives/splitQuery.adoc[`@splitQuery`], because an inline child runs inside its parent's statement on the default source. Parents naming the same tenant share one batched statement. A parent with no value at that column has no child. Like any routed tenant, the value must be in the request's tenant set, or that child fails with a client error. The parent row decides even when the parent was reached under another tenant, because a tenant's database holds only rows carrying that tenant: a registry row pointing at institution X has its child in X's database, whichever tenant the request arrived through.
 

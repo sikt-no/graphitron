@@ -159,6 +159,16 @@ Consequence to document: in a request with a default tenant, a global read sees 
 - **R505** (Backlog): tenant-index tables, which live only on the default source; their reads acquire `dslDefault`, never `dslGlobal`.
 - **R682** (Spec): moves the `TenantBinding` axis into the store; the `Untenanted` sub-axis moves with it, and the `TenantAcquisition` rename here clears the way for its read-side arms.
 
+## Implementation notes
+
+Landed as planned, with these departures, none of which changes approved behaviour:
+
+- **`RequestTenants` is a final value class, not a Java record.** The project's JavaPoet fork exposes no record builder (the `PageRequest` precedent in `ConnectionHelperClassGenerator` says the same). The class carries the record's surface: the canonical constructor `(Set<K>, Optional<K>)` holding the copy, null and membership checks, the accessors `tenants()` / `defaultTenant()`, value `equals` / `hashCode` / `toString`, and the factories `of` / `withDefault`. `TenantRuntimeKeyTypeTest.multiTenantBuildEmitsTheRequestTenancyValue` pins that shape.
+- **The plan registers the new unit.** `EmitPlan.connectionRuntime` commits `RequestTenants` in `<tenantColumn>` builds (read off `GraphitronSchema.requestTenantKeyType()`), and `PlanCompileGraph` declares the carrier and instrumentation edges into it and the facade's precise edge. Without it the plan/generator unit-set check refuses the run. The spec named only the generator.
+- **The fixture's global node type and tenant-routed payload type are a slim `GlobalLanguage`, not `Language`.** `Language.films` is `@tenantFanOut`, and the fan-out ladder's any-path `anyBoundAncestor` rung refuses it once `Language` is reachable below a divining edge: `Query.node` divines for the tenant-scoped node types, and `rateFilmsWithLanguage` divines from its ids. `GlobalLanguage implements Node @table(name: "language") @node(keyColumns: ["language_id"])` carries no fanned child, so it serves the node case and `RatedFilmsLanguagePayload.language`. The `@globalData` payload keeps `Language` (its producer divines nothing). `RatedFilmsLanguagePayload` also carries `ranOn`, so the execution case can see the service ran on tenant 1. Whether that any-path rung should stop at an untenanted edge is a separate question this item does not touch.
+- **The global write is `Mutation.createEndorsement`** (an INSERT into `film_endorsement`) under its own note, `WRITTEN_ENDORSEMENT_NOTE`, so the parent-row cases reading the class's fixture note never see the written row; the case deletes it, and the class's setup and teardown sweep both notes.
+- **Callers of the carrier constructor follow the new parameter.** `TenantScatterSubstrateTest`, `TenantScatterExecutionTest` and `TenantAuthorizationSubstrateTest` build `RequestTenants.of(...)`; `TenantFanOutFetcherPipelineTest`'s factory-shape helper groups overloads by name, since `newOwnedExecutionInput` now has two.
+
 ## Reviewer findings
 
 ### Round 1: Spec → Ready, request revisions (session_01SSF3eTSzXtPMPqYwKi8RiF, 2026-10-08)

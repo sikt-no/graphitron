@@ -422,8 +422,12 @@ class TenantScatterSubstrateTest {
         // The request tenant set admits every hosted tenant: these proofs are about concurrency,
         // and authorization has its own harness test.
         Object hosted = runtimeClass.getMethod("tenantKeys").invoke(runtime);
-        return tenantConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, java.util.Set.class, String.class)
-            .newInstance(runtime, commitPolicyCommit, java.util.Set.copyOf((java.util.Set<?>) hosted), "{}");
+        Class<?> requestTenantsClass = harness.load(
+            SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.REQUEST_TENANTS_CLASS_NAME);
+        Object requestTenants = requestTenantsClass.getMethod("of", java.util.Collection.class)
+            .invoke(null, hosted);
+        return tenantConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, requestTenantsClass, String.class)
+            .newInstance(runtime, commitPolicyCommit, requestTenants, "{}");
     }
 
     private List<?> scatter(Object tc, Collection<String> keys, Function<Object, Object> perTenant) throws Throwable {

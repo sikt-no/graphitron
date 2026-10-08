@@ -142,7 +142,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
             units.singleton(GeneratedUnits.SUB_UTIL, "SelectionOccurrences")));
         globals.add(one(GlobalUnitKind.ORDER_BY_RESULT, units.orderByResult()));
         globals.add(one(GlobalUnitKind.GRAPHITRON_CONTEXT, units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronContext")));
-        globals.add(connectionRuntime(units, schema.sessionHooks()));
+        globals.add(connectionRuntime(units, schema.sessionHooks(), schema.requestTenantKeyType().isPresent()));
         globals.add(one(GlobalUnitKind.TRANSACTION_PROVIDER,
             units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronTransactionProvider")));
         globals.add(one(GlobalUnitKind.CONNECTION_INSTRUMENTATION,
@@ -268,15 +268,21 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
     /**
      * The connection runtime's unit set: the three fixed units, plus the generated hook class
      * exactly when the resolved session-hook carrier emits one
-     * ({@link SessionHooks#emitsHookImplementation()}, the same fact the generator gates on).
-     * The {@link SessionHooks.NotConfigured} arm plans no hook unit at all: nothing is emitted
-     * and nothing is held.
+     * ({@link SessionHooks#emitsHookImplementation()}, the same fact the generator gates on),
+     * plus the {@code RequestTenants} value exactly in a {@code <tenantColumn>} build
+     * ({@link GraphitronSchema#requestTenantKeyType()}, the fact the generator's tenant key type
+     * is read from). The {@link SessionHooks.NotConfigured} arm plans no hook unit at all:
+     * nothing is emitted and nothing is held.
      */
-    private static GlobalCommand connectionRuntime(GeneratedUnits units, SessionHooks sessionHooks) {
+    private static GlobalCommand connectionRuntime(GeneratedUnits units, SessionHooks sessionHooks,
+                                                   boolean multiTenant) {
         var refs = new ArrayList<UnitRef>();
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "PinnedConnection"));
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronRuntime"));
         refs.add(units.tenantConnections());
+        if (multiTenant) {
+            refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "RequestTenants"));
+        }
         if (sessionHooks.emitsHookImplementation()) {
             refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronSessionHook"));
         }

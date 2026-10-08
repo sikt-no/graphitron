@@ -77,7 +77,7 @@ public final class TenantAcquisitionFragments {
     private static Declaration routed(TenantAcquisition acquisition, TypeName keyType,
             ClassName connections, RequestContextRead contextRead) {
         return switch (acquisition) {
-            case TenantAcquisition.Untenanted ignored -> new Declaration(
+            case TenantAcquisition.DefaultSource ignored -> new Declaration(
                 CodeBlock.builder()
                     .addStatement("$T dsl = $T.dslDefault(env)", DSL_CONTEXT, connections)
                     .build(),

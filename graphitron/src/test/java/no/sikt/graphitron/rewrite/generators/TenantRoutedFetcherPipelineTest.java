@@ -126,20 +126,6 @@ class TenantRoutedFetcherPipelineTest {
     }
 
     @Test
-    void untenantedRootAcquiresTheDefaultSourceAndHandsNothingDown() {
-        var schema = multiTenant("""
-            type Language @table(name: "language") { name: String }
-            type Query { languages: [Language!]! }
-            """);
-
-        var languages = render(schema, "QueryFetchers", "languages");
-        assertThat(languages)
-            .contains("org.jooq.DSLContext dsl = fake.code.generated.schema.TenantConnections.dslDefault(env)")
-            .doesNotContain("localContext")
-            .doesNotContain("getDslContext(env)");
-    }
-
-    @Test
     void inheritedChildRowsMethodReadsTheHandedDownTenant() {
         var schema = multiTenant("""
             type Film @table(name: "film") {
@@ -441,22 +427,6 @@ class TenantRoutedFetcherPipelineTest {
             .contains("cols[1] = rep.get(\"filmId\")")
             .contains(".computeIfAbsent(cols[1], ")
             .contains("dslFor(groupEnv, ")
-            .doesNotContain("getDslContext(groupEnv)");
-    }
-
-    @Test
-    void globalEntityDispatchAcquiresTheDefaultSourceInMultiTenantBuilds() {
-        var handle = renderHandle(multiTenant("""
-            type Language implements Node @table(name: "language") @node {
-                id: ID! @nodeId
-            }
-            type Query {
-                node(id: ID!): Node
-            }
-            """), "Language");
-        assertThat(handle)
-            .contains("fake.code.generated.schema.TenantConnections.dslDefault(groupEnv)")
-            .doesNotContain("dslFor")
             .doesNotContain("getDslContext(groupEnv)");
     }
 
