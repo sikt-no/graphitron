@@ -317,3 +317,34 @@ numbers in this item at In Review:
 * "derivation stratum done in"
 * "initial run failed validation"
 * "LSP listening"
+
+## Implementation notes
+
+All four fixes are in, one commit each, with the tests the plan names. What landed differs from
+the plan in three small places, recorded here so the Done reviewer can weigh them:
+
+* **Fix 2, flat chain.** The readers and the seeds share one `Carrier` record in
+  `ArgMappingCandidates` that holds the aliases, appends the four left joins to a select's join
+  tree and names the four columns. `carrier()` and its union are gone. The seeds read
+  `graphql_element` for the graph and add `carrier name IS NOT NULL`, so an element with no
+  declaration behind it seeds nothing, as the inner joins of the union did. The fallback (seeds
+  keep a union) was **not** taken; whether it is needed is a sis measurement, below.
+* **Fix 4, no separate key reader.** Each caller already reads the conflict view for its own
+  rows: `AuthoredClaimRejectionRows.derive` for every row it mints, `typeGrain` for the domain's
+  type rows. Each now fetches those rows once and passes the keys off them to `typeClaims` /
+  `fieldClaims`, which take a `Collection` of keys in place of the old two-argument entry. A
+  shared reader would have read the view a second time in `derive`. The `fact-model.adoc`
+  sentence was not added: the planner behaviour was not re-confirmed in this session.
+* **Plan tests use plain `EXPLAIN`.** `UnservedJoinPlanTest` runs the production writers again
+  through a statement-recording `DSLContext` and explains what they executed. Plain `EXPLAIN`
+  shows the access path, which is the asserted property; `EXPLAIN ANALYZE` would execute the
+  inserts a second time. The seeded store was large enough for H2 to choose the seek in all three
+  cases, so no assertion was dropped. As a sanity check, the old `onDuplicateKeyUpdate()` shape on
+  `graphql_field_element` explains as `tableScan` with `ON (… COORDINATE … OR …)`, and the new one
+  as a `PRIMARY_KEY` seek.
+
+`graphitron_argument`'s CHECK row count on sis is still to be counted (see the table under fix 3).
+
+**Pending: the sis run under Verification.** This session had no sis checkout, so neither the
+re-timing of the four carrier statements nor the warm `graphitron:dev` figures are recorded yet.
+The item stays In Progress until a session with sis access records them; In Review needs them.
