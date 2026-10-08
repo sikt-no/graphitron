@@ -179,7 +179,7 @@ These four constraints hold on sis today:
 | `graphql_field_element` | 7,134 of 7,134 |
 | `graphitron_field` | 8,436 of 8,436 |
 | `graphql_argument_element` | 530 of 530 |
-| `graphitron_argument` | to be counted with the implementation |
+| `graphitron_argument` | 967 of 967 |
 
 Every writer already spells the coordinate this way:
 
@@ -328,7 +328,7 @@ the plan in three small places, recorded here so the Done reviewer can weigh the
   tree and names the four columns. `carrier()` and its union are gone. The seeds read
   `graphql_element` for the graph and add `carrier name IS NOT NULL`, so an element with no
   declaration behind it seeds nothing, as the inner joins of the union did. The fallback (seeds
-  keep a union) was **not** taken; whether it is needed is a sis measurement, below.
+  keep a union) was **not** taken, and the sis re-timing below shows it is not needed.
 * **Fix 4, no separate key reader.** Each caller already reads the conflict view for its own
   rows: `AuthoredClaimRejectionRows.derive` for every row it mints, `typeGrain` for the domain's
   type rows. Each now fetches those rows once and passes the keys off them to `typeClaims` /
@@ -343,8 +343,90 @@ the plan in three small places, recorded here so the Done reviewer can weigh the
   `graphql_field_element` explains as `tableScan` with `ON (… COORDINATE … OR …)`, and the new one
   as a `PRIMARY_KEY` seek.
 
-`graphitron_argument`'s CHECK row count on sis is still to be counted (see the table under fix 3).
+## Verification results
 
-**Pending: the sis run under Verification.** This session had no sis checkout, so neither the
-re-timing of the four carrier statements nor the warm `graphitron:dev` figures are recorded yet.
-The item stays In Progress until a session with sis access records them; In Review needs them.
+Taken on 2026-10-08 on one machine, against one snapshot of the sis checkout: `9c4e2a611d` plus
+uncommitted local edits, some of them in `sis-graphql-spec`'s schema and `sis-service`'s
+conditions. Both builds ran against the same copy, so the snapshot is a constant of the
+comparison, not a variable.
+
+* **After** is trunk `8405ec308`, with all four fixes in.
+* **Before** is `a174f94c4`, the parent of the first fix commit, so the comparison isolates this
+  item rather than the day's trunk.
+
+The figures differ from the 2026-10-07 profile, which is not recorded in this item. They are not
+compared against it.
+
+**How it ran.** Two deviations from the command under Verification:
+
+* The sis siblings (`sis-jooq`, `sis-service`, `fs-extended-scalars`) cannot be rebuilt on this
+  machine, because jOOQ codegen needs the Oracle database. Their already-built jars were installed
+  into each build's private prefix, with the poms flattened the way the sis build does it.
+* Every run used its own explicit `-Dgraphitron.store.directory`, and every run after the first was
+  `-o`. That kept remote snapshot lookups out of the timings and kept the two stores apart. The
+  stores also differ in DDL hash: `0727c4c27e00d52b` before, `2b0622db6d273878` after.
+
+Each run was a startup to "LSP listening". Then one save appended a newline to `emne.graphql`,
+and the run waited for the regenerate round. The file was restored before the next startup.
+
+The machine was shared with other sessions' builds (load average 2.4 to 6.2 on 14 cores), so
+single figures carry noise of tens of percent. The warm save, which is what the goal claims, was
+taken twice for each build.
+
+All times are in seconds, read off the log markers:
+
+* **capture**: from the round's banner to "deriving 28 stages";
+* **derive**: "derivation stratum done in";
+* **generate**: from the stratum's end to "run ok" or "regenerate ok".
+
+| run | build | round total | capture | derive | generate |
+| --- | --- | --- | --- | --- | --- |
+| cold startup | before | 146.5 | 54.2 | 50.8 | 41.4 |
+| cold startup | after | 128.4 | 39.2 | 45.7 | 43.6 |
+| warm startup 1 | before | 180.5 | 74.1 | 62.6 | 43.8 |
+| warm startup 2 | before | did not finish | 69.7 | 59.8 | over 40 min, killed |
+| warm startup 3 | before | 198.6 | 80.7 | 72.1 | 45.8 |
+| warm startup 1 | after | 140.0 | 45.2 | 47.3 | 47.5 |
+| warm startup 2 | after | 106.6 | 32.5 | 39.5 | 34.6 |
+| save 1 | before | 233.9 | 94.0 | 86.8 | 53.1 |
+| save 2 | before | 183.4 | 84.6 | 61.7 | 37.1 |
+| save 1 | after | 106.0 | 35.8 | 36.1 | 34.1 |
+| save 2 | after | 104.5 | 28.0 | 39.2 | 36.2 |
+
+Every round that finished passed validation; none logged "initial run failed validation".
+
+**What the figures show.**
+
+* A warm save went from 183 to 234 seconds, down to 105. That is 80 to 130 seconds per save,
+  more than the 65s the plan summed from analysed copies. That fits `fact-model.adoc`'s warning
+  that the in-transaction warm cadence plans without fresh statistics, so it pays more for a
+  nested loop than an analysed copy shows.
+* The saving is in capture (85 to 94 down to 28 to 36) and derivation (62 to 87 down to 36 to 39).
+  The generator pass shows no consistent change.
+* Cold startup moves less, 146.5 to 128.4, because the cold cadence analyses stage by stage.
+
+**One unexplained stall, before the fixes only.** The before build's second warm startup finished
+derivation in 59.8s. Its generator pass then logged nothing for more than 40 minutes, and the run
+was killed. The next before startup, against the same store, finished its generator pass in 45.8s.
+No thread dump was taken during the stall, so its cause is unknown. Fix 4's statements run in
+that pass, on the `StoreDetections` path, but nothing here ties the stall to them. No after run
+stalled, in four rounds.
+
+**Fix 2 re-timed in the new shape.** `ArgMappingCandidates.derive` ran on a copy of each warm store,
+inside a rolled-back transaction, twice per copy, with each statement timed:
+
+| statement | before | after | rows |
+| --- | --- | --- | --- |
+| `seedCarrierItself` | 0.29 / 0.11 | 0.21 / 0.22 | 3,055 |
+| `seedCarrierChildren` | 0.14 / 0.09 | 0.13 / 0.13 | 2,628 |
+| `markContestedCarrierName` | 5.37 / 4.72 | 0.11 / 0.11 | 0 marked |
+| `expand`, depth 0 | 8.77 / 9.71 | 0.26 / 0.24 | 5,253 |
+| `expand`, depth 1 | 2.09 / 1.57 | 0.14 / 0.09 | 1,373 |
+| whole `derive` | 18.8 / 17.1 | 3.1 / 1.6 | 13,280 |
+
+Every statement returns the same row count in both shapes. The seeds did not regress, so the
+seed fallback is not needed.
+
+**CHECK counts.** On the before store, which carries none of the new constraints, 967 of 967
+`graphitron_argument` rows and 8,409 of 8,409 `graphitron_field` rows already satisfy the
+coordinate-equals-key `CHECK`. The after store holds the same counts.
