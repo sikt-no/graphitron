@@ -298,3 +298,38 @@ different classes, breaking `JooqCatalog` and every identity check in `ServiceCa
 isolation `DevQueryExecutor` already uses for dev execution (platform parent, consumer jars only), and
 it works there because nothing crosses back but strings; codegen hands jOOQ objects across, so it is
 not available here.
+
+## Reviewer findings
+
+### Round 1: Spec → Ready, request revisions (session_01MuRsGbZ7TsJp4FSVoh9FyD, 2026-10-08)
+
+Question 2 (fit) passes. The realm check projects off the decode `decodeDependencyVersions` already
+does, instead of adding a second walk beside it. The codegen decode subsumes the
+`ClassNotFoundException` catches into a new `ReflectionError` arm on the `AmbiguousMethod.Ambiguity`
+pattern. The `LinkageError` sites are each decided. I would hand the Implementation and Tests sections
+to an implementer as they stand. Every code symbol the plan names exists as named, with one
+exception, below. Question 1 fails on that one claim: it is about what happens today, and the goal's
+first paragraph and the item's title rest on it.
+
+1. **Symptom one describes a boot path trunk no longer has.** The goal says "Today the same mistake
+   surfaces as a fact-store view that 'did not parse'". The title says "the store will not open".
+   "What happens" says `ViewReferences.parse` reads stored definitions back "so
+   `MaterializeDependencies.populate` can derive the refresh order", and that "the parse is only the
+   first casualty". R955 (`4110fea`, 2026-09-23) dropped that register. `MaterializeDependencies`
+   is gone from the tree. `ViewReferences` has no caller left in any `src/main`, only gate tests.
+   No other `parser()` / `parseQuery` call remains in main sources. So on trunk, a second jOOQ in
+   the realm no longer fails at store open. Nobody has established what it does instead: fail
+   later on some 3.20-only call, or run silently on a jOOQ graphitron was not compiled against.
+   R955's own changelog entry records `graphitron:capture` completing on `sis`. The "Other
+   solutions" entry "Derive the view read sets at build time instead of parsing at boot" argues
+   against a change that has, in effect, already landed for a different reason.
+
+   This does not change what the implementer builds. Both realm-check arms stand on the invariant
+   (graphitron must run on the jOOQ it was compiled against), and the invoker ITs do not depend on
+   the parse. It does change the claim a reader judges the goal by. "Before anything else fails" is
+   measured against a failure the tree no longer produces.
+
+   What would satisfy this: restate symptom one, and the goal's "Today" sentence, against current
+   trunk. Either give the failure a second realm jOOQ now produces, or state that it is now silent
+   or unobserved and argue the check from the invariant. Retitle the item to match. Then drop the
+   "derive the view read sets" alternative, or reframe it as already landed.
