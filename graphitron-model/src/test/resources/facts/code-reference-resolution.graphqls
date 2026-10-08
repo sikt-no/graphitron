@@ -4,7 +4,7 @@
 # in the classpath corpus, so a resolution is what a reading of the bytes found.
 
 type City @table(name: "city") {
-  cityId: ID
+  cityId: ID @field(name: "CITY_ID")
   # One method answers, so this is a row.
   uppercase: String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.CityService", method: "cityUppercase"})
@@ -20,7 +20,7 @@ type City @table(name: "city") {
 # and missing is a defect for the same reason. A condition is resolved like any other reference,
 # and a name two public overloads answer resolves to neither.
 type Film @table(name: "film") {
-  filmId: ID
+  filmId: ID @field(name: "FILM_ID")
   isEnglish: Boolean
     @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions"})
   missing: String

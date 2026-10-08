@@ -1,0 +1,30 @@
+# Each @scalarType reference met with the classpath. A reference naming a public static
+# GraphQLScalarType the reading found binds the scalar and draws nothing; every other one is a
+# defect at the position it was written, and which follows from what the classpath holds under the
+# names. The constants are real: the extended-scalars library is a declared entry of the corpus.
+
+# One constant answers, so this is no row.
+scalar Decimal @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBigDecimal")
+
+# The class was read and declares no such constant.
+scalar Misspelt @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBigDecimel")
+
+# No reading read this class at all, which is a different thing to tell an author.
+scalar Unread @scalarType(scalar: "no.example.Absent.SCALAR")
+
+# No class in the reference at all, so nothing to look for.
+scalar Bare @scalarType(scalar: "SCALAR")
+
+extend type Query {
+  decimal: Decimal
+  misspelt: Misspelt
+  unread: Unread
+  bare: Bare
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
+  code,                            type_name, field_name, detail
+  SCALAR_TYPE_CONSTANT_NOT_FOUND,  Misspelt,  ,           graphql.scalars.ExtendedScalars.GraphQLBigDecimel
+  SCALAR_TYPE_CLASS_NOT_READ,      Unread,    ,           no.example.Absent
+  SCALAR_TYPE_REFERENCE_MALFORMED, Bare,      ,           SCALAR
+  """)

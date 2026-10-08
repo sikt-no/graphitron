@@ -1,0 +1,37 @@
+# A scalar field on a table-bound type reads a column of its parent's table, or of the table its
+# @reference path arrives at, under its own name or the one @field(name:) gives it. A name the table does not have is a defect: at the @field where one is
+# written, since that is the spelling to fix, and at the field otherwise. Fields that read
+# something other than a parent column are not judged here, and neither is a node's own id.
+
+type Film @table(name: "film") {
+  # Resolves by generated name, by SQL name, and through @field.
+  title: String
+  release_year: Int
+  name: String @field(name: "TITLE")
+  # Resolves nowhere.
+  titel: String
+  renamed: String @field(name: "no_such_column")
+  # Through a @reference the column is the path's terminal table's: language has a name, and no nope.
+  languageName: String @field(name: "name") @reference(path: [{key: "film_language_id_fkey"}])
+  languageNope: String @field(name: "nope") @reference(path: [{key: "film_language_id_fkey"}])
+  # A computed field reads a method, not a column.
+  isEnglish: Boolean
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions"})
+}
+
+extend type Query {
+  films: [Film!]!
+}
+
+# The two CHAIN_WITHOUT_TARGET rows are not this document's subject and are not right: a scalar read
+# through a @reference has a target, the path's last table, and the chain rule does not yet know it.
+# They are the open node "A scalar @reference has a target" in R876's graph, declared here so the
+# rows this document is about stay exact, and they go when that node lands.
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
+  code,                 type_name, field_name,   detail
+  CHAIN_WITHOUT_TARGET, Film,      languageName, 
+  CHAIN_WITHOUT_TARGET, Film,      languageNope, 
+  COLUMN_UNRESOLVED,    Film,      languageNope, nope
+  COLUMN_UNRESOLVED,    Film,      renamed,      no_such_column
+  COLUMN_UNRESOLVED,    Film,      titel,        titel
+  """)

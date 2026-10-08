@@ -71,3 +71,14 @@ graphitron_type_authored graphql_type
 # there, which after the rewrite is the connection this very relation is deciding to mint. That is
 # the circularity as much as the wrong question, so the transcription is the population it means.
 graphitron_connection_carrier graphql_field
+
+# Adjudicated and kept: an entry defect reported at what an author wrote.
+#
+# graphitron_entry_defect_rule's COLUMN_UNRESOLVED arm judges a scalar field against its parent's
+# table and reports at the field's own line, or at its @field. Both are the author's: a minted
+# field has no line to report at, and none of the macro's minted fields is a scalar read off a
+# parent column, so the expanded population would add rows the arm can only skip. The named type is
+# read from the transcription for the same reason, to ask whether the authored field returns a
+# scalar or an enum.
+graphitron_entry_defect_rule graphql_field
+graphitron_entry_defect_rule graphql_type

@@ -280,7 +280,7 @@ class EntryDefectTest {
             type Film @table(name: "film") {
               actors: [Actor!]! @reference(path: [{key: "film_actor_actor_id_fkey"}])
             }
-            type Actor @table(name: "actor") { name: String }
+            type Actor @table(name: "actor") { first_name: String }
             """, dsl -> assertThat(codes(dsl)).containsExactly("NO_ROUTE_FROM_DEPARTURE"));
     }
 
@@ -354,6 +354,168 @@ class EntryDefectTest {
     }
 
     /**
+     * A {@code @node} on a type that does not implement {@code Node}. The interface is the contract
+     * the directive publishes to clients, so the type cannot be promoted without it. Reported at the
+     * {@code @node}, the one place the author decides between adding the interface and dropping the
+     * directive, and on the type it was written on.
+     */
+    @Test
+    @DisplayName("a @node without the Node interface is a defect at the @node")
+    void aNodeWithoutTheNodeInterfaceIsADefect(@TempDir Path tmp) {
+        withCatalogStore(tmp, """
+            interface Node { id: ID! }
+            type Query { film: Film }
+            type Film @table(name: "film") @node { id: ID! title: String }
+            """, dsl -> assertThat(dsl
+                .select(GRAPHITRON_ENTRY_DEFECT_SITE.CODE, GRAPHITRON_ENTRY_DEFECT_SITE.TYPE_NAME,
+                    GRAPHITRON_ENTRY_DEFECT_SITE.SOURCE_LINE)
+                .from(GRAPHITRON_ENTRY_DEFECT_SITE)
+                .fetch(r -> r.value1() + " " + r.value2() + " line " + r.value3()))
+                .containsExactly("NODE_WITHOUT_NODE_INTERFACE Film line 3"));
+    }
+
+    /**
+     * The same type declaring the interface, which is what tells the arm from one that reports every
+     * {@code @node} it is shown.
+     */
+    @Test
+    @DisplayName("a @node on a type implementing Node draws nothing")
+    void aNodeImplementingNodeDrawsNothing(@TempDir Path tmp) {
+        withCatalogStore(tmp, """
+            interface Node { id: ID! }
+            type Query { film: Film }
+            type Film implements Node @table(name: "film") @node { id: ID! title: String }
+            """, dsl -> assertThat(codes(dsl)).doesNotContain("NODE_WITHOUT_NODE_INTERFACE"));
+    }
+
+    /**
+     * A pinned key naming a column the table does not have. The pinned tier yields nothing when any
+     * position fails, so the defect is one per {@code @node} and carries every failing spelling, in
+     * the order written; the spelling that resolves is not among them.
+     */
+    @Test
+    @DisplayName("a @node key column the table lacks is a defect naming it")
+    void aNodeKeyColumnTheTableLacksIsADefect(@TempDir Path tmp) {
+        withCatalogStore(tmp, """
+            interface Node { id: ID! }
+            type Query { film: Film }
+            type Film implements Node @table(name: "film") @node(keyColumns: ["film_id", "no_such_col"]) {
+              id: ID! title: String
+            }
+            """, dsl -> assertThat(details(dsl, "NODE_KEY_COLUMN_UNRESOLVED"))
+                .containsExactly("Film no_such_col"));
+    }
+
+    /**
+     * Two failing spellings are one defect, naming the one written first. Written out of alphabetical
+     * order so the case tells position from any ordering a query might fall back on.
+     */
+    @Test
+    @DisplayName("two @node key columns the table lacks are one defect naming the first")
+    void twoMissingKeyColumnsNameTheFirst(@TempDir Path tmp) {
+        withCatalogStore(tmp, """
+            interface Node { id: ID! }
+            type Query { film: Film }
+            type Film implements Node @table(name: "film") @node(keyColumns: ["zz_missing", "film_id", "aa_missing"]) {
+              id: ID! title: String
+            }
+            """, dsl -> assertThat(details(dsl, "NODE_KEY_COLUMN_UNRESOLVED"))
+                .containsExactly("Film zz_missing"));
+    }
+
+    /** The same key with every column real, folded by generated name as much as by SQL name. */
+    @Test
+    @DisplayName("a @node key whose columns resolve draws nothing")
+    void aNodeKeyThatResolvesDrawsNothing(@TempDir Path tmp) {
+        withCatalogStore(tmp, """
+            interface Node { id: ID! }
+            type Query { film: Film }
+            type Film implements Node @table(name: "film") @node(keyColumns: ["FILM_ID"]) {
+              id: ID! title: String
+            }
+            """, dsl -> assertThat(codes(dsl)).doesNotContain("NODE_KEY_COLUMN_UNRESOLVED"));
+    }
+
+    /**
+     * A {@code @node} over a view: no columns pinned, no node metadata on the view, and no primary
+     * key, so the three places an id could come from are all silent.
+     */
+    @Test
+    @DisplayName("a @node over a table with no key to offer is a defect")
+    void aNodeWithNoKeyIsADefect(@TempDir Path tmp) {
+        withCatalogStore(tmp, """
+            interface Node { id: ID! }
+            type Query { films: [FilmList] }
+            type FilmList implements Node @table(name: "film_list") @node { id: ID! title: String }
+            """, dsl -> assertThat(details(dsl, "NODE_WITHOUT_KEY"))
+                .containsExactly("FilmList film_list"));
+    }
+
+    /** The same over a table with a primary key, which is the tier that answers for it. */
+    @Test
+    @DisplayName("a @node over a table with a primary key draws nothing")
+    void aNodeOverAKeyedTableDrawsNothing(@TempDir Path tmp) {
+        withCatalogStore(tmp, """
+            interface Node { id: ID! }
+            type Query { film: Film }
+            type Film implements Node @table(name: "film") @node { id: ID! title: String }
+            """, dsl -> assertThat(codes(dsl)).doesNotContain("NODE_WITHOUT_KEY"));
+    }
+
+    /** A {@code @table} naming nothing the catalog holds, reported with the spelling written. */
+    @Test
+    @DisplayName("a @table naming no table is a defect at the @table")
+    void aTableNamingNothingIsADefect(@TempDir Path tmp) {
+        withCatalogStore(tmp, """
+            type Query { film: Film }
+            type Film @table(name: "no_such_table") { title: String }
+            """, dsl -> assertThat(details(dsl, "TABLE_UNRESOLVED"))
+                .containsExactly("Film no_such_table"));
+    }
+
+    /**
+     * The same spelling with no catalog behind the capture at all. Nothing has been read, so no name
+     * is wrong yet, and a store a developer captured without a {@code jooqPackage} is not one defect
+     * per type.
+     */
+    @Test
+    @DisplayName("a @table in a graph captured with no catalog draws nothing")
+    void aTableWithNoCatalogDrawsNothing(@TempDir Path tmp) {
+        withCapturedStore(tmp, """
+            type Query { film: Film }
+            type Film @table(name: "no_such_table") { title: String }
+            """, dsl -> assertThat(codes(dsl)).doesNotContain("TABLE_UNRESOLVED"));
+    }
+
+    /** A table two schemas declare, unqualified, and the same name qualified, which settles it. */
+    @Test
+    @DisplayName("a @table naming a table two schemas declare is ambiguous until qualified")
+    void aTableTwoSchemasDeclareIsAmbiguous(@TempDir Path tmp) {
+        withCatalogStore(tmp.resolve("bare"), MULTISCHEMA, """
+            type Query { event: Event }
+            type Event @table(name: "event") { id: ID }
+            """, dsl -> assertThat(details(dsl, "TABLE_AMBIGUOUS"))
+                .containsExactly("Event event"));
+        withCatalogStore(tmp.resolve("qualified"), MULTISCHEMA, """
+            type Query { event: Event }
+            type Event @table(name: "multischema_a.event") { id: ID }
+            """, dsl -> assertThat(codes(dsl)).doesNotContain("TABLE_AMBIGUOUS", "TABLE_UNRESOLVED"));
+    }
+
+    /** A catalog whose two schemas each declare a table named {@code event}. */
+    private static final String MULTISCHEMA = "no.sikt.graphitron.rewrite.multischemafixture";
+
+    /** {@link #withCatalogStore(Path, String, Consumer)} against another generated catalog. */
+    private static void withCatalogStore(Path directory, String jooqPackage, String sdl,
+                                         Consumer<DSLContext> body) {
+        var ctx = TestRunContext.of();
+        try (var store = CapturedStore.ownStoreOfCatalog(directory, sdl,
+                new JooqCatalog(jooqPackage, ctx.codegenLoader()))) {
+            body.accept(store.dsl());
+        }
+    }
+
+    /**
      * A capture against the jOOQ catalog, which the chain arms need and the write arms do not: a
      * route is ambiguous only against tables that declare more than one way between them.
      */
@@ -376,6 +538,15 @@ class EntryDefectTest {
         var rows = read(dsl);
         assertThat(rows).as("the entry and the code are the whole key").doesNotHaveDuplicates();
         return rows;
+    }
+
+    /** One code's rows as type and detail, for a captured fixture whose positions are the corpus's. */
+    private static List<String> details(DSLContext dsl, String code) {
+        return dsl.select(GRAPHITRON_ENTRY_DEFECT_SITE.TYPE_NAME,
+                GRAPHITRON_ENTRY_DEFECT_SITE.DETAIL)
+            .from(GRAPHITRON_ENTRY_DEFECT_SITE)
+            .where(GRAPHITRON_ENTRY_DEFECT_SITE.CODE.eq(code))
+            .fetch(r -> r.value1() + " " + r.value2());
     }
 
     /** The codes alone, for a captured fixture whose positions are the corpus's rather than stated. */

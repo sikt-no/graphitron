@@ -1,0 +1,23 @@
+# The generator writes one file per type, named for the type, and a filesystem that folds case
+# keeps one of two names that differ only in case. Each such type is a defect at its declaration.
+# A scalar gets no file of its own, so it collides with nothing.
+
+type Film { title: String }
+type FILM { title: String }
+
+# The same spelling as an enum and a scalar: the enum collides, the scalar does not count.
+enum Rating { G }
+scalar RATING
+
+extend type Query {
+  film: Film
+  shouty: FILM
+  rating: Rating
+  ratingScalar: RATING
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
+  code,                     type_name, field_name, detail
+  TYPE_NAME_CASE_COLLISION, FILM,      ,           Film
+  TYPE_NAME_CASE_COLLISION, Film,      ,           FILM
+  """)

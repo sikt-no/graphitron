@@ -1,0 +1,31 @@
+# A node's type id is the prefix every id it mints carries, and what Query.node dispatches on, so
+# two node types sharing one is an id that names either. Each sharing type is a defect at its
+# @table, the one directive every node carries; a type id of its own draws nothing.
+
+interface Node { id: ID! }
+
+# Pinned to one id between them.
+type Film implements Node @table(name: "film") @node(typeId: "Shared") { id: ID! }
+type Actor implements Node @table(name: "actor") @node(typeId: "Shared") { id: ID! }
+
+# An id of its own, defaulted to the type name.
+type Language implements Node @table(name: "language") @node { id: ID! }
+
+extend type Query {
+  films: [Film!]!
+  actors: [Actor!]!
+  languages: [Language!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_node", rows: """
+  type_name, type_id
+  Actor,     Shared
+  Film,      Shared
+  Language,  Language
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
+  code,                type_name, field_name, detail
+  NODE_TYPE_ID_SHARED, Actor,     ,           Shared
+  NODE_TYPE_ID_SHARED, Film,      ,           Shared
+  """)

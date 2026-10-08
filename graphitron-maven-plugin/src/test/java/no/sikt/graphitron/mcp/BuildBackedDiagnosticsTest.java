@@ -116,8 +116,18 @@ class BuildBackedDiagnosticsTest {
             var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("diagnostics").build()));
             var diagnostics = (List<Map<String, Object>>) structured.get("diagnostics");
 
+            // The walk's rejection, chosen by its kind rather than by being first: the store states
+            // the same fault at the same coordinate as an entry defect, which carries no rejection
+            // kind, and the two stand side by side until validate reads the store and the walk's
+            // rejection goes. Asserted below so that day changes this test on purpose.
             var error = diagnostics.stream()
-                .filter(d -> "error".equals(d.get("severity"))).findFirst().orElseThrow();
+                .filter(d -> "error".equals(d.get("severity")))
+                .filter(d -> d.get("rejectionKind") != null).findFirst().orElseThrow();
+            assertThat(diagnostics)
+                .as("the store's own verdict on the same column, beside the walk's")
+                .anySatisfy(d -> assertThat(d)
+                    .containsEntry("coordinate", "Film.badColumn")
+                    .doesNotContainKey("rejectionKind"));
             assertThat(error)
                 .containsEntry("source", "schema")
                 .containsEntry("coordinate", "Film.badColumn")

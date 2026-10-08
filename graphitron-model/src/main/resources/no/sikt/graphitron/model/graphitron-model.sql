@@ -8277,239 +8277,6 @@ CREATE TABLE graphitron_entry_defect (
   FOREIGN KEY (code) REFERENCES graphitron_defect_type (code)
 );
 
-CREATE VIEW graphitron_entry_defect_rule
-  (graph_name, source_name, source_line, source_column, code, detail) AS
--- The @routine that heads a chain: the last one written at a mutation-root field.
-WITH head (graph_name, type_name, field_name, source_name, source_line, source_column) AS (
-  SELECT r.graph_name, r.type_name, r.field_name, r.source_name, r.source_line, r.source_column
-    FROM graphitron_routine_entry r
-    JOIN graphql_root_operation ro
-      ON ro.graph_name = r.graph_name AND ro.type_name = r.type_name
-     AND ro.operation = 'MUTATION'
-   WHERE r.source_name IS NOT NULL
-     AND r.ordinal = (SELECT MAX(r2.ordinal) FROM graphitron_routine_entry r2
-                       WHERE r2.graph_name = r.graph_name AND r2.type_name = r.type_name
-                         AND r2.field_name = r.field_name)
-),
--- How many routes each written link resolves by, toward each of its field's targets: the count
--- graphitron_field_table_link_rule keeps only where it is 1. A reading both walks reach lies on a
--- chain that runs the whole way; two of them at one position is a chain that runs the whole way
--- twice.
-routes (graph_name, type_name, field_name, target_source_name, target_schema, target_table,
-        position, routes) AS (
-  SELECT graph_name, type_name, field_name, target_source_name, target_schema, target_table,
-         position, COUNT(*)
-    FROM graphitron_field_chain_link_resolution
-   WHERE reached_by_tail AND reached_by_head
-   GROUP BY graph_name, type_name, field_name, target_source_name, target_schema, target_table,
-            position
-),
--- Each chain a field has, with the last position it was written to. One per target, a field with
--- several resolving each on its own departure.
-chain (graph_name, type_name, field_name,
-       target_source_name, target_schema, target_table, last_position) AS (
-  SELECT ft.graph_name, ft.type_name, ft.field_name,
-         ft.to_source_name, ft.to_schema, ft.to_table, MAX(cl.position)
-    FROM graphitron_field_table ft
-    JOIN graphitron_field_chain_link cl
-      ON cl.graph_name = ft.graph_name AND cl.type_name = ft.type_name
-     AND cl.field_name = ft.field_name
-   GROUP BY ft.graph_name, ft.type_name, ft.field_name,
-            ft.to_source_name, ft.to_schema, ft.to_table
-),
--- How far the head walk got, which is the half that says where a chain stopped. The tail says
--- nothing about it: a suffix reaching the target is reachable from nowhere in particular.
-head_reach (graph_name, type_name, field_name,
-            target_source_name, target_schema, target_table, reached) AS (
-  SELECT graph_name, type_name, field_name,
-         target_source_name, target_schema, target_table, MAX(position)
-    FROM graphitron_field_chain_link_resolution
-   WHERE reached_by_head
-   GROUP BY graph_name, type_name, field_name,
-            target_source_name, target_schema, target_table
-),
--- The chains that resolve nowhere, and the one position each of them broke at.
---
--- One position and not every hole, which is what keeps this from being noise. A chain resolves at
--- every position or at none: a reading the tail reaches passes its departure back to the link
--- before it, and one the head reaches passes its arrival forward, so one reading reached by both
--- makes every position reached by both. A broken chain therefore has one thing wrong with it, and
--- reporting the first position the head could not reach names the element an author edits rather
--- than every element downstream of it.
---
--- Where the head reached the last position and nothing resolved, the chain ran the whole way and
--- landed somewhere else, so the break is the last link rather than one past it.
-broken (graph_name, type_name, field_name, target_source_name, target_schema, target_table,
-        break_position, overshot) AS (
-  SELECT c.graph_name, c.type_name, c.field_name,
-         c.target_source_name, c.target_schema, c.target_table,
-         CASE WHEN COALESCE(h.reached, -1) >= c.last_position THEN c.last_position
-              ELSE COALESCE(h.reached, -1) + 1 END,
-         CASE WHEN COALESCE(h.reached, -1) >= c.last_position THEN TRUE ELSE FALSE END
-    FROM chain c
-    LEFT JOIN head_reach h
-      ON h.graph_name = c.graph_name AND h.type_name = c.type_name
-     AND h.field_name = c.field_name AND h.target_source_name = c.target_source_name
-     AND h.target_schema = c.target_schema AND h.target_table = c.target_table
-   WHERE NOT EXISTS (SELECT 1 FROM routes rt
-                      WHERE rt.graph_name = c.graph_name AND rt.type_name = c.type_name
-                        AND rt.field_name = c.field_name
-                        AND rt.target_source_name = c.target_source_name
-                        AND rt.target_schema = c.target_schema
-                        AND rt.target_table = c.target_table)
-)
--- More than one write on one field. The row sits at the head, the individual applications
--- being legal each on their own and the plurality being what has no emitter.
-SELECT h.graph_name, h.source_name, h.source_line, h.source_column,
-       'MULTIPLE_ROUTINE_NODES', NULL
-  FROM head h
- WHERE 1 < (SELECT COUNT(*) FROM graphitron_routine_entry r2
-             WHERE r2.graph_name = h.graph_name AND r2.type_name = h.type_name
-               AND r2.field_name = h.field_name)
-UNION ALL
--- A paginated return on a write. Stated for every write and not only for the chain shape:
--- the wrapper and the write are both seat-independent facts, and this relation ranks nothing,
--- so a coordinate the seat would have answered about its carrier says this as well.
-SELECT h.graph_name, h.source_name, h.source_line, h.source_column,
-       'CONNECTION_RETURN', NULL
-  FROM head h
-  JOIN graphitron_field cf
-    ON cf.graph_name = h.graph_name AND cf.type_name = h.type_name
-   AND cf.field_name = h.field_name
-  JOIN graphitron_connection_element_type ce
-    ON ce.graph_name = cf.graph_name AND ce.type_name = cf.named_type
-UNION ALL
--- A read surface written on a write. Three sites state one, and each row sits at its own.
-SELECT fc.graph_name, fc.source_name, fc.source_line, fc.source_column,
-       'READ_SURFACE_ON_WRITE', 'condition'
-  FROM graphitron_field_condition_entry fc
-  JOIN head h
-    ON h.graph_name = fc.graph_name AND h.type_name = fc.type_name AND h.field_name = fc.field_name
- WHERE fc.source_name IS NOT NULL
-UNION ALL
-SELECT ac.graph_name, ac.source_name, ac.source_line, ac.source_column,
-       'READ_SURFACE_ON_WRITE', 'condition'
-  FROM graphitron_argument_condition_entry ac
-  JOIN head h
-    ON h.graph_name = ac.graph_name AND h.type_name = ac.type_name AND h.field_name = ac.field_name
- WHERE ac.source_name IS NOT NULL
-UNION ALL
-SELECT ob.graph_name, ob.source_name, ob.source_line, ob.source_column,
-       'READ_SURFACE_ON_WRITE', 'orderBy'
-  FROM graphitron_order_by_entry ob
-  JOIN head h
-    ON h.graph_name = ob.graph_name AND h.type_name = ob.type_name AND h.field_name = ob.field_name
- WHERE ob.source_name IS NOT NULL
-UNION ALL
--- A chain link with more than one route to its destination, at the element that wrote it. The
--- targets are folded away: a field with several of them is ambiguous at one written element
--- however many chains it breaks, and one row is one thing for the author to look at. Which routes
--- competed is one join from this position to graphitron_field_chain_link_resolution, which is why
--- the count is not in detail; it also varies per target, where this key does not.
-SELECT DISTINCT cl.graph_name, cl.source_name, cl.source_line, cl.source_column,
-       'ROUTE_AMBIGUOUS', CAST(NULL AS VARCHAR)
-  FROM routes r
-  JOIN graphitron_field_chain_link cl
-    ON cl.graph_name = r.graph_name AND cl.type_name = r.type_name
-   AND cl.field_name = r.field_name AND cl.position = r.position
- WHERE r.routes > 1
-UNION ALL
--- Where a chain broke, in a vocabulary of three told apart by what is true at the break. The
--- chain overshot its target, or the element there resolves to nothing at all, or it resolves and
--- none of its routes departs where the chain is standing. Three codes and one row, the three
--- being mutually exclusive by construction rather than by ranking.
-SELECT DISTINCT cl.graph_name, cl.source_name, cl.source_line, cl.source_column,
-       CASE WHEN b.overshot THEN 'NO_ROUTE_TO_TARGET'
-            WHEN NOT EXISTS (SELECT 1 FROM graphitron_field_chain_link_reading rd
-                              WHERE rd.graph_name = b.graph_name
-                                AND rd.type_name = b.type_name
-                                AND rd.field_name = b.field_name
-                                AND rd.target_source_name = b.target_source_name
-                                AND rd.target_schema = b.target_schema
-                                AND rd.target_table = b.target_table
-                                AND rd.position = b.break_position)
-              THEN 'ELEMENT_UNRESOLVED'
-            ELSE 'NO_ROUTE_FROM_DEPARTURE' END, CAST(NULL AS VARCHAR)
-  FROM broken b
-  JOIN graphitron_field_chain_link cl
-    ON cl.graph_name = b.graph_name AND cl.type_name = b.type_name
-   AND cl.field_name = b.field_name AND cl.position = b.break_position
-UNION ALL
--- A chain written at a field whose rows come from nowhere. Not a hole in a chain but the absence
--- of one to have a hole in: nothing says where the rows arrive, so there is no target to walk
--- toward and no element can be read against one. Reported at the first element, the whole chain
--- being the one thing wrong.
---
--- @reference-only chains, which is what makes this a fact about the schema rather than about the
--- catalog. Such a chain takes its target from the return type's binding and from nowhere else, so
--- an unbound return is an error no catalog could repair. A chain carrying a @routine takes its
--- target from the function result instead, and the same silence there means the routine name
--- resolved to nothing, which is a resolution failing rather than a schema saying nothing. That
--- fault is real and is not this one; it is owed its own arm at the routine's own position.
-SELECT cl.graph_name, cl.source_name, cl.source_line, cl.source_column,
-       'CHAIN_WITHOUT_TARGET', CAST(NULL AS VARCHAR)
-  FROM graphitron_field_chain_link cl
- WHERE cl.position = 0
-   AND NOT EXISTS (SELECT 1 FROM graphitron_field_table ft
-                    WHERE ft.graph_name = cl.graph_name AND ft.type_name = cl.type_name
-                      AND ft.field_name = cl.field_name)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_field_chain_application ca
-                    WHERE ca.graph_name = cl.graph_name AND ca.type_name = cl.type_name
-                      AND ca.field_name = cl.field_name
-                      AND ca.directive_name = 'routine')
-UNION ALL
--- A code reference that resolves to no one method, at the position it was written: exactly the
--- references naming a method that graphitron_code_reference lacks, told apart by what the graph's
--- classpath holds under the names. No class, a class without the method, or more than one method;
--- exclusive by construction, a single match being the resolution's row. One arm for every site,
--- the reference being one fact wherever it is written.
-SELECT s.graph_name, s.source_name, s.source_line, s.source_column,
-       CASE WHEN s.classes = 0 THEN 'CODE_REFERENCE_CLASS_NOT_READ'
-            WHEN s.methods = 0 THEN 'CODE_REFERENCE_METHOD_NOT_FOUND'
-            ELSE 'CODE_REFERENCE_METHOD_AMBIGUOUS' END,
-       CASE WHEN s.classes = 0 THEN s.class_name ELSE s.class_name || '.' || s.method_name END
-  FROM (SELECT c.graph_name, c.source_name, c.source_line, c.source_column,
-               c.type_name, c.field_name, c.class_name, c.method_name,
-               (SELECT COUNT(*) FROM store_graph_source g
-                  JOIN code_class k ON k.source_name = g.source_name
-                 WHERE g.graph_name = c.graph_name AND k.class_name = c.class_name) AS classes,
-               (SELECT COUNT(*) FROM store_graph_source g
-                  JOIN code_method m ON m.source_name = g.source_name
-                 WHERE g.graph_name = c.graph_name AND m.class_name = c.class_name
-                   AND m.method_name = c.method_name) AS methods
-          FROM graphitron_code_reference_site c
-         WHERE c.method_name IS NOT NULL
-           AND NOT EXISTS (SELECT 1 FROM graphitron_code_reference r
-                            WHERE r.graph_name = c.graph_name AND r.source_name = c.source_name
-                              AND r.source_line = c.source_line
-                              AND r.source_column = c.source_column)
-           -- A graph whose classpath was never read has told the store nothing about any class, so
-           -- no name it writes is wrong yet: a store before its first build, or a capture with no
-           -- classpath at all. Only a reading that read something can say a class is absent.
-           AND EXISTS (SELECT 1 FROM store_graph_source g
-                         JOIN code_class k ON k.source_name = g.source_name
-                        WHERE g.graph_name = c.graph_name)) s
-UNION ALL
--- A @table naming a table-valued function. A type is not bound to a function: the field carrying
--- @routine binds its return type to the routine's result, so the directive names something a type
--- cannot stand on. Reported at the @table, with the spelling as written.
-SELECT DISTINCT t.graph_name, t.source_name, t.source_line, t.source_column,
-       'TABLE_NAMES_ROUTINE', COALESCE(t.table_ref, t.type_name)
-  FROM graphitron_table_entry t
-  JOIN graphitron_spelled_table sp
-    ON sp.graph_name = t.graph_name AND sp.spelling = COALESCE(t.table_ref, t.type_name)
-  JOIN sql_table st
-    ON st.source_name = sp.table_source_name AND st.table_schema = sp.table_schema
-   AND st.table_name = sp.table_name
- WHERE t.source_line IS NOT NULL
-   AND st.table_type = 'FUNCTION';
-COMMENT ON VIEW graphitron_entry_defect_rule IS 'One row the entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
-COMMENT ON COLUMN graphitron_entry_defect_rule.graph_name IS 'the owning graph''s partition, carried from the entry; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_entry_defect_rule.source_name IS 'the file the offending directive was written in, the first of the three columns naming its position; with them a reference into graphql_ast_entry, which is the supertype that makes a @routine application and a path element the same kind of thing to point at';
-COMMENT ON COLUMN graphitron_entry_defect_rule.source_line IS 'the offending directive''s source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_entry_defect_rule.source_column IS 'the offending directive''s source column; with the two columns above, the entry this defect is about. The key is the entry and not the coordinate, because a coordinate is an aggregate over the sites that declare it and two offending applications at one coordinate are two things to fix';
-COMMENT ON COLUMN graphitron_entry_defect_rule.code IS 'which defect, a graphitron_defect_type key. With the entry the whole key: one entry may break two rules and then carries two rows, there being no ranking here and nothing to choose between them';
-COMMENT ON COLUMN graphitron_entry_defect_rule.detail IS 'the specific a rendered message quotes back, null where the code says everything. One column and never a payload: what a consumer needs beyond this is a join from the entry, and the columns that used to differ per defect were all message material';
 COMMENT ON TABLE graphitron_entry_defect IS 'A rule a schema breaks, at the written position an author edits to fix it, under the code that names the rule. For example a mutation field carrying @routine and an @orderBy draws one row at the @orderBy''s own line, reading READ_SURFACE_ON_WRITE.';
 COMMENT ON COLUMN graphitron_entry_defect.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_entry_defect.source_name IS 'the file the offending directive was written in, the first of the three columns naming its position';
@@ -9006,6 +8773,429 @@ COMMENT ON COLUMN graphitron_field_column_scope_rule.table_source_name IS 'the t
 COMMENT ON COLUMN graphitron_field_column_scope_rule.table_schema IS 'the table_schema of a row of this rule, which the stage inserts into graphitron_field_column_scope.table_schema, whose comment carries what the value means';
 COMMENT ON COLUMN graphitron_field_column_scope_rule.table_name IS 'the table_name of a row of this rule, which the stage inserts into graphitron_field_column_scope.table_name, whose comment carries what the value means';
 
+CREATE VIEW graphitron_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail) AS
+-- The @routine that heads a chain: the last one written at a mutation-root field.
+WITH head (graph_name, type_name, field_name, source_name, source_line, source_column) AS (
+  SELECT r.graph_name, r.type_name, r.field_name, r.source_name, r.source_line, r.source_column
+    FROM graphitron_routine_entry r
+    JOIN graphql_root_operation ro
+      ON ro.graph_name = r.graph_name AND ro.type_name = r.type_name
+     AND ro.operation = 'MUTATION'
+   WHERE r.source_name IS NOT NULL
+     AND r.ordinal = (SELECT MAX(r2.ordinal) FROM graphitron_routine_entry r2
+                       WHERE r2.graph_name = r.graph_name AND r2.type_name = r.type_name
+                         AND r2.field_name = r.field_name)
+),
+-- How many routes each written link resolves by, toward each of its field's targets: the count
+-- graphitron_field_table_link_rule keeps only where it is 1. A reading both walks reach lies on a
+-- chain that runs the whole way; two of them at one position is a chain that runs the whole way
+-- twice.
+routes (graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+        position, routes) AS (
+  SELECT graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+         position, COUNT(*)
+    FROM graphitron_field_chain_link_resolution
+   WHERE reached_by_tail AND reached_by_head
+   GROUP BY graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+            position
+),
+-- Each chain a field has, with the last position it was written to. One per target, a field with
+-- several resolving each on its own departure.
+chain (graph_name, type_name, field_name,
+       target_source_name, target_schema, target_table, last_position) AS (
+  SELECT ft.graph_name, ft.type_name, ft.field_name,
+         ft.to_source_name, ft.to_schema, ft.to_table, MAX(cl.position)
+    FROM graphitron_field_table ft
+    JOIN graphitron_field_chain_link cl
+      ON cl.graph_name = ft.graph_name AND cl.type_name = ft.type_name
+     AND cl.field_name = ft.field_name
+   GROUP BY ft.graph_name, ft.type_name, ft.field_name,
+            ft.to_source_name, ft.to_schema, ft.to_table
+),
+-- How far the head walk got, which is the half that says where a chain stopped. The tail says
+-- nothing about it: a suffix reaching the target is reachable from nowhere in particular.
+head_reach (graph_name, type_name, field_name,
+            target_source_name, target_schema, target_table, reached) AS (
+  SELECT graph_name, type_name, field_name,
+         target_source_name, target_schema, target_table, MAX(position)
+    FROM graphitron_field_chain_link_resolution
+   WHERE reached_by_head
+   GROUP BY graph_name, type_name, field_name,
+            target_source_name, target_schema, target_table
+),
+-- The chains that resolve nowhere, and the one position each of them broke at.
+--
+-- One position and not every hole, which is what keeps this from being noise. A chain resolves at
+-- every position or at none: a reading the tail reaches passes its departure back to the link
+-- before it, and one the head reaches passes its arrival forward, so one reading reached by both
+-- makes every position reached by both. A broken chain therefore has one thing wrong with it, and
+-- reporting the first position the head could not reach names the element an author edits rather
+-- than every element downstream of it.
+--
+-- Where the head reached the last position and nothing resolved, the chain ran the whole way and
+-- landed somewhere else, so the break is the last link rather than one past it.
+broken (graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+        break_position, overshot) AS (
+  SELECT c.graph_name, c.type_name, c.field_name,
+         c.target_source_name, c.target_schema, c.target_table,
+         CASE WHEN COALESCE(h.reached, -1) >= c.last_position THEN c.last_position
+              ELSE COALESCE(h.reached, -1) + 1 END,
+         CASE WHEN COALESCE(h.reached, -1) >= c.last_position THEN TRUE ELSE FALSE END
+    FROM chain c
+    LEFT JOIN head_reach h
+      ON h.graph_name = c.graph_name AND h.type_name = c.type_name
+     AND h.field_name = c.field_name AND h.target_source_name = c.target_source_name
+     AND h.target_schema = c.target_schema AND h.target_table = c.target_table
+   WHERE NOT EXISTS (SELECT 1 FROM routes rt
+                      WHERE rt.graph_name = c.graph_name AND rt.type_name = c.type_name
+                        AND rt.field_name = c.field_name
+                        AND rt.target_source_name = c.target_source_name
+                        AND rt.target_schema = c.target_schema
+                        AND rt.target_table = c.target_table)
+)
+-- More than one write on one field. The row sits at the head, the individual applications
+-- being legal each on their own and the plurality being what has no emitter.
+SELECT h.graph_name, h.source_name, h.source_line, h.source_column,
+       'MULTIPLE_ROUTINE_NODES', NULL
+  FROM head h
+ WHERE 1 < (SELECT COUNT(*) FROM graphitron_routine_entry r2
+             WHERE r2.graph_name = h.graph_name AND r2.type_name = h.type_name
+               AND r2.field_name = h.field_name)
+UNION ALL
+-- A paginated return on a write. Stated for every write and not only for the chain shape:
+-- the wrapper and the write are both seat-independent facts, and this relation ranks nothing,
+-- so a coordinate the seat would have answered about its carrier says this as well.
+SELECT h.graph_name, h.source_name, h.source_line, h.source_column,
+       'CONNECTION_RETURN', NULL
+  FROM head h
+  JOIN graphitron_field cf
+    ON cf.graph_name = h.graph_name AND cf.type_name = h.type_name
+   AND cf.field_name = h.field_name
+  JOIN graphitron_connection_element_type ce
+    ON ce.graph_name = cf.graph_name AND ce.type_name = cf.named_type
+UNION ALL
+-- A read surface written on a write. Three sites state one, and each row sits at its own.
+SELECT fc.graph_name, fc.source_name, fc.source_line, fc.source_column,
+       'READ_SURFACE_ON_WRITE', 'condition'
+  FROM graphitron_field_condition_entry fc
+  JOIN head h
+    ON h.graph_name = fc.graph_name AND h.type_name = fc.type_name AND h.field_name = fc.field_name
+ WHERE fc.source_name IS NOT NULL
+UNION ALL
+SELECT ac.graph_name, ac.source_name, ac.source_line, ac.source_column,
+       'READ_SURFACE_ON_WRITE', 'condition'
+  FROM graphitron_argument_condition_entry ac
+  JOIN head h
+    ON h.graph_name = ac.graph_name AND h.type_name = ac.type_name AND h.field_name = ac.field_name
+ WHERE ac.source_name IS NOT NULL
+UNION ALL
+SELECT ob.graph_name, ob.source_name, ob.source_line, ob.source_column,
+       'READ_SURFACE_ON_WRITE', 'orderBy'
+  FROM graphitron_order_by_entry ob
+  JOIN head h
+    ON h.graph_name = ob.graph_name AND h.type_name = ob.type_name AND h.field_name = ob.field_name
+ WHERE ob.source_name IS NOT NULL
+UNION ALL
+-- A chain link with more than one route to its destination, at the element that wrote it. The
+-- targets are folded away: a field with several of them is ambiguous at one written element
+-- however many chains it breaks, and one row is one thing for the author to look at. Which routes
+-- competed is one join from this position to graphitron_field_chain_link_resolution, which is why
+-- the count is not in detail; it also varies per target, where this key does not.
+SELECT DISTINCT cl.graph_name, cl.source_name, cl.source_line, cl.source_column,
+       'ROUTE_AMBIGUOUS', CAST(NULL AS VARCHAR)
+  FROM routes r
+  JOIN graphitron_field_chain_link cl
+    ON cl.graph_name = r.graph_name AND cl.type_name = r.type_name
+   AND cl.field_name = r.field_name AND cl.position = r.position
+ WHERE r.routes > 1
+UNION ALL
+-- Where a chain broke, in a vocabulary of three told apart by what is true at the break. The
+-- chain overshot its target, or the element there resolves to nothing at all, or it resolves and
+-- none of its routes departs where the chain is standing. Three codes and one row, the three
+-- being mutually exclusive by construction rather than by ranking.
+SELECT DISTINCT cl.graph_name, cl.source_name, cl.source_line, cl.source_column,
+       CASE WHEN b.overshot THEN 'NO_ROUTE_TO_TARGET'
+            WHEN NOT EXISTS (SELECT 1 FROM graphitron_field_chain_link_reading rd
+                              WHERE rd.graph_name = b.graph_name
+                                AND rd.type_name = b.type_name
+                                AND rd.field_name = b.field_name
+                                AND rd.target_source_name = b.target_source_name
+                                AND rd.target_schema = b.target_schema
+                                AND rd.target_table = b.target_table
+                                AND rd.position = b.break_position)
+              THEN 'ELEMENT_UNRESOLVED'
+            ELSE 'NO_ROUTE_FROM_DEPARTURE' END, CAST(NULL AS VARCHAR)
+  FROM broken b
+  JOIN graphitron_field_chain_link cl
+    ON cl.graph_name = b.graph_name AND cl.type_name = b.type_name
+   AND cl.field_name = b.field_name AND cl.position = b.break_position
+UNION ALL
+-- A chain written at a field whose rows come from nowhere. Not a hole in a chain but the absence
+-- of one to have a hole in: nothing says where the rows arrive, so there is no target to walk
+-- toward and no element can be read against one. Reported at the first element, the whole chain
+-- being the one thing wrong.
+--
+-- @reference-only chains, which is what makes this a fact about the schema rather than about the
+-- catalog. Such a chain takes its target from the return type's binding and from nowhere else, so
+-- an unbound return is an error no catalog could repair. A chain carrying a @routine takes its
+-- target from the function result instead, and the same silence there means the routine name
+-- resolved to nothing, which is a resolution failing rather than a schema saying nothing. That
+-- fault is real and is not this one; it is owed its own arm at the routine's own position.
+SELECT cl.graph_name, cl.source_name, cl.source_line, cl.source_column,
+       'CHAIN_WITHOUT_TARGET', CAST(NULL AS VARCHAR)
+  FROM graphitron_field_chain_link cl
+ WHERE cl.position = 0
+   AND NOT EXISTS (SELECT 1 FROM graphitron_field_table ft
+                    WHERE ft.graph_name = cl.graph_name AND ft.type_name = cl.type_name
+                      AND ft.field_name = cl.field_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_field_chain_application ca
+                    WHERE ca.graph_name = cl.graph_name AND ca.type_name = cl.type_name
+                      AND ca.field_name = cl.field_name
+                      AND ca.directive_name = 'routine')
+UNION ALL
+-- A code reference that resolves to no one method, at the position it was written: exactly the
+-- references naming a method that graphitron_code_reference lacks, told apart by what the graph's
+-- classpath holds under the names. No class, a class without the method, or more than one method;
+-- exclusive by construction, a single match being the resolution's row. One arm for every site,
+-- the reference being one fact wherever it is written.
+SELECT s.graph_name, s.source_name, s.source_line, s.source_column,
+       CASE WHEN s.classes = 0 THEN 'CODE_REFERENCE_CLASS_NOT_READ'
+            WHEN s.methods = 0 THEN 'CODE_REFERENCE_METHOD_NOT_FOUND'
+            ELSE 'CODE_REFERENCE_METHOD_AMBIGUOUS' END,
+       CASE WHEN s.classes = 0 THEN s.class_name ELSE s.class_name || '.' || s.method_name END
+  FROM (SELECT c.graph_name, c.source_name, c.source_line, c.source_column,
+               c.type_name, c.field_name, c.class_name, c.method_name,
+               (SELECT COUNT(*) FROM store_graph_source g
+                  JOIN code_class k ON k.source_name = g.source_name
+                 WHERE g.graph_name = c.graph_name AND k.class_name = c.class_name) AS classes,
+               (SELECT COUNT(*) FROM store_graph_source g
+                  JOIN code_method m ON m.source_name = g.source_name
+                 WHERE g.graph_name = c.graph_name AND m.class_name = c.class_name
+                   AND m.method_name = c.method_name) AS methods
+          FROM graphitron_code_reference_site c
+         WHERE c.method_name IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM graphitron_code_reference r
+                            WHERE r.graph_name = c.graph_name AND r.source_name = c.source_name
+                              AND r.source_line = c.source_line
+                              AND r.source_column = c.source_column)
+           -- A graph whose classpath was never read has told the store nothing about any class, so
+           -- no name it writes is wrong yet: a store before its first build, or a capture with no
+           -- classpath at all. Only a reading that read something can say a class is absent.
+           AND EXISTS (SELECT 1 FROM store_graph_source g
+                         JOIN code_class k ON k.source_name = g.source_name
+                        WHERE g.graph_name = c.graph_name)) s
+UNION ALL
+-- A @table naming a table-valued function. A type is not bound to a function: the field carrying
+-- @routine binds its return type to the routine's result, so the directive names something a type
+-- cannot stand on. Reported at the @table, with the spelling as written.
+SELECT DISTINCT t.graph_name, t.source_name, t.source_line, t.source_column,
+       'TABLE_NAMES_ROUTINE', COALESCE(t.table_ref, t.type_name)
+  FROM graphitron_table_entry t
+  JOIN graphitron_spelled_table sp
+    ON sp.graph_name = t.graph_name AND sp.spelling = COALESCE(t.table_ref, t.type_name)
+  JOIN sql_table st
+    ON st.source_name = sp.table_source_name AND st.table_schema = sp.table_schema
+   AND st.table_name = sp.table_name
+ WHERE t.source_line IS NOT NULL
+   AND st.table_type = 'FUNCTION'
+UNION ALL
+-- A @node on a type that does not implement Node. The interface is the contract @node publishes to
+-- clients, so a type cannot be promoted to a node without it. Reported at the @node, which is where
+-- an author decides between adding the interface and dropping the directive. A root operation type
+-- is a root before it is anything else, and a @table one is not judged here.
+SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
+       'NODE_WITHOUT_NODE_INTERFACE', CAST(NULL AS VARCHAR)
+  FROM graphitron_node_entry n
+  JOIN graphitron_table_entry t ON t.graph_name = n.graph_name AND t.type_name = n.type_name
+ WHERE n.source_line IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphql_implements_interface i
+                    WHERE i.graph_name = n.graph_name AND i.type_name = n.type_name
+                      AND i.interface_name = 'Node')
+   AND NOT EXISTS (SELECT 1 FROM graphql_root_operation r
+                    WHERE r.graph_name = n.graph_name AND r.type_name = n.type_name)
+UNION ALL
+-- A @node(keyColumns:) naming a column the bound table cannot answer to with exactly one column,
+-- folded the way NodeKeyColumns folds: against the SQL name and the generated field name alike. One
+-- row per @node, naming the first spelling that fails in the order written; the pinned tier yields
+-- nothing for the whole list when any position fails, and the others are rows of
+-- graphitron_node_keycolumn_entry under their own key rather than a list in this one. A type whose
+-- @table did not resolve has no binding to judge against and is that defect instead.
+SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
+       'NODE_KEY_COLUMN_UNRESOLVED', e.column_ref
+  FROM graphitron_node_entry n
+  JOIN graphitron_tabletype b ON b.graph_name = n.graph_name AND b.type_name = n.type_name
+  JOIN graphitron_node_keycolumn_entry e
+    ON e.graph_name = n.graph_name AND e.type_name = n.type_name
+ WHERE n.source_line IS NOT NULL
+   AND (SELECT COUNT(*) FROM sql_column c
+         WHERE c.source_name = b.table_source_name AND c.table_schema = b.table_schema
+           AND c.table_name = b.table_name
+           AND (c.column_name_upper = UPPER(e.column_ref)
+                OR c.jooq_name_upper = UPPER(e.column_ref))) <> 1
+   AND NOT EXISTS (SELECT 1 FROM graphitron_node_keycolumn_entry f
+                    WHERE f.graph_name = e.graph_name AND f.type_name = e.type_name
+                      AND f.position < e.position
+                      AND (SELECT COUNT(*) FROM sql_column c
+                            WHERE c.source_name = b.table_source_name
+                              AND c.table_schema = b.table_schema AND c.table_name = b.table_name
+                              AND (c.column_name_upper = UPPER(f.column_ref)
+                                   OR c.jooq_name_upper = UPPER(f.column_ref))) <> 1)
+UNION ALL
+-- A @node with nothing to build an id from. It pinned no columns, its bound table publishes no node
+-- metadata, and the table has no primary key, which are the three tiers NodeKeyColumns tries in
+-- turn; with all three silent the node has no key. A table that publishes metadata is judged on
+-- that metadata elsewhere, so this is the primary key's absence alone. The detail is the table.
+SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
+       'NODE_WITHOUT_KEY', b.table_name
+  FROM graphitron_node_entry n
+  JOIN graphitron_tabletype b ON b.graph_name = n.graph_name AND b.type_name = n.type_name
+ WHERE n.source_line IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_node_keycolumn_entry e
+                    WHERE e.graph_name = n.graph_name AND e.type_name = n.type_name)
+   AND NOT EXISTS (SELECT 1 FROM sql_node_metadata m
+                    WHERE m.source_name = b.table_source_name AND m.table_schema = b.table_schema
+                      AND m.table_name = b.table_name)
+   AND NOT EXISTS (SELECT 1 FROM sql_primary_key pk
+                    WHERE pk.source_name = b.table_source_name AND pk.table_schema = b.table_schema
+                      AND pk.table_name = b.table_name)
+UNION ALL
+-- A @table naming nothing the catalog holds: no candidate at all for its spelling. Reported at the
+-- @table with the spelling as written. A graph captured with no catalog has said nothing about any
+-- table, so no name it writes is wrong yet, on the terms the code-reference arm states for classes.
+SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
+       'TABLE_UNRESOLVED', COALESCE(t.table_ref, t.type_name)
+  FROM graphitron_table_entry t
+ WHERE t.source_line IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_spelled_table sp
+                    WHERE sp.graph_name = t.graph_name
+                      AND sp.spelling = COALESCE(t.table_ref, t.type_name))
+   AND EXISTS (SELECT 1 FROM store_graph_source g
+                 JOIN sql_table st ON st.source_name = g.source_name
+                WHERE g.graph_name = t.graph_name)
+UNION ALL
+-- A @table naming a table two schemas declare. The spelling has candidates and more than one, so
+-- the type would be bound to whichever a reader happened to pick; qualifying it with the schema
+-- settles it. Reported once per @table.
+SELECT DISTINCT t.graph_name, t.source_name, t.source_line, t.source_column,
+       'TABLE_AMBIGUOUS', COALESCE(t.table_ref, t.type_name)
+  FROM graphitron_table_entry t
+  JOIN graphitron_spelled_table sp
+    ON sp.graph_name = t.graph_name AND sp.spelling = COALESCE(t.table_ref, t.type_name)
+ WHERE t.source_line IS NOT NULL
+   AND sp.candidates > 1
+UNION ALL
+-- A @scalarType reference ConstantReferenceGrammar cannot split into a class and a constant: no
+-- period, or nothing on one side of the last one. Reported with the reference as written.
+SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
+       'SCALAR_TYPE_REFERENCE_MALFORMED', e.scalar_ref
+  FROM graphitron_scalar_type_entry e
+ WHERE e.source_line IS NOT NULL
+   AND (e.scalar_ref_class_part IS NULL OR e.scalar_ref_field_part IS NULL)
+UNION ALL
+-- A @scalarType naming a class the classpath reading did not read: misspelt, or in an entry the
+-- build does not hand the generator, which is the walk's not-found and not-nameable cases at once.
+-- Only a reading that read something can say a class is absent, on the code-reference arm's terms.
+SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
+       'SCALAR_TYPE_CLASS_NOT_READ', e.scalar_ref_class_part
+  FROM graphitron_scalar_type_entry e
+ WHERE e.source_line IS NOT NULL
+   AND e.scalar_ref_class_part IS NOT NULL AND e.scalar_ref_field_part IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM store_graph_source g
+                     JOIN code_class k ON k.source_name = g.source_name
+                    WHERE g.graph_name = e.graph_name AND k.class_name = e.scalar_ref_class_part)
+   AND EXISTS (SELECT 1 FROM store_graph_source g
+                 JOIN code_class k ON k.source_name = g.source_name
+                WHERE g.graph_name = e.graph_name)
+UNION ALL
+-- A @scalarType naming a class the reading read and a constant it does not declare as a public
+-- static GraphQLScalarType, which code_scalar_constant is exactly: absent, not public static, or
+-- declared as some other type are one refusal, and the reference is what the author edits.
+SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
+       'SCALAR_TYPE_CONSTANT_NOT_FOUND', e.scalar_ref
+  FROM graphitron_scalar_type_entry e
+ WHERE e.source_line IS NOT NULL
+   AND e.scalar_ref_class_part IS NOT NULL AND e.scalar_ref_field_part IS NOT NULL
+   AND EXISTS (SELECT 1 FROM store_graph_source g
+                 JOIN code_class k ON k.source_name = g.source_name
+                WHERE g.graph_name = e.graph_name AND k.class_name = e.scalar_ref_class_part)
+   AND NOT EXISTS (SELECT 1 FROM store_graph_source g
+                     JOIN code_scalar_constant c ON c.source_name = g.source_name
+                    WHERE g.graph_name = e.graph_name
+                      AND c.class_name = e.scalar_ref_class_part
+                      AND c.field_name = e.scalar_ref_field_part)
+UNION ALL
+-- Two node types answering to one type id, so Query.node has an id it cannot dispatch. Reported at
+-- each type's @table, which every node carries where only some carry @node: a node the backing
+-- class publishes is a node without one. The detail is the shared id.
+SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
+       'NODE_TYPE_ID_SHARED', n.type_id
+  FROM graphitron_node n
+  JOIN graphitron_table_entry t ON t.graph_name = n.graph_name AND t.type_name = n.type_name
+ WHERE t.source_line IS NOT NULL
+   AND EXISTS (SELECT 1 FROM graphitron_node o
+                WHERE o.graph_name = n.graph_name AND o.type_id = n.type_id
+                  AND o.type_name <> n.type_name)
+UNION ALL
+-- Two types whose names differ only in case, among the types the generator writes a file for, which
+-- is every kind but a scalar and includes what a macro minted. On a filesystem that folds case the
+-- two files are one, and neither name is the right one to keep. Reported at each authored type's
+-- base declaration; a minted type has none, and its authored sibling carries the row. The detail
+-- names a sibling, the first by name where there are several, the rest being rows of their own.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'TYPE_NAME_CASE_COLLISION',
+       (SELECT MIN(o.type_name) FROM graphitron_type o
+         WHERE o.graph_name = g.graph_name AND o.kind <> 'SCALAR'
+           AND UPPER(o.type_name) = UPPER(g.type_name) AND o.type_name <> g.type_name)
+  FROM graphitron_type g
+  JOIN graphql_type_declaration d
+    ON d.graph_name = g.graph_name AND d.type_name = g.type_name AND NOT d.is_extension
+ WHERE g.kind <> 'SCALAR'
+   AND EXISTS (SELECT 1 FROM graphitron_type o
+                WHERE o.graph_name = g.graph_name AND o.kind <> 'SCALAR'
+                  AND UPPER(o.type_name) = UPPER(g.type_name) AND o.type_name <> g.type_name)
+UNION ALL
+-- A scalar or enum field reading a column its parent's table does not have, folded by SQL name and
+-- generated name alike. The column is the @field(name:) where one is written and the field's own
+-- name otherwise, and the table is the one graphitron_field_column_scope says the field's names
+-- resolve against: the parent's own binding, or the terminal table of a @reference path, the
+-- scope's two bases a scalar field can have. A path that does not resolve has no scope row and is
+-- the chain's defect instead. A field carrying a directive that reads something other than a column
+-- is not this rule's: @service, @externalField, @routine, @nodeId, @sourceRow and @pivot each decide
+-- it otherwise. A node type's id with no @field is the node's identity rather than a column. Reported at the
+-- @field where one is written, since that is the spelling to fix, and at the field otherwise.
+SELECT f.graph_name, COALESCE(fb.source_name, f.source_name), COALESCE(fb.source_line, f.source_line),
+       COALESCE(fb.source_column, f.source_column),
+       'COLUMN_UNRESOLVED', COALESCE(fb.name_ref, f.field_name)
+  FROM graphitron_field_column_scope sc
+  JOIN graphql_field f
+    ON f.graph_name = sc.graph_name AND f.type_name = sc.type_name AND f.field_name = sc.field_name
+  JOIN graphql_type nt
+    ON nt.graph_name = f.graph_name AND nt.type_name = f.named_type AND nt.kind IN ('SCALAR', 'ENUM')
+  LEFT JOIN graphitron_field_binding_entry fb
+    ON fb.graph_name = f.graph_name AND fb.type_name = f.type_name AND fb.field_name = f.field_name
+ WHERE sc.basis IN ('PARENT_BINDING', 'PATH_TERMINAL')
+   AND COALESCE(fb.source_line, f.source_line) IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application a
+                    WHERE a.graph_name = f.graph_name
+                      AND a.coordinate = f.type_name || '.' || f.field_name
+                      AND a.directive_name IN ('service', 'externalField', 'routine', 'nodeId',
+                                               'sourceRow', 'pivot'))
+   AND NOT (fb.name_ref IS NULL AND f.field_name = 'id'
+            AND EXISTS (SELECT 1 FROM graphitron_node n
+                         WHERE n.graph_name = f.graph_name AND n.type_name = f.type_name))
+   AND NOT EXISTS (SELECT 1 FROM sql_column c
+                    WHERE c.source_name = sc.table_source_name AND c.table_schema = sc.table_schema
+                      AND c.table_name = sc.table_name
+                      AND (c.column_name_upper = UPPER(COALESCE(fb.name_ref, f.field_name))
+                           OR c.jooq_name_upper = UPPER(COALESCE(fb.name_ref, f.field_name))));
+COMMENT ON VIEW graphitron_entry_defect_rule IS 'One row the entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
+COMMENT ON COLUMN graphitron_entry_defect_rule.graph_name IS 'the owning graph''s partition, carried from the entry; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_entry_defect_rule.source_name IS 'the file the offending directive was written in, the first of the three columns naming its position; with them a reference into graphql_ast_entry, which is the supertype that makes a @routine application and a path element the same kind of thing to point at';
+COMMENT ON COLUMN graphitron_entry_defect_rule.source_line IS 'the offending directive''s source line, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_entry_defect_rule.source_column IS 'the offending directive''s source column; with the two columns above, the entry this defect is about. The key is the entry and not the coordinate, because a coordinate is an aggregate over the sites that declare it and two offending applications at one coordinate are two things to fix';
+COMMENT ON COLUMN graphitron_entry_defect_rule.code IS 'which defect, a graphitron_defect_type key. With the entry the whole key: one entry may break two rules and then carries two rows, there being no ranking here and nothing to choose between them';
+COMMENT ON COLUMN graphitron_entry_defect_rule.detail IS 'the specific a rendered message quotes back, null where the code says everything. One column and never a payload: what a consumer needs beyond this is a join from the entry, and the columns that used to differ per defect were all message material';
 CREATE VIEW intent_column_match_claim
   (graph_name, type_name, field_name, classifier, matched_name, matched_by,
    table_source_name, table_schema, table_name, column_name,
@@ -15029,7 +15219,29 @@ INSERT INTO graphitron_defect_type VALUES
   ('CODE_REFERENCE_METHOD_NOT_FOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_CODE_REFERENCE_METHOD_NOT_FOUND',
    'A code reference names a class the classpath reading read and a method that class does not declare publicly, an @externalField that names none meaning the field''s own name.'),
   ('CODE_REFERENCE_METHOD_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_CODE_REFERENCE_METHOD_AMBIGUOUS',
-   'A code reference names a method the classpath answers more than once, as overloads or as one class two entries declare, and nothing says which of them is meant.');
+   'A code reference names a method the classpath answers more than once, as overloads or as one class two entries declare, and nothing says which of them is meant.'),
+  ('NODE_WITHOUT_NODE_INTERFACE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_WITHOUT_NODE_INTERFACE',
+   'A @table type carries @node and does not implement the Relay Node interface, which is the contract @node publishes to clients, so the type cannot be promoted to a node.'),
+  ('NODE_KEY_COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_KEY_COLUMN_UNRESOLVED',
+   'A @node(keyColumns:) names a column the bound table does not have, or has twice under one name, so the node has no key the author can stand behind: a pinned key is a published wire format, and the generator will not quietly encode ids against another.'),
+  ('NODE_WITHOUT_KEY', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_WITHOUT_KEY',
+   'A @node pins no key columns, and its table publishes no node metadata and has no primary key, so there is nothing to build an id from: declare keyColumns on @node or give the table a primary key.'),
+  ('TABLE_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_TABLE_UNRESOLVED',
+   'A @table names a table the catalog does not hold, so the type is bound to nothing: the name is misspelt, or the table is in a schema the build does not generate.'),
+  ('TABLE_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_TABLE_AMBIGUOUS',
+   'A @table names a table more than one schema declares, so nothing says which the type is bound to; qualifying the name with its schema settles it.'),
+  ('SCALAR_TYPE_REFERENCE_MALFORMED', 'error', 'GRAPHITRON', 'GRAPHITRON_SCALAR_TYPE_REFERENCE_MALFORMED',
+   'A @scalarType reference is not of the form fully.qualified.Class.FIELD, so it names no constant at all.'),
+  ('SCALAR_TYPE_CLASS_NOT_READ', 'error', 'GRAPHITRON', 'GRAPHITRON_SCALAR_TYPE_CLASS_NOT_READ',
+   'A @scalarType names a class the classpath reading did not read: the name is misspelt, or the class sits in an entry the build does not hand the generator.'),
+  ('SCALAR_TYPE_CONSTANT_NOT_FOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_SCALAR_TYPE_CONSTANT_NOT_FOUND',
+   'A @scalarType names a class the reading read and a constant it does not declare as a public static GraphQLScalarType, so there is no scalar to bind.'),
+  ('NODE_TYPE_ID_SHARED', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_TYPE_ID_SHARED',
+   'Two node types answer to one type id, so an id carrying it names either and Query.node cannot tell which to fetch; give one of them its own with @node(typeId:).'),
+  ('TYPE_NAME_CASE_COLLISION', 'error', 'GRAPHITRON', 'GRAPHITRON_TYPE_NAME_CASE_COLLISION',
+   'Two types the generator writes a file for have names that differ only in case, which on a filesystem that folds case is one file; rename one of them.'),
+  ('COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_COLUMN_UNRESOLVED',
+   'A field reads a column the table it reads from does not have, its parent''s or the one its @reference path arrives at, under its own name or the one @field(name:) gives it, so there is nothing to select: the name is misspelt, or the column lives on another table.');
 
 INSERT INTO meta_relation VALUES
   ('graphql_schema_problem', 'graph-schema-problem', 'graphql-assembly',

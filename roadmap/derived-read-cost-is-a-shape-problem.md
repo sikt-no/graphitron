@@ -431,7 +431,9 @@ types and its formatter are already model-side, so what stands between here and 
 
 * **Each rule the walk enforces is a defect** `open`. A rule becomes a `graphitron_defect_type` code
   and an arm of `graphitron_entry_defect_rule`, which reaches the editor and stops no build, so the
-  arms land ahead of the flip. The fact census lists the rules per fact.
+  arms land ahead of the flip. The fact census lists the rules per fact. The eleven codes moved so
+  far draw nothing on the sakila example; evidence in
+  `roadmap/audits/2026-10-08-entry-defect-arms-on-sakila.md`.
   * **The `operation` rules** `open`. 170 sites: `serviceCall` 52, DML 47, `condition` 28, lookup 16,
     `paginate` 12, `orderBy` 10, `select` 5.
     * **A list with no ordering source is a defect** `open`. Three anti-joins, no `@defaultOrder`,
@@ -439,19 +441,39 @@ types and its formatter are already model-side, so what stands between here and 
       generate SQL, is a generator classification the store does not state yet.
   * **The `joinPath` rules** `open`. 55 sites; three of them already codes.
   * **The `node` rules** `open`. 53 sites.
+    * **A `@node` without `Node` is a defect** `done`. `NODE_WITHOUT_NODE_INTERFACE`, at the `@node`.
+    * **A `@node` key the table cannot supply is a defect** `done`. `NODE_KEY_COLUMN_UNRESOLVED`
+      names the first failing spelling; `NODE_WITHOUT_KEY` is no pinned columns, no metadata and no
+      primary key, which are the three tiers `NodeKeyColumns` tries.
+    * **Two nodes sharing a type id is a defect** `done`. `NODE_TYPE_ID_SHARED`, at each type's
+      `@table`, off `graphitron_node`'s resolved id; stated by `facts/node-type-id.graphqls`.
+    * **A pinned key disagreeing with the published one is a defect** `blocked`, on node metadata
+      well-formedness being a catalog fact. Only `intent_node_metadata_defect` states it, and a
+      `graphitron_` arm reading `intent_` is the crossing this branch removes.
   * **The `tableExpr` rules** `open`. 24 sites.
   * **The `sourceObject` rules** `open`. 23 sites.
+    * **A `@table` naming no table, or one two schemas declare, is a defect** `done`.
+      `TABLE_UNRESOLVED` and `TABLE_AMBIGUOUS`, counted off `graphitron_spelled_table`; a graph
+      captured with no catalog is judged on nothing, on the code-reference arm's terms.
   * **The `reference` rules** `open`. 20 sites.
   * **The `accessor` rules** `open`. 19 sites.
+    * **A field reading a column its table lacks is a defect** `done`. `COLUMN_UNRESOLVED`, over
+      `graphitron_field_column_scope`'s parent binding and a `@reference` path's terminal, folded
+      the way the walk folds; stated by `facts/column-unresolved.graphqls`.
   * **The `errorGuard` rules** `open`. 16 sites, over a fact only `intent_` states.
   * **The `discrimination`, `source`, `referencedTable`, `target`, `enum` and `resolvedTable`
     rules** `open`. 31 sites between them.
   * **The rules on directives R333's catalog names no fact for** `open`. `@scalarType` binding,
     tenancy and federation, 25 sites; rules all the same, over the relations that state them.
+    * **A `@scalarType` naming no constant is a defect** `done`. `SCALAR_TYPE_REFERENCE_MALFORMED`,
+      `SCALAR_TYPE_CLASS_NOT_READ` and `SCALAR_TYPE_CONSTANT_NOT_FOUND`, against `code_class` and
+      `code_scalar_constant`, stated by `facts/scalar-type-reference.graphqls`.
     * **A `@scalarType` on a specification scalar is a defect** `open`. The case is written as an
       extension of the scalar, which a capture takes since the specification became its base.
   * **A name the generated code needs unique is a rule like any other** `open`. Type names folding
     to one file name, colliding launcher and projection-unit names: `GRAPHITRON`, an author renames.
+    * **Two type names differing only in case is a defect** `done`. `TYPE_NAME_CASE_COLLISION`,
+      over `graphitron_type` so minted types count, at each authored type's base declaration.
 * **A consequential rejection is not a rule** `done`, by the defect model. A violation sits once,
   on the fact that broke, and an arm reads only coordinates whose upstream facts hold.
 * **What the generator cannot emit is judged as the schema** `done`, by the defect model's basis. A
