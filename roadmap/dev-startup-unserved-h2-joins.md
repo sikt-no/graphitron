@@ -1,7 +1,7 @@
 ---
 id: R998
 title: "Four unindexed H2 statements cost the sis dev loop about a minute per run"
-status: In Progress
+status: In Review
 bucket: dx
 priority: 1
 theme: tooling
