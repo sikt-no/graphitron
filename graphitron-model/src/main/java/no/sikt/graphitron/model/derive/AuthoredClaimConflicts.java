@@ -8,6 +8,7 @@ import org.jooq.DSLContext;
 import org.jooq.Table;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -25,6 +26,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_FIELD_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_TYPE_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
 import static org.jooq.impl.DSL.exists;
+import static org.jooq.impl.DSL.row;
 import static org.jooq.impl.DSL.selectOne;
 
 /**
@@ -302,14 +304,14 @@ public final class AuthoredClaimConflicts {
 
     private static List<ValidationError> typeGrain(DSLContext dsl, String graphName) {
         var v = INTENT_AUTHORED_CLAIM_CONFLICT;
-        var claims = typeClaims(dsl, graphName);
-        return dsl.selectFrom(v)
+        var violations = dsl.selectFrom(v)
             .where(v.GRAPH_NAME.eq(graphName), v.FIELD_NAME.isNull(), inDomain(graphName))
             .orderBy(v.TYPE_NAME)
-            .fetch(row -> ValidationError.forType(row.getTypeName(),
-                rejectionOf(row.getVerdict(),
-                    claims.getOrDefault(row.getTypeName(), List.of())),
-                location(row.getSourceName(), row.getSourceLine(), row.getSourceColumn())));
+            .fetch();
+        var claims = typeClaims(dsl, graphName, violations.getValues(v.TYPE_NAME));
+        return violations.map(row -> ValidationError.forType(row.getTypeName(),
+            rejectionOf(row.getVerdict(), claims.getOrDefault(row.getTypeName(), List.of())),
+            location(row.getSourceName(), row.getSourceLine(), row.getSourceColumn())));
     }
 
     /**
@@ -339,19 +341,26 @@ public final class AuthoredClaimConflicts {
     }
 
     /**
-     * Every violated type-grain coordinate's distinct claims for {@code graphName}, in
-     * {@link AuthoredClaim} declaration order. One read over the conflict view joined to the
-     * type-grain claim view, so only violated coordinates are read; ungated, the view being total
-     * over the authored claims and each consumer applying its own population.
+     * The distinct claims at each of {@code typeNames}, the violated type-grain coordinates the
+     * caller already read off the conflict view, in {@link AuthoredClaim} declaration order.
+     * Ungated, the view being total over the authored claims and each consumer applying its own
+     * population before it hands the names in.
+     *
+     * <p>The caller reads the view and this reads the claims, rather than one statement joining
+     * the two: H2 drives that join from the claims whichever side is written first, and then
+     * evaluates the view's grouping once per claim. No names, no statement.
      */
-    public static Map<String, List<AuthoredClaim>> typeClaims(DSLContext dsl, String graphName) {
-        var v = INTENT_AUTHORED_CLAIM_CONFLICT;
-        var tc = INTENT_AUTHORED_TYPE_CLAIM;
+    public static Map<String, List<AuthoredClaim>> typeClaims(
+        DSLContext dsl, String graphName, Collection<String> typeNames
+    ) {
         var out = new LinkedHashMap<String, List<AuthoredClaim>>();
-        dsl.selectDistinct(v.TYPE_NAME, tc.CLASSIFIER)
-            .from(v)
-            .join(tc).on(tc.GRAPH_NAME.eq(v.GRAPH_NAME), tc.TYPE_NAME.eq(v.TYPE_NAME))
-            .where(v.GRAPH_NAME.eq(graphName), v.FIELD_NAME.isNull())
+        if (typeNames.isEmpty()) {
+            return out;
+        }
+        var tc = INTENT_AUTHORED_TYPE_CLAIM;
+        dsl.selectDistinct(tc.TYPE_NAME, tc.CLASSIFIER)
+            .from(tc)
+            .where(tc.GRAPH_NAME.eq(graphName), tc.TYPE_NAME.in(typeNames))
             .forEach(row -> out.computeIfAbsent(row.value1(), key -> new ArrayList<>())
                 .add(AuthoredClaim.fromClassifier(row.value2())));
         out.replaceAll((key, claims) -> claims.stream().sorted().toList());
@@ -360,16 +369,17 @@ public final class AuthoredClaimConflicts {
 
     /** The field-grain sibling of {@link #typeClaims}, keyed by the violated coordinate. */
     public static Map<FieldCoordinate, List<AuthoredClaim>> fieldClaims(
-        DSLContext dsl, String graphName
+        DSLContext dsl, String graphName, Collection<FieldCoordinate> coordinates
     ) {
-        var v = INTENT_AUTHORED_CLAIM_CONFLICT;
-        var fc = INTENT_AUTHORED_FIELD_CLAIM;
         var out = new LinkedHashMap<FieldCoordinate, List<AuthoredClaim>>();
-        dsl.selectDistinct(v.TYPE_NAME, v.FIELD_NAME, fc.CLASSIFIER)
-            .from(v)
-            .join(fc).on(fc.GRAPH_NAME.eq(v.GRAPH_NAME), fc.TYPE_NAME.eq(v.TYPE_NAME),
-                fc.FIELD_NAME.eq(v.FIELD_NAME))
-            .where(v.GRAPH_NAME.eq(graphName), v.FIELD_NAME.isNotNull())
+        if (coordinates.isEmpty()) {
+            return out;
+        }
+        var fc = INTENT_AUTHORED_FIELD_CLAIM;
+        dsl.selectDistinct(fc.TYPE_NAME, fc.FIELD_NAME, fc.CLASSIFIER)
+            .from(fc)
+            .where(fc.GRAPH_NAME.eq(graphName), row(fc.TYPE_NAME, fc.FIELD_NAME).in(
+                coordinates.stream().map(c -> row(c.typeName(), c.fieldName())).toList()))
             .forEach(row -> out
                 .computeIfAbsent(new FieldCoordinate(row.value1(), row.value2()),
                     key -> new ArrayList<>())

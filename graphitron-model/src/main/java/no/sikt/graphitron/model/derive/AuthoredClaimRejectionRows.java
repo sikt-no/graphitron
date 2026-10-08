@@ -3,6 +3,7 @@ package no.sikt.graphitron.model.derive;
 import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.model.diagnostics.RejectionKind;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
+import no.sikt.graphitron.model.tables.records.IntentAuthoredClaimConflictRecord;
 import no.sikt.graphitron.model.tables.records.IntentAuthoredClaimRejectionRecord;
 import org.jooq.DSLContext;
 
@@ -42,36 +43,45 @@ public final class AuthoredClaimRejectionRows {
         dsl.deleteFrom(INTENT_AUTHORED_CLAIM_REJECTION)
             .where(INTENT_AUTHORED_CLAIM_REJECTION.GRAPH_NAME.eq(graphName))
             .execute();
-        var typeClaims = AuthoredClaimConflicts.typeClaims(dsl, graphName);
-        var fieldClaims = AuthoredClaimConflicts.fieldClaims(dsl, graphName);
         var v = INTENT_AUTHORED_CLAIM_CONFLICT;
         var rows = new ArrayList<IntentAuthoredClaimRejectionRecord>();
         // Coordinate order, type grain first, so the ordinal a row lands on is a function of the
         // partition rather than of the order the engine happened to hand the union's arms over.
-        dsl.selectFrom(v)
+        // Read once: the violated keys come off these rows, and the claims are read for them.
+        var violations = dsl.selectFrom(v)
             .where(v.GRAPH_NAME.eq(graphName))
             .orderBy(v.FIELD_NAME.isNotNull(), v.TYPE_NAME, v.FIELD_NAME)
-            .forEach(row -> {
-                String typeName = row.getTypeName();
-                String fieldName = row.getFieldName();
-                var claims = fieldName == null
-                    ? typeClaims.getOrDefault(typeName, List.of())
-                    : fieldClaims.getOrDefault(
-                        new AuthoredClaimConflicts.FieldCoordinate(typeName, fieldName), List.of());
-                Rejection rejection = AuthoredClaimConflicts.rejectionOf(row.getVerdict(), claims);
-                var error = fieldName == null
-                    ? ValidationError.forType(typeName, rejection, null)
-                    : ValidationError.forField(typeName + "." + fieldName, rejection, null);
-                var record = dsl.newRecord(INTENT_AUTHORED_CLAIM_REJECTION);
-                record.setGraphName(graphName);
-                record.setOrdinal(rows.size());
-                record.setTypeName(typeName);
-                record.setFieldName(fieldName);
-                record.setKind(RejectionKind.of(rejection).name());
-                record.setVariant(Rejection.classSpelling(rejection.getClass()));
-                record.setMessage(error.message());
-                rows.add(record);
-            });
+            .fetch();
+        var typeClaims = AuthoredClaimConflicts.typeClaims(dsl, graphName, violations.stream()
+            .filter(row -> row.getFieldName() == null)
+            .map(IntentAuthoredClaimConflictRecord::getTypeName)
+            .toList());
+        var fieldClaims = AuthoredClaimConflicts.fieldClaims(dsl, graphName, violations.stream()
+            .filter(row -> row.getFieldName() != null)
+            .map(row -> new AuthoredClaimConflicts.FieldCoordinate(row.getTypeName(),
+                row.getFieldName()))
+            .toList());
+        for (var row : violations) {
+            String typeName = row.getTypeName();
+            String fieldName = row.getFieldName();
+            var claims = fieldName == null
+                ? typeClaims.getOrDefault(typeName, List.of())
+                : fieldClaims.getOrDefault(
+                    new AuthoredClaimConflicts.FieldCoordinate(typeName, fieldName), List.of());
+            Rejection rejection = AuthoredClaimConflicts.rejectionOf(row.getVerdict(), claims);
+            var error = fieldName == null
+                ? ValidationError.forType(typeName, rejection, null)
+                : ValidationError.forField(typeName + "." + fieldName, rejection, null);
+            var record = dsl.newRecord(INTENT_AUTHORED_CLAIM_REJECTION);
+            record.setGraphName(graphName);
+            record.setOrdinal(rows.size());
+            record.setTypeName(typeName);
+            record.setFieldName(fieldName);
+            record.setKind(RejectionKind.of(rejection).name());
+            record.setVariant(Rejection.classSpelling(rejection.getClass()));
+            record.setMessage(error.message());
+            rows.add(record);
+        }
         if (!rows.isEmpty()) {
             dsl.batchInsert(rows).execute();
         }

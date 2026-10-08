@@ -14,6 +14,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_CLAIM_CONFLICT;
@@ -541,6 +542,52 @@ class AuthoredClaimConflictsTest {
                 .where(INTENT_AUTHORED_TYPE_CLAIM.GRAPH_NAME.eq(GRAPH))
                 .fetch(r -> decoded.add(AuthoredClaim.fromClassifier(r.value1())));
             assertThat(decoded).isEqualTo(EnumSet.allOf(AuthoredClaim.class));
+        });
+    }
+
+    /**
+     * The claim reads take the violated keys their caller read off the conflict view, so on a graph
+     * with claims and no conflict they are handed nothing and read nothing. The claims are asserted
+     * present first, or an empty answer would say nothing about the keys; and the reads are asked
+     * once with a key that has claims, so the map is seen to follow the keys rather than the view.
+     */
+    @Test
+    void aConflictFreeGraphReadsNoClaims() {
+        var sdl = """
+            type Film @table(name: "film") {
+                title: String @service(service: {className: "%s", method: "get"})
+            }
+            type Query { film: Film }
+            """.formatted(SERVICE_STUB);
+        withCapturedStore(tmp, sdl, dsl -> {
+            assertThat(dsl.fetchCount(INTENT_AUTHORED_TYPE_CLAIM,
+                    INTENT_AUTHORED_TYPE_CLAIM.GRAPH_NAME.eq(GRAPH)))
+                .as("the graph claims at the type grain")
+                .isPositive();
+            assertThat(dsl.fetchCount(INTENT_AUTHORED_FIELD_CLAIM,
+                    INTENT_AUTHORED_FIELD_CLAIM.GRAPH_NAME.eq(GRAPH)))
+                .as("and at the field grain")
+                .isPositive();
+            assertThat(dsl.fetchCount(INTENT_AUTHORED_CLAIM_CONFLICT,
+                    INTENT_AUTHORED_CLAIM_CONFLICT.GRAPH_NAME.eq(GRAPH)))
+                .as("and no two of its claims contradict")
+                .isZero();
+
+            assertThat(AuthoredClaimConflicts.typeClaims(dsl, GRAPH, List.of())).isEmpty();
+            assertThat(AuthoredClaimConflicts.fieldClaims(dsl, GRAPH, List.of())).isEmpty();
+            assertThat(AuthoredClaimConflicts.detect(dsl, GRAPH).violations()).isEmpty();
+            assertThat(dsl.fetchCount(INTENT_AUTHORED_CLAIM_REJECTION,
+                    INTENT_AUTHORED_CLAIM_REJECTION.GRAPH_NAME.eq(GRAPH)))
+                .isZero();
+
+            assertThat(AuthoredClaimConflicts.typeClaims(dsl, GRAPH, List.of("Film")))
+                .as("handed a key, the read answers for it whether or not the view names it")
+                .containsExactly(Map.entry("Film", List.of(AuthoredClaim.TABLE)));
+            assertThat(AuthoredClaimConflicts.fieldClaims(dsl, GRAPH,
+                    List.of(new AuthoredClaimConflicts.FieldCoordinate("Film", "title"))))
+                .containsExactly(Map.entry(
+                    new AuthoredClaimConflicts.FieldCoordinate("Film", "title"),
+                    List.of(AuthoredClaim.SERVICE)));
         });
     }
 
