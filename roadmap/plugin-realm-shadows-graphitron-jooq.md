@@ -7,7 +7,7 @@ priority: 1
 theme: dev-loop
 depends-on: []
 created: 2026-09-15
-last-updated: 2026-09-15
+last-updated: 2026-10-08
 ---
 
 # A consumer pom that adds a dependency to the plugin realm can shadow the jOOQ graphitron parses with, and the store will not open
@@ -48,6 +48,38 @@ in this repository, every reactor test booting a store with one jOOQ on the clas
 silent about its cause: nothing in the message mentions jOOQ, a realm, or the consumer's own pom, so
 the reading an author will reach for first is that their schema broke the generator.
 
+### A second symptom: reflecting a `<sessionState>` mount
+
+Found 2026-10-08 on the same consumer, with the same plugin block, when it added
+`<sessionState><mount>no.fellesstudentsystem.kjerneapi_service.tilgang.FsSesjon#mount</mount>…`.
+`graphitron:generate` fails before any schema work:
+
+```
+Execution generate of goal no.sikt:graphitron-maven-plugin:10-SNAPSHOT:generate failed:
+An API incompatibility was encountered while executing ...:generate:
+java.lang.IllegalAccessError: class org.jooq.impl.ArrayRecordImpl cannot access its abstract
+superclass org.jooq.impl.AbstractStore (org.jooq.impl.ArrayRecordImpl is in unnamed module of
+loader java.net.URLClassLoader @55cb0354; org.jooq.impl.AbstractStore is in unnamed module of
+loader org.codehaus.plexus.classworlds.realm.ClassRealm @72018ba5)
+```
+
+The mount class had a public static helper returning `TRollelisteRecord`, a jOOQ-generated UDT
+array record (`ArrayRecordImpl`) from the consumer's `org.jooq.pro:jooq:3.19.18`. Moving that
+helper into a nested class, so that no method on the mount class names an `ArrayRecordImpl` type,
+made the build pass with nothing else changed. The reading that fits: reflecting the mount class's
+declared methods resolves every type in their signatures. `ArrayRecordImpl` is loaded by the
+project-classpath `URLClassLoader`, and its package-private superclass `AbstractStore` is loaded by the
+plugin realm (graphitron's `org.jooq:jooq:3.20.11`). A subclass and its package-private superclass
+in the same package name but under different loaders are in different runtime packages, so the
+JVM refuses the access. The failure depends on what the consumer's mount class happens to mention,
+not just on whether it is the class `<mount>` names. Service and record classes with
+`TableRecordImpl`-derived records in their signatures did not trip it, presumably because no class
+on that chain is loaded across the split in the same way. That is unverified.
+
+It is the same root cause as above, two jOOQs in the realm, and the same silence about it: nothing
+in the message names the consumer's pom, the realm, or the mount. The sis workaround (keep jOOQ UDT
+types out of the mount class's signatures) is a consumer-side dodge, not a fix.
+
 ## Plan
 
 Not settled; this is a Backlog stub with the diagnosis in it. Two directions worth pricing against
@@ -66,4 +98,5 @@ present and which pom line added one of them is worth a great deal more than the
 and it is cheap.
 
 Whatever lands, the acceptance is the same: a module whose plugin block adds a dependency carrying a
-second jOOQ opens its store and completes a round.
+second jOOQ opens its store and completes a round, and a `<sessionState>` mount class whose
+signatures name jOOQ-generated UDT records is reflected without an `IllegalAccessError`.
