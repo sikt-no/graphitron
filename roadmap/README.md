@@ -51,7 +51,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R724` | The stated key-column match spends its ambiguity silently; make it state its arity | Ready | 2026-09-03 <sub>created 2026-08-19</sub> | [plan](stated-key-column-match-states-its-arity.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
-| `R1005` | Request default tenant: route global reads to a caller-named tenant | Spec | 2026-10-08 | [plan](request-default-tenant-for-global-reads.md) |
+| `R1005` | Request default tenant: route global reads to a caller-named tenant | Ready | 2026-10-08 | [plan](request-default-tenant-for-global-reads.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-08-06 | [plan](catalog-check-constraint-validation.md) |
@@ -596,7 +596,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R992` [**A reference whose FK lands on the tenant column routes on the parent row value**](tenant-from-fk-terminal-column.md) — Ready, architecture
 - `R460` [**Targeted read-only enforcement for query paths graphitron does not control (@routine, @service)**](query-read-only-enforcement.md) — Backlog, architecture
 - `R996` [**A tenant-scoped row referencing another tenant routes on the referenced tenant**](cross-tenant-reference-from-tenant-scoped-parent.md) — Backlog, architecture
-- `R1005` [**Request default tenant: route global reads to a caller-named tenant**](request-default-tenant-for-global-reads.md) — Spec, architecture
+- `R1005` [**Request default tenant: route global reads to a caller-named tenant**](request-default-tenant-for-global-reads.md) — Ready, architecture
 - `R505` [**Tenant-index tables: per-row tenant routing off an index parent**](tenant-index-parent-row-routing.md) — Backlog, architecture, blocked by [tenant-from-fk-terminal-column](tenant-from-fk-terminal-column.md)
 - `R995` [**The cross-scope tenant check sees every table a batched statement joins**](tenant-reach-includes-join-path-tables.md) — Backlog, architecture
 - `R517` [**Client narrowing of the fan-out domain: a tenant-column list argument intersects the request set**](tenant-fanout-argument-narrowing.md) — Backlog, architecture
