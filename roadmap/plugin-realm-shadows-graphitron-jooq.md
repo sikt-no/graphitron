@@ -32,6 +32,11 @@ host (in practice, a commercial-edition-only class such as `ArrayRecordImpl`), t
 typed rejection naming the class graphitron was reflecting, the type it could not load, both jOOQ
 jars, and the workaround, instead of a raw `LinkageError`.
 
+These acceptance criteria replace the Backlog stub's, which asked that both cases *work*. The realm
+case is a configuration the manual already withdraws, with a one-line fix on the consumer side. The
+codegen case is a current limitation, not a rule for authors: R1004 removes it for sibling methods by
+reading signatures from classfiles. This item delivers the legible failure that holds either way.
+
 ## What happens
 
 ### Symptom one: a second jOOQ in the plugin realm, the store will not open
@@ -93,7 +98,7 @@ the codegen loader's ordinary layering:
   This is deliberate and load-bearing: `JooqCatalog` reads the consumer's generated `Table` objects
   through graphitron's `org.jooq` interfaces, and `ServiceCatalog` recognises seam parameters by
   `Class` identity (`p.getType() == org.jooq.Configuration.class`).
-* `ServiceCatalog.reflectSessionHook` loads the mount class and calls `pickMethod`, which calls
+* `ServiceCatalog.reflectSessionHook` loads the mount class and calls `pickMethod`, which through `candidateMethods` calls
   `cls.getDeclaredMethods()`. Materialising a class's declared-method table resolves the parameter
   and return types of *every* declared method, not only the picked one, so the sibling helper's
   `TRollelisteRecord` is loaded, then its superclass `ArrayRecordImpl` (consumer jar), whose
@@ -101,8 +106,8 @@ the codegen loader's ordinary layering:
   two runtime packages: the JVM refuses the access.
 
 So symptom two needs no plugin-block entry at all. Any consumer on a commercial jOOQ edition can hit
-it, from any class graphitron reflects (`pickMethod` is shared by `@service`, `@condition` and the
-session hooks; `RecordBindingResolver`, `ClassAccessorResolver`, `InputBeanResolver`,
+it, from any class graphitron reflects (`ServiceCatalog.candidateMethods` sits under `@service`,
+`@condition` and the session hooks; `RecordBindingResolver`, `ClassAccessorResolver`, `InputBeanResolver`,
 `LifterMethodResolver`, `FieldBuilder` and `JooqCatalog`'s routines read call `getMethods` or
 `getDeclaredMethods` too), whenever any method on that class names a commercial-only jOOQ type.
 Service classes whose signatures name `TableRecordImpl`-derived records do not trip it because
@@ -116,9 +121,20 @@ the class graphitron was reflecting. That silence is what this item fixes.
 
 ### Plugin realm: exactly one jOOQ, and it is ours
 
-A new check at the top of `AbstractRewriteMojo.withCodegenScope`, before the codegen loader is built
-and before any goal opens the fact store, so it covers `generate`, `validate`, `capture` and `dev`
-alike. It fails the goal with a `MojoExecutionException` when either holds:
+**One decode of the realm.** `referenceVersionsOf` already walks `pluginDescriptor.getArtifacts()`,
+and `WatchedDependency.JOOQ` already matches `org.jooq.pro`, so in the `sis` case it sees both jOOQs
+today and keeps whichever comes first. Instead of a second walk beside it, the mojo boundary decodes
+the plugin artifacts once into rows of `(coordinate, version, file, trail)`, where the trail is
+`Artifact.getDependencyTrail()`. Three readers project off those rows: the realm check below,
+`referenceVersionsOf` (whose "the realm resolves one of each" stops being an assumption and becomes a
+precondition the check enforces), and the codegen backstop's jar listing. The jOOQ reference version
+the dependency advisory compares against becomes the compiled-against version below, not the first
+realm row, so there is one notion of "the jOOQ graphitron is built against".
+
+**The check.** A pure decision over those rows plus one piece of loader evidence, joined by file. It
+lives in the mojo module beside `decodeDependencyVersions`, not in `DependencyVersionWarnings`: that
+class is an advisory that runs after the store opens, goes through the warning channel, and can be
+suppressed by lint rule id, none of which a precondition may be. It refuses when either holds:
 
 * **More than one jar in the realm provides `org/jooq/Constants.class`**, read off the plugin's own
   loader with `getResources`. Coordinate-agnostic on purpose: it catches an edition under another
@@ -128,22 +144,23 @@ alike. It fails the goal with a `MojoExecutionException` when either holds:
   compiled-against version is `org.jooq.Constants.VERSION` written as a plain expression in
   graphitron's source: it is a compile-time constant, so javac inlines `"3.20.11"` into graphitron's
   bytecode. The runtime version is the same field read reflectively off the realm's `Constants`
-  class. This arm catches the case the first cannot: a plugin-block entry that brings
-  `org.jooq:jooq` at another version, where Maven mediates to a single jar that is not ours.
+  class. This arm catches what the first cannot: a plugin-block entry that brings `org.jooq:jooq` at
+  another version, where Maven mediates to a single jar that is not ours.
 
-The message is built by a pure function over plain data, following the precedent
-`decodeDependencyVersions` sets: the mojo boundary decodes Maven's `Artifact` objects into
-`(coordinate, file, trail)` rows and the interior decides and renders. Attribution, in order of
-preference:
+**Where it runs.** Once per mojo execution, before the execution's first store open, since the realm
+is fixed for the life of the execution. One `final` method on `AbstractRewriteMojo`, called at the
+start of `runGenerator` and `runCapture` and at the top of `DevMojo.execute`, which opens
+`sessionStore` with `GraphitronModelStore.openAt` before its first `withCodegenScope`. Not inside
+`withCodegenScope`: dev rebuilds that scope on every save, and the dev store open would already have
+failed, rewrapped by `openAt`'s `catch (RuntimeException)` as "another graphitron process holding
+it", which reads worse than today's message.
 
-1. The offending jar's `Artifact.getDependencyTrail()`, when Maven populates it for plugin
-   artifacts, whose second element is the plugin-block entry that brought it.
-2. Otherwise the consumer-added entries themselves, read off `pluginDescriptor.getPlugin()
-   .getDependencies()` (the `Plugin` model element is the consumer pom's `<plugin>` block), listed
-   as the candidates.
-
-Whether (1) is populated for plugin-realm artifacts under Maven 3.9 is the one fact to verify first
-at pickup; (2) is always available and is the floor. The rendered message, for the `sis` case:
+**Attribution.** The offending row's trail, whose second element is the plugin-block entry that
+brought the jar, when Maven populates trails for plugin-realm artifacts under 3.9. Otherwise the
+consumer-added entries, read off `pluginDescriptor.getPlugin().getDependencies()` (the `Plugin` model
+element is the consumer pom's `<plugin>` block), listed as candidates. Whether trails are populated is
+the one fact to verify first at pickup; the entry list is always available and is the floor. The
+rendered message, for the `sis` case:
 
 ```
 graphitron runs on org.jooq:jooq:3.20.11, but its plugin classloader also holds
@@ -156,37 +173,57 @@ Move no.fellesstudentsystem:sis-service from the plugin's <dependencies> to the 
 plugin block, exclude org.jooq.pro:jooq from it.
 ```
 
-`referenceVersionsOf`'s javadoc ("the realm is graphitron's own build, resolving one of each")
-becomes a stated precondition enforced by this check rather than an assumption; it gains a
-`{@link}` to the check.
+### Codegen loader: one decode for a consumer class that cannot link
 
-### Codegen loader: a reflected class that cannot link is a typed rejection
+**One decode, sealed outcome.** The live `Class` of a consumer class is read at two points: loading
+it (`Class.forName(name, false, ctx.codegenLoader())`, where an edition-only *supertype* already
+fails) and materialising its declared methods (`ServiceCatalog.candidateMethods`, which runs
+`getDeclaredMethods()` and is behind both `pickMethod`, for `@service` and the `<sessionState>`
+hooks, and `reflectTableMethod`, for `@condition`). Both go through one decode returning a sealed
+outcome, `Loaded` / `NotLoaded` / `Unlinkable`. `NotLoaded` is what today's
+`catch (ClassNotFoundException)` sites produce as `ReflectionError.ClassNotLoaded`, so the decode
+subsumes those catches rather than standing beside them. `Unlinkable` becomes a new
+`ReflectionError.ClassUnlinkable(className, cause)` arm.
 
-Two layers, so the common site is precise and nothing slips through as a raw `Error`:
+**A typed cause, decoded once at the catch,** following the `AmbiguousMethod.Ambiguity` precedent,
+with `message()` rendering from it:
 
-* **`ServiceCatalog.pickMethod`** (both overloads) catches `LinkageError` around
-  `getDeclaredMethods()` and returns `MethodPick.Rejected` carrying a new
-  `ReflectionError.ClassUnlinkable(className, failingType, detail)` arm. `pickMethod` is the one
-  site behind `@service`, `@condition` and the `<sessionState>` hooks, which is where an author's own
-  class is most likely to carry database-adjacent helpers. The rendered text names the class and
-  role ("the `<sessionState>` mount class `…FsSesjon`"), the type that failed (`ArrayRecordImpl`,
-  parsed off the `IllegalAccessError`/`NoClassDefFoundError` message where the JVM gives one, else
-  the error's own text verbatim), and the workaround: "graphitron loads your classes against its own
-  jOOQ (`org.jooq:jooq:3.20.11`), which does not carry this type; keep methods that name it off
-  classes graphitron reflects, for example in a nested or separate class." Adding a
-  `ReflectionError` arm means mapping its severity where `RejectionSeverityCoverageTest` demands.
-* **A backstop in `withCodegenScope`** catches `LinkageError` escaping `body.run` and rethrows a
-  `MojoExecutionException` whose message names the error, lists every jar visible to the codegen
-  loader that provides `org/jooq/Constants.class` with its coordinate (decoded from
-  `project.getArtifacts()` and the plugin artifacts by file), and says the same thing about
-  graphitron's jOOQ hosting the consumer's classes. This covers the reflection sites outside
-  `pickMethod` without touching each of them; the cause stays on the chain for `-e`.
+* `SplitPackage(type, packageName)`, from an `IllegalAccessError` naming a class and a superclass in
+  the same package under two loaders. Remedy: graphitron loads your classes against its own jOOQ
+  (`org.jooq:jooq:3.20.11`), which does not carry this type; keep methods that name it off classes
+  graphitron reflects, for example in a nested or separate class.
+* `TypeMissing(type)`, from a `NoClassDefFoundError`: a signature names a type not on the compile
+  classpath (a runtime-scoped dependency, say). Remedy: the classpath one, nothing about jOOQ.
+* `Unrecognised(detail)`, everything else in the `LinkageError` family, the error's own text.
 
-The backstop is narrower than it looks: it rethrows only, it does not continue the round, and it is
-not a catch-all for `Error`. `LinkageError` is the family the cross-loader split produces
-(`IllegalAccessError`, `NoClassDefFoundError`, `IncompatibleClassChangeError`, `VerifyError`), and
-every member of it means "this class cannot be used from here", which is the sentence the message
-adds context to.
+The arm carries no caller role, matching the other `ReflectionError` arms (`prefixedWith` is a no-op;
+the orchestrator adds which coordinate was being resolved). New arm obligations: a
+`RejectionSeverityCoverageTest.sampleFor` branch in `graphitron-lsp`, and a paragraph in
+`typed-rejection.adoc`, which `SealedHierarchyDocCoverageTest` drift-guards.
+
+**Sites that already swallow `LinkageError`,** each decided explicitly:
+
+* `BuildContext.loadForSlot` and `InputBeanResolver.tryLoad` load a type named in a signature and
+  return `null` on `LinkageError`, which their callers read as "no such type" and reject later with
+  text about the wrong thing. They adopt the decode and surface `Unlinkable` as `ClassUnlinkable`.
+* `FieldBuilder.keyColumnJavaType` stays: `Object.class` deliberately stands the comparison aside
+  when a key column's class cannot be read, and javac still sees the encode call.
+* `ClasspathNameability.platformResolves` stays: it probes the platform loader, where no jOOQ split
+  can occur.
+* `JooqCatalog`'s routine probe stays: a `null` there only withholds a better "not table-valued"
+  hint, never misdiagnoses.
+* `ClassAncestry.isEnum` and `ClassAncestry.reflect` stay: they are capture-side, where a class that
+  cannot be read is a missing fact rather than a refusal, and the generator-side decode above is where
+  an unusable class is refused.
+
+**A backstop for whatever is not classified.** `withCodegenScope` catches `LinkageError` escaping
+`body.run` and rethrows a `MojoExecutionException` rendered by the same cause decode, followed by
+every jar visible to the codegen loader that provides `org/jooq/Constants.class`, with coordinates
+from the realm rows above and the project's artifacts joined by file. It rethrows only, never
+continues the round, and catches nothing outside `LinkageError`. The two layers do different jobs:
+the arm is a located rejection that reaches the LSP and becomes a dev-loop diagnostic, while the
+backstop keeps an unclassified `Error` from escaping `DevMojo.regenerate`'s
+`catch (MojoExecutionException)` as a raw stack trace.
 
 ### Documentation
 
@@ -194,34 +231,46 @@ adds context to.
   gains one sentence, that a plugin-block entry which brings its own jOOQ now fails the build with a
   message naming it.
 * `docs/manual/reference/mojo-configuration.adoc` § Codegen classpath: a paragraph on the layering,
-  stated for authors. Your classes are loaded against graphitron's jOOQ; on a commercial edition,
-  a class graphitron reflects must not name an edition-only jOOQ type in any of its method
-  signatures, and the build tells you which class and type when one does.
+  framed as a current limitation. Your classes are loaded against graphitron's jOOQ; on a commercial
+  edition, a class graphitron reflects currently must not name an edition-only jOOQ type in any of
+  its method signatures, and the build names the class and type when one does.
 
 ## Tests
 
-* **Realm check, unit tier** (`graphitron-maven-plugin`, beside `DependencyVersionDecodeTest`):
-  the pure decide-and-render function over hand-built rows. Cases: one jOOQ at our version (passes);
-  two jars (fails, names both, names the trail's plugin-block entry); two jars with no trail (fails,
-  lists the consumer-added entries); one jar at another version (fails, names both versions). The
-  function takes the compiled-against version as a parameter, so these cases do not depend on the
-  inlined constant; the IT below covers the wiring.
-* **Realm check, invoker IT** `graphitron-maven-plugin/src/it/plugin-block-second-jooq`: a setup
-  project installs a tiny jar carrying a stub `org/jooq/Constants.class`, the IT pom lists it under
-  `<plugin><dependencies>`, and `verify.groovy` asserts the build failed with the message naming that
-  coordinate and the move/exclude remedy, and carries no fact-store error. This is the
-  acceptance evidence for symptom one: it exercises Maven's real realm construction, which no
-  in-process test can.
+* **Realm check, unit tier** (`graphitron-maven-plugin`, beside `DependencyVersionDecodeTest`): the
+  pure decision over hand-built rows. Cases: one jOOQ at our version (passes); two jars (fails, names
+  both, names the trail's plugin-block entry); two jars with no trail (fails, lists the
+  consumer-added entries); one jar at another version (fails, names both versions). The function
+  takes the compiled-against version as a parameter, so these cases do not depend on the inlined
+  constant. `DependencyVersionDecodeTest` keeps passing over the shared decode, with the jOOQ
+  reference now the compiled-against version.
+* **Realm check, invoker ITs.** A setup project installs two stub jars, each carrying only an
+  `org/jooq/Constants.class`: one at `org.example.it:second-jooq` (`VERSION = "3.19.0"`), one at
+  `org.jooq:jooq:3.19.99-it` (`VERSION = "3.19.99"`). `plugin-block-second-jooq` lists the first under
+  `<plugin><dependencies>` and asserts the two-jar arm's message; `plugin-block-mediated-jooq` lists
+  the second, which Maven mediates over graphitron's deeper `org.jooq:jooq` so the realm holds one
+  jar that is not ours, and asserts the version arm's message. That second IT is what pins the
+  inlined-constant wiring. Both are offline and exercise Maven's real realm construction, which no
+  in-process test can; they are the acceptance evidence for symptom one.
+* **Dev ordering**: a `DevMojoTest` case asserting the check fires before `GraphitronModelStore.openAt`,
+  by handing `execute` a realm decode that fails and asserting no store directory was created.
 * **Codegen loader, pipeline tier** (`graphitron`): a test stages, with the ClassFile API, a class
   `org.jooq.impl.StagedEditionOnly extends org.jooq.impl.AbstractStore` (package-private abstract in
-  the open-source jar, so it reproduces the exact split) and a mount class whose `mount` method is
-  well-formed and whose sibling static helper returns `StagedEditionOnly`, in a temp directory on a
-  `URLClassLoader` whose parent is the test's loader. Resolving the `<sessionState>` hooks against it
-  yields `ReflectionError.ClassUnlinkable` naming the mount class and `StagedEditionOnly`, not a
-  thrown `IllegalAccessError`. A second case moves the helper to a nested class and asserts the
-  hooks resolve, pinning the documented workaround. This is the acceptance evidence for symptom two.
+  the open-source jar, so it reproduces the exact split) and three consumer classes on a
+  `URLClassLoader` over a temp directory, parent the test's loader:
+  * a mount class with a well-formed `mount` and a sibling static helper returning
+    `StagedEditionOnly`: resolving the `<sessionState>` hooks yields `ClassUnlinkable` with a
+    `SplitPackage` cause, not a thrown `IllegalAccessError`;
+  * the same with the helper moved to a nested class: the hooks resolve, pinning the documented
+    workaround;
+  * a `@condition` class with the same sibling helper: `ClassUnlinkable` again, pinning that the
+    decode sits under `reflectTableMethod` as well as `pickMethod`.
+
+  These are the acceptance evidence for symptom two. A `TypeMissing` case (sibling naming a class
+  absent from the loader) pins that the jOOQ remedy is not given for an ordinary missing type.
 * **Backstop**: `CodegenLoaderTest` gains a case running a body that throws `IllegalAccessError`
-  inside `withCodegenScope` and asserts a `MojoExecutionException` listing the staged jOOQ jars.
+  inside `withCodegenScope` and asserts a `MojoExecutionException` rendered from the cause decode and
+  listing the staged jOOQ jars.
 
 ## Other solutions we've considered
 
@@ -236,19 +285,16 @@ work, at a cost far out of proportion to a configuration the manual already with
 one-line fix on the consumer side.
 
 **Make the consumer's classes reflect without loading sibling signatures.** Every
-`java.lang.reflect` view of a class (`getDeclaredMethods`, `getDeclaredMethod`, `getMethods`)
-materialises the whole method table, so the only way to look at one method without linking its
-siblings' types is to read the signature from the classfile, which `ClassfileCensus` already does for
-the classpath census. Moving `ServiceCatalog`'s reflection onto census rows would make symptom two's
-workaround unnecessary for sibling methods, but it is a rewrite of the reflection path across a dozen
-sites (and overlaps the slimming `ServiceCatalog` already has a Backlog item for), and it still could
-not load a *picked* method whose own signature names an edition-only type. This item makes the
-failure legible; that one would make most of it go away. Not filed as a successor yet: worth filing
-when a second consumer hits it with the workaround in hand.
+`java.lang.reflect` view of a class materialises the whole method table, so the only way to look at
+one method without linking its siblings' types is to read the signature from the classfile, which
+`ClassfileCensus` already does. That is the store-shaped answer, and it is filed as R1004 rather than
+folded in here: it rewrites the reflection path across a dozen sites and overlaps R72, and it still
+cannot load a *picked* method whose own signature names an edition-only type, so the legible failure
+this item ships is needed either way.
 
 **Child-first codegen loader for `org.jooq`.** Consumer classes would then link against the
 consumer's own jOOQ and never split, but graphitron's `org.jooq.Table` and the consumer's would be
 different classes, breaking `JooqCatalog` and every identity check in `ServiceCatalog`. That is the
 isolation `DevQueryExecutor` already uses for dev execution (platform parent, consumer jars only), and
 it works there because nothing crosses back but strings; codegen hands jOOQ objects across, so it is
-not available here without the census rewrite above.
+not available here.
