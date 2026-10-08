@@ -20,8 +20,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R923` | A grain declares its corpora, so a cross-corpus grain can say so | Spec | 2026-09-05 | [plan](grain-declares-its-corpora.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R872` | The keys say what a source owns, and the gatherer decides how to refresh it | Spec | 2026-09-25 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
-| `R997` | Generated pagination types take the wrong federation directives from their fields: every carrier's tags, and no @shareable | In Progress | 2026-10-08 <sub>created 2026-10-07</sub> | [plan](shared-synthesised-type-tags-under-exclude-contracts.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
+| `R997` | Generated pagination types take the wrong federation directives from their fields: every carrier's tags, and no @shareable | In Review | 2026-10-08 <sub>created 2026-10-07</sub> | [plan](shared-synthesised-type-tags-under-exclude-contracts.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R942` | A rule that evaluates an unregistered view once per driving row fails the build, whoever writes the next one | Spec | 2026-09-09 | [plan](per-row-view-naming-fails-the-build.md) |
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Spec | 2026-09-22 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
@@ -33,6 +33,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
+| `R1003` | createFilm execution test counts the film table, so a parallel writer fails it | In Review | 2026-10-08 | [plan](create-film-test-counts-its-own-row.md) |
 | `R1002` | Publish each node type's typeId as a composable directive so the supergraph can map type IDs to type names | Spec | 2026-10-08 | [plan](node-type-id-composable-directive.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
@@ -578,7 +579,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### pagination
 
-- `R997` [**Generated pagination types take the wrong federation directives from their fields: every carrier's tags, and no @shareable**](shared-synthesised-type-tags-under-exclude-contracts.md) — In Progress, bug
+- `R997` [**Generated pagination types take the wrong federation directives from their fields: every carrier's tags, and no @shareable**](shared-synthesised-type-tags-under-exclude-contracts.md) — In Review, bug
 - `R297` [**Collapse the shareable boolean on ConnectionType/EdgeType/PageInfoType; read federation flags off schemaType()**](collapse-connection-shareable-boolean.md) — Backlog, tech-debt
 - `R10` [**Drop the assembled-schema rebuild in favour of per-variant graphql-java forms**](drop-assembled-schema-rebuild.md) — Backlog, cleanup
 - `R208` [**Retire the @asConnection(connectionName:) deprecated argument**](retire-connection-name-override.md) — Backlog, cleanup
@@ -798,6 +799,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R823` [**The dev-executor fidelity test reads a mutating table twice and calls the difference a fidelity failure**](dev-executor-fidelity-reads-a-mutating-table-twice.md) — Backlog, bug
 - `R774` [**The discriminator typed-bind render-tier code-string pins duplicate what the SQL baselines already pin**](discriminator-bind-render-tier-code-string-pins.md) — Backlog, tech-debt
 - `R968` [**The partition declaration's cost claim has no fixture evidence left**](partition-selectivity-declaration-has-no-instrument.md) — Backlog, tech-debt
+- `R1003` [**createFilm execution test counts the film table, so a parallel writer fails it**](create-film-test-counts-its-own-row.md) — In Review, cleanup
 - `R822` [**A Java-source watcher test times out under load instead of waiting for the event it needs**](java-source-watcher-debounce-flake.md) — Backlog, bug
 - `R136` [**Execution-tier coverage for FK-target/NodeType-keyColumns permutation**](nodeid-fk-permutation-execution-tier.md) — Backlog, validation
 - `R135` [**Multi-hop @nodeId pipeline test for FK-target/NodeType-keyColumns permutation**](multi-hop-nodeid-fk-permutation-test.md) — Backlog, validation

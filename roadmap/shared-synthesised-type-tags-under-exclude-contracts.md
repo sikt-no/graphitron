@@ -1,7 +1,7 @@
 ---
 id: R997
 title: "Generated pagination types take the wrong federation directives from their fields: every carrier's tags, and no @shareable"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 2
 theme: pagination
@@ -104,6 +104,19 @@ Intersection, not "untagged when the carriers disagree": the two differ only whe
 - **"Untagged when the carriers disagree".** Simpler to say, and it drops tags every carrier agrees on; see The rule.
 - **Tagging the shared type's fields instead of the type.** Apollo keeps an untagged type under an include filter if one of its fields carries an included tag, but an exclude filter removes every field carrying an excluded tag, so per-field union tags empty the type under exclusion. No placement of the union serves both filter styles.
 - **Minting a separate `PageInfo` per carrier tag set.** Serves both styles, and renames a type clients hold fragments against.
+
+## Implementation notes
+
+Landed in one implementation commit. Where the code departs from or settles something the plan left open:
+
+- `EmittedRegistry.applyInheritedFederationDirectives` is the renamed fold. `EmittedRegistry.derive` returns an `Emitted` record (the registry and the `TagNarrowing`s); `of` stays as `derive(...).registry()` for callers that only want the schema. Each `TagNarrowing` builds its own `LintFinding` (`finding()`), so the wording sits next to the rule it reports and `GraphQLRewriteGenerator.withLintFindings` folds them in with one line.
+- The lookup that replaced `tagsAt` is `carrierAt`, which reads tags, `@shareable` and the source location in one pass. On the round 2 note about interface carriers: it searches interface declarations and extensions as well as object ones, so an `@asConnection` on an interface field resolves rather than raises. A coordinate no site declares still raises `IllegalStateException`.
+- The finding does not apply `<lint><excludedTypes>`. It is about a type no author declared, so there is no authored type name to match; suppression is by rule id, as the plan says.
+- The `lint_rule` catalogue row is added (round 2 note), and the `lint_rule.source` column comment and the `Source.CODEGEN` javadoc no longer say "whole-build fact with no SDL coordinate".
+- `TypeRegistry.mergeDirectives` puts the merged non-tag directives (`@shareable`) first, then the kept tags in the first registration's order. That is the order the synthesised builders and the store fold both use, so the two producers print identically. A merged `FacetValueType` now keeps its first registration's location; before, the last registration replaced it whole.
+- `ConnectionSynthesisRelation.mintedAt` still lists the shared `PageInfo` for a structural row when another carrier mints one. It describes the shared pool, and no corpus document has a structural Connection without a `pageInfo` field, so it is left alone.
+
+Tests: `EmittedRegistryTest.aSharedMintedTypeCarriesTheIntersection` and `aCarrierTheRegistryLacksIsADefect`; `ConnectionPromoterTest.sharedConnectionName_synthesisedTypesCarryTagIntersection`, `sharedConnectionName_oneShareableCarrierMakesTheSharedTypesShareable`, `sharedFacetValueType_carriesTagIntersectionAndShareableUnion` and `structuralConnectionWithNoPageInfoField_registersNoPageInfo`; `StoreEmittedFederationSchemaPipelineTest`, four schema cases and three warning cases (reported at a carrier, suppressed by `disabledRules`, absent for one carrier); corpus document `shared-tagged-connection` in `EmittedRegistryAgreementTest`, with no `KNOWN_DISAGREEMENTS` entry. Still open, outside the build: the reporter's exclude-based contract check on tilgangsstyring without a declared `PageInfo`.
 
 ## Reviewer findings
 
