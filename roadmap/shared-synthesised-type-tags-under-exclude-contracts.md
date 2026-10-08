@@ -1,7 +1,7 @@
 ---
 id: R997
 title: "Generated pagination types take the wrong federation directives from their fields: every carrier's tags, and no @shareable"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 2
 theme: pagination
