@@ -1,7 +1,7 @@
 ---
 id: R951
 title: "A second jOOQ where graphitron can see it fails the build far from its cause, naming neither the jar nor the pom entry that brought it"
-status: Spec
+status: Ready
 bucket: dx
 priority: 1
 theme: dev-loop
