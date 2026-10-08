@@ -19,8 +19,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |
 | `R923` | A grain declares its corpora, so a cross-corpus grain can say so | Spec | 2026-09-05 | [plan](grain-declares-its-corpora.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
-| `R997` | Generated pagination types take the wrong federation directives from their fields: every carrier's tags, and no @shareable | Spec | 2026-10-08 <sub>created 2026-10-07</sub> | [plan](shared-synthesised-type-tags-under-exclude-contracts.md) |
 | `R872` | The keys say what a source owns, and the gatherer decides how to refresh it | Spec | 2026-09-25 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
+| `R997` | Generated pagination types take the wrong federation directives from their fields: every carrier's tags, and no @shareable | Ready | 2026-10-08 <sub>created 2026-10-07</sub> | [plan](shared-synthesised-type-tags-under-exclude-contracts.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R942` | A rule that evaluates an unregistered view once per driving row fails the build, whoever writes the next one | Spec | 2026-09-09 | [plan](per-row-view-naming-fails-the-build.md) |
@@ -578,7 +578,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### pagination
 
-- `R997` [**Generated pagination types take the wrong federation directives from their fields: every carrier's tags, and no @shareable**](shared-synthesised-type-tags-under-exclude-contracts.md) — Spec, bug
+- `R997` [**Generated pagination types take the wrong federation directives from their fields: every carrier's tags, and no @shareable**](shared-synthesised-type-tags-under-exclude-contracts.md) — Ready, bug
 - `R297` [**Collapse the shareable boolean on ConnectionType/EdgeType/PageInfoType; read federation flags off schemaType()**](collapse-connection-shareable-boolean.md) — Backlog, tech-debt
 - `R10` [**Drop the assembled-schema rebuild in favour of per-variant graphql-java forms**](drop-assembled-schema-rebuild.md) — Backlog, cleanup
 - `R208` [**Retire the @asConnection(connectionName:) deprecated argument**](retire-connection-name-override.md) — Backlog, cleanup

@@ -1,7 +1,7 @@
 ---
 id: R997
 title: "Generated pagination types take the wrong federation directives from their fields: every carrier's tags, and no @shareable"
-status: Spec
+status: Ready
 bucket: bug
 priority: 2
 theme: pagination
@@ -188,3 +188,26 @@ shareable half and the manual text to Connection, Edge and `PageInfo`.
 coordinate". The new rule is located at a carrier and comes from a store-reading fold, which is
 closer to how `DERIVED` describes itself. The partition is by producer, so either can be argued.
 A sentence in the plan saying why `CODEGEN` would save the implementer re-deciding it.
+
+### Round 2 (2026-10-08, Spec -> Ready, reviewer session 01NkUqvvANjXerT8rYFDaDSF)
+
+Verdict: sign off. Both round 1 findings are resolved. The declared-Connection reading now
+matches what the store already does: `graphitron_minted_coinage` draws only from
+`graphitron_connection_carrier`. The facet types get both directives on both producers. The goal
+reads without the phase list, and the plan extends the existing fold, the walk's merge and the lint
+channel. It adds no new mechanism beside them.
+
+**Non-blocking**, for the implementer:
+
+- A new `LintRule` constant also needs its row in the `lint_rule` catalogue in
+  `graphitron-model.sql`. graphitron-model's `LintRuleCatalogueTest.theCatalogueAndTheEnumAgree`
+  enforces that. The plan names only graphitron's `LintRuleCatalogueTest`.
+- `tagsAt` searches object-type declaration sites only. `graphitron_connection_carrier` does not
+  filter on the parent's kind, so an `@asConnection` on an interface field would now raise rather
+  than lose its tags quietly. No fixture has one. Confirm that such a carrier is refused upstream,
+  or have `tagsAt` search interface sites too.
+- An authored `@shareable` does reach the store, as a fidelity row in
+  `graphql_directive_application`. Its gap is not the tag gap. The plan's actual reason for reading
+  it off the patched registry is "one fold, one source", and that reason holds.
+- Every corpus harness sweeps every document, so the new agreement document will need the usual
+  expectation annotations, not just the `@tag` declaration.
