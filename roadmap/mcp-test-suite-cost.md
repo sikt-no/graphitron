@@ -1,7 +1,7 @@
 ---
 id: R1006
 title: "MCP test suite: share read-only store fixtures, time only the read under test, cache the docs index across clean"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 1
 theme: testing
