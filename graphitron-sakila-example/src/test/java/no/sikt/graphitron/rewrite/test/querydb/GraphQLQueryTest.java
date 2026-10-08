@@ -6622,9 +6622,13 @@ class GraphQLQueryTest {
         // INSERT mutation with @table return: the write commits with a PK-only RETURNING
         // inside a transaction, the rows companion re-fetches the selected columns by that
         // key, and graphql-java walks the returned Record. The test cleans up its inserted
-        // row in a finally block so other tests' film-count assumptions are preserved.
+        // row in a finally block so other tests' film-count assumptions are preserved. It counts
+        // only rows carrying its own marker: other classes write to film concurrently on the
+        // shared database, so a count over the whole table moves for reasons this mutation has
+        // nothing to do with.
         String marker = "R22-PHASE-2-FILM-" + java.util.UUID.randomUUID();
-        int countBefore = dsl.fetchCount(org.jooq.impl.DSL.table("film"));
+        var ownRow = org.jooq.impl.DSL.field("title").eq(marker);
+        int countBefore = dsl.fetchCount(org.jooq.impl.DSL.table("film"), ownRow);
         try {
             Map<String, Object> data = execute("""
                 mutation {
@@ -6643,7 +6647,7 @@ class GraphQLQueryTest {
             // projection, even though the input does not supply it.
             assertThat(((Number) created.get("rentalRate")).doubleValue()).isEqualTo(4.99);
 
-            int countAfter = dsl.fetchCount(org.jooq.impl.DSL.table("film"));
+            int countAfter = dsl.fetchCount(org.jooq.impl.DSL.table("film"), ownRow);
             assertThat(countAfter)
                 .as("createFilm inserted exactly one row")
                 .isEqualTo(countBefore + 1);
