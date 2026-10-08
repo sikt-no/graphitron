@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R951` | A consumer pom that adds a dependency to the plugin realm can shadow the jOOQ graphitron parses with, and the store will not open | Spec | 2026-10-08 <sub>created 2026-09-15</sub> | [plan](plugin-realm-shadows-graphitron-jooq.md) |
-| `R1006` | MCP test suite: share read-only store fixtures, time only the read under test, cache the docs index across clean | Spec | 2026-10-08 | [plan](mcp-test-suite-cost.md) |
+| `R1006` | MCP test suite: share read-only store fixtures, time only the read under test, cache the docs index across clean | Ready | 2026-10-08 | [plan](mcp-test-suite-cost.md) |
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-10-06 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
 | `R998` | Four unindexed H2 statements cost the sis dev loop about a minute per run | In Review | 2026-10-08 <sub>created 2026-10-07</sub> | [plan](dev-startup-unserved-h2-joins.md) |
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |
@@ -790,7 +790,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### testing
 
 - `R863` [**Execution-tier tests cross-talk through the shared local-db instance, and trunk CI is red on it**](execution-tier-shared-db-cross-talk.md) — Backlog, bug
-- `R1006` [**MCP test suite: share read-only store fixtures, time only the read under test, cache the docs index across clean**](mcp-test-suite-cost.md) — Spec, bug
+- `R1006` [**MCP test suite: share read-only store fixtures, time only the read under test, cache the docs index across clean**](mcp-test-suite-cost.md) — Ready, bug
 - `R944` [**The read-cost gate fails on how loaded the machine is, which has held trunk CI red and the docs site undeployed since 2026-09-09**](read-cost-budget-floor-is-a-machine-fact.md) — Backlog, testing
 - `R740` [**Retire the oracle-diff shadow tests, and stop the anchor gate from manufacturing them**](retire-oracle-diff-shadow-tests.md) — Backlog, cleanup
 - `R808` [**A bridging-condition split-table execution case returns a second actor only in a full-module run**](bridging-condition-join-execution-flake.md) — Backlog, bug
