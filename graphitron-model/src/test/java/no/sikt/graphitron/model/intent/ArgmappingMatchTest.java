@@ -16,6 +16,8 @@ import static no.sikt.graphitron.model.test.SeededStore.seedArgumentConditionArg
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentNodeId;
 import static no.sikt.graphitron.model.test.SeededStore.seedDeclaredType;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
+import static no.sikt.graphitron.model.test.SeededStore.seedInputField;
+import static no.sikt.graphitron.model.test.SeededStore.seedType;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldConditionArgmappingEntry;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldNodeId;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldReferenceStepArgmappingEntry;
@@ -295,10 +297,9 @@ class ArgmappingMatchTest {
     @Test
     void aDottedHeadOnAnUnreachedInputTypeStillResolves() {
         withSeededStore(GRAPH, dsl -> {
-            seedDeclaredType(dsl, GRAPH, "Orphan", "INPUT_OBJECT");
-            seedField(dsl, GRAPH, "Orphan", "inner", "Inner", false);
-            seedDeclaredType(dsl, GRAPH, "Inner", "INPUT_OBJECT");
-            seedField(dsl, GRAPH, "Inner", "inventoryId");
+            seedInputField(dsl, GRAPH, "Orphan", "inner", "Inner", 0, false, false, null);
+            seedType(dsl, GRAPH, "String", "SCALAR");
+            seedInputField(dsl, GRAPH, "Inner", "inventoryId", "String", 0, false, false, null);
             seedFieldNodeId(dsl, GRAPH, "Inner", "inventoryId", "Inventory");
             seedFieldConditionArgmappingEntry(dsl, GRAPH, "Orphan", "inner", 0,
                 "p", "inner.inventoryId");
