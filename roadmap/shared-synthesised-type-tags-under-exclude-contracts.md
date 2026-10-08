@@ -102,3 +102,63 @@ Intersection, not "untagged when the carriers disagree": the two differ only whe
 - **"Untagged when the carriers disagree".** Simpler to say, and it drops tags every carrier agrees on; see The rule.
 - **Tagging the shared type's fields instead of the type.** Apollo keeps an untagged type under an include filter if one of its fields carries an included tag, but an exclude filter removes every field carrying an excluded tag, so per-field union tags empty the type under exclusion. No placement of the union serves both filter styles.
 - **Minting a separate `PageInfo` per carrier tag set.** Serves both styles, and renames a type clients hold fragments against.
+
+## Reviewer findings
+
+### Round 1 (2026-10-08, Spec -> Ready, reviewer session 01Jtzfp3ZexkDQ6BZESxxMM4)
+
+Verdict: withhold. Two findings, both about what the implementer would build. The goal itself
+reads cleanly without the phase list. An exclude-based contract keeps `PageInfo` and other shared
+generated types wherever it keeps a field returning them. `@shareable` reaches generated types
+again. An include-based build whose carriers disagree gets a suppressible warning that points at
+declaring the type. Every symbol the spec names exists as named. The coinage, the union fold, the
+walk's merge and the lint channel are all as described.
+
+**Finding 1 (question one, viability, and question two). The structural-arm case cannot be built,
+and the store has no row for it.**
+
+"One chain is not all minted", the Implementation bullet "The structural arm contributes the
+declared Connection type's type-level tags", and the third `StoreEmittedFederationSchemaPipelineTest`
+case all assume a declared Connection whose own `pageInfo` field returns a minted `PageInfo`. That
+input is rejected before anything is minted. The authored corpus is assembled before macro
+expansion: `GraphQLRewriteGenerator.assembleAndCaptureVerdicts` assembles
+`attributed.preSynthesisRegistry()`, and `LoadingRewrites` says synthesis is not among its
+rewrites. `SchemaAssembly` runs graphql-java's `SchemaGenerator`, which fails on a field whose type
+resolves to nothing. So a declared Connection with a `pageInfo: PageInfo!` field needs a declared
+`PageInfo`, which inherits nothing.
+
+The only structural case where the walk mints `PageInfo` is a declared Connection with no
+`pageInfo` field, the case `ConnectionPromoterTest.structuralTaggedConnectionWithNoSdlPageInfo_synthesisedPageInfoCarriesTag`
+pins. There, no field of that Connection returns `PageInfo`, so by the spec's own Apollo-rule
+argument it should contribute nothing. The store also has nothing to read it from:
+`graphitron_minted_coinage` and `graphitron_type_minted_candidate` draw only from
+`graphitron_connection_carrier`, which admits only `@asConnection` list fields. Under intersection
+the walk's existing structural feed (`promotionFor`, structural arm, passing the declared
+Connection's tags into the `PageInfo` registration) would narrow `PageInfo` by a type that does not
+return it.
+
+What would satisfy it: drop the structural-arm requirement from The rule, the fold bullet and the
+Tests section, or name a buildable input where it applies and the relation the fold reads it from.
+Then say what the walk's structural feed does under intersection. Stopping it is the reading
+consistent with The rule.
+
+**Finding 2 (question two). The plan has the store and the walk disagree on `@shareable` for facet
+types, and the new agreement corpus document would catch it.**
+
+The fold writes the shareable OR onto every minted type in `graphitron_minted_coinage`, which
+includes `<Connection>Facets` and `<Scalar>FacetValue`. The manual draft says `@shareable` makes
+"the generated types" shareable, facet types included. The walk bullet adds only tags to facet
+types. `ConnectionPromoter.buildSynthesisedFacets` and `buildSynthesisedFacetValue` apply no
+`@shareable`, and `GraphitronType.FacetsType` and `FacetValueType` carry no shareable flag. The
+planned corpus document has a facet and a `@shareable` carrier, and is explicitly kept out of
+`KNOWN_DISAGREEMENTS`. `EmittedRegistryAgreementTest` prints with directives, so as written it
+fails on that document.
+
+What would satisfy it: state whether facet types are shareable. If they are, extend the walk
+bullet (facet forms and `mergeSynthesisedTags` for the two facet arms). If not, scope the fold's
+shareable half and the manual text to Connection, Edge and `PageInfo`.
+
+**Non-blocking.** `LintRule.Source.CODEGEN`'s javadoc reads "A whole-build fact with no SDL
+coordinate". The new rule is located at a carrier and comes from a store-reading fold, which is
+closer to how `DERIVED` describes itself. The partition is by producer, so either can be argued.
+A sentence in the plan saying why `CODEGEN` would save the implementer re-deciding it.
