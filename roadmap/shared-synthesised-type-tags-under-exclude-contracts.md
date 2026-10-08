@@ -1,6 +1,6 @@
 ---
 id: R997
-title: "Shared pagination types drop out of exclude-based Apollo contracts by inheriting every carrier tag"
+title: "Generated pagination types take the wrong federation directives from their fields: every carrier's tags, and no @shareable"
 status: Spec
 bucket: bug
 priority: 2
@@ -10,11 +10,11 @@ created: 2026-10-07
 last-updated: 2026-10-08
 ---
 
-# Shared pagination types drop out of exclude-based Apollo contracts by inheriting every carrier tag
+# Generated pagination types take the wrong federation directives from their fields: every carrier's tags, and no @shareable
 
 ## Goal
 
-A federated subgraph whose Apollo contract variants are built by *excluding* a tag keeps its shared generated types in every contract that keeps a field returning them. A type graphitron generates for more than one field will carry only the `@tag`s every one of those fields carries, rather than every tag any of them carries. That is the rule Apollo's contract reference asks authors to follow by hand: a tag on a type definition also belongs on every field that returns the type, or a contract can drop the type while keeping a field that returns it. Reported on GitHub issue #555 by the tilgangsstyring subgraph in fs-plattform, after the separate regression there was fixed.
+The pagination types graphitron generates for a federated subgraph take the federation directives a contract and a composition need from the fields they were generated for. Two things change. A type generated for more than one field carries only the `@tag`s every one of those fields carries, rather than every tag any of them carries, so a subgraph whose Apollo contract variants are built by *excluding* a tag keeps its shared generated types in every contract that keeps a field returning them. That is the rule Apollo's contract reference asks authors to follow by hand: a tag on a type definition also belongs on every field that returns the type, or a contract can drop the type while keeping a field that returns it. And `@shareable` on a field reaches the types generated for it again, which it stopped doing when the published schema began to be built from the fact store, so a `PageInfo` two subgraphs both generate composes without the author declaring it. The tag half was reported on GitHub issue #555 by the tilgangsstyring subgraph in fs-plattform, after the separate regression there was fixed; the `@shareable` half was found while reproducing it.
 
 The shape, with type names from the report and field names illustrative. A `stable`-tagged feature file and an `experimental`-tagged one each hold an `@asConnection` field. `@asConnection` marks a list field graphitron expands into a Relay connection; the field is the *carrier*, and the expansion *mints* (generates, because the author did not declare them) a Connection type, an Edge type and `PageInfo`. `<schemaInput tag>` is the Maven configuration that stamps one `@tag` on everything a schema file declares. Neither file declares `PageInfo`:
 
@@ -34,7 +34,17 @@ type QueryOrganisasjonerConnection @tag(name: "stable") { ... }         # unchan
 type QueryMiljoerConnection @tag(name: "experimental") { ... }          # unchanged
 ```
 
-A type with one carrier, which is every Connection and Edge not shared through `connectionName:`, is unchanged. The cost falls on include-based contracts (a contract that keeps only what carries a listed tag) whose carriers disagree: an untagged shared type is absent from them. Those builds get a suppressible build warning naming the type and the fix, which is to declare the type in SDL with the tags wanted, since an author-declared type inherits nothing. That is the same escape hatch exclude-based subgraphs rely on today, moved to the side that has the warning to find it.
+The `@shareable` half, reproduced on trunk at `1fa7915` through the generator's own output:
+
+```graphql
+extend type Query {
+  stableFilms: [Film!]! @asConnection @defaultOrder(primaryKey: true) @shareable
+}
+```
+
+emits `Query.stableFilms` with its `@shareable`, and `QueryStableFilmsConnection`, `QueryStableFilmsConnectionEdge` and `PageInfo` with `@tag` only. After this item all three carry `@shareable`, as the manual already says they do.
+
+On tags, a type with one carrier, which is every Connection and Edge not shared through `connectionName:`, is unchanged. The cost falls on include-based contracts (a contract that keeps only what carries a listed tag) whose carriers disagree: an untagged shared type is absent from them. Those builds get a suppressible build warning naming the type and the fix, which is to declare the type in SDL with the tags wanted, since an author-declared type inherits nothing. That is the same escape hatch exclude-based subgraphs rely on today, moved to the side that has the warning to find it.
 
 ## The rule
 
@@ -48,11 +58,12 @@ One chain is not all minted: an author-declared Connection (the structural arm, 
 
 Intersection, not "untagged when the carriers disagree": the two differ only when carriers share some tags and differ on others (a shared `public` beside a `stable` and `experimental` split), and there intersection keeps `public`, which Apollo's rule permits, where the alternative drops it.
 
-`@shareable` is a different axis and does not follow this rule. It is a composition requirement (two subgraphs may both resolve the type), not a contract filter, so any shareable carrier makes the minted type shareable, as today on the walk. The two must be kept apart in code: the walk holds `@tag` and `@shareable` in one applied-directive list, and intersecting that list would drop `@shareable` whenever carriers disagree on it.
+`@shareable` is a different axis and does not follow the tag rule. It is a composition requirement (two subgraphs may both resolve the type), not a contract filter, so it is the union: `T` is shareable when any `c ∈ C(T)` is, which is what the walk does today and what the store path fails to do at all. The structural arm contributes the declared Connection's own `@shareable`, as the walk reads it. The two axes must be kept apart in code: the walk holds `@tag` and `@shareable` in one applied-directive list, and intersecting that list would drop `@shareable` whenever carriers disagree on it. An author-declared type inherits neither, as today.
 
 ## Implementation
 
-- `EmittedRegistry.applyInheritedTags` (graphitron-model): the per-type fold over `graphitron_minted_coinage` intersects the carriers' tag sets instead of accumulating them. Order the result by the first carrier's tag order (coinage rows are already ordered by type name and coordinate), so emission stays deterministic. The structural arm contributes the declared Connection type's type-level tags, per The rule. Update the method javadoc, which currently states the union.
+- `EmittedRegistry.applyInheritedTags` (graphitron-model) becomes the one fold for both directives, renamed to say so (`applyInheritedFederationDirectives` or similar). Per minted type, over the same `graphitron_minted_coinage` rows joined to `graphitron_type_minted`, it computes the tag intersection and the shareable OR, and writes both onto the definition in one replacement. Where `@shareable` comes from is the same as where the tags come from: the patched registry, read at the carrier's coordinate by directive name `shareable`, the name the walk reads. A `@link` import that aliases `@shareable` is honoured by neither producer today and stays out of scope.
+- The tag half of that fold intersects the carriers' tag sets instead of accumulating them. Order the result by the first carrier's tag order (coinage rows are already ordered by type name and coordinate), so emission stays deterministic. The structural arm contributes the declared Connection type's type-level tags, per The rule. Update the method javadoc, which currently states the union.
 - `EmittedRegistry.tagsAt`: a coordinate that resolves to no field becomes an `IllegalStateException`. Under union a miss only lost that carrier's tags; under intersection it silently strips every tag from the type, which is the wrong failure to have quiet. Coinage is written from fields that exist, so a miss is a defect in this method's lookup, not an author error.
 - The fold also returns the narrowings it made: each minted type whose intersection is strictly smaller than the union, with the dropped tags and the carriers that carried them. `GraphQLRewriteGenerator.emittedSchema` passes them out beside the schema, and report assembly folds them into the build-warning channel next to `SessionStateWarnings`.
 - A new `LintRule` constant, `SHARED_TYPE_TAGS_NARROWED("shared-type-tags-narrowed", Source.CODEGEN)`, emitted as a `BuildWarning.LintFinding` located at the first carrier whose tag was dropped. Rule-tagged, so `<lint><disabledRules>` suppresses it, which is what an exclude-only subgraph does once. The message names the type, the tags kept and dropped, the carriers by coordinate, and both readings: an exclude-based contract wants this outcome and can disable the rule; an include-based one keeps the type only if the author declares it with the tags wanted.
@@ -61,11 +72,11 @@ Intersection, not "untagged when the carriers disagree": the two differ only whe
 
 ## Tests
 
-- `StoreEmittedFederationSchemaPipelineTest` (the published SDL, read off the file the generator writes): the reporter's shape, a `stable` input and an `experimental` input each with an `@asConnection` carrier and no declared `PageInfo`, emits `PageInfo` untagged while each Connection and Edge keeps its own carrier's tag. A second case shares a Connection through `connectionName:` between carriers tagged `{public, stable}` and `{public, experimental}` and asserts the shared Connection, Edge and `PageInfo` carry exactly `public`. A third keeps a declared Connection (structural arm) tagged `stable` beside a minted `PageInfo` reached only through it, and asserts `PageInfo` carries `stable`. The existing `aMintedPageInfoStillInherits` and `theStableFileEmitsAsWritten` stand unchanged: one carrier, and an author-declared `PageInfo`.
+- `StoreEmittedFederationSchemaPipelineTest` (the published SDL, read off the file the generator writes): the reporter's shape, a `stable` input and an `experimental` input each with an `@asConnection` carrier and no declared `PageInfo`, emits `PageInfo` untagged while each Connection and Edge keeps its own carrier's tag. A second case shares a Connection through `connectionName:` between carriers tagged `{public, stable}` and `{public, experimental}` and asserts the shared Connection, Edge and `PageInfo` carry exactly `public`. A third keeps a declared Connection (structural arm) tagged `stable` beside a minted `PageInfo` reached only through it, and asserts `PageInfo` carries `stable`. A fourth is the `@shareable` reproduction above: a `@shareable` carrier and an unshareable one, and the carrier's Connection and Edge plus the shared `PageInfo` emit `@shareable` while the other carrier's Connection and Edge do not. The existing `aMintedPageInfoStillInherits` and `theStableFileEmitsAsWritten` stand unchanged: one carrier, and an author-declared `PageInfo` that keeps exactly its own `@shareable`.
 - The warning: the reporter's shape raises exactly one `shared-type-tags-narrowed` finding, located at a carrier and naming `PageInfo`; a build with that rule in `<lint><disabledRules>` raises none; a single-carrier build raises none.
 - `EmittedRegistryTest` § "The tags a minted type inherits": a unit case for the intersection, and one for the `tagsAt` miss raising.
 - `ConnectionPromoterTest.sharedConnectionName_synthesisedTypesCarryTagUnion` becomes the intersection case under a name that says so; a new case pins `@shareable` surviving on the shared types when only one carrier is shareable. `TypeRegistryTest`'s shareable-OR case stays as is.
-- `EmittedRegistryAgreementTest`: a new corpus document under `graphitron-model/src/test/resources/corpus/` with two carriers tagged differently, sharing a connection name, with a facet, so the comparison exercises the tag rule, the shared Connection/Edge/`PageInfo`, and the facet types. It is not added to `KNOWN_DISAGREEMENTS`. Declaring `@tag` in a corpus document is the first one to do so; if the corpus prelude cannot carry the directive declaration, the document declares it itself as `EmittedRegistryTest` does.
+- `EmittedRegistryAgreementTest`: a new corpus document under `graphitron-model/src/test/resources/corpus/` with two carriers tagged differently, sharing a connection name, with a facet, one of them `@shareable`, so the comparison exercises the tag rule, the shareable rule, the shared Connection/Edge/`PageInfo`, and the facet types. It is not added to `KNOWN_DISAGREEMENTS`. Declaring `@tag` in a corpus document is the first one to do so; if the corpus prelude cannot carry the directive declaration, the document declares it itself as `EmittedRegistryTest` does.
 - Acceptance outside the build is the reporter's exclude-based contract check passing on tilgangsstyring without a declared `PageInfo`. R298's GraphOS contract verification, when it lands, is where a standing exclude-based contract belongs; this item does not depend on it.
 
 ## User documentation (first-client check)
@@ -80,8 +91,7 @@ Intersection, not "untagged when the carriers disagree": the two differ only whe
 
 ## Out of scope
 
-- **`@shareable` on minted types from the store path.** Confirmed on trunk: a `@shareable` carrier's minted Connection, Edge and `PageInfo` are published without `@shareable`, because `EmittedRegistry.objectType` builds minted definitions bare and only tags and keys are added afterwards. A composition defect, not a contract one, filed as R999. This item's walk change must keep `@shareable` an OR (see The rule) so that R999 has a walk to agree with.
-- **Transcribing `<schemaInput tag>` tags into a relation.** `applyInheritedTags` reads tags from the patched registry because those tags reach no relation; its javadoc names that gap. The rule above is a relational division over (minted type, carrier, tag) and becomes a view once the relation exists. This item states the rule in that form and does not close the gap.
+- **Transcribing `<schemaInput tag>` tags into a relation.** `applyInheritedTags` reads tags from the patched registry because those tags reach no relation; its javadoc names that gap. The rule above is a relational division over (minted type, carrier, tag) and becomes a view once the relation exists. This item states the rule in that form and does not close the gap. `@shareable` is read the same way for the same reason, so that the one fold has one source; the `graphitron_link_entry` comment records that `@shareable` has no decoded relation.
 - **A carrier's tags inherited from its enclosing type.** Apollo applies a type-level tag to every field of the type, so a carrier on a tagged type carries that tag; `tagsAt` reads field-level tags only. Pre-existing under union and unchanged in kind here.
 - A configuration switch between union and intersection; see below.
 
