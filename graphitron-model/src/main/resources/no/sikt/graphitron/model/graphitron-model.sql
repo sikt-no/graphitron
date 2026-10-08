@@ -375,7 +375,11 @@ CREATE TABLE graphql_field_element (
   PRIMARY KEY (graph_name, type_name, field_name),
   UNIQUE (graph_name, coordinate),
   FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name) ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE,
+  -- The coordinate is the key spelled out, which is what lets an upsert key on the key alone.
+  -- A CHECK on a capture table is safe here where it is not on an author-reachable invariant:
+  -- the writer computes both from the same strings in the same call, so no SDL can fail it.
+  CHECK (coordinate = type_name || '.' || field_name)
 );
 COMMENT ON TABLE graphql_field_element IS 'A field coordinate exists on a type: the anchor for the field-keyed half of the reference web, on graphql_type_element''s terms and for its reason. Written from the declaration sites, so the coordinate exists as soon as one site declares the field, and a coordinate two sites declare is one row (the losing declaration is the duplicate quarantine''s business, not this relation''s). OBJECT and INTERFACE parents make it an output field, INPUT_OBJECT parents an input field, which the specification counts as two kinds of schema element sharing one coordinate form. This relation asserts neither and holds both, the two differing in nothing it carries; the supertype settles it, graphql_element.element_kind saying FIELD or INPUT_FIELD from the parent''s kind at the moment the walk writes the row.';
 COMMENT ON COLUMN graphql_field_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -395,7 +399,10 @@ CREATE TABLE graphql_argument_element (
   UNIQUE (graph_name, coordinate),
   FOREIGN KEY (graph_name, type_name, field_name)
     REFERENCES graphql_field_element (graph_name, type_name, field_name) ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE,
+  -- The coordinate is the key spelled out; see graphql_field_element for why a capture table
+  -- may carry the check.
+  CHECK (coordinate = type_name || '.' || field_name || '(' || argument_name || ':)')
 );
 COMMENT ON TABLE graphql_argument_element IS 'An argument coordinate exists on a field: the anchor for the argument-keyed decode relations, on graphql_type_element''s terms and for its reason.';
 COMMENT ON COLUMN graphql_argument_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -4498,7 +4505,9 @@ CREATE TABLE graphitron_field (
   UNIQUE (graph_name, coordinate),
   FOREIGN KEY (graph_name, type_name) REFERENCES graphitron_type (graph_name, type_name),
   FOREIGN KEY (graph_name, coordinate) REFERENCES graphitron_element (graph_name, coordinate),
-  CHECK (is_list OR item_non_null IS NULL)
+  CHECK (is_list OR item_non_null IS NULL),
+  -- The coordinate is the key spelled out, which is what lets EmittedAnchor upsert on the key.
+  CHECK (coordinate = type_name || '.' || field_name)
 );
 COMMENT ON TABLE graphitron_field IS 'Every field the generator works with, at the type expression it works with: one row per field coordinate, output and input alike, carrying the wrapping columns graphql_field carries. For example a field the connection macro rewrote reads here as the Connection it returns, where graphql_field is where a reader goes for what the author wrote instead.';
 COMMENT ON COLUMN graphitron_field.graph_name IS 'the owning graph''s partition, carried from whichever arm supplied the row';
@@ -4533,7 +4542,9 @@ CREATE TABLE graphitron_argument (
   FOREIGN KEY (graph_name, type_name, field_name)
     REFERENCES graphitron_field (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, coordinate) REFERENCES graphitron_element (graph_name, coordinate),
-  CHECK (is_list OR item_non_null IS NULL)
+  CHECK (is_list OR item_non_null IS NULL),
+  -- The coordinate is the key spelled out, as on graphitron_field.
+  CHECK (coordinate = type_name || '.' || field_name || '(' || argument_name || ':)')
 );
 COMMENT ON TABLE graphitron_argument IS 'Every field argument the generator works with, the author''s and the ones macro expansion minted: one row per argument coordinate, carrying the wrapping columns graphql_argument carries. For example the first and after arguments a connection carrier gets when its author wrote no pagination argument sit here, where graphql_argument holds only what the document declares and therefore holds no row for them.';
 COMMENT ON COLUMN graphitron_argument.graph_name IS 'the owning graph''s partition, carried from whichever arm supplied the row';

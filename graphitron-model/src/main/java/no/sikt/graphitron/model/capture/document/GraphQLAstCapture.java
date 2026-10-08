@@ -320,7 +320,11 @@ public final class GraphQLAstCapture {
                         ef.SOURCE_NAME.eq(i.SOURCE_NAME), ef.SOURCE_LINE.eq(i.SOURCE_LINE),
                         ef.SOURCE_COLUMN.eq(i.SOURCE_COLUMN))
                     .where(i.GRAPH_NAME.eq(graph))))
-            .onDuplicateKeyUpdate()
+            // On the key, not onDuplicateKeyUpdate: with the UNIQUE coordinate beside the key jOOQ
+            // renders H2's MERGE ON as key-or-coordinate, which no index serves. The CHECK that
+            // the coordinate spells the key keeps the coordinate arm from ever matching alone.
+            .onConflict(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME)
+            .doUpdate()
             .set(t.COORDINATE, excluded(t.COORDINATE))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();

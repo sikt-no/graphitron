@@ -305,7 +305,12 @@ public final class EmittedAnchor {
                         minted.DEFAULT_VALUE_SDL, minted.DESCRIPTION)
                     .from(minted)
                     .where(minted.GRAPH_NAME.eq(graphName))))
-            .onDuplicateKeyUpdate()
+            // On the key, not onDuplicateKeyUpdate: with the UNIQUE coordinate beside the key jOOQ
+            // renders H2's MERGE ON as key-or-coordinate, which no index serves. The CHECK that
+            // the coordinate spells the key keeps the coordinate arm from ever matching alone.
+            .onConflict(GRAPHITRON_FIELD.GRAPH_NAME, GRAPHITRON_FIELD.TYPE_NAME,
+                GRAPHITRON_FIELD.FIELD_NAME)
+            .doUpdate()
             .set(GRAPHITRON_FIELD.COORDINATE, excluded(GRAPHITRON_FIELD.COORDINATE))
             .set(GRAPHITRON_FIELD.ORDINAL, excluded(GRAPHITRON_FIELD.ORDINAL))
             .set(GRAPHITRON_FIELD.TYPE_SDL, excluded(GRAPHITRON_FIELD.TYPE_SDL))
@@ -344,7 +349,10 @@ public final class EmittedAnchor {
                         minted.ITEM_NON_NULL, minted.DEFAULT_VALUE_SDL, minted.DESCRIPTION)
                     .from(minted)
                     .where(minted.GRAPH_NAME.eq(graphName))))
-            .onDuplicateKeyUpdate()
+            // On the key, for the field grain's reason above.
+            .onConflict(GRAPHITRON_ARGUMENT.GRAPH_NAME, GRAPHITRON_ARGUMENT.TYPE_NAME,
+                GRAPHITRON_ARGUMENT.FIELD_NAME, GRAPHITRON_ARGUMENT.ARGUMENT_NAME)
+            .doUpdate()
             .set(GRAPHITRON_ARGUMENT.COORDINATE, excluded(GRAPHITRON_ARGUMENT.COORDINATE))
             .set(GRAPHITRON_ARGUMENT.ORDINAL, excluded(GRAPHITRON_ARGUMENT.ORDINAL))
             .set(GRAPHITRON_ARGUMENT.TYPE_SDL, excluded(GRAPHITRON_ARGUMENT.TYPE_SDL))
