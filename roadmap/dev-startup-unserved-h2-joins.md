@@ -395,6 +395,18 @@ All times are in seconds, read off the log markers:
 
 Every round that finished passed validation; none logged "initial run failed validation".
 
+**Launch to "LSP listening"**, the measure the Goal's 2m57s is stated in:
+
+| run | before | after |
+| --- | --- | --- |
+| cold | 3m43s | 4m17s, including the first run's downloads |
+| warm 1 | 4m10s | 3m43s |
+| warm 2 | 4m30s (warm 3) | 2m58s |
+
+This figure also carries the generated-class compile after the initial run, which swung from 38s
+to 81s between runs for reasons unrelated to the store. So it is noisier than the round totals
+above, which are the figures the goal is judged on.
+
 **What the figures show.**
 
 * A warm save went from 183 to 234 seconds, down to 105. That is 80 to 130 seconds per save,
@@ -429,4 +441,5 @@ seed fallback is not needed.
 
 **CHECK counts.** On the before store, which carries none of the new constraints, 967 of 967
 `graphitron_argument` rows and 8,409 of 8,409 `graphitron_field` rows already satisfy the
-coordinate-equals-key `CHECK`. The after store holds the same counts.
+coordinate-equals-key `CHECK`. The after store holds the same counts. The 8,436 under fix 3 came
+from the 2026-10-07 profile's schema snapshot. The difference is the snapshot, not lost rows.
