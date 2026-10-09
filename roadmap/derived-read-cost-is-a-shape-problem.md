@@ -304,11 +304,15 @@ a derivation over either corpus alone, and `graphitron_` already does this again
           redirects a `@service` parameter through the pair's `root_name`, keyed to the reference the
           mapping is a field of through `graphitron_argmapping_site`, `@service` only; a `@condition`
           mapping on the same field redirects nothing, which `type-backing.graphqls` states.
-        * **`intent_node_id_decode_slot` and `RoutineWriteFacts` read it** `open`, last, R990 having
-          changed the slot this week and their tests being the node-id subject's. The slot's mapped
-          join is rekeyed already; what it owes is its name-matched exclusion, and a decision: a
-          mapped `@service` naming two overloads now reaches it as one untyped row where it drew
-          one row per overload.
+        * **`intent_node_id_decode_slot` and `RoutineWriteFacts` read it** `done`. A `@routine`
+          parameter's written path is the pair at the site's field and ordinal, and the slot's
+          name-matched exclusion is any pair at the root field but `@externalField`'s and
+          `@multitableReference`'s, which the old decode never wrote. Old and new slots agree row
+          for row on both stores; sis answers in 302 ms against 1,139, sakila in 154 against 108,
+          the difference being the mapped join over the rekeyed chain. The seeded redirect case is
+          a field of `node-id-decode-mapped-parameter`. Open on the slot: a mapped `@service`
+          naming two overloads reaches it as one untyped row where it drew one row per overload,
+          which its comment still describes.
       * **The old entry goes** `blocked`, on the readers. `graphitron_argmapping_entry` and the
         walk's writer for it.
     * **The resolution** `open`, reopened on a legal schema. `graphitron_code_reference`: the one method a written reference

@@ -30,7 +30,6 @@ import static no.sikt.graphitron.model.test.SeededStore.seedNodeKeyColumnRef;
 import static no.sikt.graphitron.model.test.SeededStore.seedOccurrencePath;
 import static no.sikt.graphitron.model.test.SeededStore.seedPrimaryKey;
 import static no.sikt.graphitron.model.test.SeededStore.seedService;
-import static no.sikt.graphitron.model.test.SeededStore.seedServiceArgmappingEntry;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedTable;
 import static no.sikt.graphitron.model.test.SeededStore.seedTableBinding;
@@ -170,28 +169,6 @@ class NodeIdDecodeDestinationTest {
                     + " root Query.films(ids) candidates 1");
             assertThat(destinations(dsl))
                 .containsExactly("Query.films(ids) Film SINGLE_KEY_COLUMN 1");
-        });
-    }
-
-    /**
-     * A parameter an {@code argMapping} entry redirects to some other argument is not the slot for
-     * this one, even though its name matches. The absence is read on the parameter rather than on the
-     * argument for exactly this shape, and without that reading the decode would claim a parameter
-     * fed from somewhere else.
-     */
-    @Test
-    void aParameterRedirectedToAnotherArgumentIsNotThisArgumentsSlot() {
-        withCatalog(dsl -> {
-            seedNodeType(dsl, "Film", "film");
-            seedField(dsl, GRAPH, "Query", "films", "Film", true);
-            seedArgumentNodeId(dsl, GRAPH, "Query", "films", "ids", "Film");
-            seedArgument(dsl, GRAPH, "Query", "films", "other", "ID");
-            seedProducer(dsl, "Query", "films", "ids", "java.lang.String");
-            seedServiceArgmappingEntry(dsl, GRAPH, "Query", "films", 0, "ids", "other");
-
-            assertThat(slots(dsl)).isEmpty();
-            assertThat(destinations(dsl))
-                .containsExactly("Query.films(ids) Film OWN_TABLE_COLUMNS 1");
         });
     }
 

@@ -21,7 +21,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_SITE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ARGMAPPING_PAIR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
@@ -314,19 +315,22 @@ public final class RoutineWriteFacts {
     private static Field<List<RoutineCall.RoutineArgument>> arguments(
             IntentMutationRoutineSeat s, IntentFieldRoutineMethod rm) {
         var p = SQL_ROUTINE_PARAMETER;
-        var m = GRAPHITRON_ARGMAPPING_ENTRY;
-        // A ROUTINE site sits on a field, so the entry's coordinate is that field's own and the
+        var m = GRAPHITRON_AST_ARGMAPPING_PAIR_ENTRY;
+        var ms = GRAPHITRON_ARGMAPPING_SITE;
+        // A @routine mapping sits on a field, so the site's coordinate is that field's own and the
         // coordinate relation is where its type and field are read back from.
         var mc = GRAPHQL_FIELD_ELEMENT;
         return multiset(
             select(p.JOOQ_NAME, p.BINDING_TYPE,
                 coalesce(
-                    field(select(m.WRITTEN_PATH)
+                    field(select(m.BOUND_TO)
                         .from(m)
-                        .join(mc).on(mc.GRAPH_NAME.eq(m.GRAPH_NAME), mc.COORDINATE.eq(m.COORDINATE))
-                        .where(m.GRAPH_NAME.eq(s.GRAPH_NAME), m.SITE.eq("ROUTINE"),
+                        .join(ms).on(ms.GRAPH_NAME.eq(m.GRAPH_NAME), ms.SOURCE_NAME.eq(m.SOURCE_NAME),
+                            ms.SOURCE_LINE.eq(m.SOURCE_LINE), ms.SOURCE_COLUMN.eq(m.SOURCE_COLUMN))
+                        .join(mc).on(mc.GRAPH_NAME.eq(ms.GRAPH_NAME), mc.COORDINATE.eq(ms.COORDINATE))
+                        .where(m.GRAPH_NAME.eq(s.GRAPH_NAME), ms.DIRECTIVE_NAME.eq("routine"),
                             mc.TYPE_NAME.eq(s.TYPE_NAME),
-                            mc.FIELD_NAME.eq(s.FIELD_NAME), m.ORDINAL.eq(s.ORDINAL),
+                            mc.FIELD_NAME.eq(s.FIELD_NAME), ms.ORDINAL.eq(s.ORDINAL),
                             m.PARAM_NAME.eq(p.JOOQ_NAME))
                         .orderBy(m.POSITION)
                         .limit(1)),

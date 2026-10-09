@@ -14,6 +14,10 @@ extend type Query {
   # lookup takes its id as an Integer, so the decode is carried out into it.
   film(ids: ID @nodeId(typeName: "Film")): Film
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService", method: "lookup", argMapping: "id: ids"})
+  # The parameter shares the argument's name and its mapping feeds it from another, so it is not
+  # this argument's slot: the absence is read on the parameter, and the id binds a predicate.
+  redirected(id: ID @nodeId(typeName: "Film"), other: ID): Film
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService", method: "lookup", argMapping: "id: other"})
 }
 
 # The slot is the mapped parameter, typed off the method the reference resolved to.
@@ -28,6 +32,7 @@ extend schema @expectEquals(relation: "intent_node_id_decode_slot", rows: """
 extend schema @expectEquals(relation: "intent_node_id_decode", rows: """
   use_site,        node_type_name, destination,       arity
   Query.film(ids), Film,           SINGLE_KEY_COLUMN, 1
+  Query.redirected(id), Film,      OWN_TABLE_COLUMNS, 1
   """)
 
 extend schema @expectEquals(relation: "intent_argmapping_projection_defect", rows: """
