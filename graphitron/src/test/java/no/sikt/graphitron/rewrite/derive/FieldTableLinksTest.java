@@ -1,16 +1,14 @@
 package no.sikt.graphitron.rewrite.derive;
 
-import no.sikt.graphitron.model.classpath.ClasspathScanner;
-import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.function.Consumer;
@@ -438,12 +436,11 @@ class FieldTableLinksTest {
     /**
      * The catalog and the classpath both, because the arms need both: a key or a table element
      * meets the catalog, and a condition element's route is read off the signature the
-     * {@code code_} family captured. The census is the walk's transcription of a classpath and the
-     * class root is that family's reading of one, and a run does both.
+     * {@code code_} family captured off the test classes' root.
      */
     private void withCaptured(Consumer<DSLContext> body) {
-        try (var store = CapturedStore.ofCatalog(tmp, CapturedStore.GRAPH, SDL, jooq(), census(),
-                testClassRoot())) {
+        try (var store = CapturedStore.ofCatalogWith(tmp, CapturedStore.GRAPH, SDL, jooq(),
+                TestSchemaHelper.testClasspath())) {
             body.accept(store.dsl());
         }
     }
@@ -451,18 +448,5 @@ class FieldTableLinksTest {
     private static JooqCatalog jooq() {
         var ctx = testContext();
         return new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-    }
-
-    private static List<CompletionData.ExternalReference> census() {
-        return ClasspathScanner.scan(testClassRoot(), testContext().jooqPackage());
-    }
-
-    private static Path testClassRoot() {
-        try {
-            return Path.of(FieldTableLinksTest.class.getProtectionDomain()
-                .getCodeSource().getLocation().toURI());
-        } catch (URISyntaxException e) {
-            throw new IllegalStateException("the test classes are not on a file path", e);
-        }
     }
 }

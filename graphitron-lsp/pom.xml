@@ -96,6 +96,22 @@
             <scope>test</scope>
         </dependency>
         <!--
+            The classpath corpus the fixtures capture: the service module as the consumer's own code
+            and the extended-scalars artifact as a library it declares, read the way a run reads
+            them rather than stated as rows.
+        -->
+        <dependency>
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron-sakila-service</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.graphql-java</groupId>
+            <artifactId>graphql-java-extended-scalars</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!--
             jOOQ's org.jooq.conf.Settings is JAXB-annotated and jOOQ declares
             jakarta.xml.bind-api as <optional>, so it is not on the classpath transitively.
             DeclarationHoverStatementCountTest derives a Configuration to attach a statement

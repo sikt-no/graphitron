@@ -17,6 +17,7 @@ import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.model.classpath.CompletionData;
+import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import org.eclipse.lsp4j.CompletionItem;
@@ -233,8 +234,8 @@ class R157PipelineTest {
         var locOpt = vocab.locateAt(directive, cursor, bytes);
         if (locOpt.isEmpty()) return List.of();
         var context = no.sikt.graphitron.lsp.completions.CompletionContext.from(locOpt.get(), bytes);
-        // Both halves of the arm come from the one scan this test ran: the store got the census
-        // through capture, and names the backing class and what it offers off the same rows.
+        // Both halves of the arm come from the one root this test read: the store captured it,
+        // and names the backing class and what it offers off the same rows.
         try (var store = storeOver(artefacts)) {
             return FieldCompletions.generate(vocab, store.handle(), context, directive, bytes);
         }
@@ -248,13 +249,13 @@ class R157PipelineTest {
     }
 
     /**
-     * A store over the same schema and the same class census the projection was built from. Taking
-     * the census off the catalog rather than re-scanning is what makes this one pipeline: the
-     * classifier, the projection and the store all answer about the classes this test's own scan
-     * read. The schema has to be the same one too, now that which class backs a type is the store's
-     * answer rather than the permit's.
+     * A store over the same schema and the same classes the projection was built from: capture
+     * reads the root this test's scan read, so the classifier, the projection and the store all
+     * answer about the same classfiles. The schema has to be the same one too, now that which class
+     * backs a type is the store's answer rather than the permit's.
      */
     private static StoreFixture storeOver(Artefacts artefacts) {
-        return StoreFixture.of(tmp, artefacts.sdl(), artefacts.catalog().externalReferences());
+        return StoreFixture.of(tmp, artefacts.sdl(), List.of(new ClasspathEntry(testClassesRoot(),
+            ClasspathEntry.Origin.PROJECT, null, null)));
     }
 }

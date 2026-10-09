@@ -1,9 +1,8 @@
 package no.sikt.graphitron.model.test;
 
+import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.boot.StoreAnswer;
 import no.sikt.graphitron.model.boot.StoreReader;
-import no.sikt.graphitron.model.classpath.ClasspathScanner;
-import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import org.jooq.DSLContext;
 
@@ -91,9 +90,9 @@ public final class CorpusStore {
     }
 
     /**
-     * The corpus with {@code classRoot} read as the build's own output on the first graph, and the
-     * census scanned from it stated on every graph: the shape a sweep over a relation the code family
-     * feeds wants, a condition hop routing off what {@code @condition} may name.
+     * The corpus with {@code classRoot} read as the build's own output on every graph: the shape a
+     * sweep over a relation the code family feeds wants, a condition hop routing off what
+     * {@code @condition} may name.
      */
     public static CorpusStore over(Path classRoot) {
         Path root = classRoot.toAbsolutePath().normalize();
@@ -203,16 +202,17 @@ public final class CorpusStore {
     private static CapturedStore capture(Path classRoot) {
         var ctx = TestRunContext.of();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        List<CompletionData.ExternalReference> census = classRoot == null ? List.of()
-            : ClasspathScanner.scan(classRoot, ctx.jooqPackage());
+        List<ClasspathEntry> classpath = classRoot == null ? List.of()
+            : List.of(new ClasspathEntry(classRoot, ClasspathEntry.Origin.PROJECT, null, null));
         Path directory = directory();
         var documents = CorpusDocuments.documents();
         var first = documents.getFirst();
         CapturedStore store = classRoot == null
             ? CapturedStore.ownStoreOfCatalog(directory, first.id(), sdl(first), jooq)
-            : CapturedStore.ownStoreOfCatalog(directory, first.id(), sdl(first), jooq, census, classRoot);
+            : CapturedStore.ownStoreOfCatalog(directory, first.id(), sdl(first), jooq,
+                classRoot);
         for (var document : documents.subList(1, documents.size())) {
-            store.andCatalogGraph(document.id(), sdl(document), jooq, census);
+            store.andCatalogGraphWith(document.id(), sdl(document), jooq, classpath);
         }
         return store;
     }

@@ -79,7 +79,7 @@ class ClassificationHintsTest {
 
     @BeforeAll
     static void capture() {
-        store = StoreFixture.held().ofCatalog(tmp, SDL, StoreFixture.backingClasses());
+        store = StoreFixture.held().ofCatalog(tmp, SDL, StoreFixture.testClasses());
     }
 
     @AfterAll

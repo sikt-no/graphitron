@@ -85,7 +85,7 @@ class InlayHintStatementCountTest {
     @BeforeAll
     static void capture() {
         store = StoreFixture.held().ofCatalog(tmp, SDL.replace("@table\n", "@table(name: \"film\")\n"),
-            StoreFixture.backingClasses());
+            StoreFixture.testClasses());
     }
 
     @AfterAll

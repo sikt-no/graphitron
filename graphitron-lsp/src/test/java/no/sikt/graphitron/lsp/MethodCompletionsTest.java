@@ -1,5 +1,6 @@
 package no.sikt.graphitron.lsp;
 
+import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.lsp.completions.MethodCompletions;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
@@ -34,10 +35,7 @@ class MethodCompletionsTest {
 
     @BeforeAll
     static void capture() {
-        store = StoreFixture.held().ofClasspath(tmp, List.of(
-            StoreFixture.jarClass("com.example.FilmService", List.of(
-                StoreFixture.method("list", "List", StoreFixture.parameter("limit", "int")),
-                StoreFixture.method("get", "Film", StoreFixture.parameter("id", "int"))))));
+        store = StoreFixture.held().ofClasspath(tmp, ClasspathCorpus.entries());
     }
 
     @AfterAll
@@ -47,20 +45,20 @@ class MethodCompletionsTest {
 
     @Test
     void serviceMethodCompletesMethodsOfSiblingClassName() {
-        String source = "type Query { x: Int @service(service: {className: \"com.example.FilmService\", method: \"\"}) }\n";
+        String source = "type Query { x: Int @service(service: {className: \"" + SERVICE + "\", method: \"\"}) }\n";
         Point cursor = new Point(0, source.lastIndexOf('"'));
 
         var items = run(source, cursor, "service");
 
         assertThat(items).extracting(i -> i.getLabel())
-            .containsExactlyInAnyOrder("list", "get");
-        var list = items.stream().filter(i -> i.getLabel().equals("list")).findFirst().orElseThrow();
-        assertThat(list.getDetail()).isEqualTo("List list(int limit)");
+            .containsExactlyInAnyOrder("filmsByIds", "filmById");
+        var byIds = items.stream().filter(i -> i.getLabel().equals("filmsByIds")).findFirst().orElseThrow();
+        assertThat(byIds.getDetail()).isEqualTo("List<FilmRecord> filmsByIds(List<Integer> ids, DSLContext dsl)");
     }
 
     @Test
     void conditionMethodCompletesMethodsOfSiblingClassName() {
-        String source = "type Query { x: Int @condition(condition: {className: \"com.example.FilmService\", method: \"\"}) }\n";
+        String source = "type Query { x: Int @condition(condition: {className: \"" + SERVICE + "\", method: \"\"}) }\n";
         Point cursor = new Point(0, source.lastIndexOf('"'));
 
         var items = run(source, cursor, "condition");
@@ -95,24 +93,27 @@ class MethodCompletionsTest {
         // ExternalCodeReference object. The canonical overlay's
         // MethodNameBinding(@sourceRow(className:)) reads the sibling
         // value off the directive's argument list directly.
-        String source = "type Foo { x: Int @sourceRow(className: \"com.example.FilmService\", method: \"\") }\n";
+        String source = "type Foo { x: Int @sourceRow(className: \"" + SERVICE + "\", method: \"\") }\n";
         Point cursor = new Point(0, source.lastIndexOf('"'));
 
         var items = run(source, cursor, "sourceRow");
 
-        assertThat(items).extracting(i -> i.getLabel()).containsExactlyInAnyOrder("list", "get");
+        assertThat(items).extracting(i -> i.getLabel()).containsExactlyInAnyOrder("filmsByIds", "filmById");
     }
 
     @Test
     void cursorOutsideMethodReturnsEmpty() {
         // Cursor inside className:, not method:.
-        String source = "type Query { x: Int @service(service: {className: \"com.example.FilmService\", method: \"foo\"}) }\n";
+        String source = "type Query { x: Int @service(service: {className: \"" + SERVICE + "\", method: \"foo\"}) }\n";
         Point cursor = new Point(0, source.indexOf('"') + 1);
 
         var items = run(source, cursor, "service");
 
         assertThat(items).isEmpty();
     }
+
+    /** A corpus service declaring exactly two methods, both taking parameters. */
+    private static final String SERVICE = "no.sikt.graphitron.rewrite.test.services.FilmCarrierService";
 
     private static List<org.eclipse.lsp4j.CompletionItem> run(String source, Point cursor, String directiveName) {
         var parser = new Parser();

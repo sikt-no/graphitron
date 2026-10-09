@@ -1,6 +1,7 @@
 package no.sikt.graphitron.lsp;
 
-import no.sikt.graphitron.model.classpath.CompletionData;
+import no.sikt.graphitron.model.config.ClasspathEntry;
+import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.lsp.definition.DeclarationDefinitions;
 import no.sikt.graphitron.lsp.facts.DeclarationFacts;
 import no.sikt.graphitron.lsp.hover.DeclarationHovers;
@@ -40,11 +41,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class DeclarationHoverOverlayParityTest {
 
-    private static final String STANDALONE_CLASS = "no.sikt.example.CustomRecord";
-    private static final String RECORD_CLASS = "no.sikt.example.PersonRecord";
-    private static final String POJO_CLASS = "no.sikt.example.PersonPojo";
-    private static final String SERVICE_CLASS = "no.sikt.example.PriceService";
-    private static final String BACKING_SERVICE = "no.sikt.example.BackingService";
+    private static final String STANDALONE_CLASS = "no.sikt.graphitron.rewrite.test.services.MemberlessShape";
+    private static final String RECORD_CLASS = "no.sikt.graphitron.rewrite.test.services.NamedRecord";
+    private static final String POJO_CLASS = "no.sikt.graphitron.rewrite.test.services.NamedBean";
+    /** One corpus class both prices a film and grounds the three class-backed views. */
+    private static final String SERVICE_CLASS = "no.sikt.graphitron.rewrite.test.services.NamedMemberService";
+    private static final String BACKING_SERVICE = SERVICE_CLASS;
 
     private static final String FIXTURE_SERVICE = "no.sikt.graphitron.lsp.fixtures.R157Service";
     private static final String FIXTURE_RECORD = "no.sikt.graphitron.lsp.fixtures.R157FilmRecord";
@@ -71,8 +73,8 @@ class DeclarationHoverOverlayParityTest {
             pojo: FilmPojoView @service(service: {className: "%1$s", method: "makeFilmPojo"})
             row: FilmRow @service(service: {className: "%1$s", method: "makeFilmRow"})
             priced: Priced
-            custom: CustomView @service(service: {className: "%3$s", method: "makeCustom"})
-            person: PersonView @service(service: {className: "%3$s", method: "makePerson"})
+            custom: CustomView @service(service: {className: "%3$s", method: "makeMemberless"})
+            person: PersonView @service(service: {className: "%3$s", method: "makeRecord"})
             bean: BeanView @service(service: {className: "%3$s", method: "makeBean"})
             called: Called
         }
@@ -166,7 +168,7 @@ class DeclarationHoverOverlayParityTest {
             type FilmRow { title: String }
             """.formatted(FIXTURE_SERVICE);
 
-        try (var store = StoreFixture.of(root, sdl, StoreFixture.backingClasses())) {
+        try (var store = StoreFixture.of(root, sdl, StoreFixture.testClasses())) {
             assertThat(target(store, type("FilmRow")))
                 .isEqualTo(new DeclTarget.SourceClass(FIXTURE_JOOQ_RECORD));
             assertThat(target(store, member("FilmRow", "title"))).isInstanceOf(DeclTarget.None.class);
@@ -420,12 +422,12 @@ class DeclarationHoverOverlayParityTest {
             """);
         store.withJavaSource(root, STANDALONE_CLASS, """
             /** A hand-written record. */
-            public class CustomRecord {
+            public class MemberlessShape {
             }
             """);
         store.withJavaSource(root, RECORD_CLASS, """
             /** A person. */
-            public record PersonRecord(
+            public record NamedRecord(
                 /** The person's first name. */
                 String firstName
             ) {
@@ -433,14 +435,14 @@ class DeclarationHoverOverlayParityTest {
             """);
         store.withJavaSource(root, POJO_CLASS, """
             /** A person, as a bean. */
-            public class PersonPojo {
+            public class NamedBean {
                 /** Reads the first name. */
                 public String getFirstName() { return null; }
             }
             """);
         store.withJavaSource(root, SERVICE_CLASS, """
             /** Prices films. */
-            public class PriceService {
+            public class NamedMemberService {
                 /** Prices one film. */
                 public Object price(Object table) { return null; }
             }
@@ -457,12 +459,12 @@ class DeclarationHoverOverlayParityTest {
 
     /**
      * The store every case reads: the fixture module's generated catalog for the table and column
-     * arms, the fixture classes for the types a producer grounds on them, and the census entries the
-     * fixtures cannot supply, which are the classes the parsed sources declare and one method taking a
-     * parameter, whose count is the arity a method-backed field resolves at.
+     * arms, the fixture classes for the types a producer grounds on them, and the service corpus for
+     * the classes the parsed sources declare, among them one method taking a parameter, whose count is
+     * the arity a method-backed field resolves at.
      */
     private static StoreFixture parityStore(Path root) {
-        return StoreFixture.ofCatalog(root, SDL, parityCensus());
+        return StoreFixture.ofCatalog(root, SDL, parityClasspath());
     }
 
     /**
@@ -470,24 +472,11 @@ class DeclarationHoverOverlayParityTest {
      * once: both borrowing would have the second clear the first's rows.
      */
     private static StoreFixture secondParityStore(Path root) {
-        return StoreFixture.held().ofCatalog(root, SDL, parityCensus());
+        return StoreFixture.held().ofCatalog(root, SDL, parityClasspath());
     }
 
-    private static List<CompletionData.ExternalReference> parityCensus() {
-        return Stream.concat(
-            StoreFixture.backingClasses().stream(),
-            Stream.of(
-                StoreFixture.jarClass(SERVICE_CLASS, List.of(
-                    StoreFixture.method("price", "Field",
-                        StoreFixture.parameter("ctx", "DSLContext")))),
-                StoreFixture.jarClass(BACKING_SERVICE, List.of(
-                    StoreFixture.producing("makeCustom", STANDALONE_CLASS),
-                    StoreFixture.producing("makePerson", RECORD_CLASS),
-                    StoreFixture.producing("makeBean", POJO_CLASS))),
-                StoreFixture.jarClass(STANDALONE_CLASS, List.of()),
-                StoreFixture.jarRecord(RECORD_CLASS,
-                    StoreFixture.component("firstName", "String")),
-                StoreFixture.jarClass(POJO_CLASS, List.of(
-                    StoreFixture.method("getFirstName", "String"))))).toList();
+    private static List<ClasspathEntry> parityClasspath() {
+        return Stream.concat(StoreFixture.testClasses().stream(), Stream.of(ClasspathCorpus.service()))
+            .toList();
     }
 }

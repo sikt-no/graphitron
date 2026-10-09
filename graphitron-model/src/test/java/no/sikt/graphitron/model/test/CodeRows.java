@@ -1,6 +1,5 @@
 package no.sikt.graphitron.model.test;
 
-import no.sikt.graphitron.model.classpath.CompletionData;
 import org.jooq.DSLContext;
 
 import java.time.LocalDateTime;
@@ -25,10 +24,9 @@ import static no.sikt.graphitron.model.Tables.CODE_WRITE_SLOT;
  * A stated signature as the reading would have written it down: the method, the type its result
  * names, what that type delivers, and the member slot it offers where it offers one.
  *
- * <p>Here rather than in either caller because a fixture states a signature in two vocabularies and
- * both owe the same rows. {@link SeededStore} states one as a position map and {@link CapturedStore}
- * takes one transcribed by the walk, and a case is about a rule only if it does not also have to be
- * about which of the two families it remembered to seed.
+ * <p>Its one caller is {@link SeededStore}, which states a signature as a position map, and it goes
+ * with the seeders that call it. A capture states no signature: {@link CapturedStore} names a
+ * classpath and the reading writes these rows.
  *
  * <p>The peel here is the reading's, and it agrees with the view's by construction: the container
  * vocabulary is one relation, and the descent stops on the same two conditions, at a position naming
@@ -52,76 +50,6 @@ public final class CodeRows {
 
     private static final Pattern PACKAGED_NAME =
         Pattern.compile("[A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)+");
-
-    /**
-     * Every class of a stated census as the reading would have read it.
-     *
-     * <p>A record's accessors are synthesised from its components rather than demanded of the
-     * fixture, and that is the one place this projection adds something the input did not say. The
-     * language guarantees them: a component is an accessor, so a census naming the component has
-     * named the accessor, and a fixture spelling both would be spelling one fact twice. Everything
-     * else is a projection of what the census already holds.
-     */
-    public static void writeStated(DSLContext dsl, List<CompletionData.ExternalReference> census,
-                                   LocalDateTime readAt) {
-        for (CompletionData.ExternalReference at : census) {
-            clazz(dsl, at.sourceName(), at.className(), readAt);
-            boolean isRecord = "RECORD".equals(at.classKind());
-            for (CompletionData.Method method : at.methods()) {
-                var positions = positionsOf(method.returnTypeRefs());
-                write(dsl, at.sourceName(), at.className(), method.name(), method.descriptor(),
-                    positions, method.declaredReturnType(), readAt);
-                // What the method takes, which a stated census carries and this projection used to
-                // drop. A reader asking for a signature wants both halves of it.
-                int ordinal = 0;
-                for (CompletionData.Parameter taken : method.parameters()) {
-                    parameter(dsl, at.sourceName(), at.className(), method.name(),
-                        method.descriptor(), ordinal++, taken.name(),
-                        positionsOf(taken.typeRefs()), taken.declaredType(), "OTHER", readAt);
-                }
-                if (isRecord) {
-                    continue;
-                }
-                if (method.parameters().isEmpty()) {
-                    slot(dsl, at.sourceName(), at.className(), method.name(), method.descriptor(),
-                        beanProperty(method.name()),
-                        statedType(positions, method.declaredReturnType()), "BEAN_ACCESSOR", readAt);
-                    continue;
-                }
-                String filled = setterProperty(method);
-                if (filled != null) {
-                    var first = method.parameters().getFirst();
-                    String boundType = statedType(positionsOf(first.typeRefs()),
-                        first.declaredType());
-                    type(dsl, at.sourceName(), boundType, readAt);
-                    construction(dsl, at.sourceName(), at.className(), "SETTERS", "()V", readAt);
-                    writeSlot(dsl, at.sourceName(), at.className(), method.name(),
-                        method.descriptor(), 0, filled, boundType, readAt);
-                }
-            }
-            if (!isRecord) {
-                continue;
-            }
-            int position = 0;
-            for (CompletionData.RecordComponent component : at.recordComponents()) {
-                var positions = positionsOf(component.typeRefs());
-                String descriptor = accessorDescriptor(positions);
-                write(dsl, at.sourceName(), at.className(), component.name(), descriptor,
-                    positions, component.declaredType(), readAt);
-                slot(dsl, at.sourceName(), at.className(), component.name(), descriptor,
-                    component.name(), statedType(positions, component.declaredType()),
-                    "RECORD_COMPONENT", readAt);
-                // And the write side of the same component. A record is made in one call, so the
-                // component is both what you read off one and what you pass to make one, and the
-                // census states it once for both.
-                construction(dsl, at.sourceName(), at.className(), "POSITIONAL", "<canonical>",
-                    readAt);
-                writeSlot(dsl, at.sourceName(), at.className(), "<init>", "<canonical>",
-                    position++, component.name(), statedType(positions, component.declaredType()),
-                    readAt);
-            }
-        }
-    }
 
     /**
      * One signature: the type its result names, what that type delivers, and the method itself.
@@ -213,20 +141,6 @@ public final class CodeRows {
             .set(CODE_READ_SLOT.TOUCHED_AT, readAt)
             .onDuplicateKeyIgnore()
             .execute();
-    }
-
-    /** The property a setter fills, or null where the method is not one. */
-    public static String setterProperty(CompletionData.Method method) {
-        if (method.parameters().size() != 1) {
-            return null;
-        }
-        String name = method.name();
-        if (!name.startsWith("set") || name.length() <= 3) {
-            return null;
-        }
-        char first = name.charAt(3);
-        return first == Character.toLowerCase(first)
-            ? null : Character.toLowerCase(first) + name.substring(4);
     }
 
     /** That a value of the class can be made, and how. Idempotent; the first statement wins. */
@@ -505,23 +419,4 @@ public final class CodeRows {
         });
     }
 
-    /** A census transcription's type references as the position map every rule here reads. */
-    private static Map<String, String> positionsOf(List<CompletionData.TypeRef> refs) {
-        var positions = new java.util.LinkedHashMap<String, String>();
-        for (CompletionData.TypeRef ref : refs) {
-            positions.putIfAbsent(ref.path(), ref.referencedClass());
-        }
-        return positions;
-    }
-
-    /**
-     * The descriptor of a record component's accessor, derived from the erasure at the component's
-     * root. A synthesis on the terms {@link #writeStated} states: the accessor exists because the
-     * component does, so its key is derivable too, and a component naming no class at its root is
-     * given the one shape a fixture cannot mean anything else by.
-     */
-    private static String accessorDescriptor(Map<String, String> positions) {
-        String root = positions.get("");
-        return root == null ? "()Ljava/lang/Object;" : "()L" + root.replace('.', '/') + ";";
-    }
 }

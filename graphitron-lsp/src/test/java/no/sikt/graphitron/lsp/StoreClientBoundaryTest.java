@@ -41,8 +41,8 @@ class StoreClientBoundaryTest {
     /**
      * The reactor edges this module may declare, by artifact and scope. Compile scope is the store's
      * generated query surface and the tree-sitter natives the parser loads; test scope is the
-     * generated jOOQ catalog a fixture captures against and the shared store harness it captures
-     * with.
+     * generated jOOQ catalog a fixture captures against, the service corpus whose classes a fixture
+     * reads as its classpath, and the shared store harness it captures with.
      *
      * <p>The generator is on neither list, at neither scope. What used to keep the edge alive was a
      * handful of tests that needed a real build, and a test whose subject is the build and the
@@ -56,6 +56,7 @@ class StoreClientBoundaryTest {
         "graphitron-model", "compile",
         "graphitron-tree-sitter-natives", "compile",
         "graphitron-sakila-db", "test",
+        "graphitron-sakila-service", "test",
         "graphitron-model test-jar", "test");
 
     /** The MCP server's package: off limits in both trees, the module having no edge to it. */
@@ -66,14 +67,17 @@ class StoreClientBoundaryTest {
 
     /**
      * The generated packages that sit under the generator's package name without being the
-     * generator: {@code graphitron-sakila-db} emits the fixture jOOQ models and the fixture services
-     * and conditions there. A capture fixture names them, so the generator scan discounts them
+     * generator: {@code graphitron-sakila-db} emits the fixture jOOQ models there, and
+     * {@code graphitron-sakila-service} holds the classpath corpus there. A capture fixture names them, so the generator scan discounts them
      * before it looks, rather than stopping at main sources on their account.
      */
     private static final List<String> GENERATED_FIXTURE_PACKAGES = List.of(
         "no.sikt.graphitron.rewrite.test.jooq",
         "no.sikt.graphitron.rewrite.test.services",
         "no.sikt.graphitron.rewrite.test.conditions",
+        "no.sikt.graphitron.rewrite.test.extensions",
+        "no.sikt.graphitron.rewrite.test.nameless",
+        "no.sikt.graphitron.rewrite.test.scalars",
         "no.sikt.graphitron.rewrite.multischemafixture");
 
     /** Floors on the scanned-file counts: a walk that reached nothing would otherwise pass. */

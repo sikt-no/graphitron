@@ -105,11 +105,11 @@ class TypeBackingPartitionTest {
         var both = new ArrayList<>(corpus);
         both.addAll(named);
 
-        captured = CapturedStore.ofCatalogWith(tmp.resolve("store"), "own", SDL, jooq, List.of(),
+        captured = CapturedStore.ofCatalogWith(tmp.resolve("store"), "own", SDL, jooq,
             corpus);
-        captured.andCatalogGraphWith("named", SDL, jooq, List.of(), named);
-        captured.andCatalogGraphWith("nameless", SDL, jooq, List.of(), nameless);
-        captured.andCatalogGraphWith("both", SDL, jooq, List.of(), both);
+        captured.andCatalogGraphWith("named", SDL, jooq, named);
+        captured.andCatalogGraphWith("nameless", SDL, jooq, nameless);
+        captured.andCatalogGraphWith("both", SDL, jooq, both);
     }
 
     @AfterAll

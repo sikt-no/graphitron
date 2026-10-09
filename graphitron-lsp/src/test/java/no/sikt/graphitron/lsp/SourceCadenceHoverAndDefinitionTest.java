@@ -1,5 +1,6 @@
 package no.sikt.graphitron.lsp;
 
+import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.lsp.definition.DeclarationDefinitions;
 import no.sikt.graphitron.lsp.definition.Definitions;
 import no.sikt.graphitron.lsp.hover.Hovers;
@@ -34,7 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class SourceCadenceHoverAndDefinitionTest {
 
-    private static final String SVC_FQN = "com.example.PriceService";
+    private static final String SVC_FQN = "no.sikt.graphitron.rewrite.test.services.NamedMemberService";
 
     /** The graph is beside the point in every case here; the subject is the {@code .java} files. */
     private static final String PLACEHOLDER_SDL = "type Query { placeholder: Int }\n";
@@ -50,10 +51,10 @@ class SourceCadenceHoverAndDefinitionTest {
 
     @Test
     void serviceMethodHoverAndGotoBothReadTheWalkedSource(@TempDir Path srcRoot) throws IOException {
-        writeJava(srcRoot, "com/example/PriceService.java", """
-            package com.example;
+        writeJava(srcRoot, "no/sikt/graphitron/rewrite/test/services/NamedMemberService.java", """
+            package no.sikt.graphitron.rewrite.test.services;
             /** Computes prices. */
-            public class PriceService {
+            public class NamedMemberService {
 
                 /** Looks up a price for a film. */
                 public Object price(Object table) {
@@ -64,12 +65,12 @@ class SourceCadenceHoverAndDefinitionTest {
 
         var file = file("""
             type Query {
-                films: Int @service(service: {className: "com.example.PriceService", method: "price"})
+                films: Int @service(service: {className: "%s", method: "price"})
             }
-            """);
+            """.formatted(SVC_FQN));
         var methodPos = pointAt(file, 1, "price\"");
 
-        try (var store = priceServiceStore(srcRoot)) {
+        try (var store = namedMemberServiceStore(srcRoot)) {
             // Hover surfaces the method Javadoc the parse read into the store's java-source family;
             // the classpath census it joins to carries none by design.
             assertThat(hoverText(store, file, methodPos))
@@ -78,7 +79,7 @@ class SourceCadenceHoverAndDefinitionTest {
             // Goto-definition jumps to the same method declaration in the same file.
             var loc = Definitions.compute(BundledVocabulary.get(), file, store.handle(), methodPos)
                 .orElseThrow();
-            assertThat(loc.getUri()).endsWith("PriceService.java");
+            assertThat(loc.getUri()).endsWith("NamedMemberService.java");
             // The method is declared on the 6th line (0-based line 5) of the source above.
             assertThat(loc.getRange().getStart().getLine()).isEqualTo(5);
         }
@@ -122,29 +123,29 @@ class SourceCadenceHoverAndDefinitionTest {
 
     @Test
     void aSourceEditMovesHoverAndGotoTogetherWithoutAGeneratorPass(@TempDir Path srcRoot) throws IOException {
-        Path source = writeJava(srcRoot, "com/example/PriceService.java", """
-            package com.example;
-            public class PriceService {
+        Path source = writeJava(srcRoot, "no/sikt/graphitron/rewrite/test/services/NamedMemberService.java", """
+            package no.sikt.graphitron.rewrite.test.services;
+            public class NamedMemberService {
                 /** First doc. */
                 public Object price(Object table) { return null; }
             }
             """);
         var file = file("""
             type Query {
-                films: Int @service(service: {className: "com.example.PriceService", method: "price"})
+                films: Int @service(service: {className: "%s", method: "price"})
             }
-            """);
+            """.formatted(SVC_FQN));
         var methodPos = pointAt(file, 1, "price\"");
 
-        try (var store = priceServiceStore(srcRoot)) {
+        try (var store = namedMemberServiceStore(srcRoot)) {
             int lineBefore = Definitions.compute(BundledVocabulary.get(), file, store.handle(), methodPos)
                 .orElseThrow().getRange().getStart().getLine();
             assertThat(hoverText(store, file, methodPos)).contains("First doc.");
 
             // Edit the source: new Javadoc, and the method shifts down two lines.
             Files.writeString(source, """
-                package com.example;
-                public class PriceService {
+                package no.sikt.graphitron.rewrite.test.services;
+                public class NamedMemberService {
 
 
                     /** Second doc, moved down. */
@@ -202,13 +203,12 @@ class SourceCadenceHoverAndDefinitionTest {
     }
 
     /**
-     * The census and the parse for {@code PriceService}, captured from the file the test wrote: the
+     * The census and the parse for {@code NamedMemberService}, captured from the file the test wrote: the
      * classpath side is what makes the method resolvable, the parse side is where its doc comment
      * comes from, and hover needs both.
      */
-    private static StoreFixture priceServiceStore(Path srcRoot) {
-        var store = StoreFixture.ofClasspath(srcRoot, List.of(StoreFixture.jarClass(SVC_FQN,
-            List.of(StoreFixture.method("price", "Object", StoreFixture.parameter("table", "Object"))))));
+    private static StoreFixture namedMemberServiceStore(Path srcRoot) {
+        var store = StoreFixture.ofClasspath(srcRoot, List.of(ClasspathCorpus.service()));
         store.refreshJavaSources(srcRoot);
         return store;
     }

@@ -208,7 +208,7 @@ class SurfaceScanCountTest {
 
     @BeforeAll
     static void capture() {
-        store = StoreFixture.held().ofCatalog(tmp, SDL, StoreFixture.backingClasses());
+        store = StoreFixture.held().ofCatalog(tmp, SDL, StoreFixture.testClasses());
         file = WorkspaceFileTestSupport.snapshot(SDL);
     }
 
@@ -310,7 +310,7 @@ class SurfaceScanCountTest {
     private static long inlayScansPerDeclaration(int types) {
         Path directory = tmp.resolve("inlay-scale-" + types);
         String sdl = scaledSdl(types, SITES_PER_TYPE);
-        try (var scaled = StoreFixture.ofCatalog(directory, sdl, StoreFixture.backingClasses())) {
+        try (var scaled = StoreFixture.ofCatalog(directory, sdl, StoreFixture.testClasses())) {
             var snapshot = WorkspaceFileTestSupport.snapshot(sdl);
             long total = scansFor(scaled, handle -> InlayHints.compute(
                 everyHintEnabled(), snapshot, Optional.of(handle), firstDeclarations()));
@@ -332,7 +332,7 @@ class SurfaceScanCountTest {
     private static long censusLookupCost(int types) {
         Path directory = tmp.resolve("scale-" + types);
         try (var scaled = StoreFixture.ofCatalog(directory, scaledSdl(types),
-                StoreFixture.backingClasses())) {
+                StoreFixture.testClasses())) {
             var handle = scaled.handle();
             var arms = DeclarationFacts.arms(handle, new DeclarationFacts.Coord.Type("T0"));
             Field<?> redirects = arms.fields().stream()

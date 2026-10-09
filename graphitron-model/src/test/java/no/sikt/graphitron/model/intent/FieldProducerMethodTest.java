@@ -62,8 +62,8 @@ class FieldProducerMethodTest {
             ClasspathEntry.Origin.REACTOR, "no.sikt:graphitron-sakila-service-copy", null));
 
         try (var captured = CapturedStore.ofCatalogWith(tmp.resolve("store"), OWN, SDL,
-                jooq, List.of(), mine)) {
-            captured.andCatalogGraphWith(SIBLING, SDL, jooq, List.of(), theirs);
+                jooq, mine)) {
+            captured.andCatalogGraphWith(SIBLING, SDL, jooq, theirs);
 
             var rows = captured.dsl()
                 .select(INTENT_FIELD_PRODUCER_METHOD.GRAPH_NAME,

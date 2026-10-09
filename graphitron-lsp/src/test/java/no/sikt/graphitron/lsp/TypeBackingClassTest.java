@@ -97,6 +97,6 @@ class TypeBackingClassTest {
     }
 
     private StoreFixture capture(String sdl) {
-        return StoreFixture.of(tmp, sdl, StoreFixture.backingClasses());
+        return StoreFixture.of(tmp, sdl, StoreFixture.testClasses());
     }
 }

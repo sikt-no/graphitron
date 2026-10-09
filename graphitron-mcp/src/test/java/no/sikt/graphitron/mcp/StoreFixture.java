@@ -1,5 +1,6 @@
 package no.sikt.graphitron.mcp;
 
+import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
@@ -9,8 +10,6 @@ import no.sikt.graphitron.model.test.FactWriters;
 import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.run.ModelCapture;
-import no.sikt.graphitron.model.classpath.ClasspathScanner;
-import no.sikt.graphitron.model.classpath.CompletionData;
 import org.junit.jupiter.api.extension.AfterAllCallback;
 import org.junit.jupiter.api.extension.BeforeAllCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
@@ -32,9 +31,9 @@ import java.util.stream.Stream;
  *
  * <p>A local layer over {@link CapturedStore}, which is the reactor's capture level: every factory
  * here is one of that level's arms with this module's own vocabulary in front of it, a generated jOOQ
- * package instead of a {@link JooqCatalog} and this module's class census instead of a list the caller
- * assembles. What stays local is what is local: the two generated packages, the placeholder SDL, the
- * fixture census and its walked source root, and the reader a tool's several queries go through.
+ * package instead of a {@link JooqCatalog} and this module's test classes instead of a classpath the
+ * caller assembles. What stays local is what is local: the two generated packages, the placeholder
+ * SDL, the fixture classes and their walked source root, and the reader a tool's several queries go through.
  *
  * <p>Captures only. The fixture that ran the whole generator moved above this module with the cases
  * that read it, their rows being written by loaders that consume the walk's own streams; a census
@@ -130,55 +129,41 @@ public final class StoreFixture implements AutoCloseable, FixtureView {
             : CapturedStore.ofCatalog(directory, sdl, new JooqCatalog(jooqPackage)));
     }
 
-    /** The package the code fixtures live under; the census is narrowed to it. */
-    private static final String CODE_FIXTURE_PACKAGE = "no.sikt.graphitron.mcp.fixtures.";
-
     /** The one code-fixture source root a walk covers; see {@link #codeFixtureSources()}. */
     private static final String WALKED_FIXTURE_PATH = "src/test/java/no/sikt/graphitron/mcp/fixtures/code";
 
-    /** Scanned once; see {@link #codeFixtureCensus()}. */
-    private static List<CompletionData.ExternalReference> codeFixtureCensus;
-
     /**
-     * The shape the {@code code} tool's cases read: the census of the fixture classes under
-     * {@code no.sikt.graphitron.mcp.fixtures}, plus the {@code java_} declaration family for the one
-     * source root a walk covers.
+     * The shape the {@code code} tool's cases read: a reading of this module's test classes, plus
+     * the {@code java_} declaration family for the one source root a walk covers.
      *
      * <p>Two inputs on purpose, because the tool joins two families that refresh on independent
-     * cadences and the fixtures have to be able to disagree. The census reaches every fixture class;
+     * cadences and the fixtures have to be able to disagree. The reading reaches every fixture class;
      * the walk reaches only the {@code fixtures.code} directory, so the {@code fixtures.library} class
      * is a class the store knows and no source positions, which is what a dependency jar is.
      */
     public static StoreFixture ofCodeFixtures(Path directory) {
         return withCode(new StoreFixture(
-            CapturedStore.of(directory, GRAPH, PLACEHOLDER_SDL, codeFixtureCensus())));
+            CapturedStore.ofWith(directory, GRAPH, PLACEHOLDER_SDL, codeFixtureClasspath())));
     }
 
-    /** The code and declaration families {@link #ofCodeFixtures} adds after its capture. */
+    /** The declaration family {@link #ofCodeFixtures} adds after its capture. */
     private static StoreFixture withCode(StoreFixture fixture) {
-        // The condition kind reads the code family, which the walk does not write, so the arm runs
-        // over the same entry the census was scanned from. The same entry and not the fixture
-        // package below it: the tool correlates an admitted method to its census class on the
-        // source name, so an arm writing a different one would correlate with nothing. What the
-        // wider read admits beyond the fixtures cannot surface, the class list being the census's
-        // and the census being filtered to them.
-        CapturedStore.captureCode(fixture.captured.dsl(), testClassesRoot(), JOOQ_PACKAGE, null);
         FactWriters.refreshJavaSources(fixture.captured.dsl(), List.of(codeFixtureSources()));
         return fixture;
     }
 
     /**
      * The shape the {@code schema} tool's cases read: an SDL of the caller's over the single-schema
-     * generated model, with the fixture classes on the classpath census.
+     * generated model, with this module's test classes read as its classpath.
      *
      * <p>All three inputs, because the tool's entry joins all three. The SDL is what declares the
      * coordinates, the catalog is what a {@code @table} binding and a column match resolve against, and
-     * the census is what a producer's return and a {@code @condition}'s method resolve against; a
+     * the classpath is what a producer's return and a {@code @condition}'s method resolve against; a
      * fixture missing any one of them makes a whole family of slots silently empty.
      */
     public static StoreFixture ofSchema(Path directory, String sdl) {
-        return new StoreFixture(CapturedStore.ofCatalog(directory, GRAPH, sdl,
-            new JooqCatalog(JOOQ_PACKAGE), codeFixtureCensus()));
+        return new StoreFixture(CapturedStore.ofCatalogWith(directory, GRAPH, sdl,
+            new JooqCatalog(JOOQ_PACKAGE), codeFixtureClasspath()));
     }
 
     /**
@@ -206,14 +191,15 @@ public final class StoreFixture implements AutoCloseable, FixtureView {
 
         /** {@link StoreFixture#ofSchema(Path, String)} on a store of its own. */
         public StoreFixture ofSchema(Path directory, String sdl) {
-            return new StoreFixture(CapturedStore.ownStoreOfCatalog(directory, GRAPH, sdl,
-                new JooqCatalog(JOOQ_PACKAGE), codeFixtureCensus()), true);
+            return new StoreFixture(CapturedStore.ownStoreOfCatalogWith(directory, GRAPH, sdl,
+                new JooqCatalog(JOOQ_PACKAGE), codeFixtureClasspath()), true);
         }
 
         /** {@link StoreFixture#ofCodeFixtures(Path)} on a store of its own. */
         public StoreFixture ofCodeFixtures(Path directory) {
             return withCode(new StoreFixture(
-                CapturedStore.ownStore(directory, GRAPH, PLACEHOLDER_SDL, codeFixtureCensus()), true));
+                CapturedStore.ownStoreWith(directory, GRAPH, PLACEHOLDER_SDL, codeFixtureClasspath()),
+                true));
         }
 
         /** {@link #ofCatalog} captured once for a whole test class; see {@link Shared}. */
@@ -248,22 +234,14 @@ public final class StoreFixture implements AutoCloseable, FixtureView {
     }
 
     /**
-     * The census of the fixture classes as a real classfile scan produced it. A scan rather than
-     * hand-built rows because everything the {@code code} tool projects is a classfile fact the store
-     * holds verbatim: the descriptors that key an overload, the un-erased {@code org.jooq.Condition}
-     * match, the declared type forms off the {@code Signature} attribute, and a record's mandated
-     * members. A hand-built reference can spell all of those differently from any real compiler.
-     *
-     * <p>Scanned once per JVM: the scan reads every class this module compiled and the answer does not
-     * change between tests.
+     * This module's test classes as the classpath a run would read: its own build output. A reading
+     * rather than hand-built rows because everything the {@code code} tool projects is a classfile
+     * fact the store holds verbatim: the descriptors that key an overload, the un-erased
+     * {@code org.jooq.Condition} match, the declared type forms off the {@code Signature} attribute,
+     * and a record's mandated members.
      */
-    static synchronized List<CompletionData.ExternalReference> codeFixtureCensus() {
-        if (codeFixtureCensus == null) {
-            codeFixtureCensus = ClasspathScanner.scan(testClassesRoot(), JOOQ_PACKAGE).stream()
-                .filter(reference -> reference.className().startsWith(CODE_FIXTURE_PACKAGE))
-                .toList();
-        }
-        return codeFixtureCensus;
+    static List<ClasspathEntry> codeFixtureClasspath() {
+        return List.of(new ClasspathEntry(testClassesRoot(), ClasspathEntry.Origin.PROJECT, null, null));
     }
 
     /**
@@ -281,8 +259,7 @@ public final class StoreFixture implements AutoCloseable, FixtureView {
 
     /**
      * This module's compiled test classes, which is the classpath entry every code fixture is read
-     * from. Shared with the fixtures that need a census with real classes on it rather than an empty
-     * one.
+     * from.
      */
     static Path testClassesRoot() {
         try {

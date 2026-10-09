@@ -2,13 +2,13 @@ package no.sikt.graphitron.lsp;
 
 import io.github.treesitter.jtreesitter.Parser;
 import io.github.treesitter.jtreesitter.Point;
+import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.lsp.completions.ArgMappingCompletions;
 import no.sikt.graphitron.lsp.completions.CompletionContext;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.model.classpath.CompletionData;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.Test;
@@ -30,15 +30,15 @@ class ArgMappingCompletionsTest {
 
     private static final LspVocabulary VOCAB = BundledVocabulary.get();
 
-    private static final String CLASS = "com.example.PriceService";
+    private static final String CLASS = "no.sikt.graphitron.rewrite.test.services.ArgMappedService";
+    private static final String NAMELESS = "no.sikt.graphitron.rewrite.test.nameless.NamelessService";
 
     @Test
     void leftSideOffersMethodParameterNames(@TempDir Path tmp) {
         String source = field("argMapping: \"\"");
         int col = source.indexOf("argMapping: \"") + "argMapping: \"".length();
 
-        try (var fixture = classpath(tmp, StoreFixture.method("compute", "Object",
-            StoreFixture.parameter("film", "Object"), StoreFixture.parameter("limit", "Object")))) {
+        try (var fixture = corpus(tmp)) {
             // Declaration order, which is the order an author reads the parameter list in.
             assertThat(labels(fixture.handle(), source, col)).containsExactly("film", "limit");
         }
@@ -46,29 +46,25 @@ class ArgMappingCompletionsTest {
 
     /**
      * Every overload's parameter names, deduplicated. The schema names a method by name alone, so no
-     * census can say which overload an author meant; the projection resolved to whichever came first,
+     * reading can say which overload an author meant; the projection resolved to whichever came first,
      * which quietly hid the other one's names.
      */
     @Test
     void leftSideOffersEveryOverloadsParameterNames(@TempDir Path tmp) {
-        String source = field("argMapping: \"\"");
+        String source = field(CLASS, "pick", "argMapping: \"\"");
         int col = source.indexOf("argMapping: \"") + "argMapping: \"".length();
 
-        try (var fixture = classpath(tmp,
-            StoreFixture.method("compute", "Object", StoreFixture.parameter("film", "Object")),
-            StoreFixture.method("compute", "Object",
-                StoreFixture.parameter("film", "Object"), StoreFixture.parameter("limit", "Integer")))) {
+        try (var fixture = corpus(tmp)) {
             assertThat(labels(fixture.handle(), source, col)).containsExactly("film", "limit");
         }
     }
 
     @Test
     void leftSideSuppressedWhenParameterNamesAbsent(@TempDir Path tmp) {
-        String source = field("argMapping: \"\"");
+        String source = field(NAMELESS, "compute", "argMapping: \"\"");
         int col = source.indexOf("argMapping: \"") + "argMapping: \"".length();
 
-        try (var fixture = classpath(tmp, StoreFixture.method("compute", "Object",
-            StoreFixture.parameter(null, "Object")))) {
+        try (var fixture = corpus(tmp)) {
             assertThat(labels(fixture.handle(), source, col)).isEmpty();
         }
     }
@@ -88,8 +84,7 @@ class ArgMappingCompletionsTest {
         String source = field("argMapping: \"film: \"");
         int col = source.indexOf("film: ") + "film: ".length();
 
-        try (var fixture = classpath(tmp, StoreFixture.method("compute", "Object",
-            StoreFixture.parameter("film", "Object")))) {
+        try (var fixture = corpus(tmp)) {
             assertThat(labels(fixture.handle(), source, col))
                 .containsExactlyInAnyOrder("first", "after");
         }
@@ -100,16 +95,14 @@ class ArgMappingCompletionsTest {
         String source = field("argMapping: \"film: after.\"");
         int col = source.indexOf("after.") + "after.".length();
 
-        try (var fixture = classpath(tmp, StoreFixture.method("compute", "Object",
-            StoreFixture.parameter("film", "Object")))) {
+        try (var fixture = corpus(tmp)) {
             assertThat(labels(fixture.handle(), source, col)).isEmpty();
         }
     }
 
-    /** A census holding one class with the given methods, the shape a classpath scan writes. */
-    private static StoreFixture classpath(Path directory, CompletionData.Method... methods) {
-        return StoreFixture.ofClasspath(directory,
-            List.of(StoreFixture.jarClass(CLASS, List.of(methods))));
+    /** The service corpus, read the way a run reads it. */
+    private static StoreFixture corpus(Path directory) {
+        return StoreFixture.ofClasspath(directory, List.of(ClasspathCorpus.service()));
     }
 
     /**
@@ -117,8 +110,12 @@ class ArgMappingCompletionsTest {
      * content is supplied by the caller.
      */
     private static String field(String argMapping) {
+        return field(CLASS, "compute", argMapping);
+    }
+
+    private static String field(String className, String method, String argMapping) {
         return "type Query { f(first: Int, after: String): Int "
-            + "@service(service: {className: \"" + CLASS + "\", method: \"compute\", "
+            + "@service(service: {className: \"" + className + "\", method: \"" + method + "\", "
             + argMapping + "}) }\n";
     }
 

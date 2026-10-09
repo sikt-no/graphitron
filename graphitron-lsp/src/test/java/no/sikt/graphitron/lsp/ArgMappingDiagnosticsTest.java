@@ -1,9 +1,9 @@
 package no.sikt.graphitron.lsp;
 
+import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
-import no.sikt.graphitron.model.classpath.CompletionData;
 import org.eclipse.lsp4j.Diagnostic;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -21,39 +21,29 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class ArgMappingDiagnosticsTest {
 
-    private static final String SERVICE_FQN = "com.example.PriceService";
+    /** One {@code compute} method whose one parameter is named {@code input}. */
+    private static final String NAMED = "no.sikt.graphitron.rewrite.test.services.ComputingService";
+
+    /**
+     * The same method compiled without {@code -parameters}: one parameter, no name. The reading
+     * records the absence rather than inventing {@code arg0}, which is what the left-side check
+     * suppresses on.
+     */
+    private static final String NAMELESS = "no.sikt.graphitron.rewrite.test.nameless.NamelessService";
 
     @TempDir
     Path tmp;
 
-    /** One {@code compute} method whose parameters carry the given names. */
-    private static List<CompletionData.ExternalReference> census(String... paramNames) {
-        var params = new java.util.ArrayList<CompletionData.Parameter>();
-        for (String n : paramNames) params.add(StoreFixture.parameter(n, "Object"));
-        return List.of(StoreFixture.jarClass(SERVICE_FQN,
-            List.of(StoreFixture.method("compute", "Object",
-                params.toArray(CompletionData.Parameter[]::new)))));
+    private List<Diagnostic> diagnose(String argMapping) {
+        return diagnose(NAMED, argMapping);
     }
 
-    /**
-     * The same method compiled without {@code -parameters}: one parameter, no name. The census
-     * records the absence rather than inventing {@code arg0}, which is what the left-side check
-     * suppresses on.
-     */
-    private static List<CompletionData.ExternalReference> censusWithoutParameterNames() {
-        return List.of(StoreFixture.jarClass(SERVICE_FQN,
-            List.of(StoreFixture.method("compute", "Object",
-                StoreFixture.parameter(null, "Object")))));
-    }
-
-    private List<Diagnostic> diagnose(
-        List<CompletionData.ExternalReference> census, String argMapping
-    ) {
+    private List<Diagnostic> diagnose(String className, String argMapping) {
         String source = "type Query { f(a: Int, input: Int): Int "
-            + "@service(service: {className: \"com.example.PriceService\", method: \"compute\", "
+            + "@service(service: {className: \"" + className + "\", method: \"compute\", "
             + "argMapping: \"" + argMapping + "\"}) }\n";
         var file = WorkspaceFileTestSupport.snapshot(source);
-        try (var store = StoreFixture.ofClasspath(tmp, census)) {
+        try (var store = StoreFixture.ofClasspath(tmp, List.of(ClasspathCorpus.service()))) {
             return Diagnostics.compute(BundledVocabulary.get(), "", file,
                 Optional.of(store.handle()));
         }
@@ -61,47 +51,47 @@ class ArgMappingDiagnosticsTest {
 
     @Test
     void validMappingProducesNoDiagnostics() {
-        assertThat(diagnose(census("input"), "input: a")).isEmpty();
+        assertThat(diagnose("input: a")).isEmpty();
     }
 
     @Test
     void unknownJavaParameterFlagged() {
-        var diags = diagnose(census("input"), "missing: a");
+        var diags = diagnose("missing: a");
         assertThat(diags).anySatisfy(d ->
             assertThat(d.getMessage()).contains("Unknown Java parameter 'missing'"));
     }
 
     @Test
     void unknownGraphqlArgumentFlagged() {
-        var diags = diagnose(census("input"), "input: missing");
+        var diags = diagnose("input: missing");
         assertThat(diags).anySatisfy(d ->
             assertThat(d.getMessage()).contains("Unknown GraphQL argument 'missing'"));
     }
 
     @Test
     void duplicateJavaParameterFlagged() {
-        var diags = diagnose(census("input"), "input: a, input: input");
+        var diags = diagnose("input: a, input: input");
         assertThat(diags).anySatisfy(d ->
             assertThat(d.getMessage()).contains("Duplicate Java parameter 'input'"));
     }
 
     @Test
     void danglingColonFlagged() {
-        var diags = diagnose(census("input"), "input:");
+        var diags = diagnose("input:");
         assertThat(diags).anySatisfy(d ->
             assertThat(d.getMessage()).contains("Missing GraphQL argument"));
     }
 
     @Test
     void strayCommaFlagged() {
-        var diags = diagnose(census("input"), "input: a,");
+        var diags = diagnose("input: a,");
         assertThat(diags).anySatisfy(d ->
             assertThat(d.getMessage()).contains("Empty argMapping entry"));
     }
 
     @Test
     void unknownJavaParameterSuppressedWithoutParameterNames() {
-        var diags = diagnose(censusWithoutParameterNames(), "missing: a");
+        var diags = diagnose(NAMELESS, "missing: a");
         assertThat(diags).noneSatisfy(d ->
             assertThat(d.getMessage()).contains("Unknown Java parameter"));
     }
@@ -109,10 +99,10 @@ class ArgMappingDiagnosticsTest {
     @Test
     void dotPathHeadSegmentValidatedAgainstFieldArguments() {
         // 'input' is a real field arg; the nested step 'missing' is not validated.
-        assertThat(diagnose(census("input"), "input: input.missing")).noneSatisfy(d ->
+        assertThat(diagnose("input: input.missing")).noneSatisfy(d ->
             assertThat(d.getMessage()).contains("Unknown GraphQL argument"));
         // A typo'd head segment is flagged.
-        assertThat(diagnose(census("input"), "input: missing.leaf")).anySatisfy(d ->
+        assertThat(diagnose("input: missing.leaf")).anySatisfy(d ->
             assertThat(d.getMessage()).contains("Unknown GraphQL argument 'missing'"));
     }
 }

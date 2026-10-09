@@ -119,6 +119,6 @@ class TypeMemberScopeTest {
     }
 
     private StoreFixture capture(String sdl) {
-        return StoreFixture.ofCatalog(tmp, sdl, StoreFixture.backingClasses());
+        return StoreFixture.ofCatalog(tmp, sdl, StoreFixture.testClasses());
     }
 }

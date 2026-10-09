@@ -1,8 +1,8 @@
 package no.sikt.graphitron.rewrite.derive;
 
 import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
-import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
@@ -25,24 +25,21 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code no.sikt.graphitron.model.intent.NodeIdDecodeDestinationTest}, and it states it far more
  * finely than this file does. What that tier cannot state is that a real capture writes the operands
  * the algebra reads. The slot fork spans three families that only a capture fills together, the
- * directive applications, the input-occurrence paths and the classpath census, and a fork that is
+ * directive applications, the input-occurrence paths and the classpath, and a fork that is
  * correct over seeded rows and finds nothing on a captured schema would be inert without a single
  * red assertion. So the cases here are few and coarse on purpose: one per destination, plus the
  * control that says the fork is a fork.
  *
- * <p>The SDL is captured and the census is hand-built, on {@code TypeBackingClassTest}'s terms: a
- * directive application is a fact capture produces, while a census row is a name, a descriptor and a
- * decomposed declared type, which is all these rules read. The record type named below is the test
- * catalog's own generated record for {@code film}, so the agreement the record destination turns on
- * is against the catalog rather than against a string this file chose.
+ * <p>The SDL is captured and so is the classpath, the service corpus, on
+ * {@code TypeBackingClassTest}'s terms. The record type the service takes is the test catalog's own
+ * generated record for {@code film}, so the agreement the record destination turns on is against
+ * the catalog rather than against a string this file chose.
  */
 @PipelineTier
 class NodeIdDecodeSlotCaptureTest {
 
-    private static final String APP = "app-classes";
-    private static final String SERVICE = "app.Films";
-    private static final String FILM_RECORD =
-        "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord";
+    private static final String SERVICE =
+        "no.sikt.graphitron.rewrite.test.services.NodeIdDestinationService";
 
     private static final String SDL = """
         type Film implements Node @table(name: "film") @node { id: ID! title: String }
@@ -53,11 +50,11 @@ class NodeIdDecodeSlotCaptureTest {
         type Query {
             films(id: ID! @nodeId(typeName: "Film")): [Film!]!
             findFilm(id: ID! @nodeId(typeName: "Film")): String
-                @service(service: {className: "app.Films", method: "find"})
+                @service(service: {className: "%1$s", method: "find"})
             modifyFilm(in: ModifyFilmInput!): String
-                @service(service: {className: "app.Films", method: "modify"})
+                @service(service: {className: "%1$s", method: "modify"})
         }
-        """;
+        """.formatted(SERVICE);
 
     @TempDir
     Path tmp;
@@ -89,35 +86,10 @@ class NodeIdDecodeSlotCaptureTest {
     }
 
     private void withCapturedStore(Consumer<DSLContext> body) {
-        try (var store = CapturedStore.ofCatalog(tmp, "g", SDL, jooq(), census())) {
+        try (var store = CapturedStore.ofCatalogWith(tmp, "g", SDL, jooq(),
+                ClasspathCorpus.entries())) {
             body.accept(store.dsl());
         }
-    }
-
-    /**
-     * One service class with two methods: one taking the generated film record, one taking the key
-     * column's own Java type. The parameter names are the argument names the SDL spells, which is
-     * the match the generator itself makes and the match the slot relation reads.
-     */
-    private static List<CompletionData.ExternalReference> census() {
-        return List.of(new CompletionData.ExternalReference(SERVICE, SERVICE, "",
-            List.of(
-                method("modify", "(L" + FILM_RECORD.replace('.', '/') + ";)Ljava/lang/String;",
-                    parameter("in", FILM_RECORD)),
-                method("find", "(Ljava/lang/Integer;)Ljava/lang/String;",
-                    parameter("id", "java.lang.Integer"))),
-            List.of(), "CLASS", APP, List.of()));
-    }
-
-    private static CompletionData.Method method(String name, String descriptor,
-                                               CompletionData.Parameter parameter) {
-        return new CompletionData.Method(name, "String", "", List.of(parameter), descriptor,
-            "String", List.of(new CompletionData.TypeRef("", "java.lang.String", "NONE")));
-    }
-
-    private static CompletionData.Parameter parameter(String name, String declaredType) {
-        return new CompletionData.Parameter(name, declaredType, "", "", declaredType,
-            List.of(new CompletionData.TypeRef("", declaredType, "NONE")));
     }
 
     private static JooqCatalog jooq() {

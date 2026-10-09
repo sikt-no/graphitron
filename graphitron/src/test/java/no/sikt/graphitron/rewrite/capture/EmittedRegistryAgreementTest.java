@@ -121,7 +121,7 @@ class EmittedRegistryAgreementTest {
     void theProducersAgreeExceptWhereRecorded(@TempDir Path tmp) {
         var ctx = TestConfiguration.testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        var census = TestSchemaHelper.classpathCensus(ctx);
+        var classpath = TestSchemaHelper.testClasspath();
         var printer = new SchemaPrinter(SchemaPrinter.Options.defaultOptions()
             .includeDirectives(true)
             .includeSchemaDefinition(true));
@@ -147,8 +147,8 @@ class EmittedRegistryAgreementTest {
             }
 
             GraphQLSchema derived;
-            try (var store = CapturedStore.ofCatalog(tmp.resolve(document.id()),
-                    CapturedStore.GRAPH, sdl, jooq, census)) {
+            try (var store = CapturedStore.ofCatalogWith(tmp.resolve(document.id()),
+                    CapturedStore.GRAPH, sdl, jooq, classpath)) {
                 var assembly = SchemaAssembly.of(EmittedRegistry.derive(store.registry(),
                     new StoreHandle(store.dsl(), CapturedStore.GRAPH)).registry());
                 if (!(assembly instanceof SchemaAssembly.Assembled assembled)) {

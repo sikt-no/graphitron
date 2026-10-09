@@ -2,6 +2,7 @@ package no.sikt.graphitron.lsp;
 
 import io.github.treesitter.jtreesitter.Parser;
 import io.github.treesitter.jtreesitter.Point;
+import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.lsp.completions.ClassNameCompletions;
 import no.sikt.graphitron.lsp.completions.CompletionContext;
 import no.sikt.graphitron.lsp.completions.Completions;
@@ -25,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Completion end to end through the session's store: the request boundary resolves the open document
- * to its graph, the arm queries inside that read, and the answer is that graph's census and no other's.
+ * to its graph, the arm queries inside that read, and the answer is that graph's classpath and no other's.
  *
  * <p>Two properties a per-arm test cannot reach. That a store shared by a whole workspace does not
  * leak one module's classes into another module's popup, which is the failure the scoping predicate
@@ -38,6 +39,11 @@ class CompletionStoreWiringTest {
 
     private static final LspVocabulary VOCAB = BundledVocabulary.get();
 
+    /** What the corpus's own classes start with, which the library's do not. */
+    private static final String CORPUS = "no.sikt.";
+    private static final String FILM_SERVICE = "no.sikt.graphitron.rewrite.test.services.FilmService";
+    private static final String EXTENDED_SCALARS = "graphql.scalars.ExtendedScalars";
+
     /** A cursor inside {@code @service}'s empty className value, the class-name arm's trigger. */
     private static final String SOURCE =
         "type Query { x: Int @service(service: {className: \"\", method: \"foo\"}) }\n";
@@ -45,23 +51,23 @@ class CompletionStoreWiringTest {
     @Test
     void oneGraphsPopupDoesNotOfferAnothersClasses(@TempDir Path tmp) {
         try (var fixture = StoreFixture.of(tmp, "api", "type Query { x: Int }\n",
-                List.of(StoreFixture.reference("com.example.ApiService", List.of(),
-                    "/nonexistent/api.jar")))
+                List.of(ClasspathCorpus.service()))
                 .andGraph(tmp, "billing", "type Query { y: Int }\n",
-                    List.of(StoreFixture.reference("com.example.BillingService", List.of(),
-                        "/nonexistent/billing.jar")))) {
+                    List.of(ClasspathCorpus.scalars()))) {
 
-            assertThat(classNames(fixture.handleFor("api"))).containsExactly("com.example.ApiService");
-            assertThat(classNames(fixture.handleFor("billing")))
-                .as("the sibling module's class is in the same store and is not a candidate here")
-                .containsExactly("com.example.BillingService");
+            var api = classNames(fixture.handleFor("api"));
+            var billing = classNames(fixture.handleFor("billing"));
+            assertThat(api).contains(FILM_SERVICE).allMatch(name -> name.startsWith(CORPUS));
+            assertThat(billing)
+                .as("the sibling module's classes are in the same store and are not candidates here")
+                .contains(EXTENDED_SCALARS).noneMatch(name -> name.startsWith(CORPUS));
         }
     }
 
     @Test
     void theOpenDocumentsOwnGraphAnswersForIt(@TempDir Path tmp) {
         try (var fixture = StoreFixture.of(tmp, StoreFixture.GRAPH, "type Query { x: Int }\n",
-                List.of(StoreFixture.jarClass("com.example.FilmService", List.of())));
+                List.of(ClasspathCorpus.service()));
              var access = fixture.access()) {
 
             var workspace = new Workspace();
@@ -70,7 +76,7 @@ class CompletionStoreWiringTest {
             workspace.didOpen(uri, 1, SOURCE);
 
             assertThat(completionAt(workspace, uri)).extracting(CompletionItem::getLabel)
-                .containsExactly("com.example.FilmService");
+                .contains(FILM_SERVICE).allMatch(name -> name.startsWith(CORPUS));
         }
     }
 

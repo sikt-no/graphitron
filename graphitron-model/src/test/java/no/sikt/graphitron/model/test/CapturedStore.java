@@ -4,13 +4,10 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreReader;
-import no.sikt.graphitron.model.capture.code.ClasspathSourceCapture;
-import no.sikt.graphitron.model.capture.code.CodeCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLSchemaProblems;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
-import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
@@ -64,8 +61,8 @@ import no.sikt.graphitron.model.jooq.JooqCatalog;
  * the pass itself.
  *
  * <p><b>Named arms, not flags.</b> Each factory says in its own name what its shape carries. The
- * classpath census is an argument rather than an axis, because it pairs with every shape and naming
- * it would double the set to say nothing.
+ * classpath is an argument rather than an axis, because it pairs with every shape and naming it
+ * would double the set to say nothing.
  *
  * <p>Owns the store's lifetime so a test can query after capture, step by step rather than inside
  * one continuation. The store itself comes from {@link FactStores#inMemory()} rather than being
@@ -150,7 +147,7 @@ public final class CapturedStore implements AutoCloseable {
         Path file = write(directory, graphName, sdl);
         var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
         ThreadConfinedStore.run(dsl -> {
-            captureFiles(dsl, List.of(file), directory, graphName, registry, null, List.of(), false);
+            captureFiles(dsl, List.of(file), directory, graphName, null, false, List.of());
             body.accept(dsl);
         });
     }
@@ -171,11 +168,7 @@ public final class CapturedStore implements AutoCloseable {
      * <p>Such a case pays for a boot, which is the honest price of the schema it rewrites.
      */
     public static CapturedStore ownStore(Path directory, String graphName, String sdl) {
-        Path file = write(directory, graphName, sdl);
-        var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
-        var store = ownedStore();
-        var schemas = captureFiles(store.dsl(), List.of(file), directory, graphName, registry, null, List.of(), false);
-        return new CapturedStore(store, graphName, directory, file, registry, schemas, true);
+        return ownStoreWith(directory, graphName, sdl, List.of());
     }
 
     /**
@@ -184,51 +177,42 @@ public final class CapturedStore implements AutoCloseable {
      * demote registered ones to views, and a clear cannot undo either.
      */
     public static CapturedStore ownStoreOfCatalog(Path directory, String sdl, JooqCatalog jooq) {
-        Path file = write(directory, GRAPH, sdl);
-        var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
-        var store = ownedStore();
-        var schemas = captureFiles(store.dsl(), List.of(file), directory, GRAPH, registry, jooq, List.of(), false);
-        return new CapturedStore(store, GRAPH, directory, file, registry, schemas, true);
-    }
-
-    /** {@link #ofCatalog(Path, String, String, JooqCatalog, List)} on a store of its own. */
-    public static CapturedStore ownStoreOfCatalog(Path directory, String graphName, String sdl,
-                                                  JooqCatalog jooq,
-                                                  List<CompletionData.ExternalReference> census) {
-        Path file = write(directory, graphName, sdl);
-        var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
-        var store = ownedStore();
-        var schemas = captureFiles(store.dsl(), List.of(file), directory, graphName, registry, jooq, census, false);
-        return new CapturedStore(store, graphName, directory, file, registry, schemas, true);
-    }
-
-    /**
-     * {@link #ofCatalog(Path, String, String, JooqCatalog, List, Path)} on a store of its own, for a
-     * fixture that outlives the case that opened it and reads a relation the code family feeds.
-     */
-    public static CapturedStore ownStoreOfCatalog(Path directory, String graphName, String sdl,
-                                                  JooqCatalog jooq,
-                                                  List<CompletionData.ExternalReference> census,
-                                                  Path classRoot) {
-        Path file = write(directory, graphName, sdl);
-        var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
-        var store = ownedStore();
-        var schemas = captureFiles(store.dsl(), List.of(file), directory, graphName, registry,
-            Objects.requireNonNull(jooq, "jooq"), census, false,
-            List.of(new ClasspathEntry(classRoot, ClasspathEntry.Origin.PROJECT, null, null)));
-        return new CapturedStore(store, graphName, directory, file, registry, schemas, true);
+        return ownStoreOfCatalog(directory, GRAPH, sdl, jooq);
     }
 
     /** {@link #ofCatalog(Path, String, String, JooqCatalog)} on a store of its own. */
     public static CapturedStore ownStoreOfCatalog(Path directory, String graphName, String sdl,
                                                   JooqCatalog jooq) {
-        return ownStoreOfCatalog(directory, graphName, sdl, jooq, List.of());
+        return ownStoreOfCatalogWith(directory, graphName, sdl, Objects.requireNonNull(jooq, "jooq"),
+            List.of());
     }
 
-    /** {@link #of(Path, String, String, List)} on a store of its own. */
-    public static CapturedStore ownStore(Path directory, String graphName, String sdl,
-                                         List<CompletionData.ExternalReference> census) {
-        return ownStoreOfCatalog(directory, graphName, sdl, null, census);
+    /**
+     * {@link #ofCatalog(Path, String, String, JooqCatalog, Path)} on a store of its own, for a
+     * fixture that outlives the case that opened it and reads a relation the code family feeds.
+     */
+    public static CapturedStore ownStoreOfCatalog(Path directory, String graphName, String sdl,
+                                                  JooqCatalog jooq, Path classRoot) {
+        return ownStoreOfCatalogWith(directory, graphName, sdl, Objects.requireNonNull(jooq, "jooq"),
+            List.of(ownOutput(classRoot)));
+    }
+
+    /** {@link #ofWith} on a store of its own. */
+    public static CapturedStore ownStoreWith(Path directory, String graphName, String sdl,
+                                             List<ClasspathEntry> classpath) {
+        return ownStoreOfCatalogWith(directory, graphName, sdl, null, classpath);
+    }
+
+    /** {@link #ofCatalogWith} on a store of its own, the catalog being optional here. */
+    public static CapturedStore ownStoreOfCatalogWith(Path directory, String graphName, String sdl,
+                                                      JooqCatalog jooq,
+                                                      List<ClasspathEntry> classpath) {
+        Path file = write(directory, graphName, sdl);
+        var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
+        var store = ownedStore();
+        var schemas = captureFiles(store.dsl(), List.of(file), directory, graphName, jooq, false,
+            classpath);
+        return new CapturedStore(store, graphName, directory, file, registry, schemas, true);
     }
 
     /** {@link #ofFiles(Path, String, String, String, String)} on a store of its own. */
@@ -238,7 +222,7 @@ public final class CapturedStore implements AutoCloseable {
             write(directory, secondName, secondSdl));
         var registry = SchemaLoader.load(files.stream().map(SchemaSource::file).toList());
         var store = ownedStore();
-        var schemas = captureFiles(store.dsl(), files, directory, GRAPH, registry, null, List.of(), false);
+        var schemas = captureFiles(store.dsl(), files, directory, GRAPH, null, false, List.of());
         return new CapturedStore(store, GRAPH, directory, files.getFirst(), registry, schemas, true);
     }
 
@@ -271,17 +255,17 @@ public final class CapturedStore implements AutoCloseable {
 
     /** The same under a graph the caller names, which is what a partition assertion needs two of. */
     public static CapturedStore of(Path directory, String graphName, String sdl) {
-        return of(directory, graphName, sdl, List.of());
+        return ofWith(directory, graphName, sdl, List.of());
     }
 
     /**
-     * The same plus a classpath census, for the arms that read the {@code code_} family. The census
-     * is the caller's own scan rather than a shape of this handle: what a rule reading a class's
-     * declared form is worth depends on the classes being real ones.
+     * The same over a classpath the caller describes, for the arms that read the {@code code_}
+     * family. Read the way a run reads it, so what those arms find is what the reading wrote: what a
+     * rule reading a class's declared form is worth depends on the classes being real ones.
      */
-    public static CapturedStore of(Path directory, String graphName, String sdl,
-                                   List<CompletionData.ExternalReference> census) {
-        return openAndCapture(directory, graphName, sdl, null, census);
+    public static CapturedStore ofWith(Path directory, String graphName, String sdl,
+                                       List<ClasspathEntry> classpath) {
+        return openAndCapture(directory, graphName, sdl, null, classpath);
     }
 
     /**
@@ -307,7 +291,7 @@ public final class CapturedStore implements AutoCloseable {
             write(directory, secondName, secondSdl));
         var registry = SchemaLoader.load(files.stream().map(SchemaSource::file).toList());
         var store = ThreadConfinedStore.borrow();
-        var schemas = captureFiles(store.dsl(), files, directory, GRAPH, registry, jooq, List.of(), false);
+        var schemas = captureFiles(store.dsl(), files, directory, GRAPH, jooq, false, List.of());
         return new CapturedStore(store, GRAPH, directory, files.getFirst(), registry, schemas);
     }
 
@@ -327,51 +311,29 @@ public final class CapturedStore implements AutoCloseable {
 
     /** {@link #ofCatalog(Path, String, JooqCatalog)} under a graph the caller names. */
     public static CapturedStore ofCatalog(Path directory, String graphName, String sdl, JooqCatalog jooq) {
-        return ofCatalog(directory, graphName, sdl, jooq, List.of());
-    }
-
-    /** The catalog shape plus a classpath census, for a test whose arms span both. */
-    public static CapturedStore ofCatalog(Path directory, String graphName, String sdl, JooqCatalog jooq,
-                                          List<CompletionData.ExternalReference> census) {
-        return openAndCapture(directory, graphName, sdl, Objects.requireNonNull(jooq, "jooq"), census);
+        return ofCatalogWith(directory, graphName, sdl, jooq, List.of());
     }
 
     /**
      * The same, with {@code classRoot} read as this build's own output, for a fixture whose
      * assertions reach a relation the code family feeds: a condition hop routes off what
-     * {@code @condition} may name, which is the code family's statement and not the census's.
-     *
-     * <p>The census argument and this one describe the same directory and are not redundant: one is
-     * the walk's transcription of the classpath and the other is the reading {@link ModelCapture}
-     * performs over it, and a run does both.
+     * {@code @condition} may name, which is the code family's statement.
      */
     public static CapturedStore ofCatalog(Path directory, String graphName, String sdl, JooqCatalog jooq,
-                                          List<CompletionData.ExternalReference> census,
                                           Path classRoot) {
-        return ofCatalog(directory, graphName, sdl, jooq, census, List.of(classRoot));
+        return ofCatalogWith(directory, graphName, sdl, jooq, List.of(ownOutput(classRoot)));
     }
 
     /**
-     * {@link #ofCatalog(Path, String, String, JooqCatalog, List, Path)} over a classpath the caller
+     * {@link #ofCatalog(Path, String, String, JooqCatalog, Path)} over a classpath the caller
      * describes. Entries rather than paths, because what an entry <em>is</em> decides what the
      * reading admits from it: the reactor-limited arms take the consumer's own code and not a
      * library's, and a path alone cannot say which it is.
      */
     public static CapturedStore ofCatalogWith(Path directory, String graphName, String sdl,
-                                              JooqCatalog jooq,
-                                              List<CompletionData.ExternalReference> census,
-                                              List<ClasspathEntry> classpath) {
+                                              JooqCatalog jooq, List<ClasspathEntry> classpath) {
         return openAndCapture(directory, graphName, sdl, Objects.requireNonNull(jooq, "jooq"),
-            census, classpath);
-    }
-
-    /** {@link #ofCatalogWith} for a caller with paths and no opinion, which reads them as its own. */
-    public static CapturedStore ofCatalog(Path directory, String graphName, String sdl, JooqCatalog jooq,
-                                          List<CompletionData.ExternalReference> census,
-                                          List<Path> classRoots) {
-        return ofCatalogWith(directory, graphName, sdl, jooq, census, classRoots.stream()
-            .map(root -> new ClasspathEntry(root, ClasspathEntry.Origin.PROJECT, null, null))
-            .toList());
+            classpath);
     }
 
     /**
@@ -421,26 +383,23 @@ public final class CapturedStore implements AutoCloseable {
                 + "; this arm's whole subject is a read that refused something");
         }
         var store = ThreadConfinedStore.borrow();
-        var schemas = captureFiles(store.dsl(), files, directory, GRAPH, parse.registry(), jooq, List.of(), false);
+        var schemas = captureFiles(store.dsl(), files, directory, GRAPH, jooq, false, List.of());
         return new CapturedStore(store, GRAPH, directory, files.getFirst(), parse.registry(), schemas);
     }
 
     private static CapturedStore openAndCapture(Path directory, String graphName, String sdl,
-                                                JooqCatalog jooq,
-                                                List<CompletionData.ExternalReference> census) {
-        return openAndCapture(directory, graphName, sdl, jooq, census, List.of());
-    }
-
-    private static CapturedStore openAndCapture(Path directory, String graphName, String sdl,
-                                                JooqCatalog jooq,
-                                                List<CompletionData.ExternalReference> census,
-                                                List<ClasspathEntry> classpath) {
+                                                JooqCatalog jooq, List<ClasspathEntry> classpath) {
         Path file = write(directory, graphName, sdl);
         var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
         var store = ThreadConfinedStore.borrow();
-        var schemas = captureFile(store, file, directory, graphName, registry, jooq, census, false,
+        var schemas = captureFiles(store.dsl(), List.of(file), directory, graphName, jooq, false,
             classpath);
         return new CapturedStore(store, graphName, directory, file, registry, schemas);
+    }
+
+    /** A class root read as this build's own output, which is what a fixture's own classes are. */
+    private static ClasspathEntry ownOutput(Path classRoot) {
+        return new ClasspathEntry(classRoot, ClasspathEntry.Origin.PROJECT, null, null);
     }
 
     // ---------------------------------------------------------------------------------------
@@ -452,39 +411,39 @@ public final class CapturedStore implements AutoCloseable {
      * case asserting that one graph's scope cannot reach another's rows.
      */
     public CapturedStore andGraph(String otherGraph, String sdl) {
-        return andGraph(otherGraph, sdl, List.of());
+        return andGraphWith(otherGraph, sdl, List.of());
     }
 
-    /** {@link #andGraph(String, String)} with a classpath census on the second graph. */
-    public CapturedStore andGraph(String otherGraph, String sdl,
-                                  List<CompletionData.ExternalReference> census) {
-        captureAnother(otherGraph, sdl, null, census, false);
+    /** {@link #andGraph(String, String)} over a classpath the caller describes, read for real. */
+    public CapturedStore andGraphWith(String otherGraph, String sdl, List<ClasspathEntry> classpath) {
+        captureAnother(otherGraph, sdl, null, false, classpath);
         return this;
     }
 
     /** {@link #andGraph(String, String)} against a generated jOOQ catalog. */
     public CapturedStore andCatalogGraph(String otherGraph, String sdl, JooqCatalog jooq) {
-        return andCatalogGraph(otherGraph, sdl, jooq, List.of());
+        return andCatalogGraphWith(otherGraph, sdl, jooq, List.of());
     }
 
-    /** The same with a classpath census, for a sweep whose relations span the catalog and the census. */
-    public CapturedStore andCatalogGraph(String otherGraph, String sdl, JooqCatalog jooq,
-                                         List<CompletionData.ExternalReference> census) {
-        captureAnother(otherGraph, sdl, Objects.requireNonNull(jooq, "jooq"), census, false);
+    /**
+     * The same over a classpath the caller describes, which is what a corpus in more than one
+     * artifact is: the code a consumer writes and the code a consumer names are different jars and
+     * both are read.
+     */
+    public CapturedStore andCatalogGraphWith(String otherGraph, String sdl, JooqCatalog jooq,
+                                            List<ClasspathEntry> classpath) {
+        captureAnother(otherGraph, sdl, Objects.requireNonNull(jooq, "jooq"), false, classpath);
         return this;
     }
 
     /**
-     * The same over several class roots, which is what a corpus in more than one artifact is: the
-     * code a consumer writes and the code a consumer names are different jars and both are read.
+     * The same with a class root, which is what a store holding several graphs over one reactor is:
+     * the classpath does not vary by graph, and the families read out of it carry no graph at all,
+     * so the second graph's reading of it is the first graph's reading again.
      */
-    public CapturedStore andCatalogGraphWith(String otherGraph, String sdl, JooqCatalog jooq,
-                                            List<CompletionData.ExternalReference> census,
-                                            List<ClasspathEntry> classpath) {
-        Path other = write(directory, otherGraph, sdl);
-        captureFile(store, other, directory, otherGraph,
-            SchemaLoader.load(List.of(SchemaSource.file(other))), jooq, census, false, classpath);
-        return this;
+    public CapturedStore andCatalogGraph(String otherGraph, String sdl, JooqCatalog jooq,
+                                         Path classRoot) {
+        return andCatalogGraphWith(otherGraph, sdl, jooq, List.of(ownOutput(classRoot)));
     }
 
     /**
@@ -505,7 +464,6 @@ public final class CapturedStore implements AutoCloseable {
     public Map<String, String> andCatalogGraphReadAt(String graph, Map<String, String> written,
                                                      java.util.Collection<String> files,
                                                      Instant at, JooqCatalog jooq,
-                                                     List<CompletionData.ExternalReference> census,
                                                      List<ClasspathEntry> classpath) {
         for (var file : written.entrySet()) {
             Path path = write(directory, graph + "." + file.getKey(), file.getValue());
@@ -518,36 +476,12 @@ public final class CapturedStore implements AutoCloseable {
         var paths = files.stream()
             .map(name -> fixtureFile(directory, graph + "." + name))
             .toList();
-        captureFiles(store.dsl(), paths, directory, graph, null, jooq, census, false, classpath,
+        captureFiles(store.dsl(), paths, directory, graph, jooq, false, classpath,
             LocalDateTime.ofEpochSecond(at.getEpochSecond(), 0, ZoneOffset.UTC));
         var sourceNames = new java.util.LinkedHashMap<String, String>();
         files.forEach(name -> sourceNames.put(name,
             SchemaSource.file(fixtureFile(directory, graph + "." + name)).sourceName()));
         return sourceNames;
-    }
-
-    /** {@link #andCatalogGraphWith} for a caller with paths and no opinion. */
-    public CapturedStore andCatalogGraph(String otherGraph, String sdl, JooqCatalog jooq,
-                                         List<CompletionData.ExternalReference> census,
-                                         List<Path> classRoots) {
-        return andCatalogGraphWith(otherGraph, sdl, jooq, census, classRoots.stream()
-            .map(root -> new ClasspathEntry(root, ClasspathEntry.Origin.PROJECT, null, null))
-            .toList());
-    }
-
-    /**
-     * The same with a class root, which is what a store holding several graphs over one reactor is:
-     * the classpath does not vary by graph, and the families read out of it carry no graph at all,
-     * so the second graph's reading of it is the first graph's reading again.
-     */
-    public CapturedStore andCatalogGraph(String otherGraph, String sdl, JooqCatalog jooq,
-                                         List<CompletionData.ExternalReference> census,
-                                         Path classRoot) {
-        Path other = write(directory, otherGraph, sdl);
-        captureFile(store, other, directory, otherGraph,
-            SchemaLoader.load(List.of(SchemaSource.file(other))), jooq, census, false,
-            List.of(new ClasspathEntry(classRoot, ClasspathEntry.Origin.PROJECT, null, null)));
-        return this;
     }
 
     /**
@@ -557,8 +491,7 @@ public final class CapturedStore implements AutoCloseable {
      * location a function of the graph and could not state it at all.
      */
     public CapturedStore andGraphSharingTheFile(String otherGraph) {
-        captureFile(store, file, directory, otherGraph,
-            SchemaLoader.load(List.of(SchemaSource.file(file))), null, List.of(), false);
+        captureFiles(store.dsl(), List.of(file), directory, otherGraph, null, false, List.of());
         return this;
     }
 
@@ -568,7 +501,7 @@ public final class CapturedStore implements AutoCloseable {
      * beside them.
      */
     public CapturedStore recapture(String sdl) {
-        captureAnother(graphName, sdl, null, List.of(), true);
+        captureAnother(graphName, sdl, null, true, List.of());
         return this;
     }
 
@@ -578,40 +511,26 @@ public final class CapturedStore implements AutoCloseable {
      * what its scope sees afterwards is the new catalog alone.
      */
     public CapturedStore recaptureCatalog(String sdl, JooqCatalog jooq) {
-        captureAnother(graphName, sdl, Objects.requireNonNull(jooq, "jooq"), List.of(), true);
+        captureAnother(graphName, sdl, Objects.requireNonNull(jooq, "jooq"), true, List.of());
         return this;
     }
 
-    private void captureAnother(String graph, String sdl, JooqCatalog jooq,
-                                List<CompletionData.ExternalReference> census, boolean warm) {
+    private void captureAnother(String graph, String sdl, JooqCatalog jooq, boolean warm,
+                                List<ClasspathEntry> classpath) {
         Path other = write(directory, graph, sdl);
-        captureFile(store, other, directory, graph,
-            SchemaLoader.load(List.of(SchemaSource.file(other))), jooq, census, warm);
-    }
-
-    private static CapturedSchema captureFile(GraphitronModelStore store, Path file, Path directory,
-                                    String graphName, TypeDefinitionRegistry registry, JooqCatalog jooq,
-                                    List<CompletionData.ExternalReference> census, boolean warm) {
-        return captureFiles(store.dsl(), List.of(file), directory, graphName, registry, jooq, census, warm);
-    }
-
-    private static CapturedSchema captureFile(GraphitronModelStore store, Path file, Path directory,
-                                    String graphName, TypeDefinitionRegistry registry, JooqCatalog jooq,
-                                    List<CompletionData.ExternalReference> census, boolean warm,
-                                    List<ClasspathEntry> classpath) {
-        return captureFiles(store.dsl(), List.of(file), directory, graphName, registry, jooq, census, warm,
-            classpath);
+        captureFiles(store.dsl(), List.of(other), directory, graph, jooq, warm, classpath);
     }
 
     /**
-     * One reading of the documents, through {@link ModelCapture}, which is what a run captures
-     * through.
+     * One reading of the documents and the classpath, through {@link ModelCapture}, which is what a
+     * run captures through.
      *
      * <p>This level promises that a fixture cannot encode a state capture never writes. It used to
      * keep half of it, because the fixture drove a walk of its own beside the pass and the two
      * wrote overlapping families, so a reader repointed at an entry found an empty relation in
-     * every test while a real run had the rows all along. There is one writer now and the promise
-     * is whole: what a fixture holds is what the pass writes, or the pass did not write it.
+     * every test while a real run had the rows all along; and later because a fixture could state a
+     * classpath as rows rather than name one to read. There is one writer now and the promise is
+     * whole: what a fixture holds is what the pass writes, or the pass did not write it.
      *
      * <p>The anchor first, then the pass. {@link ModelCapture#writeGraph} states the row every
      * other relation hangs a key on, and a fixture driving the gatherers itself owes it before any
@@ -620,55 +539,24 @@ public final class CapturedStore implements AutoCloseable {
      * <p>Each graph names its own files rather than matching a pattern under the directory: the
      * arms capturing a second graph write its file beside the first, and a glob would hand each
      * graph the other's source.
-     */
-    private static CapturedSchema captureFiles(DSLContext dsl, List<Path> files, Path directory,
-                                     String graphName, TypeDefinitionRegistry registry, JooqCatalog jooq,
-                                     List<CompletionData.ExternalReference> census, boolean warm) {
-        return captureFiles(dsl, files, directory, graphName, registry, jooq, census, warm, List.of());
-    }
-
-    /**
-     * The same capture with a classpath, for a fixture whose assertions reach a relation the code
-     * family feeds. The census parameter beside it is the walk's transcription of a classpath and
-     * this is the code family's reading of one, so a fixture supplying only the first gets a store
-     * where a class is in the census and no directive may name it, which is not a state a run
-     * produces.
      *
      * <p>The code family is written before the walk, which is the order a run has and the order
      * that matters: {@code AbstractRewriteMojo.runGenerator} captures the model into the store and
-     * then invokes the generator, whose walk derives over what it finds there. The walk materialises
-     * as it goes, so a code row written after it is invisible to everything derived during it, and a
-     * fixture would read a resolved route beside a chain that never saw it.
+     * then invokes the generator, whose walk derives over what it finds there.
      */
     private static CapturedSchema captureFiles(DSLContext dsl, List<Path> files, Path directory,
-                                     String graphName, TypeDefinitionRegistry registry, JooqCatalog jooq,
-                                     List<CompletionData.ExternalReference> census, boolean warm,
-                                     List<ClasspathEntry> classpath) {
-        return captureFiles(dsl, files, directory, graphName, registry, jooq, census, warm, classpath,
+                                               String graphName, JooqCatalog jooq, boolean warm,
+                                               List<ClasspathEntry> classpath) {
+        return captureFiles(dsl, files, directory, graphName, jooq, warm, classpath,
             LocalDateTime.now());
     }
 
     /** The same capture at an instant the caller states, which every row it marks then carries. */
-    @SuppressWarnings("removal")  // states a census while fixtures without a classpath do
     private static CapturedSchema captureFiles(DSLContext dsl, List<Path> files, Path directory,
-                                     String graphName, TypeDefinitionRegistry registry, JooqCatalog jooq,
-                                     List<CompletionData.ExternalReference> census, boolean warm,
-                                     List<ClasspathEntry> classpath, LocalDateTime readAt) {
+                                               String graphName, JooqCatalog jooq, boolean warm,
+                                               List<ClasspathEntry> classpath, LocalDateTime readAt) {
         FactStores.countCapture();
-        // The graph's own row, before anything that keys into it. The pass writes it first thing,
-        // but the stated census below runs ahead of the pass and claims sources against it.
         ModelCapture.writeGraph(dsl, new GraphIdentity(graphName, directory), readAt);
-        if (classpath.isEmpty()) {
-            // Before the pass, because the pass derives at its tail and those derivations read
-            // this family. A fixture stating a census and naming no classpath has nothing for the
-            // classpath gatherer to scan, so this is where those rows come from.
-            ClasspathSourceCapture.stated(dsl, graphName,
-                census.stream().map(CompletionData.ExternalReference::sourceName).toList(), readAt);
-            // The statement as the reading would have written it. One family now, the census that
-            // used to stand beside it having gone: a fixture states a classpath once and the
-            // reading is what holds it.
-            CodeRows.writeStated(dsl, census, readAt);
-        }
         // The pass, and the whole of the capture: it writes the graph row, the catalog, the
         // classpath families where there is a classpath, every document stratum, and runs the
         // derivations at its tail.
@@ -742,27 +630,6 @@ public final class CapturedStore implements AutoCloseable {
         GraphQLSchemaProblems.writeParsed(dsl, graphName, parse.failures(), at);
         GraphQLSchemaProblems.writeAssembled(dsl, graphName, parse.registryErrors(),
             Optional.empty(), assembly.errors(), at);
-    }
-
-    /**
-     * Writes what a schema may name in the Java on one classpath entry, for a test that drove the
-     * walk and wants the code family beside what the walk transcribed.
-     *
-     * <p>A primitive for the same reason {@link #writeSchemaProblems} is one: the two writers are
-     * on either side of the migration. The walk transcribes the classpath as a census, {@link
-     * CodeCapture} states what one directive may name, and a fixture whose assertions span both
-     * reaches each directly. The entry is this build's own output, which is what a fixture
-     * pointing at its own test classes is saying.
-     *
-     * <p>The graph is linked to the entry by whoever registered it; this writes the entry's rows,
-     * not the reading that claimed it for a graph.
-     */
-    public static void captureCode(DSLContext dsl, Path entry, String skipPrefix,
-                                   ClassLoader loader) {
-        var readAt = LocalDateTime.now();
-        var classpath = List.of(new ClasspathEntry(entry, ClasspathEntry.Origin.PROJECT, null, null));
-        CodeCapture.capture(dsl,
-            ClasspathSourceCapture.read(dsl, classpath, skipPrefix, readAt), loader, readAt);
     }
 
     /** The graph identity a fixture captured under, shared so readers can scope by it. */

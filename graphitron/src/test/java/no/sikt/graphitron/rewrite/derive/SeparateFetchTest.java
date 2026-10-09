@@ -2,10 +2,10 @@ package no.sikt.graphitron.rewrite.derive;
 
 import no.sikt.graphitron.facts.GatheredFacts;
 import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.SchemaReachability;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
@@ -48,7 +48,8 @@ class SeparateFetchTest {
     Path tmp;
 
     private static final String GRAPH = CapturedStore.GRAPH;
-    private static final String PRODUCER = "app.Producer";
+    private static final String PRODUCER =
+        "no.sikt.graphitron.rewrite.test.services.HandedFilmService";
 
     /**
      * The marker arms against the walk's delivery gather. Both markers on one schema, plus fields
@@ -91,7 +92,7 @@ class SeparateFetchTest {
      * grounded on the class a producer hands back, so nothing arrives for its fields to be projected
      * out of, and the child that names a {@code @table} type is a trip of its own.
      *
-     * <p>The backing row is the subject rather than the scenery. Read here off a captured census, it
+     * <p>The backing row is the subject rather than the scenery. Read here off a captured classpath, it
      * is the thing that keeps the arm from joining to a relation that nothing in a real pipeline
      * populates in the shape it reads.
      */
@@ -107,7 +108,8 @@ class SeparateFetchTest {
             }
             type Film @table(name: "film") { title: String }
             """.formatted(PRODUCER);
-        try (var store = CapturedStore.ofCatalog(tmp, GRAPH, sdl, jooq(), handedCensus())) {
+        try (var store = CapturedStore.ofCatalogWith(tmp, GRAPH, sdl, jooq(),
+                ClasspathCorpus.entries())) {
             var dsl = store.dsl();
             assertThat(dsl.select(GRAPHITRON_TYPE_BACKING.CLASS_NAME, GRAPHITRON_TYPE_BACKING.DECLARED_VIA)
                 .from(GRAPHITRON_TYPE_BACKING)
@@ -115,7 +117,7 @@ class SeparateFetchTest {
                 .and(GRAPHITRON_TYPE_BACKING.TYPE_NAME.eq("Payload"))
                 .fetch(r -> r.value1() + " " + r.value2()))
                 .as("the premise: the backing the arm joins to is a writer's row, not a fixture's")
-                .containsExactly("app.PayloadDto PRODUCER");
+                .containsExactly("no.sikt.graphitron.rewrite.test.services.HandedFilm PRODUCER");
             assertThat(rulesFor(dsl, "Payload", "film")).containsExactly("RECORD_HANDED_PARENT");
         }
     }
@@ -151,48 +153,5 @@ class SeparateFetchTest {
     private static JooqCatalog jooq() {
         var ctx = testContext();
         return new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-    }
-
-    /**
-     * The census the closure grounds on: the producer's return, and the members the reached record
-     * declares. Hand-built rather than scanned, the split every derivation test over the census
-     * makes and for its reason: a census row is a name, a descriptor and a decomposed declared type,
-     * which is all these rules read.
-     */
-    private static List<CompletionData.ExternalReference> handedCensus() {
-        String entry = "app/target/classes";
-        return List.of(
-            reference(entry, PRODUCER, method("make", "()Lapp/PayloadDto;", ref("app.PayloadDto"))),
-            record(entry, "app.PayloadDto",
-                component("name", ref("java.lang.String")),
-                component("film", ref("app.FilmRow"))));
-    }
-
-    private static CompletionData.ExternalReference reference(
-        String sourceName, String className, CompletionData.Method... methods) {
-        return new CompletionData.ExternalReference(className, className, "",
-            List.of(methods), List.of(), "CLASS", sourceName, List.of());
-    }
-
-    private static CompletionData.ExternalReference record(
-        String sourceName, String className, CompletionData.RecordComponent... components) {
-        return new CompletionData.ExternalReference(className, className, "",
-            List.of(), List.of(components), "RECORD", sourceName, List.of());
-    }
-
-    private static CompletionData.Method method(
-        String name, String descriptor, CompletionData.TypeRef... refs) {
-        return new CompletionData.Method(name, "Object", "", List.of(), descriptor,
-            "Object", List.of(refs));
-    }
-
-    private static CompletionData.RecordComponent component(
-        String name, CompletionData.TypeRef... refs) {
-        return new CompletionData.RecordComponent(name, "Object", "Object", List.of(refs));
-    }
-
-    /** The qualified name a declared type mentions at its own root, which is what the peel reads. */
-    private static CompletionData.TypeRef ref(String referencedClass) {
-        return new CompletionData.TypeRef("", referencedClass, "NONE");
     }
 }

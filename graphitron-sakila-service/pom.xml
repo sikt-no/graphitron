@@ -47,6 +47,34 @@
                 <configuration>
                     <parameters>true</parameters>
                 </configuration>
+                <executions>
+                    <!-- The corpus compiles with -parameters, as a consumer's own code usually does.
+                         The nameless package is the exception: a library compiled without it, whose
+                         classfiles carry no parameter names. It is excluded from the default compile
+                         and compiled in a pass of its own with -parameters off. Self-contained, so no
+                         other class in this module references it at compile time. -->
+                    <execution>
+                        <id>default-compile</id>
+                        <configuration>
+                            <excludes>
+                                <exclude>no/sikt/graphitron/rewrite/test/nameless/**</exclude>
+                            </excludes>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>compile-nameless</id>
+                        <phase>compile</phase>
+                        <goals>
+                            <goal>compile</goal>
+                        </goals>
+                        <configuration>
+                            <parameters>false</parameters>
+                            <includes>
+                                <include>no/sikt/graphitron/rewrite/test/nameless/**</include>
+                            </includes>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

@@ -50,8 +50,6 @@ import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_WRITE_SLOT;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD_PARAMETER_TABLE;
-import static no.sikt.graphitron.model.Tables.CODE_EXTERNAL_FIELD_METHOD;
-import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_BINDING_ENTRY;
@@ -917,60 +915,6 @@ public final class SeededStore {
                 ConstantReferenceGrammar.split(scalarRef)
                     instanceof ConstantReferenceGrammar.Reference.Parsed p ? p.fieldName() : null)
             .set(GRAPHITRON_SCALAR_TYPE_ENTRY.TOUCHED_AT, SEEDED_READING)
-            .execute();
-    }
-
-    /**
-     * One {@code public static GraphQLScalarType} constant the reading reached, and the Java type
-     * it coerces a value to. A null {@code inputType} is the reading's own answer for a constant it
-     * could not read one off, which the resolution treats as no answer at all. The owning class
-     * file is stated with it, the constant being a fact read out of that file.
-     */
-    public static void seedScalarConstant(DSLContext dsl, String sourceName, String className,
-                                          String fieldName, String inputType) {
-        CodeRows.clazz(dsl, sourceName, className, SEEDED_READING);
-        dsl.insertInto(CODE_SCALAR_CONSTANT)
-            .set(CODE_SCALAR_CONSTANT.SOURCE_NAME, sourceName)
-            .set(CODE_SCALAR_CONSTANT.CLASS_NAME, className)
-            .set(CODE_SCALAR_CONSTANT.FIELD_NAME, fieldName)
-            .set(CODE_SCALAR_CONSTANT.INPUT_TYPE, inputType)
-            .set(CODE_SCALAR_CONSTANT.TOUCHED_AT, SEEDED_READING)
-            .execute();
-    }
-
-    /**
-     * One method the lifter arm admitted: what an author may name in {@code @externalField}. The
-     * admission itself is the arm's, so a row here asserts the method passed it, and the parameter
-     * type is the one fact the arm carries beside its key, being the clause a reader has to decide
-     * for itself. The owning class needs no census row, on {@link #seedScalarConstant}'s terms.
-     */
-    public static void seedExternalFieldMethod(DSLContext dsl, String sourceName, String className,
-                                               String methodName, String descriptor,
-                                               String tableParameterType) {
-        // Every type a signature mentions is a row the signature points at, so a fixture seeding a
-        // method seeds the types it names first. A condition's own return is fixed by the arm's
-        // admission and is the one type a case never has to state.
-        seedType(dsl, sourceName, JOOQ_CONDITION);
-        CodeRows.clazz(dsl, sourceName, className, SEEDED_READING);
-        dsl.insertInto(CODE_METHOD)
-            .set(CODE_METHOD.SOURCE_NAME, sourceName)
-            .set(CODE_METHOD.CLASS_NAME, className)
-            .set(CODE_METHOD.METHOD_NAME, methodName)
-            .set(CODE_METHOD.DESCRIPTOR, descriptor)
-            .set(CODE_METHOD.IS_STATIC, true)
-            .set(CODE_METHOD.RESULT_TYPE, JOOQ_CONDITION)
-            .set(CODE_METHOD.TOUCHED_AT, SEEDED_READING)
-            .onDuplicateKeyIgnore()
-            .execute();
-        // The table the lifter takes is the sole position's role now, not a column on the arm.
-        seedConditionParameter(dsl, sourceName, className, methodName, descriptor, 0, "table",
-            tableParameterType);
-        dsl.insertInto(CODE_EXTERNAL_FIELD_METHOD)
-            .set(CODE_EXTERNAL_FIELD_METHOD.SOURCE_NAME, sourceName)
-            .set(CODE_EXTERNAL_FIELD_METHOD.CLASS_NAME, className)
-            .set(CODE_EXTERNAL_FIELD_METHOD.METHOD_NAME, methodName)
-            .set(CODE_EXTERNAL_FIELD_METHOD.DESCRIPTOR, descriptor)
-            .set(CODE_EXTERNAL_FIELD_METHOD.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 

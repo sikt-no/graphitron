@@ -1,5 +1,6 @@
 package no.sikt.graphitron.lsp;
 
+import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.lsp.hover.Hovers;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
@@ -27,7 +28,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class HoversTest {
 
     /** The class the Java-side arms hover on, present in the census and declared in a source file. */
-    private static final String SERVICE = "com.example.FilmService";
+    private static final String SERVICE = "no.sikt.graphitron.rewrite.test.services.FilmCatalogService";
+    /** A service compiled without {@code -parameters}, whose {@code list} carries no parameter name. */
+    private static final String NAMELESS = "no.sikt.graphitron.rewrite.test.nameless.NamelessService";
 
     /**
      * The graph's own SDL: a {@code @node} type, which is the one binding arm whose subject is the
@@ -66,26 +69,18 @@ class HoversTest {
      */
     @BeforeAll
     static void capture() {
-        // The hand-built references stand in for a consumer's jar; the scanned ones are the
-        // backing-class fixtures, whose member slots the store's own rule reads off a real
-        // classfile's declared form rather than off a list a fixture wrote.
-        store = StoreFixture.held().ofCatalog(tmp, SDL, Stream.concat(
-            Stream.of(
-                StoreFixture.jarClass(SERVICE, List.of(
-                    StoreFixture.genericMethod("list", "List", "List<Film>", StoreFixture.parameter("limit", "int")),
-                    StoreFixture.method("raw", "List", StoreFixture.parameter(null, "int")),
-                    StoreFixture.method("page", "Object", StoreFixture.parameter("film", "Object")),
-                    StoreFixture.method("page", "Object",
-                        StoreFixture.parameter("film", "Object"),
-                        StoreFixture.parameter("limit", "int")))),
-                StoreFixture.jarClass("com.example.FooDto", List.of())),
-            StoreFixture.backingClasses().stream()).toList());
+        // The service corpus stands in for a consumer's own code; this module's test classes carry
+        // the backing-class fixtures, whose member slots the store's own rule reads off a real
+        // classfile's declared form.
+        store = StoreFixture.held().ofCatalog(tmp, SDL,
+            Stream.concat(Stream.of(ClasspathCorpus.service()), StoreFixture.testClasses().stream())
+                .toList());
         // A second graph over a schema of its own: it captured the same bundled directive
         // definitions and none of this graph's classes, which is what a sibling module looks like.
         store.andGraph(tmp, OTHER_GRAPH, "type Query { placeholder: Int }\n", List.of());
         store.withJavaSource(tmp.resolve("src"), SERVICE, """
             /** Lists films from the catalog. */
-            public class FilmService {
+            public class FilmCatalogService {
                 /** Returns the first N films. */
                 public Object list(int limit) { return null; }
                 /** One page of films. */
@@ -372,12 +367,12 @@ class HoversTest {
     void serviceClassHoverShowsClassFqn() {
         var file = file("""
             type Query {
-                x: Int @service(service: {className: "com.example.FilmService", method: "list"})
+                x: Int @service(service: {className: "%s", method: "list"})
             }
-            """);
+            """.formatted(SERVICE));
 
-        assertThat(markdownAt(file, pointAt(file, 1, "FilmService")))
-            .contains("**Class** `com.example.FilmService`");
+        assertThat(markdownAt(file, pointAt(file, 1, "FilmCatalogService")))
+            .contains("**Class** `no.sikt.graphitron.rewrite.test.services.FilmCatalogService`");
     }
 
     @Test
@@ -387,10 +382,10 @@ class HoversTest {
         // FQN a sibling module compiled is as unknown here as one nothing compiled at all.
         var file = file("""
             type Query {
-                x: Int @service(service: {className: "com.example.FilmService", method: "list"})
+                x: Int @service(service: {className: "%s", method: "list"})
             }
-            """);
-        var pos = pointAt(file, 1, "FilmService");
+            """.formatted(SERVICE));
+        var pos = pointAt(file, 1, "FilmCatalogService");
 
         var md = Hovers.compute(file, Optional.of(store.handleFor(OTHER_GRAPH)), pos).orElseThrow()
             .getContents().getRight().getValue();
@@ -405,11 +400,11 @@ class HoversTest {
         // docstring on the shared ExternalCodeReference.className coordinate (the carve-out gates on
         // the enclosing directive name; the same coordinate under @enum/@service still hovers the class).
         var file = file("""
-            input FooInput @record(record: {className: "com.example.FooDto"}) {
+            input FooInput @record(record: {className: "no.sikt.graphitron.rewrite.test.services.FilmBlurb"}) {
                 bar: Int
             }
             """);
-        var md = markdownAt(file, pointAt(file, 0, "FooDto"));
+        var md = markdownAt(file, pointAt(file, 0, "FilmBlurb"));
         assertThat(md).doesNotContain("**Class**");
         assertThat(md).isNotBlank();
     }
@@ -438,12 +433,12 @@ class HoversTest {
         // no Javadoc by design, and the source parse is what a hover body renders.
         var file = file("""
             type Query {
-                x: Int @service(service: {className: "com.example.FilmService", method: "list"})
+                x: Int @service(service: {className: "%s", method: "list"})
             }
-            """);
+            """.formatted(SERVICE));
 
-        var md = markdownAt(file, pointAt(file, 1, "FilmService"));
-        assertThat(md).contains("**Class** `com.example.FilmService`");
+        var md = markdownAt(file, pointAt(file, 1, "FilmCatalogService"));
+        assertThat(md).contains("**Class** `no.sikt.graphitron.rewrite.test.services.FilmCatalogService`");
         assertThat(md).contains("Lists films from the catalog.");
     }
 
@@ -451,19 +446,19 @@ class HoversTest {
     void serviceMethodHoverShowsJavadocWhenPresent() {
         var file = file("""
             type Query {
-                x: Int @service(service: {className: "com.example.FilmService", method: "list"})
+                x: Int @service(service: {className: "%s", method: "list"})
             }
-            """);
+            """.formatted(SERVICE));
 
         var md = markdownAt(file, pointAt(file, 1, "list"));
         assertThat(md).contains("**Method** `list`");
         assertThat(md).contains("Returns the first N films.");
-        assertThat(md).contains("List<Film> list(int limit)");
+        assertThat(md).contains("List<FilmRecord> list(int limit)");
     }
 
     /**
      * The signature is spelled the way the author wrote it. A hover that said {@code List} where the
-     * source says {@code List<Film>} was showing the erasure the descriptor carries, which tells an
+     * source says {@code List<FilmRecord>} was showing the erasure the descriptor carries, which tells an
      * author less than the line they are hovering over; the census carries the declared form beside
      * it for exactly this.
      */
@@ -471,12 +466,12 @@ class HoversTest {
     void methodHoverSpellsTheDeclaredReturnTypeRatherThanItsErasure() {
         var file = file("""
             type Query {
-                x: Int @service(service: {className: "com.example.FilmService", method: "list"})
+                x: Int @service(service: {className: "%s", method: "list"})
             }
-            """);
+            """.formatted(SERVICE));
 
         var md = markdownAt(file, pointAt(file, 1, "list"));
-        assertThat(md).contains("List<Film> list(int limit)");
+        assertThat(md).contains("List<FilmRecord> list(int limit)");
         assertThat(md).doesNotContain("List list(int limit)");
     }
 
@@ -484,14 +479,14 @@ class HoversTest {
     void serviceMethodHoverShowsSignature() {
         var file = file("""
             type Query {
-                x: Int @service(service: {className: "com.example.FilmService", method: "list"})
+                x: Int @service(service: {className: "%s", method: "list"})
             }
-            """);
+            """.formatted(SERVICE));
 
         var md = markdownAt(file, pointAt(file, 1, "list"));
         assertThat(md).contains("**Method** `list`");
-        assertThat(md).contains("`com.example.FilmService`");
-        assertThat(md).contains("List<Film> list(int limit)");
+        assertThat(md).contains("`no.sikt.graphitron.rewrite.test.services.FilmCatalogService`");
+        assertThat(md).contains("List<FilmRecord> list(int limit)");
     }
 
     @Test
@@ -502,9 +497,9 @@ class HoversTest {
         // joined on at all.
         var file = file("""
             type Query {
-                x: Int @service(service: {className: "com.example.FilmService", method: "page"})
+                x: Int @service(service: {className: "%s", method: "page"})
             }
-            """);
+            """.formatted(SERVICE));
 
         var md = markdownAt(file, pointAt(file, 1, "page"));
         assertThat(md).contains("Object page(Object film)");
@@ -516,12 +511,12 @@ class HoversTest {
     void methodHoverWithNullParameterNamesShowsArgPlaceholderAndWarning() {
         var file = file("""
             type Query {
-                x: Int @service(service: {className: "com.example.FilmService", method: "raw"})
+                x: Int @service(service: {className: "%s", method: "list"})
             }
-            """);
+            """.formatted(NAMELESS));
 
-        var md = markdownAt(file, pointAt(file, 1, "raw"));
-        assertThat(md).contains("List raw(int arg0)");
+        var md = markdownAt(file, pointAt(file, 1, "list"));
+        assertThat(md).contains("List<String> list(int arg0)");
         assertThat(md).contains("-parameters");
     }
 
@@ -532,9 +527,9 @@ class HoversTest {
         // ExternalCodeReference.method's SDL docstring.
         var file = file("""
             type Query {
-                x: Int @service(service: {className: "com.example.FilmService", method: "missing"})
+                x: Int @service(service: {className: "%s", method: "missing"})
             }
-            """);
+            """.formatted(SERVICE));
 
         assertThat(markdownAt(file, pointAt(file, 1, "missing"))).isNotBlank();
     }

@@ -1,10 +1,10 @@
 package no.sikt.graphitron.lsp;
 
 import io.github.treesitter.jtreesitter.Point;
+import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.lsp.references.BindingReferences;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
-import no.sikt.graphitron.model.classpath.CompletionData;
 import org.eclipse.lsp4j.Location;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -32,7 +32,7 @@ class BindingReferencesTest {
 
     private static StoreFixture store;
 
-    private static final String SVC_FQN = "com.example.PriceService";
+    private static final String SVC_FQN = "no.sikt.graphitron.rewrite.test.services.PriceService";
     private static final String FK_CONSTANT = "FILM__FILM_LANGUAGE_ID_FKEY";
 
     /**
@@ -53,7 +53,7 @@ class BindingReferencesTest {
 
         type Foo @table(name: "film") {
           bar: Int @field(name: "title")
-          price: Int @service(service: {className: "com.example.PriceService", method: "price"})
+          price: Int @service(service: {className: "no.sikt.graphitron.rewrite.test.services.PriceService", method: "price"})
           hop: Int @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
         }
 
@@ -62,13 +62,13 @@ class BindingReferencesTest {
         }
 
         type Other @table(name: "language") {
-          name: String @service(service: {className: "com.example.PriceService", method: "shifted"})
+          name: String @service(service: {className: "no.sikt.graphitron.rewrite.test.services.PriceService", method: "shifted"})
         }
         """;
 
     @BeforeAll
     static void capture() {
-        store = StoreFixture.held().ofCatalog(sourceRoot, CAPTURED, census());
+        store = StoreFixture.held().ofCatalog(sourceRoot, CAPTURED, ClasspathCorpus.entries());
     }
 
     @AfterAll
@@ -197,9 +197,4 @@ class BindingReferencesTest {
         return new Point(line, col + Math.max(1, token.length() / 2));
     }
 
-    private static List<CompletionData.ExternalReference> census() {
-        return List.of(StoreFixture.jarClass(SVC_FQN, List.of(
-            StoreFixture.method("price", "Field"),
-            StoreFixture.method("shifted", "Object"))));
-    }
 }

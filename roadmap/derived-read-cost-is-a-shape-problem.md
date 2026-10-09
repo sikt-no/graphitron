@@ -1003,9 +1003,18 @@ conversion frees one.
 * **The code half converts** `open`, and is the larger half: 54 classes and 717 tests against the
   SDL half's 50 and 354. Taken first because the prerequisites are here. A seeded `code_method` row
   is a claim about a method; a method in `graphitron-sakila-service` is one.
-  * **A stated classpath states what a reading would** `open`. `CodeRows.writeStated` writes
-    `code_method` and `code_method_parameter` without their element classes, which a reading fills,
-    so a rule reading those columns finds nothing in a fixture and everything on a real classpath.
+  * **A fixture's classpath is read, never stated** `done`. Every capturing fixture names classpath
+    entries and capture reads their classfiles as a run does; `CodeRows.writeStated`,
+    `ClasspathSourceCapture.stated` and the census parameter are gone, and a real read of the
+    largest fixture root costs what the projection did.
+    * **A scanned census becomes the root it was scanned from** `done`. The language server's and
+      MCP server's fixtures, `TestSchemaHelper`, `CorpusStore` and the derive tests pass the root,
+      with no expectation moving.
+    * **A hand-built census becomes real classes** `done`. In the service corpus: the backing
+      graph, a package compiled without `-parameters`, and the shapes the editor tests named,
+      `ClasspathCorpus` declaring the module as the consumer's code and extended-scalars as a
+      library. One case moved its claim: a type grounded on a generated record jumps to the
+      record's table, so the member-less class is one no entry declares.
 * **The library carries the shapes a conversion needs** `open`, and grows by one shape per
   conversion attempt. The first attempt wanted an overload and the service module had none across
   ninety-seven classes, so `FilmService.topRated` is now a pair. That is the expected cost, a method
@@ -1149,7 +1158,14 @@ and `MultiRowWritesAreChunkedTest` (now `WritesBindPerRowTest`); `SdlCapture` wi
 `GraphQLAnchorTest`); `SourceDocument.parsed()` and its `changed` component; `reclaimVanished` (now
 `reclaim`). `TypeBackingRows` and its stratum step; `SeededStore.seedTypeBackingClass` and
 `seedTableWithoutRecordClass`; `AccessorHopTest`, `TypeBackingSeedTest` and `TypeBackingTest` (now
-the `type-backing*` fact documents and `TypeBackingPartitionTest`). The specification's built-ins
+the `type-backing*` fact documents and `TypeBackingPartitionTest`). The stated classpath:
+`CodeRows.writeStated`, `ClasspathSourceCapture.stated`, `CapturedStore.captureCode` and every
+census parameter on `CapturedStore`'s arms; `TestSchemaHelper.classpathCensus` (now
+`testClasspath`); the language server fixture's `backingClasses` (now `testClasses`), `jarClass`,
+`reactorClass`, `jarRecord`, `reference`, `method`, `parameter`, `producing`, `genericMethod`,
+`genericParameter`, `component`, `scalarHolder`, `lifterHolder`, `withScalarConstants` and
+`withExternalFieldLifters`; the MCP fixture's `codeFixtureCensus` (now `codeFixtureClasspath`);
+`SeededStore.seedScalarConstant` and `seedExternalFieldMethod`. The specification's built-ins
 as constants beside the entries:
 `GraphQLAstCapture.SPECIFIED_SCALARS`, `SPECIFIED_DIRECTIVES` with its three column fields and
 `specifiedDirectivesUndeclared`, `SdlFactCapture.SPECIFIED_DIRECTIVES`, and the transcription's

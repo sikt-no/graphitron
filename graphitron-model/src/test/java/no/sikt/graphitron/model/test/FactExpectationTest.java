@@ -133,10 +133,9 @@ class FactExpectationTest {
         for (var document : graphs.plain().entrySet()) {
             if (captured == null) {
                 captured = CapturedStore.ofCatalogWith(tmp, document.getKey(),
-                    full(document.getValue()), jooq, List.of(), corpus);
+                    full(document.getValue()), jooq, corpus);
             } else {
-                captured.andCatalogGraphWith(document.getKey(), full(document.getValue()), jooq,
-                    List.of(), corpus);
+                captured.andCatalogGraphWith(document.getKey(), full(document.getValue()), jooq, corpus);
             }
         }
         var plainBlocks = CorpusExpectations.blocks(captured.dsl()).stream()
@@ -168,7 +167,7 @@ class FactExpectationTest {
                     }
                 });
                 var sourceNames = captured.andCatalogGraphReadAt(graph.getKey(), written, files,
-                    Instant.ofEpochSecond(instant), jooq, List.of(), corpus);
+                    Instant.ofEpochSecond(instant), jooq, corpus);
                 var writtenNow = written.keySet().stream()
                     .filter(file -> !PRELUDE_FILE.equals(file))
                     .map(sourceNames::get)

@@ -84,7 +84,7 @@ class DiagnosticsStatementCountTest {
 
     @BeforeAll
     static void capture() {
-        store = StoreFixture.held().ofCatalog(tmp, GRAPH_SDL, StoreFixture.backingClasses());
+        store = StoreFixture.held().ofCatalog(tmp, GRAPH_SDL, StoreFixture.testClasses());
     }
 
     @AfterAll
@@ -270,7 +270,7 @@ class DiagnosticsStatementCountTest {
         // issues, captured rather than restated, so the pin cannot drift from the production read.
         String sdl = boundTypes(DRAIN_FIXTURE_TYPES);
         try (var driving = StoreFixture.ofCatalog(
-                tmp.resolve("drain-scan"), sdl, StoreFixture.backingClasses())) {
+                tmp.resolve("drain-scan"), sdl, StoreFixture.testClasses())) {
             var capturedSql = new AtomicReference<String>();
             var configuration = driving.handle().dsl().configuration()
                 .derive(new DefaultExecuteListenerProvider(new ExecuteListener() {

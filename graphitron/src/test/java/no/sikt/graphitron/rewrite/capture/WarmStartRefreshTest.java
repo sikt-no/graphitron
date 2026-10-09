@@ -8,10 +8,7 @@ import no.sikt.graphitron.model.derive.DerivationStratum;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.grammar.NodeDeclaration;
-import no.sikt.graphitron.model.config.RunContext;
-import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.model.classpath.ClasspathCensus;
-import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.schema.SdlVerdicts;
@@ -43,7 +40,6 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
-import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.CODE_CLASS;
@@ -141,7 +137,6 @@ class WarmStartRefreshTest {
     @DisplayName("a warm run ends with the rows a cold run would have produced")
     void warmAndColdAgreeRelationByRelation(@TempDir Path tmp) throws IOException {
         Path jar = jarWith(tmp, "com.example.lib.LibraryClass");
-        var references = referencesOver(tmp, jar);
         Path directory = tmp.resolve("graphitron-model");
 
         capture(directory, tmp, jar);
@@ -276,7 +271,6 @@ class WarmStartRefreshTest {
     @DisplayName("an unchanged jar's classes are not written a second time")
     void anUnchangedJarIsNotReinserted(@TempDir Path tmp) throws IOException {
         Path jar = jarWith(tmp, "com.example.lib.LibraryClass");
-        var references = referencesOver(tmp, jar);
         Path directory = tmp.resolve("graphitron-model");
 
         capture(directory, tmp, jar);
@@ -742,12 +736,6 @@ class WarmStartRefreshTest {
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 is required of every JVM", e);
         }
-    }
-
-    private static List<CompletionData.ExternalReference> referencesOver(Path basedir, Path... entries) {
-        return CatalogBuilder.buildExternalReferences(new RunContext(
-            List.of(), basedir, GRAPH_NAME, basedir.resolve("target/generated"),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE, List.of(entries)));
     }
 
     private static Path jarWith(Path directory, String... classNames) throws IOException {

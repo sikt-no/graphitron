@@ -2,6 +2,7 @@ package no.sikt.graphitron.lsp;
 
 import io.github.treesitter.jtreesitter.Parser;
 import io.github.treesitter.jtreesitter.Point;
+import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.lsp.completions.ArgNameCompletions;
 import no.sikt.graphitron.lsp.completions.ClassNameCompletions;
 import no.sikt.graphitron.lsp.completions.CompletionContext;
@@ -51,11 +52,14 @@ class CompletionTextEditTest {
     static Path tmp;
 
     /**
-     * One capture for every store-backed arm below: a service class, a scalar holder, a @node type,
+     * One capture for every store-backed arm below: the service corpus, the scalar library, a @node type,
      * a table-bound type for the arms that read a binding, and the fixture module's catalog for the
      * table and column arms.
      */
     private static StoreFixture store;
+
+    /** A corpus service declaring two methods, one of which {@code filmsB} prefixes. */
+    private static final String SERVICE = "no.sikt.graphitron.rewrite.test.services.FilmCarrierService";
 
     @BeforeAll
     static void capture() {
@@ -64,11 +68,7 @@ class CompletionTextEditTest {
             type Film @node(typeId: "Film", keyColumns: ["film_id"]) { id: ID }
             type Foo @table(name: "film") { bar: Int }
             """,
-            List.of(
-                StoreFixture.jarClass("com.example.FilmService",
-                    List.of(StoreFixture.method("list", "List")))))
-            .withScalarConstants(
-                StoreFixture.scalarHolder("graphql.scalars.ExtendedScalars", "DateTime"));
+            ClasspathCorpus.entries());
     }
 
     @AfterAll
@@ -78,27 +78,30 @@ class CompletionTextEditTest {
 
     @Test
     void classNameItem_textEditCoversFullDottedValue() {
-        String source = "type Query { x: Int @service(service: {className: \"com.example.FilmServ\", method: \"foo\"}) }\n";
-        int innerStart = source.indexOf("com.example.FilmServ");
-        // Cursor mid-value (between FilmS and erv): non-trivial prefix.
-        Point cursor = new Point(0, innerStart + "com.example.FilmS".length());
+        String partial = SERVICE.substring(0, SERVICE.length() - "ice".length());
+        String source = "type Query { x: Int @service(service: {className: \"" + partial
+            + "\", method: \"foo\"}) }\n";
+        int innerStart = source.indexOf(partial);
+        // Cursor mid-value, before the last two letters of the partial: non-trivial prefix.
+        Point cursor = new Point(0, innerStart + partial.length() - 2);
 
         var items = runClassName(source, cursor);
 
-        assertTextEditRange(items, "com.example.FilmService",
-            new Range(new Position(0, innerStart), new Position(0, innerStart + "com.example.FilmServ".length())));
+        assertTextEditRange(items, SERVICE,
+            new Range(new Position(0, innerStart), new Position(0, innerStart + partial.length())));
     }
 
     @Test
     void methodItem_textEditCoversFullDottedValue() {
-        String source = "type Query { x: Int @service(service: {className: \"com.example.FilmService\", method: \"li\"}) }\n";
-        int methodStart = source.indexOf("\"li\"") + 1;
+        String source = "type Query { x: Int @service(service: {className: \"" + SERVICE
+            + "\", method: \"filmsB\"}) }\n";
+        int methodStart = source.indexOf("\"filmsB\"") + 1;
         Point cursor = new Point(0, methodStart + 1);
 
         var items = runMethod(source, cursor);
 
-        assertTextEditRange(items, "list",
-            new Range(new Position(0, methodStart), new Position(0, methodStart + "li".length())));
+        assertTextEditRange(items, "filmsByIds",
+            new Range(new Position(0, methodStart), new Position(0, methodStart + "filmsB".length())));
     }
 
     @Test
@@ -235,19 +238,21 @@ class CompletionTextEditTest {
         var items = runClassName(source, cursor);
 
         Range expected = new Range(new Position(0, innerCol), new Position(0, innerCol));
-        assertTextEditRange(items, "com.example.FilmService", expected);
+        assertTextEditRange(items, SERVICE, expected);
     }
 
     @Test
     void blockStringRow_classNameItemRangeIsTripleQuoteStrippedInnerSpan() {
-        String source = "type Query { x: Int @service(service: {className: \"\"\"com.example.\"\"\", method: \"foo\"}) }\n";
-        int innerStart = source.indexOf("com.example.");
-        Point cursor = new Point(0, innerStart + "com.example.".length());
+        String prefix = "no.sikt.graphitron.rewrite.test.services.";
+        String source = "type Query { x: Int @service(service: {className: \"\"\"" + prefix
+            + "\"\"\", method: \"foo\"}) }\n";
+        int innerStart = source.indexOf(prefix);
+        Point cursor = new Point(0, innerStart + prefix.length());
 
         var items = runClassName(source, cursor);
 
-        assertTextEditRange(items, "com.example.FilmService",
-            new Range(new Position(0, innerStart), new Position(0, innerStart + "com.example.".length())));
+        assertTextEditRange(items, SERVICE,
+            new Range(new Position(0, innerStart), new Position(0, innerStart + prefix.length())));
     }
 
     @Test
@@ -263,7 +268,7 @@ class CompletionTextEditTest {
         var items = runClassName(source, cursor);
 
         Range expected = new Range(new Position(0, openQuote + 1), new Position(0, openQuote + 1));
-        assertTextEditRange(items, "com.example.FilmService", expected);
+        assertTextEditRange(items, SERVICE, expected);
     }
 
     // ---- Helpers ----

@@ -3,14 +3,11 @@ package no.sikt.graphitron.rewrite.derive;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.model.classpath.ClasspathScanner;
-import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.function.BiConsumer;
@@ -28,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * derivation reproduces the walk where the two are meant to agree, and that where they part the
  * difference is the one the derivation set out to make rather than an accident. The classes are
  * public fixtures because both sides have to see them: the walk resolves through a classloader,
- * which does not care, and the census keeps public top-level classes only, which does.
+ * which does not care, and the reading admits public top-level classes only, which does.
  *
  * <p><b>When this may go.</b> Not when the language server migrates, which it has: the editor reads
  * the derivation now while {@code RecordBindingResolver} still binds record types for the leaf model,
@@ -179,8 +176,9 @@ class TypeBackingShadowTest {
      */
     private void withBothSides(String sdl, BiConsumer<DSLContext, List<String>> body) {
         var ctx = testContext();
-        try (var store = CapturedStore.ofCatalog(tmp, GRAPH, sdl,
-                new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), census())) {
+        try (var store = CapturedStore.ofCatalogWith(tmp, GRAPH, sdl,
+                new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()),
+                TestSchemaHelper.testClasspath())) {
             var bundle = TestSchemaHelper.buildBundle(sdl);
             body.accept(store.dsl(), walk(bundle.model()));
         }
@@ -191,23 +189,6 @@ class TypeBackingShadowTest {
         return TypeBackingClasses.of(model).byTypeName().entrySet().stream()
             .map(binding -> binding.getKey() + "=" + binding.getValue())
             .toList();
-    }
-
-    /**
-     * The real scan over the test classes, so the census the derivation reads is the one a build
-     * would produce rather than a reference list written to make it pass.
-     */
-    private static List<CompletionData.ExternalReference> census() {
-        return ClasspathScanner.scan(testClassRoot(), testContext().jooqPackage());
-    }
-
-    private static Path testClassRoot() {
-        try {
-            return Path.of(TestBackingService.class.getProtectionDomain()
-                .getCodeSource().getLocation().toURI());
-        } catch (URISyntaxException e) {
-            throw new IllegalStateException("the test classes are not on a file path", e);
-        }
     }
 
     /** What the producers and the accessors reached, the populations the walk also answers from. */

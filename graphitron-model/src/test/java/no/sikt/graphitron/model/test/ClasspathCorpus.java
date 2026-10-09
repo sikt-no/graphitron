@@ -34,17 +34,27 @@ public final class ClasspathCorpus {
      * often than one of their own. A corpus holding only the first could not state that case at all.
      */
     public static List<ClasspathEntry> entries() {
-        return List.of(
-            // A reactor module this one declares a dependency on, which is what it is: the
-            // consumer's own code as far as the reactor-limited arms are concerned, and nameable
-            // as a declared artifact is. PROJECT would be this module's own output, which it is not.
-            new ClasspathEntry(rootOf(CityService.class, "the service corpus"),
-                ClasspathEntry.Origin.REACTOR, SERVICE_CORPUS, null),
-            // A library, which is a different thing and admitted by different arms. Declaring it is
-            // what makes naming its constants legitimate, and marking it as the consumer's own code
-            // would make its methods nameable at @service, which they are not.
-            new ClasspathEntry(rootOf(ExtendedScalars.class, "the scalar-constant corpus"),
-                ClasspathEntry.Origin.DECLARED, EXTENDED_SCALARS, null));
+        return List.of(service(), scalars());
+    }
+
+    /**
+     * The service half alone: a reactor module this one declares a dependency on, which is what it
+     * is. The consumer's own code as far as the reactor-limited arms are concerned, and nameable as a
+     * declared artifact is. PROJECT would be this module's own output, which it is not.
+     */
+    public static ClasspathEntry service() {
+        return new ClasspathEntry(rootOf(CityService.class, "the service corpus"),
+            ClasspathEntry.Origin.REACTOR, SERVICE_CORPUS, null);
+    }
+
+    /**
+     * The scalar half alone: a library, which is a different thing and admitted by different arms.
+     * Declaring it is what makes naming its constants legitimate, and marking it as the consumer's
+     * own code would make its methods nameable at {@code @service}, which they are not.
+     */
+    public static ClasspathEntry scalars() {
+        return new ClasspathEntry(rootOf(ExtendedScalars.class, "the scalar-constant corpus"),
+            ClasspathEntry.Origin.DECLARED, EXTENDED_SCALARS, null);
     }
 
     /** What the service corpus is, which is the half of its identity a path does not carry. */

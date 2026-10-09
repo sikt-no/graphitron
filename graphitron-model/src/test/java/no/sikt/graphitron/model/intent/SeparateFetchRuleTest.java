@@ -55,7 +55,7 @@ class SeparateFetchRuleTest {
     void aRuleThatReachesACoordinateTwiceStillAnswersOnce() {
         var ctx = TestRunContext.of();
         var jooq = new JooqCatalog(MULTISCHEMA, ctx.codegenLoader());
-        try (var captured = CapturedStore.ofCatalogWith(tmp, GRAPH, SDL, jooq, List.of(),
+        try (var captured = CapturedStore.ofCatalogWith(tmp, GRAPH, SDL, jooq,
                 ClasspathCorpus.entries())) {
             var t = GRAPHITRON_SPELLED_TABLE;
             assertThat(captured.dsl().select(t.TABLE_SCHEMA).from(t)

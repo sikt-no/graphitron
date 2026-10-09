@@ -1,5 +1,6 @@
 package no.sikt.graphitron.lsp;
 
+import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.lsp.completions.ClassNameCompletions;
 import no.sikt.graphitron.lsp.completions.MethodCompletions;
 import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
@@ -9,7 +10,6 @@ import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
-import no.sikt.graphitron.model.classpath.CompletionData;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import io.github.treesitter.jtreesitter.Parser;
@@ -55,11 +55,10 @@ class DirectiveShapeSmokeTest {
                     })
             }
             """;
-        // One fixture for every arm: completion and diagnostics both read this census, so a class the
+        // One fixture for every arm: completion and diagnostics both read this capture, so a class the
         // one offers is a class the other accepts, and neither can be right about a schema the other
         // is wrong about.
-        try (var store = storeWith(
-            "no.sikt.graphitron.rewrite.test.services.SampleQueryService", "filmsByService")) {
+        try (var store = corpus()) {
         // Class-name completion: cursor inside className: value.
         Point classCursor = pointInside(source, "no.sikt.graphitron");
         var classBytes = source.getBytes(StandardCharsets.UTF_8);
@@ -98,8 +97,7 @@ class DirectiveShapeSmokeTest {
                     })
             }
             """;
-        try (var store = storeWith(
-            "no.sikt.graphitron.rewrite.test.services.SampleQueryService", "filmsByService")) {
+        try (var store = corpus()) {
             var diags = diagnose(source, store);
 
             assertThat(diags).hasSize(1);
@@ -119,9 +117,7 @@ class DirectiveShapeSmokeTest {
                     }, override: true)
             }
             """;
-        try (var store = storeWith(
-            "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
-            "outerOverrideMethod")) {
+        try (var store = corpus()) {
             var diags = diagnose(source, store);
 
             assertThat(diags).hasSize(1);
@@ -135,15 +131,15 @@ class DirectiveShapeSmokeTest {
         // resolves (the hover falls through to the SDL docstring, proving shape recognition), but
         // @record is deprecated and ignored so there is no live-binding "**Class**" hover on the FQN.
         String source = """
-            input FooInput @record(record: {className: "com.example.FooDto"}) {
+            input FooInput @record(record: {className: "no.sikt.graphitron.rewrite.test.services.FilmBlurb"}) {
                 bar: Int
             }
             """;
-        Point cursor = pointInside(source, "com.example");
+        Point cursor = pointInside(source, "no.sikt.graphitron");
 
         // The class is in the census, so the carve-out is what declines rather than a lookup miss;
         // the docstring that answers instead is a captured row like every other fact here.
-        try (var store = storeWith("com.example.FooDto", null)) {
+        try (var store = corpus()) {
             var hover = Hovers.compute(WorkspaceFileTestSupport.snapshot(source),
                 Optional.of(store.handle()), cursor).orElseThrow();
 
@@ -161,7 +157,7 @@ class DirectiveShapeSmokeTest {
             type Query {
                 filmsByServiceRenamed(ids: [Int!]!): [Film!]!
                     @service(service: {
-                        className: "com.example.FilmService",
+                        className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
                         method: "filmsByServiceRenamed",
                         argMapping: ""
                     })
@@ -174,7 +170,7 @@ class DirectiveShapeSmokeTest {
         var argMapBytes = source.getBytes(StandardCharsets.UTF_8);
         var argMapDirective = directiveAt(source, cursor);
         var argMapLoc = VOCAB.locateAt(argMapDirective, cursor, argMapBytes);
-        try (var store = storeWith("com.example.FilmService", "filmsByServiceRenamed")) {
+        try (var store = corpus()) {
             var classItems = argMapLoc
                 .map(loc -> ClassNameCompletions.generate(
                     VOCAB, store.handle(),
@@ -197,12 +193,9 @@ class DirectiveShapeSmokeTest {
             Optional.of(store.handle()));
     }
 
-    /** One class, with one method where the case needs one, captured into a store of its own. */
-    private StoreFixture storeWith(String className, String methodName) {
-        var methods = methodName == null
-            ? List.<CompletionData.Method>of()
-            : List.of(StoreFixture.method(methodName, "List"));
-        return StoreFixture.ofClasspath(tmp, List.of(StoreFixture.jarClass(className, methods)));
+    /** The service corpus, captured into a store of its own. */
+    private StoreFixture corpus() {
+        return StoreFixture.ofClasspath(tmp, List.of(ClasspathCorpus.service()));
     }
 
     /**

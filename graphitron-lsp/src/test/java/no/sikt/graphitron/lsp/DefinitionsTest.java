@@ -1,12 +1,12 @@
 package no.sikt.graphitron.lsp;
 
+import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.lsp.definition.DefinitionTarget;
 import no.sikt.graphitron.lsp.definition.Definitions;
 import no.sikt.graphitron.lsp.facts.ClasspathMethods;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
-import no.sikt.graphitron.model.classpath.CompletionData;
 import org.eclipse.lsp4j.Location;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -60,7 +60,7 @@ class DefinitionsTest {
         type Foo @table(name: "film") { bar: Int }
         """;
 
-    private static final String SVC_FQN = "com.example.PriceService";
+    private static final String SVC_FQN = "no.sikt.graphitron.rewrite.test.services.PriceService";
 
     /**
      * The one foreign key the {@code @reference(key:)} cases name, in both spellings the resolver
@@ -82,8 +82,8 @@ class DefinitionsTest {
 
     @BeforeAll
     static void parseSources() {
-        store = StoreFixture.held().ofCatalog(sourceRoot, CAPTURED_SDL, census());
-        bare = StoreFixture.held().ofCatalog(bareRoot, CAPTURED_SDL, census());
+        store = StoreFixture.held().ofCatalog(sourceRoot, CAPTURED_SDL, ClasspathCorpus.entries());
+        bare = StoreFixture.held().ofCatalog(bareRoot, CAPTURED_SDL, ClasspathCorpus.entries());
         // The generated classes the census points at, standing in for the real generated sources: the
         // join between the two populations is by name across two cadences, so a source that agrees on
         // the name is all it takes, and the column constants are the census's own spelling of them.
@@ -225,10 +225,10 @@ class DefinitionsTest {
     void serviceClassNameJumpsToClassDeclaration() {
         var file = file("""
             type Query {
-                films: Int @service(service: {className: "com.example.PriceService", method: "price"})
+                films: Int @service(service: {className: "no.sikt.graphitron.rewrite.test.services.PriceService", method: "price"})
             }
             """);
-        var pos = pointAt(file, 1, "com.example.PriceService");
+        var pos = pointAt(file, 1, "no.sikt.graphitron.rewrite.test.services.PriceService");
         var loc = compute(file, pos).orElseThrow();
         assertThat(loc.getUri()).endsWith("PriceService.java");
         assertThat(loc.getRange().getStart().getLine()).isEqualTo(CLASS_LINE);
@@ -238,7 +238,7 @@ class DefinitionsTest {
     void serviceMethodJumpsToMethodDeclaration() {
         var file = file("""
             type Query {
-                films: Int @service(service: {className: "com.example.PriceService", method: "price"})
+                films: Int @service(service: {className: "no.sikt.graphitron.rewrite.test.services.PriceService", method: "price"})
             }
             """);
         var pos = pointAt(file, 1, "price");
@@ -250,7 +250,7 @@ class DefinitionsTest {
     void externalFieldMethodJumpsToMethodDeclaration() {
         var file = file("""
             type Foo {
-                bar: Int @externalField(reference: {className: "com.example.PriceService", method: "price"})
+                bar: Int @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.services.PriceService", method: "price"})
             }
             """);
         var pos = pointAt(file, 1, "price");
@@ -261,9 +261,9 @@ class DefinitionsTest {
     @Test
     void enumReferenceClassNameJumpsToClassDeclaration() {
         var file = file("""
-            enum Color @enum(enumReference: {className: "com.example.PriceService"}) { RED }
+            enum Color @enum(enumReference: {className: "no.sikt.graphitron.rewrite.test.services.PriceService"}) { RED }
             """);
-        var pos = pointAt(file, 0, "com.example.PriceService");
+        var pos = pointAt(file, 0, "no.sikt.graphitron.rewrite.test.services.PriceService");
         var loc = compute(file, pos).orElseThrow();
         assertThat(loc.getUri()).endsWith("PriceService.java");
     }
@@ -272,7 +272,7 @@ class DefinitionsTest {
     void conditionMethodJumpsToMethodDeclaration() {
         var file = file("""
             type Foo {
-                bar: Int @condition(condition: {className: "com.example.PriceService", method: "price"})
+                bar: Int @condition(condition: {className: "no.sikt.graphitron.rewrite.test.services.PriceService", method: "price"})
             }
             """);
         var pos = pointAt(file, 1, "price");
@@ -284,10 +284,10 @@ class DefinitionsTest {
     void sourceRowFlatClassNameJumpsToClassDeclaration() {
         var file = file("""
             type Foo {
-                bar: Int @sourceRow(className: "com.example.PriceService", method: "price")
+                bar: Int @sourceRow(className: "no.sikt.graphitron.rewrite.test.services.PriceService", method: "price")
             }
             """);
-        var pos = pointAt(file, 1, "com.example.PriceService");
+        var pos = pointAt(file, 1, "no.sikt.graphitron.rewrite.test.services.PriceService");
         var loc = compute(file, pos).orElseThrow();
         assertThat(loc.getUri()).endsWith("PriceService.java");
     }
@@ -297,9 +297,9 @@ class DefinitionsTest {
         // @record is deprecated/ignored; its className binds no class even though the coordinate is
         // shared with @enum.
         var file = file("""
-            type Foo @record(record: {className: "com.example.PriceService"}) { bar: Int }
+            type Foo @record(record: {className: "no.sikt.graphitron.rewrite.test.services.PriceService"}) { bar: Int }
             """);
-        var pos = pointAt(file, 0, "com.example.PriceService");
+        var pos = pointAt(file, 0, "no.sikt.graphitron.rewrite.test.services.PriceService");
         assertThat(compute(file, pos)).isEmpty();
     }
 
@@ -320,7 +320,7 @@ class DefinitionsTest {
         // the declaration of the name beats declining over an arity disagreement.
         var file = file("""
             type Foo {
-                bar: Int @service(service: {className: "com.example.PriceService", method: "shifted"})
+                bar: Int @service(service: {className: "no.sikt.graphitron.rewrite.test.services.PriceService", method: "shifted"})
             }
             """);
         var pos = pointAt(file, 1, "shifted");
@@ -386,21 +386,6 @@ class DefinitionsTest {
 
     private static Optional<Location> compute(FileSnapshot file, Point pos) {
         return Definitions.compute(file, store.handle(), pos);
-    }
-
-    /**
-     * The classpath census half: one service class whose method signatures are what the arity join
-     * reads. Positions live in the store's java-source family, joined by the class FQN at request
-     * time.
-     */
-    private static List<CompletionData.ExternalReference> census() {
-        return List.of(StoreFixture.jarClass(SVC_FQN, List.of(
-            StoreFixture.method("price", "Field"),
-            StoreFixture.method("shifted", "Object"),
-            StoreFixture.method("pick", "Object"),
-            StoreFixture.method("pick", "Object",
-                StoreFixture.parameter("a", "Object"),
-                StoreFixture.parameter("b", "Object")))));
     }
 
     private static Point pointAt(FileSnapshot file, int line, String token) {

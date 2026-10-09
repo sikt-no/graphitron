@@ -2,6 +2,7 @@ package no.sikt.graphitron.lsp;
 
 import io.github.treesitter.jtreesitter.Parser;
 import io.github.treesitter.jtreesitter.Point;
+import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.lsp.completions.ScalarTypeCompletions;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
@@ -33,15 +34,11 @@ class ScalarTypeCompletionsTest {
 
     private static StoreFixture store;
 
-    // Source of truth is the store, not a static table: two holders on the graph's classpath, a
-    // library's extended-scalars class and a consumer's own, each carrying scalar constants.
+    // Source of truth is the store, not a static table: two entries on the graph's classpath, the
+    // extended-scalars library and the consumer's own code, each declaring scalar constants.
     @BeforeAll
     static void capture() {
-        store = StoreFixture.held().ofClasspath(tmp, List.of())
-            .withScalarConstants(
-                StoreFixture.scalarHolder("graphql.scalars.ExtendedScalars",
-                    "GraphQLBigDecimal", "DateTime", "UUID"),
-                StoreFixture.scalarHolder("com.example.Scalars", "MONEY"));
+        store = StoreFixture.held().ofClasspath(tmp, ClasspathCorpus.entries());
     }
 
     @AfterAll
@@ -56,14 +53,14 @@ class ScalarTypeCompletionsTest {
 
         var items = run(source, cursor);
 
-        // Every scanned constant is offered, including the consumer's own (com.example.Scalars.MONEY),
+        // Every scanned constant is offered, including the consumer's own (Scalars.MONEY),
         // which a hardcoded extended-scalars table could never surface.
         assertThat(items).extracting(CompletionItem::getLabel)
             .contains(
                 "graphql.scalars.ExtendedScalars.GraphQLBigDecimal",
                 "graphql.scalars.ExtendedScalars.DateTime",
                 "graphql.scalars.ExtendedScalars.UUID",
-                "com.example.Scalars.MONEY");
+                "no.sikt.graphitron.rewrite.test.scalars.Scalars.MONEY");
     }
 
     @Test

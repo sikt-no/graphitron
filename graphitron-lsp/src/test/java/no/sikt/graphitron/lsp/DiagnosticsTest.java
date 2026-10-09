@@ -1,10 +1,10 @@
 package no.sikt.graphitron.lsp;
 
+import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
-import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.model.grammar.FieldSourceSigilGrammar;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.junit.jupiter.api.AfterAll;
@@ -78,7 +78,7 @@ class DiagnosticsTest {
     private static StoreFixture catalogOnly;
     /** The two-schema generated model, where a constraint name stops identifying one key. */
     private static StoreFixture multiSchema;
-    /** The catalog plus the class census the class-name, method and scalar arms resolve against. */
+    /** The catalog plus the corpus the class-name, method and scalar arms resolve against. */
     private static StoreFixture withClasses;
     /** The catalog plus the backing-class fixtures, whose members the class-backed arms read. */
     private static StoreFixture withBackingClasses;
@@ -95,10 +95,10 @@ class DiagnosticsTest {
     static void capture() {
         catalogOnly = StoreFixture.held().ofCatalog(catalogRoot, TABLE_SDL);
         multiSchema = StoreFixture.held().ofMultiSchemaCatalog(multiSchemaRoot, PLACEHOLDER_SDL);
-        withClasses = StoreFixture.held().ofCatalog(classesRoot, PLACEHOLDER_SDL, classCensus())
-            .withScalarConstants(SCALARS);
+        withClasses = StoreFixture.held().ofCatalog(classesRoot, PLACEHOLDER_SDL,
+            ClasspathCorpus.entries());
         withBackingClasses = StoreFixture.held().ofCatalog(backingRoot, BACKED_SDL,
-            StoreFixture.backingClasses());
+            StoreFixture.testClasses());
         withNodes = StoreFixture.held().of(nodesRoot, """
             type Query { x: Int }
             type Film @node(typeId: "Film") { id: ID }
@@ -128,31 +128,16 @@ class DiagnosticsTest {
     }
 
     /**
-     * The scalar arm's holder: a class in the census whose constants are code rows beside it. The
-     * scalar cases need both halves, one asking whether the class resolves and one whether the
-     * constant does.
+     * The classes the class-name, method and scalar arms name, all in the corpus. {@code SHELF} declares
+     * one method taking nothing; {@code CARRIERS} declares two taking named parameters and,
+     * deliberately, no {@code missing}; {@code FIELDS} declares lifters; {@code NAMELESS} was compiled
+     * without {@code -parameters}; {@code SCALARS} declares a scalar constant of the consumer's own.
      */
-    private static final StoreFixture.ScalarHolder SCALARS =
-        StoreFixture.scalarHolder("com.example.Scalars", "MONEY");
-
-    /**
-     * The classes the class-name, method and scalar arms name. Each carries {@code foo}, the method
-     * the happy paths reference, so a case about a class name does not trip the sibling method arm;
-     * {@code FilmService} carries the two the method cases name and, deliberately, no {@code missing}.
-     */
-    private static List<CompletionData.ExternalReference> classCensus() {
-        var foo = List.of(StoreFixture.method("foo", "String"));
-        return List.of(
-            StoreFixture.jarClass("com.example.RealService", foo),
-            StoreFixture.jarClass("com.example.RealCondition", foo),
-            StoreFixture.jarClass("com.example.RealRecord", foo),
-            StoreFixture.jarClass("com.example.RealEnum", foo),
-            StoreFixture.jarClass("com.example.RealLifter", foo),
-            SCALARS.asClass(),
-            StoreFixture.jarClass("com.example.FilmService", List.of(
-                StoreFixture.method("list", "List"),
-                StoreFixture.method("get", "String"))));
-    }
+    private static final String SHELF = "no.sikt.graphitron.rewrite.test.services.FilmShelfService";
+    private static final String CARRIERS = "no.sikt.graphitron.rewrite.test.services.FilmCarrierService";
+    private static final String FIELDS = "no.sikt.graphitron.rewrite.test.extensions.FilmFields";
+    private static final String NAMELESS = "no.sikt.graphitron.rewrite.test.nameless.NamelessService";
+    private static final String SCALARS = "no.sikt.graphitron.rewrite.test.scalars.Scalars";
 
     @Test
     void unknownTableNameProducesError() {
@@ -747,9 +732,9 @@ class DiagnosticsTest {
     void knownServiceClassProducesNoError() {
         var file = file("""
             type Query {
-                x: Int @service(service: {className: "com.example.RealService", method: "foo"})
+                x: Int @service(service: {className: "%s", method: "shelf"})
             }
-            """);
+            """.formatted(SHELF));
 
         var diags = compute(file, withClasses);
 
@@ -760,23 +745,23 @@ class DiagnosticsTest {
     void unknownMethodOnKnownClassProducesError() {
         var file = file("""
             type Query {
-                x: Int @service(service: {className: "com.example.FilmService", method: "missing"})
+                x: Int @service(service: {className: "%s", method: "missing"})
             }
-            """);
+            """.formatted(CARRIERS));
 
         var diags = compute(file, withClasses);
 
         assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage()).contains("missing").contains("FilmService");
+        assertThat(diags.get(0).getMessage()).contains("missing").contains("FilmCarrierService");
     }
 
     @Test
     void knownMethodOnKnownClassProducesNoError() {
         var file = file("""
             type Query {
-                x: Int @service(service: {className: "com.example.FilmService", method: "list"})
+                x: Int @service(service: {className: "%s", method: "filmsByIds"})
             }
-            """);
+            """.formatted(CARRIERS));
 
         var diags = compute(file, withClasses);
 
@@ -785,34 +770,28 @@ class DiagnosticsTest {
 
     @Test
     void methodWithNullParameterNamesProducesParametersWarning() {
-        // The census's only overload of `list` takes one parameter and carries no name for it, which
-        // is what a class compiled without -parameters records. Its own store, because the shared
-        // census carries a nameless-free `list` and the point here is that no overload of the name has
-        // names to offer.
+        // The only overload of `list` takes one parameter and carries no name for it, which is what
+        // a class compiled without -parameters records, so no overload of the name has names to offer.
         var file = file("""
             type Query {
-                x: Int @service(service: {className: "com.example.FilmService", method: "list"})
+                x: Int @service(service: {className: "%s", method: "list"})
             }
-            """);
+            """.formatted(NAMELESS));
 
-        try (var nameless = StoreFixture.ofClasspath(tmp, List.of(
-            StoreFixture.jarClass("com.example.FilmService", List.of(
-                StoreFixture.method("list", "List", StoreFixture.parameter(null, "int"))))))) {
-            var diags = compute(file, nameless);
+        var diags = compute(file, withClasses);
 
-            assertThat(diags).hasSize(1);
-            assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Warning);
-            assertThat(diags.get(0).getMessage()).contains("-parameters");
-        }
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Warning);
+        assertThat(diags.get(0).getMessage()).contains("-parameters");
     }
 
     @Test
     void methodWithNoParametersDoesNotProduceParametersWarning() {
         var file = file("""
             type Query {
-                x: Int @service(service: {className: "com.example.FilmService", method: "get"})
+                x: Int @service(service: {className: "%s", method: "shelf"})
             }
-            """);
+            """.formatted(SHELF));
 
         var diags = compute(file, withClasses);
 
@@ -880,9 +859,9 @@ class DiagnosticsTest {
     void knownExternalFieldClassProducesNoError() {
         var file = file("""
             type Foo {
-                bar: Int @externalField(reference: {className: "com.example.RealService", method: "foo"})
+                bar: Int @externalField(reference: {className: "%s", method: "title"})
             }
-            """);
+            """.formatted(FIELDS));
 
         var diags = compute(file, withClasses);
 
@@ -1052,8 +1031,8 @@ class DiagnosticsTest {
     @Test
     void scalarType_trailingDot_producesError() {
         var file = file("""
-            scalar Money @scalarType(scalar: "com.example.Scalars.")
-            """);
+            scalar Money @scalarType(scalar: "%s.")
+            """.formatted(SCALARS));
 
         var diags = compute(file, withClasses);
 
@@ -1079,8 +1058,8 @@ class DiagnosticsTest {
     @Test
     void scalarType_knownClass_producesNoDiagnostic() {
         var file = file("""
-            scalar Money @scalarType(scalar: "com.example.Scalars.MONEY")
-            """);
+            scalar Money @scalarType(scalar: "%s.MONEY")
+            """.formatted(SCALARS));
 
         var diags = compute(file, withClasses);
 

@@ -1,9 +1,8 @@
 package no.sikt.graphitron.rewrite.derive;
 
 import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
-import no.sikt.graphitron.model.classpath.ClasspathScanner;
-import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
@@ -11,7 +10,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.function.Consumer;
@@ -29,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Every case captures real SDL against the test catalog rather than seeding rows, for the reason
  * {@code ReferenceStepTargetTest} states: a seeded fixture is free to declare a shape capture never
  * writes, and the case then pins behaviour no build can produce. The catalog supplies the bound
- * element types, and the classpath census the record-backed one.
+ * element types, and a reading of the test classes the record-backed one.
  *
  * <p>Each case asserts the whole graph's rows rather than a projection of them, so a payload that
  * should contribute nothing fails the case it appears in.
@@ -481,26 +479,10 @@ class CarrierDataFieldTest {
 
     private void withCapturedStore(String sdl, Consumer<DSLContext> body) {
         var ctx = testContext();
-        try (var store = CapturedStore.ofCatalog(tmp, GRAPH, sdl,
-                new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), census())) {
+        try (var store = CapturedStore.ofCatalogWith(tmp, GRAPH, sdl,
+                new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()),
+                TestSchemaHelper.testClasspath())) {
             body.accept(store.dsl());
-        }
-    }
-
-    /**
-     * The real scan over the test classes, so the class the record-backed element resolves through is
-     * one a build would have found rather than a reference written to make the case pass.
-     */
-    private static List<CompletionData.ExternalReference> census() {
-        return ClasspathScanner.scan(testClassRoot(), testContext().jooqPackage());
-    }
-
-    private static Path testClassRoot() {
-        try {
-            return Path.of(CarrierDataFieldTest.class.getProtectionDomain()
-                .getCodeSource().getLocation().toURI());
-        } catch (URISyntaxException e) {
-            throw new IllegalStateException("the test classes are not on a file path", e);
         }
     }
 }

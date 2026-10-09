@@ -2,6 +2,7 @@ package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.StoreAccess;
+import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
@@ -9,11 +10,8 @@ import no.sikt.graphitron.model.test.RunawayRelation;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.FactWriters;
-import no.sikt.graphitron.model.test.SeededStore;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
-import no.sikt.graphitron.model.classpath.ClasspathScanner;
-import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
 import org.jooq.DSLContext;
 
@@ -22,7 +20,6 @@ import java.io.UncheckedIOException;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
@@ -32,15 +29,15 @@ import static no.sikt.graphitron.model.Tables.SQL_TABLE;
  * A booted fact store with one or more graphs captured into it, for the tests that read the store.
  *
  * <p>Stood up by real capture over an SDL fixture rather than by inserting rows, so a fixture cannot
- * encode a state capture never writes. The classpath census goes in the same way: capture takes the
- * class list as input today, so a test hands over the same references the projection-era fixtures
- * declared and the store ends up holding what a scan of those classes would have produced.
+ * encode a state capture never writes. The classpath goes in the same way: a test names the entries,
+ * this module's test classes or the service corpus, and capture reads their classfiles as a run
+ * would.
  *
  * <p>A local layer over {@link CapturedStore}, the reactor's capture level: every arm here is one of
  * that level's captures with this module's vocabulary in front of it, a generated jOOQ package
- * instead of a {@link JooqCatalog} and a scanned census instead of a list the caller assembles. The
- * writers go through {@link FactWriters}. What stays local is what is local: the two generated
- * packages, the placeholder SDL, the backing-class census, and the reads a provider makes.
+ * instead of a {@link JooqCatalog} and this module's test classes as a classpath entry. The writers
+ * go through {@link FactWriters}. What stays local is what is local: the two generated packages, the
+ * placeholder SDL, the backing-class fixtures, and the reads a provider makes.
  *
  * <p>Captures only. The arm that ran a real generator pass moved above this module with the one test
  * that read it, because a build is the generator's and this module does not depend on it.
@@ -74,9 +71,6 @@ final class StoreFixture implements AutoCloseable {
     /** The package holding the record and POJO the class-backed member arms resolve against. */
     private static final String FIXTURE_PACKAGE = "no.sikt.graphitron.lsp.fixtures.";
 
-    /** Scanned once; see {@link #backingClasses()}. */
-    private static List<CompletionData.ExternalReference> backingClassCensus;
-
     /** SDL for a fixture whose whole subject is the classpath, so its schema is beside the point. */
     private static final String PLACEHOLDER_SDL = "type Query { placeholder: Int }\n";
 
@@ -92,49 +86,6 @@ final class StoreFixture implements AutoCloseable {
         this.graphName = captured.graphName();
         this.file = captured.file();
         this.directory = directory;
-    }
-
-    /**
-     * States what {@code holders} declare, in the terms the code family states them in, and links
-     * their entry to this fixture's graph.
-     *
-     * <p>Written rather than read, because the arm that answers this in a real run reads
-     * classfiles and a fabricated holder has none: its entry is a path that does not exist, which
-     * is what makes it a stand-in. The input type is absent for the same reason, there being
-     * nothing to load, and the completion this feeds reads the class and the field and never the
-     * input type, so the fixture is not standing in for a fact the arm would answer differently.
-     */
-    StoreFixture withScalarConstants(ScalarHolder... holders) {
-        for (ScalarHolder holder : holders) {
-            SeededStore.seedSource(dsl(), holder.sourceName(), "JAR");
-            SeededStore.seedGraphSource(dsl(), graphName, holder.sourceName());
-            for (String fieldName : holder.fieldNames()) {
-                SeededStore.seedScalarConstant(dsl(), holder.sourceName(), holder.className(),
-                    fieldName, null);
-            }
-        }
-        return this;
-    }
-
-    /**
-     * The lifters a class exposes, written beside the census rows that class already has.
-     *
-     * <p>{@link #withScalarConstants}'s shape and for the same reason: whether a method may be named
-     * at {@code @externalField} is the code family's answer and the census states none of it, so a
-     * holder names the entry, the class and the admitted methods, and this writes them. A fixture
-     * that seeds a method here is claiming the arm admitted it, which is what a real capture would
-     * have decided by reading the classfile.
-     */
-    StoreFixture withExternalFieldLifters(LifterHolder... holders) {
-        for (LifterHolder holder : holders) {
-            SeededStore.seedSource(dsl(), holder.sourceName(), "DIRECTORY");
-            SeededStore.seedGraphSource(dsl(), graphName, holder.sourceName());
-            for (CompletionData.Method lifter : holder.lifters()) {
-                SeededStore.seedExternalFieldMethod(dsl(), holder.sourceName(), holder.className(),
-                    lifter.name(), lifter.descriptor(), lifter.parameters().getFirst().type());
-            }
-        }
-        return this;
     }
 
     private DSLContext dsl() {
@@ -163,17 +114,17 @@ final class StoreFixture implements AutoCloseable {
         HELD;
 
         CapturedStore of(Path directory, String graphName, String sdl,
-                         List<CompletionData.ExternalReference> classpath) {
+                         List<ClasspathEntry> classpath) {
             return this == CASE
-                ? CapturedStore.of(directory, graphName, sdl, classpath)
-                : CapturedStore.ownStore(directory, graphName, sdl, classpath);
+                ? CapturedStore.ofWith(directory, graphName, sdl, classpath)
+                : CapturedStore.ownStoreWith(directory, graphName, sdl, classpath);
         }
 
         CapturedStore ofCatalog(Path directory, String graphName, String sdl, JooqCatalog jooq,
-                                List<CompletionData.ExternalReference> classpath) {
+                                List<ClasspathEntry> classpath) {
             return this == CASE
-                ? CapturedStore.ofCatalog(directory, graphName, sdl, jooq, classpath)
-                : CapturedStore.ownStoreOfCatalog(directory, graphName, sdl, jooq, classpath);
+                ? CapturedStore.ofCatalogWith(directory, graphName, sdl, jooq, classpath)
+                : CapturedStore.ownStoreOfCatalogWith(directory, graphName, sdl, jooq, classpath);
         }
 
         CapturedStore ofFiles(Path directory, String firstName, String firstSdl,
@@ -205,16 +156,16 @@ final class StoreFixture implements AutoCloseable {
             return open(Lifetime.HELD, directory, GRAPH, sdl, List.of());
         }
 
-        StoreFixture of(Path directory, String sdl, List<CompletionData.ExternalReference> classpath) {
+        StoreFixture of(Path directory, String sdl, List<ClasspathEntry> classpath) {
             return open(Lifetime.HELD, directory, GRAPH, sdl, classpath);
         }
 
         StoreFixture of(Path directory, String graphName, String sdl,
-                        List<CompletionData.ExternalReference> classpath) {
+                        List<ClasspathEntry> classpath) {
             return open(Lifetime.HELD, directory, graphName, sdl, classpath);
         }
 
-        StoreFixture ofClasspath(Path directory, List<CompletionData.ExternalReference> classpath) {
+        StoreFixture ofClasspath(Path directory, List<ClasspathEntry> classpath) {
             return open(Lifetime.HELD, directory, GRAPH, PLACEHOLDER_SDL, classpath);
         }
 
@@ -223,7 +174,7 @@ final class StoreFixture implements AutoCloseable {
         }
 
         StoreFixture ofCatalog(Path directory, String sdl,
-                               List<CompletionData.ExternalReference> classpath) {
+                               List<ClasspathEntry> classpath) {
             return ofJooqPackage(Lifetime.HELD, directory, GRAPH, sdl, classpath, JOOQ_PACKAGE);
         }
 
@@ -248,13 +199,13 @@ final class StoreFixture implements AutoCloseable {
         return of(directory, GRAPH, sdl, List.of());
     }
 
-    /** Captures {@code sdl} plus a classpath census: the shape for the {@code code_} arms. */
-    static StoreFixture of(Path directory, String sdl, List<CompletionData.ExternalReference> classpath) {
+    /** Captures {@code sdl} plus a classpath: the shape for the {@code code_} arms. */
+    static StoreFixture of(Path directory, String sdl, List<ClasspathEntry> classpath) {
         return of(directory, GRAPH, sdl, classpath);
     }
 
     /** An SDL fixture with nothing in it, for the arms whose whole subject is the classpath. */
-    static StoreFixture ofClasspath(Path directory, List<CompletionData.ExternalReference> classpath) {
+    static StoreFixture ofClasspath(Path directory, List<ClasspathEntry> classpath) {
         return of(directory, GRAPH, PLACEHOLDER_SDL, classpath);
     }
 
@@ -268,9 +219,9 @@ final class StoreFixture implements AutoCloseable {
         return ofCatalog(directory, sdl, List.of());
     }
 
-    /** The catalog shape plus a classpath census, for a test whose arms span both. */
+    /** The catalog shape plus a classpath, for a test whose arms span both. */
     static StoreFixture ofCatalog(Path directory, String sdl,
-                                  List<CompletionData.ExternalReference> classpath) {
+                                  List<ClasspathEntry> classpath) {
         return ofJooqPackage(Lifetime.CASE, directory, GRAPH, sdl, classpath, JOOQ_PACKAGE);
     }
 
@@ -293,7 +244,7 @@ final class StoreFixture implements AutoCloseable {
     /** The catalog axis in this module's terms: the name of a generated package. */
     private static StoreFixture ofJooqPackage(Lifetime lifetime, Path directory, String graphName,
                                               String sdl,
-                                              List<CompletionData.ExternalReference> classpath,
+                                              List<ClasspathEntry> classpath,
                                               String jooqPackage) {
         return new StoreFixture(lifetime.ofCatalog(directory, graphName, sdl,
             new JooqCatalog(jooqPackage), classpath), directory, lifetime);
@@ -312,29 +263,23 @@ final class StoreFixture implements AutoCloseable {
     }
 
     static StoreFixture of(Path directory, String graphName, String sdl,
-                           List<CompletionData.ExternalReference> classpath) {
+                           List<ClasspathEntry> classpath) {
         return open(Lifetime.CASE, directory, graphName, sdl, classpath);
     }
 
     private static StoreFixture open(Lifetime lifetime, Path directory, String graphName, String sdl,
-                                     List<CompletionData.ExternalReference> classpath) {
+                                     List<ClasspathEntry> classpath) {
         return new StoreFixture(lifetime.of(directory, graphName, sdl, classpath), directory, lifetime);
     }
 
     /**
-     * The census of the backing-class fixtures in {@code no.sikt.graphitron.lsp.fixtures}, as a real
-     * classfile scan produced it. The arms that resolve a member name on a class-backed type read the
-     * store's own rule over this census, and that rule reads a class's declared form, so a hand-built
-     * reference could hand it a record whose classfile says otherwise. Scanned once per JVM: the scan
-     * reads every class this module compiled, and the answer does not change between tests.
+     * This module's test classes as the classpath a run would read: its own build output, holding the
+     * backing-class fixtures in {@code no.sikt.graphitron.lsp.fixtures}. The arms that resolve a
+     * member name on a class-backed type read the store's own rule over what the reading found, and
+     * that rule reads a class's declared form, so only a real classfile can say it.
      */
-    static synchronized List<CompletionData.ExternalReference> backingClasses() {
-        if (backingClassCensus == null) {
-            backingClassCensus = ClasspathScanner.scan(testClassesRoot(), JOOQ_PACKAGE).stream()
-                .filter(reference -> reference.className().startsWith(FIXTURE_PACKAGE))
-                .toList();
-        }
-        return backingClassCensus;
+    static List<ClasspathEntry> testClasses() {
+        return List.of(new ClasspathEntry(testClassesRoot(), ClasspathEntry.Origin.PROJECT, null, null));
     }
 
     private static Path testClassesRoot() {
@@ -362,9 +307,9 @@ final class StoreFixture implements AutoCloseable {
      * this says so rather than writing somewhere the store does not look.
      */
     StoreFixture andGraph(Path directory, String otherGraph, String sdl,
-                          List<CompletionData.ExternalReference> classpath) {
+                          List<ClasspathEntry> classpath) {
         requireOwnDirectory(directory);
-        captured.andGraph(otherGraph, sdl, classpath);
+        captured.andGraphWith(otherGraph, sdl, classpath);
         return this;
     }
 
@@ -552,159 +497,6 @@ final class StoreFixture implements AutoCloseable {
     /** The same store seen as another graph, for asserting one graph cannot read another's rows. */
     StoreHandle handleFor(String otherGraph) {
         return new StoreHandle(dsl(), otherGraph);
-    }
-
-    /** A reference to a class the scan found inside a jar. */
-    static CompletionData.ExternalReference jarClass(String className, List<CompletionData.Method> methods) {
-        return reference(className, methods, "/nonexistent/lib.jar");
-    }
-
-    /**
-     * A reference to a class the scan found in a compiled directory, so reactor-resident rather than
-     * jar-resident. The directory has to exist, since that is how capture tells the two apart.
-     */
-    static CompletionData.ExternalReference reactorClass(
-        Path classesDirectory, String className, List<CompletionData.Method> methods
-    ) {
-        return reference(className, methods, classesDirectory.toString());
-    }
-
-    /**
-     * A class carrying {@code GraphQLScalarType} constants, jar-resident like the libraries are.
-     *
-     * <p>Not a census reference. What a schema may name at {@code @scalarType} is the code family's
-     * to state, and the census says nothing about it, so a holder names the entry, the class and
-     * the fields directly and {@link #withScalarConstants} writes them.
-     */
-    static ScalarHolder scalarHolder(String className, String... fieldNames) {
-        return new ScalarHolder(SCALAR_JAR, className, List.of(fieldNames));
-    }
-
-    /** The entry a fabricated holder sits on; a path that does not exist, like the other jars. */
-    private static final String SCALAR_JAR = "/nonexistent/scalars.jar";
-
-    /**
-     * A class exposing lifters, reactor-resident because that is the only place one can live: a
-     * lifter is called on the consumer's own generated tables and is written in the consumer's own
-     * code, so the arm reads the reactor and nothing else. The directory has to exist, on
-     * {@link #reactorClass}'s terms, capture telling a directory from a jar by looking.
-     *
-     * <p>Not a census reference, on {@link #scalarHolder}'s terms. {@link LifterHolder#asClass}
-     * gives the census side, and the methods a holder names are the ones the arm admitted; a class
-     * whose census rows include methods absent here is a class declaring non-lifters, which is the
-     * case worth writing.
-     */
-    static LifterHolder lifterHolder(
-        Path classesDirectory, String className, List<CompletionData.Method> lifters
-    ) {
-        return new LifterHolder(classesDirectory.toString(), className, lifters);
-    }
-
-    /**
-     * One class's lifters, as a fixture states them: the entry, the class, and the methods the arm
-     * admitted. A holder is two facts written by two different things, which is
-     * {@link ScalarHolder}'s split and the same one.
-     */
-    record LifterHolder(String sourceName, String className, List<CompletionData.Method> lifters) {
-
-        /**
-         * The holder as the census sees it: every method the class declares, lifters and not,
-         * saying nothing about which is which.
-         */
-        CompletionData.ExternalReference asClass(List<CompletionData.Method> allMethods) {
-            return reference(className, allMethods, sourceName);
-        }
-    }
-
-    /**
-     * One class's scalar constants, as a fixture states them.
-     *
-     * <p>A holder is two facts, and they are written by two different things, which is the whole
-     * point of the split. The class is a census fact and goes in through capture like any other
-     * ({@link #asClass}); its constants are the code family's and are written beside it. A test
-     * that only completes needs the second, and one whose subject is whether the class resolves
-     * needs both.
-     */
-    record ScalarHolder(String sourceName, String className, List<String> fieldNames) {
-
-        /** The holder as the census sees it: a jar-resident class, saying nothing about scalars. */
-        CompletionData.ExternalReference asClass() {
-            return reference(className, List.of(), sourceName);
-        }
-    }
-
-    static CompletionData.ExternalReference reference(
-        String className, List<CompletionData.Method> methods, String sourceName
-    ) {
-        return new CompletionData.ExternalReference(
-            className.substring(className.lastIndexOf('.') + 1), className, "",
-            methods, List.of(), "CLASS", sourceName);
-    }
-
-    /**
-     * A record class the scan found inside a jar, named by its components. Its declared form is what
-     * decides whether a member name resolves against components or against bean accessors, so a
-     * fixture standing in for a record has to say so.
-     */
-    static CompletionData.ExternalReference jarRecord(
-        String className, CompletionData.RecordComponent... components
-    ) {
-        return new CompletionData.ExternalReference(
-            className.substring(className.lastIndexOf('.') + 1), className, "",
-            List.of(), List.of(components), "RECORD", "/nonexistent/lib.jar");
-    }
-
-    /** One record component: the name an author writes, and the type a hover renders. */
-    static CompletionData.RecordComponent component(String name, String displayType) {
-        return new CompletionData.RecordComponent(name, displayType);
-    }
-
-    /** A method whose descriptor is synthesised from its parameter types, enough to key it apart. */
-    static CompletionData.Method method(String name, String returnType, CompletionData.Parameter... parameters) {
-        return new CompletionData.Method(
-            name, returnType, "", List.of(parameters),
-            "(" + Arrays.stream(parameters).map(CompletionData.Parameter::type)
-                .reduce("", String::concat) + ")" + returnType);
-    }
-
-    static CompletionData.Parameter parameter(String name, String type) {
-        return new CompletionData.Parameter(name, type, null, "");
-    }
-
-    /**
-     * A no-argument method whose return type names one qualified class, which is what a producer
-     * grounding an SDL type on a class needs. {@link #method} cannot stand in for it: the return type
-     * it takes is the erased display form, and a package-less name cannot be compared for identity, so
-     * the census carries the qualified names a declared type mentions as their own rows and that is
-     * what the store's peel reads.
-     */
-    static CompletionData.Method producing(String name, String returnClassFqn) {
-        var erased = method(name, returnClassFqn.substring(returnClassFqn.lastIndexOf('.') + 1));
-        return new CompletionData.Method(
-            erased.name(), erased.returnType(), erased.description(), erased.parameters(),
-            erased.descriptor(), erased.returnType(),
-            List.of(new CompletionData.TypeRef("", returnClassFqn, "NONE")));
-    }
-
-    /**
-     * A method whose declared return form differs from the erasure beside it, which is what a
-     * generic return looks like in the census: the descriptor says {@code List} and the classfile's
-     * signature says {@code List<Film>}. Separate from {@link #method} so a fixture that means the
-     * two forms to differ has to say so.
-     */
-    static CompletionData.Method genericMethod(
-        String name, String returnType, String declaredReturnType,
-        CompletionData.Parameter... parameters
-    ) {
-        var erased = method(name, returnType, parameters);
-        return new CompletionData.Method(
-            erased.name(), erased.returnType(), erased.description(), erased.parameters(),
-            erased.descriptor(), declaredReturnType);
-    }
-
-    /** A parameter whose declared form differs from its erasure, on {@link #genericMethod}'s terms. */
-    static CompletionData.Parameter genericParameter(String name, String type, String declaredType) {
-        return new CompletionData.Parameter(name, type, null, "", declaredType);
     }
 
     @Override

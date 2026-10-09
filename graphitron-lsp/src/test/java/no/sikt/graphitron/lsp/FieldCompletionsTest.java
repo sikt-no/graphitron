@@ -46,7 +46,7 @@ class FieldCompletionsTest {
     @BeforeAll
     static void captureTheCatalog() {
         STORE = StoreFixture.held().ofCatalog(sharedDirectory, "type Query { placeholder: Int }\n",
-            StoreFixture.backingClasses());
+            StoreFixture.testClasses());
     }
 
     @AfterAll
@@ -620,7 +620,7 @@ class FieldCompletionsTest {
      * a type the document declares, so the document and the capture have to be the same schema.
      */
     private List<CompletionItem> runBacked(String source, Point cursor) {
-        try (var store = StoreFixture.of(sharedDirectory, source, StoreFixture.backingClasses())) {
+        try (var store = StoreFixture.of(sharedDirectory, source, StoreFixture.testClasses())) {
             return run(store.handle(), source, cursor);
         }
     }

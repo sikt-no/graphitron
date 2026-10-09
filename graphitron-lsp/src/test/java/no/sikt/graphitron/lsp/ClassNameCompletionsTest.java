@@ -1,5 +1,6 @@
 package no.sikt.graphitron.lsp;
 
+import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.lsp.completions.ClassNameCompletions;
 import no.sikt.graphitron.lsp.completions.CompletionContext;
 import no.sikt.graphitron.lsp.parsing.Directives;
@@ -27,9 +28,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * coordinate but is deprecated and ignored, so its className slot is
  * carved out and offers no completion.
  *
- * <p>The candidates are {@code code_class} rows captured from a classpath census, one graph's own, so
- * these cases also stand on the scoping: a class this graph's walk never met is not a candidate
- * however much store it shares.
+ * <p>The candidates are {@code code_class} rows captured from a real classpath, the service corpus
+ * and the scalar library it declares, one graph's own, so these cases also stand on the scoping: a
+ * class this graph's reading never met is not a candidate however much store it shares. Every
+ * className slot completes from the same candidates, so the cases past the first assert that
+ * rather than a count.
  */
 class ClassNameCompletionsTest {
 
@@ -42,9 +45,7 @@ class ClassNameCompletionsTest {
 
     @BeforeAll
     static void capture() {
-        store = StoreFixture.held().ofClasspath(tmp, List.of(
-            StoreFixture.jarClass("com.example.FilmService", List.of()),
-            StoreFixture.jarClass("com.example.CategoryConditions", List.of())));
+        store = StoreFixture.held().ofClasspath(tmp, ClasspathCorpus.entries());
     }
 
     @AfterAll
@@ -61,8 +62,9 @@ class ClassNameCompletionsTest {
 
         // Alphabetical within a residence rank, not the order the walk happened to meet them in:
         // the projection carried the scan's own sequence, which nothing could explain to an author.
-        assertThat(items).extracting(i -> i.getLabel())
-            .containsExactly("com.example.CategoryConditions", "com.example.FilmService");
+        var labels = labels(items);
+        assertThat(labels).contains(FILM_SERVICE, REFERENCE_CONDITIONS);
+        assertThat(labels.stream().filter(label -> label.startsWith(CORPUS)).toList()).isSorted();
     }
 
     @Test
@@ -72,7 +74,7 @@ class ClassNameCompletionsTest {
 
         var items = run(source, cursor, "condition");
 
-        assertThat(items).hasSize(2);
+        assertThat(labels(items)).isEqualTo(serviceLabels());
     }
 
     @Test
@@ -92,7 +94,7 @@ class ClassNameCompletionsTest {
     @Test
     void cursorOutsideClassNameReturnsEmpty() {
         // Cursor inside method:, not className:.
-        String source = "type Query { x: Int @service(service: {className: \"com.example.FilmService\", method: \"\"}) }\n";
+        String source = "type Query { x: Int @service(service: {className: \"" + FILM_SERVICE + "\", method: \"\"}) }\n";
         Point cursor = new Point(0, source.lastIndexOf('"'));
 
         var items = run(source, cursor, "service");
@@ -102,7 +104,7 @@ class ClassNameCompletionsTest {
 
     @Test
     void cursorInArgMappingReturnsEmpty() {
-        String source = "type Query { x: Int @service(service: {className: \"com.example.FilmService\", method: \"foo\", argMapping: \"\"}) }\n";
+        String source = "type Query { x: Int @service(service: {className: \"" + FILM_SERVICE + "\", method: \"foo\", argMapping: \"\"}) }\n";
         Point cursor = new Point(0, source.lastIndexOf('"'));
 
         var items = run(source, cursor, "service");
@@ -117,7 +119,7 @@ class ClassNameCompletionsTest {
 
         var items = run(source, cursor, "externalField");
 
-        assertThat(items).hasSize(2);
+        assertThat(labels(items)).isEqualTo(serviceLabels());
     }
 
     @Test
@@ -127,7 +129,7 @@ class ClassNameCompletionsTest {
 
         var items = run(source, cursor, "enum");
 
-        assertThat(items).hasSize(2);
+        assertThat(labels(items)).isEqualTo(serviceLabels());
     }
 
     @Test
@@ -141,8 +143,7 @@ class ClassNameCompletionsTest {
 
         var items = run(source, cursor, "sourceRow");
 
-        assertThat(items).extracting(i -> i.getLabel())
-            .containsExactlyInAnyOrder("com.example.FilmService", "com.example.CategoryConditions");
+        assertThat(labels(items)).isEqualTo(serviceLabels());
     }
 
     @Test
@@ -152,7 +153,7 @@ class ClassNameCompletionsTest {
 
         var items = run(source, cursor, "reference");
 
-        assertThat(items).hasSize(2);
+        assertThat(labels(items)).isEqualTo(serviceLabels());
     }
 
     @Test
@@ -166,6 +167,22 @@ class ClassNameCompletionsTest {
         var items = run(source, cursor, "reference");
 
         assertThat(items).isEmpty();
+    }
+
+    /** What the corpus's own classes start with, which the library's do not. */
+    private static final String CORPUS = "no.sikt.";
+    private static final String FILM_SERVICE = "no.sikt.graphitron.rewrite.test.services.FilmService";
+    private static final String REFERENCE_CONDITIONS =
+        "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures";
+
+    /** What the {@code service} slot offers, which every other className slot offers too. */
+    private static List<String> serviceLabels() {
+        String source = "type Query { x: Int @service(service: {className: \"\", method: \"foo\"}) }\n";
+        return labels(run(source, new Point(0, source.indexOf('"') + 1), "service"));
+    }
+
+    private static List<String> labels(List<org.eclipse.lsp4j.CompletionItem> items) {
+        return items.stream().map(org.eclipse.lsp4j.CompletionItem::getLabel).toList();
     }
 
     private static List<org.eclipse.lsp4j.CompletionItem> run(String source, Point cursor, String directiveName) {

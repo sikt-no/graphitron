@@ -156,8 +156,8 @@ class RoutineWriteProducerStatementCountTest {
 
     private CapturedStore capture(String sdl) {
         var ctx = no.sikt.graphitron.common.configuration.TestConfiguration.testContext();
-        return CapturedStore.ofCatalog(tmp, CapturedStore.GRAPH, sdl,
+        return CapturedStore.ofCatalogWith(tmp, CapturedStore.GRAPH, sdl,
             new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()),
-            TestSchemaHelper.classpathCensus(ctx));
+            TestSchemaHelper.testClasspath());
     }
 }

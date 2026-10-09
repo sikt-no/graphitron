@@ -1,15 +1,13 @@
 package no.sikt.graphitron.rewrite.derive;
 
 import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
-import no.sikt.graphitron.model.classpath.ClasspathScanner;
-import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.function.Consumer;
@@ -460,31 +458,10 @@ class MutationRoutineSeatTest {
 
     private void withCapturedStore(String sdl, Consumer<DSLContext> body) {
         var ctx = testContext();
-        try (var store = CapturedStore.ofCatalog(tmp, GRAPH, sdl,
-                new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), census(),
-                // The walk transcribes the classpath as a census and the code family states
-                // what @condition may name; a condition hop routes off the second, so the capture
-                // gets the class root as well, which is what a real run hands it.
-                testClassRoot())) {
+        try (var store = CapturedStore.ofCatalogWith(tmp, GRAPH, sdl,
+                new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()),
+                TestSchemaHelper.testClasspath())) {
             body.accept(store.dsl());
-        }
-    }
-
-    /**
-     * The real scan over the test classes, on {@code CarrierDataFieldTest}'s terms: the carrier
-     * relations this one reduces over resolve a record-backed element through the census, so a case
-     * that draws no such element still has to be judged against the census a build would see.
-     */
-    private static List<CompletionData.ExternalReference> census() {
-        return ClasspathScanner.scan(testClassRoot(), testContext().jooqPackage());
-    }
-
-    private static Path testClassRoot() {
-        try {
-            return Path.of(MutationRoutineSeatTest.class.getProtectionDomain()
-                .getCodeSource().getLocation().toURI());
-        } catch (URISyntaxException e) {
-            throw new IllegalStateException("the test classes are not on a file path", e);
         }
     }
 }

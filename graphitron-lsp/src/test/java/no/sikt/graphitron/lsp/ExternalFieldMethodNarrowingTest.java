@@ -1,11 +1,11 @@
 package no.sikt.graphitron.lsp;
 
+import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.lsp.completions.CompletionContext;
 import no.sikt.graphitron.lsp.completions.MethodCompletions;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
-import no.sikt.graphitron.model.classpath.CompletionData;
 import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -32,49 +32,32 @@ import static org.assertj.core.api.Assertions.assertThat;
  * this replaces offered it, because an arity and a return type's simple name is the whole of what a
  * census can be asked.
  *
- * <p>The fixture writes both halves, as the store does: the census rows say what each class
- * declares, and the arm rows say which of them were admitted. A method declared and not admitted is
- * the interesting row, and every non-lifter here is one.
+ * <p>The capture writes both halves, as a run does: the census rows say what each class declares,
+ * and the arm rows say which of them the arm admitted. A method declared and not admitted is the
+ * interesting row, and every non-lifter here is one.
  */
 class ExternalFieldMethodNarrowingTest {
 
     private static final LspVocabulary VOCAB = BundledVocabulary.get();
 
-    private static final String FIELDS_CLASS = "com.example.FilmFields";
+    /**
+     * Two lifters, {@code rentalRate} and {@code title}, beside one non-lifter per clause of the
+     * contract: a wrong return type, a wrong arity, and a lifter's shape exactly whose argument is no
+     * table.
+     */
+    private static final String FIELDS_CLASS = "no.sikt.graphitron.rewrite.test.extensions.FilmFields";
 
-    /** Lifters: a {@code Field} out, one argument, and that argument a jOOQ table. */
-    private static final List<CompletionData.Method> LIFTERS = List.of(
-        StoreFixture.method("rentalRate", "Field", StoreFixture.parameter("film", "Film")),
-        StoreFixture.method("title", "Field", StoreFixture.parameter("film", "Film")));
-
-    /** Declared on the same class and admitted by nothing, one per clause of the contract. */
-    private static final List<CompletionData.Method> NON_LIFTERS = List.of(
-        // Wrong return type.
-        StoreFixture.method("helper", "String", StoreFixture.parameter("film", "Film")),
-        // Wrong arity.
-        StoreFixture.method("combine", "Field",
-            StoreFixture.parameter("a", "Film"), StoreFixture.parameter("b", "Film")),
-        // A lifter's shape exactly, and not a lifter: the argument is no table.
-        StoreFixture.method("fromName", "Field", StoreFixture.parameter("name", "String")));
+    /** A class declaring one method and no lifter. */
+    private static final String NO_LIFTERS = "no.sikt.graphitron.rewrite.test.services.FilmShelfService";
 
     @TempDir
     static Path tmp;
-
-    @TempDir
-    static Path classes;
 
     private static StoreFixture store;
 
     @BeforeAll
     static void capture() {
-        var holder = StoreFixture.lifterHolder(classes, FIELDS_CLASS, LIFTERS);
-        var declared = new java.util.ArrayList<>(LIFTERS);
-        declared.addAll(NON_LIFTERS);
-        store = StoreFixture.held().ofClasspath(tmp, List.of(
-                holder.asClass(declared),
-                StoreFixture.jarClass("com.example.NoLifters", List.of(
-                    StoreFixture.method("plain", "String")))))
-            .withExternalFieldLifters(holder);
+        store = StoreFixture.held().ofClasspath(tmp, List.of(ClasspathCorpus.service()));
     }
 
     @AfterAll
@@ -107,13 +90,12 @@ class ExternalFieldMethodNarrowingTest {
 
     /**
      * Deliberate: an author on a class that cannot lift a field is better served by seeing what it
-     * does have than by an empty popup. The fallback absorbs the arm's own scope too, a jar class
-     * having no rows there at all because a lifter cannot live in one.
+     * does have than by an empty popup.
      */
     @Test
     void aClassWithNoLifterFallsBackToItsWholeMethodList() {
-        assertThat(completeMethodsOn("com.example.NoLifters", "externalField", "reference"))
-            .containsExactly("plain");
+        assertThat(completeMethodsOn(NO_LIFTERS, "externalField", "reference"))
+            .containsExactly("shelf");
     }
 
     private static List<String> completeMethodsOn(String classFqn, String directive, String argument) {

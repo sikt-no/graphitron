@@ -1,12 +1,12 @@
 package no.sikt.graphitron.lsp;
 
 import io.github.treesitter.jtreesitter.Point;
+import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.lsp.definition.DeclarationDefinitions;
 import no.sikt.graphitron.lsp.facts.DeclarationFacts;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.lsp.parsing.DeclTarget;
-import no.sikt.graphitron.model.classpath.CompletionData;
 import org.eclipse.lsp4j.Location;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -45,10 +45,15 @@ class DeclarationDefinitionsTest {
     private static StoreFixture store;
     private static StoreFixture bare;
 
-    private static final String RECORD_FQN = "com.example.FilmDto";
-    private static final String POJO_FQN = "com.example.FilmPojo";
-    private static final String STD_FQN = "com.example.FilmRecord";
-    private static final String SVC_FQN = "com.example.FilmService";
+    private static final String RECORD_FQN = "no.sikt.graphitron.rewrite.test.services.NamedRecord";
+    private static final String POJO_FQN = "no.sikt.graphitron.rewrite.test.services.NamedBean";
+    /**
+     * A class a type is grounded on that no entry the graph reads declares, so the reading holds
+     * none of its members: the type name still names the class, and a member name inside it names
+     * nothing.
+     */
+    private static final String STD_FQN = "java.time.LocalDate";
+    private static final String SVC_FQN = "no.sikt.graphitron.rewrite.test.services.NamedMemberService";
     /** The generated convenience class a {@code @routine} field's call surface lives on. */
     private static final String ROUTINES_FQN = "no.sikt.graphitron.rewrite.test.jooq.Routines";
 
@@ -68,9 +73,9 @@ class DeclarationDefinitionsTest {
     private static final String CAPTURED_SDL = """
         type Query {
             table: FilmTable
-            dto: FilmRecord @service(service: {className: "%1$s", method: "makeDto"})
-            pojo: FilmPojo @service(service: {className: "%1$s", method: "makePojo"})
-            std: FilmStd @service(service: {className: "%1$s", method: "makeStd"})
+            dto: FilmRecord @service(service: {className: "%1$s", method: "makeRecord"})
+            pojo: FilmPojo @service(service: {className: "%1$s", method: "makeBean"})
+            std: FilmStd @service(service: {className: "%1$s", method: "makeUnread"})
             price: Int @service(service: {className: "%1$s", method: "price"})
             greeted: Int @service(service: {className: "%1$s", method: "greet"})
             twinned: Int @service(service: {className: "%1$s", method: "twin"})
@@ -107,8 +112,8 @@ class DeclarationDefinitionsTest {
 
     @BeforeAll
     static void parseSources() {
-        store = StoreFixture.held().ofCatalog(sourceRoot, CAPTURED_SDL, census());
-        bare = StoreFixture.held().ofCatalog(bareRoot, CAPTURED_SDL, census());
+        store = StoreFixture.held().ofCatalog(sourceRoot, CAPTURED_SDL, ClasspathCorpus.entries());
+        bare = StoreFixture.held().ofCatalog(bareRoot, CAPTURED_SDL, ClasspathCorpus.entries());
         filmFqn = store.tableClassFqn("film");
         // The column constant is the census's own spelling of it, which is what the class declares
         // and what the resolution keys the position lookup by.
@@ -118,24 +123,24 @@ class DeclarationDefinitionsTest {
             }
             """);
         store.withJavaSource(sourceRoot, RECORD_FQN, """
-            public record FilmDto(
+            public record NamedRecord(
                 String firstName
             ) {
             }
             """);
         store.withJavaSource(sourceRoot, POJO_FQN, """
-            public class FilmPojo {
+            public class NamedBean {
                 public String getFirstName() { return null; }
             }
             """);
         store.withJavaSource(sourceRoot, STD_FQN, """
-            public class FilmRecord {
+            public class LocalDate {
             }
             """);
         // The service's methods are laid out one per line so each line number below names one
         // declaration; greet is arity-overloaded and twin is a same-arity pair.
         store.withJavaSource(sourceRoot, SVC_FQN, """
-            public class FilmService {
+            public class NamedMemberService {
                 public Object price(Object ctx) { return null; }
                 public Object discount(Object ctx) { return null; }
                 public Object computeCol(Object ctx) { return null; }
@@ -175,21 +180,21 @@ class DeclarationDefinitionsTest {
     void typeNameOnRecordJumpsToBackingClass() {
         var file = file("type FilmRecord { firstName: String }");
         var loc = compute(file, pointAt(file, 0, "FilmRecord")).orElseThrow();
-        assertThat(loc.getUri()).endsWith("FilmDto.java");
+        assertThat(loc.getUri()).endsWith("NamedRecord.java");
     }
 
     @Test
     void typeNameOnPojoJumpsToBackingClass() {
         var file = file("type FilmPojo { firstName: String }");
         var loc = compute(file, pointAt(file, 0, "FilmPojo")).orElseThrow();
-        assertThat(loc.getUri()).endsWith("FilmPojo.java");
+        assertThat(loc.getUri()).endsWith("NamedBean.java");
     }
 
     @Test
     void typeNameOnAClassWithNoMembersInTheCensusStillJumpsToIt() {
         var file = file("type FilmStd { value: String }");
         var loc = compute(file, pointAt(file, 0, "FilmStd")).orElseThrow();
-        assertThat(loc.getUri()).endsWith("FilmRecord.java");
+        assertThat(loc.getUri()).endsWith("LocalDate.java");
     }
 
     @Test
@@ -225,7 +230,7 @@ class DeclarationDefinitionsTest {
     void fieldNameOnPojoJumpsToAccessorMethod() {
         var file = file("type FilmPojo { firstName: String }");
         var loc = compute(file, pointAt(file, 0, "firstName")).orElseThrow();
-        assertThat(loc.getUri()).endsWith("FilmPojo.java");
+        assertThat(loc.getUri()).endsWith("NamedBean.java");
         assertThat(loc.getRange().getStart().getLine()).isEqualTo(ACCESSOR_LINE);
     }
 
@@ -235,7 +240,7 @@ class DeclarationDefinitionsTest {
         // accessor is synthesised later), so the component name is its own field row.
         var file = file("type FilmRecord { firstName: String }");
         var loc = compute(file, pointAt(file, 0, "firstName")).orElseThrow();
-        assertThat(loc.getUri()).endsWith("FilmDto.java");
+        assertThat(loc.getUri()).endsWith("NamedRecord.java");
         assertThat(loc.getRange().getStart().getLine()).isEqualTo(COMPONENT_LINE);
     }
 
@@ -263,7 +268,7 @@ class DeclarationDefinitionsTest {
     void rootServiceFieldNameJumpsToServiceMethod() {
         var file = file("type Query { price: Int }");
         var loc = compute(file, pointAt(file, 0, "price")).orElseThrow();
-        assertThat(loc.getUri()).endsWith("FilmService.java");
+        assertThat(loc.getUri()).endsWith("NamedMemberService.java");
         assertThat(loc.getRange().getStart().getLine()).isEqualTo(PRICE_LINE);
     }
 
@@ -273,7 +278,7 @@ class DeclarationDefinitionsTest {
         // classification takes precedence over the TableBacking.
         var file = file("type FilmTable @table(name: \"film\") { discount: Int }");
         var loc = compute(file, pointAt(file, 0, "discount")).orElseThrow();
-        assertThat(loc.getUri()).endsWith("FilmService.java");
+        assertThat(loc.getUri()).endsWith("NamedMemberService.java");
         assertThat(loc.getRange().getStart().getLine()).isEqualTo(DISCOUNT_LINE);
     }
 
@@ -294,7 +299,7 @@ class DeclarationDefinitionsTest {
     void aProducerMethodTheCensusDoesNotHoldStillJumpsByName() {
         var file = file("type Query { greeted: Int }");
         var loc = compute(file, pointAt(file, 0, "greeted")).orElseThrow();
-        assertThat(loc.getUri()).endsWith("FilmService.java");
+        assertThat(loc.getUri()).endsWith("NamedMemberService.java");
         assertThat(loc.getRange().getStart().getLine()).isEqualTo(GREET0_LINE);
     }
 
@@ -406,32 +411,6 @@ class DeclarationDefinitionsTest {
     private static Optional<Location> locate(String fieldName, DeclTarget target) {
         var coord = new DeclarationFacts.Coord.Member("Query", fieldName);
         return DeclarationDefinitions.locate(target, DeclarationFacts.of(store.handle(), coord));
-    }
-
-    /**
-     * The classpath census half: which names are references, and with what members. The record's
-     * component and the POJO's accessor are what a member name resolves through; the service's three
-     * one-argument methods are the arities a method-backed field resolves at, and its three factories
-     * are what ground the captured graph's three class-scoped types. {@code greet} and {@code twin} are
-     * deliberately absent, so the cases that name them exercise the arity-0 fallback on a method the
-     * census does not carry. Positions are the parse's answer, joined to this by name.
-     *
-     * <p>{@link #STD_FQN} is deliberately not a reference here. It is the class a type is grounded on
-     * whose members the census does not hold, which is the population a generated jOOQ record falls
-     * into: the type name still names the class, and a member name inside it names nothing.
-     */
-    private static List<CompletionData.ExternalReference> census() {
-        var oneArg = StoreFixture.parameter("ctx", "DSLContext");
-        return List.of(
-            StoreFixture.jarRecord(RECORD_FQN, StoreFixture.component("firstName", "String")),
-            StoreFixture.jarClass(POJO_FQN, List.of(StoreFixture.method("getFirstName", "String"))),
-            StoreFixture.jarClass(SVC_FQN, List.of(
-                StoreFixture.method("price", "Field", oneArg),
-                StoreFixture.method("discount", "Field", oneArg),
-                StoreFixture.method("computeCol", "Field", oneArg),
-                StoreFixture.producing("makeDto", RECORD_FQN),
-                StoreFixture.producing("makePojo", POJO_FQN),
-                StoreFixture.producing("makeStd", STD_FQN))));
     }
 
     private static Point pointAt(FileSnapshot file, int line, String token) {

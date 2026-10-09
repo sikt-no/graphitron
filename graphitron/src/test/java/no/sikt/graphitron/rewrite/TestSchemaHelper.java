@@ -187,8 +187,9 @@ public final class TestSchemaHelper {
             String schemaText, RunContext ctx,
             no.sikt.graphitron.model.derive.ResolvedKeyProjections.Projections projections) {
         var bundle = buildBundle(schemaText, ctx);
-        try (var store = CapturedStore.ofCatalog(directory, CapturedStore.GRAPH, schemaText,
-                new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), classpathCensus(ctx))) {
+        try (var store = CapturedStore.ofCatalogWith(directory, CapturedStore.GRAPH, schemaText,
+                new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()),
+                testClasspath())) {
             return no.sikt.graphitron.plan.EmitPlan.produce(bundle.model(), bundle.federationLink(),
                 bundle.usesOneOf(), ctx.outputPackage(), projections,
                 new no.sikt.graphitron.model.read.StoreHandle(store.dsl(), CapturedStore.GRAPH));
@@ -222,16 +223,16 @@ public final class TestSchemaHelper {
     }
 
     /**
-     * The classpath census capture reads the {@code code_} family from, scanned off the test
-     * classes' own root: what a rule reading a class's declared form states is only worth
-     * something when the classes it read are real ones.
+     * The classpath capture reads the {@code code_} family from: the test classes' own root, read as
+     * this build's own output the way a run reads it. What a rule reading a class's declared form
+     * states is only worth something when the reading behind it is the real one.
      */
-    public static java.util.List<no.sikt.graphitron.model.classpath.CompletionData.ExternalReference>
-            classpathCensus(RunContext ctx) {
+    public static java.util.List<no.sikt.graphitron.model.config.ClasspathEntry> testClasspath() {
         try {
             var root = java.nio.file.Path.of(TestSchemaHelper.class.getProtectionDomain()
                 .getCodeSource().getLocation().toURI());
-            return no.sikt.graphitron.model.classpath.ClasspathScanner.scan(root, ctx.jooqPackage());
+            return java.util.List.of(new no.sikt.graphitron.model.config.ClasspathEntry(root,
+                no.sikt.graphitron.model.config.ClasspathEntry.Origin.PROJECT, null, null));
         } catch (java.net.URISyntaxException e) {
             throw new IllegalStateException("the test classes are not on a file path", e);
         }

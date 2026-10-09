@@ -254,63 +254,6 @@ public final class ClasspathSourceCapture {
         }
     }
 
-    /**
-     * The entries of a reading the caller performed, for a fixture that states a census and has no
-     * classpath behind it.
-     *
-     * <p>Here rather than in the gatherer that writes from such a census, because provenance has
-     * one owner however the reading was come by: a gatherer that recorded its own source rows on
-     * this path and not the other would be the second answer this class exists to remove. What a
-     * stated census cannot say, this cannot record, so the rows carry the kind read off the
-     * filesystem and no origin or coordinate at all.
-     *
-     * @deprecated provenance for a stated census; it goes with the fixtures that state one.
-     */
-    @Deprecated(forRemoval = true)
-    public static void stated(DSLContext dsl, String graph, List<String> sourceNames,
-                              LocalDateTime readAt) {
-        var named = new LinkedHashSet<String>();
-        sourceNames.forEach(name -> named.add(name == null ? "" : name));
-        if (named.isEmpty()) {
-            return;
-        }
-        var t = STORE_SOURCE;
-        var rows = named.stream().collect(Rows.toRowList(
-            name -> val(name, t.SOURCE_NAME),
-            name -> val(kindOf(name), t.SOURCE_KIND),
-            name -> val(stampOf(name), t.STAMP),
-            name -> val(modifiedAt(name), t.MTIME),
-            name -> val(readAt, t.LAST_SEEN),
-            name -> val(readAt, t.READ_AT)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.SOURCE_NAME, t.SOURCE_KIND, t.STAMP, t.MTIME, t.LAST_SEEN,
-                    t.READ_AT)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.STAMP, excluded(t.STAMP))
-                .set(t.MTIME, excluded(t.MTIME))
-                .set(t.LAST_SEEN, excluded(t.LAST_SEEN))
-                .set(t.READ_AT, excluded(t.READ_AT)));
-        var m = STORE_GRAPH_SOURCE;
-        var claims = named.stream().collect(Rows.toRowList(
-            name -> val(graph, m.GRAPH_NAME),
-            name -> val(name, m.SOURCE_NAME),
-            name -> val(stampOf(name), m.STAMP),
-            name -> val(readAt, m.READ_AT)));
-        BindBatch.execute(dsl, claims, markers ->
-            dsl.insertInto(m, m.GRAPH_NAME, m.SOURCE_NAME, m.STAMP, m.READ_AT)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(m.STAMP, excluded(m.STAMP))
-                .set(m.READ_AT, excluded(m.READ_AT)));
-    }
-
-    /** What the store calls an entry, read off the filesystem where a stated census says nothing. */
-    private static String kindOf(String sourceName) {
-        return !sourceName.isEmpty() && Files.isDirectory(Path.of(sourceName))
-            ? "DIRECTORY" : "JAR";
-    }
-
     /** The registry row every classpath row hangs its source on, one per entry read. */
     private static void writeSources(DSLContext dsl, List<ClassfileCensus.EntryAt> entries,
                                      LocalDateTime readAt) {
