@@ -10094,7 +10094,8 @@ COMMENT ON COLUMN graphitron_type_backing.declared_via IS 'which population answ
 CREATE VIEW graphitron_type_backing_rule (graph_name, type_name, class_name, declared_via) AS
 -- What a producer grounds, two axes: the class a resolved @service or @externalField method returns
 -- backs the field's type, and the class a parameter takes backs the type of the argument feeding it,
--- the parameter's own name unless an argMapping entry redirects it. Objects and input objects only.
+-- the parameter's own name unless the reference's argMapping redirects it. Objects and input objects
+-- only.
 WITH RECURSIVE seed (graph_name, type_name, class_name) AS (
   SELECT s.graph_name, f.named_type, m.result_element_class
     FROM graphitron_code_reference_site s
@@ -10120,11 +10121,18 @@ WITH RECURSIVE seed (graph_name, type_name, class_name) AS (
     JOIN code_method_parameter mp
       ON mp.source_name = r.method_source_name AND mp.class_name = r.method_class_name
      AND mp.method_name = r.method_name AND mp.descriptor = r.method_descriptor
-    JOIN graphql_field_element pc
-      ON pc.graph_name = s.graph_name AND pc.type_name = s.type_name
-     AND pc.field_name = s.field_name
-    LEFT JOIN graphitron_argmapping_entry am
-      ON am.graph_name = s.graph_name AND am.site = 'SERVICE' AND am.coordinate = pc.coordinate
+    -- The @service mapping written on this reference, if one names the parameter. Keyed to the
+    -- reference the mapping is a field of rather than to the coordinate, so another directive's
+    -- mapping on the same field redirects nothing here.
+    LEFT JOIN (SELECT ms.graph_name, ms.source_name, ms.reference_line, ms.reference_column,
+                      p.param_name, p.root_name
+                 FROM graphitron_ast_argmapping_pair_entry p
+                 JOIN graphitron_argmapping_site ms
+                   ON ms.graph_name = p.graph_name AND ms.source_name = p.source_name
+                  AND ms.source_line = p.source_line AND ms.source_column = p.source_column
+                WHERE ms.directive_name = 'service') am
+      ON am.graph_name = s.graph_name AND am.source_name = s.source_name
+     AND am.reference_line = s.source_line AND am.reference_column = s.source_column
      AND am.param_name = mp.parameter_name
     JOIN graphql_argument a
       ON a.graph_name = s.graph_name AND a.type_name = s.type_name

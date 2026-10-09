@@ -47,6 +47,12 @@ type Mutation {
   dottedPair(deep: DeepPickInput, inner: InnerPickInput, second: SecondPickInput, note: String): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmPairingService",
                        method: "pair", argMapping: "first: deep.inner"})
+  # A mapping another directive writes on the same field redirects no @service parameter: first is
+  # still fed by its own name, and the argument the @condition maps it to feeds nothing.
+  conditionedPair(first: FirstPickInput, second: SecondPickInput, note: String, other: ConditionedPickInput): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmPairingService", method: "pair"})
+    @condition(condition: {className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+                           method: "outerOverrideMethod", argMapping: "first: other"})
 }
 
 input AssignInput { film: FilmInput }
@@ -58,6 +64,7 @@ input ChosenPickInput { filmId: Int }
 input DecoyPickInput { filmId: Int }
 input DeepPickInput { inner: InnerPickInput }
 input InnerPickInput { filmId: Int }
+input ConditionedPickInput { filmId: Int }
 
 # Film is named by both populations with one class: two rows, one answer.
 extend schema @expectEquals(relation: "graphitron_type_backing", rows: """
@@ -77,6 +84,13 @@ extend schema @expectEquals(relation: "graphitron_type_backing", rows: """
   SecondPickInput, no.sikt.graphitron.rewrite.test.services.SecondPick,           PRODUCER
   ChosenPickInput, no.sikt.graphitron.rewrite.test.services.FirstPick,            PRODUCER
   DeepPickInput,   no.sikt.graphitron.rewrite.test.services.FirstPick,            PRODUCER
+  """)
+
+# The @condition mapping the negative case turns on is captured, so ConditionedPickInput being
+# unbacked is the rule declining it rather than there being nothing to decline.
+extend schema @assertContains(relation: "graphitron_argmapping_site", rows: """
+  directive_name, coordinate,               element_kind
+  condition,      Mutation.conditionedPair, FIELD_DEFINITION
   """)
 
 # One class answering a type is no contest, however many populations name it. Film is contested in

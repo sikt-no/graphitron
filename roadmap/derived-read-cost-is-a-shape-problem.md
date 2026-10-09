@@ -300,12 +300,10 @@ a derivation over either corpus alone, and `graphitron_` already does this again
           `NodeIdDecodeDefectTest`'s mapped case is `node-id-decode-mapped-parameter`; the oracle
           is `ArgmappingProjectionDefectsTest` and `ArgmappingProjectionRejectionPipelineTest`.
           `ArgmappingEntryTest` goes with the old entry.
-        * **`graphitron_type_backing_rule` reads the pair relation** `blocked`, on the type-backing
-          anchor reaching trunk. The anchor retires `intent_type_backing_seed`, but its parameter
-          branch keeps the seed's join to the old entry by site and field coordinate, which redirects
-          a `@service` parameter to the argument its mapping names. Keyed instead to the reference
-          the mapping is a field of, through `graphitron_argmapping_site`, and to the pair's
-          `root_name`, still `@service` only; the type-backing fact documents are the oracle.
+        * **`graphitron_type_backing_rule` reads the pair relation** `done`. The parameter branch
+          redirects a `@service` parameter through the pair's `root_name`, keyed to the reference the
+          mapping is a field of through `graphitron_argmapping_site`, `@service` only; a `@condition`
+          mapping on the same field redirects nothing, which `type-backing.graphqls` states.
         * **`intent_node_id_decode_slot` and `RoutineWriteFacts` read it** `open`, last, R990 having
           changed the slot this week and their tests being the node-id subject's. The slot's mapped
           join is rekeyed already; what it owes is its name-matched exclusion, and a decision: a
