@@ -23,7 +23,6 @@ import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_EXCEPTION;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
-import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD_PARAMETER_TABLE;
 import static no.sikt.graphitron.model.Tables.CODE_EXTERNAL_FIELD_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
 import static no.sikt.graphitron.model.Tables.CODE_SERVICE_METHOD;
@@ -545,19 +544,15 @@ class CodeCaptureTest {
     }
 
     /**
-     * A concrete position names one table and the catalog is what says which. The role is the
-     * declaration's answer and stands whether or not the catalog holds the class, so the two are
-     * separate rows: this capture has no catalog behind it, and the position is still concrete.
+     * Concrete is the declaration's answer and stands whether or not any catalog holds the class:
+     * this capture has no catalog behind it, and the position is still concrete. Which table it
+     * names is the graphitron anchor's match, not this reading's.
      */
     @Test
-    @DisplayName("a concrete position the catalog cannot place is concrete and unresolved")
-    void aConcretePositionWithoutACatalogResolvesToNothing() {
-        withReactorCapture(dsl -> {
-            assertThat(rolesOn(dsl, "onOneTable")).containsExactly("TABLE_CONCRETE", "OTHER");
-            assertThat(dsl.fetchCount(CODE_CONDITION_METHOD_PARAMETER_TABLE))
-                .as("no catalog was read, so no position resolved to a table")
-                .isZero();
-        });
+    @DisplayName("a concrete position is concrete whether or not a catalog holds its class")
+    void aConcretePositionIsConcreteWithoutACatalog() {
+        withReactorCapture(dsl -> assertThat(rolesOn(dsl, "onOneTable"))
+            .containsExactly("TABLE_CONCRETE", "OTHER"));
     }
 
     // ===== The service arm: what a consumer may name at @service(service:) =====

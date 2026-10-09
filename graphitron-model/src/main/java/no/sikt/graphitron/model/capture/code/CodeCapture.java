@@ -20,7 +20,6 @@ import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD;
-import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD_PARAMETER_TABLE;
 import static no.sikt.graphitron.model.Tables.CODE_EXTERNAL_FIELD_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
@@ -36,7 +35,6 @@ import static no.sikt.graphitron.model.Tables.CODE_SERVICE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_DELIVERY_CONTAINER;
-import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
@@ -985,8 +983,6 @@ public final class CodeCapture {
 
     private record Exception(String source, String className, ClassfileCensus.MethodAt at) {}
 
-    /** A catalog table as this gatherer keys it, which is sql_table's own primary key. */
-    private record TableAt(String source, String schema, String name) {}
 
 
     /**
@@ -1041,43 +1037,6 @@ public final class CodeCapture {
                 .set(p.ROLE, excluded(p.ROLE))
                 .set(p.EXTRACTION, excluded(p.EXTRACTION))
                 .set(p.TOUCHED_AT, excluded(p.TOUCHED_AT)));
-
-        record Resolved(At at, TableAt table) {}
-        var catalog = tablesByClass(dsl);
-        var resolved = new ArrayList<Resolved>();
-        for (At row : found) {
-            if (!TABLE_CONCRETE.equals(row.role())) {
-                continue;
-            }
-            var table = catalog.get(rootClass(row.at()));
-            if (table != null) {
-                resolved.add(new Resolved(row, table));
-            }
-        }
-        if (resolved.isEmpty()) {
-            return;
-        }
-        var pt = CODE_CONDITION_METHOD_PARAMETER_TABLE;
-        var resolvedRows = resolved.stream().collect(Rows.toRowList(
-            row -> val(row.at().member().source(), pt.SOURCE_NAME),
-            row -> val(row.at().member().className(), pt.CLASS_NAME),
-            row -> val(row.at().member().at().name(), pt.METHOD_NAME),
-            row -> val(row.at().member().at().descriptor(), pt.DESCRIPTOR),
-            row -> val(row.at().at().position(), pt.POSITION),
-            row -> val(row.table().source(), pt.TABLE_SOURCE_NAME),
-            row -> val(row.table().schema(), pt.TABLE_SCHEMA),
-            row -> val(row.table().name(), pt.TABLE_NAME),
-            row -> val(touchedAt, pt.TOUCHED_AT)));
-        BindBatch.execute(dsl, resolvedRows, markers ->
-            dsl.insertInto(pt, pt.SOURCE_NAME, pt.CLASS_NAME, pt.METHOD_NAME, pt.DESCRIPTOR,
-                    pt.POSITION, pt.TABLE_SOURCE_NAME, pt.TABLE_SCHEMA, pt.TABLE_NAME,
-                    pt.TOUCHED_AT)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(pt.TABLE_SOURCE_NAME, excluded(pt.TABLE_SOURCE_NAME))
-                .set(pt.TABLE_SCHEMA, excluded(pt.TABLE_SCHEMA))
-                .set(pt.TABLE_NAME, excluded(pt.TABLE_NAME))
-                .set(pt.TOUCHED_AT, excluded(pt.TOUCHED_AT)));
     }
 
     /**
@@ -1108,38 +1067,6 @@ public final class CodeCapture {
             .findFirst()
             .orElse(null);
     }
-
-    /**
-     * The catalog's tables by the generated class an author's parameter would name, across every
-     * partition the store holds.
-     *
-     * <p>Across partitions rather than within a graph's, because a code row is shared between the
-     * graphs that read its entry and must not mean different things to two of them. The class name
-     * is what makes that safe: a generated class belongs to exactly one package and a package to
-     * one partition, so at most one partition answers. A name two partitions do claim is a genuine
-     * ambiguity, and it is dropped rather than guessed, which reads downstream as a concrete
-     * position the catalog could not resolve.
-     */
-    private static Map<String, TableAt> tablesByClass(DSLContext dsl) {
-        var byClass = new HashMap<String, TableAt>();
-        var ambiguous = new HashSet<String>();
-        dsl.select(SQL_TABLE.CLASS_FQN, SQL_TABLE.SOURCE_NAME, SQL_TABLE.TABLE_SCHEMA,
-                SQL_TABLE.TABLE_NAME)
-            .from(SQL_TABLE)
-            .forEach(row -> {
-                String fqn = row.value1();
-                var at = new TableAt(row.value2(), row.value3(), row.value4());
-                var seen = byClass.put(fqn, at);
-                if (seen != null && !seen.equals(at)) {
-                    ambiguous.add(fqn);
-                }
-            });
-        ambiguous.forEach(byClass::remove);
-        return byClass;
-    }
-
-
-
 
     /**
      * What a declared type hands over, and how a caller receives it.
@@ -1234,7 +1161,6 @@ public final class CodeCapture {
      */
     private static void sweep(DSLContext dsl, List<String> sources, LocalDateTime touchedAt) {
         for (org.jooq.Table<?> table : List.of(
-                CODE_CONDITION_METHOD_PARAMETER_TABLE,
                 CODE_METHOD_PARAMETER, CODE_METHOD_EXCEPTION, CODE_WRITE_SLOT, CODE_CONSTRUCTION,
                 CODE_READ_SLOT,
                 CODE_SERVICE_METHOD, CODE_CONDITION_METHOD, CODE_EXTERNAL_FIELD_METHOD,

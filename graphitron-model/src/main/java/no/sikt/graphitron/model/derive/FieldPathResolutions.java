@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_RESOLUTION_CONDITION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_RESOLUTION_KEYED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_RESOLUTION_KEYLESS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_RESOLUTION_OPEN;
@@ -14,19 +15,20 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_RESOLUTION_R
 import static org.jooq.impl.DSL.excluded;
 
 /**
- * The capture-cadence writer of the three chain-link resolution relations: every reading of every
+ * The capture-cadence writer of the four chain-link resolution relations: every reading of every
  * written chain link that either walk reaches, and which of them does.
  *
- * <p>Three relations and not one, because the readings have three key shapes.
+ * <p>Four relations and not one, because the readings have four key shapes.
  * {@code graphitron_field_path_resolution_keyed} holds the readings a foreign key identifies,
- * {@code graphitron_field_path_resolution_keyless} the table pairs none identifies, and
+ * {@code graphitron_field_path_resolution_keyless} the table pairs none identifies,
  * {@code graphitron_field_path_resolution_open} the readings that state no departure of their
- * own. The view over the three carries the canonical name every reader spells, and what each column
+ * own, and {@code graphitron_field_path_resolution_condition} the readings a condition method
+ * routes. The view over the three carries the canonical name every reader spells, and what each column
  * means is documented there.
  *
  * <p>The rule is {@code graphitron_field_path_resolution_rule}, and unlike the hop relations'
- * arms it cannot be split three ways: one chain mixes arms, a routine heading it and a key link
- * after, so each walk crosses all three shapes. This stage therefore evaluates the rule once and
+ * arms it cannot be split by shape: one chain mixes arms, a routine heading it and a key link
+ * after, so each walk crosses every shape. This stage therefore evaluates the rule once and
  * files each row under its shape, which is the whole of what it adds to the rule. The {@code EXCEPT}
  * between the view and the rule stays runnable for as long as both exist, and
  * {@code StageAnswerAgreementTest} runs it.
@@ -46,11 +48,14 @@ public final class FieldPathResolutions {
         var r = GRAPHITRON_FIELD_PATH_RESOLUTION_RULE;
         var rows = dsl.selectFrom(r).where(r.GRAPH_NAME.eq(graphName)).fetch();
         keyed(dsl, rows.stream().filter(row -> row.getConstraintName() != null).toList(), touchedAt);
+        condition(dsl, rows.stream().filter(row -> row.getMethodName() != null).toList(), touchedAt);
         keyless(dsl, rows.stream()
-            .filter(row -> row.getConstraintName() == null && row.getFromSourceName() != null)
+            .filter(row -> row.getConstraintName() == null && row.getMethodName() == null
+                && row.getFromSourceName() != null)
             .toList(), touchedAt);
         open(dsl, rows.stream()
-            .filter(row -> row.getConstraintName() == null && row.getFromSourceName() == null)
+            .filter(row -> row.getConstraintName() == null && row.getMethodName() == null
+                && row.getFromSourceName() == null)
             .toList(), touchedAt);
 
         var keyed = GRAPHITRON_FIELD_PATH_RESOLUTION_KEYED;
@@ -62,6 +67,10 @@ public final class FieldPathResolutions {
         var open = GRAPHITRON_FIELD_PATH_RESOLUTION_OPEN;
         dsl.deleteFrom(open)
             .where(open.GRAPH_NAME.eq(graphName)).and(open.TOUCHED_AT.ne(touchedAt)).execute();
+        var condition = GRAPHITRON_FIELD_PATH_RESOLUTION_CONDITION;
+        dsl.deleteFrom(condition)
+            .where(condition.GRAPH_NAME.eq(graphName)).and(condition.TOUCHED_AT.ne(touchedAt))
+            .execute();
     }
 
     private static void keyed(DSLContext dsl, List<GraphitronFieldPathResolutionRuleRecord> rows,
@@ -155,6 +164,42 @@ public final class FieldPathResolutions {
             batch = batch.bind(row.getGraphName(), row.getTypeName(), row.getFieldName(),
                 row.getTargetSourceName(), row.getTargetSchema(), row.getTargetTable(),
                 row.getPosition(), row.getVia(),
+                row.getToSourceName(), row.getToSchema(), row.getToTable(),
+                row.getReachedByTail(), row.getReachedByHead(), touchedAt);
+        }
+        batch.execute();
+    }
+
+    private static void condition(DSLContext dsl,
+                                  List<GraphitronFieldPathResolutionRuleRecord> rows,
+                                  LocalDateTime touchedAt) {
+        if (rows.isEmpty()) {
+            return;
+        }
+        var t = GRAPHITRON_FIELD_PATH_RESOLUTION_CONDITION;
+        var batch = dsl.batch(dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME,
+                t.TARGET_SOURCE_NAME, t.TARGET_SCHEMA, t.TARGET_TABLE, t.POSITION, t.VIA,
+                t.METHOD_SOURCE_NAME, t.METHOD_CLASS_NAME, t.METHOD_NAME, t.METHOD_DESCRIPTOR,
+                t.FROM_SOURCE_NAME, t.FROM_SCHEMA, t.FROM_TABLE,
+                t.TO_SOURCE_NAME, t.TO_SCHEMA, t.TO_TABLE,
+                t.REACHED_BY_TAIL, t.REACHED_BY_HEAD, t.TOUCHED_AT)
+            .values(markers(21))
+            .onDuplicateKeyUpdate()
+            .set(t.VIA, excluded(t.VIA))
+            .set(t.FROM_SOURCE_NAME, excluded(t.FROM_SOURCE_NAME))
+            .set(t.FROM_SCHEMA, excluded(t.FROM_SCHEMA))
+            .set(t.FROM_TABLE, excluded(t.FROM_TABLE))
+            .set(t.REACHED_BY_TAIL, excluded(t.REACHED_BY_TAIL))
+            .set(t.REACHED_BY_HEAD, excluded(t.REACHED_BY_HEAD))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+        for (var row : rows) {
+            batch = batch.bind(row.getGraphName(), row.getTypeName(), row.getFieldName(),
+                row.getTargetSourceName(), row.getTargetSchema(), row.getTargetTable(),
+                row.getPosition(), row.getVia(),
+                row.getMethodSourceName(), row.getMethodClassName(), row.getMethodName(),
+                row.getMethodDescriptor(),
+                row.getFromSourceName(), row.getFromSchema(), row.getFromTable(),
                 row.getToSourceName(), row.getToSchema(), row.getToTable(),
                 row.getReachedByTail(), row.getReachedByHead(), touchedAt);
         }

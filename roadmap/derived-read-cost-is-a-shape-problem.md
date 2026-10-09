@@ -1177,13 +1177,15 @@ documents against the rest.
   corpus under the configuration, and neither keys the other. The reading skips the generated jOOQ
   package, and that is right, the generated classes being the catalog's to describe and no part of
   the service layer. Two reads cross today, one child each.
-  * **The table a parameter is bound to is the graphitron anchor's** `open`.
-    `code_condition_method_parameter_table` keys a parameter to the `sql_table` its class names, so
-    the reading runs after the catalog, and it matches by class name in Java with a hand-kept
-    ambiguity check. The binding crosses two families, so it belongs to the gatherer downstream of
-    both: matched by name once, at `graphitron`'s anchor, and stored as a table keying both sides,
-    which is the shape the relation already has under the wrong family. Readers join on its keys.
-    `code_method_parameter.role` keeps `TABLE_CONCRETE`, which is a fact about the signature alone.
+  * **The table a parameter is bound to is the graphitron anchor's** `done`. No relation states
+    it: the resolution that needs it joins the parameter's erased class to `sql_table.class_fqn`
+    among the graph's own sources, and stores what it resolved keyed to both sides. A chain link a
+    condition method routes is `graphitron_field_path_resolution_condition`, keyed to
+    `code_condition_method` and to the tables, so a method that changes signature takes its
+    readings with it. The code gatherer no longer reads the catalog, `code` no longer declares
+    `jooq`, and a table added to the catalog binds on the next capture where it used to wait for
+    the code entry to change. `code_method_parameter.role` keeps `TABLE_CONCRETE`, a fact about
+    the signature alone.
   * **The reading's loader comes from the classpath it read** `open`. `CodeCapture` and
     `ClassAncestry` are handed `jooq.codegenLoader()`, to load scalar constants and to ask whether a
     position is a `Table` or an enum. That is a loader and not a family, but reaching it through
@@ -1717,7 +1719,8 @@ tables into `jvm_declared_type_ref`: `jvm_method_parameter_type_ref`, `jvm_metho
 `graphitron_minted_type_site`), `intent_argmapping_pair_live`, `intent_errors_field_live`,
 `intent_condition_param_extraction`, `intent_condition_table_parameter`,
 `graphitron_argument_path_segment`, `code_condition_method_parameter` (now
-`code_method_parameter`), and `code_type_slot` (now `code_read_slot`). The demand relations,
+`code_method_parameter`), `code_type_slot` (now `code_read_slot`), and
+`code_condition_method_parameter_table` (now a join in the resolutions that need it). The demand relations,
 dissolved rather than replaced: `intent_field_demand_rule`, `intent_field_exemption_rule`,
 `intent_type_demand`, `intent_type_exemption`, `intent_resolved_field_demand` and
 `intent_resolved_type_demand`. The deprecated link and federation key decode, its readers having
@@ -1774,7 +1777,7 @@ Values `AUTHORED_EXPRESSION` and `TRAILING_SEGMENTS_BEYOND_ONE`.
 `field-chain-link-reach` grain's key shape. Added rather than retired, and
 listed because the grain is the point: `store_graph_source.stamp` and `store_graph_source.read_at`.
 
-**Java.** `DemandRuleTest`, `DemandShadowTest`, `DemandResidue`, `SchemaQueries.Demand` and the
+**Java.** `CodeCapture.tablesByClass`; `DemandRuleTest`, `DemandShadowTest`, `DemandResidue`, `SchemaQueries.Demand` and the
 MCP schema tool's `demand` slot; `MacroCapture.expandConnections` (now `expand`); the `Expansions` record, the five
 `captureXDirective` callbacks, `captureNavigation`, `connectionElementByType`;
 `EntryFamilyFixture.ENTRY_RELATIONS` and `ANCHOR_RELATIONS` (now `entryRelations()`);

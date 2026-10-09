@@ -267,7 +267,6 @@ class RelationRegistrationGateTest {
         registrations.put("code_method_parameter", Arm.UNSHADOWED);
         registrations.put("code_method_exception", Arm.UNSHADOWED);
         registrations.put("code_condition_method", Arm.UNSHADOWED);
-        registrations.put("code_condition_method_parameter_table", Arm.UNSHADOWED);
         registrations.put("code_external_field_method", Arm.UNSHADOWED);
         registrations.put("code_service_method", Arm.UNSHADOWED);
         registrations.put("code_throwable", Arm.UNSHADOWED);
@@ -384,6 +383,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_field_path_resolution_keyed", Arm.DERIVED);
         registrations.put("graphitron_field_path_resolution_keyless", Arm.DERIVED);
         registrations.put("graphitron_field_path_resolution_open", Arm.DERIVED);
+        registrations.put("graphitron_field_path_resolution_condition", Arm.DERIVED);
         registrations.put("graphitron_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_field_table_link_rule", Arm.DERIVED);
         registrations.put("graphitron_node_id_instruction", Arm.DERIVED);

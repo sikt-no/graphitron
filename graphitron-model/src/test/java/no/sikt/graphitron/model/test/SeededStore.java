@@ -38,7 +38,6 @@ import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTION;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_WRITE_SLOT;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
-import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD_PARAMETER_TABLE;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_BINDING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_LOOKUP_KEY_ENTRY;
@@ -2270,27 +2269,13 @@ public final class SeededStore {
             parameterName, parameterClass == null ? Map.of() : Map.of("", parameterClass));
         dsl.update(CODE_METHOD_PARAMETER)
             .set(CODE_METHOD_PARAMETER.ROLE, conditionRole(dsl, parameterClass))
+            .set(CODE_METHOD_PARAMETER.ERASED_CLASS, parameterClass)
             .where(CODE_METHOD_PARAMETER.SOURCE_NAME.eq(sourceName))
             .and(CODE_METHOD_PARAMETER.CLASS_NAME.eq(className))
             .and(CODE_METHOD_PARAMETER.METHOD_NAME.eq(methodName))
             .and(CODE_METHOD_PARAMETER.DESCRIPTOR.eq(descriptor))
             .and(CODE_METHOD_PARAMETER.POSITION.eq(position))
             .execute();
-        var table = parameterClass == null ? null : seededTable(dsl, parameterClass);
-        if (table != null) {
-            dsl.insertInto(CODE_CONDITION_METHOD_PARAMETER_TABLE)
-                .set(CODE_CONDITION_METHOD_PARAMETER_TABLE.SOURCE_NAME, sourceName)
-                .set(CODE_CONDITION_METHOD_PARAMETER_TABLE.CLASS_NAME, className)
-                .set(CODE_CONDITION_METHOD_PARAMETER_TABLE.METHOD_NAME, methodName)
-                .set(CODE_CONDITION_METHOD_PARAMETER_TABLE.DESCRIPTOR, descriptor)
-                .set(CODE_CONDITION_METHOD_PARAMETER_TABLE.POSITION, position)
-                .set(CODE_CONDITION_METHOD_PARAMETER_TABLE.TABLE_SOURCE_NAME, table.value1())
-                .set(CODE_CONDITION_METHOD_PARAMETER_TABLE.TABLE_SCHEMA, table.value2())
-                .set(CODE_CONDITION_METHOD_PARAMETER_TABLE.TABLE_NAME, table.value3())
-                .set(CODE_CONDITION_METHOD_PARAMETER_TABLE.TOUCHED_AT, SEEDED_READING)
-                .onDuplicateKeyIgnore()
-                .execute();
-        }
     }
 
     /**

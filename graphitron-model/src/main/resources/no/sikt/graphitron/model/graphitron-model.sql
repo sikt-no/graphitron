@@ -5320,6 +5320,8 @@ COMMENT ON COLUMN sql_table.description IS 'the database comment on the table, w
 COMMENT ON COLUMN sql_table.table_schema_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against the namespace half of an authored table or routine reference. Generated, so nothing writes it and nothing can. Fold only where an authored spelling meets a catalog name. Two values of one family are compared exactly, and a comparison that does want a fold on both sides reaches this column by joining sql_table on its key rather than by having it forwarded through a derived view';
 COMMENT ON COLUMN sql_table.table_name_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against the name half of an authored table or routine reference, and against graphitron_table_entry.type_name_upper where the name argument was omitted. Generated, so nothing writes it and nothing can. Fold only where an authored spelling meets a catalog name. Two values of one family are compared exactly, and a comparison that does want a fold on both sides reaches this column by joining sql_table on its key rather than by having it forwarded through a derived view. intent_field_reference_discovery is the worked example of that second sentence: both of its table names are catalog values, so it joins this relation twice on its key to compare them here';
 COMMENT ON COLUMN sql_table.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
+CREATE INDEX ix_sql_table_class_fqn ON sql_table (class_fqn);
+COMMENT ON INDEX ix_sql_table_class_fqn IS 'Serves the match of a method parameter''s erased class to the table it names, which graphitron_field_path_reading and graphitron_condition_method_route make inline, the second again inside its overload check. Measured on a sis capture: graphitron_condition_method_route at 6.7 s without it and 2.3 s with it, where the stored parameter-to-table relation it replaced read in 2.2 s.';
 
 CREATE TABLE sql_table_record_supertype (
   source_name    VARCHAR NOT NULL,
@@ -6148,7 +6150,7 @@ COMMENT ON COLUMN code_method_parameter.position IS 'the position in the paramet
 COMMENT ON COLUMN code_method_parameter.parameter_name IS 'the parameter''s name as the source declared it, or NULL where the class was compiled without -parameters and the classfile carries no MethodParameters attribute. What a GraphQL argument binds to and what an argMapping entry targets, so a run that finds it absent refuses the binding rather than guessing; a reader must not read NULL as an unnamed parameter';
 COMMENT ON COLUMN code_type.root_class IS 'the fully-qualified class the type names at its root position, type arguments dropped: java.util.List for a List<Film>, and the class itself where the type is one. NULL where the root names no class, which a primitive, a void, an array and a type variable are alike in, so a reader asking what a value has to be to be assigned here reads the absence as "not a class" and does not have to tell those four apart; type_name does tell them apart, for the reader that has to. What a position accepts, and deliberately not how many it accepts: a List<Film> accepts a list, and that it delivers films is code_type_element.delivery''s answer to a different question. The two are stated separately because they diverge exactly where it matters, a reader comparing against a jOOQ record class wanting the list and a reader asking whether one value can be handed over wanting the films';
 COMMENT ON COLUMN code_method_parameter.parameter_type IS 'the type bound at this position, by reference. A parameter is a binding rather than a description: what the type is and what it resolves to are the type''s own facts and are stated once however many positions carry it, which over this module''s main sources is thirteen hundred positions over two hundred types';
-COMMENT ON COLUMN code_method_parameter.role IS 'what the position is for as far as its type alone decides, in a closed vocabulary of four, and the four are exclusive because no type satisfies two of them. DSL_CONTEXT: the run''s own jOOQ context is passed here. TABLE_CONCRETE: the declaration names one generated table, and code_condition_method_parameter_table says which where the catalog holds it. TABLE_ANY: the declaration is org.jooq.Table itself, raw or wildcarded, or a type variable, so the position takes whatever table the site supplies. OTHER: everything else, whose role is the application''s to decide from the arguments and context keys in scope at the site. Decided here rather than by a reader because deciding it needs an assignability walk, which a reader either re-derives through a recursive closure or asks a loader for';
+COMMENT ON COLUMN code_method_parameter.role IS 'what the position is for as far as its type alone decides, in a closed vocabulary of four, and the four are exclusive because no type satisfies two of them. DSL_CONTEXT: the run''s own jOOQ context is passed here. TABLE_CONCRETE: the declaration names one generated table, the sql_table whose class_fqn is the erased class. TABLE_ANY: the declaration is org.jooq.Table itself, raw or wildcarded, or a type variable, so the position takes whatever table the site supplies. OTHER: everything else, whose role is the application''s to decide from the arguments and context keys in scope at the site. Decided here rather than by a reader because deciding it needs an assignability walk, which a reader either re-derives through a recursive closure or asks a loader for';
 COMMENT ON COLUMN code_method_parameter.extraction IS 'how a value bound to this position is coerced into it, decided by the declared type alone: ENUM_VALUE_OF where that type is an enum and DIRECT otherwise. The standing rule rather than the last word, a parameter bound to a slot carrying @nodeId receiving that slot''s decoded key instead, an exception the generator applies. Decided by loading the class, which is what makes it answerable for both populations at once: an author''s own enum and a generated one a column binds to, the second living in the package this reading excludes and so reachable no other way';
 COMMENT ON COLUMN code_method_parameter.touched_at IS 'when the reading that produced this row ran; swept with the method it hangs on';
 
@@ -6313,41 +6315,12 @@ COMMENT ON COLUMN code_external_field_method.method_name IS 'the method, as on c
 COMMENT ON COLUMN code_external_field_method.descriptor IS 'the method''s descriptor, completing the key. The table the lifter lifts from was a column here and is code_method_parameter''s role at position 0: a parameter''s type is the parameter''s fact, and a reader asking which table a lifter takes asks the position rather than the arm';
 COMMENT ON COLUMN code_external_field_method.touched_at IS 'when the reading that produced this row ran; swept with the method it hangs on';
 
-CREATE TABLE code_condition_method_parameter_table (
-  source_name       VARCHAR NOT NULL,
-  class_name        VARCHAR NOT NULL,
-  method_name       VARCHAR NOT NULL,
-  descriptor        VARCHAR NOT NULL,
-  position          INT NOT NULL,
-  table_source_name VARCHAR NOT NULL,
-  table_schema      VARCHAR NOT NULL,
-  table_name        VARCHAR NOT NULL,
-  touched_at        TIMESTAMP NOT NULL,
-  PRIMARY KEY (source_name, class_name, method_name, descriptor, position),
-  FOREIGN KEY (source_name, class_name, method_name, descriptor, position)
-    REFERENCES code_method_parameter
-      (source_name, class_name, method_name, descriptor, position) ON DELETE CASCADE,
-  -- The resolution goes when the table does, and only the resolution: the position is still a
-  -- concrete one the author wrote, and a consumer dropping a table has not unwritten their method.
-  FOREIGN KEY (table_source_name, table_schema, table_name)
-    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE
-);
-COMMENT ON TABLE code_condition_method_parameter_table IS 'The catalog table one TABLE_CONCRETE parameter position names. For example position 0 of filmTitleContains naming the film table of the consumer''s public schema.';
-COMMENT ON COLUMN code_condition_method_parameter_table.source_name IS 'the entry the declaring class was read from, as on code_method_parameter; the key''s leading dimension';
-COMMENT ON COLUMN code_condition_method_parameter_table.class_name IS 'the declaring class, as on code_method_parameter';
-COMMENT ON COLUMN code_condition_method_parameter_table.method_name IS 'the method, as on code_method_parameter';
-COMMENT ON COLUMN code_condition_method_parameter_table.descriptor IS 'the method''s descriptor, as on code_method_parameter';
-COMMENT ON COLUMN code_condition_method_parameter_table.position IS 'the position, completing the key; with the four columns above, the parameter this resolution is of, and the row is deleted with it';
-COMMENT ON COLUMN code_condition_method_parameter_table.table_source_name IS 'the catalog partition holding the table, the first of three columns keying it';
-COMMENT ON COLUMN code_condition_method_parameter_table.table_schema IS 'the schema the table is in, the second of the three';
-COMMENT ON COLUMN code_condition_method_parameter_table.table_name IS 'the table''s SQL name, the third. Keyed to sql_table rather than carrying the generated class name, so a reader joins a primary key instead of sql_table.class_fqn, which is no key and can match more than one row';
-COMMENT ON COLUMN code_condition_method_parameter_table.touched_at IS 'when the reading that produced this row ran; swept with the parameter it hangs on';
-
 CREATE VIEW graphitron_field_path_reading
   (graph_name, type_name, field_name, target_source_name, target_schema, target_table,
    position, last_position, via, key_matched_by,
    constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from,
-   from_source_name, from_schema, from_table, to_source_name, to_schema, to_table) AS
+   from_source_name, from_schema, from_table, to_source_name, to_schema, to_table,
+   method_source_name, method_class_name, method_name, method_descriptor) AS
 WITH
 -- The key an element named, whichever directive wrote it. One fact with one shape, so one
 -- relation; a written position is never under both directives at once, so a bag costs nothing.
@@ -6421,7 +6394,9 @@ link (graph_name, type_name, field_name, position, last_position,
          CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
          CAST(NULL AS VARCHAR), CAST(NULL AS BOOLEAN),
          CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
-         fr.result_source_name, fr.result_schema, fr.result_table
+         fr.result_source_name, fr.result_schema, fr.result_table,
+         CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+         CAST(NULL AS VARCHAR)
     FROM link l
     JOIN graphitron_routine_entry r
       ON r.graph_name = l.graph_name AND r.type_name = l.type_name
@@ -6446,7 +6421,9 @@ link (graph_name, type_name, field_name, position, last_position,
          l.position, l.last_position, 'KEY', 'SQL_NAME',
          h.source_name, h.table_schema, h.table_name, h.constraint_name, h.fk_on_from,
          h.from_source_name, h.from_schema, h.from_table,
-         h.to_source_name, h.to_schema, h.to_table
+         h.to_source_name, h.to_schema, h.to_table,
+         CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+         CAST(NULL AS VARCHAR)
     FROM link l
     JOIN key_spelling ks
       ON ks.graph_name = l.graph_name AND ks.source_name = l.source_name
@@ -6468,7 +6445,9 @@ link (graph_name, type_name, field_name, position, last_position,
          l.position, l.last_position, 'KEY', 'SQL_NAME',
          h.source_name, h.table_schema, h.table_name, h.constraint_name, h.fk_on_from,
          h.from_source_name, h.from_schema, h.from_table,
-         h.to_source_name, h.to_schema, h.to_table
+         h.to_source_name, h.to_schema, h.to_table,
+         CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+         CAST(NULL AS VARCHAR)
     FROM link l
     JOIN key_spelling ks
       ON ks.graph_name = l.graph_name AND ks.source_name = l.source_name
@@ -6490,7 +6469,9 @@ link (graph_name, type_name, field_name, position, last_position,
          l.position, l.last_position, 'KEY', 'JOOQ_NAME',
          h.source_name, h.table_schema, h.table_name, h.constraint_name, h.fk_on_from,
          h.from_source_name, h.from_schema, h.from_table,
-         h.to_source_name, h.to_schema, h.to_table
+         h.to_source_name, h.to_schema, h.to_table,
+         CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+         CAST(NULL AS VARCHAR)
     FROM link l
     JOIN key_spelling ks
       ON ks.graph_name = l.graph_name AND ks.source_name = l.source_name
@@ -6518,7 +6499,9 @@ link (graph_name, type_name, field_name, position, last_position,
          l.position, l.last_position, 'TABLE', CAST(NULL AS VARCHAR),
          h.source_name, h.table_schema, h.table_name, h.constraint_name, h.fk_on_from,
          h.from_source_name, h.from_schema, h.from_table,
-         h.to_source_name, h.to_schema, h.to_table
+         h.to_source_name, h.to_schema, h.to_table,
+         CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+         CAST(NULL AS VARCHAR)
     FROM link l
     JOIN table_spelling ts
       ON ts.graph_name = l.graph_name AND ts.source_name = l.source_name
@@ -6547,7 +6530,9 @@ link (graph_name, type_name, field_name, position, last_position,
          CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
          CAST(NULL AS VARCHAR), CAST(NULL AS BOOLEAN),
          pair.source_name, pair.table_schema, pair.table_name,
-         st.source_name, st.table_schema, st.table_name
+         st.source_name, st.table_schema, st.table_name,
+         CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+         CAST(NULL AS VARCHAR)
     FROM link l
     JOIN table_spelling ts
       ON ts.graph_name = l.graph_name AND ts.source_name = l.source_name
@@ -6566,14 +6551,16 @@ link (graph_name, type_name, field_name, position, last_position,
   UNION ALL
   -- An element carrying a condition and naming neither a key nor a table has no foreign key to
   -- read, so its route is what its method's signature declares: the second parameter names the
-  -- arrival, and the first names the departure or leaves it open for the chain's own to stand.
+  -- arrival, and the first names the departure or leaves it open for the chain's own to stand. A
+-- parameter names the table whose generated class is its erased class, among the graph's sources.
   SELECT l.graph_name, l.type_name, l.field_name,
          l.target_source_name, l.target_schema, l.target_table,
          l.position, l.last_position, 'CONDITION', CAST(NULL AS VARCHAR),
          CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
          CAST(NULL AS VARCHAR), CAST(NULL AS BOOLEAN),
-         departs.table_source_name, departs.table_schema, departs.table_name,
-         arrives.table_source_name, arrives.table_schema, arrives.table_name
+         departs.source_name, departs.table_schema, departs.table_name,
+         arrives.source_name, arrives.table_schema, arrives.table_name,
+         cm.source_name, cm.class_name, cm.method_name, cm.descriptor
     FROM link l
     JOIN condition_spelling cs
       ON cs.graph_name = l.graph_name AND cs.source_name = l.source_name
@@ -6582,14 +6569,22 @@ link (graph_name, type_name, field_name, position, last_position,
     JOIN code_condition_method cm
       ON cm.source_name = m.source_name AND cm.class_name = cs.class_name
      AND cm.method_name = cs.method
-    JOIN code_condition_method_parameter_table arrives
-      ON arrives.source_name = cm.source_name AND arrives.class_name = cm.class_name
-     AND arrives.method_name = cm.method_name AND arrives.descriptor = cm.descriptor
-     AND arrives.position = 1
-    LEFT JOIN code_condition_method_parameter_table departs
-      ON departs.source_name = cm.source_name AND departs.class_name = cm.class_name
+    JOIN code_method_parameter ap
+      ON ap.source_name = cm.source_name AND ap.class_name = cm.class_name
+     AND ap.method_name = cm.method_name AND ap.descriptor = cm.descriptor AND ap.position = 1
+    JOIN sql_table arrives ON arrives.class_fqn = ap.erased_class
+    JOIN store_graph_source am
+      ON am.graph_name = l.graph_name AND am.source_name = arrives.source_name
+    LEFT JOIN (SELECT dm.graph_name, dp.source_name AS method_source_name, dp.class_name,
+                      dp.method_name, dp.descriptor,
+                      d.source_name, d.table_schema, d.table_name
+                 FROM code_method_parameter dp
+                 JOIN sql_table d ON d.class_fqn = dp.erased_class
+                 JOIN store_graph_source dm ON dm.source_name = d.source_name
+                WHERE dp.position = 0) departs
+      ON departs.graph_name = l.graph_name
+     AND departs.method_source_name = cm.source_name AND departs.class_name = cm.class_name
      AND departs.method_name = cm.method_name AND departs.descriptor = cm.descriptor
-     AND departs.position = 0
    WHERE NOT EXISTS (SELECT 1 FROM key_spelling k
                       WHERE k.graph_name = l.graph_name AND k.source_name = l.source_name
                         AND k.source_line = l.source_line AND k.source_column = l.source_column)
@@ -6619,11 +6614,16 @@ COMMENT ON COLUMN graphitron_field_path_reading.from_table IS 'the from_table of
 COMMENT ON COLUMN graphitron_field_path_reading.to_source_name IS 'the to_source_name of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
 COMMENT ON COLUMN graphitron_field_path_reading.to_schema IS 'the to_schema of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
 COMMENT ON COLUMN graphitron_field_path_reading.to_table IS 'the to_table of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
+COMMENT ON COLUMN graphitron_field_path_reading.method_source_name IS 'the classpath entry the condition method routing this reading was read from, the first of four columns keying code_condition_method; NULL off the CONDITION arm';
+COMMENT ON COLUMN graphitron_field_path_reading.method_class_name IS 'the condition method''s declaring class';
+COMMENT ON COLUMN graphitron_field_path_reading.method_name IS 'the condition method''s name';
+COMMENT ON COLUMN graphitron_field_path_reading.method_descriptor IS 'the condition method''s descriptor. An overload is its own reading, routed by its own signature';
 CREATE VIEW graphitron_field_path_resolution_rule
   (graph_name, type_name, field_name, target_source_name, target_schema, target_table,
    position, via, key_matched_by,
    constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from,
    from_source_name, from_schema, from_table, to_source_name, to_schema, to_table,
+   method_source_name, method_class_name, method_name, method_descriptor,
    reached_by_tail, reached_by_head) AS
 WITH RECURSIVE
 -- The chain walked from its end. The target is where the last link arrives and it is the one
@@ -6633,14 +6633,15 @@ from_tail (graph_name, type_name, field_name, target_source_name, target_schema,
    position, via, key_matched_by,
    constraint_source_name, constraint_schema, constraint_table, constraint_name,
    fk_on_from, from_source_name, from_schema, from_table,
-   to_source_name, to_schema, to_table) AS (
+   to_source_name, to_schema, to_table, method_source_name, method_class_name, method_name, method_descriptor) AS (
   SELECT
          r.graph_name, r.type_name, r.field_name,
          r.target_source_name, r.target_schema, r.target_table,
          r.position, r.via, r.key_matched_by,
          r.constraint_source_name, r.constraint_schema, r.constraint_table, r.constraint_name,
          r.fk_on_from, r.from_source_name, r.from_schema, r.from_table,
-         r.to_source_name, r.to_schema, r.to_table
+         r.to_source_name, r.to_schema, r.to_table,
+         r.method_source_name, r.method_class_name, r.method_name, r.method_descriptor
     FROM graphitron_field_path_reading r
    WHERE r.position = r.last_position
      AND r.to_source_name = r.target_source_name AND r.to_schema = r.target_schema
@@ -6652,7 +6653,8 @@ from_tail (graph_name, type_name, field_name, target_source_name, target_schema,
          r.position, r.via, r.key_matched_by,
          r.constraint_source_name, r.constraint_schema, r.constraint_table, r.constraint_name,
          r.fk_on_from, r.from_source_name, r.from_schema, r.from_table,
-         r.to_source_name, r.to_schema, r.to_table
+         r.to_source_name, r.to_schema, r.to_table,
+         r.method_source_name, r.method_class_name, r.method_name, r.method_descriptor
     FROM from_tail w
     JOIN graphitron_field_path_reading r
       ON r.graph_name = w.graph_name AND r.type_name = w.type_name
@@ -6671,14 +6673,15 @@ from_head (graph_name, type_name, field_name, target_source_name, target_schema,
    position, via, key_matched_by,
    constraint_source_name, constraint_schema, constraint_table, constraint_name,
    fk_on_from, from_source_name, from_schema, from_table,
-   to_source_name, to_schema, to_table) AS (
+   to_source_name, to_schema, to_table, method_source_name, method_class_name, method_name, method_descriptor) AS (
   SELECT
          r.graph_name, r.type_name, r.field_name,
          r.target_source_name, r.target_schema, r.target_table,
          r.position, r.via, r.key_matched_by,
          r.constraint_source_name, r.constraint_schema, r.constraint_table, r.constraint_name,
          r.fk_on_from, r.from_source_name, r.from_schema, r.from_table,
-         r.to_source_name, r.to_schema, r.to_table
+         r.to_source_name, r.to_schema, r.to_table,
+         r.method_source_name, r.method_class_name, r.method_name, r.method_descriptor
     FROM graphitron_field_path_reading r
     JOIN graphitron_field_table ft
       ON ft.graph_name = r.graph_name AND ft.type_name = r.type_name
@@ -6695,7 +6698,8 @@ from_head (graph_name, type_name, field_name, target_source_name, target_schema,
          r.position, r.via, r.key_matched_by,
          r.constraint_source_name, r.constraint_schema, r.constraint_table, r.constraint_name,
          r.fk_on_from, r.from_source_name, r.from_schema, r.from_table,
-         r.to_source_name, r.to_schema, r.to_table
+         r.to_source_name, r.to_schema, r.to_table,
+         r.method_source_name, r.method_class_name, r.method_name, r.method_descriptor
     FROM from_head w
     JOIN graphitron_field_path_reading r
       ON r.graph_name = w.graph_name AND r.type_name = w.type_name
@@ -6722,27 +6726,31 @@ SELECT
        position, via, key_matched_by,
        constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from,
        from_source_name, from_schema, from_table, to_source_name, to_schema, to_table,
+       method_source_name, method_class_name, method_name, method_descriptor,
        BOOL_OR(reach = 'TAIL'), BOOL_OR(reach = 'HEAD')
   FROM (SELECT
        graph_name, type_name, field_name, target_source_name, target_schema, target_table,
        position, via, key_matched_by,
        constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from,
-       from_source_name, from_schema, from_table, to_source_name, to_schema, to_table, 'TAIL' AS reach
+       from_source_name, from_schema, from_table, to_source_name, to_schema, to_table,
+       method_source_name, method_class_name, method_name, method_descriptor, 'TAIL' AS reach
           FROM from_tail
         UNION ALL
         SELECT
        graph_name, type_name, field_name, target_source_name, target_schema, target_table,
        position, via, key_matched_by,
        constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from,
-       from_source_name, from_schema, from_table, to_source_name, to_schema, to_table, 'HEAD'
+       from_source_name, from_schema, from_table, to_source_name, to_schema, to_table,
+       method_source_name, method_class_name, method_name, method_descriptor, 'HEAD'
           FROM from_head) walked
  GROUP BY
        graph_name, type_name, field_name, target_source_name, target_schema, target_table,
        position, via, key_matched_by,
        constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from,
-       from_source_name, from_schema, from_table, to_source_name, to_schema, to_table;
+       from_source_name, from_schema, from_table, to_source_name, to_schema, to_table,
+       method_source_name, method_class_name, method_name, method_descriptor;
 
-COMMENT ON VIEW graphitron_field_path_resolution_rule IS 'One row the chain-link walks compute, in the shape graphitron_field_path_resolution presents: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into the three arm tables under graphitron_field_path_resolution, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
+COMMENT ON VIEW graphitron_field_path_resolution_rule IS 'One row the chain-link walks compute, in the shape graphitron_field_path_resolution presents: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into the four arm tables under graphitron_field_path_resolution, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
 COMMENT ON COLUMN graphitron_field_path_resolution_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_field_path_resolution.graph_name through the arm table the row''s shape belongs to';
 COMMENT ON COLUMN graphitron_field_path_resolution_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_field_path_resolution.type_name through the arm table the row''s shape belongs to';
 COMMENT ON COLUMN graphitron_field_path_resolution_rule.field_name IS 'the field_name of a row of this rule, which the stage writes into graphitron_field_path_resolution.field_name through the arm table the row''s shape belongs to';
@@ -6763,6 +6771,10 @@ COMMENT ON COLUMN graphitron_field_path_resolution_rule.from_table IS 'the from_
 COMMENT ON COLUMN graphitron_field_path_resolution_rule.to_source_name IS 'the to_source_name of a row of this rule, which the stage writes into graphitron_field_path_resolution.to_source_name through the arm table the row''s shape belongs to';
 COMMENT ON COLUMN graphitron_field_path_resolution_rule.to_schema IS 'the to_schema of a row of this rule, which the stage writes into graphitron_field_path_resolution.to_schema through the arm table the row''s shape belongs to';
 COMMENT ON COLUMN graphitron_field_path_resolution_rule.to_table IS 'the to_table of a row of this rule, which the stage writes into graphitron_field_path_resolution.to_table through the arm table the row''s shape belongs to';
+COMMENT ON COLUMN graphitron_field_path_resolution_rule.method_source_name IS 'the method_source_name of a row of this rule, which the stage writes into graphitron_field_path_resolution.method_source_name through the arm table the row''s shape belongs to';
+COMMENT ON COLUMN graphitron_field_path_resolution_rule.method_class_name IS 'the method_class_name of a row of this rule, which the stage writes into graphitron_field_path_resolution.method_class_name through the arm table the row''s shape belongs to';
+COMMENT ON COLUMN graphitron_field_path_resolution_rule.method_name IS 'the method_name of a row of this rule, which the stage writes into graphitron_field_path_resolution.method_name through the arm table the row''s shape belongs to';
+COMMENT ON COLUMN graphitron_field_path_resolution_rule.method_descriptor IS 'the method_descriptor of a row of this rule, which the stage writes into graphitron_field_path_resolution.method_descriptor through the arm table the row''s shape belongs to';
 COMMENT ON COLUMN graphitron_field_path_resolution_rule.reached_by_tail IS 'the reached_by_tail of a row of this rule, which the stage writes into graphitron_field_path_resolution.reached_by_tail through the arm table the row''s shape belongs to';
 COMMENT ON COLUMN graphitron_field_path_resolution_rule.reached_by_head IS 'the reached_by_head of a row of this rule, which the stage writes into graphitron_field_path_resolution.reached_by_head through the arm table the row''s shape belongs to';
 
@@ -6880,12 +6892,12 @@ CREATE TABLE graphitron_field_path_resolution_keyless (
     REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
   FOREIGN KEY (to_source_name, to_schema, to_table)
     REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
-  CHECK (via IN ('NAME_MATCH', 'CONDITION')),
+  CHECK (via = 'NAME_MATCH'),
   -- A reading neither walk reaches is not in the resolution at all.
   CHECK (reached_by_tail OR reached_by_head)
 );
 
-COMMENT ON TABLE graphitron_field_path_resolution_keyless IS 'One reading of one chain link that joins a table pair through no foreign key, toward one target, with which of the two walks reached it. For example a condition element whose method routes rental to rent_film draws one row departing rental and arriving rent_film, read CONDITION.';
+COMMENT ON TABLE graphitron_field_path_resolution_keyless IS 'One reading of one chain link that joins a table pair through no foreign key, toward one target, with which of the two walks reached it. For example a table element whose departure is a function result draws one row departing the result and arriving the named table, read NAME_MATCH.';
 COMMENT ON COLUMN graphitron_field_path_resolution_keyless.graph_name IS 'the graph_name of a row of this arm, presented on graphitron_field_path_resolution.graph_name, whose comment carries what the value means';
 COMMENT ON COLUMN graphitron_field_path_resolution_keyless.type_name IS 'the type_name of a row of this arm, presented on graphitron_field_path_resolution.type_name, whose comment carries what the value means';
 COMMENT ON COLUMN graphitron_field_path_resolution_keyless.field_name IS 'the field_name of a row of this arm, presented on graphitron_field_path_resolution.field_name, whose comment carries what the value means';
@@ -6934,9 +6946,8 @@ CREATE TABLE graphitron_field_path_resolution_open (
       ON DELETE CASCADE,
   FOREIGN KEY (to_source_name, to_schema, to_table)
     REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
-  -- A @routine heads a chain and departs from nothing; a condition method whose signature names
-  -- no departing table leaves the departure to the link before it.
-  CHECK (via IN ('ROUTINE', 'CONDITION')),
+  -- A @routine heads a chain and departs from nothing.
+  CHECK (via = 'ROUTINE'),
   -- A reading neither walk reaches is not in the resolution at all.
   CHECK (reached_by_tail OR reached_by_head)
 );
@@ -6957,16 +6968,90 @@ COMMENT ON COLUMN graphitron_field_path_resolution_open.reached_by_tail IS 'the 
 COMMENT ON COLUMN graphitron_field_path_resolution_open.reached_by_head IS 'the reached_by_head of a row of this arm, presented on graphitron_field_path_resolution.reached_by_head, whose comment carries what the value means';
 COMMENT ON COLUMN graphitron_field_path_resolution_open.touched_at IS 'the capture instant that last wrote this row, the mark the stage sweeps against: a row the latest capture of its graph did not write again is one the corpus no longer has';
 
+CREATE TABLE graphitron_field_path_resolution_condition (
+  graph_name             VARCHAR NOT NULL,
+  type_name              VARCHAR NOT NULL,
+  field_name             VARCHAR NOT NULL,
+  target_source_name     VARCHAR NOT NULL,
+  target_schema          VARCHAR NOT NULL,
+  target_table           VARCHAR NOT NULL,
+  position               INT     NOT NULL,
+  via                    VARCHAR NOT NULL,
+  method_source_name     VARCHAR NOT NULL,
+  method_class_name      VARCHAR NOT NULL,
+  method_name            VARCHAR NOT NULL,
+  method_descriptor      VARCHAR NOT NULL,
+  from_source_name       VARCHAR,
+  from_schema            VARCHAR,
+  from_table             VARCHAR,
+  to_source_name         VARCHAR NOT NULL,
+  to_schema              VARCHAR NOT NULL,
+  to_table               VARCHAR NOT NULL,
+  reached_by_tail        BOOLEAN NOT NULL,
+  reached_by_head        BOOLEAN NOT NULL,
+  touched_at             TIMESTAMP NOT NULL,
+  -- The method routing the reading is its identity, with the arrival its second parameter names.
+  PRIMARY KEY (graph_name, type_name, field_name,
+               target_source_name, target_schema, target_table, position,
+               method_source_name, method_class_name, method_name, method_descriptor,
+               to_source_name, to_schema, to_table),
+  FOREIGN KEY (graph_name, type_name, field_name,
+               target_source_name, target_schema, target_table)
+    REFERENCES graphitron_field_table
+      (graph_name, type_name, field_name, to_source_name, to_schema, to_table) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, type_name, field_name, position)
+    REFERENCES graphitron_field_path (graph_name, type_name, field_name, position)
+      ON DELETE CASCADE,
+  FOREIGN KEY (method_source_name, method_class_name, method_name, method_descriptor)
+    REFERENCES code_condition_method (source_name, class_name, method_name, descriptor)
+      ON DELETE CASCADE,
+  FOREIGN KEY (from_source_name, from_schema, from_table)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
+  FOREIGN KEY (to_source_name, to_schema, to_table)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
+  CHECK (via = 'CONDITION'),
+  -- A first parameter naming no table leaves the departure to the link before it, whole.
+  CHECK ((from_source_name IS NULL) = (from_table IS NULL)
+         AND (from_schema IS NULL) = (from_table IS NULL)),
+  -- A reading neither walk reaches is not in the resolution at all.
+  CHECK (reached_by_tail OR reached_by_head)
+);
+
+COMMENT ON TABLE graphitron_field_path_resolution_condition IS 'One reading of one chain link that a condition method''s signature routes, toward one target, with which of the two walks reached it. For example a condition element whose method routes rental to rent_film draws one row naming the method, departing rental and arriving rent_film.';
+COMMENT ON COLUMN graphitron_field_path_resolution_condition.graph_name IS 'the graph_name of a row of this arm, presented on graphitron_field_path_resolution.graph_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_field_path_resolution_condition.type_name IS 'the type_name of a row of this arm, presented on graphitron_field_path_resolution.type_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_field_path_resolution_condition.field_name IS 'the field_name of a row of this arm, presented on graphitron_field_path_resolution.field_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_field_path_resolution_condition.target_source_name IS 'the target_source_name of a row of this arm, presented on graphitron_field_path_resolution.target_source_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_field_path_resolution_condition.target_schema IS 'the target_schema of a row of this arm, presented on graphitron_field_path_resolution.target_schema, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_field_path_resolution_condition.target_table IS 'the target_table of a row of this arm, presented on graphitron_field_path_resolution.target_table, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_field_path_resolution_condition.position IS 'the position of a row of this arm, presented on graphitron_field_path_resolution.position, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_field_path_resolution_condition.via IS 'the via of a row of this arm, presented on graphitron_field_path_resolution.via, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_field_path_resolution_condition.method_source_name IS 'the method_source_name of a row of this arm, presented on graphitron_field_path_resolution.method_source_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_field_path_resolution_condition.method_class_name IS 'the method_class_name of a row of this arm, presented on graphitron_field_path_resolution.method_class_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_field_path_resolution_condition.method_name IS 'the method_name of a row of this arm, presented on graphitron_field_path_resolution.method_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_field_path_resolution_condition.method_descriptor IS 'the method_descriptor of a row of this arm, presented on graphitron_field_path_resolution.method_descriptor, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_field_path_resolution_condition.from_source_name IS 'the from_source_name of a row of this arm, presented on graphitron_field_path_resolution.from_source_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_field_path_resolution_condition.from_schema IS 'the from_schema of a row of this arm, presented on graphitron_field_path_resolution.from_schema, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_field_path_resolution_condition.from_table IS 'the from_table of a row of this arm, presented on graphitron_field_path_resolution.from_table, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_field_path_resolution_condition.to_source_name IS 'the to_source_name of a row of this arm, presented on graphitron_field_path_resolution.to_source_name, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_field_path_resolution_condition.to_schema IS 'the to_schema of a row of this arm, presented on graphitron_field_path_resolution.to_schema, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_field_path_resolution_condition.to_table IS 'the to_table of a row of this arm, presented on graphitron_field_path_resolution.to_table, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_field_path_resolution_condition.reached_by_tail IS 'the reached_by_tail of a row of this arm, presented on graphitron_field_path_resolution.reached_by_tail, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_field_path_resolution_condition.reached_by_head IS 'the reached_by_head of a row of this arm, presented on graphitron_field_path_resolution.reached_by_head, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_field_path_resolution_condition.touched_at IS 'the capture instant that last wrote this row, the mark the stage sweeps against: a row the latest capture of its graph did not write again is one the corpus no longer has';
+
 CREATE VIEW graphitron_field_path_resolution
   (graph_name, type_name, field_name, target_source_name, target_schema, target_table,
    position, via, key_matched_by,
    constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from,
    from_source_name, from_schema, from_table, to_source_name, to_schema, to_table,
+   method_source_name, method_class_name, method_name, method_descriptor,
    reached_by_tail, reached_by_head) AS
 SELECT graph_name, type_name, field_name, target_source_name, target_schema, target_table,
        position, via, key_matched_by,
        constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from,
        from_source_name, from_schema, from_table, to_source_name, to_schema, to_table,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        reached_by_tail, reached_by_head
   FROM graphitron_field_path_resolution_keyed
 UNION ALL
@@ -6975,6 +7060,7 @@ SELECT graph_name, type_name, field_name, target_source_name, target_schema, tar
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        CAST(NULL AS BOOLEAN),
        from_source_name, from_schema, from_table, to_source_name, to_schema, to_table,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        reached_by_tail, reached_by_head
   FROM graphitron_field_path_resolution_keyless
 UNION ALL
@@ -6984,8 +7070,18 @@ SELECT graph_name, type_name, field_name, target_source_name, target_schema, tar
        CAST(NULL AS BOOLEAN),
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        to_source_name, to_schema, to_table,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        reached_by_tail, reached_by_head
-  FROM graphitron_field_path_resolution_open;
+  FROM graphitron_field_path_resolution_open
+UNION ALL
+SELECT graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+       position, via, CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS BOOLEAN),
+       from_source_name, from_schema, from_table, to_source_name, to_schema, to_table,
+       method_source_name, method_class_name, method_name, method_descriptor,
+       reached_by_tail, reached_by_head
+  FROM graphitron_field_path_resolution_condition;
 
 COMMENT ON VIEW graphitron_field_path_resolution IS 'One reading of one chain link toward one target, with which of the two walks reached it: the tail walk from the target backwards, the head walk from the field''s departure forwards. For example an element whose condition method routes rent_film to rental on a field departing film draws a row the tail reaches and the head does not, which is the chain failing to reach it.';
 COMMENT ON COLUMN graphitron_field_path_resolution.graph_name IS 'the owning graph''s partition, carried from the reading; the leading key dimension that keeps one workspace''s graphs apart';
@@ -7008,6 +7104,10 @@ COMMENT ON COLUMN graphitron_field_path_resolution.from_table IS 'the departure'
 COMMENT ON COLUMN graphitron_field_path_resolution.to_source_name IS 'the catalog partition of the table this reading arrives at, the first of three columns naming it';
 COMMENT ON COLUMN graphitron_field_path_resolution.to_schema IS 'the arrival''s SQL schema';
 COMMENT ON COLUMN graphitron_field_path_resolution.to_table IS 'the arrival''s SQL name. Every arm states its arrival outright, which is what lets a reading be taken without knowing which reading the link before it took';
+COMMENT ON COLUMN graphitron_field_path_resolution.method_source_name IS 'the classpath entry of the condition method routing this reading, the first of four columns keying code_condition_method; NULL off the CONDITION arm';
+COMMENT ON COLUMN graphitron_field_path_resolution.method_class_name IS 'the condition method''s declaring class';
+COMMENT ON COLUMN graphitron_field_path_resolution.method_name IS 'the condition method''s name';
+COMMENT ON COLUMN graphitron_field_path_resolution.method_descriptor IS 'the condition method''s descriptor; an overload is its own reading';
 COMMENT ON COLUMN graphitron_field_path_resolution.reached_by_tail IS 'whether the tail walk, from the target backwards, reached this reading. A reading it reaches could end the chain, which says nothing about whether the chain gets there';
 COMMENT ON COLUMN graphitron_field_path_resolution.reached_by_head IS 'whether the head walk, from the field''s departure forwards, reached this reading. A reading reached by both lies on a chain that runs the whole way; one only the head reaches is where a broken chain got to';
 
@@ -7019,7 +7119,8 @@ CREATE VIEW graphitron_field_table_link_rule
 -- A reading both walks reach lies on a chain that runs the whole way, because the two halves
 -- compose into one. Counted per position afterwards: a link two readings reach both ways is a
 -- chain that resolves ambiguously and has no single row to store. The count is what
--- graphitron_entry_defect reports and what this discards.
+-- graphitron_entry_defect reports and what this discards. Routes are counted and not readings: two
+-- overloads of a condition method naming one table pair are two readings and one route.
 SELECT
        graph_name, type_name, field_name, target_source_name, target_schema, target_table,
        position, via, key_matched_by,
@@ -7033,8 +7134,13 @@ SELECT
                COUNT(*) OVER (PARTITION BY graph_name, type_name, field_name,
                               target_source_name, target_schema, target_table,
                               position) AS readings
-          FROM graphitron_field_path_resolution
-         WHERE reached_by_tail AND reached_by_head) counted
+          FROM (SELECT DISTINCT graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+                       position, via, key_matched_by,
+                       constraint_source_name, constraint_schema, constraint_table, constraint_name,
+                       fk_on_from, from_source_name, from_schema, from_table,
+                       to_source_name, to_schema, to_table
+                  FROM graphitron_field_path_resolution
+                 WHERE reached_by_tail AND reached_by_head) route) counted
  WHERE readings = 1;
 COMMENT ON VIEW graphitron_field_table_link_rule IS 'One row the chain-link resolution computes, in the shape graphitron_field_table_link stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_field_table_link, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
 COMMENT ON COLUMN graphitron_field_table_link_rule.graph_name IS 'the graph_name of a row of this rule, which the stage inserts into graphitron_field_table_link.graph_name';
@@ -8048,7 +8154,7 @@ named (graph_name, class_name, method) AS (
 arrival (graph_name, class_name, method, source_name, descriptor,
          to_source_name, to_schema, to_table) AS (
   SELECT n.graph_name, n.class_name, n.method, m.source_name, m.descriptor,
-         t.table_source_name, t.table_schema, t.table_name
+         t.source_name, t.table_schema, t.table_name
     FROM named n
     JOIN store_graph_source g ON g.graph_name = n.graph_name
     JOIN code_condition_method m
@@ -8057,12 +8163,8 @@ arrival (graph_name, class_name, method, source_name, descriptor,
     JOIN code_method_parameter a
       ON a.source_name = m.source_name AND a.class_name = m.class_name
      AND a.method_name = m.method_name AND a.descriptor = m.descriptor AND a.position = 1
-    JOIN code_condition_method_parameter_table t
-      ON t.source_name = a.source_name AND t.class_name = a.class_name
-     AND t.method_name = a.method_name AND t.descriptor = a.descriptor
-     AND t.position = a.position
-    JOIN store_graph_source gt
-      ON gt.graph_name = n.graph_name AND gt.source_name = t.table_source_name
+    JOIN sql_table t ON t.class_fqn = a.erased_class
+    JOIN store_graph_source gt ON gt.graph_name = n.graph_name AND gt.source_name = t.source_name
    -- Every overload of the name has to arrive at this same table, so a declaration whose second
    -- position resolves elsewhere, or does not resolve at all, suppresses the route. Driven from
    -- the parameter rather than the resolution, because not resolving is half of what disagreeing
@@ -8072,26 +8174,23 @@ arrival (graph_name, class_name, method, source_name, descriptor,
                        JOIN code_condition_method cm
                          ON cm.source_name = p.source_name AND cm.class_name = p.class_name
                         AND cm.method_name = p.method_name AND cm.descriptor = p.descriptor
-                       LEFT JOIN code_condition_method_parameter_table q
-                         ON q.source_name = p.source_name AND q.class_name = p.class_name
-                        AND q.method_name = p.method_name AND q.descriptor = p.descriptor
-                        AND q.position = p.position
-                        AND q.table_source_name = t.table_source_name
-                        AND q.table_schema = t.table_schema
+                       LEFT JOIN sql_table q
+                         ON q.class_fqn = p.erased_class
+                        AND q.source_name = t.source_name AND q.table_schema = t.table_schema
                         AND q.table_name = t.table_name
-                      WHERE p.source_name = t.source_name AND p.class_name = t.class_name
-                        AND p.method_name = t.method_name AND p.position = 1
+                      WHERE p.source_name = a.source_name AND p.class_name = a.class_name
+                        AND p.method_name = a.method_name AND p.position = 1
                         AND q.table_name IS NULL)
 )
 SELECT a.graph_name, a.class_name, a.method,
-       d.table_source_name, d.table_schema, d.table_name,
+       d.source_name, d.table_schema, d.table_name,
        a.to_source_name, a.to_schema, a.to_table
   FROM arrival a
-  JOIN code_condition_method_parameter_table d
-    ON d.source_name = a.source_name AND d.class_name = a.class_name
-   AND d.method_name = a.method AND d.descriptor = a.descriptor AND d.position = 0
-  JOIN store_graph_source gf
-    ON gf.graph_name = a.graph_name AND gf.source_name = d.table_source_name
+  JOIN code_method_parameter dp
+    ON dp.source_name = a.source_name AND dp.class_name = a.class_name
+   AND dp.method_name = a.method AND dp.descriptor = a.descriptor AND dp.position = 0
+  JOIN sql_table d ON d.class_fqn = dp.erased_class
+  JOIN store_graph_source gd ON gd.graph_name = a.graph_name AND gd.source_name = d.source_name
  UNION
 SELECT a.graph_name, a.class_name, a.method,
        f.source_name, f.table_schema, f.table_name,
@@ -8100,10 +8199,13 @@ SELECT a.graph_name, a.class_name, a.method,
   JOIN store_graph_source gf ON gf.graph_name = a.graph_name
   JOIN sql_table f ON f.source_name = gf.source_name
  WHERE NOT EXISTS (SELECT 1
-                     FROM code_condition_method_parameter_table d
-                    WHERE d.source_name = a.source_name AND d.class_name = a.class_name
-                      AND d.method_name = a.method AND d.descriptor = a.descriptor
-                      AND d.position = 0);
+                     FROM code_method_parameter dp
+                     JOIN sql_table d ON d.class_fqn = dp.erased_class
+                     JOIN store_graph_source gd
+                       ON gd.graph_name = a.graph_name AND gd.source_name = d.source_name
+                    WHERE dp.source_name = a.source_name AND dp.class_name = a.class_name
+                      AND dp.method_name = a.method AND dp.descriptor = a.descriptor
+                      AND dp.position = 0);
 COMMENT ON VIEW graphitron_condition_method_route IS 'How a condition method''s own signature routes a hop: the departing tables its first parameter admits, beside the table its second parameter names. For example a method taking a film table and an actor table routes film to actor, whatever element named it.';
 COMMENT ON COLUMN graphitron_condition_method_route.graph_name IS 'the owning graph''s partition, carried from whichever reference-step relation named the pair; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_condition_method_route.class_name IS 'the condition class as the author wrote it, fully qualified, carried from the path element; the key this route answers for together with the method beside it';
@@ -9193,14 +9295,19 @@ WITH head (graph_name, type_name, field_name, source_name, source_line, source_c
 ),
 -- How many routes each written link resolves by, toward each of its field's targets: the count
 -- graphitron_field_table_link_rule keeps only where it is 1. A reading both walks reach lies on a
--- chain that runs the whole way; two of them at one position is a chain that runs the whole way
--- twice.
+-- chain that runs the whole way; two routes at one position is a chain that runs the whole way
+-- twice. Two overloads of a condition method naming one table pair are one route.
 routes (graph_name, type_name, field_name, target_source_name, target_schema, target_table,
         position, routes) AS (
   SELECT graph_name, type_name, field_name, target_source_name, target_schema, target_table,
          position, COUNT(*)
-    FROM graphitron_field_path_resolution
-   WHERE reached_by_tail AND reached_by_head
+    FROM (SELECT DISTINCT graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+           position, via, key_matched_by,
+           constraint_source_name, constraint_schema, constraint_table, constraint_name,
+           fk_on_from, from_source_name, from_schema, from_table,
+           to_source_name, to_schema, to_table
+            FROM graphitron_field_path_resolution
+           WHERE reached_by_tail AND reached_by_head) route
    GROUP BY graph_name, type_name, field_name, target_source_name, target_schema, target_table,
             position
 ),
@@ -13630,10 +13737,7 @@ INSERT INTO meta_gatherer_dependency VALUES
   -- them it could only copy the author's strings.
   ('graphitron-ast', 'jooq'),
   ('graphitron-ast', 'code'),
-  -- A concrete table position is keyed to the table it names, so the arm reads the catalog the
-  -- jOOQ gatherer wrote. ModelCapture runs the two in this order for that reason.
   ('code', 'classpath-source'),
-  ('code', 'jooq'),
   ('derivation', 'store'),
   ('derivation', 'sdl'),
   ('derivation', 'graphql-source'),
@@ -13896,16 +14000,19 @@ INSERT INTO meta_grain VALUES
    'graph_name, class_name, method, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table', 'sdl'),
   ('field-path-reading',
    'one way one written chain link could be read, toward one target, in one graph',
-   'graph_name, type_name, field_name, target_source_name, target_schema, target_table, position, via, constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table', 'sdl'),
+   'graph_name, type_name, field_name, target_source_name, target_schema, target_table, position, via, constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table, method_source_name, method_class_name, method_name, method_descriptor', 'sdl'),
   ('field-path-reach',
    'one way one written chain link could be read that a walk reaches, and which walks do, toward one target, in one graph',
-   'graph_name, type_name, field_name, target_source_name, target_schema, target_table, position, via, constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table', 'sdl'),
+   'graph_name, type_name, field_name, target_source_name, target_schema, target_table, position, via, constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table, method_source_name, method_class_name, method_name, method_descriptor', 'sdl'),
   ('field-path-keyed-reach',
    'one reading of one written chain link that joins through a foreign key, toward one target, in one graph',
    'graph_name, type_name, field_name, target_source_name, target_schema, target_table, position, constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from', 'sdl'),
   ('field-path-keyless-reach',
    'one reading of one written chain link that joins a table pair through no foreign key, toward one target, in one graph',
    'graph_name, type_name, field_name, target_source_name, target_schema, target_table, position, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table', 'sdl'),
+  ('field-path-condition-reach',
+   'one reading of one written chain link that a condition method routes, toward one target, in one graph',
+   'graph_name, type_name, field_name, target_source_name, target_schema, target_table, position, method_source_name, method_class_name, method_name, method_descriptor, to_source_name, to_schema, to_table', 'sdl'),
   ('field-path-open-reach',
    'one reading of one written chain link that states its arrival and not its departure, toward one target, in one graph',
    'graph_name, type_name, field_name, target_source_name, target_schema, target_table, position, to_source_name, to_schema, to_table', 'sdl'),
@@ -14766,7 +14873,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_condition_method_route', 'condition-method-route', 'graphitron',
    'How a condition method''s own signature routes a hop: the departing tables its first parameter admits, beside the table its second parameter names.',
    'For example a method taking a film table and an actor table routes film to actor, whatever element named it.',
-   'A path element carrying a condition and naming neither a key nor a table has no foreign key to follow, so the method''s own signature is the only route there is. Position 0 is the departure and position 1 the arrival, because the emitter calls the method positionally with the source alias first, and both are read off code_condition_method_parameter_table rather than matched against sql_table.class_fqn here. Keyed on the class and method rather than on the element that named them: the rule does not vary by site, and the field-site and argument-site hop relations both ask it. Overloads are admitted the way the resolver admits them, so a route survives only where every position-1 parameter the name declares resolves to that same arrival; a slot naming no generated table class and a slot naming a different one are one refusal. A first parameter naming no table constrains nothing, so the departure is every table in the graph''s sources on those rows and the chain says where it stands. Absence is one fact, that this pair routes nothing, and never why. The classpath reading admits public classes only, so a condition method on a package-private or nested class routes nothing here where the generator resolves it through its codegen loader.'),
+   'A path element carrying a condition and naming neither a key nor a table has no foreign key to follow, so the method''s own signature is the only route there is. Position 0 is the departure and position 1 the arrival, because the emitter calls the method positionally with the source alias first, and each is the table whose generated class is the parameter''s erased class, among the graph''s sources. Keyed on the class and method rather than on the element that named them: the rule does not vary by site, and the field-site and argument-site hop relations both ask it. Overloads are admitted the way the resolver admits them, so a route survives only where every position-1 parameter the name declares resolves to that same arrival; a slot naming no generated table class and a slot naming a different one are one refusal. A first parameter naming no table constrains nothing, so the departure is every table in the graph''s sources on those rows and the chain says where it stands. Absence is one fact, that this pair routes nothing, and never why. The classpath reading admits public classes only, so a condition method on a package-private or nested class routes nothing here where the generator resolves it through its codegen loader.'),
   ('graphitron_field_path_reading', 'field-path-reading', 'graphitron',
    'One way one written link of a field''s chain could be read: the route it would take, where it would depart and where it would arrive.',
    'For example an element naming film_actor_film_id_fkey draws two readings, one departing film_actor and one departing film, and the chain keeps whichever it reaches.',
@@ -14774,23 +14881,27 @@ INSERT INTO meta_relation VALUES
   ('graphitron_field_path_resolution', 'field-path-reach', 'graphitron',
    'One reading of one chain link toward one target, with which of the two walks reached it: the tail walk from the target backwards, the head walk from the field''s departure forwards.',
    'For example an element whose condition method routes rent_film to rental on a field departing film draws a row the tail reaches and the head does not, which is the chain failing to reach it.',
-   'One name over three relations, because the readings have three key shapes: graphitron_field_path_resolution_keyed holds the readings a foreign key identifies, graphitron_field_path_resolution_keyless the table pairs none identifies, and graphitron_field_path_resolution_open the readings that state no departure of their own. The columns a half does not have are cast to NULL here, so no reader is edited. Stored because two readers ask it and the walk is the dear part of both: graphitron_field_table_link_rule keeps the readings both walks reach, and graphitron_entry_defect_rule reads the losers to say where a chain broke, both on the capture path. As a view each reader re-walked every chain, and the defect rule did so once per chain it drove, which on a consumer-size schema did not finish. The walk is not split by arm the way graphitron_field_reference_step_hop is, because one chain mixes arms: the stage walks once, from graphitron_field_path_resolution_rule, and files each reading under its shape. Which walks reached a reading is payload and not identity, so a reading both reach is one row and no reader regroups the reading to ask it.'),
+   'One name over four relations, because the readings have four key shapes: graphitron_field_path_resolution_keyed holds the readings a foreign key identifies, graphitron_field_path_resolution_keyless the table pairs none identifies, graphitron_field_path_resolution_open the readings that state no departure of their own, and graphitron_field_path_resolution_condition the readings a condition method routes. The columns an arm does not have are cast to NULL here, so no reader is edited. Stored because two readers ask it and the walk is the dear part of both: graphitron_field_table_link_rule keeps the readings both walks reach, and graphitron_entry_defect_rule reads the losers to say where a chain broke, both on the capture path. As a view each reader re-walked every chain, and the defect rule did so once per chain it drove, which on a consumer-size schema did not finish. The walk is not split by arm the way graphitron_field_reference_step_hop is, because one chain mixes arms: the stage walks once, from graphitron_field_path_resolution_rule, and files each reading under its shape. Which walks reached a reading is payload and not identity, so a reading both reach is one row and no reader regroups the reading to ask it.'),
   ('graphitron_field_path_resolution_rule', 'field-path-reach', 'graphitron',
    'One row the chain-link walks compute, in the shape graphitron_field_path_resolution presents: the rule itself, evaluated on demand rather than read off disk.',
-   'For example a capture inserts this view''s rows for one graph into the three arm tables under graphitron_field_path_resolution, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
+   'For example a capture inserts this view''s rows for one graph into the four arm tables under graphitron_field_path_resolution, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_field_table_link_rule''s terms and for its reasons: the EXCEPT between this view and the union it fills stays runnable for as long as both exist. The walk runs from both ends. From the tail, because the target is the one anchor that always exists; from the head as well, because a reading the tail reaches is a suffix and says nothing about whether the chain gets there. Both walks are folded onto the reading they reach rather than intersected, since the losers are what a diagnostic reads.'),
   ('graphitron_field_path_resolution_keyed', 'field-path-keyed-reach', 'graphitron',
    'One reading of one chain link that joins through a foreign key, toward one target, with which of the two walks reached it.',
    'For example an element naming film_actor_film_id_fkey on Actor.films draws a row departing film_actor for film that both walks reach, and one departing film for film_actor that neither does and so is not here.',
-   'The foreign-key third of a split the resolution''s three key shapes force, on graphitron_field_reference_step_hop_keyed''s terms. Where a foreign key identifies the reading its name and the side it is walked from are identity, both orientations of one constraint being separate readings, and the tables at either end follow from that pair. Where none does those columns are absent rather than null, which is graphitron_field_path_resolution_keyless and graphitron_field_path_resolution_open. key_matched_by stays a nullable payload column rather than forcing a fourth relation: it says which namespace answered a written constraint name, and a table element wrote no name to match, which a biconditional CHECK states.'),
+   'The foreign-key arm of a split the resolution''s four key shapes force, on graphitron_field_reference_step_hop_keyed''s terms. Where a foreign key identifies the reading its name and the side it is walked from are identity, both orientations of one constraint being separate readings, and the tables at either end follow from that pair. Where none does those columns are absent rather than null, which is graphitron_field_path_resolution_keyless and graphitron_field_path_resolution_open. key_matched_by stays a nullable payload column rather than forcing a fourth relation: it says which namespace answered a written constraint name, and a table element wrote no name to match, which a biconditional CHECK states.'),
   ('graphitron_field_path_resolution_keyless', 'field-path-keyless-reach', 'graphitron',
    'One reading of one chain link that joins a table pair through no foreign key, toward one target, with which of the two walks reached it.',
-   'For example a condition element whose method routes rental to rent_film draws one row departing rental and arriving rent_film, read CONDITION.',
-   'The keyless third of a split the resolution''s three key shapes force, on graphitron_field_reference_step_hop_keyless''s terms. Where no foreign key identifies the reading there is none to enumerate, so the link with its departing and arriving table triples is already total and the constraint columns are absent rather than null. A table matched to a function result by column name and a route read off a condition method''s signature are the same shape of fact, a table pair with no constraint behind it, so they share one relation. A condition method that names no departing table is not here but in graphitron_field_path_resolution_open, its departure being absent rather than unknown.'),
+   'For example a table element whose departure is a function result draws one row departing the result and arriving the named table, read NAME_MATCH.',
+   'The keyless arm of a split the resolution''s four key shapes force, on graphitron_field_reference_step_hop_keyless''s terms. Where no foreign key identifies the reading there is none to enumerate, so the link with its departing and arriving table triples is already total and the constraint columns are absent rather than null. A table matched to a function result by column name is the one reading of this shape; a route a condition method''s signature declares is identified by the method and is in graphitron_field_path_resolution_condition.'),
   ('graphitron_field_path_resolution_open', 'field-path-open-reach', 'graphitron',
    'One reading of one chain link that states where it arrives and not where it departs, toward one target, with which of the two walks reached it.',
    'For example a @routine heading Query.hopped draws one row arriving at the function''s result table, read ROUTINE, and departing nowhere.',
-   'The third shape of the split, and the one graphitron_field_reference_step_hop never needed, because a hop always departs. A chain link may not: a @routine heads a chain and departs from nothing, and a condition method whose signature names no departing table leaves the departure to the link before it. The arrival is then the whole of what tells two such readings apart, so the key is the link and the arrival, and the departure columns are absent rather than null.'),
+   'The shape graphitron_field_reference_step_hop never needed, because a hop always departs. A chain link may not: a @routine heads a chain and departs from nothing. The arrival is then the whole of what tells two such readings apart, so the key is the link and the arrival, and the departure columns are absent rather than null.'),
+  ('graphitron_field_path_resolution_condition', 'field-path-condition-reach', 'graphitron',
+   'One reading of one chain link that a condition method''s signature routes, toward one target, with which of the two walks reached it.',
+   'For example a condition element whose method routes rental to rent_film draws one row naming the method, departing rental and arriving rent_film.',
+   'The arm whose identity is code: the method routing the reading is keyed to code_condition_method, so a method that changes signature or leaves the classpath takes its readings with it, and two overloads naming one table pair are two readings rather than one row standing for both. The arrival is in the key because the parameter naming it is matched to sql_table by its erased class, and a graph whose catalogs generate one class twice answers twice. The departure is payload and may be absent: a first parameter naming no table leaves it to the link before it.'),
   ('graphitron_field_table_link_rule', 'field-table-link', 'graphitron',
    'One row the chain-link resolution computes, in the shape graphitron_field_table_link stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_field_table_link, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
@@ -15103,10 +15214,6 @@ INSERT INTO meta_relation VALUES
    'One method an author may name in @externalField(reference:).',
    'For example a public static titleUpper(Film) returning an org.jooq.Field.',
    'The whole of this directive''s contract is a fact about the method, which is what lets the relation be the candidate set rather than an approximation of it: the generator admits a lifter that is public and static, takes exactly one parameter typed as a jOOQ table, and returns org.jooq.Field. Every clause is readable before any schema is consulted, so every clause is an admission rule here and none of them is a column. The one clause left out is the only one that is not about the method, whether the table it lifts from is the table the field was written on, and a reader answers that from the position''s own role.'),
-  ('code_condition_method_parameter_table', 'method-parameter', 'code',
-   'The catalog table one TABLE_CONCRETE parameter position names.',
-   'For example position 0 of filmTitleContains naming the film table of the consumer''s public schema.',
-   'Its own relation and not three columns on the parameter, because the resolution is absent for two of the three roles and for a concrete position the catalog does not hold, and three nullable columns would spell that absence three times and let two of the three be set. Presence is the fact: a parameter with a row here resolved, one without did not, and the role beside it says whether it was ever going to. Keyed to sql_table rather than carrying the class name so a reader joins a primary key, and cascaded from both parents for different reasons: from the parameter because a method that stops existing has no positions, and from the table because a dropped table unresolves the position without unwriting it.'),
   ('code_throwable', 'classpath-class', 'code',
    'One throwable on the classpath, which is what an author may name as an @error handler''s exception.',
    'For example org.jooq.exception.IntegrityConstraintViolationException, read from the jOOQ jar.',

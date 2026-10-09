@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.derive;
 
 import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.model.test.TestRunContext;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import org.jooq.DSLContext;
@@ -215,15 +216,16 @@ class StageAnswerAgreementTest {
     /**
      * The chain-link resolution's own non-vacuity case, on the axis its split is on. The agreement
      * above compares the union view, which a routing mistake filing every reading under one arm
-     * would still pass; each arm table holding rows on some fixture is what says the three key
+     * would still pass; each arm table holding rows on some fixture is what says the four key
      * shapes, and the constraints each table states, were written to at all.
      */
     @Test
-    @DisplayName("the fixtures reach all three arms of the path resolution")
+    @DisplayName("the fixtures reach every arm of the path resolution")
     void theFixturesReachEveryArmOfThePathResolution() {
         var arms = List.of("graphitron_field_path_resolution_keyed",
             "graphitron_field_path_resolution_keyless",
-            "graphitron_field_path_resolution_open");
+            "graphitron_field_path_resolution_open",
+            "graphitron_field_path_resolution_condition");
         var populated = new java.util.HashSet<String>();
         for (var fixture : Fixture.values()) {
             withCapturedStore(fixture, dsl -> arms.forEach(arm -> {
@@ -282,9 +284,14 @@ class StageAnswerAgreementTest {
             case FEDERATION -> federationSdl();
         };
         Path directory = tmp.resolve("stages-" + fixture.name().toLowerCase());
-        try (var store = fixture == Fixture.FEDERATION
-                ? CapturedStore.tagged(directory, schema, "catalog")
-                : CapturedStore.ownStoreOfCatalog(directory, schema, jooq)) {
+        // The arms fixture reads the classpath corpus as well, its condition path being routed by
+        // a method there.
+        try (var store = switch (fixture) {
+                case FEDERATION -> CapturedStore.tagged(directory, schema, "catalog");
+                case ARMS -> CapturedStore.ownStoreOfCatalogWith(directory, CapturedStore.GRAPH,
+                    schema, jooq, ClasspathCorpus.entries());
+                default -> CapturedStore.ownStoreOfCatalog(directory, schema, jooq);
+            }) {
             body.accept(store.dsl());
         }
     }
@@ -346,7 +353,7 @@ class StageAnswerAgreementTest {
     /**
      * One schema reaching every arm each stage above branches on. For the field-site column scope,
      * all three navigation rules: an authored {@code @reference} path whose terminal element names
-     * a table (PATH_TERMINAL), an object-typed field whose named type carries its own binding
+     * a table (PATH_TERMINAL) and one a condition method routes, an object-typed field whose named type carries its own binding
      * (NAMED_TYPE_TABLE), and leaf fields resolving in their parent's binding (PARENT_BINDING). For
      * the carrier data channel, two of the three producing families and two of the three element
      * kinds: a {@code @service} carrier wrapping a bound type, an INSERT carrier wrapping the same,
@@ -362,6 +369,12 @@ class StageAnswerAgreementTest {
               language: Language
               actors: [Actor!]! @reference(path: [{key: "film_actor_film_id_fkey"},
                                                  {key: "film_actor_actor_id_fkey"}])
+              castings: [FilmActor!]! @reference(path: [{condition: {
+                className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+                method: "filmToFilmActor"}}])
+            }
+            type FilmActor @table(name: "film_actor") {
+              lastUpdate: String @field(name: "last_update")
             }
             type Language @table(name: "language") {
               name: String
