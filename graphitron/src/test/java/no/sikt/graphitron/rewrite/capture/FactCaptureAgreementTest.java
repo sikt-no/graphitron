@@ -27,6 +27,7 @@ import no.sikt.graphitron.rewrite.model.MethodBackedField;
 import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.schema.AttributedRegistry;
 import no.sikt.graphitron.model.grammar.NodeDeclaration;
 import no.sikt.graphitron.model.compile.CompileDiagnostic;
 import no.sikt.graphitron.model.capture.compile.CompileFacts;
@@ -132,7 +133,6 @@ import no.sikt.graphitron.model.config.SessionStateConfig;
 import no.sikt.graphitron.model.capture.config.StoredRecipe;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
-import no.sikt.graphitron.rewrite.PipelineCapturedStore;
 
 /**
  * The shadow period's honesty check: the store is filled beside the live pipeline and nobody reads
@@ -600,7 +600,8 @@ class FactCaptureAgreementTest {
     @Test
     @DisplayName("derived federation keys agree with the registry rewrite's, off one pipeline run")
     void federationKeySynthesisAgreesWithTheRewrite(@TempDir Path tmp) {
-        try (var store = PipelineCapturedStore.of(tmp, FEDERATED_FIXTURE)) {
+        var jooq = catalog();
+        try (var store = CapturedStore.ofCatalog(tmp, FEDERATED_FIXTURE, jooq)) {
             var composed = new LinkedHashSet<String>();
             var d = GRAPHITRON_DIRECTIVE_APPLICATION;
             var a = GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
@@ -616,7 +617,8 @@ class FactCaptureAgreementTest {
                     + ((StringValue) graphql.parser.Parser.parseValue(row.value2())).getValue()));
 
             var expected = new LinkedHashSet<String>();
-            for (TypeDefinition<?> definition : store.attributed().registry().types().values()) {
+            var walked = AttributedRegistry.of(store.schema().written(), jooq).registry();
+            for (TypeDefinition<?> definition : walked.types().values()) {
                 if (!(definition instanceof ObjectTypeDefinition object)) {
                     continue;
                 }
@@ -652,7 +654,7 @@ class FactCaptureAgreementTest {
     @Test
     @DisplayName("a federated schema the generator accepts records no problem and has a domain")
     void aFederatedSchemaReadsAsSound(@TempDir Path tmp) {
-        try (var store = PipelineCapturedStore.of(tmp, FEDERATED_FIXTURE)) {
+        try (var store = CapturedStore.ofCatalog(tmp, FEDERATED_FIXTURE, catalog())) {
             assertThat(store.dsl()
                     .select(GRAPHQL_SCHEMA_PROBLEM.STAGE, GRAPHQL_SCHEMA_PROBLEM.MESSAGE)
                     .from(GRAPHQL_SCHEMA_PROBLEM)
@@ -2313,5 +2315,11 @@ class FactCaptureAgreementTest {
     /** The graph these anchors capture under; one per store, so joins stay within one run's rows. */
     private static GraphIdentity graph(Path tmp) {
         return new GraphIdentity("FactCaptureAgreementTest", tmp);
+    }
+
+    /** The generated test catalog, as the cases reading the node rule capture against. */
+    private static JooqCatalog catalog() {
+        var ctx = testContext();
+        return new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
     }
 }

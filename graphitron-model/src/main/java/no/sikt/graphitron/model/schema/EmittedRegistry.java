@@ -47,7 +47,7 @@ import static org.jooq.impl.DSL.val;
  * says was synthesised on top of it.
  *
  * <p>The document an author writes and the schema graphitron emits are not the same document, and
- * the difference is entirely synthesis. {@code AttributedRegistry.load} marks the line in its own
+ * the difference is entirely synthesis. {@code AttributedRegistry.of} marks the line in its own
  * body: everything above it is a loading rewrite that capture sees, and everything below is
  * synthesis that capture does not. Two things live below that line, the federation key synthesis
  * and the {@code @asConnection} expansion, and the store already states both as rows. So the

@@ -17,6 +17,7 @@ import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
+import no.sikt.graphitron.model.run.CapturedSchema;
 import no.sikt.graphitron.model.run.ModelCapture;
 import org.jooq.DSLContext;
 
@@ -53,8 +54,8 @@ import no.sikt.graphitron.model.jooq.JooqCatalog;
  * here that hand-inserts rows owes a reason at the call site.
  *
  * <p>Lives here rather than in the generator's tests because every arm on it is a capture, and
- * capture is this module's. The one arm that was not, a capture behind the generator's own
- * attribution pipeline, stayed above the line with the two tests that read it.
+ * capture is this module's; a test above the line consumes what an arm hands back, the store and
+ * the two schemas the capture built.
  *
  * <p><b>Layered.</b> {@link #withCapturedStore} is the closure form and the shortest thing to type;
  * this handle is the primitive underneath it, for a test that needs more than one step against the
@@ -86,6 +87,9 @@ public final class CapturedStore implements AutoCloseable {
     private final Path file;
     private final TypeDefinitionRegistry registry;
 
+    /** The two schemas the capture built and handed back, as the mojo receives them. */
+    private final CapturedSchema schemas;
+
     /**
      * Whether this fixture booted its own store or borrowed the thread's, which is all
      * {@link #close()} has to decide between. A case that rewrites the schema owns one; see
@@ -97,13 +101,14 @@ public final class CapturedStore implements AutoCloseable {
     private final long generation;
 
     private CapturedStore(GraphitronModelStore store, String graphName, Path directory, Path file,
-                          TypeDefinitionRegistry registry) {
-        this(store, graphName, directory, file, registry, false);
+                          TypeDefinitionRegistry registry, CapturedSchema schemas) {
+        this(store, graphName, directory, file, registry, schemas, false);
     }
 
     private CapturedStore(GraphitronModelStore store, String graphName, Path directory, Path file,
-                          TypeDefinitionRegistry registry, boolean owned) {
+                          TypeDefinitionRegistry registry, CapturedSchema schemas, boolean owned) {
         this.owned = owned;
+        this.schemas = schemas;
         this.generation = owned ? -1 : ThreadConfinedStore.generation();
         this.store = store;
         this.graphName = graphName;
@@ -169,8 +174,8 @@ public final class CapturedStore implements AutoCloseable {
         Path file = write(directory, graphName, sdl);
         var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
         var store = ownedStore();
-        captureFiles(store.dsl(), List.of(file), directory, graphName, registry, null, List.of(), false);
-        return new CapturedStore(store, graphName, directory, file, registry, true);
+        var schemas = captureFiles(store.dsl(), List.of(file), directory, graphName, registry, null, List.of(), false);
+        return new CapturedStore(store, graphName, directory, file, registry, schemas, true);
     }
 
     /**
@@ -182,8 +187,8 @@ public final class CapturedStore implements AutoCloseable {
         Path file = write(directory, GRAPH, sdl);
         var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
         var store = ownedStore();
-        captureFiles(store.dsl(), List.of(file), directory, GRAPH, registry, jooq, List.of(), false);
-        return new CapturedStore(store, GRAPH, directory, file, registry, true);
+        var schemas = captureFiles(store.dsl(), List.of(file), directory, GRAPH, registry, jooq, List.of(), false);
+        return new CapturedStore(store, GRAPH, directory, file, registry, schemas, true);
     }
 
     /** {@link #ofCatalog(Path, String, String, JooqCatalog, List)} on a store of its own. */
@@ -193,8 +198,8 @@ public final class CapturedStore implements AutoCloseable {
         Path file = write(directory, graphName, sdl);
         var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
         var store = ownedStore();
-        captureFiles(store.dsl(), List.of(file), directory, graphName, registry, jooq, census, false);
-        return new CapturedStore(store, graphName, directory, file, registry, true);
+        var schemas = captureFiles(store.dsl(), List.of(file), directory, graphName, registry, jooq, census, false);
+        return new CapturedStore(store, graphName, directory, file, registry, schemas, true);
     }
 
     /**
@@ -208,10 +213,10 @@ public final class CapturedStore implements AutoCloseable {
         Path file = write(directory, graphName, sdl);
         var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
         var store = ownedStore();
-        captureFiles(store.dsl(), List.of(file), directory, graphName, registry,
+        var schemas = captureFiles(store.dsl(), List.of(file), directory, graphName, registry,
             Objects.requireNonNull(jooq, "jooq"), census, false,
             List.of(new ClasspathEntry(classRoot, ClasspathEntry.Origin.PROJECT, null, null)));
-        return new CapturedStore(store, graphName, directory, file, registry, true);
+        return new CapturedStore(store, graphName, directory, file, registry, schemas, true);
     }
 
     /** {@link #ofCatalog(Path, String, String, JooqCatalog)} on a store of its own. */
@@ -233,8 +238,25 @@ public final class CapturedStore implements AutoCloseable {
             write(directory, secondName, secondSdl));
         var registry = SchemaLoader.load(files.stream().map(SchemaSource::file).toList());
         var store = ownedStore();
-        captureFiles(store.dsl(), files, directory, GRAPH, registry, null, List.of(), false);
-        return new CapturedStore(store, GRAPH, directory, files.getFirst(), registry, true);
+        var schemas = captureFiles(store.dsl(), files, directory, GRAPH, registry, null, List.of(), false);
+        return new CapturedStore(store, GRAPH, directory, files.getFirst(), registry, schemas, true);
+    }
+
+    /**
+     * Captures {@code sdl} as the one input of a recipe entry configured with {@code tag}, so the
+     * composition applies it, the synthesised {@code @link} importing {@code @tag} included: the
+     * shape a run configuring {@code <schemaInput tag>} has.
+     */
+    public static CapturedStore tagged(Path directory, String sdl, String tag) {
+        Path file = write(directory, GRAPH, sdl);
+        var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
+        var store = ThreadConfinedStore.borrow();
+        var corpus = SubjectConfig.of(new SchemaRecipe(directory.resolve("pom.xml"),
+            List.of(new SchemaRecipe.Binding(new SchemaRecipe.Entry.Literal(SchemaSource.file(file)),
+                Optional.of(tag), Optional.empty())),
+            List.of("graphqls")));
+        var schemas = capture(store.dsl(), graph(directory), corpus, null);
+        return new CapturedStore(store, GRAPH, directory, file, registry, schemas);
     }
 
     /** {@link #ownStore(Path, String, String)} under the default graph. */
@@ -285,8 +307,8 @@ public final class CapturedStore implements AutoCloseable {
             write(directory, secondName, secondSdl));
         var registry = SchemaLoader.load(files.stream().map(SchemaSource::file).toList());
         var store = ThreadConfinedStore.borrow();
-        captureFiles(store.dsl(), files, directory, GRAPH, registry, jooq, List.of(), false);
-        return new CapturedStore(store, GRAPH, directory, files.getFirst(), registry);
+        var schemas = captureFiles(store.dsl(), files, directory, GRAPH, registry, jooq, List.of(), false);
+        return new CapturedStore(store, GRAPH, directory, files.getFirst(), registry, schemas);
     }
 
     /**
@@ -399,8 +421,8 @@ public final class CapturedStore implements AutoCloseable {
                 + "; this arm's whole subject is a read that refused something");
         }
         var store = ThreadConfinedStore.borrow();
-        captureFiles(store.dsl(), files, directory, GRAPH, parse.registry(), jooq, List.of(), false);
-        return new CapturedStore(store, GRAPH, directory, files.getFirst(), parse.registry());
+        var schemas = captureFiles(store.dsl(), files, directory, GRAPH, parse.registry(), jooq, List.of(), false);
+        return new CapturedStore(store, GRAPH, directory, files.getFirst(), parse.registry(), schemas);
     }
 
     private static CapturedStore openAndCapture(Path directory, String graphName, String sdl,
@@ -416,8 +438,9 @@ public final class CapturedStore implements AutoCloseable {
         Path file = write(directory, graphName, sdl);
         var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
         var store = ThreadConfinedStore.borrow();
-        captureFile(store, file, directory, graphName, registry, jooq, census, false, classpath);
-        return new CapturedStore(store, graphName, directory, file, registry);
+        var schemas = captureFile(store, file, directory, graphName, registry, jooq, census, false,
+            classpath);
+        return new CapturedStore(store, graphName, directory, file, registry, schemas);
     }
 
     // ---------------------------------------------------------------------------------------
@@ -566,17 +589,17 @@ public final class CapturedStore implements AutoCloseable {
             SchemaLoader.load(List.of(SchemaSource.file(other))), jooq, census, warm);
     }
 
-    private static void captureFile(GraphitronModelStore store, Path file, Path directory,
+    private static CapturedSchema captureFile(GraphitronModelStore store, Path file, Path directory,
                                     String graphName, TypeDefinitionRegistry registry, JooqCatalog jooq,
                                     List<CompletionData.ExternalReference> census, boolean warm) {
-        captureFiles(store.dsl(), List.of(file), directory, graphName, registry, jooq, census, warm);
+        return captureFiles(store.dsl(), List.of(file), directory, graphName, registry, jooq, census, warm);
     }
 
-    private static void captureFile(GraphitronModelStore store, Path file, Path directory,
+    private static CapturedSchema captureFile(GraphitronModelStore store, Path file, Path directory,
                                     String graphName, TypeDefinitionRegistry registry, JooqCatalog jooq,
                                     List<CompletionData.ExternalReference> census, boolean warm,
                                     List<ClasspathEntry> classpath) {
-        captureFiles(store.dsl(), List.of(file), directory, graphName, registry, jooq, census, warm,
+        return captureFiles(store.dsl(), List.of(file), directory, graphName, registry, jooq, census, warm,
             classpath);
     }
 
@@ -598,10 +621,10 @@ public final class CapturedStore implements AutoCloseable {
      * arms capturing a second graph write its file beside the first, and a glob would hand each
      * graph the other's source.
      */
-    private static void captureFiles(DSLContext dsl, List<Path> files, Path directory,
+    private static CapturedSchema captureFiles(DSLContext dsl, List<Path> files, Path directory,
                                      String graphName, TypeDefinitionRegistry registry, JooqCatalog jooq,
                                      List<CompletionData.ExternalReference> census, boolean warm) {
-        captureFiles(dsl, files, directory, graphName, registry, jooq, census, warm, List.of());
+        return captureFiles(dsl, files, directory, graphName, registry, jooq, census, warm, List.of());
     }
 
     /**
@@ -617,17 +640,17 @@ public final class CapturedStore implements AutoCloseable {
      * as it goes, so a code row written after it is invisible to everything derived during it, and a
      * fixture would read a resolved route beside a chain that never saw it.
      */
-    private static void captureFiles(DSLContext dsl, List<Path> files, Path directory,
+    private static CapturedSchema captureFiles(DSLContext dsl, List<Path> files, Path directory,
                                      String graphName, TypeDefinitionRegistry registry, JooqCatalog jooq,
                                      List<CompletionData.ExternalReference> census, boolean warm,
                                      List<ClasspathEntry> classpath) {
-        captureFiles(dsl, files, directory, graphName, registry, jooq, census, warm, classpath,
+        return captureFiles(dsl, files, directory, graphName, registry, jooq, census, warm, classpath,
             LocalDateTime.now());
     }
 
     /** The same capture at an instant the caller states, which every row it marks then carries. */
     @SuppressWarnings("removal")  // states a census while fixtures without a classpath do
-    private static void captureFiles(DSLContext dsl, List<Path> files, Path directory,
+    private static CapturedSchema captureFiles(DSLContext dsl, List<Path> files, Path directory,
                                      String graphName, TypeDefinitionRegistry registry, JooqCatalog jooq,
                                      List<CompletionData.ExternalReference> census, boolean warm,
                                      List<ClasspathEntry> classpath, LocalDateTime readAt) {
@@ -649,7 +672,7 @@ public final class CapturedStore implements AutoCloseable {
         // The pass, and the whole of the capture: it writes the graph row, the catalog, the
         // classpath families where there is a classpath, every document stratum, and runs the
         // derivations at its tail.
-        ModelCapture.capture(dsl, new GraphIdentity(graphName, directory),
+        return ModelCapture.capture(dsl, new GraphIdentity(graphName, directory),
             corpusOf(files, directory), classpath, jooq, readAt);
     }
 
@@ -685,16 +708,16 @@ public final class CapturedStore implements AutoCloseable {
      * driving one capture has no earlier moment to date it by; an arm wanting two captures to be
      * told apart calls {@link ModelCapture#capture} with instants of its own.
      */
-    public static void capture(DSLContext dsl, GraphIdentity graph, SubjectConfig corpus,
-                               JooqCatalog jooq) {
-        capture(dsl, graph, corpus, jooq, List.of());
+    public static CapturedSchema capture(DSLContext dsl, GraphIdentity graph, SubjectConfig corpus,
+                                         JooqCatalog jooq) {
+        return capture(dsl, graph, corpus, jooq, List.of());
     }
 
     /** {@link #capture(DSLContext, GraphIdentity, SubjectConfig, JooqCatalog)} with a classpath. */
-    public static void capture(DSLContext dsl, GraphIdentity graph, SubjectConfig corpus,
-                               JooqCatalog jooq, List<ClasspathEntry> classpath) {
+    public static CapturedSchema capture(DSLContext dsl, GraphIdentity graph, SubjectConfig corpus,
+                                         JooqCatalog jooq, List<ClasspathEntry> classpath) {
         FactStores.countCapture();
-        ModelCapture.capture(dsl, graph, corpus, classpath, jooq,
+        return ModelCapture.capture(dsl, graph, corpus, classpath, jooq,
             LocalDateTime.now().truncatedTo(ChronoUnit.MICROS));
     }
 
@@ -873,6 +896,11 @@ public final class CapturedStore implements AutoCloseable {
     public DSLContext dsl() {
         mine();
         return store.dsl();
+    }
+
+    /** The two schemas the capture built, which is what the generate mojo hands the generator. */
+    public CapturedSchema schema() {
+        return schemas;
     }
 
     public TypeDefinitionRegistry registry() {

@@ -1,8 +1,7 @@
-package no.sikt.graphitron.rewrite.capture;
+package no.sikt.graphitron.model;
 
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.schema.input.TagLinkSynthesiser;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -14,7 +13,6 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SCHEMA_INPUT;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
-import no.sikt.graphitron.rewrite.PipelineCapturedStore;
 
 /**
  * A tagged capture: the one fixture in the tree whose capture is configured with a
@@ -28,7 +26,6 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
  * lookup records the tagged file stamped, any generator-injected name it meets being recorded
  * unstamped rather than stamped or refused.
  */
-@PipelineTier
 class TaggedCaptureStampTest {
 
     private static final String SDL = """
@@ -40,7 +37,7 @@ class TaggedCaptureStampTest {
     @DisplayName("a tagged capture composes cleanly, and stamps the tagged file rather than a sentinel")
     void aTaggedCaptureComposesCleanly(@TempDir Path tmp) {
         assertThatCode(() -> {
-            try (var store = PipelineCapturedStore.of(tmp, SDL, "catalog")) {
+            try (var store = CapturedStore.tagged(tmp, SDL, "catalog")) {
                 assertThat(store.dsl().select(STORE_GRAPH_SCHEMA_INPUT.TAG)
                         .from(STORE_GRAPH_SCHEMA_INPUT).fetch(STORE_GRAPH_SCHEMA_INPUT.TAG))
                     .as("the control: the capture was configured with the tag, not only the generator")

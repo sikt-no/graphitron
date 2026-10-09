@@ -18,20 +18,13 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import no.sikt.graphitron.model.config.RunContext;
-import no.sikt.graphitron.model.schema.AttributedRegistry;
+import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.schema.SchemaAssembly;
 
 /**
- * End-to-end coverage of the tagged-inputs pipeline driven through the new
- * {@link GraphQLRewriteGenerator} instance entry point. Reads assertions off
- * the built {@link GraphQLSchema} (not the pre-build registry) so any future
- * caching the classifier might introduce between registry mutation and schema
- * build is covered by this test.
- *
- * <p>Reads through {@code AttributedRegistry.load} so we can
- * exercise the wiring that {@link GraphQLRewriteGenerator#run()} feeds into
- * the pipeline without paying the emission stage's configured-output-paths
- * tax. {@code run()} itself is a one-liner over this method, so the wiring is
- * fully covered.
+ * End-to-end coverage of tagged and noted inputs: what three configured entries apply, read off the
+ * post-synthesis schema a capture builds, which is the schema the generator emits. The tag and note
+ * rewrites have tests of their own; this pins that what they apply reaches the emitted schema.
  */
 @PipelineTier
 class TaggedInputsPipelineTest {
@@ -71,8 +64,11 @@ class TaggedInputsPipelineTest {
             DEFAULT_JOOQ_PACKAGE
         );
 
-        var registry = AttributedRegistry.load(ctx);
-        GraphQLSchema assembled = GraphitronSchemaBuilder.buildBundle(registry, ctx).assembled();
+        GraphQLSchema assembled;
+        try (var captured = GraphitronStore.captured(ctx)) {
+            assembled = ((SchemaAssembly.Assembled) captured.schema().synthesised().orElseThrow())
+                .schema();
+        }
 
         // Tagged-only: @tag present on fields, no description change.
         GraphQLObjectType student = (GraphQLObjectType) assembled.getType("Student");

@@ -1,43 +1,19 @@
 package no.sikt.graphitron.rewrite;
 
-import graphql.language.ObjectTypeDefinition;
-import graphql.language.StringValue;
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
-import graphql.schema.idl.SchemaParser;
-import graphql.schema.idl.TypeDefinitionRegistry;
-import no.sikt.graphitron.rewrite.generators.schema.SchemaSdlEmitter;
-import no.sikt.graphitron.model.schema.input.SchemaInput;
-import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
-import java.util.Optional;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
-import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
-import static java.util.Objects.requireNonNull;
 import static org.assertj.core.api.Assertions.assertThat;
-import no.sikt.graphitron.model.config.RunContext;
-import no.sikt.graphitron.model.schema.AttributedRegistry;
 
 /**
- * End-to-end coverage of federation {@code @tag} inheritance: the federation {@code @tag} on an {@code @asConnection} carrier
- * field must reach the synthesised Connection / Edge / PageInfo types on the assembled schema
- * (the federation-SDL emission source) and survive the federation SDL round-trip.
- *
- * <p>Exercises both tag sources. The explicit arm writes {@code @tag} directly in the SDL and
- * asserts on the assembled schema. The {@code <schemaInput tag>} arm drives the tag through
- * {@code TagApplier} via the {@code AttributedRegistry.load} hook in the
- * {@code TaggedInputsPipelineTest} shape; because that path also synthesises the federation
- * {@code @link}, its built schema is federation-shaped and feeds the emission round-trip
- * (the {@code FederationBuildSmokeTest} shape, through {@link SchemaSdlEmitter}).
+ * Federation {@code @tag} inheritance on the walk: an explicit {@code @tag} on an
+ * {@code @asConnection} carrier reaches the Connection / Edge / PageInfo types the walk synthesises,
+ * which the schema classes are still rendered from. The store's inheritance, configured tags
+ * included, is pinned through {@code generate} by {@code StoreEmittedFederationSchemaPipelineTest}.
  */
 @PipelineTier
 class ConnectionFederationTagPipelineTest {
@@ -61,48 +37,6 @@ class ConnectionFederationTagPipelineTest {
         assertThat(carrier.getAppliedDirectives("tag")).hasSize(1);
     }
 
-    @Test
-    void schemaInputTag_synthesisedTypesInheritCarrierTag(@TempDir Path tmp) throws IOException {
-        GraphQLSchema assembled = buildSchemaInputTaggedBundle(tmp).assembled();
-
-        // TagApplier stamps @tag(name: "catalog") on the carrier field; promotion inherits it.
-        assertThat(tagNames(obj(assembled, "QueryFilmsConnection"))).containsExactly("catalog");
-        assertThat(tagNames(obj(assembled, "QueryFilmsConnectionEdge"))).containsExactly("catalog");
-        assertThat(tagNames(obj(assembled, "PageInfo"))).containsExactly("catalog");
-    }
-
-    @Test
-    void schemaInputTag_federationSdlRoundTripCarriesTagOnSynthesisedTypes(@TempDir Path tmp) throws IOException {
-        var bundle = buildSchemaInputTaggedBundle(tmp);
-        assertThat(bundle.federationLink())
-            .as("<schemaInput tag> synthesises the federation @link, so emission takes the federation arm")
-            .isTrue();
-
-        Path target = SchemaSdlEmitter.emit(
-            bundle.assembled(), bundle.model(), bundle.federationLink(), tmp, "com.example.app");
-        TypeDefinitionRegistry reparsed =
-            new SchemaParser().parse(Files.readString(target, StandardCharsets.UTF_8));
-
-        assertThat(reparsedTagNames(reparsed, "QueryFilmsConnection")).containsExactly("catalog");
-        assertThat(reparsedTagNames(reparsed, "QueryFilmsConnectionEdge")).containsExactly("catalog");
-        assertThat(reparsedTagNames(reparsed, "PageInfo")).containsExactly("catalog");
-    }
-
-    private static GraphitronSchemaBuilder.Bundle buildSchemaInputTaggedBundle(Path tmp) throws IOException {
-        Path src = tmp.resolve("catalog.graphqls");
-        Files.writeString(src, """
-            type Film @table(name: "film") { id: ID }
-            type Query {
-                films: [Film!]! @asConnection @defaultOrder(primaryKey: true)
-            }
-            """);
-        var ctx = new RunContext(
-            List.of(new SchemaInput(SchemaSource.file(src), Optional.of("catalog"), Optional.empty())),
-            tmp, "ConnectionFederationTagPipelineTest", tmp, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
-        var registry = AttributedRegistry.load(ctx);
-        return GraphitronSchemaBuilder.buildBundle(registry, ctx);
-    }
-
     private static GraphQLObjectType obj(GraphQLSchema schema, String name) {
         return (GraphQLObjectType) schema.getType(name);
     }
@@ -110,13 +44,6 @@ class ConnectionFederationTagPipelineTest {
     private static List<String> tagNames(GraphQLObjectType type) {
         return type.getAppliedDirectives("tag").stream()
             .map(d -> (String) d.getArgument("name").getValue())
-            .toList();
-    }
-
-    private static List<String> reparsedTagNames(TypeDefinitionRegistry reg, String typeName) {
-        var def = requireNonNull(reg.getTypeOrNull(typeName, ObjectTypeDefinition.class));
-        return def.getDirectives("tag").stream()
-            .map(d -> ((StringValue) d.getArgument("name").getValue()).getValue())
             .toList();
     }
 }

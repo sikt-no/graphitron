@@ -79,9 +79,6 @@ class StoreFixtureGuardTest {
                 + "between bodies, and never handed out as a lifetime the caller owns"),
         new Home("graphitron-model/src/test/java/no/sikt/graphitron/model/test/CapturedStore.java",
             "a real capture walk over a fixture document, for tests about the crawlers"),
-        new Home("graphitron/src/test/java/no/sikt/graphitron/rewrite/PipelineCapturedStore.java",
-            "the same walk behind the generator's attribution pipeline, for the two tests that "
-                + "compare what capture wrote against what the rewrite put in front of it"),
         new Home("graphitron/src/test/java/no/sikt/graphitron/rewrite/BuiltStore.java",
             "a real generator run into a store on disk, for tests about the dev loop's wiring"));
 

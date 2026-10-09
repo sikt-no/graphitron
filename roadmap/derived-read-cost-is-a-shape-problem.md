@@ -492,19 +492,28 @@ types and its formatter are already model-side, so what stands between here and 
   and the `VALIDATE` projection go, and with them the plugin's last use of the generator outside
   `generate` and `dev`.
 
-### The generator renders the schema capture synthesised
+### `generate` is a function of the store and the post-synthesis schema
 
 Capture builds both schemas: the schema as written, and the post-synthesis schema the macros' rows
-make of it. The generator renders the post-synthesis schema as SDL and as the schema classes and
-wiring, generates the datafetchers and the rest from the store, and builds no schema or store of its
-own.
+make of it. `generate` renders the post-synthesis schema as SDL and as the schema classes and wiring,
+and the datafetchers and the rest from the store.
+
+It is a function onto the output directory rather than a pipeline: after a run the directory is
+fixed by the store, the post-synthesis schema and the run's configuration, a file whose content
+would not change is left alone and a file no longer produced is swept. Writing, that comparison and
+the sweep are how it delivers its result. What it does not do is fetch or build its inputs: it opens
+no store and captures nothing, which is the generate mojo's and the test harnesses' orchestration,
+reads nothing off the classpath that capture has already read, and builds no schema of its own.
 
 * **The generator reads the documents once** `done`, through capture. `ModelCapture.capture` hands
   back its reading, carrying the parser's failures and the loading rewrites' outcome, and
   `GraphitronStore.captured` returns it beside the store as a `CapturedGraph`.
-  `CapturedSchemaAgreementTest` holds the reading equal to the generator's own.
   * **A dev round whose capture was skipped still has a schema** `done`. The skip yields: the
     session's generator factory captures first.
+  * **`AttributedRegistry.load` dissolves** `done`. The refusal cases and the walk's configured-tag
+    cases dissolved into what the capture path already pins, the configured tags and notes are read
+    off the post-synthesis schema, and `CapturedSchemaAgreementTest` went with the second reading it
+    compared.
 * **Capture hands back the post-synthesis schema** `done`. `EmittedRegistry` runs in capture and
   `CapturedSchema` carries both; the generator renders the post-synthesis one and reads the
   written one only for the walk.
@@ -536,8 +545,39 @@ own.
 * **The datafetchers and the rest are generated from the store** `open`. `EmitPlan` reads the store
   already; the per-type generators still take the walk's model.
 * **The generator builds no schema** `blocked`, on the three above. `KeyNodeSynthesiser`, the walk's
-  connection expansion and `AttributedRegistry` go with the walk, and `CapturedSchemaAgreementTest`
-  with `AttributedRegistry.load`.
+  connection expansion and what is left of `AttributedRegistry` go with the walk.
+* **Its inputs are values** `open`. A `StoreHandle`, the `CapturedSchema` and the run's
+  configuration; not `CapturedGraph`, which owns the store and its lifetime, so the constructor that
+  takes one goes.
+* **The jOOQ catalog and the classpath census are read from the store** `open`. Capture has read
+  both, and the generator loading the catalog by reflection and scanning the census is the same
+  second read the documents had.
+* **One entry point** `blocked`, on "Validate is a query over the store" and on the dev loop reading
+  what it needs from the store. The four projections over one body collapse into the one function.
+* **`graphitron` does no orchestration** `open`. Opening a store and capturing are the generate
+  mojo's and the test harnesses'. A harness in `graphitron`'s tests that captures and reads nothing
+  of the generator moves to the model's test fixtures, and a test there that exercises capture alone
+  moves with it.
+  * **`PipelineCapturedStore` folded into `CapturedStore`** `done`. A tagged arm and the two schemas
+    each arm hands back, so the walk-versus-store cases derive the walk's input themselves, and
+    `TaggedCaptureStampTest` moved to the model.
+* **The anchoring marks and sweeps** `open`. A clear and refill deletes before it inserts, so every
+  relation keyed into the cleared one with a cascade is emptied each reading and correct only because
+  a later stage happens to rebuild it; the element anchors, `GraphitronAnchor` and
+  `GraphitronCodeReferences` already stamp each row with the reading and sweep the rest.
+  * **Directive applications are marked and swept** `open`. `graphitron_directive_application` and
+    its arguments gain a stamp, are upserted on their keys, and the stale arguments then the stale
+    applications are swept.
+  * **Minted conflicts are marked and swept** `open`. Nothing keys into
+    `graphitron_minted_conflict`, so this is the discipline rather than a hazard.
+  * **Nodes are marked and swept** `open`. `graphitron_node`'s type id and its origin are payload, so
+    an upsert on the type is enough.
+  * **Table types are marked and swept** `open`, and need one step more. The bound table is what
+    `graphitron_node_keycolumn`'s foreign key names, so a binding that changed is deleted first,
+    taking that type's node and key columns with it, and the rest are upserted and swept; an
+    unchanged binding keeps its row and everything hanging off it.
+  * **Node key columns are marked and swept** `open`, just after the anchor in
+    `GraphitronAssemblyCapture`, so the node chain is one lifecycle end to end.
 
 ### A capture reads only what changed
 

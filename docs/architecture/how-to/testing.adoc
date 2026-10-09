@@ -203,10 +203,6 @@ There is a harness per subject, and a structural guard (`StoreFixtureGuardTest`)
 | `CapturedStore` (`graphitron-model` test-jar)
 | A real capture over a fixture document, with the fixture file, the caller-supplied graph identity, and named arms saying what each capture's inputs are. Below the line with the capture it drives, so a client can take it without taking the generator.
 
-| A capture behind the generator's own attribution pipeline
-| `PipelineCapturedStore` (`graphitron` test-jar)
-| The same capture, with the pipeline's rewrites run first and both registries handed back, so a test can compare what capture wrote against what the rewrite put in front of it. The one capture arm that needs both tiers, which is why it is the one that stayed above the line.
-
 | The dev loop's own wiring, over rows only a pipeline run can produce
 | `BuiltStore` (`graphitron` test-jar)
 | A real `buildOutput()` run into a store on disk that outlives the run.

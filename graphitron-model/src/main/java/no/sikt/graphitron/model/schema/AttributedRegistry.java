@@ -20,7 +20,7 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * The output of {@link #load}: a
+ * The output of {@link #of}: a
  * {@link TypeDefinitionRegistry} paired with the names of the definitions the federation
  * {@code @link} injector added to it, plus the handle on the same registry as it stood before the
  * synthesis rewrites.
@@ -112,43 +112,13 @@ public record AttributedRegistry(TypeDefinitionRegistry registry,
     }
 
     /**
-     * Reads the run's schema sources and applies every rewrite that stands between a file on disk
-     * and the registry the rest of the run sees.
-     *
-     * <p>Every source is read and none is refused on another's behalf: a source that will not parse
-     * costs its own declarations and nothing else, and a declaration the registry will not admit
-     * costs itself. The refusals ride along in {@link #read} rather than being thrown here, so the
-     * run's verdict on them is pronounced by whoever asked for the read, after the facts about the
-     * files beside them have been recorded.
-     *
-     * <p>The catalog is reached only when the federation {@code @link} injector produced names,
-     * {@code @key} synthesis resolving its node declarations against it. Taking it as a parameter
-     * is what keeps a run to one load of the generated classes rather than one per caller that
-     * wants them.
-     *
-     * <p>A refusal of the loading rewrites is not carried: it throws the exception it carries,
-     * which is the one each rewrite has always thrown, so a build fails as it did before the
-     * rewrites were composed in {@link LoadingRewrites}.
-     *
-     * <p>This is the capture layer's because it is nobody else's: it parses, applies four
-     * configuration-driven rewrites, and synthesises, and a validator or a language server wants
-     * exactly that without wanting a generator. It used to live on the generator, which is why a
-     * goal whose whole job is capture had to construct one.
-     */
-    public static AttributedRegistry load(RunContext ctx, JooqCatalog jooq) {
-        var read = SchemaLoader.parsePerSource(loadableSources(ctx.schemaInputs()));
-        var composed = applied(LoadingRewrites.apply(read.registry(), ctx.schemaInputs()));
-        return synthesised(read, composed.registry(), composed.injectedNames(), jooq);
-    }
-
-    /**
      * The registry the run classifies, from the schema capture assembled rather than from a second
      * reading of the documents.
      *
      * <p>Capture has already parsed, reduced and composed the corpus, and recorded what each stage
      * refused; what it does not do is synthesis, which is all this adds. A refusal of the loading
-     * rewrites throws here as it does in {@link #load}, and the parser's and the reduce's refusals
-     * ride along in {@link #read} for the run to pronounce on, as they do there.
+     * rewrites throws here, the exception each rewrite has always thrown, and the parser's and the
+     * reduce's refusals ride along in {@link #read} for the run to pronounce on.
      *
      * <p>The reading is not edited. Synthesis runs on a copy of its composition, so one capture can
      * serve every pass a caller runs over it.
@@ -182,31 +152,5 @@ public record AttributedRegistry(TypeDefinitionRegistry registry,
             KeyNodeSynthesiser.apply(registry, new NodeDeclaration(jooq));
         }
         return new AttributedRegistry(registry, preSynthesis, injectedNames, read);
-    }
-
-    /**
-     * {@link #load} over a catalog the caller has not built, for one that has no use for a catalog
-     * beyond what synthesis might want of it.
-     */
-    public static AttributedRegistry load(RunContext ctx) {
-        return load(ctx, new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()));
-    }
-
-    /**
-     * The sources a parse can be attempted on. A label carries no file, so it is refused here with
-     * the loader's own words rather than silently shortening the corpus: no context in the tree
-     * carries a label this far, which makes this a guard against a new source kind rather than a
-     * live path.
-     */
-    private static List<SchemaSource.File> loadableSources(List<SchemaInput> inputs) {
-        var sources = new ArrayList<SchemaSource.File>(inputs.size());
-        for (SchemaInput input : inputs) {
-            switch (input.source()) {
-                case SchemaSource.File file -> sources.add(file);
-                case SchemaSource.Named named ->
-                    throw new RuntimeException("Schema file not found: " + named.label());
-            }
-        }
-        return sources;
     }
 }

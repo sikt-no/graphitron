@@ -16,6 +16,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
+import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
@@ -131,6 +132,34 @@ class BrokenSourceStillCapturesPipelineTest {
                 .as("the document parsed and the registry admitted it, so capture ran; only "
                     + "assembly could see that Nope resolves to nothing, and it ran after")
                 .contains("Query");
+        }
+    }
+
+    /**
+     * The third stage's refusal: the loading rewrites. Capture records it and carries on, and the run
+     * still fails, saying what capture recorded. Each rewrite's own tests pin its message.
+     */
+    @Test
+    @DisplayName("a run the loading rewrites refuse still fails, saying what capture recorded")
+    void aLoadingRewriteRefusalStillFailsTheRun(@TempDir Path tmp) throws IOException {
+        Path schemaDir = Files.createDirectories(tmp.resolve("schema"));
+        Path links = schemaDir.resolve("links.graphqls");
+        Files.writeString(links, """
+            extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+            extend schema @link(url: "https://specs.apollo.dev/federation/v2.9", import: ["@shareable"])
+            type Query { a: String }
+            """);
+
+        Path storeDir = Files.createDirectories(tmp.resolve("store"));
+        var ctx = context(tmp, storeDir, List.of(SchemaInput.file(links)));
+
+        try (var store = GraphitronStore.captured(ctx)) {
+            String recorded = store.store().dsl().select(GRAPHQL_SCHEMA_PROBLEM.MESSAGE)
+                .from(GRAPHQL_SCHEMA_PROBLEM)
+                .where(GRAPHQL_SCHEMA_PROBLEM.STAGE.eq("REWRITE"))
+                .fetchSingle(GRAPHQL_SCHEMA_PROBLEM.MESSAGE);
+            assertThatThrownBy(() -> new GraphQLRewriteGenerator(ctx, store).validate())
+                .hasMessageContaining(recorded);
         }
     }
 

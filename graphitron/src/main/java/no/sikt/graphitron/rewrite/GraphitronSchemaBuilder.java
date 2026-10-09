@@ -137,7 +137,7 @@ public class GraphitronSchemaBuilder {
 
     /**
      * Convenience overload for tests that hand-craft a {@link TypeDefinitionRegistry} without
-     * running {@link no.sikt.graphitron.model.schema.AttributedRegistry#load}. Wraps via
+     * a capture. Wraps via
      * {@link AttributedRegistry#from(TypeDefinitionRegistry)}; production code uses
      * {@link #build(AttributedRegistry, RunContext)} directly.
      */
