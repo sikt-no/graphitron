@@ -44,7 +44,7 @@ class DecodeClearScopeGuardTest {
         + "/model/capture/document/GraphitronAnchor.java");
 
     /** A floor against a scan that matched nothing and would then agree with any list at all. */
-    private static final int MIN_WRITTEN_RELATIONS = 30;
+    private static final int MIN_WRITTEN_RELATIONS = 20;
 
     @Test
     @DisplayName("the decode's clear names exactly the relations the decode writes")

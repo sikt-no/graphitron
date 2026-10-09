@@ -1,4 +1,4 @@
-"A graph that links, but to nothing that federates it. The opt-in is a prefix over a link's url, so a link naming another spec does not match it and a link whose url the author omitted is a null that matches no prefix at all; the null guard falls out of the join rather than being a condition spelled twice. Stated over the composition for the reason the unlinked document gives: a synthesized row would arrive here without an ordinal, and neither link brings one."
+"A graph that links, but to nothing that federates it. The opt-in is a prefix over a link's url, so a link naming another spec does not match it and a link whose url the author omitted is a null that matches no prefix at all; the null guard falls out of the join rather than being a condition spelled twice. Stated as the unlinked document states it: the synthesis holds no row, and the directive anchor holds the author's key and nothing minted beside it."
 type Film @table(name: "film") @node @key(fields: "title") {
   id: ID
   title: String
@@ -20,7 +20,18 @@ extend type Query {
   languages: [Language!]!
 }
 
-extend schema @expectEquals(relation: "intent_federation_key", rows: """
-  type_name, ordinal, fields_sdl
-  Film,      0,       title
+extend schema @assertAbsent(relation: "graphitron_synthesized_federation_key", rows: """
+  type_name
+  Film
+  Language
+  """)
+
+extend schema @assertContains(relation: "graphitron_directive_application", rows: """
+  coordinate, directive_name, ordinal, origin
+  Film,       key,            0,       AUTHORED
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_directive_application", rows: """
+  coordinate, directive_name, origin
+  Language,   key,            MINTED
   """)

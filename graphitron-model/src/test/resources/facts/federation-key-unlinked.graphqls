@@ -1,4 +1,4 @@
-"The same node types in a graph that declares no federation link. Federation is opt-in and absence is the default, so nothing is synthesized however many nodes the graph declares; what an author wrote still composes, an authored key being a fact about the type rather than a consequence of the opt-in. Stated over the composition rather than over the synthesis, because absence is only assertable as a population that holds everything else: a derived row would arrive here with no ordinal, and none does. Resolvable is left out of the claim because an authored key that does not spell it records absence rather than the default, which is a separate fact from the one this document is about."
+"The same node types in a graph that declares no federation link. Federation is opt-in and absence is the default, so nothing is synthesized however many nodes the graph declares; what an author wrote still composes, an authored key being a fact about the type rather than a consequence of the opt-in. Stated twice: the synthesis holds no row, and the directive anchor holds the author's key and nothing minted beside it. Resolvable is left out of the claim because an authored key that does not spell it records absence rather than the default, which is a separate fact from the one this document is about."
 type Film @table(name: "film") @node @key(fields: "title") {
   id: ID
   title: String
@@ -15,7 +15,18 @@ extend type Query {
   languages: [Language!]!
 }
 
-extend schema @expectEquals(relation: "intent_federation_key", rows: """
-  type_name, ordinal, fields_sdl
-  Film,      0,       title
+extend schema @assertAbsent(relation: "graphitron_synthesized_federation_key", rows: """
+  type_name
+  Film
+  Language
+  """)
+
+extend schema @assertContains(relation: "graphitron_directive_application", rows: """
+  coordinate, directive_name, ordinal, origin
+  Film,       key,            0,       AUTHORED
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_directive_application", rows: """
+  coordinate, directive_name, origin
+  Language,   key,            MINTED
   """)

@@ -92,8 +92,6 @@ class RelationRegistrationGateTest {
             "graphitron_field_node_id_entry", "graphitron_argument_node_id_entry", "graphitron_argument_lookup_key_entry",
             "graphitron_field_lookup_key_entry", "graphitron_split_query_entry", "graphitron_tenant_fan_out_entry",
             "graphitron_pivot_entry", "graphitron_routine_entry", "graphitron_routine_column_mapping_pair_entry",
-            "graphitron_federation_key_entry", "graphitron_federation_key_field_entry",
-            "graphitron_federation_key_field_segment_entry", "graphitron_link_entry",
             "graphitron_multitable_reference_entry",
             "graphitron_undecoded_argument_entry",
             // The three supertypes ride the arm of the sites that spell them. The spelled reference
@@ -339,7 +337,6 @@ class RelationRegistrationGateTest {
         registrations.put("intent_node_metadata_defect", Arm.DERIVED);
         registrations.put("graphitron_node_type", Arm.DERIVED);
         registrations.put("graphitron_synthesized_federation_key", Arm.DERIVED);
-        registrations.put("intent_federation_key", Arm.DERIVED);
         registrations.put("graphitron_field_reference_step_target", Arm.DERIVED);
         registrations.put("graphitron_field_reference_step_target_keyed", Arm.DERIVED);
         registrations.put("graphitron_field_reference_step_target_keyless", Arm.DERIVED);

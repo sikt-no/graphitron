@@ -279,7 +279,6 @@ public final class SdlFactCapture {
                         continue;
                     }
                 }
-                decode.captureSchemaDirective(directive, ordinal);
             }
         }
         if (registry.schemaDefinition().isEmpty()) {

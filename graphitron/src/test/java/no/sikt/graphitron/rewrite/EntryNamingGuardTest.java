@@ -56,10 +56,10 @@ class EntryNamingGuardTest {
         "sikt", "graphitron", "model", "capture", "graphitron", "GraphitronFactCapture.java");
 
     /**
-     * Where the decode begins: the first of its five methods, in file order. A symbol rather than
+     * Where the decode begins: the first of its methods, in file order. A symbol rather than
      * the section banner above it, so a comment reflow cannot move the guard's boundary.
      */
-    private static final String REGION_OPENS = "public void captureSchemaDirective";
+    private static final String REGION_OPENS = "public void captureTypeDirective";
 
     /** Every {@code graphitron_} relation constant, as the generated model spells one. */
     private static final Pattern RELATION = Pattern.compile("\\bGRAPHITRON_[A-Z0-9_]+\\b");

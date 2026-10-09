@@ -25,7 +25,6 @@ import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.TableTypes;
 import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import no.sikt.graphitron.model.schema.SiteRef;
-import no.sikt.graphitron.model.grammar.FieldSetGrammar;
 import no.sikt.graphitron.model.grammar.ArgMappingSigil;
 import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
 import no.sikt.graphitron.model.selection.GraphQLSelectionParseException;
@@ -53,9 +52,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_HANDLER_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_LOOKUP_KEY_ENTRY;
@@ -64,7 +60,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NAVIGATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NODE_ID_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_LINK_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_METHOD_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MULTITABLE_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
@@ -124,8 +119,6 @@ import static org.jooq.impl.DSL.when;
 public final class GraphitronFactCapture {
 
     /** Federation's two decoded applications; every other federation directive is fidelity only. */
-    private static final String FEDERATION_KEY = "key";
-    private static final String FEDERATION_LINK = "link";
 
     private final FactSink sink;
 
@@ -146,23 +139,6 @@ public final class GraphitronFactCapture {
         return new GraphitronFactCapture(sink);
     }
 
-
-    // ---------------------------------------------------------------- schema-level
-
-    public void captureSchemaDirective(Directive directive, int ordinal) {
-        if (!FEDERATION_LINK.equals(directive.getName())) {
-            return;
-        }
-        if (!sink.claim(GRAPHITRON_LINK_ENTRY, ordinal)) {
-            return;
-        }
-        var record = sink.dsl().newRecord(GRAPHITRON_LINK_ENTRY);
-        record.setOrdinal(ordinal);
-        no.sikt.graphitron.model.capture.sdl.SdlFactCapture.setPosition(directive.getSourceLocation(),
-            record::setSourceName, record::setSourceLine, record::setSourceColumn);
-        record.setUrl(string(directive, "url"));
-        sink.add(record);
-    }
 
     // ---------------------------------------------------------------- type-level
 
@@ -215,46 +191,7 @@ public final class GraphitronFactCapture {
                     sink.add(row);
                 }
             }
-            case FEDERATION_KEY -> captureFederationKey(site, directive, ordinal);
             default -> { /* no decoded relation: fidelity-only or consumer-less */ }
-        }
-    }
-
-    /**
-     * Federation's {@code @key}, decoded for consumption. Its verbatim twin lives in
-     * {@code graphql_directive_application} for re-emission and both are written in the same pass, so a
-     * gate query can pin the two projections in agreement.
-     */
-    private void captureFederationKey(SiteRef site, Directive directive, int ordinal) {
-        if (!sink.claim(GRAPHITRON_FEDERATION_KEY_ENTRY, site.typeName(), ordinal)) return;
-        String fields = string(directive, "fields");
-        if (fields == null) return;
-        var record = sink.dsl().newRecord(GRAPHITRON_FEDERATION_KEY_ENTRY);
-        record.setTypeName(site.typeName());
-        record.setOrdinal(ordinal);
-        site(site, directive, record::setSourceName, record::setDeclarationLine,
-            record::setDeclarationColumn, record::setSourceLine, record::setSourceColumn);
-        record.setFieldsSdl(fields);
-        record.setResolvable(bool(directive, "resolvable"));
-        sink.add(record);
-
-        int position = 0;
-        for (List<String> path : FieldSetGrammar.paths(fields)) {
-            var row = sink.dsl().newRecord(GRAPHITRON_FEDERATION_KEY_FIELD_ENTRY);
-            row.setTypeName(site.typeName());
-            row.setOrdinal(ordinal);
-            row.setPosition(position);
-            sink.add(row);
-            for (int segment = 0; segment < path.size(); segment++) {
-                var segmentRow = sink.dsl().newRecord(GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY);
-                segmentRow.setTypeName(site.typeName());
-                segmentRow.setOrdinal(ordinal);
-                segmentRow.setPosition(position);
-                segmentRow.setSegmentPosition(segment);
-                segmentRow.setSegmentName(path.get(segment));
-                sink.add(segmentRow);
-            }
-            position++;
         }
     }
 
@@ -1070,16 +1007,12 @@ public final class GraphitronFactCapture {
         GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY,
         GRAPHITRON_ERROR_ENTRY,
         GRAPHITRON_ERROR_HANDLER_ENTRY,
-        GRAPHITRON_FEDERATION_KEY_ENTRY,
-        GRAPHITRON_FEDERATION_KEY_FIELD_ENTRY,
-        GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY,
         GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG_ENTRY,
         GRAPHITRON_FIELD_CONDITION_ENTRY,
         GRAPHITRON_FIELD_LOOKUP_KEY_ENTRY,
         GRAPHITRON_FIELD_NODE_ID_ENTRY,
         GRAPHITRON_FIELD_REFERENCE_ENTRY,
         GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY,
-        GRAPHITRON_LINK_ENTRY,
         GRAPHITRON_METHOD_REFERENCE_ENTRY,
         GRAPHITRON_MULTITABLE_REFERENCE_ENTRY,
         GRAPHITRON_ORDER_BY_ENTRY,

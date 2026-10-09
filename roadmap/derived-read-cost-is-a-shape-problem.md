@@ -361,6 +361,11 @@ entry is written by the capture phase alone. Counted in `roadmap/audits/2026-09-
   precedent and the same defect is untreated here.
 * **The twinned ones flip and subtract** `open`. Their replacement is written on every capture and
   read by nobody, which is the state this item calls the most dangerous one.
+  * **The link and federation key entries are gone** `done`. Key synthesis reads
+    `graphitron_ast_link_entry` and the `graphitron_ast_federation_key_` entries, so
+    `graphitron_link_entry` and the three `graphitron_federation_key_` entries lost their last
+    reader and went, with the decode arms that wrote them and `intent_federation_key`, whose
+    readers read `graphitron_directive_application` instead.
 * **The untwinned ones get an ast entry first** `open`, and are the longer half.
 * **The supertype roster becomes shrink-only** `open`. It already records the duplication and only
   ever gains rows, so making it a ratchet turns the record into the gate rather than adding one.
@@ -520,6 +525,8 @@ own.
       `graphql_source_input` records what each file's entry configures, `graphitron_configured_tag`
       states the tag rule over it as a third set of the directive anchor, and
       `graphitron_inherited_directive` is the intersection over the carriers.
+    * **The rule reads no deprecated decode** `done`. The key and link entries it read are retired;
+      see "No `graphitron_*_entry` survives".
     * **`EmittedRegistry` renders the anchors and states no rule** `done`. It patches the anchored
       elements and applies the minted applications, and the narrowing it reports reads the rule's
       output.
@@ -963,7 +970,10 @@ tables into `jvm_declared_type_ref`: `jvm_method_parameter_type_ref`, `jvm_metho
 `code_method_parameter`), and `code_type_slot` (now `code_read_slot`). The demand relations,
 dissolved rather than replaced: `intent_field_demand_rule`, `intent_field_exemption_rule`,
 `intent_type_demand`, `intent_type_exemption`, `intent_resolved_field_demand` and
-`intent_resolved_type_demand`.
+`intent_resolved_type_demand`. The deprecated link and federation key decode, its readers having
+moved to the `ast_` entries and the directive anchor: `graphitron_link_entry`,
+`graphitron_federation_key_entry`, `graphitron_federation_key_field_entry`,
+`graphitron_federation_key_field_segment_entry` and `intent_federation_key`.
 
 **Renamed, by rule rather than by list.** Every relation of the as-written half of `graphitron_`
 gained the `_entry` suffix. A sweep for a survivor is a search for a `graphitron_` name that is

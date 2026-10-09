@@ -72,10 +72,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_LOOKUP_KEY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NODE_ID_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_LINK_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
@@ -2236,72 +2232,6 @@ public final class SeededStore {
             .set(GRAPHQL_UNION_MEMBER.SOURCE_COLUMN, 3)
             .set(GRAPHQL_UNION_MEMBER.TOUCHED_AT, SEEDED_READING)
             .execute();
-    }
-
-    /**
-     * A schema-level {@code @link}, decoded: the url as written, at an ordinal the case names.
-     * Whether the url is the federation opt-in is a predicate a derivation applies, so this helper
-     * takes whatever string the case wants tested against it, the omitted-argument state included
-     * (a {@code null} url, which matches no prefix).
-     */
-    public static void seedLink(DSLContext dsl, String graphName, int ordinal, String url) {
-        dsl.insertInto(GRAPHITRON_LINK_ENTRY)
-            .set(GRAPHITRON_LINK_ENTRY.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_LINK_ENTRY.ORDINAL, ordinal)
-            .set(GRAPHITRON_LINK_ENTRY.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_LINK_ENTRY.SOURCE_LINE, 1)
-            .set(GRAPHITRON_LINK_ENTRY.SOURCE_COLUMN, 15)
-            .set(GRAPHITRON_LINK_ENTRY.URL, url)
-            .execute();
-    }
-
-    /**
-     * An authored federation {@code @key}, decoded whole: the application row plus one selection per
-     * path, each with its segments. Paths arrive as dotted strings for brevity ({@code "id"},
-     * {@code "author.id"}) and are split into the segment rows the decode writes, so a case states
-     * the field set the way an author writes it and the store holds it the way the grammar decoded
-     * it. Positions are dense from zero in both children, as capture writes them.
-     *
-     * @param resolvable the {@code resolvable:} argument, or {@code null} where the author omitted it
-     * @param paths      the field set's selections in written order; an empty array is the shape a
-     *                   malformed {@code fields:} argument decodes to, which is a stated fact rather
-     *                   than a gap
-     */
-    public static void seedFederationKey(DSLContext dsl, String graphName, String typeName,
-                                         int ordinal, String fieldsSdl, Boolean resolvable,
-                                         String... paths) {
-        seedDeclaredType(dsl, graphName, typeName, "OBJECT");
-        dsl.insertInto(GRAPHITRON_FEDERATION_KEY_ENTRY)
-            .set(GRAPHITRON_FEDERATION_KEY_ENTRY.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_FEDERATION_KEY_ENTRY.TYPE_NAME, typeName)
-            .set(GRAPHITRON_FEDERATION_KEY_ENTRY.ORDINAL, ordinal)
-            .set(GRAPHITRON_FEDERATION_KEY_ENTRY.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_FEDERATION_KEY_ENTRY.DECLARATION_LINE, SEED_LINE)
-            .set(GRAPHITRON_FEDERATION_KEY_ENTRY.DECLARATION_COLUMN, SEED_COLUMN)
-            .set(GRAPHITRON_FEDERATION_KEY_ENTRY.SOURCE_LINE, 2)
-            .set(GRAPHITRON_FEDERATION_KEY_ENTRY.SOURCE_COLUMN, 3)
-            .set(GRAPHITRON_FEDERATION_KEY_ENTRY.FIELDS_SDL, fieldsSdl)
-            .set(GRAPHITRON_FEDERATION_KEY_ENTRY.RESOLVABLE, resolvable)
-            .execute();
-        for (int position = 0; position < paths.length; position++) {
-            dsl.insertInto(GRAPHITRON_FEDERATION_KEY_FIELD_ENTRY)
-                .set(GRAPHITRON_FEDERATION_KEY_FIELD_ENTRY.GRAPH_NAME, graphName)
-                .set(GRAPHITRON_FEDERATION_KEY_FIELD_ENTRY.TYPE_NAME, typeName)
-                .set(GRAPHITRON_FEDERATION_KEY_FIELD_ENTRY.ORDINAL, ordinal)
-                .set(GRAPHITRON_FEDERATION_KEY_FIELD_ENTRY.POSITION, position)
-                .execute();
-            String[] segments = paths[position].split("\\.");
-            for (int segment = 0; segment < segments.length; segment++) {
-                dsl.insertInto(GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY)
-                    .set(GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY.GRAPH_NAME, graphName)
-                    .set(GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY.TYPE_NAME, typeName)
-                    .set(GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY.ORDINAL, ordinal)
-                    .set(GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY.POSITION, position)
-                    .set(GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY.SEGMENT_POSITION, segment)
-                    .set(GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY.SEGMENT_NAME, segments[segment])
-                    .execute();
-            }
-        }
     }
 
     // ===== The jOOQ catalog =====

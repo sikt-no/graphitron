@@ -26,7 +26,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FEDERATION_KEY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.META_FAMILY;
@@ -636,14 +636,18 @@ class FactSchemaGateTest {
     @DisplayName("the federation dual projection agrees with its verbatim twin")
     void federationKeyProjectionsAgree(@TempDir Path tmp) {
         try (var store = CapturedStore.ownStore(tmp, FIXTURE)) {
+            // The decode keys each application by its at sign, which is where the verbatim twin
+            // sits too, so the two agree position for position.
+            var k = GRAPHITRON_AST_FEDERATION_KEY_ENTRY;
             var decoded = store.dsl()
-                .select(GRAPHITRON_FEDERATION_KEY_ENTRY.TYPE_NAME, GRAPHITRON_FEDERATION_KEY_ENTRY.ORDINAL)
-                .from(GRAPHITRON_FEDERATION_KEY_ENTRY)
+                .select(k.SOURCE_NAME, k.SOURCE_LINE, k.SOURCE_COLUMN)
+                .from(k)
                 .fetch();
             assertThat(decoded).as("the fixture applies @key twice, so the gate has something to pin")
                 .hasSize(2);
             var verbatim = store.dsl()
-                .select(GRAPHQL_TYPE_ELEMENT.TYPE_NAME, GRAPHQL_DIRECTIVE_APPLICATION.ORDINAL)
+                .select(GRAPHQL_DIRECTIVE_APPLICATION.SOURCE_NAME,
+                    GRAPHQL_DIRECTIVE_APPLICATION.SOURCE_LINE, GRAPHQL_DIRECTIVE_APPLICATION.SOURCE_COLUMN)
                 .from(GRAPHQL_DIRECTIVE_APPLICATION)
                 .join(GRAPHQL_TYPE_ELEMENT)
                     .on(GRAPHQL_TYPE_ELEMENT.GRAPH_NAME.eq(GRAPHQL_DIRECTIVE_APPLICATION.GRAPH_NAME),

@@ -48,7 +48,8 @@ import java.util.Map;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
@@ -64,7 +65,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_CARRIER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_MINTED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MINTED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
-import static no.sikt.graphitron.model.Tables.INTENT_FEDERATION_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SYNTHESIZED_FEDERATION_KEY;
 import static no.sikt.graphitron.model.Tables.JAVAC_DIAGNOSTIC;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_DISABLED_RULE;
@@ -144,10 +144,9 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
  * <ul>
  *   <li>{@link Arm#CONTAINMENT} for the SDL side. Capture is total and {@code GraphitronSchema} is
  *       reachability-pruned, so the honest relation is that the store contains the model. The claim
- *       is now about authored SDL throughout: {@code graphitron_federation_key_entry} held
- *       macro-synthesized rows under it until federation's key rule became a derivation, so a
- *       containment arm here says the store transcribes what the document declares and nothing
- *       else.</li>
+ *       is about authored SDL throughout: a key a macro synthesises is minted into the directive
+ *       anchor and never transcribed, so a containment arm here says the store transcribes what
+ *       the document declares and nothing else.</li>
  *   <li>{@link Arm#EQUALITY} for the catalog and scanner censuses, which are the same walk reduced
  *       two ways. The {@code java_} family joins them with its anchors elsewhere, in
  *       {@code JavaSourceFactsTest}: it is written by neither capture nor a graph, so its
@@ -583,16 +582,17 @@ class FactCaptureAgreementTest {
      * rewrite's last consumer.
      *
      * <p>Both sides come out of one pipeline run rather than out of two registries the test
-     * assembles: the expectation is the registry the rewrite mutated, and the comparison is
-     * {@code intent_federation_key} over the store filled from the handle production hands capture.
-     * One relation rather than a union the test assembles, which is what makes the comparison a
-     * reading of the schema's own composition instead of a second spelling of it.
+     * assembles: the expectation is the registry the rewrite mutated, and the comparison is the
+     * {@code key} rows of {@code graphitron_directive_application}, authored and minted, over the
+     * store filled from the handle production hands capture. One relation rather than a union the
+     * test assembles, which is what makes the comparison a reading of the schema's own composition
+     * instead of a second spelling of it.
      *
      * <p>The reading position is part of what this pins, and it matters more after the move than
      * before: a synthesized key transcribed as an authored one now lands wrong in stratum one
      * outright. What catches it is the derived membership. A capture that read the rewritten registry
-     * would land Film's and Language's {@code id} keys in {@code graphitron_federation_key_entry} as
-     * authored rows; the derivation's no-authored-id-key condition would then decline on both, so the
+     * would transcribe Film's and Language's {@code id} keys as authored applications; the
+     * derivation's no-authored-id-key condition would then decline on both, so the
      * expected synthesized membership comes up empty while the first assertion still agrees. The
      * second assertion is therefore what keeps the agreement from being reached by capture reading
      * the wrong registry.
@@ -602,11 +602,18 @@ class FactCaptureAgreementTest {
     void federationKeySynthesisAgreesWithTheRewrite(@TempDir Path tmp) {
         try (var store = PipelineCapturedStore.of(tmp, FEDERATED_FIXTURE)) {
             var composed = new LinkedHashSet<String>();
+            var d = GRAPHITRON_DIRECTIVE_APPLICATION;
+            var a = GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
             store.dsl()
-                .select(INTENT_FEDERATION_KEY.TYPE_NAME, INTENT_FEDERATION_KEY.FIELDS_SDL)
-                .from(INTENT_FEDERATION_KEY)
+                .select(d.COORDINATE, a.VALUE_SDL)
+                .from(d)
+                .join(a).on(a.GRAPH_NAME.eq(d.GRAPH_NAME).and(a.COORDINATE.eq(d.COORDINATE))
+                    .and(a.DIRECTIVE_NAME.eq(d.DIRECTIVE_NAME)).and(a.ORDINAL.eq(d.ORDINAL))
+                    .and(a.DIRECTIVE_ARGUMENT_NAME.eq("fields")))
+                .where(d.DIRECTIVE_NAME.eq("key"))
                 .fetch()
-                .forEach(row -> composed.add(row.value1() + "|" + row.value2()));
+                .forEach(row -> composed.add(row.value1() + "|"
+                    + ((StringValue) graphql.parser.Parser.parseValue(row.value2())).getValue()));
 
             var expected = new LinkedHashSet<String>();
             for (TypeDefinition<?> definition : store.attributed().registry().types().values()) {

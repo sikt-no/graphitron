@@ -131,7 +131,7 @@ CREATE TABLE store_graph_supergraph (
   PRIMARY KEY (graph_name),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
 );
-COMMENT ON TABLE store_graph_supergraph IS 'Which supergraph a graph declared itself a subgraph of: the graph''s own declaration of its <supergraph> parameter, minted and cleared by the graph''s own run like every other graph-keyed row. What it asserts is grouping, not federation. Declaring membership does not make a graph federated and is not policed against the SDL''s opt-in, which graphitron_link_entry already records as a predicate over the @link url; the grouping is deliberately usable before any federation SDL lands, since a subgraph under development may declare its home before its first @key is written. Only graphs with a declared supergraph are registered, so the row''s presence is the fact and a standalone graph has no row; a nullable column on the anchor would be the field every construction site may leave null, which this store spells structurally instead. Three absences collapse deliberately, because every reader''s safe answer is the same "not a peer": a graph whose author declared nothing, a programmatic run that was never asked, and a graph whose anchor a diagnostics preamble minted before capture ran. Deliberately not a supergraph entity relation of its own beside store_graph: no single run would mint or may clear such a row, and StoreRefresh derives the ownership-scoped clear set from the presence of a graph_name column, so the supergraph exists here as a value graphs declare and never as an entity anything owns. Single-valued by the (graph_name) key; if federation practice''s multi-supergraph publication ever has to be admitted, the widening is the key growing to (graph_name, supergraph_name), which costs a store-stamp roll rather than a data migration. This relation and store_graph are the whole of the cross-graph consumer read surface''s enumeration axis; nothing else configuration-shaped joins it, and what a surface reads about a peer stays SDL-derived.';
+COMMENT ON TABLE store_graph_supergraph IS 'Which supergraph a graph declared itself a subgraph of: the graph''s own declaration of its <supergraph> parameter, minted and cleared by the graph''s own run like every other graph-keyed row. What it asserts is grouping, not federation. Declaring membership does not make a graph federated and is not policed against the SDL''s opt-in, which graphitron_ast_link_entry already records as the @link url; the grouping is deliberately usable before any federation SDL lands, since a subgraph under development may declare its home before its first @key is written. Only graphs with a declared supergraph are registered, so the row''s presence is the fact and a standalone graph has no row; a nullable column on the anchor would be the field every construction site may leave null, which this store spells structurally instead. Three absences collapse deliberately, because every reader''s safe answer is the same "not a peer": a graph whose author declared nothing, a programmatic run that was never asked, and a graph whose anchor a diagnostics preamble minted before capture ran. Deliberately not a supergraph entity relation of its own beside store_graph: no single run would mint or may clear such a row, and StoreRefresh derives the ownership-scoped clear set from the presence of a graph_name column, so the supergraph exists here as a value graphs declare and never as an entity anything owns. Single-valued by the (graph_name) key; if federation practice''s multi-supergraph publication ever has to be admitted, the widening is the key growing to (graph_name, supergraph_name), which costs a store-stamp roll rather than a data migration. This relation and store_graph are the whole of the cross-graph consumer read surface''s enumeration axis; nothing else configuration-shaped joins it, and what a surface reads about a peer stays SDL-derived.';
 COMMENT ON COLUMN store_graph_supergraph.graph_name IS 'the declaring graph''s partition, anchored by store_graph; also the key, which is where the single-valued claim is enforced structurally';
 COMMENT ON COLUMN store_graph_supergraph.supergraph_name IS 'the declared supergraph''s name, as the <supergraph> parameter spelled it, with an empty element collapsed to absent by the decode rather than stored blank. Paired with graph_name it is the store''s rendering of the addressing federation already uses, which is why <graphName>''s own documentation speaks of the subgraph''s published name. A graph''s peers are the graphs this relation joins to over this column, a self-join between non-null values, so two standalone graphs never group by accident and two supergraphs in one workspace store coexist mutually invisible';
 COMMENT ON COLUMN store_graph_supergraph.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row with no instant being one no reading claims and no sweep reaches. A graph that stopped declaring a supergraph writes no row, so the sweep is the whole of how it stops being a peer';
@@ -4314,90 +4314,6 @@ COMMENT ON COLUMN graphitron_routine_column_mapping_pair_entry.touched_at IS 'wh
 -- applications land in the graphql_ family as fidelity rows, re-emitted verbatim; the store
 -- needs no special case for it.
 
-CREATE TABLE graphitron_federation_key_entry (
-  graph_name       VARCHAR NOT NULL,
-  type_name        VARCHAR NOT NULL,
-  ordinal          INT     NOT NULL,
-  source_name      VARCHAR NOT NULL,
-  declaration_line INT     NOT NULL,
-  declaration_column INT   NOT NULL,
-  source_line      INT,
-  source_column    INT,
-  fields_sdl       VARCHAR NOT NULL,
-  resolvable       BOOLEAN,
-  PRIMARY KEY (graph_name, type_name, ordinal),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name)
-    ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_federation_key_entry IS 'Federation @key as the author wrote it, decoded for consumption (its verbatim twin lives in graphql_directive_application for re-emission; a gate query pins agreement). Authored applications alone, which is what this family''s charter says a decode is: the key federation synthesizes for a node type is a derivation over these rows and the node metadata, and it lives in graphitron_synthesized_federation_key. A reader wanting every key the emitted schema carries reads intent_federation_key, which unions the two. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_federation_key_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
-COMMENT ON COLUMN graphitron_federation_key_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_federation_key_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_federation_key_entry.ordinal IS '@key is repeatable; document order';
-COMMENT ON COLUMN graphitron_federation_key_entry.source_name IS 'the applying declaration site, which every row here has, the relation holding authored applications alone';
-COMMENT ON COLUMN graphitron_federation_key_entry.declaration_line IS 'line of the contributing declaration site, keyed with source_name';
-COMMENT ON COLUMN graphitron_federation_key_entry.declaration_column IS 'column of the contributing declaration site, the site key''s fourth part';
-COMMENT ON COLUMN graphitron_federation_key_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_federation_key_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_federation_key_entry.fields_sdl IS 'the field-set literal as written';
-COMMENT ON COLUMN graphitron_federation_key_entry.resolvable IS 'as written; NULL when omitted';
-
-CREATE TABLE graphitron_federation_key_field_entry (
-  graph_name VARCHAR NOT NULL,
-  type_name  VARCHAR NOT NULL,
-  ordinal    INT     NOT NULL,
-  position   INT     NOT NULL,
-  PRIMARY KEY (graph_name, type_name, ordinal, position),
-  FOREIGN KEY (graph_name, type_name, ordinal)
-    REFERENCES graphitron_federation_key_entry (graph_name, type_name, ordinal)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_federation_key_field_entry IS 'An ordered element of a @key field set (the field-set grammar is a parse boundary, so the decode happens at capture). One row per leaf selection, in written order, and the row is the position alone: what the selection names is the segment child, because the grammar admits nesting and a decoded grammar lands as rows rather than as a rendered string. A top-level selection is one segment, so the child is never empty. That today''s consumer rejects nesting is a detection, not a capture limit. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
-COMMENT ON COLUMN graphitron_federation_key_field_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_federation_key_field_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_federation_key_field_entry.ordinal IS 'capture-assigned position in document order';
-COMMENT ON COLUMN graphitron_federation_key_field_entry.position IS '0-based within the field set';
-
-CREATE TABLE graphitron_federation_key_field_segment_entry (
-  graph_name       VARCHAR NOT NULL,
-  type_name        VARCHAR NOT NULL,
-  ordinal          INT     NOT NULL,
-  position         INT     NOT NULL,
-  segment_position INT     NOT NULL,
-  segment_name     VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, type_name, ordinal, position, segment_position),
-  FOREIGN KEY (graph_name, type_name, ordinal, position)
-    REFERENCES graphitron_federation_key_field_entry (graph_name, type_name, ordinal, position)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_federation_key_field_segment_entry IS 'What one @key selection names, segment by segment: the nesting the field-set parser computes, recorded rather than rendered. A reader asking which leaf a key selects, and under what parent, joins instead of splitting a dotted string, which is the whole reason the parser''s prefix stack reaches the store at all. Positions are dense from zero and a selection always has a position-zero segment, an unnested one having only that. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
-COMMENT ON COLUMN graphitron_federation_key_field_segment_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_federation_key_field_segment_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_federation_key_field_segment_entry.ordinal IS 'the owning @key application''s ordinal';
-COMMENT ON COLUMN graphitron_federation_key_field_segment_entry.position IS 'the owning selection''s 0-based position within the field set';
-COMMENT ON COLUMN graphitron_federation_key_field_segment_entry.segment_position IS '0-based position of the segment within the selection, dense from zero; position zero names a field of the type the @key sits on, and each further position descends into the one before it';
-COMMENT ON COLUMN graphitron_federation_key_field_segment_entry.segment_name IS 'the segment itself, one name carrying no dot; what a reader would otherwise have recovered by splitting a path';
-
-CREATE TABLE graphitron_link_entry (
-  graph_name    VARCHAR NOT NULL,
-  ordinal       INT     NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  url           VARCHAR,
-  PRIMARY KEY (graph_name, ordinal),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
-);
-COMMENT ON TABLE graphitron_link_entry IS '@link on the schema definition, decoded. All @link applications decode here (the verbatim twin sits in graphql_directive_application at coordinate $schema); whether a link is the federation opt-in is a predicate over url, a derivation. @tag and @shareable get no decoded relations: their only readers are the expansion machinery itself, which is the capture walk with the AST in hand, so downstream consumers see them only as fidelity rows for re-emission. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_link_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
-COMMENT ON COLUMN graphitron_link_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_link_entry.ordinal IS '@link is repeatable; document order';
-COMMENT ON COLUMN graphitron_link_entry.source_name IS 'the SDL file the row was captured from';
-COMMENT ON COLUMN graphitron_link_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_link_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_link_entry.url IS 'as written';
-
 -- Retired directives: existence only, per the rules above.
 --
 -- @notGenerated, like @experimental_constructType above, is not a graphitron directive and its
@@ -8006,20 +7922,6 @@ COMMENT ON COLUMN graphitron_directive_application_arg_minted.directive_name IS 
 COMMENT ON COLUMN graphitron_directive_application_arg_minted.ordinal IS 'the owning application''s ordinal';
 COMMENT ON COLUMN graphitron_directive_application_arg_minted.directive_argument_name IS 'the formal argument the value binds';
 COMMENT ON COLUMN graphitron_directive_application_arg_minted.value_sdl IS 'the value as SDL, which the macro states';
-
-CREATE VIEW intent_federation_key
-  (graph_name, type_name, ordinal, fields_sdl, resolvable) AS
-SELECT graph_name, type_name, ordinal, fields_sdl, resolvable
-  FROM graphitron_federation_key_entry
- UNION ALL
-SELECT graph_name, type_name, CAST(NULL AS INT), fields_sdl, resolvable
-  FROM graphitron_synthesized_federation_key;
-COMMENT ON VIEW intent_federation_key IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Every @key a graph''s emitted schema carries, authored and synthesized alike: the composition two readers already ask for, the round trip that re-emits the applications and the agreement anchor that pins the derivation against the pipeline''s registry rewrite. A relation rather than a union each of them assembles for itself, on the rule that a composition with a second asker is a relation. The grain is the authored relation''s, with a NULL ordinal on the synthesized arm rather than an invented one: document order is a property of something the author wrote, and a derived row has no position in a document. UNION ALL and not UNION, deliberately. The authored arm is unique on its own key already and the synthesized arm cannot collide with it, its condition being that no authored id key exists, so deduplication could only ever fold together rows a reader wants told apart: two authored @key(fields: "id") applications at distinct ordinals are two rows here, which is the arity the authored relation states and this reduction owes its readers. Key grain only. The path and segment children stay authored-only until a reader asks for them composed, the synthesized arm''s single id path being recoverable from fields_sdl by the same rule that would have decoded it. A reader wanting a total order over both arms orders the authored rows by ordinal and appends the derived one, which is the ordering the composing query owns rather than one this relation invents.';
-COMMENT ON COLUMN intent_federation_key.graph_name IS 'the owning graph''s partition, carried from whichever arm produced the row';
-COMMENT ON COLUMN intent_federation_key.type_name IS 'the type the key sits on';
-COMMENT ON COLUMN intent_federation_key.ordinal IS 'the authored application''s position in document order; NULL on a synthesized row, which is the stated absent bucket rather than a missing value, a derived row having no document position and the type''s declaration site being one join away';
-COMMENT ON COLUMN intent_federation_key.fields_sdl IS 'the field-set literal: as written on an authored row, and the rule''s own id on a synthesized one';
-COMMENT ON COLUMN intent_federation_key.resolvable IS 'as written on an authored row, NULL where the author omitted it; always true on a synthesized one';
 
 CREATE TABLE graphitron_code_reference (
   graph_name         VARCHAR NOT NULL,
@@ -15533,7 +15435,7 @@ INSERT INTO meta_relation VALUES
   ('graphql_assembly_synthesised_link', 'graph-synthesised-link', 'graphql-assembly',
    'One graph whose composed schema carries the federation @link that <schemaInput tag> synthesised, which its author did not write.',
    'For example a graph whose only federation opt-in is a tagged schema input, with no @link in any document, has one row.',
-   'The tag arm of federation''s opt-in, which no document states. A federation @link reaches the schema the generator builds two ways, written by the author or synthesised by the loading rewrites where a tag is configured and none was written, and the generator federates on either. The decode reads the corpus as written, so graphitron_link_entry holds only the first, and without this relation a graph federated through a tag alone would get no synthesised @key from the store. Recorded from the composition rather than derived from the recipe rows because the two differ: a tagged pattern that matched no file is a recipe row and tags nothing, and the rule is TagLinkSynthesiser''s, run once by the assembly over the inputs the generator hands it, so restating it in SQL over configuration would be a second implementation with nothing holding the two together. A configuration-varying row on a graph-keyed surface is admissible for the reason the assembly''s problem rows are: it states a property of the schema the graph publishes, which is what the cross-graph surface''s SDL-derived rule protects. Presence is the fact, keyed by the graph alone.'),
+   'The tag arm of federation''s opt-in, which no document states. A federation @link reaches the schema the generator builds two ways, written by the author or synthesised by the loading rewrites where a tag is configured and none was written, and the generator federates on either. The decode reads the corpus as written, so graphitron_ast_link_entry holds only the first, and without this relation a graph federated through a tag alone would get no synthesised @key from the store. Recorded from the composition rather than derived from the recipe rows because the two differ: a tagged pattern that matched no file is a recipe row and tags nothing, and the rule is TagLinkSynthesiser''s, run once by the assembly over the inputs the generator hands it, so restating it in SQL over configuration would be a second implementation with nothing holding the two together. A configuration-varying row on a graph-keyed surface is admissible for the reason the assembly''s problem rows are: it states a property of the schema the graph publishes, which is what the cross-graph surface''s SDL-derived rule protects. Presence is the fact, keyed by the graph alone.'),
   ('graphql_ast_type_declaration_entry', 'sdl-declaration-site', 'graphql-ast',
    'A type declaration as one document wrote it: this position in this file declares or extends a named type of this kind and this name.',
    'For example type Film { title: String } is one row saying OBJECT, and extend type Film { rating: Rating } is another saying OBJECT and an extension.',

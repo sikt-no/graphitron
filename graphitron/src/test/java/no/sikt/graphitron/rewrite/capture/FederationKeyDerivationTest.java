@@ -22,8 +22,9 @@ import java.util.Optional;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ASSEMBLY_SYNTHESISED_LINK;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_ENTRY;
-import static no.sikt.graphitron.model.Tables.INTENT_FEDERATION_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FEDERATION_KEY_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SYNTHESIZED_FEDERATION_KEY;
@@ -34,12 +35,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code @key(fields: "id")} gets one, and the rule now answers as a derivation instead of as a
  * write the capture walk performed.
  *
- * <p>What each case reads is the point. Nothing lands in {@code graphql_type_directive} or
- * {@code graphitron_federation_key_entry} for a synthesized key any more, so those two relations are
- * asserted <em>empty</em> at the synthesized coordinate and the membership is read from
- * {@code graphitron_synthesized_federation_key}. That is the whole of the move: at this coordinate
- * stratum one is now pure transcription of the SDL, and a reader wanting every key the emitted
- * schema carries reads the composed reduction.
+ * <p>What each case reads is the point. Nothing lands in the transcription or its decode for a
+ * synthesized key, so those are asserted <em>empty</em> at the synthesized coordinate and the
+ * membership is read from {@code graphitron_synthesized_federation_key}. At this coordinate stratum
+ * one is pure transcription of the SDL, and a reader wanting every key the emitted schema carries
+ * reads the {@code key} rows of {@code graphitron_directive_application}, authored and minted.
  *
  * <p>These are capture-driven cases rather than seeded ones, which is what the module boundary asks
  * for: the rule's own algebra is pinned row-in-verdict-out in {@code graphitron-model}, and what
@@ -107,21 +107,21 @@ class FederationKeyDerivationTest {
             assertThat(keyApplicationsOf(store.dsl(), "Film"))
                 .as("the SDL declares no @key, so the transcription holds none")
                 .isEmpty();
-            assertThat(store.dsl().fetchCount(GRAPHITRON_FEDERATION_KEY_ENTRY))
-                .as("the decode relation holds authored applications alone")
+            assertThat(store.dsl().fetchCount(GRAPHITRON_AST_FEDERATION_KEY_ENTRY))
+                .as("the decode holds authored applications alone")
                 .isZero();
 
             assertThat(composedKeysOf(store.dsl(), "Film"))
-                .as("the reduction is where a reader sees the key, with no ordinal on a derived row")
-                .containsExactly("null:id");
+                .as("the directive anchor is where a reader sees the key, minted after the authored")
+                .containsExactly("0:MINTED:id");
         }
     }
 
     /**
      * An authored id key stands the rule down, and the explicit {@code resolvable: false} that keeps
-     * the type out of {@code _Entity} survives into the reduction unaltered. That is the reason the
-     * stand-down is a condition on the rule rather than a precedence in the reduction: a synthesized
-     * row asserting {@code resolvable} true beside this one would put the opt-out back.
+     * the type out of {@code _Entity} survives into the directive anchor unaltered. That is the reason
+     * the stand-down is a condition on the rule rather than a precedence in the anchor: a minted row
+     * asserting {@code resolvable} true beside this one would put the opt-out back.
      */
     @Test
     @DisplayName("an authored id key stands the derivation down, opt-out intact")
@@ -130,11 +130,14 @@ class FederationKeyDerivationTest {
             "type Film implements Node @node @key(fields: \"id\", resolvable: false) {");
         try (var store = CapturedStore.of(tmp, sdl)) {
             assertThat(store.dsl().fetchCount(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY)).isZero();
+            var a = GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
             assertThat(store.dsl()
-                .select(INTENT_FEDERATION_KEY.RESOLVABLE)
-                .from(INTENT_FEDERATION_KEY)
-                .where(INTENT_FEDERATION_KEY.TYPE_NAME.eq("Film"))
-                .fetchSingle().value1()).isFalse();
+                .select(a.VALUE_SDL)
+                .from(a)
+                .where(a.COORDINATE.eq("Film"))
+                .and(a.DIRECTIVE_NAME.eq("key"))
+                .and(a.DIRECTIVE_ARGUMENT_NAME.eq("resolvable"))
+                .fetchSingle().value1()).isEqualTo("false");
         }
     }
 
@@ -177,9 +180,8 @@ class FederationKeyDerivationTest {
 
     /**
      * An other-field key is an additional alternative rather than the id contract, so the rule still
-     * fires and the two coexist on one type. There is no ordinal interleaving left to preserve: the
-     * authored row keeps its document position and the derived one has none, and a reader wanting a
-     * total order appends the derived row after the authored ones in its own query.
+     * fires and the two coexist on one type: the authored application keeps its document position
+     * and the minted one is numbered after it.
      */
     @Test
     @DisplayName("an authored non-id key and a derived key coexist on one type")
@@ -188,7 +190,7 @@ class FederationKeyDerivationTest {
             "type Film implements Node @node @key(fields: \"title\") {");
         try (var store = CapturedStore.of(tmp, sdl)) {
             assertThat(composedKeysOf(store.dsl(), "Film"))
-                .containsExactlyInAnyOrder("0:title", "null:id");
+                .containsExactly("0:AUTHORED:title", "1:MINTED:id");
             assertThat(keyApplicationsOf(store.dsl(), "Film"))
                 .as("only the authored application is transcribed")
                 .containsExactly(0);
@@ -229,7 +231,8 @@ class FederationKeyDerivationTest {
         String sdl = DIRECTIVES + FEDERATED.replace(LINK, "");
         try (var store = CapturedStore.of(tmp, sdl)) {
             assertThat(store.dsl().fetchCount(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY)).isZero();
-            assertThat(store.dsl().fetchCount(INTENT_FEDERATION_KEY)).isZero();
+            assertThat(store.dsl().fetchCount(GRAPHITRON_DIRECTIVE_APPLICATION,
+                GRAPHITRON_DIRECTIVE_APPLICATION.DIRECTIVE_NAME.eq("key"))).isZero();
         }
     }
 
@@ -310,12 +313,21 @@ class FederationKeyDerivationTest {
             .fetch(GRAPHQL_DIRECTIVE_APPLICATION.ORDINAL);
     }
 
-    /** A type's composed keys as {@code ordinal:fields}, the derived row rendering its null ordinal. */
+    /** A type's emitted keys as {@code ordinal:origin:fields}, from the directive anchor. */
     private static List<String> composedKeysOf(DSLContext dsl, String typeName) {
-        return dsl.select(INTENT_FEDERATION_KEY.ORDINAL, INTENT_FEDERATION_KEY.FIELDS_SDL)
-            .from(INTENT_FEDERATION_KEY)
-            .where(INTENT_FEDERATION_KEY.TYPE_NAME.eq(typeName))
+        var d = GRAPHITRON_DIRECTIVE_APPLICATION;
+        var a = GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
+        return dsl.select(d.ORDINAL, d.ORIGIN, a.VALUE_SDL)
+            .from(d)
+            .join(a).on(a.GRAPH_NAME.eq(d.GRAPH_NAME).and(a.COORDINATE.eq(d.COORDINATE))
+                .and(a.DIRECTIVE_NAME.eq(d.DIRECTIVE_NAME)).and(a.ORDINAL.eq(d.ORDINAL))
+                .and(a.DIRECTIVE_ARGUMENT_NAME.eq("fields")))
+            .where(d.COORDINATE.eq(typeName))
+            .and(d.DIRECTIVE_NAME.eq("key"))
+            .orderBy(d.ORDINAL)
             .fetch()
-            .map(r -> r.value1() + ":" + r.value2());
+            .map(r -> r.value1() + ":" + r.value2() + ":"
+                + ((graphql.language.StringValue) graphql.parser.Parser.parseValue(r.value3()))
+                    .getValue());
     }
 }

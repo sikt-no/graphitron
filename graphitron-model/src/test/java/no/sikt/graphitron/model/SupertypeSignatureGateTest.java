@@ -325,16 +325,6 @@ class SupertypeSignatureGateTest {
         // The enum-value site's two sorting pairs, on the terms every pair above is on: an
         // as-written relation beside the resolved one it will be derived into, both coming off this
         // roster together on the day that derivation lands.
-        // And the schema site's, which pair on payload while differing on key in the way this whole
-        // tranche does: the anchors are keyed by an ordinal the old writer assigned, the entries by
-        // the position of the at sign the ordinal would sort by.
-        Set.of("graphitron_ast_link_entry", "graphitron_link_entry"),
-        // Federation's key segments, which pair on the one column either of them carries beyond its
-        // key. Only the segment does: the key entry keeps the field set as a string the anchor
-        // holds beside a declaration site, and a selection row is key and nothing else, so neither
-        // of those two has a payload to share with anything.
-        Set.of("graphitron_ast_federation_key_segment_entry",
-               "graphitron_federation_key_field_segment_entry"),
         // @node's key columns, which pair the same way. Only the child does: the anchor above it
         // carries the declaration site the application was written on as four columns of its own,
         // where the entry carries that by being keyed at the position, so the two share no payload
