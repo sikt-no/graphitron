@@ -23,9 +23,8 @@ import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_TARGET;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_SEPARATE_FETCH;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_CLAIM;
-import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CONFLICT;
-import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_SEED;
 import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectDistinct;
@@ -305,29 +304,30 @@ public final class ClaimFacts {
                 .orderBy(GRAPHITRON_ERROR_HANDLER_ENTRY.POSITION))
                 .convertFrom(rows -> rows.map(Records.mapping(Handler::new)))
                 .as("type_claim_handlers");
-            grounded = multiset(selectDistinct(INTENT_TYPE_BACKING_SEED.CLASS_NAME)
-                .from(INTENT_TYPE_BACKING_SEED)
-                .where(INTENT_TYPE_BACKING_SEED.GRAPH_NAME.eq(graph))
-                .and(INTENT_TYPE_BACKING_SEED.TYPE_NAME.eq(typeName)))
+            grounded = multiset(selectDistinct(GRAPHITRON_TYPE_BACKING.CLASS_NAME)
+                .from(GRAPHITRON_TYPE_BACKING)
+                .where(GRAPHITRON_TYPE_BACKING.GRAPH_NAME.eq(graph))
+                .and(GRAPHITRON_TYPE_BACKING.TYPE_NAME.eq(typeName))
+                .and(TypeBackingClass.GROUNDED))
                 .convertFrom(rows -> rows.map(Record1::value1))
                 .as("type_claim_grounded");
-            reached = multiset(selectDistinct(INTENT_TYPE_BACKING.CLASS_NAME)
-                .from(INTENT_TYPE_BACKING)
-                .where(INTENT_TYPE_BACKING.GRAPH_NAME.eq(graph))
-                .and(INTENT_TYPE_BACKING.TYPE_NAME.eq(typeName)))
+            reached = multiset(selectDistinct(GRAPHITRON_TYPE_BACKING.CLASS_NAME)
+                .from(GRAPHITRON_TYPE_BACKING)
+                .where(GRAPHITRON_TYPE_BACKING.GRAPH_NAME.eq(graph))
+                .and(GRAPHITRON_TYPE_BACKING.TYPE_NAME.eq(typeName)))
                 .convertFrom(rows -> rows.map(Record1::value1))
                 .as("type_claim_reached");
             // The contested set is the backing rows the conflict relation names, joined rather
             // than read off a column: the classes are rows under the same key, and the relation
             // that says the type is contested carries the arity and nothing else.
-            contested = multiset(selectDistinct(INTENT_TYPE_BACKING.CLASS_NAME)
+            contested = multiset(selectDistinct(GRAPHITRON_TYPE_BACKING.CLASS_NAME)
                 .from(INTENT_TYPE_BACKING_CONFLICT)
-                .join(INTENT_TYPE_BACKING)
-                .on(INTENT_TYPE_BACKING.GRAPH_NAME.eq(INTENT_TYPE_BACKING_CONFLICT.GRAPH_NAME),
-                    INTENT_TYPE_BACKING.TYPE_NAME.eq(INTENT_TYPE_BACKING_CONFLICT.TYPE_NAME))
+                .join(GRAPHITRON_TYPE_BACKING)
+                .on(GRAPHITRON_TYPE_BACKING.GRAPH_NAME.eq(INTENT_TYPE_BACKING_CONFLICT.GRAPH_NAME),
+                    GRAPHITRON_TYPE_BACKING.TYPE_NAME.eq(INTENT_TYPE_BACKING_CONFLICT.TYPE_NAME))
                 .where(INTENT_TYPE_BACKING_CONFLICT.GRAPH_NAME.eq(graph))
                 .and(INTENT_TYPE_BACKING_CONFLICT.TYPE_NAME.eq(typeName))
-                .orderBy(INTENT_TYPE_BACKING.CLASS_NAME))
+                .orderBy(GRAPHITRON_TYPE_BACKING.CLASS_NAME))
                 .convertFrom(rows -> rows.map(Record1::value1))
                 .as("type_claim_contested");
         }

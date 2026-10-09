@@ -46,8 +46,6 @@ graphitron_mutation_write_payload_rule graphql_type
 graphitron_node_id_instruction_rule graphql_field
 graphitron_node_id_instruction_rule graphql_type
 intent_routine_return_binding graphql_type
-intent_type_backing_seed graphql_field
-intent_type_backing_seed graphql_type
 
 # Adjudicated and kept: the authored arms of the emitted population.
 #

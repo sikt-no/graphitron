@@ -921,7 +921,7 @@ class GraphitronMcpServerTest {
      *
      * <p>{@code Film} binds a table and carries a column-matched field, a {@code @reference} hop and a
      * {@code @service}; the extension site is what makes its declaration list plural. {@code FilmSummary}
-     * is backed by nothing the author wrote, only by what the producer returns, which is the closure arm.
+     * is backed by nothing the author wrote, only by what the producer returns, which is the producer arm.
      * {@code Contested} binds a table <em>and</em> is returned by a producer, so the two backing
      * populations disagree about it. {@code FilmFilter} carries the {@code @condition} whose method the
      * store's producer view does not reach. {@code Named} and {@code Searchable} are the two SDL
@@ -1085,8 +1085,8 @@ class GraphitronMcpServerTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void schemaReportsAClosureBackedTypesClassAndTheMemberNamesItOffers() {
-        // The closure's own reachability is derived and tested on the store side; what this asserts is
+    void schemaReportsAProducerBackedTypesClassAndTheMemberNamesItOffers() {
+        // Which class backs a type is derived and tested on the store side; what this asserts is
         // the rendering, which is the class, its provenance and the slots the class offers an author.
         var summary = onlyType(SCHEMA, "FilmSummary");
 
@@ -1094,7 +1094,7 @@ class GraphitronMcpServerTest {
             .satisfies(backing -> {
                 assertThat(backing)
                     .containsEntry("class", SCHEMA_FIXTURES + "FilmSummary")
-                    .containsEntry("declaredVia", "BACKING_CLOSURE");
+                    .containsEntry("declaredVia", "PRODUCER");
                 // Both accessor prefixes the bean rule accepts, each with the slot name the rule
                 // derives and the declaration it resolves back to.
                 assertThat((List<Map<String, Object>>) backing.get("members")).containsExactly(
@@ -1118,7 +1118,7 @@ class GraphitronMcpServerTest {
         var backing = (List<Map<String, Object>>) contested.get("backing");
         assertThat(backing).hasSize(2);
         assertThat(backing).extracting(b -> b.get("declaredVia"))
-            .containsExactlyInAnyOrder("BOUND_TABLE", "BACKING_CLOSURE");
+            .containsExactlyInAnyOrder("BOUND_TABLE", "PRODUCER");
         assertThat(backing).extracting(b -> b.get("class"))
             .contains(SCHEMA_FIXTURES + "FilmSummary");
 

@@ -23,8 +23,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_METHOD;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_REFERENCE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_ROUTINE_METHOD;
-import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING;
-import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_SEED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
 import static no.sikt.graphitron.model.Tables.JAVA_CLASS_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JAVA_FIELD_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JAVA_METHOD_DECLARATION;
@@ -331,11 +330,9 @@ public final class DeclarationFacts {
         private Arms(StoreHandle store, Coord coord) {
             var classes = candidateClasses(store, coord);
             boundTables = named(boundTableArm(store, coord), "bound_tables");
-            backingSeeds = named(backingArm(store, coord, INTENT_TYPE_BACKING_SEED.TYPE_NAME,
-                INTENT_TYPE_BACKING_SEED.CLASS_NAME, INTENT_TYPE_BACKING_SEED.GRAPH_NAME),
+            backingSeeds = named(backingArm(store, coord, TypeBackingClass.GROUNDED),
                 "backing_seeds");
-            backingReached = named(backingArm(store, coord, INTENT_TYPE_BACKING.TYPE_NAME,
-                INTENT_TYPE_BACKING.CLASS_NAME, INTENT_TYPE_BACKING.GRAPH_NAME),
+            backingReached = named(backingArm(store, coord, TypeBackingClass.REACHED),
                 "backing_reached");
             redirects = named(redirectArm(store, coord), "redirects");
             columns = named(columnArm(store, coord), "columns");
@@ -426,19 +423,20 @@ public final class DeclarationFacts {
     }
 
     /**
-     * One backing population, either of the two the grounding rule chooses between. Both have the
-     * same shape over different relations, which is why this is one method called twice: what
-     * separates them is which relation grounds a class, and that is the parameter.
+     * One backing population, either of the two the grounding rule chooses between, as
+     * {@link TypeBackingClass#GROUNDED} or {@link TypeBackingClass#REACHED} names it. Both are rows of
+     * one relation, which is why this is one method called twice: what separates them is which rows
+     * count, and that is the parameter.
      */
     private static Field<List<String>> backingArm(
-        StoreHandle store, Coord coord, TableField<?, String> typeColumn,
-        TableField<?, String> classColumn, TableField<?, String> graphColumn
+        StoreHandle store, Coord coord, Condition population
     ) {
-        return multiset(selectDistinct(classColumn)
-            .from(typeColumn.getTable())
-            .where(graphColumn.eq(store.graphName()))
-            .and(typeColumn.eq(coord.typeName()))
-            .orderBy(classColumn))
+        return multiset(selectDistinct(GRAPHITRON_TYPE_BACKING.CLASS_NAME)
+            .from(GRAPHITRON_TYPE_BACKING)
+            .where(GRAPHITRON_TYPE_BACKING.GRAPH_NAME.eq(store.graphName()))
+            .and(GRAPHITRON_TYPE_BACKING.TYPE_NAME.eq(coord.typeName()))
+            .and(population)
+            .orderBy(GRAPHITRON_TYPE_BACKING.CLASS_NAME))
             .convertFrom(rows -> rows.map(Record1::value1));
     }
 
@@ -475,7 +473,7 @@ public final class DeclarationFacts {
         var boundTable = multiset(select(SQL_TABLE.SOURCE_NAME, SQL_TABLE.TABLE_SCHEMA,
                 SQL_TABLE.TABLE_NAME, SQL_TABLE.CLASS_FQN, SQL_TABLE.DESCRIPTION)
             .from(SQL_TABLE)
-            .where(SQL_TABLE.RECORD_CLASS_FQN.eq(INTENT_TYPE_BACKING.CLASS_NAME))
+            .where(SQL_TABLE.RECORD_CLASS_FQN.eq(GRAPHITRON_TYPE_BACKING.CLASS_NAME))
             .and(SQL_TABLE.RECORD_CLASS_FQN.ne(NO_RECORD_CLASS))
             .and(store.reads(SQL_TABLE.SOURCE_NAME))
             .orderBy(SQL_TABLE.TABLE_SCHEMA, SQL_TABLE.TABLE_NAME))
@@ -484,11 +482,11 @@ public final class DeclarationFacts {
             .convertFrom(rows -> rows.map(row -> new TableRow(
                 new CatalogTable(row.value1(), row.value2(), row.value3()),
                 row.value4(), row.value5())));
-        return multiset(select(INTENT_TYPE_BACKING.CLASS_NAME, boundTable)
-            .from(INTENT_TYPE_BACKING)
-            .where(INTENT_TYPE_BACKING.GRAPH_NAME.eq(store.graphName()))
-            .and(INTENT_TYPE_BACKING.TYPE_NAME.eq(coord.typeName()))
-            .orderBy(INTENT_TYPE_BACKING.CLASS_NAME))
+        return multiset(select(GRAPHITRON_TYPE_BACKING.CLASS_NAME, boundTable)
+            .from(GRAPHITRON_TYPE_BACKING)
+            .where(GRAPHITRON_TYPE_BACKING.GRAPH_NAME.eq(store.graphName()))
+            .and(GRAPHITRON_TYPE_BACKING.TYPE_NAME.eq(coord.typeName()))
+            .orderBy(GRAPHITRON_TYPE_BACKING.CLASS_NAME))
             .convertFrom(rows -> rows.stream()
                 .flatMap(row -> row.value2().stream()
                     .map(table -> new RedirectRow(row.value1(), table)))
@@ -679,10 +677,10 @@ public final class DeclarationFacts {
             .and(INTENT_BOUND_TABLE.TYPE_NAME.eq(coord.typeName()))
             .and(store.reads(SQL_TABLE.SOURCE_NAME))
             .union(select(SQL_TABLE.CLASS_FQN)
-                .from(INTENT_TYPE_BACKING)
-                .join(SQL_TABLE).on(SQL_TABLE.RECORD_CLASS_FQN.eq(INTENT_TYPE_BACKING.CLASS_NAME))
-                .where(INTENT_TYPE_BACKING.GRAPH_NAME.eq(store.graphName()))
-                .and(INTENT_TYPE_BACKING.TYPE_NAME.eq(coord.typeName()))
+                .from(GRAPHITRON_TYPE_BACKING)
+                .join(SQL_TABLE).on(SQL_TABLE.RECORD_CLASS_FQN.eq(GRAPHITRON_TYPE_BACKING.CLASS_NAME))
+                .where(GRAPHITRON_TYPE_BACKING.GRAPH_NAME.eq(store.graphName()))
+                .and(GRAPHITRON_TYPE_BACKING.TYPE_NAME.eq(coord.typeName()))
                 .and(store.reads(SQL_TABLE.SOURCE_NAME)))
             .union(backingCandidates(store, coord));
         if (coord.memberName() == null) return classes;
@@ -698,14 +696,10 @@ public final class DeclarationFacts {
 
     /** Both backing populations, which is what a class-keyed arm asks about without choosing between them. */
     private static Select<Record1<String>> backingCandidates(StoreHandle store, Coord coord) {
-        return select(INTENT_TYPE_BACKING_SEED.CLASS_NAME)
-            .from(INTENT_TYPE_BACKING_SEED)
-            .where(INTENT_TYPE_BACKING_SEED.GRAPH_NAME.eq(store.graphName()))
-            .and(INTENT_TYPE_BACKING_SEED.TYPE_NAME.eq(coord.typeName()))
-            .union(select(INTENT_TYPE_BACKING.CLASS_NAME)
-                .from(INTENT_TYPE_BACKING)
-                .where(INTENT_TYPE_BACKING.GRAPH_NAME.eq(store.graphName()))
-                .and(INTENT_TYPE_BACKING.TYPE_NAME.eq(coord.typeName())));
+        return selectDistinct(GRAPHITRON_TYPE_BACKING.CLASS_NAME)
+            .from(GRAPHITRON_TYPE_BACKING)
+            .where(GRAPHITRON_TYPE_BACKING.GRAPH_NAME.eq(store.graphName()))
+            .and(GRAPHITRON_TYPE_BACKING.TYPE_NAME.eq(coord.typeName()));
     }
 
     /**
@@ -756,11 +750,11 @@ public final class DeclarationFacts {
             .and(INTENT_BOUND_TABLE.TABLE_SCHEMA.eq(SQL_COLUMN.TABLE_SCHEMA))
             .and(INTENT_BOUND_TABLE.TABLE_NAME.eq(SQL_COLUMN.TABLE_NAME)));
         var record = SQL_TABLE.as("scope_table");
-        var redirected = exists(select(INTENT_TYPE_BACKING.TYPE_NAME)
-            .from(INTENT_TYPE_BACKING)
-            .join(record).on(record.RECORD_CLASS_FQN.eq(INTENT_TYPE_BACKING.CLASS_NAME))
-            .where(INTENT_TYPE_BACKING.GRAPH_NAME.eq(store.graphName()))
-            .and(INTENT_TYPE_BACKING.TYPE_NAME.eq(coord.typeName()))
+        var redirected = exists(select(GRAPHITRON_TYPE_BACKING.TYPE_NAME)
+            .from(GRAPHITRON_TYPE_BACKING)
+            .join(record).on(record.RECORD_CLASS_FQN.eq(GRAPHITRON_TYPE_BACKING.CLASS_NAME))
+            .where(GRAPHITRON_TYPE_BACKING.GRAPH_NAME.eq(store.graphName()))
+            .and(GRAPHITRON_TYPE_BACKING.TYPE_NAME.eq(coord.typeName()))
             .and(record.RECORD_CLASS_FQN.ne(NO_RECORD_CLASS))
             .and(record.SOURCE_NAME.eq(SQL_COLUMN.SOURCE_NAME))
             .and(record.TABLE_SCHEMA.eq(SQL_COLUMN.TABLE_SCHEMA))

@@ -67,7 +67,6 @@ intent_column_match_claim
 intent_delivery_container
 intent_errors_field
 intent_errors_field_member
-intent_field_accessor_hop
 intent_field_chain_node
 intent_field_chain_start
 intent_field_chain_terminus
@@ -104,9 +103,7 @@ intent_resolved_node_key_projection
 intent_resolved_node_key_shape
 intent_routine_return_binding
 intent_table_key_candidate
-intent_type_backing
 intent_type_backing_conflict
-intent_type_backing_seed
 lint_finding
 lint_finding_fix
 lint_finding_fix_edit

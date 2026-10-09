@@ -30,8 +30,8 @@ type Payload {
   label: String
   plain: Plain
   film: Film
-  films: [Film!]! @splitQuery @tenantFanOut
-    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "topRated"})
+  films(ids: [Int!]): [Film!]! @splitQuery @tenantFanOut
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
 }
 
 # The same table-bound child under a parent nothing hands, so the enclosing statement exists.
@@ -46,8 +46,8 @@ extend type Query {
   films: [Film!]!
   summaries: [Payload!]!
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummaryService", method: "summaries"})
-  topRated: [Film!]!
-    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "topRated"})
+  byIds(ids: [Int!]): [Film!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
 }
 
 type Mutation {
@@ -60,7 +60,7 @@ extend schema @expectEquals(relation: "intent_field_separate_fetch", rows: """
   Query,     ping,       ROOT_OPERATION
   Query,     films,      ROOT_OPERATION
   Query,     summaries,  ROOT_OPERATION
-  Query,     topRated,   ROOT_OPERATION
+  Query,     byIds,      ROOT_OPERATION
   Mutation,  assign,     ROOT_OPERATION
   Film,      deferred,   SPLIT_QUERY
   Film,      fanned,     TENANT_FAN_OUT

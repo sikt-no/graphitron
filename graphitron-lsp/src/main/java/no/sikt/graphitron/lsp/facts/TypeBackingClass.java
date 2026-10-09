@@ -1,31 +1,31 @@
 package no.sikt.graphitron.lsp.facts;
 
 import no.sikt.graphitron.model.read.StoreHandle;
-import org.jooq.TableField;
+import org.jooq.Condition;
 
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.Set;
 
-import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING;
-import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_SEED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
+import static org.jooq.impl.DSL.noCondition;
 
 /**
  * Which Java class stands for an SDL type, for a surface that must name one. The rows are
- * {@code intent_type_backing}'s, the coalesced answer over the {@code @table} binding read through
- * its table's record and the closure over producer returns and accessor hops; what a reader makes
- * of more than one of them is this class.
+ * {@code graphitron_type_backing}'s, one per population answering: the {@code @table} binding read
+ * through its table's record, a producer's return or parameter, and an accessor read off a class
+ * already backing the parent; what a reader makes of more than one of them is this class.
  *
  * <p>The relation prefers no row over another, so both rules below are the reader's and are stated
  * here rather than assumed of the store.
  *
  * <ul>
- *   <li><b>A grounding beats a hop.</b> A class a producer of the type's own delivers is a row of
- *       {@code intent_type_backing_seed}; a class reached by reading the type off another type's
- *       member is not. A hop reads the parent's member type without checking it against the child's
+ *   <li><b>A grounding beats a hop.</b> A class a producer of the type's own delivers is a row
+ *       {@link #GROUNDED} admits; a class reached by reading the type off another type's member is
+ *       not. A hop reads the parent's member type without checking it against the child's
  *       own grounding, so where the two disagree the hop is wrong rather than merely second, and
- *       the answer is drawn from the seeds whenever the type has any.</li>
+ *       the answer is drawn from the groundings whenever the type has any.</li>
  *   <li><b>A type still contested has no answer.</b> Two producers naming different classes leave
  *       nothing to prefer between them, and a surface that guessed would offer one class's members
  *       while the generator bound the other. Empty, which every caller already renders as silence.
@@ -46,26 +46,30 @@ public final class TypeBackingClass {
 
     private TypeBackingClass() {}
 
+    /** The grounded population: the classes a producer of the type's own delivers or takes. */
+    public static final Condition GROUNDED = GRAPHITRON_TYPE_BACKING.DECLARED_VIA.eq("PRODUCER");
+
+    /** The reached population: every class any population answers with. */
+    public static final Condition REACHED = noCondition();
+
     /**
      * The class backing {@code typeName} in this graph, empty where the store reaches none or
      * reaches more than one after the grounding rule.
      *
      * <p>Lazy in the second population, which is the grounding rule expressed as work not done: a
-     * type a producer of its own grounds needs no reading of what a hop reached, the seeds having
+     * type a producer of its own grounds needs no reading of what a hop reached, the groundings having
      * already answered. A caller resolving a whole region asks both populations as arms of its own
      * statement and applies {@link #resolve} over what it holds.
      */
     public static Optional<String> of(StoreHandle store, String typeName) {
-        var grounded = candidatesOf(store, INTENT_TYPE_BACKING_SEED.TYPE_NAME,
-            INTENT_TYPE_BACKING_SEED.CLASS_NAME, INTENT_TYPE_BACKING_SEED.GRAPH_NAME, typeName);
+        var grounded = candidatesOf(store, GROUNDED, typeName);
         if (!grounded.isEmpty()) return resolve(grounded, Set.of());
-        return resolve(Set.of(), candidatesOf(store, INTENT_TYPE_BACKING.TYPE_NAME,
-            INTENT_TYPE_BACKING.CLASS_NAME, INTENT_TYPE_BACKING.GRAPH_NAME, typeName));
+        return resolve(Set.of(), candidatesOf(store, REACHED, typeName));
     }
 
     /**
-     * Both rules above, over candidates a caller already holds: the seeds where the type has any,
-     * else the classes the closure reached, and an answer only where exactly one class stands.
+     * Both rules above, over candidates a caller already holds: the groundings where the type has any,
+     * else every class any population reached, and an answer only where exactly one class stands.
      *
      * <p>Here rather than inlined in the reader above because a caller assembling one statement of
      * its own fetches the same two populations as arms of it, and the rule that decides between them
@@ -80,15 +84,14 @@ public final class TypeBackingClass {
             : Optional.empty();
     }
 
-    private static Set<String> candidatesOf(
-        StoreHandle store, TableField<?, String> typeColumn, TableField<?, String> classColumn,
-        TableField<?, String> graphColumn, String typeName
-    ) {
+    private static Set<String> candidatesOf(StoreHandle store, Condition population, String typeName) {
+        var b = GRAPHITRON_TYPE_BACKING;
         return new LinkedHashSet<>(store.dsl()
-            .selectDistinct(classColumn)
-            .from(typeColumn.getTable())
-            .where(graphColumn.eq(store.graphName()))
-            .and(typeColumn.eq(typeName))
-            .fetch(classColumn));
+            .selectDistinct(b.CLASS_NAME)
+            .from(b)
+            .where(b.GRAPH_NAME.eq(store.graphName()))
+            .and(b.TYPE_NAME.eq(typeName))
+            .and(population)
+            .fetch(b.CLASS_NAME));
     }
 }

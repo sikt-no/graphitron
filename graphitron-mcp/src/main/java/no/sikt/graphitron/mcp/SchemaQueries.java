@@ -35,7 +35,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_TARGET;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_CLAIM;
-import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CONFLICT;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
@@ -230,8 +230,9 @@ final class SchemaQueries {
      * One class the store says stands for a type, with the member names it offers an author.
      *
      * @param declaredVia {@code BOUND_TABLE} where the type's {@code @table} binding was read through
-     *     its table's generated record, {@code BACKING_CLOSURE} where a producer's return or an
-     *     accessor hop reached the class. Provenance and never a preference: a type its two populations
+     *     its table's generated record, {@code PRODUCER} where a producer's return or parameter
+     *     grounded the class, {@code ACCESSOR} where a field read off a class backing its parent
+     *     reached it. Provenance and never a preference: a type its two populations
      *     answer differently is two entries here, where the walk applies a precedence and never says so
      * @param members empty where the classpath census never reached the class, which is the ordinary
      *     case on the table arm: the generated jOOQ records it names are deliberately never scanned
@@ -500,18 +501,17 @@ final class SchemaQueries {
      * The classes the store says stand for the type, from either population that can answer, each with
      * the members it offers.
      *
-     * <p>The coalescing view rather than the closure underneath it, on that view's own terms: it is the
-     * one relation for the question every consumer of a backing asks, which is what class and not which
-     * walk found it. A type both populations answer differently is two entries with their
+     * <p>One relation for the question every consumer of a backing asks, which is what class and not
+     * which population found it. A type both populations answer differently is two entries with their
      * {@code declared_via}, never one with the walk's table-wins precedence quietly applied.
      */
     private static Field<List<Backing>> backing(StoreHandle store) {
         return multiset(
-            select(INTENT_TYPE_BACKING.CLASS_NAME, INTENT_TYPE_BACKING.DECLARED_VIA, members(store))
-                .from(INTENT_TYPE_BACKING)
-                .where(ofType(INTENT_TYPE_BACKING.GRAPH_NAME, INTENT_TYPE_BACKING.TYPE_NAME))
-                .orderBy(INTENT_TYPE_BACKING.CLASS_NAME.asc(),
-                    INTENT_TYPE_BACKING.DECLARED_VIA.asc()))
+            select(GRAPHITRON_TYPE_BACKING.CLASS_NAME, GRAPHITRON_TYPE_BACKING.DECLARED_VIA, members(store))
+                .from(GRAPHITRON_TYPE_BACKING)
+                .where(ofType(GRAPHITRON_TYPE_BACKING.GRAPH_NAME, GRAPHITRON_TYPE_BACKING.TYPE_NAME))
+                .orderBy(GRAPHITRON_TYPE_BACKING.CLASS_NAME.asc(),
+                    GRAPHITRON_TYPE_BACKING.DECLARED_VIA.asc()))
             .convertFrom(r -> r.map(Records.mapping(Backing::new)));
     }
 
@@ -535,7 +535,7 @@ final class SchemaQueries {
                 .join(CODE_TYPE)
                 .on(CODE_TYPE.SOURCE_NAME.eq(CODE_READ_SLOT.SOURCE_NAME)
                     .and(CODE_TYPE.TYPE_NAME.eq(CODE_READ_SLOT.SLOT_TYPE)))
-                .where(CODE_READ_SLOT.CLASS_NAME.eq(INTENT_TYPE_BACKING.CLASS_NAME)
+                .where(CODE_READ_SLOT.CLASS_NAME.eq(GRAPHITRON_TYPE_BACKING.CLASS_NAME)
                     .and(store.reads(CODE_READ_SLOT.SOURCE_NAME)))
                 .orderBy(CODE_READ_SLOT.SLOT_NAME.asc(), CODE_READ_SLOT.METHOD_NAME.asc()))
             .convertFrom(r -> r.map(Records.mapping(MemberSlot::new)));

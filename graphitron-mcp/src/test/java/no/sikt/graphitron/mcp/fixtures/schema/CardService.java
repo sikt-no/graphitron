@@ -1,9 +1,9 @@
 package no.sikt.graphitron.mcp.fixtures.schema;
 
 /**
- * A consumer service an SDL {@code @service} names, and the seed of a backing closure: the class its
- * method returns is what backs the SDL type the field is typed by, which is the population
- * {@code intent_type_backing_class} derives and the {@code schema} tool renders.
+ * A consumer service an SDL {@code @service} names, and so a producer: the class its method returns
+ * is what backs the SDL type the field is typed by, which is a row of {@code graphitron_type_backing}
+ * and what the {@code schema} tool renders.
  *
  * <p>Its own package, deliberately apart from the {@code fixtures.code} classes: those are the
  * {@code code} tool's census subjects and one of its cases asserts a class's method list exactly, so a
@@ -17,7 +17,7 @@ public class CardService {
     }
 
     /**
-     * The producer that makes a {@code @table}-bound type answered a second way: the closure backs the
+     * The producer that makes a {@code @table}-bound type answered a second way: the producer backs the
      * type this returns to with this class, where the type's own binding backs it with a generated jOOQ
      * record, and the store reports both rather than applying the walk's table-wins precedence.
      */

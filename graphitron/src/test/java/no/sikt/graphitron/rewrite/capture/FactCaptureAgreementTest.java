@@ -290,24 +290,17 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       are names, so a fixture states both sides and half its cases pin the three causes of absence
  *       apart (a name matching no catalog object, one matching a stored table rather than a
  *       callable, and a callable the generated model exposes no call surface for);
- *       {@code no.sikt.graphitron.model.intent.AccessorHopTest} binds the four relations an
- *       accessor hop is built from ({@code intent_delivery_container}, {@code code_read_slot}
- *       and {@code intent_field_accessor_hop}) to a census stated as rows in
- *       the module whose DDL declares them, one accessor per delivery shape beside the arrangements
- *       no scan of compiled fixtures offers side by side (one class name declared on two classpath
- *       entries, one slot name offered by two classes), with the two directions in which the hop
- *       differs from the reflective walk pinned as pins rather than expectations;
- *       {@code no.sikt.graphitron.rewrite.derive.TypeBackingClassTest} binds
- *       {@code intent_type_backing_class}, the closure over those hops, to captured SDL over a
- *       hand-built census, which is the only way its rows can be read at all: the closure runs over
- *       a cyclic type graph, so the relation is materialized and a writer's run is what puts rows
- *       there, its cases pinning how far the frontier goes, that a cycle terminates, the one
- *       condition that stops a hop, and each population the closure deliberately does not reach;
- *       with {@code no.sikt.graphitron.model.intent.TypeBackingSeedTest} carrying the two axes that
- *       ground it and {@code no.sikt.graphitron.model.intent.TypeBackingTest} carrying what
- *       coalescing those rows with the table-bound population makes of them, both against a store
- *       seeded row by row in the module whose DDL declares them;
- *       with
+ *       {@code graphitron_type_backing}, which class backs a type and by which population, is
+ *       bound by the fact documents {@code type-backing.graphqls},
+ *       {@code type-backing-conflict.graphqls} and
+ *       {@code type-backing-without-a-record-class.graphqls} over real classes and the real
+ *       catalog, with {@code no.sikt.graphitron.model.TypeBackingPartitionTest} carrying the cases
+ *       a document cannot state because they vary the classpath (a graph reading its own entries
+ *       only, one class name on two entries, a parameter compiled without its name);
+ *       {@code no.sikt.graphitron.rewrite.derive.TypeBackingClassTest} binds its reach to captured
+ *       SDL over a stated census, its cases pinning how far the frontier goes, that a cycle
+ *       terminates, the one condition that stops a hop, and each population it deliberately does
+ *       not reach; with
  *       {@code no.sikt.graphitron.rewrite.derive.TypeBackingShadowTest} beside it running the
  *       differential against the classification walk's own answer on both axes, projected in that
  *       test's JVM, over public fixture classes both sides can see;
@@ -321,8 +314,8 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       cascade verdicts;
  *       {@code no.sikt.graphitron.rewrite.derive.SeparateFetchTest} binds
  *       {@code intent_field_separate_fetch}'s two marker arms to the walk's own gathered delivery
- *       relation over a real capture, and pins the record-handed arm reaching a closure a
- *       derivation writer materialized from a captured census, with
+ *       relation over a real capture, and pins the record-handed arm reaching a backing the
+ *       graphitron gatherer anchored from a captured census, with
  *       the fact documents {@code separate-fetch.graphqls} and
  *       {@code separate-fetch-renamed-root.graphqls}, with
  *       {@code no.sikt.graphitron.model.intent.SeparateFetchRuleTest}, carrying what the view makes

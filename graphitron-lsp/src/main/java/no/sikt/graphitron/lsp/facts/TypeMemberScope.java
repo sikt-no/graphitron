@@ -22,7 +22,7 @@ import java.util.function.Supplier;
  *
  * <p>A {@code @table} binding answers first, and a class only where no binding does. That is the
  * classification walk's own precedence, which reads the table and never consults the class, and it
- * is a reading {@code intent_type_backing} deliberately records as a choice rather than folding in:
+ * is a reading {@code graphitron_type_backing} deliberately records as a choice rather than folding in:
  * a type its binding and its producers answer differently is two rows there, and preferring one is
  * a consumer's to own.
  *

@@ -16,8 +16,7 @@ import java.util.List;
 import java.util.function.BiConsumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CLASS;
-import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_SEED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -134,16 +133,16 @@ class TypeBackingShadowTest {
 
     /**
      * The difference that is not a taste question, run against the walk. A type a producer grounds
-     * and a member of another type also delivers is two rows in the closure, and the walk answers
+     * and a member of another type also delivers is two rows, one per population, and the walk answers
      * with the grounding: it settles the root producers before it propagates anything, then
      * declines to read an already-grounded type off a parent's member. That refusal is protective
      * rather than a tie-break, the hop reading the parent's member type without checking it against
      * the child's grounding, so the class it lands on can be wrong. What this pins is that
-     * {@code intent_type_backing_seed} is enough to reproduce the walk's answer: the seed row alone
-     * is what the walk says, and the extra closure row is the one the walk suppressed.
+     * the producer rows are enough to reproduce the walk's answer: the {@code PRODUCER} row alone is
+     * what the walk says, and the {@code ACCESSOR} row is the one the walk suppressed.
      */
     @Test
-    void aGroundingBeatsAHopAndTheSeedRelationSaysWhichIsWhich() {
+    void aGroundingBeatsAHopAndTheProvenanceSaysWhichIsWhich() {
         String sdl = """
             type Query {
                 films: [Film] @service(service: {className: "%s", method: "films"})
@@ -156,11 +155,11 @@ class TypeBackingShadowTest {
         withBothSides(sdl, (dsl, walk) -> {
             assertThat(walk).contains("Language=" + PKG + "TestBackingOther");
             assertThat(derived(dsl))
-                .as("the closure carries the hop's answer too, and does not choose")
+                .as("the relation carries the hop's answer too, and does not choose")
                 .contains("Language=" + PKG + "TestBackingOther",
                     "Language=" + PKG + "TestBackingLanguage");
-            assertThat(seeded(dsl))
-                .as("the seeds alone reproduce what the walk answered")
+            assertThat(grounded(dsl))
+                .as("the producer rows alone reproduce what the walk answered")
                 .contains("Language=" + PKG + "TestBackingOther")
                 .doesNotContain("Language=" + PKG + "TestBackingLanguage");
         });
@@ -211,17 +210,23 @@ class TypeBackingShadowTest {
         }
     }
 
+    /** What the producers and the accessors reached, the populations the walk also answers from. */
     private static List<String> derived(DSLContext dsl) {
-        return dsl.select(INTENT_TYPE_BACKING_CLASS.TYPE_NAME, INTENT_TYPE_BACKING_CLASS.CLASS_NAME)
-            .from(INTENT_TYPE_BACKING_CLASS)
-            .where(INTENT_TYPE_BACKING_CLASS.GRAPH_NAME.eq(GRAPH))
+        var b = GRAPHITRON_TYPE_BACKING;
+        return dsl.selectDistinct(b.TYPE_NAME, b.CLASS_NAME)
+            .from(b)
+            .where(b.GRAPH_NAME.eq(GRAPH))
+            .and(b.DECLARED_VIA.in("PRODUCER", "ACCESSOR"))
             .fetch(r -> r.value1() + "=" + r.value2());
     }
 
-    private static List<String> seeded(DSLContext dsl) {
-        return dsl.select(INTENT_TYPE_BACKING_SEED.TYPE_NAME, INTENT_TYPE_BACKING_SEED.CLASS_NAME)
-            .from(INTENT_TYPE_BACKING_SEED)
-            .where(INTENT_TYPE_BACKING_SEED.GRAPH_NAME.eq(GRAPH))
+    /** What the producers alone grounded. */
+    private static List<String> grounded(DSLContext dsl) {
+        var b = GRAPHITRON_TYPE_BACKING;
+        return dsl.select(b.TYPE_NAME, b.CLASS_NAME)
+            .from(b)
+            .where(b.GRAPH_NAME.eq(GRAPH))
+            .and(b.DECLARED_VIA.eq("PRODUCER"))
             .fetch(r -> r.value1() + "=" + r.value2());
     }
 }

@@ -1867,3 +1867,12 @@ INSERT INTO role_assignment (holder_id, role_code, role_name) VALUES
     (1, 'MIKE',  'Mike role'),
     (2, 'YOTA',  'Yota role'),
     (2, 'BRAVO', 'Bravo role');
+
+-- A table jOOQ generates no record class for: this module's codegen names it in recordsExcludes,
+-- which is a configuration a consumer's codegen can have. Its rows then bind to org.jooq.Record,
+-- which names no class, so a type bound to it stands on a table and is backed by no class. Here so
+-- a capture meets that case the way it meets every other, rather than a test stating it.
+CREATE TABLE recordless_note (
+    note_id integer      PRIMARY KEY,
+    body    varchar(100) NOT NULL
+);

@@ -82,7 +82,6 @@ public final class DerivationStratum {
                 InputOccurrencePaths::derive),
             step("ArgMappingCandidates", "graphitron_argmapping_candidate",
                 ArgMappingCandidates::derive),
-            step("TypeBackingRows", "intent_type_backing_class", TypeBackingRows::derive),
             step("AuthoredClaimRejectionRows", "intent_authored_claim_rejection",
                 AuthoredClaimRejectionRows::derive),
             step("CarrierDataFields", "graphitron_carrier_data_field", CarrierDataFields::derive),

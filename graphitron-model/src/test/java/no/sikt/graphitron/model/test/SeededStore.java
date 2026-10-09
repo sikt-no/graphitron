@@ -102,7 +102,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_IMPLEMENTS_INTERFACE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_UNION_MEMBER;
 import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH;
 import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH_STEP;
-import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CLASS;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
@@ -855,7 +854,6 @@ public final class SeededStore {
     // A reference is seeded whole, as an author writes one, and its two parts are filled through
     // the same grammar capture uses, so a seeded row and a captured one cannot disagree about what
     // a part means. A case wanting a partition the split would not produce sets the columns itself.
-
 
     /**
      * A {@code @table} application on a type: the reference as the author spelled it, unresolved.
@@ -1862,7 +1860,6 @@ public final class SeededStore {
             .execute();
     }
 
-
     /**
      * One ordered entry of an {@code @node(keyColumns:)} list, as written. It resolves against no
      * column: the pinned list is keyed by graph and type and needs no table to be stated, and a
@@ -2111,7 +2108,6 @@ public final class SeededStore {
             .execute();
     }
 
-
     /**
      * The raw application itself: that a directive of this name was written on a field, with none of
      * the decoding a semantic helper above stands for. The pair is what a fallback arm turns on, so
@@ -2295,23 +2291,6 @@ public final class SeededStore {
                 .set(SQL_TABLE_RECORD_SUPERTYPE.SUPERTYPE_NAME, supertype)
                 .execute();
         }
-    }
-
-    /**
-     * A table whose generated model exposes no record class of its own. The catalog reports that as
-     * {@code org.jooq.Record} rather than as an absence, so a rule reading the column has a name to
-     * drop rather than a NULL to guard, and a rule that failed to drop it would hand every such
-     * table the same class.
-     */
-    public static void seedTableWithoutRecordClass(DSLContext dsl, String sourceName,
-                                                   String tableSchema, String tableName) {
-        seedTable(dsl, sourceName, tableSchema, tableName);
-        dsl.update(SQL_TABLE)
-            .set(SQL_TABLE.RECORD_CLASS_FQN, "org.jooq.Record")
-            .where(SQL_TABLE.SOURCE_NAME.eq(sourceName))
-            .and(SQL_TABLE.TABLE_SCHEMA.eq(tableSchema))
-            .and(SQL_TABLE.TABLE_NAME.eq(tableName))
-            .execute();
     }
 
     /**
@@ -3012,26 +2991,6 @@ public final class SeededStore {
         dsl.insertInto(INTENT_TYPE_DOMAIN)
             .set(INTENT_TYPE_DOMAIN.GRAPH_NAME, graphName)
             .set(INTENT_TYPE_DOMAIN.TYPE_NAME, typeName)
-            .execute();
-    }
-
-    /**
-     * A type backed by a class, on {@link #seedTypeDomain}'s terms: another closure over a cyclic
-     * type graph, so it is a materialization and a relation reading it reads rows a writer put
-     * there. The type is seeded as an object unless the case already gave it a kind, an input
-     * object being backed here too and the difference mattering to a reader that guards on kind.
-     *
-     * <p>Which class a producer would actually have delivered is not this helper's question. A row
-     * naming a class no census declares is the ordinary case, since what backs a type is a name the
-     * closure carried and not an entry anything has to hold.
-     */
-    public static void seedTypeBackingClass(DSLContext dsl, String graphName, String typeName,
-                                            String className) {
-        seedType(dsl, graphName, typeName, "OBJECT");
-        dsl.insertInto(INTENT_TYPE_BACKING_CLASS)
-            .set(INTENT_TYPE_BACKING_CLASS.GRAPH_NAME, graphName)
-            .set(INTENT_TYPE_BACKING_CLASS.TYPE_NAME, typeName)
-            .set(INTENT_TYPE_BACKING_CLASS.CLASS_NAME, className)
             .execute();
     }
 }

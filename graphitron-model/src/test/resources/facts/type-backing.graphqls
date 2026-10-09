@@ -1,0 +1,88 @@
+# Which Java class stands for a type, and how the store knows. A @table type is backed by its
+# table's record class. A producer grounds the type its method returns, and the type of an argument
+# a method parameter takes, the parameter's own name unless an argMapping entry redirects it. A field
+# read off a backed class backs its own type with what the member delivers, the member the field
+# names unless @field renames it, read for an output type and written for an input object.
+
+type Film @table(name: "film") { title: String }
+
+extend type Query {
+  holder(filmId: Int): Holder
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "byId"})
+  producedFilm(id: Int): Film
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})
+  shelf: Shelf
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmShelfService", method: "shelf"})
+}
+
+type Holder { blurb: Blurb, renamed: Retitled @field(name: "blurb"), note: String }
+type Blurb { description: String }
+type Retitled { description: String }
+
+# A field's arguments are not what makes a member: byKey takes one and still reads getByKey(), and
+# lookup reads nothing, its getter taking a key and so being no member. title reads getTitle(),
+# which yields a String, and the keyed twin beside it lends the member nothing, so TitledBlurb is
+# never backed by the blurb the twin returns.
+type Shelf { byKey(key: String): KeyedBlurb, lookup(key: String): LookedUpBlurb, title: TitledBlurb }
+type KeyedBlurb { description: String }
+type LookedUpBlurb { description: String }
+type TitledBlurb { description: String }
+
+type Mutation {
+  assign(in: AssignInput): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignFilmRecord"})
+  redirected(payload: RedirectedInput): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
+                       method: "assignFilmRecord", argMapping: "in: payload"})
+  # Each parameter is read at its own position, and the scalar note, whose class answers no type's
+  # fields, grounds nothing; nor does the String the method returns.
+  pair(first: FirstPickInput, second: SecondPickInput, note: String): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmPairingService", method: "pair"})
+  # The mapping moves first and nothing else: the argument spelled like it feeds nothing, and second
+  # is still fed by its own name.
+  mappedPair(chosen: ChosenPickInput, first: DecoyPickInput, second: SecondPickInput, note: String): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmPairingService",
+                       method: "pair", argMapping: "first: chosen"})
+  # A dotted path is fed by its head; the argument its tail spells feeds nothing.
+  dottedPair(deep: DeepPickInput, inner: InnerPickInput, second: SecondPickInput, note: String): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmPairingService",
+                       method: "pair", argMapping: "first: deep.inner"})
+}
+
+input AssignInput { film: FilmInput }
+input FilmInput { title: String }
+input RedirectedInput { title: String }
+input FirstPickInput { filmId: Int }
+input SecondPickInput { filmId: Int }
+input ChosenPickInput { filmId: Int }
+input DecoyPickInput { filmId: Int }
+input DeepPickInput { inner: InnerPickInput }
+input InnerPickInput { filmId: Int }
+
+# Film is named by both populations with one class: two rows, one answer.
+extend schema @expectEquals(relation: "graphitron_type_backing", rows: """
+  type_name,       class_name,                                                    declared_via
+  Film,            no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord, BOUND_TABLE
+  Film,            no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord, PRODUCER
+  Holder,          no.sikt.graphitron.rewrite.test.services.FilmBlurbHolder,      PRODUCER
+  Blurb,           no.sikt.graphitron.rewrite.test.services.FilmBlurb,            ACCESSOR
+  Retitled,        no.sikt.graphitron.rewrite.test.services.FilmBlurb,            ACCESSOR
+  Shelf,           no.sikt.graphitron.rewrite.test.services.FilmShelf,            PRODUCER
+  KeyedBlurb,      no.sikt.graphitron.rewrite.test.services.FilmBlurb,            ACCESSOR
+  TitledBlurb,     java.lang.String,                                              ACCESSOR
+  AssignInput,     no.sikt.graphitron.rewrite.test.services.FilmRecordAssignment, PRODUCER
+  RedirectedInput, no.sikt.graphitron.rewrite.test.services.FilmRecordAssignment, PRODUCER
+  FilmInput,       no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord, ACCESSOR
+  FirstPickInput,  no.sikt.graphitron.rewrite.test.services.FirstPick,            PRODUCER
+  SecondPickInput, no.sikt.graphitron.rewrite.test.services.SecondPick,           PRODUCER
+  ChosenPickInput, no.sikt.graphitron.rewrite.test.services.FirstPick,            PRODUCER
+  DeepPickInput,   no.sikt.graphitron.rewrite.test.services.FirstPick,            PRODUCER
+  """)
+
+# One class answering a type is no contest, however many populations name it. Film is contested in
+# type-backing-conflict, by a class of that graph's own, and that is no contest here.
+extend schema @assertAbsent(relation: "intent_type_backing_conflict", rows: """
+  type_name
+  Film
+  Holder
+  """)

@@ -1,0 +1,20 @@
+# A table jOOQ generated no record class for binds its rows to org.jooq.Record, which names no
+# class. A type bound to such a table has a table and no backing: the bound-table population reads
+# a table through its record class, and this table has none to read.
+
+type Note @table(name: "recordless_note") { body: String }
+
+extend schema @assertContains(relation: "sql_table", rows: """
+  table_name,      record_class_fqn
+  recordless_note, org.jooq.Record
+  """)
+
+extend schema @assertContains(relation: "graphitron_resolved_type_binding", rows: """
+  type_name, table_name
+  Note,      recordless_note
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_type_backing", rows: """
+  type_name, declared_via
+  Note,      BOUND_TABLE
+  """)

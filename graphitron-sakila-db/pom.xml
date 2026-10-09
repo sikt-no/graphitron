@@ -118,6 +118,9 @@
                                          remedy and is cheaper than a disambiguating
                                          GeneratorStrategy nothing would exercise. -->
                                     <implicitJoinPathsToMany>false</implicitJoinPathsToMany>
+                                    <!-- recordless_note is generated without a record
+                                         class, the case init.sql's comment on it explains. -->
+                                    <recordsExcludes>recordless_note</recordsExcludes>
                                 </generate>
                                 <target>
                                     <packageName>${jooqPackage}</packageName>

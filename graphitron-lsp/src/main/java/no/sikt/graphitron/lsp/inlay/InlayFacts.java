@@ -23,8 +23,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_DISCOVERY;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_SEPARATE_FETCH;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_CLAIM;
-import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING;
-import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_SEED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.jooq.impl.DSL.falseCondition;
 import static org.jooq.impl.DSL.multiset;
@@ -347,10 +346,8 @@ final class InlayFacts {
                     .orderBy(INTENT_FIELD_SEPARATE_FETCH.TYPE_NAME,
                         INTENT_FIELD_SEPARATE_FETCH.FIELD_NAME, INTENT_FIELD_SEPARATE_FETCH.RULE))
                     .convertFrom(rows -> rows.map(Records.mapping(RuleRow::new))),
-                backingArm(store, questions.backingTypeNames, INTENT_TYPE_BACKING_SEED.TYPE_NAME,
-                    INTENT_TYPE_BACKING_SEED.CLASS_NAME, INTENT_TYPE_BACKING_SEED.GRAPH_NAME),
-                backingArm(store, questions.backingTypeNames, INTENT_TYPE_BACKING.TYPE_NAME,
-                    INTENT_TYPE_BACKING.CLASS_NAME, INTENT_TYPE_BACKING.GRAPH_NAME),
+                backingArm(store, questions.backingTypeNames, TypeBackingClass.GROUNDED),
+                backingArm(store, questions.backingTypeNames, TypeBackingClass.REACHED),
                 boundTableArm(store, questions.boundTableTypeNames),
                 redirectArm(store, questions.memberTypeNames),
                 columnMatchArm(store, questions.memberSites),
@@ -360,19 +357,20 @@ final class InlayFacts {
     }
 
     /**
-     * One backing population, either of the two the grounding rule chooses between. Both have the same
-     * shape over different relations, which is why this is one method called twice: what separates them
-     * is which relation grounds a class, and that is the parameter.
+     * One backing population, either of the two the grounding rule chooses between, as
+     * {@link TypeBackingClass#GROUNDED} or {@link TypeBackingClass#REACHED} names it. Both are rows of
+     * one relation, which is why this is one method called twice: what separates them is which rows
+     * count, and that is the parameter.
      */
     private static Field<List<BackingRow>> backingArm(
-        StoreHandle store, Collection<String> typeNames, TableField<?, String> typeColumn,
-        TableField<?, String> classColumn, TableField<?, String> graphColumn
+        StoreHandle store, Collection<String> typeNames, Condition population
     ) {
-        return multiset(selectDistinct(typeColumn, classColumn)
-            .from(typeColumn.getTable())
-            .where(graphColumn.eq(store.graphName()))
-            .and(typeColumn.in(typeNames))
-            .orderBy(typeColumn, classColumn))
+        return multiset(selectDistinct(GRAPHITRON_TYPE_BACKING.TYPE_NAME, GRAPHITRON_TYPE_BACKING.CLASS_NAME)
+            .from(GRAPHITRON_TYPE_BACKING)
+            .where(GRAPHITRON_TYPE_BACKING.GRAPH_NAME.eq(store.graphName()))
+            .and(GRAPHITRON_TYPE_BACKING.TYPE_NAME.in(typeNames))
+            .and(population)
+            .orderBy(GRAPHITRON_TYPE_BACKING.TYPE_NAME, GRAPHITRON_TYPE_BACKING.CLASS_NAME))
             .convertFrom(rows -> rows.map(Records.mapping(BackingRow::new)));
     }
 
@@ -406,14 +404,14 @@ final class InlayFacts {
     private static Field<List<RedirectRow>> redirectArm(
         StoreHandle store, Collection<String> typeNames
     ) {
-        return multiset(selectDistinct(INTENT_TYPE_BACKING.TYPE_NAME, INTENT_TYPE_BACKING.CLASS_NAME,
+        return multiset(selectDistinct(GRAPHITRON_TYPE_BACKING.TYPE_NAME, GRAPHITRON_TYPE_BACKING.CLASS_NAME,
                 SQL_TABLE.SOURCE_NAME, SQL_TABLE.TABLE_SCHEMA, SQL_TABLE.TABLE_NAME)
-            .from(INTENT_TYPE_BACKING)
-            .join(SQL_TABLE).on(SQL_TABLE.RECORD_CLASS_FQN.eq(INTENT_TYPE_BACKING.CLASS_NAME))
-            .where(INTENT_TYPE_BACKING.GRAPH_NAME.eq(store.graphName()))
-            .and(INTENT_TYPE_BACKING.TYPE_NAME.in(typeNames))
+            .from(GRAPHITRON_TYPE_BACKING)
+            .join(SQL_TABLE).on(SQL_TABLE.RECORD_CLASS_FQN.eq(GRAPHITRON_TYPE_BACKING.CLASS_NAME))
+            .where(GRAPHITRON_TYPE_BACKING.GRAPH_NAME.eq(store.graphName()))
+            .and(GRAPHITRON_TYPE_BACKING.TYPE_NAME.in(typeNames))
             .and(store.reads(SQL_TABLE.SOURCE_NAME))
-            .orderBy(INTENT_TYPE_BACKING.TYPE_NAME, SQL_TABLE.TABLE_SCHEMA, SQL_TABLE.TABLE_NAME))
+            .orderBy(GRAPHITRON_TYPE_BACKING.TYPE_NAME, SQL_TABLE.TABLE_SCHEMA, SQL_TABLE.TABLE_NAME))
             .convertFrom(rows -> rows.map(Records.mapping(RedirectRow::new)));
     }
 
@@ -448,11 +446,11 @@ final class InlayFacts {
     private static Field<List<SlotRow>> slotArm(StoreHandle store, Collection<String> typeNames) {
         return multiset(selectDistinct(CODE_READ_SLOT.CLASS_NAME, CODE_READ_SLOT.SLOT_NAME)
             .from(CODE_READ_SLOT)
-            .join(INTENT_TYPE_BACKING)
-            .on(INTENT_TYPE_BACKING.CLASS_NAME.eq(CODE_READ_SLOT.CLASS_NAME))
+            .join(GRAPHITRON_TYPE_BACKING)
+            .on(GRAPHITRON_TYPE_BACKING.CLASS_NAME.eq(CODE_READ_SLOT.CLASS_NAME))
             .where(store.reads(CODE_READ_SLOT.SOURCE_NAME))
-            .and(INTENT_TYPE_BACKING.GRAPH_NAME.eq(store.graphName()))
-            .and(INTENT_TYPE_BACKING.TYPE_NAME.in(typeNames))
+            .and(GRAPHITRON_TYPE_BACKING.GRAPH_NAME.eq(store.graphName()))
+            .and(GRAPHITRON_TYPE_BACKING.TYPE_NAME.in(typeNames))
             .orderBy(CODE_READ_SLOT.CLASS_NAME, CODE_READ_SLOT.SLOT_NAME))
             .convertFrom(rows -> rows.map(Records.mapping(SlotRow::new)));
     }

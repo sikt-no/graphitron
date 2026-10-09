@@ -18,7 +18,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_CLAIM_REJECTION;
  * {@code intent_authored_claim_conflict} mints, stored so the diagnostics read surface can carry
  * the violation's kind, variant and message as plain columns instead of assembling a sentence in
  * SQL. Runs inside capture's own transaction after the flush, clears the run's graph partition
- * first and re-mints, on {@link TypeBackingRows}'s cadence exactly, so on any settled store these
+ * first and re-mints, on the derivation stratum's cadence, so on any settled store these
  * rows stand one-to-one with the conflict view's.
  *
  * <p>Why a writer rather than a view is the relation's own argument and not this class's: the

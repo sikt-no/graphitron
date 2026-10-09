@@ -38,7 +38,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.IntStream;
 
-import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.select;
@@ -340,10 +340,10 @@ class SurfaceScanCountTest {
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("no arm named redirects in the statement"));
 
-            var drivingRelation = multiset(select(INTENT_TYPE_BACKING.CLASS_NAME)
-                .from(INTENT_TYPE_BACKING)
-                .where(INTENT_TYPE_BACKING.GRAPH_NAME.eq(handle.graphName()))
-                .and(INTENT_TYPE_BACKING.TYPE_NAME.eq("T0")));
+            var drivingRelation = multiset(select(GRAPHITRON_TYPE_BACKING.CLASS_NAME)
+                .from(GRAPHITRON_TYPE_BACKING)
+                .where(GRAPHITRON_TYPE_BACKING.GRAPH_NAME.eq(handle.graphName()))
+                .and(GRAPHITRON_TYPE_BACKING.TYPE_NAME.eq("T0")));
 
             return scans(handle, handle.dsl().select(redirects))
                 - scans(handle, handle.dsl().select(drivingRelation));

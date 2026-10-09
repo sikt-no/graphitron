@@ -13,18 +13,16 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CLASS;
-import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_SEED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The registered agreement anchor for {@code intent_type_backing_class}, the closure that answers
- * which Java class backs a graph's type.
+ * The registered agreement anchor for the reach of {@code graphitron_type_backing}: the closure
+ * over producers and accessor hops that answers which Java class backs a graph's type.
  *
- * <p>The subject here is reach. The relation is materialized rather than derived on read, because
- * the closure runs over the SDL type graph and that graph is cyclic, so its rows are what a
- * capture-cadence derivation writer put there and only a run of that writer can state what it
- * produces. Each case therefore captures a schema for real and reads the table afterwards: which
+ * <p>The subject here is reach. The relation is anchored rather than derived on read, because
+ * the closure runs over the SDL type graph and that graph is cyclic, so its rows are what the
+ * graphitron gatherer's anchoring put there and only a run of it can state what it produces. Each case therefore captures a schema for real and reads the table afterwards: which
  * groundings arrive, how much further than one step the frontier goes, that a cycle terminates at
  * one row rather than looping, and the one condition that stops a hop.
  *
@@ -34,12 +32,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * get right side by side: a chain three types deep, a cycle, a coordinate two producers answer
  * differently, and a field whose own producer overrides what its parent's member would say.
  *
- * <p>What a producer's facts make of the groundings, and what coalescing this closure with the
- * table-bound population makes of its rows, are not asked here. Those are the algebra of
- * {@code intent_type_backing_seed}, {@code intent_type_backing} and
- * {@code intent_type_backing_conflict}, and they live in the module whose DDL declares them, in
- * {@code no.sikt.graphitron.model.intent.TypeBackingSeedTest} and
- * {@code no.sikt.graphitron.model.intent.TypeBackingTest}, against a store seeded row by row.
+ * <p>The table-bound population, and what a contest between populations makes of a type, are not
+ * asked here. Those are stated in the module whose DDL declares them, by the fact documents
+ * {@code type-backing*.graphqls} and by {@code no.sikt.graphitron.model.TypeBackingPartitionTest}.
  *
  * <p>Several cases assert that a coordinate produces no row. Those are the closure's own claim
  * rather than gaps in it: the boundary of what a class can back is where the closure stops, and the
@@ -107,9 +102,9 @@ class TypeBackingClassTest {
     @Test
     void aCycleInTheTypeGraphTerminatesAtOneRow() {
         withCapturedStore(dsl ->
-            assertThat(dsl.fetchCount(INTENT_TYPE_BACKING_CLASS,
-                INTENT_TYPE_BACKING_CLASS.GRAPH_NAME.eq(GRAPH)
-                    .and(INTENT_TYPE_BACKING_CLASS.TYPE_NAME.eq("Film"))))
+            assertThat(dsl.fetchCount(GRAPHITRON_TYPE_BACKING,
+                GRAPHITRON_TYPE_BACKING.GRAPH_NAME.eq(GRAPH)
+                    .and(GRAPHITRON_TYPE_BACKING.TYPE_NAME.eq("Film"))))
                 .isOne());
     }
 
@@ -192,8 +187,8 @@ class TypeBackingClassTest {
     /**
      * A type bound by {@code @table} seeds nothing here, that population being the table binding's
      * own. The classes it would seed are the generated jOOQ records the classpath census excludes by
-     * design, so the answer comes from the catalog or from nowhere, and where the two populations
-     * meet is the coalesce rather than this relation.
+     * design, so the answer comes from the catalog or from nowhere, and is a {@code BOUND_TABLE}
+     * row beside the closure's rather than one of them.
      */
     @Test
     void aTableBoundTypeIsNotSomethingTheClosureSeeds() {
@@ -203,9 +198,9 @@ class TypeBackingClassTest {
     // ===== Which rows a producer grounded =====
 
     /**
-     * The seeds are the groundings and nothing else: a producer's return on one axis, the class
-     * feeding an argument on the other. A type only a hop reaches has no row here even though the
-     * closure backs it, which is the whole of what that relation adds over this one.
+     * The {@code PRODUCER} rows are the groundings and nothing else: a producer's return on one
+     * axis, the class feeding an argument on the other. A type only a hop reaches has none even
+     * though the closure backs it, its row saying {@code ACCESSOR}.
      */
     @Test
     void aSeedIsAGroundingAndAHopIsNot() {
@@ -219,12 +214,12 @@ class TypeBackingClassTest {
     }
 
     /**
-     * The contest the grounding relation exists to let a reader settle. A type a producer grounds
-     * and a member of another type also delivers is two rows in the closure, which cannot say which
-     * of them a producer answered for. Here it can, and the difference matters rather than being a
-     * tie-break: the hop reads the parent's member type without checking it against the child's own
-     * grounding, so the class it lands on can be wrong and not merely second. The precedence stays
-     * the reader's, which is why the closure keeps both rows.
+     * The contest the provenance column exists to let a reader settle. A type a producer grounds
+     * and a member of another type also delivers is two rows, and the column says which of them a
+     * producer answered for. That matters rather than being a tie-break: the hop reads the parent's
+     * member type without checking it against the child's own grounding, so the class it lands on
+     * can be wrong and not merely second. The precedence stays the reader's, which is why the
+     * relation keeps both rows.
      */
     @Test
     void aTypeAProducerGroundsIsToldApartFromWhatAHopReached() {
@@ -450,22 +445,28 @@ class TypeBackingClassTest {
         return new CompletionData.TypeRef(path, referencedClass, "NONE");
     }
 
-    /** Every class backing the named type, in name order so a case can state the whole answer. */
+    /**
+     * Every class the closure backs the named type with, in name order so a case can state the
+     * whole answer.
+     */
     private static List<String> backing(DSLContext dsl, String graphName, String typeName) {
-        return dsl.select(INTENT_TYPE_BACKING_CLASS.CLASS_NAME)
-            .from(INTENT_TYPE_BACKING_CLASS)
-            .where(INTENT_TYPE_BACKING_CLASS.GRAPH_NAME.eq(graphName)
-                .and(INTENT_TYPE_BACKING_CLASS.TYPE_NAME.eq(typeName)))
-            .orderBy(INTENT_TYPE_BACKING_CLASS.CLASS_NAME)
+        var b = GRAPHITRON_TYPE_BACKING;
+        return dsl.selectDistinct(b.CLASS_NAME)
+            .from(b)
+            .where(b.GRAPH_NAME.eq(graphName))
+            .and(b.TYPE_NAME.eq(typeName))
+            .and(b.DECLARED_VIA.in("PRODUCER", "ACCESSOR"))
+            .orderBy(b.CLASS_NAME)
             .fetch(0, String.class);
     }
 
     /** The groundings of the named type, which is the subset a producer answered for. */
     private static List<String> seeds(DSLContext dsl, String graphName, String typeName) {
-        var s = INTENT_TYPE_BACKING_SEED;
-        return dsl.select(s.CLASS_NAME).from(s)
-            .where(s.GRAPH_NAME.eq(graphName)).and(s.TYPE_NAME.eq(typeName))
-            .orderBy(s.CLASS_NAME)
+        var b = GRAPHITRON_TYPE_BACKING;
+        return dsl.select(b.CLASS_NAME).from(b)
+            .where(b.GRAPH_NAME.eq(graphName)).and(b.TYPE_NAME.eq(typeName))
+            .and(b.DECLARED_VIA.eq("PRODUCER"))
+            .orderBy(b.CLASS_NAME)
             .fetch(0, String.class);
     }
 

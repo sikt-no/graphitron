@@ -480,8 +480,7 @@ and the emitters read, and it goes when nothing reads what it builds.
       ONLY_CHILD or CHILD, agrees with the walk on every field it classifies, and a gate over the fact
       examples holds every output field to a source or a defect explaining it.
     * **The source object is stated by `graphitron_` relations** `open`. Whether a type is
-      table-bound, a record, or a nesting type passing its parent's row through, which only
-      `intent_type_backing` says today.
+      table-bound, a record, or a nesting type passing its parent's row through.
       * **A type's backing is anchored by the graphitron gatherer** `done`. `graphitron_type_backing`,
         marked and swept after the table bindings: one recursive statement over the producers'
         resolved methods and the members each backed class offers, an array path standing in for
@@ -489,8 +488,10 @@ and the emitters read, and it goes when nothing reads what it builds.
         model and generator suites, save an ambiguous reference, which grounds nothing here and
         draws `CODE_REFERENCE_METHOD_AMBIGUOUS`. On a consumer schema of 2345 types: 130 backings
         through 136 paths at most four deep.
-      * **The readers move and the `intent_` cluster retires** `open`. The seed, the closure table,
-        its producer and the coalesce view, once every reader reads the anchored relation.
+      * **The readers move and the `intent_` cluster retires** `done`. Every reader in the generator,
+        the language server and the MCP server reads `graphitron_type_backing`, a grounding being a
+        `PRODUCER` row; the seeded cases are fact documents, plus one capture over classpaths the
+        test compiles where the case is the classpath.
       * **Two backings for one type is a defect** `open`. What `intent_type_backing_conflict`
         reports, as a code at the type's declaration.
     * **The source's shape and the target's shape** `blocked`, on the node above. A record is a
@@ -765,10 +766,10 @@ result_delivery      -- DIRECT | WRAPPED | MANY, NULL with element_class
   entry is NULL and the name is a name for the compiler to resolve. NULL then says the class was not
   gathered, which a join on names cannot say at all.
 * **A slot's parse is read by what replaces the accessor hop** `open`. No query reads the new
-  columns. Their reader was `intent_field_accessor_hop`, which peels `slot_type` through
-  `code_type_element` to say which class a member of a class delivers, the edge the type-backing
-  walk steps along, and which is dissolving. Its successor reads `element_class` off the slot with
-  no peel; if the hop's dissolution needs no such edge, the columns are unearned and go.
+  columns. Their reader was `intent_field_accessor_hop`, now retired. Its successor,
+  `graphitron_type_backing_rule`, still peels `slot_type` through `code_type_element`, because a
+  stated classpath leaves `element_class` empty; once it does not, the rule reads the column with no
+  peel, or the columns are unearned and go.
 * **`code_construction` keys on the class it is about** `done`. It states how a value of one class is
   made and was keyed by a type spelling, a class fact filed under a type key. It keys into
   `code_class` now and `code_write_slot` follows it, so a class the next reading does not find takes
@@ -1109,7 +1110,10 @@ dissolved rather than replaced: `intent_field_demand_rule`, `intent_field_exempt
 `intent_resolved_type_demand`. The deprecated link and federation key decode, its readers having
 moved to the `ast_` entries and the directive anchor: `graphitron_link_entry`,
 `graphitron_federation_key_entry`, `graphitron_federation_key_field_entry`,
-`graphitron_federation_key_field_segment_entry` and `intent_federation_key`.
+`graphitron_federation_key_field_segment_entry` and `intent_federation_key`. The type-backing
+cluster, into `graphitron_type_backing`: `intent_type_backing_seed`, `intent_type_backing_class`,
+`intent_type_backing` and `intent_field_accessor_hop`, with the grain `type-backing-class` and the
+value `BACKING_CLOSURE` (now `PRODUCER` and `ACCESSOR`).
 
 **Renamed, by rule rather than by list.** Every relation of the as-written half of `graphitron_`
 gained the `_entry` suffix. A sweep for a survivor is a search for a `graphitron_` name that is
@@ -1143,7 +1147,10 @@ MCP schema tool's `demand` slot; `MacroCapture.expandConnections` (now `expand`)
 and `MultiRowWritesAreChunkedTest` (now `WritesBindPerRowTest`); `SdlCapture` with `captureFacts`,
 `captureEntries` and `captureGraphitronAnchors`; `SdlAnchor` and `SdlAnchorTest` (now
 `GraphQLAnchorTest`); `SourceDocument.parsed()` and its `changed` component; `reclaimVanished` (now
-`reclaim`). The specification's built-ins as constants beside the entries:
+`reclaim`). `TypeBackingRows` and its stratum step; `SeededStore.seedTypeBackingClass` and
+`seedTableWithoutRecordClass`; `AccessorHopTest`, `TypeBackingSeedTest` and `TypeBackingTest` (now
+the `type-backing*` fact documents and `TypeBackingPartitionTest`). The specification's built-ins
+as constants beside the entries:
 `GraphQLAstCapture.SPECIFIED_SCALARS`, `SPECIFIED_DIRECTIVES` with its three column fields and
 `specifiedDirectivesUndeclared`, `SdlFactCapture.SPECIFIED_DIRECTIVES`, and the transcription's
 filter by built-in name; `GraphQLAstCapture.BEFORE_EVERY_FILE` moved to `GraphQLSourceCapture`,

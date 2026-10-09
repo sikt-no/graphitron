@@ -465,10 +465,6 @@ class RelationRegistrationGateTest {
         registrations.put("intent_field_producer_method", Arm.DERIVED);
         registrations.put("intent_field_routine_method", Arm.DERIVED);
         registrations.put("intent_delivery_container", Arm.DERIVED);
-        registrations.put("intent_field_accessor_hop", Arm.DERIVED);
-        registrations.put("intent_type_backing_seed", Arm.DERIVED);
-        registrations.put("intent_type_backing_class", Arm.DERIVED);
-        registrations.put("intent_type_backing", Arm.DERIVED);
         registrations.put("intent_type_backing_conflict", Arm.DERIVED);
         registrations.put("intent_resolved_field_claim", Arm.DERIVED);
         registrations.put("intent_type_domain", Arm.DERIVED);

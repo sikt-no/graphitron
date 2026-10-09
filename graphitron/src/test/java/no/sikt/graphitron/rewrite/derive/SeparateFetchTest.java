@@ -16,7 +16,7 @@ import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_SEPARATE_FETCH;
-import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CLASS;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -87,16 +87,16 @@ class SeparateFetchTest {
 
     /**
      * The implicit split's reach: the one arm no author writes a marker for, and the one standing on
-     * a relation a writer materializes rather than on a directive application. {@code Payload} is
+     * a relation a writer anchors rather than on a directive application. {@code Payload} is
      * grounded on the class a producer hands back, so nothing arrives for its fields to be projected
      * out of, and the child that names a {@code @table} type is a trip of its own.
      *
-     * <p>The closure row is the subject rather than the scenery. Read here off a captured census, it
-     * is the thing that keeps the seeded half's arm from joining to a relation that nothing in a
-     * real pipeline populates in the shape it reads.
+     * <p>The backing row is the subject rather than the scenery. Read here off a captured census, it
+     * is the thing that keeps the arm from joining to a relation that nothing in a real pipeline
+     * populates in the shape it reads.
      */
     @Test
-    void aProducerHandedParentReachesTheArmThroughTheClosureAWriterDerived() {
+    void aProducerHandedParentReachesTheArmThroughTheBackingTheGathererAnchored() {
         String sdl = """
             type Query {
                 payload: Payload @service(service: {className: "%s", method: "make"})
@@ -109,13 +109,13 @@ class SeparateFetchTest {
             """.formatted(PRODUCER);
         try (var store = CapturedStore.ofCatalog(tmp, GRAPH, sdl, jooq(), handedCensus())) {
             var dsl = store.dsl();
-            assertThat(dsl.select(INTENT_TYPE_BACKING_CLASS.CLASS_NAME)
-                .from(INTENT_TYPE_BACKING_CLASS)
-                .where(INTENT_TYPE_BACKING_CLASS.GRAPH_NAME.eq(GRAPH))
-                .and(INTENT_TYPE_BACKING_CLASS.TYPE_NAME.eq("Payload"))
-                .fetch(0, String.class))
-                .as("the premise: the closure the arm joins to is a writer's row, not a fixture's")
-                .containsExactly("app.PayloadDto");
+            assertThat(dsl.select(GRAPHITRON_TYPE_BACKING.CLASS_NAME, GRAPHITRON_TYPE_BACKING.DECLARED_VIA)
+                .from(GRAPHITRON_TYPE_BACKING)
+                .where(GRAPHITRON_TYPE_BACKING.GRAPH_NAME.eq(GRAPH))
+                .and(GRAPHITRON_TYPE_BACKING.TYPE_NAME.eq("Payload"))
+                .fetch(r -> r.value1() + " " + r.value2()))
+                .as("the premise: the backing the arm joins to is a writer's row, not a fixture's")
+                .containsExactly("app.PayloadDto PRODUCER");
             assertThat(rulesFor(dsl, "Payload", "film")).containsExactly("RECORD_HANDED_PARENT");
         }
     }

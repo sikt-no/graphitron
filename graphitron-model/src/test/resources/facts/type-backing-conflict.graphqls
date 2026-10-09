@@ -1,0 +1,21 @@
+# A type two populations answer with different classes is contested: here a @table type is
+# backed by its record class, and a producer returning a holder for it backs it with the holder
+# too. Both are rows, neither preferred, and the conflict view counts them.
+
+type Film @table(name: "film") { title: String }
+
+extend type Query {
+  heldFilm(filmId: Int): Film
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "byId"})
+}
+
+extend schema @expectEquals(relation: "graphitron_type_backing", rows: """
+  type_name, class_name,                                                    declared_via
+  Film,      no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord, BOUND_TABLE
+  Film,      no.sikt.graphitron.rewrite.test.services.FilmBlurbHolder,                                            PRODUCER
+  """)
+
+extend schema @expectEquals(relation: "intent_type_backing_conflict", rows: """
+  type_name, candidates
+  Film,      2
+  """)

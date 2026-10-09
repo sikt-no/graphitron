@@ -36,8 +36,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CARRIER_DATA_FIELD;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_COLUMN_TABLE;
-import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING;
-import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_SEED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
 import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
@@ -714,10 +713,8 @@ final class DiagnosticFacts {
                 nodeTypeBindingArm(store, questions.nodeTypeNames),
                 overrideArm(store, questions.memberSites),
                 parentArm(store, questions.memberTypeNames),
-                backingArm(store, questions.memberTypeNames, INTENT_TYPE_BACKING_SEED.TYPE_NAME,
-                    INTENT_TYPE_BACKING_SEED.CLASS_NAME, INTENT_TYPE_BACKING_SEED.GRAPH_NAME),
-                backingArm(store, questions.memberTypeNames, INTENT_TYPE_BACKING.TYPE_NAME,
-                    INTENT_TYPE_BACKING.CLASS_NAME, INTENT_TYPE_BACKING.GRAPH_NAME),
+                backingArm(store, questions.memberTypeNames, TypeBackingClass.GROUNDED),
+                backingArm(store, questions.memberTypeNames, TypeBackingClass.REACHED),
                 redirectArm(store, questions.memberTypeNames),
                 slotArm(store, questions.memberTypeNames),
                 sigilSiteArm(store, questions.sigilSites),
@@ -973,19 +970,20 @@ final class DiagnosticFacts {
     }
 
     /**
-     * One backing population, either of the two the grounding rule chooses between. Both arms have the
-     * same shape over different relations, which is why they are one method called twice rather than
-     * two: what separates them is which relation grounds a class, and that is the parameter.
+     * One backing population, either of the two the grounding rule chooses between, as
+     * {@link TypeBackingClass#GROUNDED} or {@link TypeBackingClass#REACHED} names it. Both are rows of
+     * one relation, which is why this is one method called twice: what separates them is which rows
+     * count, and that is the parameter.
      */
     private static Field<List<BackingRow>> backingArm(
-        StoreHandle store, Collection<String> typeNames, TableField<?, String> typeColumn,
-        TableField<?, String> classColumn, TableField<?, String> graphColumn
+        StoreHandle store, Collection<String> typeNames, Condition population
     ) {
-        return multiset(selectDistinct(typeColumn, classColumn)
-            .from(typeColumn.getTable())
-            .where(graphColumn.eq(store.graphName()))
-            .and(typeColumn.in(typeNames))
-            .orderBy(typeColumn, classColumn))
+        return multiset(selectDistinct(GRAPHITRON_TYPE_BACKING.TYPE_NAME, GRAPHITRON_TYPE_BACKING.CLASS_NAME)
+            .from(GRAPHITRON_TYPE_BACKING)
+            .where(GRAPHITRON_TYPE_BACKING.GRAPH_NAME.eq(store.graphName()))
+            .and(GRAPHITRON_TYPE_BACKING.TYPE_NAME.in(typeNames))
+            .and(population)
+            .orderBy(GRAPHITRON_TYPE_BACKING.TYPE_NAME, GRAPHITRON_TYPE_BACKING.CLASS_NAME))
             .convertFrom(rows -> rows.map(Records.mapping(BackingRow::new)));
     }
 
@@ -1006,19 +1004,19 @@ final class DiagnosticFacts {
     private static Field<List<RedirectRow>> redirectArm(
         StoreHandle store, Collection<String> typeNames
     ) {
-        return multiset(select(INTENT_TYPE_BACKING.TYPE_NAME, INTENT_TYPE_BACKING.CLASS_NAME,
+        return multiset(select(GRAPHITRON_TYPE_BACKING.TYPE_NAME, GRAPHITRON_TYPE_BACKING.CLASS_NAME,
                 SQL_TABLE.SOURCE_NAME, SQL_TABLE.TABLE_SCHEMA, SQL_TABLE.TABLE_NAME,
                 SQL_COLUMN.COLUMN_NAME, SQL_COLUMN.JOOQ_NAME)
-            .from(INTENT_TYPE_BACKING)
-            .join(SQL_TABLE).on(SQL_TABLE.RECORD_CLASS_FQN.eq(INTENT_TYPE_BACKING.CLASS_NAME))
+            .from(GRAPHITRON_TYPE_BACKING)
+            .join(SQL_TABLE).on(SQL_TABLE.RECORD_CLASS_FQN.eq(GRAPHITRON_TYPE_BACKING.CLASS_NAME))
             .leftJoin(SQL_COLUMN)
             .on(SQL_COLUMN.SOURCE_NAME.eq(SQL_TABLE.SOURCE_NAME))
             .and(SQL_COLUMN.TABLE_SCHEMA.eq(SQL_TABLE.TABLE_SCHEMA))
             .and(SQL_COLUMN.TABLE_NAME.eq(SQL_TABLE.TABLE_NAME))
-            .where(INTENT_TYPE_BACKING.GRAPH_NAME.eq(store.graphName()))
-            .and(INTENT_TYPE_BACKING.TYPE_NAME.in(typeNames))
+            .where(GRAPHITRON_TYPE_BACKING.GRAPH_NAME.eq(store.graphName()))
+            .and(GRAPHITRON_TYPE_BACKING.TYPE_NAME.in(typeNames))
             .and(store.reads(SQL_TABLE.SOURCE_NAME))
-            .orderBy(INTENT_TYPE_BACKING.TYPE_NAME, SQL_TABLE.TABLE_SCHEMA, SQL_TABLE.TABLE_NAME,
+            .orderBy(GRAPHITRON_TYPE_BACKING.TYPE_NAME, SQL_TABLE.TABLE_SCHEMA, SQL_TABLE.TABLE_NAME,
                 SQL_COLUMN.ORDINAL))
             .convertFrom(rows -> rows.map(Records.mapping(RedirectRow::new)));
     }
@@ -1032,11 +1030,11 @@ final class DiagnosticFacts {
         return multiset(selectDistinct(CODE_READ_SLOT.CLASS_NAME,
                 CODE_READ_SLOT.SLOT_NAME, CODE_READ_SLOT.ORIGIN)
             .from(CODE_READ_SLOT)
-            .join(INTENT_TYPE_BACKING)
-            .on(INTENT_TYPE_BACKING.CLASS_NAME.eq(CODE_READ_SLOT.CLASS_NAME))
+            .join(GRAPHITRON_TYPE_BACKING)
+            .on(GRAPHITRON_TYPE_BACKING.CLASS_NAME.eq(CODE_READ_SLOT.CLASS_NAME))
             .where(store.reads(CODE_READ_SLOT.SOURCE_NAME))
-            .and(INTENT_TYPE_BACKING.GRAPH_NAME.eq(store.graphName()))
-            .and(INTENT_TYPE_BACKING.TYPE_NAME.in(typeNames))
+            .and(GRAPHITRON_TYPE_BACKING.GRAPH_NAME.eq(store.graphName()))
+            .and(GRAPHITRON_TYPE_BACKING.TYPE_NAME.in(typeNames))
             .orderBy(CODE_READ_SLOT.CLASS_NAME, CODE_READ_SLOT.SLOT_NAME))
             .convertFrom(rows -> rows.map(Records.mapping(SlotRow::new)));
     }

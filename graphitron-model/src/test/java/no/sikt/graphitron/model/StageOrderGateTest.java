@@ -85,7 +85,7 @@ class StageOrderGateTest {
      *
      * <p>The stages go ahead of the producers where their rules allow it and after them where they
      * do not, which is a property of each rule's read set rather than a convention: a rule reaching
-     * {@code intent_input_occurrence_path}, {@code intent_type_backing_class} or the other tables
+     * {@code intent_input_occurrence_path} or the other tables
      * the producers write has to run after the producer that writes it, and a rule bottoming out in
      * captured facts alone may run first, where later steps can read its rows. The gate below is
      * what says which of those each stage actually is.
@@ -104,8 +104,6 @@ class StageOrderGateTest {
             Set.of("intent_input_occurrence_path", "intent_input_occurrence_path_step")),
         new Step("ArgMappingCandidates", null,
             Set.of("graphitron_argmapping_candidate")),
-        new Step("TypeBackingRows", null,
-            Set.of("intent_type_backing_class")),
         new Step("AuthoredClaimRejectionRows", null,
             Set.of("intent_authored_claim_rejection")),
         new Step("CarrierDataFields", "graphitron_carrier_data_field_rule",
