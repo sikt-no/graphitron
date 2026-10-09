@@ -10156,9 +10156,11 @@ hop (graph_name, type_name, from_class, to_type, to_class) AS (
     JOIN code_read_slot sl
       ON sl.source_name = g.source_name AND sl.slot_name = COALESCE(b.name_ref, f.field_name)
    WHERE sl.element_class IS NOT NULL
-     AND NOT EXISTS (SELECT 1 FROM graphitron_code_reference_site x
-                      WHERE x.graph_name = f.graph_name AND x.type_name = f.type_name
-                        AND x.field_name = f.field_name
+     -- Read off the stored applications rather than the reference sites: H2 evaluates a view
+     -- again for every hop row, and on a consumer schema that was most of the rule's time.
+     AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application x
+                      WHERE x.graph_name = f.graph_name
+                        AND x.coordinate = f.type_name || '.' || f.field_name
                         AND x.directive_name IN ('service', 'externalField'))
   UNION ALL
   SELECT f.graph_name, f.type_name, sl.class_name, f.named_type, sl.element_class
