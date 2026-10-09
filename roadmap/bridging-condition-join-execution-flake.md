@@ -1,7 +1,7 @@
 ---
 id: R808
 title: "DML film_actor cases seed rows that concurrent reader cases see on -Plocal-db"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 theme: testing
