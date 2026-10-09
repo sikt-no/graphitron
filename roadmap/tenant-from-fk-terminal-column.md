@@ -1,7 +1,7 @@
 ---
 id: R992
 title: "A reference whose FK lands on the tenant column routes on the parent row value"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 4
 theme: runtime-connection
@@ -120,23 +120,28 @@ These settle the open points the Backlog stub left:
   - Precedence: `Query.films(filmId:) → Film.endorsements: [FilmEndorsement!]! @splitQuery → FilmEndorsement.film @splitQuery`, where every path is bound, still classifies `ParentRowBound`, not `Inherited`.
   - A condition-joined reference from `film_endorsement` to `film` keeps `NoTenantBinding`.
   - A `@tenantFanOut` field below the `ParentRowBound` edge draws the tenant-bound-ancestor rejection.
-- **Pipeline** (`TenantRoutedFetcherPipelineTest`), in the style of its existing `Inherited` batched case: the `ParentRowBound` fetcher declares the row-partitioned loader name, short-circuits a null tenant column at single and list cardinality, and hands the tenant down. Its rows method acquires through the slot read.
-- **Execution** (`TenantDivinedRoutingExecutionTest`, real database-per-tenant): `multitenant.graphqls` gains `FilmEndorsement` and `Query.endorsements`. The default database holds endorsements of films 1 and 2.
+  - A list and a connection over the two-hop path `film_endorsement → film → inventory`, whose first hop lands on the tenant column, both classify `ParentRowBound` on the `endorsed_film` slot.
+- **No pipeline-tier case.** What the generated fetcher does (the row-partitioned loader name, the null short-circuit, the hand-down, the rows method's slot read) is behaviour, so it is pinned at the execution tier below, and the compile tier proves it builds; a pipeline case asserting emitted method-body text is the pattern `development-principles.adoc` bans at every tier.
+- **Execution** (`TenantDivinedRoutingExecutionTest`, real database-per-tenant): `multitenant.graphqls` gains `FilmEndorsement`, `FilmBookmark`, `Query.endorsements` and `Query.bookmarks`. The default database holds endorsements of films 1 and 2, and bookmarks of film 1, film 2 and of no film; `film_bookmark` is a global table added to `init.sql` for its nullable reference onto `film.film_id`, since `film_endorsement.endorsed_film` is `NOT NULL`.
   - `endorsements { film { title inventories { inventoryId } } }` returns each film from its own tenant database, with one acquisition per tenant on the counting data sources and the inventories inherited.
   - A request whose tenant set excludes tenant 2 resolves film 1, and fails film 2's element with the not-permitted error.
   - The behaviour change: an endorsement reached under tenant 1 whose film lives in tenant 2 returns tenant 2's film when tenant 2 is in the request set, and the not-permitted error when it is not. The fixture needs a path from a tenant-1-bound parent to an endorsement of film 2, for example a condition-joined `Film.endorsements` that returns every endorsement. The FK-joined one returns only the film's own.
-  - This doubles as the compile proof that the emitted fetcher and rows method build at `<release>17</release>`.
+  - Each bookmark's `inventories` list comes from the tenant its row names (two inventories for film 1's tenant, none for film 2's), with one acquisition per tenant; each bookmark's `inventoriesConnection` page does likewise.
+  - The bookmark of no film answers `null` for `film`, `[]` for `inventories` and an empty page for `inventoriesConnection`, with no acquisition on either tenant's counting source.
+  - This doubles as the compile proof that the emitted fetcher and rows method build at `<release>17</release>` at single, list and connection cardinality, including the empty-page short-circuit.
 
 ## Implementation notes
 
-Landed as specified, in one commit. Where the build departs from or settles something the plan left open:
+Landed as specified in `1707b1c`, with the test-tier rework in `1eecadb` (described at the end of this section). Where the build departs from or settles something the plan left open:
 
 - **The null short-circuit covers every key column, not only the tenant-carrying one.** `GeneratorUtils.buildKeyExtractionThroughLocals` reads each key column into its `fkVal<i>` local and returns the empty value when any is null. A null component of any key column can never match the correlation, so this answers what the loader would have, and the existing single-cardinality `buildKeyExtractionWithNullCheck` now delegates to the same body. Record and TableRecord wraps declare the same locals ahead of their own key read.
 - **The empty connection carries no count source.** The connection arm of the short-circuit answers `new ConnectionResult(List.of(), <defaultPageSize>, null, null, false, List.of(), null, null, null)`, so `totalCount` and `facets` read `null`, as they do on any carrier the count query does not cover. On a schema that declares `totalCount: Int!`, a parent with a null tenant column therefore surfaces the non-null error rather than `0`; answering `0` would need either a connection on some source or a change to the generated count resolver, and neither is worth it for a parent row whose reference points nowhere.
 - **The cross-tenant execution path goes through two global tables, not a condition-joined `Film.endorsements`.** The plan's suggested fixture joins from tenant-scoped `film` to global `film_endorsement` by condition, which lands `OnParentJoin` and anchors `film` inside a default-source statement: a cross-scope read, the kind R995 makes the build refuse. The fixture instead reaches the endorsements as `films(filmId: 1) { inventories { store { endorsements { film } } } }`: `Inventory.store` is an FK-joined, untenanted batched child, and `Store.endorsements` is a condition join between two global tables (`ReferencePathConditionFixtures.everyTenantFixtureEndorsement`, which selects the fixture's rows by note), so every statement stays in one scope.
 - **`Query.endorsements` takes a `note` filter.** The default database is shared with concurrently running execution classes that insert their own endorsements of films 2 and 3; the filter keeps this class's reads to its own rows.
 
-Coverage, by the plan's test list: `TenantBindingClassificationTest` (the five classification cases, under "A reference whose foreign key lands on the tenant column routes on the parent row"), `TenantRoutedFetcherPipelineTest` (`parentRowBound*`: single and list short-circuits, key-first framing, hand-down, rows-method slot read, inherited child), and `TenantDivinedRoutingExecutionTest` (`parentRowBound_*`, four cases against database-per-tenant PostgreSQL, compiled at `<release>17</release>` with the rest of `multitenant.graphqls`).
+Coverage, by the plan's test list: `TenantBindingClassificationTest` (the six classification cases, under "A reference whose foreign key lands on the tenant column routes on the parent row") and `TenantDivinedRoutingExecutionTest` (`parentRowBound_*`, seven cases against database-per-tenant PostgreSQL, compiled at `<release>17</release>` with the rest of `multitenant.graphqls`).
+
+**Rework after the first review (`1eecadb`).** The three `TenantRoutedFetcherPipelineTest` cases that matched emitted method-body text are removed, with no pipeline case in their place. The evidence they stood in for now runs: the new `film_bookmark` fixture table gives a nullable reference onto the tenant column, and `FilmBookmark` carries the arm at single, list and connection cardinality, so the list fetcher, the non-`Row` key branch of `buildKeyExtractionThroughLocals` and the empty-`ConnectionResult` arm all compile at `<release>17</release>` and execute. A classification case pins that the list and connection shapes take the arm.
 
 ## Reviewer findings
 
