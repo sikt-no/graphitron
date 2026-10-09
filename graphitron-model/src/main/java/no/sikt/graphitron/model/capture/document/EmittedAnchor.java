@@ -93,7 +93,7 @@ public final class EmittedAnchor {
         arguments(dsl, graphName);
         sweep(dsl, graphName, touchedAt);
         // After the sweep, so the sets join only the coordinates this reading kept.
-        directives(dsl, graphName);
+        directives(dsl, graphName, touchedAt);
     }
 
     /**
@@ -101,38 +101,43 @@ public final class EmittedAnchor {
      * configuration applies and what a macro adds, unioned into the anchor and then their arguments
      * the same way.
      *
-     * <p>Cleared and refilled rather than upserted, which the element grains cannot be: nothing keys
-     * into these rows but their arguments, which go with them, so emptying the graph's applications
-     * takes nothing else, and an application the author removed from a coordinate that still stands
-     * has to stop being a row.
+     * <p>Marked and swept as the element grains are: every row the reading derives is upserted with
+     * its instant, then the arguments and the applications carrying another instant go. An
+     * application the reading still derives keeps its row, and one removed from a coordinate that
+     * still stands leaves.
      */
-    private static void directives(DSLContext dsl, String graphName) {
+    private static void directives(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
         var t = GRAPHITRON_DIRECTIVE_APPLICATION;
-        dsl.deleteFrom(t).where(t.GRAPH_NAME.eq(graphName)).execute();
         var authored = GRAPHITRON_DIRECTIVE_APPLICATION_AUTHORED;
         var configured = GRAPHITRON_DIRECTIVE_APPLICATION_CONFIGURED;
         var minted = GRAPHITRON_DIRECTIVE_APPLICATION_MINTED;
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.COORDINATE, t.DIRECTIVE_NAME, t.ORDINAL, t.ORIGIN,
-                t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN)
+                t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.TOUCHED_AT)
             .select(dsl
                 .select(authored.GRAPH_NAME, authored.COORDINATE, authored.DIRECTIVE_NAME,
                     authored.ORDINAL, authored.ORIGIN, authored.SOURCE_NAME, authored.SOURCE_LINE,
-                    authored.SOURCE_COLUMN)
+                    authored.SOURCE_COLUMN, val(touchedAt))
                 .from(authored)
                 .where(authored.GRAPH_NAME.eq(graphName))
                 .unionAll(dsl
                     .select(configured.GRAPH_NAME, configured.COORDINATE, configured.DIRECTIVE_NAME,
                         configured.ORDINAL, configured.ORIGIN, configured.SOURCE_NAME,
-                        configured.SOURCE_LINE, configured.SOURCE_COLUMN)
+                        configured.SOURCE_LINE, configured.SOURCE_COLUMN, val(touchedAt))
                     .from(configured)
                     .where(configured.GRAPH_NAME.eq(graphName)))
                 .unionAll(dsl
                     .select(minted.GRAPH_NAME, minted.COORDINATE, minted.DIRECTIVE_NAME,
                         minted.ORDINAL, minted.ORIGIN, minted.SOURCE_NAME, minted.SOURCE_LINE,
-                        minted.SOURCE_COLUMN)
+                        minted.SOURCE_COLUMN, val(touchedAt))
                     .from(minted)
                     .where(minted.GRAPH_NAME.eq(graphName))))
+            .onDuplicateKeyUpdate()
+            .set(t.ORIGIN, excluded(t.ORIGIN))
+            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
+            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
+            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
         var a = GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
         var authoredArg = GRAPHITRON_DIRECTIVE_APPLICATION_ARG_AUTHORED;
@@ -140,23 +145,39 @@ public final class EmittedAnchor {
         var mintedArg = GRAPHITRON_DIRECTIVE_APPLICATION_ARG_MINTED;
         dsl.insertInto(a)
             .columns(a.GRAPH_NAME, a.COORDINATE, a.DIRECTIVE_NAME, a.ORDINAL,
-                a.DIRECTIVE_ARGUMENT_NAME, a.VALUE_SDL)
+                a.DIRECTIVE_ARGUMENT_NAME, a.VALUE_SDL, a.TOUCHED_AT)
             .select(dsl
                 .select(authoredArg.GRAPH_NAME, authoredArg.COORDINATE, authoredArg.DIRECTIVE_NAME,
-                    authoredArg.ORDINAL, authoredArg.DIRECTIVE_ARGUMENT_NAME, authoredArg.VALUE_SDL)
+                    authoredArg.ORDINAL, authoredArg.DIRECTIVE_ARGUMENT_NAME, authoredArg.VALUE_SDL,
+                    val(touchedAt))
                 .from(authoredArg)
                 .where(authoredArg.GRAPH_NAME.eq(graphName))
                 .unionAll(dsl
                     .select(configuredArg.GRAPH_NAME, configuredArg.COORDINATE,
                         configuredArg.DIRECTIVE_NAME, configuredArg.ORDINAL,
-                        configuredArg.DIRECTIVE_ARGUMENT_NAME, configuredArg.VALUE_SDL)
+                        configuredArg.DIRECTIVE_ARGUMENT_NAME, configuredArg.VALUE_SDL,
+                        val(touchedAt))
                     .from(configuredArg)
                     .where(configuredArg.GRAPH_NAME.eq(graphName)))
                 .unionAll(dsl
                     .select(mintedArg.GRAPH_NAME, mintedArg.COORDINATE, mintedArg.DIRECTIVE_NAME,
-                        mintedArg.ORDINAL, mintedArg.DIRECTIVE_ARGUMENT_NAME, mintedArg.VALUE_SDL)
+                        mintedArg.ORDINAL, mintedArg.DIRECTIVE_ARGUMENT_NAME, mintedArg.VALUE_SDL,
+                        val(touchedAt))
                     .from(mintedArg)
                     .where(mintedArg.GRAPH_NAME.eq(graphName))))
+            .onDuplicateKeyUpdate()
+            .set(a.VALUE_SDL, excluded(a.VALUE_SDL))
+            .set(a.TOUCHED_AT, excluded(a.TOUCHED_AT))
+            .execute();
+        // Arguments first: an application swept takes its arguments by cascade, but an argument
+        // removed from an application that stands has only its own stamp to go by.
+        dsl.deleteFrom(a)
+            .where(a.GRAPH_NAME.eq(graphName))
+            .and(a.TOUCHED_AT.ne(touchedAt))
+            .execute();
+        dsl.deleteFrom(t)
+            .where(t.GRAPH_NAME.eq(graphName))
+            .and(t.TOUCHED_AT.ne(touchedAt))
             .execute();
     }
 

@@ -4504,6 +4504,7 @@ CREATE TABLE graphitron_directive_application (
   source_name    VARCHAR,
   source_line    INT,
   source_column  INT,
+  touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate, directive_name, ordinal),
   FOREIGN KEY (graph_name, coordinate) REFERENCES graphitron_element (graph_name, coordinate)
     ON DELETE CASCADE,
@@ -4519,6 +4520,7 @@ COMMENT ON COLUMN graphitron_directive_application.origin IS 'which set supplied
 COMMENT ON COLUMN graphitron_directive_application.source_name IS 'the file an authored application was written in; NULL on the others, which no document states, the CHECK holding the two columns together';
 COMMENT ON COLUMN graphitron_directive_application.source_line IS 'source line of the at sign, 1-based; NULL where the application is not authored';
 COMMENT ON COLUMN graphitron_directive_application.source_column IS 'source column of the same; NULL where the application is not authored';
+COMMENT ON COLUMN graphitron_directive_application.touched_at IS 'when the reading that last wrote this row ran. Swept per graph after the reading upserts, so an application the reading stopped deriving leaves and the rest keep their rows; an element that went takes its applications with it through the cascade';
 
 CREATE TABLE graphitron_directive_application_arg (
   graph_name              VARCHAR NOT NULL,
@@ -4527,6 +4529,7 @@ CREATE TABLE graphitron_directive_application_arg (
   ordinal                 INT     NOT NULL,
   directive_argument_name VARCHAR NOT NULL,
   value_sdl               VARCHAR NOT NULL,
+  touched_at              TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate, directive_name, ordinal, directive_argument_name),
   FOREIGN KEY (graph_name, coordinate, directive_name, ordinal)
     REFERENCES graphitron_directive_application (graph_name, coordinate, directive_name, ordinal)
@@ -4539,6 +4542,7 @@ COMMENT ON COLUMN graphitron_directive_application_arg.directive_name IS 'the ow
 COMMENT ON COLUMN graphitron_directive_application_arg.ordinal IS 'the owning application''s ordinal, the fourth; with the three above, a reference into graphitron_directive_application';
 COMMENT ON COLUMN graphitron_directive_application_arg.directive_argument_name IS 'the definition''s formal argument this value binds, and the rest of the grain';
 COMMENT ON COLUMN graphitron_directive_application_arg.value_sdl IS 'the value as SDL: as written on an authored application, and as the macro states it on a minted one, so a reader renders both the same way';
+COMMENT ON COLUMN graphitron_directive_application_arg.touched_at IS 'when the reading that last wrote this row ran, swept per graph like the application''s own, so an argument removed from an application that still stands leaves';
 
 -- ==== Macro synthesis provenance ==================================================
 -- What macro expansion mints is stated by views and anchored by EmittedAnchor, beside the authored
@@ -15936,7 +15940,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_directive_application', 'expanded-directive-application', 'graphitron',
    'Every directive application the generator emits, the author''s and the ones macro expansion minted, at the coordinate it is applied to: one row per application.',
    'For example the @key(fields: "id") federation synthesises for a node type sits here beside the @table its author wrote on it, at the same grain and answering the same questions.',
-   'The directive grain of the emitted population, which the anchors lacked: a macro that applies a directive rather than minting an element had nowhere to put it, so the federation key rule stayed a view outside the anchor and the renderer patched it in. Three sets, told apart by origin: what a document states, carried across from graphql_directive_application, what the configuration applies to what a document declares, and what a macro adds. Cleared and refilled each reading after the element sweep, nothing but its arguments keying into it.'),
+   'The directive grain of the emitted population, which the anchors lacked: a macro that applies a directive rather than minting an element had nowhere to put it, so the federation key rule stayed a view outside the anchor and the renderer patched it in. Three sets, told apart by origin: what a document states, carried across from graphql_directive_application, what the configuration applies to what a document declares, and what a macro adds. Marked and swept by the reading after the element sweep, as the element anchors are, so an application the reading still derives keeps its row.'),
   ('graphitron_directive_application_arg', 'expanded-directive-application-argument', 'graphitron',
    'One argument of an application graphitron_directive_application holds: the application''s own key and the formal argument the value binds.',
    'For example the fields: "id" of a synthesised @key is one row, its value the literal an author would have typed.',

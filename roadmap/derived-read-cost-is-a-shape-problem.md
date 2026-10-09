@@ -565,9 +565,9 @@ reads nothing off the classpath that capture has already read, and builds no sch
   relation keyed into the cleared one with a cascade is emptied each reading and correct only because
   a later stage happens to rebuild it; the element anchors, `GraphitronAnchor` and
   `GraphitronCodeReferences` already stamp each row with the reading and sweep the rest.
-  * **Directive applications are marked and swept** `open`. `graphitron_directive_application` and
-    its arguments gain a stamp, are upserted on their keys, and the stale arguments then the stale
-    applications are swept.
+  * **Directive applications are marked and swept** `done`. `graphitron_directive_application` and
+    its arguments carry the reading's stamp, are upserted on their keys, and the stale arguments then
+    the stale applications are swept.
   * **Minted conflicts are marked and swept** `open`. Nothing keys into
     `graphitron_minted_conflict`, so this is the discipline rather than a hazard.
   * **Nodes are marked and swept** `open`. `graphitron_node`'s type id and its origin are payload, so

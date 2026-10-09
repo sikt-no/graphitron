@@ -1,0 +1,18 @@
+# The directive anchor read in steps, over one file. The first reading writes two applications, one
+# with an argument, and marks every row with its own instant.
+
+type Film {
+  title: String @deprecated(reason: "old")
+  year: Int @deprecated
+}
+
+extend schema @assertContains(relation: "graphitron_directive_application", rows: """
+  coordinate, directive_name, origin,   touched_at
+  Film.title, deprecated,     AUTHORED, 1000000000
+  Film.year,  deprecated,     AUTHORED, 1000000000
+  """)
+
+extend schema @assertContains(relation: "graphitron_directive_application_arg", rows: """
+  coordinate, directive_name, directive_argument_name, touched_at
+  Film.title, deprecated,     reason,                  1000000000
+  """)

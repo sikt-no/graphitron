@@ -1,0 +1,23 @@
+# The second reading drops the year's application, and the title's argument while keeping its
+# application. What the reading still derives is written again under its mark; the sweep takes the
+# application it no longer derives, and the argument even though its application stands.
+
+type Film {
+  title: String @deprecated
+  year: Int
+}
+
+extend schema @assertContains(relation: "graphitron_directive_application", rows: """
+  coordinate, directive_name, origin,   touched_at
+  Film.title, deprecated,     AUTHORED, 1000000060
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_directive_application", rows: """
+  coordinate, directive_name
+  Film.year,  deprecated
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_directive_application_arg", rows: """
+  coordinate, directive_name, directive_argument_name
+  Film.title, deprecated,     reason
+  """)
