@@ -361,6 +361,8 @@ class RelationRegistrationGateTest {
         registrations.put("intent_field_navigated_type", Arm.DERIVED);
         registrations.put("intent_routine_return_binding", Arm.DERIVED);
         registrations.put("graphitron_resolved_type_binding", Arm.DERIVED);
+        registrations.put("graphitron_type_backing", Arm.DERIVED);
+        registrations.put("graphitron_type_backing_rule", Arm.DERIVED);
         registrations.put("intent_resolved_node_key_shape", Arm.DERIVED);
         registrations.put("intent_field_participant_scope_table", Arm.DERIVED);
         registrations.put("graphitron_field_scope_table", Arm.DERIVED);

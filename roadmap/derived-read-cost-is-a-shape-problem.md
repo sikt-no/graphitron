@@ -482,6 +482,17 @@ and the emitters read, and it goes when nothing reads what it builds.
     * **The source object is stated by `graphitron_` relations** `open`. Whether a type is
       table-bound, a record, or a nesting type passing its parent's row through, which only
       `intent_type_backing` says today.
+      * **A type's backing is anchored by the graphitron gatherer** `done`. `graphitron_type_backing`,
+        marked and swept after the table bindings: one recursive statement over the producers'
+        resolved methods and the members each backed class offers, an array path standing in for
+        the cycle detection H2 lacks. It agrees with the `intent_` cluster on every capture of the
+        model and generator suites, save an ambiguous reference, which grounds nothing here and
+        draws `CODE_REFERENCE_METHOD_AMBIGUOUS`. On a consumer schema of 2345 types: 130 backings
+        through 136 paths at most four deep.
+      * **The readers move and the `intent_` cluster retires** `open`. The seed, the closure table,
+        its producer and the coalesce view, once every reader reads the anchored relation.
+      * **Two backings for one type is a defect** `open`. What `intent_type_backing_conflict`
+        reports, as a code at the type's declaration.
     * **The source's shape and the target's shape** `blocked`, on the node above. A record is a
       class-backed type, and a column read differs from a field read by the source's shape.
 * **`validate` reads only the store** `open`, as "Validate is a query over the store". Second to
@@ -991,6 +1002,9 @@ conversion frees one.
 * **The code half converts** `open`, and is the larger half: 54 classes and 717 tests against the
   SDL half's 50 and 354. Taken first because the prerequisites are here. A seeded `code_method` row
   is a claim about a method; a method in `graphitron-sakila-service` is one.
+  * **A stated classpath states what a reading would** `open`. `CodeRows.writeStated` writes
+    `code_method` and `code_method_parameter` without their element classes, which a reading fills,
+    so a rule reading those columns finds nothing in a fixture and everything on a real classpath.
 * **The library carries the shapes a conversion needs** `open`, and grows by one shape per
   conversion attempt. The first attempt wanted an overload and the service module had none across
   ninety-seven classes, so `FilmService.topRated` is now a pair. That is the expected cost, a method

@@ -99,3 +99,12 @@ graphitron_configured_tag graphql_field
 # would read a promoted field as a single connection and fold a batched type to ONE.
 graphitron_type_reach_rule graphql_field
 graphitron_type_reach_rule graphql_type
+
+# Adjudicated and kept: a type's backing follows the authored type graph.
+#
+# graphitron_type_backing_rule reads which type a field names, and which kind a type is, over the
+# authored schema, as the closure it replaces did. A producer grounds an authored field's type, and a
+# hop reads an authored field off its parent's class; a type the macro minted is grounded by no
+# producer and offered by no member, so the expanded population would add rows nothing can back.
+graphitron_type_backing_rule graphql_field
+graphitron_type_backing_rule graphql_type

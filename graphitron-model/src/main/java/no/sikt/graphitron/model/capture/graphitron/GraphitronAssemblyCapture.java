@@ -12,6 +12,7 @@ import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.ResolvedTypeBindings;
 import no.sikt.graphitron.model.derive.SpelledTables;
 import no.sikt.graphitron.model.derive.TypeArrivals;
+import no.sikt.graphitron.model.derive.TypeBackings;
 import no.sikt.graphitron.model.derive.TypeReaches;
 import org.jooq.DSLContext;
 
@@ -83,6 +84,10 @@ public final class GraphitronAssemblyCapture {
         // Then the bindings, which the routine arm reaches through the hops just written, and then
         // the walk, which seeds from those bindings and steps through those hops.
         ResolvedTypeBindings.derive(dsl, graph);
+        // Then which class stands for each type: the table binding just written read through its
+        // record class, and what the producers' resolved methods ground, closed over the members
+        // each backed class offers. The classpath was read before this gatherer ran.
+        TypeBackings.derive(dsl, graph, readAt);
         FieldReferenceStepTargets.derive(dsl, graph);
         // Then the endpoints, because their target rule reads the navigation above and their
         // departure reads the bindings above that.

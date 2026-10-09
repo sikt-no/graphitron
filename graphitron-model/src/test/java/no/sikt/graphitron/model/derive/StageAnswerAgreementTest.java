@@ -56,6 +56,7 @@ class StageAnswerAgreementTest {
         new Stage("graphql_ast_element_declaration", "graphql_ast_element_declaration_rule"),
         new Stage("graphitron_field_chain_link_resolution",
             "graphitron_field_chain_link_resolution_rule"),
+        new Stage("graphitron_type_backing", "graphitron_type_backing_rule"),
         new Stage("graphitron_type_reach", "graphitron_type_reach_rule"),
         new Stage("graphitron_type_arrival", "graphitron_type_arrival_rule"),
         new Stage("graphitron_field_source", "graphitron_field_source_rule"),

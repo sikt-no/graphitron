@@ -398,6 +398,9 @@ class SupertypeSignatureGateTest {
         // the row goes when the condition copies do.
         "graphitron_entry_defect_rule|graphitron_argument_condition_entry,graphitron_field_condition_entry",
         "intent_field_producer_reference|graphitron_external_field_entry,graphitron_service_entry",
+        // The type-backing closure's skip: a field a producer directive supplies is not read off its
+        // parent's class, whichever of the two directives supplies it, and the rule asks each in turn.
+        "graphitron_type_backing_rule|graphitron_external_field_entry,graphitron_service_entry",
         "graphitron_node_id_instruction_rule|graphitron_argument_node_id_entry,graphitron_field_node_id_entry",
         "intent_reference_for_application|graphitron_argument_reference_for_entry,graphitron_reference_for_entry",
         // The scope rule reaching a table by either keying of one resolution, which became visible
