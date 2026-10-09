@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.model.run.GraphitronStore;
-import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -95,11 +94,9 @@ class DevPassProjectionPipelineTest {
     void runPass_producesEverythingBuildOutputAndGenerateProduce(@TempDir Path tmp) throws IOException {
         var ctx = contextFor(tmp, CLEAN);
         try (var store = GraphitronStore.captured(ctx)) {
-            var handle = new StoreHandle(store.dsl(), ctx.graphName());
-
-            var generated = new GraphQLRewriteGenerator(ctx, handle).generate();
-            var reported = new GraphQLRewriteGenerator(ctx, handle).buildOutput();
-            var pass = new GraphQLRewriteGenerator(ctx, handle).runPass();
+            var generated = new GraphQLRewriteGenerator(ctx, store).generate();
+            var reported = new GraphQLRewriteGenerator(ctx, store).buildOutput();
+            var pass = new GraphQLRewriteGenerator(ctx, store).runPass();
 
             assertThat(pass.output().catalog())
                 .as("the completion catalog the pass projects is the one buildOutput() projects")
@@ -140,9 +137,7 @@ class DevPassProjectionPipelineTest {
     void runPass_rejectedRound_reportsTheErrorsAndEmitsNothing(@TempDir Path tmp) throws IOException {
         var ctx = contextFor(tmp, REJECTED);
         try (var store = GraphitronStore.captured(ctx)) {
-            var handle = new StoreHandle(store.dsl(), ctx.graphName());
-
-            var pass = new GraphQLRewriteGenerator(ctx, handle).runPass();
+            var pass = new GraphQLRewriteGenerator(ctx, store).runPass();
 
             assertThat(pass.output().report().errors())
                 .extracting(ValidationError::message)
@@ -178,17 +173,16 @@ class DevPassProjectionPipelineTest {
     void theBuildEntryPointsStillThrowTheListThePassReports(@TempDir Path tmp) throws IOException {
         var ctx = contextFor(tmp, REJECTED);
         try (var store = GraphitronStore.captured(ctx)) {
-            var handle = new StoreHandle(store.dsl(), ctx.graphName());
-            var reportedErrors = new GraphQLRewriteGenerator(ctx, handle).runPass()
+            var reportedErrors = new GraphQLRewriteGenerator(ctx, store).runPass()
                 .output().report().errors().stream().map(ValidationError::message).toList();
 
-            assertThatThrownBy(() -> new GraphQLRewriteGenerator(ctx, handle).generate())
+            assertThatThrownBy(() -> new GraphQLRewriteGenerator(ctx, store).generate())
                 .as("generate() fails the build on the same errors the dev pass merely reports")
                 .isInstanceOf(ValidationFailedException.class)
                 .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
                     .extracting(ValidationError::message)
                     .isEqualTo(reportedErrors));
-            assertThatThrownBy(() -> new GraphQLRewriteGenerator(ctx, handle).validate())
+            assertThatThrownBy(() -> new GraphQLRewriteGenerator(ctx, store).validate())
                 .as("and so does validate(), which emits nothing either way")
                 .isInstanceOf(ValidationFailedException.class)
                 .satisfies(e -> assertThat(((ValidationFailedException) e).errors())

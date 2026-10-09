@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.model.run.GraphitronStore;
-import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures;
@@ -504,7 +503,7 @@ class ArgmappingProjectionRejectionPipelineTest {
             classpathRoots
         );
         try (var store = GraphitronStore.captured(ctx)) {
-            new GraphQLRewriteGenerator(ctx, new StoreHandle(store.dsl(), ctx.graphName()))
+            new GraphQLRewriteGenerator(ctx, store)
                 .validate();
         }
     }

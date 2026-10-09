@@ -261,16 +261,18 @@ class FederationKeyDerivationTest {
             "extend schema @link(url: \"https://specs.apollo.dev/federation/v2.10\","
                 + " import: [\"@key\", \"@tag\"])");
 
-        try (var store = GraphitronStore.captured(context(tmp.resolve("tagged"), unlinked, "stable"))) {
+        try (var store = GraphitronStore.captured(
+                context(tmp.resolve("tagged"), unlinked, "stable")).store()) {
             assertThat(store.dsl().fetchCount(GRAPHQL_ASSEMBLY_SYNTHESISED_LINK)).isOne();
             assertThat(synthesizedKeysOf(store.dsl())).containsExactly("Film");
         }
-        try (var store = GraphitronStore.captured(context(tmp.resolve("untagged"), unlinked, null))) {
+        try (var store = GraphitronStore.captured(
+                context(tmp.resolve("untagged"), unlinked, null)).store()) {
             assertThat(store.dsl().fetchCount(GRAPHQL_ASSEMBLY_SYNTHESISED_LINK)).isZero();
             assertThat(synthesizedKeysOf(store.dsl())).isEmpty();
         }
         try (var store = GraphitronStore.captured(
-                context(tmp.resolve("linked"), linkedWithTag, "stable"))) {
+                context(tmp.resolve("linked"), linkedWithTag, "stable")).store()) {
             assertThat(store.dsl().fetchCount(GRAPHQL_ASSEMBLY_SYNTHESISED_LINK))
                 .as("the author wrote the link, so the composition synthesised none")
                 .isZero();

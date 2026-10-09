@@ -7,6 +7,7 @@ import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.model.run.CapturedSchema;
 import no.sikt.graphitron.model.run.GraphitronStore;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
@@ -1177,9 +1178,9 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             // reader over it: a goal that grows a second pass shares this store with it instead of
             // opening another, and no pass can open one at all.
             try (var store = GraphitronModelStore.openAt(ctx.storeDirectory())) {
-                captureModel(ctx, store);
+                var schema = captureModel(ctx, store);
                 call.invoke(new GraphQLRewriteGenerator(ctx,
-                    new StoreHandle(store.dsl(), ctx.graphName())));
+                    new StoreHandle(store.dsl(), ctx.graphName()), schema));
             } catch (SchemaProblem e) {
                 var loaded = loadedSchemaFiles(ctx);
                 // Wrap the SchemaProblem in a null-message intermediary so Maven's
@@ -1239,11 +1240,11 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * owner of.
      *
      * <p>A call beside the pass's own walk and not a step inside it. The two share the store and
-     * nothing else, so retiring that walk is deleting its call rather than unpicking this one out
-     * of it.
+     * the schemas this returns, which the gatherers built from the documents: the pass renders
+     * from them rather than building them again.
      */
-    void captureModel(RunContext ctx, GraphitronModelStore store) {
-        GraphitronStore.capture(store, new GraphIdentity(ctx.graphName(), ctx.basedir()),
+    CapturedSchema captureModel(RunContext ctx, GraphitronModelStore store) {
+        return GraphitronStore.capture(store, new GraphIdentity(ctx.graphName(), ctx.basedir()),
             SubjectConfig.of(ctx),
             ctx.classpathRoots(),
             // Off the declared parameter rather than the context's, which carries the sentinel a

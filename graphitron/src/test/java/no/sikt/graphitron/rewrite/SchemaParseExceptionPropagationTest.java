@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.model.run.GraphitronStore;
-import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
@@ -21,9 +20,8 @@ import no.sikt.graphitron.model.diagnostics.SchemaParseException;
 
 /**
  * Confirms a syntactically broken schema surfaces as the same {@link SchemaParseException}
- * out of the generator entry point as out of {@code SchemaLoader.load} directly:
- * the loader throws it, and it propagates unchanged through
- * {@code AttributedRegistry.load} into {@link GraphQLRewriteGenerator#generate()}
+ * out of the generator entry point as out of {@code SchemaLoader.load} directly: capture keeps
+ * the parser's failure on its reading, and {@link GraphQLRewriteGenerator#generate()} throws it
  * with no translation step. The build-time pipeline therefore still fails on a broken schema,
  * carrying the attributed file:line:col message rather than a bare wrapper.
  *
@@ -53,8 +51,7 @@ class SchemaParseExceptionPropagationTest {
 
         Throwable thrown;
         try (var store = GraphitronStore.captured(ctx)) {
-            var handle = new StoreHandle(store.dsl(), ctx.graphName());
-            thrown = catchThrowable(() -> new GraphQLRewriteGenerator(ctx, handle).generate());
+            thrown = catchThrowable(() -> new GraphQLRewriteGenerator(ctx, store).generate());
         }
 
         assertThat(thrown)

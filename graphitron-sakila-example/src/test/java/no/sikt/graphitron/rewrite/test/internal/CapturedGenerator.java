@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite.test.internal;
 
 import no.sikt.graphitron.model.config.RunContext;
-import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.run.GraphitronStore;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 
@@ -31,7 +30,7 @@ public final class CapturedGenerator {
     public static <T> T with(RunContext ctx, Function<GraphQLRewriteGenerator, T> pass) {
         try (var store = GraphitronStore.captured(ctx)) {
             return pass.apply(
-                new GraphQLRewriteGenerator(ctx, new StoreHandle(store.dsl(), ctx.graphName())));
+                new GraphQLRewriteGenerator(ctx, store));
         }
     }
 

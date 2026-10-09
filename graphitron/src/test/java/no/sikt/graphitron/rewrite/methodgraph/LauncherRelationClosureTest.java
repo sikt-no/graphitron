@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite.methodgraph;
 
 import no.sikt.graphitron.model.run.GraphitronStore;
-import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.command.Invocation;
 import no.sikt.graphitron.command.LaunchSource;
 import no.sikt.graphitron.command.LauncherCommand;
@@ -128,7 +127,7 @@ class LauncherRelationClosureTest {
             TestConfiguration.DEFAULT_JOOQ_PACKAGE);
         GraphQLRewriteGenerator.GenerationResult result;
         try (var store = GraphitronStore.captured(ctx)) {
-            result = new GraphQLRewriteGenerator(ctx, new StoreHandle(store.dsl(), ctx.graphName()))
+            result = new GraphQLRewriteGenerator(ctx, store)
                 .generate();
         }
         walk = EmittedMethodClosure.walk(result.emittedUnits());

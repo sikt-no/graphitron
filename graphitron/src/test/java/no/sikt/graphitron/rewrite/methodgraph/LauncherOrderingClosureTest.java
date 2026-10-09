@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite.methodgraph;
 
 import no.sikt.graphitron.model.run.GraphitronStore;
-import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.command.Arity;
 import no.sikt.graphitron.command.CallWrap;
 import no.sikt.graphitron.command.Contribution;
@@ -119,7 +118,7 @@ class LauncherOrderingClosureTest {
             TestConfiguration.DEFAULT_JOOQ_PACKAGE);
         GraphQLRewriteGenerator.GenerationResult result;
         try (var store = GraphitronStore.captured(ctx)) {
-            result = new GraphQLRewriteGenerator(ctx, new StoreHandle(store.dsl(), ctx.graphName()))
+            result = new GraphQLRewriteGenerator(ctx, store)
                 .generate();
         }
         launchers = result.plan().launchers();

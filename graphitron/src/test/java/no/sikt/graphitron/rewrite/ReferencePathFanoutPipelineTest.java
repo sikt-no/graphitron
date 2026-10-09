@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.model.run.GraphitronStore;
-import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.model.lint.LintConfig;
@@ -186,8 +185,7 @@ class ReferencePathFanoutPipelineTest {
         ).withLintConfig(lint);
         var run = store == null ? ctx : ctx.withStoreDirectory(store);
         try (var opened = GraphitronStore.captured(run)) {
-            return new GraphQLRewriteGenerator(run,
-                new StoreHandle(opened.dsl(), run.graphName())).buildOutput().report();
+            return new GraphQLRewriteGenerator(run, opened).buildOutput().report();
         }
     }
 }

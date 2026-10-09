@@ -1058,7 +1058,7 @@ public class DevMojo extends AbstractRewriteMojo {
         try {
             withCodegenScope(ctx -> {
                 try {
-                    var output = generatorFor(ctx).buildOutput();
+                    var output = capturedGenerator(ctx).buildOutput();
                     writeReportFacts(output.walkErrors(), output.warnings());
                     workspace.markAllForRecalculation();
                     var catalog = output.catalog();
@@ -1097,7 +1097,7 @@ public class DevMojo extends AbstractRewriteMojo {
      */
     private InitialOutput buildOutputQuietly(RunContext ctx) {
         try {
-            var output = generatorFor(ctx).buildOutput();
+            var output = capturedGenerator(ctx).buildOutput();
             return new InitialOutput(output.catalog(), true, output.walkErrors(), output.warnings());
         } catch (RuntimeException e) {
             getLog().warn("graphitron:dev: initial catalog build failed; "
@@ -1184,11 +1184,15 @@ public class DevMojo extends AbstractRewriteMojo {
     }
 
     /**
-     * A generator for one round, reading the classpath through the session's census so the round
-     * pays for what changed. Every construction site goes through this, or a round would quietly
-     * get a census of its own and re-parse the whole classpath.
+     * Captures the graph and returns a generator over that capture, reading the classpath through
+     * the session's census so the round pays for what changed. Every construction site goes through
+     * this, or a round would quietly get a census of its own and re-parse the whole classpath.
+     *
+     * <p>The capture comes first because the generator reads no document itself, and because a
+     * round the pass refuses still owes its facts, for the reason {@link #captureModel} carries.
      */
-    private GraphQLRewriteGenerator generatorFor(RunContext ctx) {
+    private GraphQLRewriteGenerator capturedGenerator(RunContext ctx) {
+        var schema = captureModel(ctx, storeFor(ctx));
         // Registered here rather than at session start-up because this is the one place every
         // cadence passes through. The census then says its own cost from inside the pass, so the
         // schema cadence, the classpath cadence and the quiet start-up build all report without
@@ -1196,7 +1200,7 @@ public class DevMojo extends AbstractRewriteMojo {
         // re-reads, so it is the one a missed site would have silenced.
         sessionCensus.reportTo(round -> getLog().info("graphitron:dev: " + round.report()));
         return new GraphQLRewriteGenerator(ctx,
-            new StoreHandle(storeFor(ctx).dsl(), ctx.graphName()), sessionCensus);
+            new StoreHandle(storeFor(ctx).dsl(), ctx.graphName()), schema, sessionCensus);
     }
 
     PassRound runGeneratorPass(RunContext ctx, String label) {
@@ -1204,14 +1208,9 @@ public class DevMojo extends AbstractRewriteMojo {
         // act on; reassigned from the pass below, which returns one only when it emitted.
         this.lastGeneration = null;
         try {
-            // Every round, and before the pass, for the reason captureModel carries. A round the
-            // pass refuses gets one too, and gets it whether the refusal returns errors or throws:
-            // the schema the gatherers read is no less read for having been turned down.
-            captureModel(ctx, storeFor(ctx));
-            // One pass: the emitted tree, the compile graph the incremental driver reads, and the
-            // editor-facing catalog and diagnostics, from a single read of the schema and a single
-            // capture of the graph's partition.
-            var pass = generatorFor(ctx).runPass();
+            // One capture and one pass: the emitted tree, the compile graph the incremental driver
+            // reads, and the editor-facing catalog and diagnostics.
+            var pass = capturedGenerator(ctx).runPass();
             this.lastGeneration = pass.generation().orElse(null);
             var errors = pass.output().report().errors();
             if (!errors.isEmpty()) {

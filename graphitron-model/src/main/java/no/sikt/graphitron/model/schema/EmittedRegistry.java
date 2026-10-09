@@ -214,16 +214,20 @@ public final class EmittedRegistry {
     }
 
     /**
-     * The emitted registry for {@code store}'s graph, derived from {@code transcribed}.
+     * The emitted registry for {@code store}'s graph, derived from {@code transcribed}. Capture's
+     * own entry point: the composition it assembled is pre-synthesis by construction, so there is
+     * no second handle to pick the wrong one of.
      *
      * @param transcribed the registry capture wrote its facts from, which is the pre-synthesis one
      * @param store       the graph's own partition of the fact store
      */
-    private static Emitted derive(TypeDefinitionRegistry transcribed, StoreHandle store) {
+    public static Emitted derive(TypeDefinitionRegistry transcribed, StoreHandle store) {
         Objects.requireNonNull(transcribed, "transcribed");
         Objects.requireNonNull(store, "store");
 
-        var patched = new TypeDefinitionRegistry().merge(transcribed);
+        // Replayed through the reduce rather than TypeDefinitionRegistry.merge, which rebuilds the
+        // parse order kind by kind.
+        var patched = SchemaLoader.merge(List.of(transcribed)).registry();
         var replacements = new ArrayList<Replacement>();
         for (var type : emittedTypes(store)) {
             if (patched.getTypeOrNull(type.typeName()) instanceof ObjectTypeDefinition object) {

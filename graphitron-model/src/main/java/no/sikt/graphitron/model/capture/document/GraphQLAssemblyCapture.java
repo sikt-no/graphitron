@@ -57,12 +57,16 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_ASSEMBLY_SYNTHESISED_LINK;
  * {@code @link} a configured tag synthesises, as a {@code graphql_assembly_synthesised_link} row:
  * the one federation opt-in no document states, so the only place it can be read from is here.
  *
- * <p>It returns the merged registry beside the assembly. The decode walks the merged registry, the
- * corpus as written, which the composition started from and never touches: the rewrites run on a
- * reduce of their own. The assembly is a narrower claim than an executable schema:
- * {@link SchemaAssembly} carries the schema on the arm that has one, and a caller that reaches for
- * it has to have said what it does when there is none. A capture whose corpus did not assemble is
- * an ordinary outcome here, the verdict being the thing this gatherer was run for.
+ * <p>It returns the merged registry beside the composition and the assembly. The decode walks the
+ * merged registry, the corpus as written, which the composition started from and never touches:
+ * the rewrites run on a reduce of their own. The assembly is a narrower claim than an executable
+ * schema: {@link SchemaAssembly} carries the schema on the arm that has one, and a caller that
+ * reaches for it has to have said what it does when there is none. A capture whose corpus did not
+ * assemble is an ordinary outcome here, the verdict being the thing this gatherer was run for.
+ *
+ * <p>The generator composes from what this returns rather than reading the documents a second
+ * time, so the reading carries what a run refusing the corpus throws with: the parser's failures
+ * and the composition's refusal, which the rows above state but cannot be rethrown from.
  */
 public final class GraphQLAssemblyCapture {
 
@@ -71,11 +75,22 @@ public final class GraphQLAssemblyCapture {
     /**
      * What this gatherer made of one reading.
      *
-     * @param merged   the corpus as written, reduced into one registry; what the decode walks
-     * @param assembly the assembly over the composition, or over {@code merged} where the
-     *                 composition refused; {@link SchemaAssembly#registry()} says which was judged
+     * @param read        the corpus as written, reduced into one registry, with what the parser
+     *                    and the reduce refused on the way
+     * @param composition the loading rewrites' outcome over a reduce of its own: the composed
+     *                    registry, or the refusal that stopped it
+     * @param assembly    the assembly over the composition, or over {@link #merged()} where the
+     *                    composition refused; {@link SchemaAssembly#registry()} says which was
+     *                    judged
      */
-    public record AssemblyReading(TypeDefinitionRegistry merged, SchemaAssembly assembly) {}
+    public record AssemblyReading(SchemaLoader.PerSourceParse read,
+                                  LoadingRewrites.Outcome composition, SchemaAssembly assembly) {
+
+        /** The corpus as written, reduced into one registry; what the decode walks. */
+        public TypeDefinitionRegistry merged() {
+            return read.registry();
+        }
+    }
 
     /**
      * The corpus reduced into one registry.
@@ -119,7 +134,9 @@ public final class GraphQLAssemblyCapture {
         writeSynthesisedLink(dsl, graph.name(),
             outcome instanceof LoadingRewrites.Outcome.Applied applied && applied.synthesisedLink(),
             readAt);
-        return new AssemblyReading(merged.registry(), assembly);
+        var read = new SchemaLoader.PerSourceParse(merged.registry(), reading.failures(),
+            merged.registryErrors());
+        return new AssemblyReading(read, outcome, assembly);
     }
 
     /**

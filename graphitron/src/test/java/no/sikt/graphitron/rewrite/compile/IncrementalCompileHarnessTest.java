@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite.compile;
 
 import no.sikt.graphitron.model.run.GraphitronStore;
-import no.sikt.graphitron.model.read.StoreHandle;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.plan.GeneratedUnits;
@@ -320,7 +319,7 @@ class IncrementalCompileHarnessTest {
 
         GraphQLRewriteGenerator.GenerationResult result;
         try (var store = GraphitronStore.captured(ctx)) {
-            result = new GraphQLRewriteGenerator(ctx, new StoreHandle(store.dsl(), ctx.graphName()))
+            result = new GraphQLRewriteGenerator(ctx, store)
                 .generate();
         }
 

@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite.capture;
 
 import no.sikt.graphitron.model.run.GraphitronStore;
-import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.model.config.RunContext;
@@ -68,8 +67,7 @@ class BrokenSourceStillCapturesPipelineTest {
         var ctx = context(tmp, storeDir, List.of(SchemaInput.file(good), SchemaInput.file(broken)));
 
         try (var store = GraphitronStore.captured(ctx)) {
-            var handle = new StoreHandle(store.dsl(), ctx.graphName());
-            assertThatThrownBy(() -> new GraphQLRewriteGenerator(ctx, handle).validate())
+            assertThatThrownBy(() -> new GraphQLRewriteGenerator(ctx, store).validate())
             .as("the run still fails, and with the exception the mojo's catch arm already handles")
             .isInstanceOf(SchemaParseException.class)
             .hasMessageContaining(broken.toString());
@@ -122,8 +120,7 @@ class BrokenSourceStillCapturesPipelineTest {
         var ctx = context(tmp, storeDir, List.of(SchemaInput.file(dangling)));
 
         try (var store = GraphitronStore.captured(ctx)) {
-            var handle = new StoreHandle(store.dsl(), ctx.graphName());
-            assertThatThrownBy(() -> new GraphQLRewriteGenerator(ctx, handle).validate())
+            assertThatThrownBy(() -> new GraphQLRewriteGenerator(ctx, store).validate())
                 .as("an unassemblable schema still fails the run")
                 .isInstanceOf(RuntimeException.class);
         }

@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.model.run.GraphitronStore;
-import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.lint.LintRule;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
@@ -75,7 +74,7 @@ class BuildOutputReportPipelineTest {
 
         ValidationReport report;
         try (var store = GraphitronStore.captured(ctx)) {
-            report = new GraphQLRewriteGenerator(ctx, new StoreHandle(store.dsl(), ctx.graphName()))
+            report = new GraphQLRewriteGenerator(ctx, store)
                 .buildOutput().report();
         }
 
@@ -120,7 +119,7 @@ class BuildOutputReportPipelineTest {
 
         ValidationReport report;
         try (var store = GraphitronStore.captured(ctx)) {
-            report = new GraphQLRewriteGenerator(ctx, new StoreHandle(store.dsl(), ctx.graphName()))
+            report = new GraphQLRewriteGenerator(ctx, store)
                 .buildOutput().report();
         }
 

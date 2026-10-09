@@ -8,6 +8,8 @@ import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.plan.EmitPlan;
 import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.model.run.CapturedGraph;
+import no.sikt.graphitron.model.run.CapturedSchema;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.rewrite.compile.CompileDependencyGraph;
@@ -24,7 +26,6 @@ import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.EmittedRegistry;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.schema.SdlVerdicts;
-import no.sikt.graphitron.model.schema.federation.KeyNodeSynthesiser;
 import no.sikt.graphitron.model.schema.input.DescriptionNoteApplier;
 import no.sikt.graphitron.model.schema.input.FederationLinkApplier;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
@@ -95,7 +96,7 @@ import no.sikt.graphitron.model.schema.AttributedRegistry;
  * generators, and writes output to the configured output directory.
  *
  * <p><b>One body, four projections.</b> {@link #runPipeline} is the whole pipeline and the only
- * place its stages are named: read and attribute the schema inputs, assemble, classify, load the
+ * place its stages are named: synthesise over the schema capture assembled, classify, load the
  * jOOQ catalog, scan the classpath census, lint and validate, and (conditionally) project the
  * completion catalog, emit the sources and project the compile graph. Each public entry point is a
  * {@link Projection} of that one call: {@link #generate()}, {@link #validate()},
@@ -107,6 +108,7 @@ import no.sikt.graphitron.model.schema.AttributedRegistry;
  *
  * <p>Capturing is not one of them. The store is filled by its gatherers before any pass runs,
  * whoever orchestrates the run, and a goal that wants only the store never constructs this class.
+ * Nor is reading the documents.
  */
 public class GraphQLRewriteGenerator {
     static final Logger LOGGER = LoggerFactory.getLogger(GraphQLRewriteGenerator.class);
@@ -116,6 +118,12 @@ public class GraphQLRewriteGenerator {
 
     private final RunContext ctx;
     private final StoreHandle store;
+
+    /**
+     * The two schemas the capture that filled {@link #store} built. The generator renders the
+     * post-synthesis one; the written one it reads only for the walk, while the walk stands.
+     */
+    private final CapturedSchema schemas;
 
     /**
      * The classpath census, which this generator reads and never writes. A one-shot goal gets a
@@ -138,15 +146,25 @@ public class GraphQLRewriteGenerator {
      * than a hazard: they are in one process, none of them holds a transaction, and what they
      * disagree about is only how recently they looked.
      */
-    public GraphQLRewriteGenerator(RunContext ctx, StoreHandle store) {
-        this(ctx, store, new ClasspathCensus());
+    public GraphQLRewriteGenerator(RunContext ctx, StoreHandle store, CapturedSchema schemas) {
+        this(ctx, store, schemas, new ClasspathCensus());
     }
 
-    /** {@link #GraphQLRewriteGenerator(RunContext, StoreHandle)} over a census the caller holds. */
-    public GraphQLRewriteGenerator(RunContext ctx, StoreHandle store, ClasspathCensus census) {
+    /**
+     * {@link #GraphQLRewriteGenerator(RunContext, StoreHandle, CapturedSchema)} over a census the
+     * caller holds.
+     */
+    public GraphQLRewriteGenerator(RunContext ctx, StoreHandle store, CapturedSchema schemas,
+                                   ClasspathCensus census) {
         this.ctx = ctx;
         this.store = Objects.requireNonNull(store, "store");
+        this.schemas = Objects.requireNonNull(schemas, "schemas");
         this.census = Objects.requireNonNull(census, "census");
+    }
+
+    /** A generator over a graph somebody captured, its store and its schema together. */
+    public GraphQLRewriteGenerator(RunContext ctx, CapturedGraph captured) {
+        this(ctx, captured.handle(), captured.schema());
     }
 
     /**
@@ -326,75 +344,28 @@ public class GraphQLRewriteGenerator {
     }
 
     /**
-     * Runs the assembly stage and records every stage's verdict, then pronounces the run's own
-     * verdict on them.
+     * The schema the walk classifies, having thrown if any stage refused the author's document.
      *
-     * <p>Assembly is where the GraphQL specification's structural rules are checked at all, so it
-     * runs on every pass whether or not this pass has any use for the assembled schema, and its
-     * outcome is written down either way. The order is the point: capture first, fail second. The
-     * three read stages are a pipeline in that each consumes what the last produced, never in the
-     * sense that an earlier refusal cancels a later stage, and the recording is what would be lost
-     * by failing at the first refusal instead of the last.
+     * <p>Capture ran every stage and recorded its verdict, so this only pronounces. Each refusal
+     * throws the exception it always threw, so the mojo's catch arms and the dev loop's one-line
+     * parse report are unchanged.
      *
-     * <p>Returns the assembled schema paired with the stage verdicts, having thrown if any stage
-     * refused: a refusal is still fatal to a build, and each stage still throws exactly the
-     * exception it always threw, so the mojo's catch arms and the dev loop's one-line parse report
-     * are unchanged. The verdicts ride along so the pass that goes on to classify records the same
-     * emptiness this method would have recorded, derived from the stages rather than assumed.
+     * <p>The verdict comes from capture's assembly, which judged the composition before synthesis,
+     * so no refusal blames the author for a declaration graphitron's own rewrite injected. The
+     * schema returned is over the synthesised registry, assembled again only when synthesis added
+     * something; a refusal there is graphitron's defect and fails the run as one.
      */
-    private ReadSchema assembleAndCaptureVerdicts(AttributedRegistry attributed, JooqCatalog jooq,
-                                                  ClasspathCensus.Reading census) {
-        // The assembly that judges the document is the one over the loading rewrites' composition,
-        // before the synthesis rewrites, which is the schema the store's assembly judges too: both
-        // compose the corpus through LoadingRewrites. Judging the post-synthesis registry instead
-        // let a verdict blame the author for a declaration graphitron's own rewrite injected; a
-        // verdict is a fact about what the author wrote, so it comes from the same composition the
-        // store's does.
-        var assembly = SchemaAssembly.of(attributed.preSynthesisRegistry());
-        var verdicts = SdlVerdicts.of(attributed.read());
-        if (verdicts.anyRefusal() || !assembly.errors().isEmpty()) {
+    private GraphQLSchema acceptedSchema(AttributedRegistry attributed) {
+        var assembly = schemas.written().assembly();
+        if (SdlVerdicts.of(attributed.read()).anyRefusal() || !assembly.errors().isEmpty()) {
             SchemaLoader.throwIfRejected(attributed.read());
-            // Nothing above threw, so the refusal was assembly's own: rethrow it as the stage
-            // raised it, which is the exception this path has always failed with.
+            // Nothing above threw, so the refusal was assembly's own.
             GraphitronSchemaBuilder.assembleOrFail(assembly);
         }
-        var pipeline = assemblyForPipeline(attributed, assembly);
-        if (!(pipeline instanceof SchemaAssembly.Assembled)) {
-            // graphitron's own rewrite broke a document the author wrote correctly, the assembly
-            // above having succeeded on the composition the store judges. Capture from that
-            // assembly before failing: the author's facts are all still true, and withholding them
-            // is the "one broken thing blanks every fact beside it" failure this file argues
-            // against, here caused by our own defect rather than by anything they wrote. The
-            // verdicts written are still the pre-synthesis ones, so no ASSEMBLY row blames them.
-        }
-        return new ReadSchema(GraphitronSchemaBuilder.assembleOrFail(pipeline), verdicts, assembly);
+        return GraphitronSchemaBuilder.assembleOrFail(attributed.injectedNames().isEmpty()
+            ? assembly
+            : SchemaAssembly.of(attributed.registry()));
     }
-
-    /**
-     * The assembly the pipeline classifies, which is over the post-synthesis registry: the
-     * federation key and node declarations {@link KeyNodeSynthesiser} injected are part of what the
-     * generator emits. A second assembly is paid for only when that rewrite ran at all; with no
-     * injected names the pre-synthesis registry is the same document, so the assembly above is
-     * reused and this can only be its {@code Assembled} arm.
-     *
-     * <p>Returned as the outcome value rather than assembled-or-thrown, because a refusal here is
-     * graphitron's own defect and the caller has something to do about it before failing.
-     */
-    private static SchemaAssembly assemblyForPipeline(AttributedRegistry attributed,
-                                                      SchemaAssembly preSynthesis) {
-        return attributed.injectedNames().isEmpty()
-            ? preSynthesis
-            : SchemaAssembly.of(attributed.registry());
-    }
-
-    /**
-     * A successfully read schema: what assembly produced, and what the three stages said about the
-     * document on the way. The verdicts are empty by construction here, every refusal having been
-     * fatal upstream, but they are carried rather than re-synthesised so the capture downstream
-     * writes a fact about this read instead of a constant.
-     */
-    private record ReadSchema(GraphQLSchema assembled, SdlVerdicts verdicts,
-                              SchemaAssembly preSynthesisAssembly) {}
 
 
     /**
@@ -490,30 +461,17 @@ public class GraphQLRewriteGenerator {
     private record Captured(List<ValidationError> walkErrors, List<ValidationError> errors,
                             EmitPlan plan, List<BuildWarning> warnings) {}
 
-    /** The emitted schema, and the generated types whose inherited tags deriving it narrowed. */
-    private record EmittedSchema(graphql.schema.GraphQLSchema schema,
-                                 List<EmittedRegistry.TagNarrowing> narrowings) {}
-
     /**
-     * The schema this run emits, derived from the facts rather than synthesised beside the model.
+     * The schema this run emits: capture's post-synthesis schema.
      *
-     * <p>The registry the author wrote, patched with what the anchors say macro expansion added.
-     * Most of a corpus is untouched by expansion, so what the store owes is the delta and the rest
-     * of the document stays exactly as written, applied directives included.
-     *
-     * <p>A rejection here is not an author error. The authored corpus already assembled upstream,
-     * so a registry that will not assemble after patching is this derivation disagreeing with
-     * itself, which is a defect in the generator and is raised as one.
-     *
-     * <p>The narrowings ride out beside the schema because deriving it is what found them: a
-     * generated type whose carriers disagree on their {@code @tag}s, which report assembly turns
-     * into a warning.
+     * <p>Present whenever the written schema was accepted, both needing the composition. A
+     * rejection is not an author error: the written schema assembled, so a post-synthesis one that
+     * does not is the derivation disagreeing with itself, and is raised as graphitron's defect.
      */
-    private EmittedSchema emittedSchema(AttributedRegistry attributed) {
-        var emitted = EmittedRegistry.derive(attributed, store);
-        var assembly = SchemaAssembly.of(emitted.registry());
+    private GraphQLSchema emittedSchema() {
+        var assembly = schemas.synthesised().orElseThrow();
         if (assembly instanceof SchemaAssembly.Assembled assembled) {
-            return new EmittedSchema(assembled.schema(), emitted.narrowings());
+            return assembled.schema();
         }
         var rejected = (SchemaAssembly.Rejected) assembly;
         throw new IllegalStateException("the emitted registry derived from the store did not "
@@ -537,18 +495,11 @@ public class GraphQLRewriteGenerator {
         var census = reading.references();
         LOGGER.debug("{}", reading.round().report());
 
-        var attributed = AttributedRegistry.load(ctx, jooq);
-        var read = assembleAndCaptureVerdicts(attributed, jooq, reading);
-        var bundle = GraphitronSchemaBuilder.buildBundle(attributed, read.assembled(), ctx);
+        var attributed = AttributedRegistry.of(schemas.written(), jooq);
+        var bundle = GraphitronSchemaBuilder.buildBundle(attributed, acceptedSchema(attributed), ctx);
         var schema = bundle.model();
         boolean federationLink = bundle.federationLink();
-        // The emitted schema comes off the store rather than off the walk that built the model
-        // beside it. Both producers exist and agree: EmittedRegistryAgreementTest compares their
-        // printed schemas over every corpus document, and the two defects that comparison found
-        // were capture's rather than this one's. What the walk still owns is the classified model
-        // above, which nothing compares yet, so it stays where it is.
-        var emitted = emittedSchema(attributed);
-        var assembled = emitted.schema();
+        var assembled = emittedSchema();
 
         var catalog = projection.catalog()
             ? CatalogBuilder.build(jooq, assembled, ctx, census)
@@ -568,7 +519,7 @@ public class GraphQLRewriteGenerator {
         // and nothing to hand back at the end of.
         var storeFacts = StoreDetections.over(store.dsl(), store.graphName(), ClassifiedRun.present());
         var captured = capturedFrom(projection, schema, attributed, bundle, federationLink,
-            outputPackage, storeFacts, emitted.narrowings());
+            outputPackage, storeFacts, schemas.narrowings());
 
         var warnings = captured.warnings();
         if (captured.plan() == null) {

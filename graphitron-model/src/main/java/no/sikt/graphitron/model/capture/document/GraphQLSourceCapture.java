@@ -148,11 +148,15 @@ public final class GraphQLSourceCapture {
      * @param inputs    the recipe's matches in recipe order, the list a
      *                  {@link no.sikt.graphitron.model.config.RunContext} built from the same
      *                  recipe would hold
+     * @param failures  what the parser said about each {@link SourceDocument.Unparsable} source,
+     *                  which a run refusing the corpus throws with
      */
-    public record CorpusReading(List<SourceDocument> documents, List<SchemaInput> inputs) {
+    public record CorpusReading(List<SourceDocument> documents, List<SchemaInput> inputs,
+                                List<SchemaLoader.SyntaxFailure> failures) {
         public CorpusReading {
             documents = List.copyOf(documents);
             inputs = List.copyOf(inputs);
+            failures = List.copyOf(failures);
         }
     }
 
@@ -197,7 +201,7 @@ public final class GraphQLSourceCapture {
         dropMembership(dsl, graph.name(), configured);
         GraphQLSchemaProblems.writeParsed(dsl, graph.name(), parse.failures(), readAt);
         documents.sort(OLDEST_FIRST);
-        return new CorpusReading(documents, inputs);
+        return new CorpusReading(documents, inputs, parse.failures());
     }
 
     /**

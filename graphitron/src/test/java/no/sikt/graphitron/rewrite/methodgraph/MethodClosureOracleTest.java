@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite.methodgraph;
 
 import no.sikt.graphitron.model.run.GraphitronStore;
-import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
@@ -115,8 +114,7 @@ class MethodClosureOracleTest {
             OUTPUT_PACKAGE,
             TestConfiguration.DEFAULT_JOOQ_PACKAGE);
         try (var store = GraphitronStore.captured(ctx)) {
-            walk = EmittedMethodClosure.walk(new GraphQLRewriteGenerator(ctx,
-                new StoreHandle(store.dsl(), ctx.graphName())).generate().emittedUnits());
+            walk = EmittedMethodClosure.walk(new GraphQLRewriteGenerator(ctx, store).generate().emittedUnits());
         }
     }
 

@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite.classifieddsl;
 
 import no.sikt.graphitron.model.test.CorpusDocuments;
 import no.sikt.graphitron.model.run.GraphitronStore;
-import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.model.test.CapturedStore;
@@ -187,8 +186,7 @@ final class OutcomeBlockRenderer {
         Map<String, ? extends Object> units;
         try {
             try (var store = GraphitronStore.captured(ctx)) {
-                units = new GraphQLRewriteGenerator(ctx,
-                    new StoreHandle(store.dsl(), ctx.graphName())).generate().emittedUnits();
+                units = new GraphQLRewriteGenerator(ctx, store).generate().emittedUnits();
             }
         } catch (ValidationFailedException rejected) {
             // A classification fixture that pins a verdict on a pattern the build refuses. The

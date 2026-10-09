@@ -13,6 +13,7 @@ import java.sql.SQLTimeoutException;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.function.Supplier;
 
 /**
  * Opening a store and filling it, for a caller that owns both.
@@ -65,7 +66,7 @@ public final class GraphitronStore {
      *
      * @throws StoreUnavailableException if the store cannot be opened
      */
-    public static GraphitronModelStore captured(RunContext ctx) {
+    public static CapturedGraph captured(RunContext ctx) {
         var graph = new GraphIdentity(ctx.graphName(), ctx.basedir());
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         return ctx.storeDirectory() == null
@@ -118,9 +119,9 @@ public final class GraphitronStore {
      *
      * @throws StoreUnavailableException if the store cannot be opened
      */
-    public static GraphitronModelStore captured(Path directory, GraphIdentity graph,
-                                                SubjectConfig config,
-                                                List<ClasspathEntry> classpath, JooqCatalog jooq) {
+    public static CapturedGraph captured(Path directory, GraphIdentity graph,
+                                         SubjectConfig config,
+                                         List<ClasspathEntry> classpath, JooqCatalog jooq) {
         if (directory == null) {
             // No home to name is a private store that dies with the run, which is what a caller
             // with nowhere to keep facts is asking for.
@@ -129,26 +130,24 @@ public final class GraphitronStore {
         var store = at(directory);
         try {
             refuseIfOwnedElsewhere(store, graph);
-            capture(store, graph, config, classpath, jooq);
+            return new CapturedGraph(store, graph, capture(store, graph, config, classpath, jooq));
         } catch (RuntimeException | Error failure) {
             store.close();
             throw failure;
         }
-        return store;
     }
 
     /** {@link #captured} into a store that lives as long as the caller, for a run with no home. */
-    public static GraphitronModelStore capturedInMemory(GraphIdentity graph, SubjectConfig config,
-                                                        List<ClasspathEntry> classpath,
-                                                        JooqCatalog jooq) {
+    public static CapturedGraph capturedInMemory(GraphIdentity graph, SubjectConfig config,
+                                                 List<ClasspathEntry> classpath,
+                                                 JooqCatalog jooq) {
         var store = inMemory();
         try {
-            capture(store, graph, config, classpath, jooq);
+            return new CapturedGraph(store, graph, capture(store, graph, config, classpath, jooq));
         } catch (RuntimeException | Error failure) {
             store.close();
             throw failure;
         }
-        return store;
     }
 
     /**
@@ -158,12 +157,14 @@ public final class GraphitronStore {
      * <p>What each gatherer reads, and why the two compiled-code inputs are separate, is
      * {@link ModelCapture}'s. This adds the transaction and the instant: a run that fails partway
      * leaves the store as it found it, and every relation dates the same reading.
+     *
+     * @return the two schemas the capture built, as {@link ModelCapture} hands them back
      */
-    public static void capture(GraphitronModelStore store, GraphIdentity graph,
-                               SubjectConfig config, List<ClasspathEntry> classpath,
-                               JooqCatalog jooq) {
+    public static CapturedSchema capture(GraphitronModelStore store, GraphIdentity graph,
+                                         SubjectConfig config, List<ClasspathEntry> classpath,
+                                         JooqCatalog jooq) {
         var readAt = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
-        capture(graph.name(), () -> store.dsl().transaction(tx ->
+        return capture(graph.name(), () -> store.dsl().transactionResult(tx ->
             ModelCapture.capture(tx.dsl(), graph, config, classpath, jooq, readAt)));
     }
 
@@ -180,9 +181,9 @@ public final class GraphitronStore {
      * <p>A contended lock is the one write failure a person can act on. Everything else keeps the
      * driver's words, there being nothing to advise.
      */
-    public static void capture(String graphName, Runnable body) {
+    public static <T> T capture(String graphName, Supplier<T> body) {
         try {
-            body.run();
+            return body.get();
         } catch (DataAccessException failure) {
             if (!contendedLock(failure)) {
                 throw failure;

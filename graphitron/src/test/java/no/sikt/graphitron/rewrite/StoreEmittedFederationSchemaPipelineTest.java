@@ -8,7 +8,6 @@ import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.model.lint.LintConfig;
 import no.sikt.graphitron.model.lint.LintRule;
-import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.run.GraphitronStore;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.LoadingRewrites;
@@ -309,7 +308,7 @@ class StoreEmittedFederationSchemaPipelineTest {
         var recorded = new ArrayList<Boolean>();
         for (var ctx : fixtures) {
             boolean stored;
-            try (var store = GraphitronStore.captured(ctx)) {
+            try (var store = GraphitronStore.captured(ctx).store()) {
                 stored = store.dsl().fetchExists(GRAPHQL_ASSEMBLY_SYNTHESISED_LINK,
                     GRAPHQL_ASSEMBLY_SYNTHESISED_LINK.GRAPH_NAME.eq(ctx.graphName()));
             }
@@ -348,7 +347,7 @@ class StoreEmittedFederationSchemaPipelineTest {
     private static TypeDefinitionRegistry generate(RunContext ctx) throws IOException {
         GraphQLRewriteGenerator.GenerationResult result;
         try (var store = GraphitronStore.captured(ctx)) {
-            result = new GraphQLRewriteGenerator(ctx, new StoreHandle(store.dsl(), ctx.graphName()))
+            result = new GraphQLRewriteGenerator(ctx, store)
                 .generate();
         }
         Path schema = result.emitted().stream()
@@ -361,7 +360,7 @@ class StoreEmittedFederationSchemaPipelineTest {
     private static List<BuildWarning.LintFinding> narrowedFindings(RunContext ctx) {
         ValidationReport report;
         try (var store = GraphitronStore.captured(ctx)) {
-            report = new GraphQLRewriteGenerator(ctx, new StoreHandle(store.dsl(), ctx.graphName()))
+            report = new GraphQLRewriteGenerator(ctx, store)
                 .buildOutput().report();
         }
         return report.warnings().stream()

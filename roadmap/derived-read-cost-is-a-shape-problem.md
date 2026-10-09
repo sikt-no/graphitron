@@ -487,6 +487,31 @@ types and its formatter are already model-side, so what stands between here and 
   and the `VALIDATE` projection go, and with them the plugin's last use of the generator outside
   `generate` and `dev`.
 
+### The generator renders the schema capture synthesised
+
+Capture builds both schemas: the schema as written, and the post-synthesis schema the macros' rows
+make of it. The generator renders the post-synthesis schema as SDL and as the schema classes and
+wiring, generates the datafetchers and the rest from the store, and builds no schema or store of its
+own.
+
+* **The generator reads the documents once** `done`, through capture. `ModelCapture.capture` hands
+  back its reading, carrying the parser's failures and the loading rewrites' outcome, and
+  `GraphitronStore.captured` returns it beside the store as a `CapturedGraph`.
+  `CapturedSchemaAgreementTest` holds the reading equal to the generator's own.
+  * **A dev round whose capture was skipped still has a schema** `done`. The skip yields: the
+    session's generator factory captures first.
+* **Capture hands back the post-synthesis schema** `done`. `EmittedRegistry` runs as capture's last
+  step and `CapturedSchema` carries both; the generator renders the post-synthesis one and reads the
+  written one only for the walk.
+* **The schema classes and the SDL read only the post-synthesis schema** `open`.
+  `CarriesObjectForm.formOf` takes a minted type's form from the walk's own synthesis, and
+  `SchemaSdlEmitter` asks the walk which support types to drop.
+* **The datafetchers and the rest are generated from the store** `open`. `EmitPlan` reads the store
+  already; the per-type generators still take the walk's model.
+* **The generator builds no schema** `blocked`, on the three above. `KeyNodeSynthesiser`, the walk's
+  connection expansion and `AttributedRegistry` go with the walk, and `CapturedSchemaAgreementTest`
+  with `AttributedRegistry.load`.
+
 ### A capture reads only what changed
 
 * A directory can be compared at all `done`

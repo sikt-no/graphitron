@@ -4,6 +4,7 @@ import com.apollographql.federation.graphqljava.directives.LinkDirectiveProcesso
 import graphql.language.NamedNode;
 import graphql.schema.idl.TypeDefinitionRegistry;
 
+import no.sikt.graphitron.model.capture.document.GraphQLAssemblyCapture;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.grammar.NodeDeclaration;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
@@ -136,18 +137,46 @@ public record AttributedRegistry(TypeDefinitionRegistry registry,
      */
     public static AttributedRegistry load(RunContext ctx, JooqCatalog jooq) {
         var read = SchemaLoader.parsePerSource(loadableSources(ctx.schemaInputs()));
-        var composed = switch (LoadingRewrites.apply(read.registry(), ctx.schemaInputs())) {
+        var composed = applied(LoadingRewrites.apply(read.registry(), ctx.schemaInputs()));
+        return synthesised(read, composed.registry(), composed.injectedNames(), jooq);
+    }
+
+    /**
+     * The registry the run classifies, from the schema capture assembled rather than from a second
+     * reading of the documents.
+     *
+     * <p>Capture has already parsed, reduced and composed the corpus, and recorded what each stage
+     * refused; what it does not do is synthesis, which is all this adds. A refusal of the loading
+     * rewrites throws here as it does in {@link #load}, and the parser's and the reduce's refusals
+     * ride along in {@link #read} for the run to pronounce on, as they do there.
+     *
+     * <p>The reading is not edited. Synthesis runs on a copy of its composition, so one capture can
+     * serve every pass a caller runs over it.
+     */
+    public static AttributedRegistry of(GraphQLAssemblyCapture.AssemblyReading reading,
+                                        JooqCatalog jooq) {
+        var composed = applied(reading.composition());
+        // Replayed through the reduce rather than TypeDefinitionRegistry.merge, which rebuilds the
+        // parse order kind by kind and so hands back the same definitions in a different order.
+        var copy = SchemaLoader.merge(List.of(composed.registry())).registry();
+        return synthesised(reading.read(), copy, composed.injectedNames(), jooq);
+    }
+
+    /** The composed registry, or the exception the loading rewrites refused with. */
+    private static LoadingRewrites.Outcome.Applied applied(LoadingRewrites.Outcome composition) {
+        return switch (composition) {
             case LoadingRewrites.Outcome.Applied applied -> applied;
             case LoadingRewrites.Outcome.Refused refused -> throw refused.refusal().exception();
         };
-        var registry = composed.registry();
-        var injectedNames = composed.injectedNames();
-        // Everything above is a loading rewrite and everything below is synthesis, which is the
-        // line the pre-synthesis handle is cut on. The store's assembly composes the same rewrites
-        // through the same function, so the two judge one schema. TagApplier and
-        // DescriptionNoteApplier are among them: their @tag applications and appended notes are in
-        // the emitted schema and in what the store's assembly judges, though no relation
-        // transcribes them.
+    }
+
+    /** Synthesises over {@code registry} in place, keeping a read-only copy of it from before. */
+    private static AttributedRegistry synthesised(SchemaLoader.PerSourceParse read,
+                                                  TypeDefinitionRegistry registry,
+                                                  Set<String> injectedNames, JooqCatalog jooq) {
+        // The line the pre-synthesis handle is cut on: every loading rewrite is behind it, TagApplier
+        // and DescriptionNoteApplier included, and synthesis is ahead of it. Capture composes
+        // through the same rewrites, so its assembly and this handle are one schema.
         var preSynthesis = registry.readOnly();
         if (!injectedNames.isEmpty()) {
             KeyNodeSynthesiser.apply(registry, new NodeDeclaration(jooq));

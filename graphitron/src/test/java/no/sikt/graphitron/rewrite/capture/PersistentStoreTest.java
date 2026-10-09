@@ -590,7 +590,7 @@ class PersistentStoreTest {
     private static GraphitronModelStore forRun(Path directory, Path scratch) {
         CapturedStore.registryOf(scratch, SDL);
         return GraphitronStore.captured(directory, graph(scratch),
-            CapturedStore.corpusOf(scratch), List.of(), null);
+            CapturedStore.corpusOf(scratch), List.of(), null).store();
     }
 
     /**
