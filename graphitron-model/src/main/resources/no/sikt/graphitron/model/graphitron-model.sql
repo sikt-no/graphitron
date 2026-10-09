@@ -4509,7 +4509,9 @@ CREATE TABLE graphitron_directive_application (
   FOREIGN KEY (graph_name, coordinate) REFERENCES graphitron_element (graph_name, coordinate)
     ON DELETE CASCADE,
   CHECK (origin IN ('AUTHORED', 'CONFIGURED', 'MINTED')),
-  CHECK ((origin = 'AUTHORED') = (source_name IS NOT NULL))
+  -- One direction only: an application nobody wrote has no position. An authored one usually has,
+  -- but graphql_directive_application admits a positionless writer, and capture must not refuse it.
+  CHECK (origin = 'AUTHORED' OR source_name IS NULL)
 );
 COMMENT ON TABLE graphitron_directive_application IS 'Every directive application the generator emits, the author''s and the ones macro expansion minted, at the coordinate it is applied to: one row per application. For example the @key(fields: "id") federation synthesises for a node type sits here beside the @table its author wrote on it, at the same grain and answering the same questions.';
 COMMENT ON COLUMN graphitron_directive_application.graph_name IS 'the owning graph''s partition, carried from whichever set supplied the row';
@@ -4517,7 +4519,7 @@ COMMENT ON COLUMN graphitron_directive_application.coordinate IS 'the coordinate
 COMMENT ON COLUMN graphitron_directive_application.directive_name IS 'the applied directive''s name, without the leading @';
 COMMENT ON COLUMN graphitron_directive_application.ordinal IS 'the repeat within one coordinate and one directive name, numbered from zero: the author''s order on an authored application, and after every authored one on the others';
 COMMENT ON COLUMN graphitron_directive_application.origin IS 'which set supplied the row: AUTHORED where a document states the application, CONFIGURED where the configuration applies it to what a document declares, MINTED where macro expansion adds it. What the renderer reads, the registry it patches already holding the first two';
-COMMENT ON COLUMN graphitron_directive_application.source_name IS 'the file an authored application was written in; NULL on the others, which no document states, the CHECK holding the two columns together';
+COMMENT ON COLUMN graphitron_directive_application.source_name IS 'the file an authored application was written in; NULL on the others, which no document states';
 COMMENT ON COLUMN graphitron_directive_application.source_line IS 'source line of the at sign, 1-based; NULL where the application is not authored';
 COMMENT ON COLUMN graphitron_directive_application.source_column IS 'source column of the same; NULL where the application is not authored';
 COMMENT ON COLUMN graphitron_directive_application.touched_at IS 'when the reading that last wrote this row ran. Swept per graph after the reading upserts, so an application the reading stopped deriving leaves and the rest keep their rows; an element that went takes its applications with it through the cascade';

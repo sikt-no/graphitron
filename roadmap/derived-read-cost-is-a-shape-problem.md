@@ -513,7 +513,8 @@ reads nothing off the classpath that capture has already read, and builds no sch
   * **`AttributedRegistry.load` dissolves** `done`. The refusal cases and the walk's configured-tag
     cases dissolved into what the capture path already pins, the configured tags and notes are read
     off the post-synthesis schema, and `CapturedSchemaAgreementTest` went with the second reading it
-    compared.
+    compared. `EmittedRegistry`'s overloads over `AttributedRegistry`, kept alive only by tests, went
+    after it, and with them the pre-synthesis handle nothing else read.
 * **Capture hands back the post-synthesis schema** `done`. `EmittedRegistry` runs in capture and
   `CapturedSchema` carries both; the generator renders the post-synthesis one and reads the
   written one only for the walk.
@@ -549,6 +550,23 @@ reads nothing off the classpath that capture has already read, and builds no sch
 * **Its inputs are values** `open`. A `StoreHandle`, the `CapturedSchema` and the run's
   configuration; not `CapturedGraph`, which owns the store and its lifetime, so the constructor that
   takes one goes.
+* **Configured tags have one producer** `open`. `TagApplier` puts them into the written composition
+  in Java, and `graphitron_configured_tag` states the same rule in SQL for inheritance to read, so a
+  carrier's own tags and the ones its minted types inherit come from two rules nothing compares.
+  The emitted schema applies the `CONFIGURED` rows as it applies the `MINTED` ones, and the
+  configuration's rewrites leave the composition, so the written schema is what was written.
+  * **Enum values are anchored** `open`. `TagApplier` tags them and `graphitron_element` holds
+    none, so the rule cannot state their tags yet.
+  * **The `@link` a configured tag needs reaches the emitted schema** `open`. `TagLinkSynthesiser`
+    adds it in the composition today, and the tags it declares stop arriving there.
+  * **The schema classes read only the post-synthesis schema** first, see the node above: they are
+    rendered from the walk's synthesis, which inherits carriers' tags from the composition.
+  * **`DescriptionNoteApplier` follows** `open`. One producer today, but configuration applied in the
+    composition all the same.
+* **Capture's added cost is measured** `open`. Capture now also derives `graphitron_configured_tag`
+  and `graphitron_inherited_directive` and builds the post-synthesis schema, `graphitron:capture`
+  alone included, and the dev loop's classpath-change and quiet-startup rounds now capture too. The
+  builds stayed green and in their usual time; the relations themselves are untimed.
 * **The jOOQ catalog and the classpath census are read from the store** `open`. Capture has read
   both, and the generator loading the catalog by reflection and scanning the census is the same
   second read the documents had.

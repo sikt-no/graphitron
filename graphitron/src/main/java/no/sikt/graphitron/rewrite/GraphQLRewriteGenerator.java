@@ -485,11 +485,7 @@ public class GraphQLRewriteGenerator {
      * result; see the class javadoc for why there is one body rather than one per entry point.
      */
     private PassProducts runPipeline(Projection projection) {
-        // The two whole-classpath reads, hoisted above every stage that wants them so a pass pays
-        // for each exactly once: the generated jOOQ classes (loaded by reflection, and holding the
-        // per-table caches every later lookup reads) and the classpath census (a scan and parse of
-        // every consumer class). Both feed @key synthesis, the capture, the completion catalog and
-        // the detections, which used to load one apiece.
+        // The two whole-classpath reads, each paid once per pass.
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         var reading = CatalogBuilder.readExternalReferences(ctx, this.census);
         var census = reading.references();
@@ -506,17 +502,8 @@ public class GraphQLRewriteGenerator {
             : null;
         String outputPackage = ctx.outputPackage();
 
-        // Capture, validate and plan share one open store, and the order between them is this
-        // method's to state. Capture runs ahead of validation because the store-backed detections
-        // feed the error stream, so the store has to be filled before the verdict is pronounced;
-        // the plan runs after it because a producer reads what this run emits, and there is no
-        // emission for a schema validation rejected. The plan is also produced before the per-type
-        // generators run: the launcher relation's rows are read by the fetcher generator (a root
-        // coordinate with a row gets the launcher emission, one without falls through to its
-        // legacy builder), and those generators need no store, so the window closes here.
-        // The facts this run reads, and the detections over them. No window: the store is the
-        // caller's and stays open as long as the caller holds it, so there is nothing to keep open
-        // and nothing to hand back at the end of.
+        // The store's detections feed the verdict, and the plan is produced only for a schema the
+        // verdict accepts, before the per-type generators that read its launcher rows.
         var storeFacts = StoreDetections.over(store.dsl(), store.graphName(), ClassifiedRun.present());
         var captured = capturedFrom(projection, schema, attributed, bundle, federationLink,
             outputPackage, storeFacts, schemas.narrowings());

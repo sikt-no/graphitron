@@ -6,7 +6,6 @@ import graphql.language.ObjectTypeDefinition;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.model.schema.AttributedRegistry;
 import no.sikt.graphitron.model.schema.EmittedRegistry;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.test.CapturedStore;
@@ -17,7 +16,6 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -184,12 +182,12 @@ class EmittedRegistryTest {
     static void capture() {
         try (var store = CapturedStore.of(tmp.resolve("connection"), CONNECTION_SCHEMA)) {
             connectionTranscribed = store.registry();
-            connectionEmitted = EmittedRegistry.of(attributed(connectionTranscribed),
+            connectionEmitted = emitted((connectionTranscribed),
                 new StoreHandle(store.dsl(), CapturedStore.GRAPH));
         }
         try (var store = CapturedStore.of(tmp.resolve("plain"), PLAIN_SCHEMA)) {
             plainTranscribed = store.registry();
-            plainEmitted = EmittedRegistry.of(attributed(plainTranscribed),
+            plainEmitted = emitted((plainTranscribed),
                 new StoreHandle(store.dsl(), CapturedStore.GRAPH));
         }
     }
@@ -326,7 +324,7 @@ class EmittedRegistryTest {
     void aDeclaredPageInfoInheritsNoTag() {
         CapturedStore.withCapturedStore(tmp.resolve("declared-page-info"),
             DECLARED_PAGE_INFO_SCHEMA, dsl -> {
-                var emitted = EmittedRegistry.of(attributed(parse(DECLARED_PAGE_INFO_SCHEMA)),
+                var emitted = emitted((parse(DECLARED_PAGE_INFO_SCHEMA)),
                     new StoreHandle(dsl, CapturedStore.GRAPH));
 
                 assertThat(typeDirectives(emitted, "PageInfo"))
@@ -350,7 +348,7 @@ class EmittedRegistryTest {
     void aSharedMintedTypeCarriesTheIntersection() {
         CapturedStore.withCapturedStore(tmp.resolve("disagreeing-carriers"),
             DISAGREEING_CARRIERS_SCHEMA, dsl -> {
-                var emitted = EmittedRegistry.derive(attributed(parse(DISAGREEING_CARRIERS_SCHEMA)),
+                var emitted = EmittedRegistry.derive((parse(DISAGREEING_CARRIERS_SCHEMA)),
                     new StoreHandle(dsl, CapturedStore.GRAPH));
                 var registry = emitted.registry();
 
@@ -387,7 +385,7 @@ class EmittedRegistryTest {
     @DisplayName("a node type in a federation-linked graph gets the key the anchor minted")
     void theMintedKeyIsApplied() {
         CapturedStore.withCapturedStore(tmp.resolve("minted-key"), LINKED_NODE_SCHEMA, dsl -> {
-            var emitted = EmittedRegistry.of(attributed(parse(LINKED_NODE_SCHEMA)),
+            var emitted = emitted((parse(LINKED_NODE_SCHEMA)),
                 new StoreHandle(dsl, CapturedStore.GRAPH));
 
             assertThat(typeDirectives(emitted, "Film"))
@@ -400,7 +398,7 @@ class EmittedRegistryTest {
     @DisplayName("an unlinked graph has no key to apply")
     void nothingIsAppliedWithoutTheOptIn() {
         CapturedStore.withCapturedStore(tmp.resolve("unlinked"), UNLINKED_NODE_SCHEMA, dsl -> {
-            var emitted = EmittedRegistry.of(attributed(parse(UNLINKED_NODE_SCHEMA)),
+            var emitted = emitted((parse(UNLINKED_NODE_SCHEMA)),
                 new StoreHandle(dsl, CapturedStore.GRAPH));
 
             assertThat(typeDirectives(emitted, "Film")).containsExactly("@node");
@@ -417,7 +415,7 @@ class EmittedRegistryTest {
     void theAuthoredKeyIsNotReapplied() {
         CapturedStore.withCapturedStore(tmp.resolve("authored-key"), LINKED_AUTHORED_KEY_SCHEMA,
             dsl -> {
-                var emitted = EmittedRegistry.of(attributed(parse(LINKED_AUTHORED_KEY_SCHEMA)),
+                var emitted = emitted((parse(LINKED_AUTHORED_KEY_SCHEMA)),
                     new StoreHandle(dsl, CapturedStore.GRAPH));
 
                 assertThat(typeDirectives(emitted, "Film"))
@@ -435,7 +433,7 @@ class EmittedRegistryTest {
     @DisplayName("a registry already carrying the minted key is refused as a generator defect")
     void aKeyAlreadyMintedIsRefused() {
         CapturedStore.withCapturedStore(tmp.resolve("minted-twice"), LINKED_NODE_SCHEMA, dsl ->
-            assertThatThrownBy(() -> EmittedRegistry.of(attributed(parse(MINTED_KEY_SCHEMA)),
+            assertThatThrownBy(() -> emitted((parse(MINTED_KEY_SCHEMA)),
                     new StoreHandle(dsl, CapturedStore.GRAPH)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("'Film'")
@@ -444,9 +442,9 @@ class EmittedRegistryTest {
 
     // ---------------------------------------------------------------------------------------
 
-    /** A registry nothing synthesised over, whose two handles are therefore one object. */
-    private static AttributedRegistry attributed(TypeDefinitionRegistry registry) {
-        return new AttributedRegistry(registry, Set.of());
+    /** The emitted registry for the graph, derived from {@code registry}. */
+    private static TypeDefinitionRegistry emitted(TypeDefinitionRegistry registry, StoreHandle store) {
+        return EmittedRegistry.derive(registry, store).registry();
     }
 
     private static List<String> typeDirectives(TypeDefinitionRegistry registry,

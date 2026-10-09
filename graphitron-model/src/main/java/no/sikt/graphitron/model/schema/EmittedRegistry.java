@@ -37,7 +37,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_COINAGE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MINTED;
-import static org.jooq.impl.DSL.concat;
 import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.val;
@@ -95,14 +94,10 @@ import static org.jooq.impl.DSL.val;
  *
  * <h3>Which registry it starts from</h3>
  *
- * <p>The pre-synthesis one, and this class takes it off the {@link AttributedRegistry} itself
- * rather than trusting a caller to pick the handle. The other handle has already been through
- * {@code KeyNodeSynthesiser}, so starting from it applies every synthesised key a second time; the
- * choice belongs with the class that states the contract, and production and tests reach the
- * derivation through one input shape.
- *
- * <p>The registry is not modified; the patch is applied to a copy, so a caller holding the
- * read-only pre-synthesis snapshot keeps it.
+ * <p>The composition capture assembled, before any synthesis: what the store says was synthesised
+ * is applied to it here, and a registry already through {@code KeyNodeSynthesiser} would get every
+ * key a second time, which the patch refuses. The registry is not modified; the patch is applied to
+ * a copy.
  */
 public final class EmittedRegistry {
 
@@ -116,31 +111,6 @@ public final class EmittedRegistry {
     private static final String SHAREABLE_DIRECTIVE = "shareable";
 
     private EmittedRegistry() {}
-
-    /**
-     * The emitted registry for {@code store}'s graph, derived from {@code attributed}'s
-     * pre-synthesis registry.
-     *
-     * @param attributed the run's registry; a caller with no synthesis to account for wraps its
-     *                   own with {@link AttributedRegistry#AttributedRegistry(TypeDefinitionRegistry, java.util.Set)},
-     *                   whose two handles are one object
-     * @param store      the graph's own partition of the fact store
-     */
-    public static TypeDefinitionRegistry of(AttributedRegistry attributed, StoreHandle store) {
-        return derive(attributed, store).registry();
-    }
-
-    /**
-     * The emitted registry together with what deriving it narrowed, for a caller that reports on
-     * it. {@link #of} is this with the narrowings dropped.
-     *
-     * @param attributed the run's registry, as {@link #of} takes it
-     * @param store      the graph's own partition of the fact store
-     */
-    public static Emitted derive(AttributedRegistry attributed, StoreHandle store) {
-        Objects.requireNonNull(attributed, "attributed");
-        return derive(attributed.preSynthesisRegistry(), store);
-    }
 
     /**
      * The emitted registry, and every minted type whose inherited tags the carriers' disagreement
@@ -213,9 +183,9 @@ public final class EmittedRegistry {
     }
 
     /**
-     * The emitted registry for {@code store}'s graph, derived from {@code transcribed}. Capture's
-     * own entry point: the composition it assembled is pre-synthesis by construction, so there is
-     * no second handle to pick the wrong one of.
+     * The emitted registry for {@code store}'s graph, derived from {@code transcribed}, and what
+     * deriving it narrowed. Capture's entry point: the composition it assembled is pre-synthesis by
+     * construction.
      *
      * @param transcribed the registry capture wrote its facts from, which is the pre-synthesis one
      * @param store       the graph's own partition of the fact store
@@ -489,15 +459,21 @@ public final class EmittedRegistry {
     private static List<TagNarrowing> narrowings(StoreHandle store) {
         var coinage = GRAPHITRON_MINTED_COINAGE;
         var minted = GRAPHITRON_TYPE_MINTED;
+        var anchored = GRAPHITRON_FIELD;
         var field = GRAPHQL_FIELD;
+        // The carrier's own position, reached by name: the anchored field spells the coordinate's
+        // parts, and the transcription is keyed by them.
         var carriers = store.dsl()
             .select(coinage.TYPE_NAME, coinage.COORDINATE, field.SOURCE_NAME, field.SOURCE_LINE,
                 field.SOURCE_COLUMN)
             .from(coinage)
             .join(minted).on(minted.GRAPH_NAME.eq(coinage.GRAPH_NAME)
                 .and(minted.TYPE_NAME.eq(coinage.TYPE_NAME)))
-            .leftJoin(field).on(field.GRAPH_NAME.eq(coinage.GRAPH_NAME)
-                .and(concat(field.TYPE_NAME, val("."), field.FIELD_NAME).eq(coinage.COORDINATE)))
+            .leftJoin(anchored).on(anchored.GRAPH_NAME.eq(coinage.GRAPH_NAME)
+                .and(anchored.COORDINATE.eq(coinage.COORDINATE)))
+            .leftJoin(field).on(field.GRAPH_NAME.eq(anchored.GRAPH_NAME)
+                .and(field.TYPE_NAME.eq(anchored.TYPE_NAME))
+                .and(field.FIELD_NAME.eq(anchored.FIELD_NAME)))
             .where(coinage.GRAPH_NAME.eq(store.graphName()))
             .orderBy(coinage.TYPE_NAME, coinage.COORDINATE)
             .fetch();

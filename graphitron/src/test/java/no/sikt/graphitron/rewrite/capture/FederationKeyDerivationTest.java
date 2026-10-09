@@ -37,9 +37,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>What each case reads is the point. Nothing lands in the transcription or its decode for a
  * synthesized key, so those are asserted <em>empty</em> at the synthesized coordinate and the
- * membership is read from {@code graphitron_synthesized_federation_key}. At this coordinate stratum
- * one is pure transcription of the SDL, and a reader wanting every key the emitted schema carries
- * reads the {@code key} rows of {@code graphitron_directive_application}, authored and minted.
+ * membership is read from {@code graphitron_synthesized_federation_key}. What the documents say is
+ * transcribed and nothing more, and a reader wanting every key the emitted schema carries reads the
+ * {@code key} rows of {@code graphitron_directive_application}, authored and minted.
  *
  * <p>These are capture-driven cases rather than seeded ones, which is what the module boundary asks
  * for: the rule's own algebra is pinned row-in-verdict-out in {@code graphitron-model}, and what
