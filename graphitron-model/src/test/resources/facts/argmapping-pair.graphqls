@@ -44,6 +44,17 @@ type Mutation {
 
 extend type Query {
   films(filter: FilmFilter): [Film!]!
+  # A sigil written first keeps position 0, and the entry after it keeps 1: a sigil is an entry
+  # like any other, at the position the author wrote it.
+  sessionFirst: String
+    @service(service: {className: "example.Ref", method: "m", argMapping: "identity: $session, extra: someArg"})
+  # A three-name path, and a name carrying an underscore, which is a LIKE wildcard and a legal
+  # GraphQL name character at once, so a split written with the wrong operator fails here.
+  splits(filter: FilmFilter, title_or_name: String): String
+    @service(service: {className: "example.Ref", method: "m", argMapping: "name: filter.title.value, exact: title_or_name"})
+  # Empty entries do not parse, so the mapping writes none.
+  empties: String
+    @service(service: {className: "example.Ref", method: "m", argMapping: "t: ,, ."})
 }
 
 extend schema @expectEquals(relation: "graphitron_ast_argmapping_pair_entry", rows: """
@@ -56,6 +67,10 @@ extend schema @expectEquals(relation: "graphitron_ast_argmapping_pair_entry", ro
   0,        conditionOnInputField, title
   0,        pathCondition,         actorId
   0,        pCustomer,             customer
+  0,        identity,              $session
+  1,        extra,                 someArg
+  0,        name,                  filter.title.value
+  1,        exact,                 title_or_name
   """)
 
 # The parts of what an entry binds to, which the database generates from the written text: a dotted
@@ -70,6 +85,10 @@ extend schema @expectEquals(relation: "graphitron_ast_argmapping_pair_entry", ro
   conditionOnInputField, title,     ,          title
   pathCondition,         actorId,   ,          actorId
   pCustomer,             customer,  ,          customer
+  identity,              $session,  ,          $session
+  extra,                 someArg,   ,          someArg
+  name,                  filter,    filter.title, value
+  exact,                 title_or_name, ,      title_or_name
   """)
 
 # Where each mapping sits, one row per mapping that wrote an entry: the directive and its repeat,
@@ -83,4 +102,13 @@ extend schema @expectEquals(relation: "graphitron_argmapping_site", rows: """
   condition,      0,       FilmFilter.title,   INPUT_FIELD,
   reference,      0,       Actor.films,        FIELD_DEFINITION, 0
   routine,        0,       Mutation.rentFilm,  FIELD_DEFINITION,
+  service,        0,       Query.sessionFirst, FIELD_DEFINITION,
+  service,        0,       Query.splits,       FIELD_DEFINITION,
+  """)
+
+# A sigil is something a right-hand side may name, so it has a candidate at the coordinate it is
+# written for, naming a runtime value and no GraphQL type.
+extend schema @assertContains(relation: "graphitron_argmapping_candidate", rows: """
+  coordinate,         element_kind, name,     named_type, depth
+  Query.sessionFirst, SIGIL,        $session, ,           0
   """)

@@ -283,7 +283,7 @@ a derivation over either corpus alone, and `graphitron_` already does this again
         is timed on the sis and sakila stores before and after.
         * **The candidate stage seeds a sigil from what was written** `done`. Admitting a sigil is
           the site's rule, so a candidate exists wherever one is written; on sakila the two seeds
-          agree exactly, and `SessionSigilCaptureTest` captures the case.
+          agree exactly, and `argmapping-pair` states the case.
         * **The chain is keyed by the written mapping** `done`. `graphitron_argmapping_match`, the
           three `intent_argmapping_` views and `intent_resolved_node_key_projection` carry the
           mapping string's position and the entry's in place of the site literal, and the site
