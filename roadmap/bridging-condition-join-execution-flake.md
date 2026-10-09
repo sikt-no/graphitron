@@ -1,7 +1,7 @@
 ---
 id: R808
 title: "DML film_actor cases seed rows that concurrent reader cases see on -Plocal-db"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 3
 theme: testing
@@ -131,3 +131,45 @@ mean to assert.
 * *Relax the reader assertions* to containment. That gives up what the readers mean to check, that
   the join returns exactly the related rows; a reader that admitted an extra row through a broken
   predicate would pass.
+
+## Implementation notes
+
+Landed in one commit (`c1695a8`), on the plan's shape, all in `graphitron-sakila-example` test
+sources. Where it adds detail, so the Done reviewer can weigh it:
+
+* *The helper.* `DmlBulkMutationsExecutionTest.inRolledBackTransaction(Consumer<DSLContext>)` runs
+  the body in `dsl.transaction(...)` on `DSL.using(cfg)` and ends it by throwing a private
+  `RollbackSentinel` (stackless, so it costs nothing), which jOOQ turns into a rollback and the
+  helper catches. Anything else the body throws, assertion failures included, propagates as
+  itself. The three `film_actor` cases run seed, mutation and assertions inside it;
+  `cleanupFilmActor` and the `finally` blocks are gone.
+* *Threading the context.* `execute`, `executeRaw` and `run` gain a `DSLContext` overload that the
+  three cases pass the transaction's context to; the `String`-only forms delegate with the class's
+  `dsl`, so the other cases are unchanged. `seedFilmActor` and `countFilmActor` take the context
+  as a parameter.
+* *The invariant check.* `seedFilmActor` asserts the pair counts one inside the transaction and
+  zero from a second connection opened with `DSL.using(dbUrl, dbUser, dbPassword)`. The class now
+  keeps the URL and credentials it connected with (`test.db.url` or the container's), so the check
+  runs on both profiles.
+* *`junit-platform.properties`.* The "database" paragraph gains the rule: cleanup in `finally`
+  bounds what a table holds afterwards, not meanwhile, so a writer seeding rows into a table whose
+  seeded content readers assert exactly seeds them in a transaction it rolls back, with
+  `inRolledBackTransaction` named as the pattern.
+
+## Verification results
+
+* Full `mvnd install -Plocal-db` on the rebased tree: green. All three `film_actor` cases ran (none
+  among the class's six skips); `GraphQLQueryTest` 421 and `RoutineFieldExecutionTest` 17 passed
+  beside them. The first attempt failed test-compile on `-Werror` (the sentinel lacked a
+  `serialVersionUID`); the fix is in the same commit and the build resumed from
+  `graphitron-sakila-example`, every upstream module having passed on the unchanged tree.
+* The guard bites. With the single-row case's seed moved before `inRolledBackTransaction` (so it
+  autocommits), the case fails with `film_actor (1, 4) seeded inside the transaction is visible to
+  another connection`. A weaker perturbation, seeding through the class's `dsl` inside the body,
+  does not fail and should not: `DSL.using(url, ...)` holds one connection, so inside
+  `dsl.transaction` the class context is the transaction's connection and the row stays
+  uncommitted.
+
+Still owed: the next trunk CI run green. The race itself is not reproducible on demand, so the
+evidence that the readers stop flaking is the deterministic invisibility check above plus the
+absence of further one-row-too-many failures in full `-Plocal-db` builds.
