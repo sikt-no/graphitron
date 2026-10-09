@@ -25,7 +25,6 @@ import java.util.Map;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_MATCH;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -162,14 +161,11 @@ class RoutineSpentInputShadowTest {
      * spelling site and the path the author wrote.
      */
     private static Map<String, String> storeLandings(DSLContext dsl, String graphName) {
-        var e = GRAPHITRON_ARGMAPPING_ENTRY;
         var m = GRAPHITRON_ARGMAPPING_MATCH;
         var out = new LinkedHashMap<String, String>();
-        dsl.select(e.COORDINATE, e.WRITTEN_PATH, m.BOUND_PATH)
-            .from(e)
-            .join(m).on(m.GRAPH_NAME.eq(e.GRAPH_NAME)).and(m.SITE.eq(e.SITE))
-                .and(m.USE_SITE.eq(e.USE_SITE)).and(m.POSITION.eq(e.POSITION))
-            .where(e.GRAPH_NAME.eq(graphName)).and(e.SITE.eq("ROUTINE"))
+        dsl.select(m.COORDINATE, m.WRITTEN_PATH, m.BOUND_PATH)
+            .from(m)
+            .where(m.GRAPH_NAME.eq(graphName)).and(m.DIRECTIVE_NAME.eq("routine"))
             .forEach(r -> out.put(r.value1() + "|" + r.value2(), r.value3()));
         return out;
     }

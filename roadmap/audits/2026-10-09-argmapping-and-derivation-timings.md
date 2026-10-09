@@ -163,6 +163,46 @@ The 99 rows of branch 7 are the sis false positives `2026-10-01-sis-entry-defect
 counts. Neither expensive branch has been bisected further; the next axes are each CTE on its own
 and one join dropped at a time.
 
+**The new shape against the old, sis**, a fresh capture after the pair relation gained its path
+decomposition and `graphitron_argmapping_site` was added, five sweeps.
+
+| query | rows | avg | sd |
+|---|---|---|---|
+| `graphitron_argmapping_site` | 51 | 12 | 17 |
+| pairs joined to their site | 121 | 13 | 7 |
+| old entry `EXCEPT` new, on coordinate, parameter and path | 0 | 12 | 6 |
+| new `EXCEPT` old, `@externalField` left out, the old decode writing none | 0 | 11 | 3 |
+
+Every pair has its site, and the two shapes hold the same mappings, `$session` entries and
+argument coordinates included.
+
+**The chain rekeyed to the written mapping**, both stores. Each rekeyed view was created beside
+its old self under a suffix on a copy of the store (`CREATE VIEW <name>_n`, the five names
+substituted throughout), so old and new are timed in one database, interleaved, five sweeps. Old
+`EXCEPT` new and new `EXCEPT` old, on every column both shapes carry, are empty for all five views:
+51, 51, 7, 7 and 0 rows on sakila and 121, 121, 0, 0 and 0 on sis.
+
+Over the site as a view the chain was slower, the further down the more so. A third copy put the
+site's rows in a table with its key (`CREATE TABLE ... AS SELECT`, the key columns set `NOT NULL`,
+then the primary key) and the chain over it as `_t`. Averages in ms; the machine was loaded, so
+compare along a row and not with the figures above.
+
+| view | store | old | site a view | site a table |
+|---|---|---|---|---|
+| `intent_argmapping_bound_parameter_type` | sakila | 15 | 521 | 12 |
+| `intent_argmapping_key_column_candidate` | sakila | 25 | 85 | 26 |
+| `intent_resolved_node_key_projection` | sakila | 81 | 3,376 | 95 |
+| `intent_argmapping_projection_defect` | sakila | 21 | 493 | 28 |
+| `intent_argmapping_key_column_candidate` | sis | 135 | 452 | 130 |
+| `intent_resolved_node_key_projection` | sis | 92 | 370 | 111 |
+| `intent_argmapping_projection_defect` | sis | 37 | 93 | 32 |
+
+Bisected on sakila: the routine branch of `bound_parameter_type` was 244 ms where its parts
+were 40 ms (pairs joined to the site) and 1 ms (`intent_field_routine_method`). Driving the site
+view from the pairs at position 0 instead of a `DISTINCT` left it at 231 ms and the projection at
+1,230, so the driver is not the cost: H2 joins a view of joins inside each view that reads it, and
+a keyed table it can look up. The site is an anchor for that reason.
+
 ## Traps met
 
 * A store from the example's full build is the multitenant fixture's, so every argMapping relation

@@ -1,0 +1,108 @@
+# Where a written argMapping path landed against what its coordinate offers: the candidate it bound,
+# whether that carries a @nodeId, and whether one name was left past it. One row per mapping entry
+# whose path names a candidate, or names one thing beyond one; anything else names nothing at its
+# coordinate and is no row, a refusal the walk reports before the store is read.
+#
+# An ordinary binding is a row and not a gap: node_id_declared false says no decode is implied. The
+# three @nodeId readings are three answers across two columns, because a two-value fork would put
+# the bare spelling on one side and make it indistinguishable from something it is not.
+
+input RentFilmInput {
+  inventoryId: ID @nodeId(typeName: "Inventory")
+  nested: NestedInput
+}
+
+input NestedInput {
+  inventoryId: ID @nodeId(typeName: "Inventory")
+}
+
+input PlainInput {
+  inventoryId: ID
+}
+
+# A directive on the argument and one on the input field of the same name: the lookup follows what
+# the path bound, so neither answers for the other.
+input FilmTypedInput {
+  inventoryId: ID @nodeId(typeName: "Film")
+}
+
+# No argument anywhere reaches Orphan, and the path below is still spelled correctly. Candidates are
+# keyed by the coordinate a path is written from and not by who reaches it, so it resolves.
+input Orphan {
+  inner: Inner @condition(condition: {className: "example.Ref", method: "m", argMapping: "p: inner.inventoryId"})
+}
+
+input Inner {
+  inventoryId: String @nodeId(typeName: "Inventory")
+}
+
+type Mutation {
+  # A one-name path leaves the head as what bound, with nothing past it.
+  bare(inventoryId: ID @nodeId(typeName: "Inventory")): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId")
+  # A bare @nodeId declares a decode and names nothing to decode against.
+  untyped(inventoryId: ID @nodeId): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId")
+  # A dotted path onto a @nodeId input field with one name left over.
+  dotted(input: RentFilmInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId.inventory_id")
+  # The deepest candidate binds, not the first, and a descent of several levels is one row.
+  deepest(input: RentFilmInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.nested.inventoryId.inventory_id")
+  descent(input: RentFilmInput): String
+    @routine(name: "rent_film", argMapping: "pNested: input.nested.inventoryId")
+  # A head naming no argument binds nothing, and two names past a candidate is no partial binding.
+  noArgument(input: RentFilmInput): String
+    @routine(name: "rent_film", argMapping: "pNope: notAnArgument")
+  twoPast(input: RentFilmInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId.inventory_id.nope")
+  # The whole path binds an input field with no @nodeId: a row, with no decode declared.
+  ordinary(input: PlainInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId")
+  # A name naming no input field is the one name past the head, whether or not a decode was meant.
+  unknownName(input: PlainInput): String
+    @routine(name: "rent_film", argMapping: "pNope: input.nope")
+  byKind(input: FilmTypedInput @nodeId(typeName: "Inventory")): String
+    @routine(name: "rent_film", argMapping: "pDeep: input.inventoryId, pHead: input")
+  # Two applications of a repeatable directive each land on their own, as two positions of one do.
+  twice(input: RentFilmInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId.inventory_id")
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId")
+  twoPairs(input: RentFilmInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId.inventory_id, pOther: input.inventoryId")
+}
+
+type Film @table(name: "film") {
+  title: String
+  # A mapping in a @reference path element binds against the step's table and lands on nothing
+  # here, whatever it spells.
+  actors(since: ID @nodeId(typeName: "Inventory")): [Film!]!
+    @reference(path: [{table: "film", condition: {className: "example.Ref", method: "m", argMapping: "p: since"}}])
+}
+
+extend type Query {
+  # At an argument's @condition the argument it sits on is the only one in scope.
+  films(
+    byActor: ID @nodeId(typeName: "Actor") @condition(condition: {className: "example.Ref", method: "m", argMapping: "p: byActor"}),
+    other: ID @condition(condition: {className: "example.Ref", method: "m", argMapping: "p: byActor"})
+  ): [Film!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_argmapping_match", rows: """
+  coordinate,              ordinal, position, written_path,                          bound_path,               bound_kind,  bound_type_name, bound_field_name, bound_argument_name, node_id_declared, node_type_ref
+  Mutation.bare,           0,       0,        inventoryId,                           inventoryId,              ARGUMENT,    Mutation,        bare,             inventoryId,         TRUE,             Inventory
+  Mutation.untyped,        0,       0,        inventoryId,                           inventoryId,              ARGUMENT,    Mutation,        untyped,          inventoryId,         TRUE,
+  Mutation.dotted,         0,       0,        input.inventoryId.inventory_id,        input.inventoryId,        INPUT_FIELD, RentFilmInput,   inventoryId,      ,                    TRUE,             Inventory
+  Mutation.deepest,        0,       0,        input.nested.inventoryId.inventory_id, input.nested.inventoryId, INPUT_FIELD, NestedInput,     inventoryId,      ,                    TRUE,             Inventory
+  Mutation.descent,        0,       0,        input.nested.inventoryId,              input.nested.inventoryId, INPUT_FIELD, NestedInput,     inventoryId,      ,                    TRUE,             Inventory
+  Mutation.ordinary,       0,       0,        input.inventoryId,                     input.inventoryId,        INPUT_FIELD, PlainInput,      inventoryId,      ,                    FALSE,
+  Mutation.unknownName,    0,       0,        input.nope,                            input,                    ARGUMENT,    Mutation,        unknownName,      input,               FALSE,
+  Mutation.byKind,         0,       0,        input.inventoryId,                     input.inventoryId,        INPUT_FIELD, FilmTypedInput,  inventoryId,      ,                    TRUE,             Film
+  Mutation.byKind,         0,       1,        input,                                 input,                    ARGUMENT,    Mutation,        byKind,           input,               TRUE,             Inventory
+  Mutation.twice,          0,       0,        input.inventoryId.inventory_id,        input.inventoryId,        INPUT_FIELD, RentFilmInput,   inventoryId,      ,                    TRUE,             Inventory
+  Mutation.twice,          1,       0,        input.inventoryId,                     input.inventoryId,        INPUT_FIELD, RentFilmInput,   inventoryId,      ,                    TRUE,             Inventory
+  Mutation.twoPairs,       0,       0,        input.inventoryId.inventory_id,        input.inventoryId,        INPUT_FIELD, RentFilmInput,   inventoryId,      ,                    TRUE,             Inventory
+  Mutation.twoPairs,       0,       1,        input.inventoryId,                     input.inventoryId,        INPUT_FIELD, RentFilmInput,   inventoryId,      ,                    TRUE,             Inventory
+  Orphan.inner,            0,       0,        inner.inventoryId,                     inner.inventoryId,        INPUT_FIELD, Inner,           inventoryId,      ,                    TRUE,             Inventory
+  Query.films(byActor:),   0,       0,        byActor,                               byActor,                  ARGUMENT,    Query,           films,            byActor,             TRUE,             Actor
+  """)

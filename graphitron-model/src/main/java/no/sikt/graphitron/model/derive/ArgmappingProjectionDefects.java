@@ -4,8 +4,11 @@ import graphql.language.SourceLocation;
 import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.grammar.ArgMappingSigil;
+import org.jooq.Condition;
 import org.jooq.DSLContext;
+import org.jooq.Field;
 import org.jooq.Table;
+import org.jooq.impl.DSL;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -14,8 +17,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
-import static no.sikt.graphitron.model.Tables.INTENT_ARGMAPPING_BOUND_PARAMETER_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_ARGMAPPING_PROJECTION_DEFECT;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_PROJECTION;
 import static no.sikt.graphitron.model.derive.NodeIdMessages.keyColumnsOf;
@@ -69,7 +70,7 @@ import static no.sikt.graphitron.model.derive.NodeIdMessages.simpleName;
  * here and not in SQL: a projection that resolves at a site whose emitter does not read it yet, and
  * one off a list-shaped node id, are both {@link Rejection.Deferred}. Whether an emitter exists is a
  * fact about this codebase and not about the schema. {@link #EMITTING_SITES} is the first of those
- * facts, held beside the switch that names the eight sites so a value can neither be misspelled nor
+ * facts, held beside the switch that names the five sites so a value can neither be misspelled nor
  * forgotten; the second is the list shape, a coherent request naming the list of a key column across
  * the decoded ids that nothing builds yet. Both shrink as emitters land rather than being deleted,
  * and a projection either arm covers fails the build saying so, which is the honest state: emitting
@@ -80,7 +81,7 @@ import static no.sikt.graphitron.model.derive.NodeIdMessages.simpleName;
  * instead of an entry here binding it. {@link NodeIdMessages} holds what must not drift between them;
  * the remedies differ, and differ because the carrier does.
  *
- * <p>Locations are the view's: the owning directive application's own position, so a message points
+ * <p>Locations are the view's: the {@code argMapping} string's own position, so a message points
  * at the {@code argMapping} the author wrote rather than at the input type's declaration. The
  * message names the use site whenever that says more than the coordinate the error already carries,
  * which is what makes a definition-keyed remedy actionable: one input type can be consumed where
@@ -96,11 +97,10 @@ public final class ArgmappingProjectionDefects {
      * one {@link NodeIdMessages#keyColumnsOf} names on its behalf.
      */
     public static final Set<Table<?>> READS = NodeIdMessages.readsWith(
-        Set.of(INTENT_ARGMAPPING_PROJECTION_DEFECT, INTENT_RESOLVED_NODE_KEY_PROJECTION,
-            INTENT_ARGMAPPING_BOUND_PARAMETER_TYPE, GRAPHITRON_ARGMAPPING_ENTRY));
+        Set.of(INTENT_ARGMAPPING_PROJECTION_DEFECT, INTENT_RESOLVED_NODE_KEY_PROJECTION));
 
     /**
-     * The {@code site} values whose emitters read a resolved key projection: a routine IN parameter and
+     * The sites whose emitters read a resolved key projection: a routine IN parameter and
      * a {@code @condition} method parameter, both reading their column off a decoded record through
      * {@code ProjectedKeyReads}. The two condition sites are one emitter, the
      * conditions class's glue, which is why they were wired together rather than one at a time.
@@ -113,8 +113,7 @@ public final class ArgmappingProjectionDefects {
      * <p>{@code SERVICE} joins when its emitter lands. The input-field {@code @condition} stays out for
      * a different reason worth stating: its pair rows are keyed by the input type and input field, while
      * the condition row rendering it is keyed by the consuming output field, so the projection relation's
-     * coordinate never matches and the lookup misses by construction rather than by omission. The three
-     * path-step sites resolve no leaf at all and can therefore only ever defer.
+     * coordinate never matches and the lookup misses by construction rather than by omission.
      *
      * <p>The set is keyed on the site and so says nothing about whether every <em>emitter</em> at a
      * wired site reads a projection. That second question is the plan's, asked as row presence in
@@ -127,47 +126,68 @@ public final class ArgmappingProjectionDefects {
         EnumSet.of(Site.ROUTINE, Site.FIELD_CONDITION, Site.ARGUMENT_CONDITION);
 
     /**
-     * The nine {@code site} values {@code graphitron_argmapping_entry} discriminates on, each mapped to
-     * the {@link ArgMappingSigil.Site} whose description names the directive in a message. The
-     * mapping is many-to-one in both directions of reading: three SDL positions share
-     * {@code @condition} and the store tells them apart because their heads and their emitters
-     * differ, which is exactly the distinction {@link #EMITTING_SITES} needs and the coarser
-     * vocabulary cannot express.
+     * Where a mapping the projection relations read sits: each directive and element kind
+     * {@code graphitron_argmapping_match} admits, mapped to the {@link ArgMappingSigil.Site} whose
+     * description names the directive in a message. Three element kinds share {@code @condition}
+     * and are told apart because their heads and their emitters differ, which is exactly the
+     * distinction {@link #EMITTING_SITES} needs and the coarser vocabulary cannot express.
      */
     enum Site {
-        ROUTINE(ArgMappingSigil.Site.ROUTINE),
-        SERVICE(ArgMappingSigil.Site.SERVICE),
-        FIELD_CONDITION(ArgMappingSigil.Site.CONDITION),
-        INPUT_FIELD_CONDITION(ArgMappingSigil.Site.CONDITION),
-        ARGUMENT_CONDITION(ArgMappingSigil.Site.CONDITION),
-        FIELD_REFERENCE_STEP(ArgMappingSigil.Site.REFERENCE_STEP),
-        ARGUMENT_REFERENCE_STEP(ArgMappingSigil.Site.REFERENCE_STEP),
-        REFERENCE_FOR_STEP(ArgMappingSigil.Site.REFERENCE_STEP);
+        ROUTINE("routine", null, ArgMappingSigil.Site.ROUTINE),
+        SERVICE("service", null, ArgMappingSigil.Site.SERVICE),
+        FIELD_CONDITION("condition", "FIELD_DEFINITION", ArgMappingSigil.Site.CONDITION),
+        INPUT_FIELD_CONDITION("condition", "INPUT_FIELD", ArgMappingSigil.Site.CONDITION),
+        ARGUMENT_CONDITION("condition", "FIELD_ARGUMENT", ArgMappingSigil.Site.CONDITION);
 
+        private final String directiveName;
+        private final String elementKind;
         private final ArgMappingSigil.Site sigilSite;
 
-        Site(ArgMappingSigil.Site sigilSite) {
+        Site(String directiveName, String elementKind, ArgMappingSigil.Site sigilSite) {
+            this.directiveName = directiveName;
+            this.elementKind = elementKind;
             this.sigilSite = sigilSite;
         }
 
-        /** The directive as a message names it, borrowed rather than re-spelled here. */
         String description() {
             return sigilSite.description();
         }
 
-        /** The site a store row names; an unknown value is vocabulary drift, a build bug. */
-        static Site of(String site) {
+        /** Whether a row's directive and element kind are this site's. */
+        Condition is(Field<String> directiveName, Field<String> elementKind) {
+            var directive = directiveName.eq(this.directiveName);
+            return this.elementKind == null ? directive : directive.and(elementKind.eq(this.elementKind));
+        }
+
+        /** Whether a row sits at any of {@code sites}. */
+        static Condition anyOf(Set<Site> sites, Field<String> directiveName,
+                               Field<String> elementKind) {
+            return DSL.or(sites.stream().map(site -> site.is(directiveName, elementKind)).toList());
+        }
+
+        /** The site a store row names; a pair no value names is vocabulary drift, a build bug. */
+        static Site of(String directiveName, String elementKind) {
             return Arrays.stream(values())
-                .filter(s -> s.name().equals(site))
+                .filter(s -> s.directiveName.equals(directiveName)
+                    && (s.elementKind == null || s.elementKind.equals(elementKind)))
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException(
-                    "the argMapping relations produced site '" + site + "', which no "
-                    + Site.class.getSimpleName()
-                    + " value names; the view arms and the enum must move together"));
+                    "the argMapping relations produced a mapping in @" + directiveName + " on "
+                    + elementKind + ", which no " + Site.class.getSimpleName()
+                    + " value names; graphitron_argmapping_match's directive list and the enum must"
+                    + " move together"));
+        }
+
+        /**
+         * Where the mapping sits as a message names it: the element, an argument spelled without
+         * its colon, and a repeatable directive's application ordinal.
+         */
+        String useSite(String coordinate, Integer ordinal) {
+            var spelled = coordinate.replace(":)", ")");
+            return this == ROUTINE && ordinal != null ? spelled + "#" + ordinal : spelled;
         }
     }
 
-    /** Which defect, in the view's own closed vocabulary. */
     private enum Verdict {
         /**
          * A path opening something with nothing to open: an ID carrying no {@code @nodeId}, and
@@ -280,45 +300,34 @@ public final class ArgmappingProjectionDefects {
      */
     private static List<Defect> primitiveParameters(DSLContext dsl, String graphName) {
         var p = INTENT_RESOLVED_NODE_KEY_PROJECTION;
-        var bp = INTENT_ARGMAPPING_BOUND_PARAMETER_TYPE;
-        var ap = GRAPHITRON_ARGMAPPING_ENTRY;
-        return dsl.selectDistinct(p.SITE, p.USE_SITE, p.TYPE_NAME, p.FIELD_NAME, p.POSITION,
-                p.WRITTEN_PATH, p.NODE_TYPE_NAME, p.COLUMN_NAME, bp.PARAMETER_TYPE, ap.PARAM_NAME,
-                ap.SOURCE_NAME, ap.SOURCE_LINE, ap.SOURCE_COLUMN)
+        return dsl.selectDistinct(p.DIRECTIVE_NAME, p.ELEMENT_KIND, p.COORDINATE, p.ORDINAL,
+                p.TYPE_NAME, p.FIELD_NAME, p.POSITION, p.WRITTEN_PATH, p.NODE_TYPE_NAME,
+                p.COLUMN_NAME, p.PARAMETER_TYPE, p.PARAM_NAME,
+                p.SOURCE_NAME, p.SOURCE_LINE, p.SOURCE_COLUMN)
             .from(p)
-            .join(ap).on(ap.GRAPH_NAME.eq(p.GRAPH_NAME), ap.SITE.eq(p.SITE),
-                ap.USE_SITE.eq(p.USE_SITE), ap.POSITION.eq(p.POSITION))
-            .join(bp).on(bp.GRAPH_NAME.eq(p.GRAPH_NAME), bp.SITE.eq(p.SITE),
-                bp.USE_SITE.eq(p.USE_SITE), bp.POSITION.eq(p.POSITION), bp.CANDIDATES.eq(1))
-            .where(p.GRAPH_NAME.eq(graphName), bp.JAVA_TYPE.isNull(),
-                bp.PARAMETER_TYPE.in(BOXED_BY_PRIMITIVE.keySet()))
-            .orderBy(p.TYPE_NAME, p.FIELD_NAME, p.USE_SITE, p.POSITION)
+            .where(p.GRAPH_NAME.eq(graphName), p.PARAM_JAVA_TYPE.isNull(),
+                p.PARAMETER_TYPE.in(BOXED_BY_PRIMITIVE.keySet()))
+            .orderBy(p.TYPE_NAME, p.FIELD_NAME, p.COORDINATE, p.ORDINAL, p.POSITION)
             .fetch(row -> {
-                var site = Site.of(row.get(p.SITE));
-                var entry = entry(site, row.get(p.USE_SITE), row.get(p.TYPE_NAME),
-                    row.get(p.FIELD_NAME), row.get(ap.PARAM_NAME), row.get(p.WRITTEN_PATH));
-                String primitive = row.get(bp.PARAMETER_TYPE);
+                var site = Site.of(row.get(p.DIRECTIVE_NAME), row.get(p.ELEMENT_KIND));
+                var useSite = site.useSite(row.get(p.COORDINATE), row.get(p.ORDINAL));
+                var entry = entry(site, useSite, row.get(p.TYPE_NAME),
+                    row.get(p.FIELD_NAME), row.get(p.PARAM_NAME), row.get(p.WRITTEN_PATH));
+                String primitive = row.get(p.PARAMETER_TYPE);
                 return new Defect(
                     row.get(p.TYPE_NAME) + "." + row.get(p.FIELD_NAME),
-                    row.get(p.USE_SITE), row.get(ap.PARAM_NAME), row.get(p.WRITTEN_PATH), false,
+                    useSite, row.get(p.PARAM_NAME), row.get(p.WRITTEN_PATH), false,
                     Rejection.structural(entry + " projects '" + row.get(p.COLUMN_NAME)
                         + "' of '" + row.get(p.NODE_TYPE_NAME) + "', but the parameter it binds to"
                         + " is declared " + primitive + "; an omitted or null @nodeId anywhere on"
                         + " that path projects null, so the projected read is boxed at every path"
                         + " shape and a primitive parameter cannot take it. Declare it "
                         + BOXED_BY_PRIMITIVE.get(primitive)),
-                    location(row.get(ap.SOURCE_NAME), row.get(ap.SOURCE_LINE),
-                        row.get(ap.SOURCE_COLUMN)));
+                    location(row.get(p.SOURCE_NAME), row.get(p.SOURCE_LINE),
+                        row.get(p.SOURCE_COLUMN)));
             });
     }
 
-    /**
-     * The eight primitive spellings a declared parameter type can carry, each beside the type an
-     * author declares instead. A closed vocabulary, and the erased source form is what it is tested
-     * against rather than the absent declared-type root: that absence is equally an array or a type
-     * variable, and refusing one of those with "declare Integer" would name the wrong fact and offer
-     * a remedy that does not apply. Those two keep the compiler as the backstop they already had.
-     */
     private static final Map<String, String> BOXED_BY_PRIMITIVE = Map.of(
         "boolean", "Boolean", "byte", "Byte", "char", "Character", "short", "Short",
         "int", "Integer", "long", "Long", "float", "Float", "double", "Double");
@@ -328,14 +337,15 @@ public final class ArgmappingProjectionDefects {
         var v = INTENT_ARGMAPPING_PROJECTION_DEFECT;
         return dsl.selectFrom(v)
             .where(v.GRAPH_NAME.eq(graphName))
-            .orderBy(v.TYPE_NAME, v.FIELD_NAME, v.USE_SITE, v.POSITION)
+            .orderBy(v.TYPE_NAME, v.FIELD_NAME, v.COORDINATE, v.ORDINAL, v.POSITION)
             .fetch(row -> {
-                var site = Site.of(row.getSite());
-                var entry = entry(site, row.getUseSite(), row.getTypeName(), row.getFieldName(),
+                var site = Site.of(row.getDirectiveName(), row.getElementKind());
+                var useSite = site.useSite(row.getCoordinate(), row.getOrdinal());
+                var entry = entry(site, useSite, row.getTypeName(), row.getFieldName(),
                     row.getParamName(), row.getWrittenPath());
                 return new Defect(
                     row.getTypeName() + "." + row.getFieldName(),
-                    row.getUseSite(), row.getParamName(), row.getWrittenPath(), false,
+                    useSite, row.getParamName(), row.getWrittenPath(), false,
                     rejectionOf(Verdict.of(row.getVerdict()), entry, row.getNodeTypeRef(),
                         row.getTrailingName(),
                         keyColumnsOf(dsl, graphName, row.getNodeTypeRef()),
@@ -360,23 +370,22 @@ public final class ArgmappingProjectionDefects {
      */
     private static List<Defect> unemittableProjections(DSLContext dsl, String graphName) {
         var p = INTENT_RESOLVED_NODE_KEY_PROJECTION;
-        var ap = GRAPHITRON_ARGMAPPING_ENTRY;
-        return dsl.selectDistinct(p.SITE, p.USE_SITE, p.TYPE_NAME, p.FIELD_NAME, p.POSITION,
-                p.WRITTEN_PATH, p.NODE_TYPE_NAME, p.LEAF_IS_LIST, ap.PARAM_NAME,
-                ap.SOURCE_NAME, ap.SOURCE_LINE, ap.SOURCE_COLUMN)
+        return dsl.selectDistinct(p.DIRECTIVE_NAME, p.ELEMENT_KIND, p.COORDINATE, p.ORDINAL,
+                p.TYPE_NAME, p.FIELD_NAME, p.POSITION, p.WRITTEN_PATH, p.NODE_TYPE_NAME,
+                p.LEAF_IS_LIST, p.PARAM_NAME, p.SOURCE_NAME, p.SOURCE_LINE, p.SOURCE_COLUMN)
             .from(p)
-            .join(ap).on(ap.GRAPH_NAME.eq(p.GRAPH_NAME), ap.SITE.eq(p.SITE),
-                ap.USE_SITE.eq(p.USE_SITE), ap.POSITION.eq(p.POSITION))
             .where(p.GRAPH_NAME.eq(graphName))
-            .orderBy(p.TYPE_NAME, p.FIELD_NAME, p.USE_SITE, p.POSITION)
+            .orderBy(p.TYPE_NAME, p.FIELD_NAME, p.COORDINATE, p.ORDINAL, p.POSITION)
             .fetch()
             .stream()
             .filter(row -> Boolean.TRUE.equals(row.get(p.LEAF_IS_LIST))
-                || !EMITTING_SITES.contains(Site.of(row.get(p.SITE))))
+                || !EMITTING_SITES.contains(Site.of(row.get(p.DIRECTIVE_NAME),
+                    row.get(p.ELEMENT_KIND))))
             .map(row -> {
-                var site = Site.of(row.get(p.SITE));
-                var entry = entry(site, row.get(p.USE_SITE), row.get(p.TYPE_NAME),
-                    row.get(p.FIELD_NAME), row.get(ap.PARAM_NAME), row.get(p.WRITTEN_PATH));
+                var site = Site.of(row.get(p.DIRECTIVE_NAME), row.get(p.ELEMENT_KIND));
+                var useSite = site.useSite(row.get(p.COORDINATE), row.get(p.ORDINAL));
+                var entry = entry(site, useSite, row.get(p.TYPE_NAME),
+                    row.get(p.FIELD_NAME), row.get(p.PARAM_NAME), row.get(p.WRITTEN_PATH));
                 // The list reason is reported ahead of the unwired-site one where both hold: it is
                 // the shape the author can act on, an unwired site being nothing they control.
                 String why = Boolean.TRUE.equals(row.get(p.LEAF_IS_LIST))
@@ -387,10 +396,10 @@ public final class ArgmappingProjectionDefects {
                       + "', which no emitter reads at this site yet";
                 return new Defect(
                     row.get(p.TYPE_NAME) + "." + row.get(p.FIELD_NAME),
-                    row.get(p.USE_SITE), row.get(ap.PARAM_NAME), row.get(p.WRITTEN_PATH), true,
+                    useSite, row.get(p.PARAM_NAME), row.get(p.WRITTEN_PATH), true,
                     Rejection.deferred(entry + why),
-                    location(row.get(ap.SOURCE_NAME), row.get(ap.SOURCE_LINE),
-                        row.get(ap.SOURCE_COLUMN)));
+                    location(row.get(p.SOURCE_NAME), row.get(p.SOURCE_LINE),
+                        row.get(p.SOURCE_COLUMN)));
             })
             .toList();
     }

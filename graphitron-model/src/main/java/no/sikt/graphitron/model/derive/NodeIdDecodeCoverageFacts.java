@@ -52,17 +52,6 @@ public final class NodeIdDecodeCoverageFacts {
         INTENT_INPUT_OCCURRENCE_PATH_STEP, INTENT_RESOLVED_NODE_KEY_PROJECTION);
 
     /**
-     * The {@code site} values whose emitters read a resolved key projection, mirroring
-     * {@link ArgmappingProjectionDefects#EMITTING_SITES} rather than restating it. The same
-     * declaration, so a site joining that set joins this rail's population in the same edit: read
-     * off a second list here, this rule would go quiet exactly where the new emitter starts
-     * installing decodes.
-     */
-    private static final Set<String> PROJECTED_INSTALL_SITES =
-        ArgmappingProjectionDefects.EMITTING_SITES.stream().map(Enum::name)
-            .collect(java.util.stream.Collectors.toUnmodifiableSet());
-
-    /**
      * One authored decoding instruction at one use site: where it is, what node type it decodes
      * against, and where the author wrote it. The unit the coverage rule subtracts the ledger from.
      */
@@ -160,10 +149,11 @@ public final class NodeIdDecodeCoverageFacts {
      * where nothing was installed: a silent miss of exactly the class this rule exists to close,
      * arriving through the keying axis.
      *
-     * <p>Narrowed on {@link #PROJECTED_INSTALL_SITES}, so what counts as an install here is the
-     * same declaration that decides which sites the emitters are wired for. Presence in the view
-     * alone would not do: it resolves a projection at every site, and what leaves only the emitting
-     * ones is that {@link ArgmappingProjectionDefects} has already failed the build for the rest.
+     * <p>Narrowed on {@link ArgmappingProjectionDefects#EMITTING_SITES} rather than a list of its
+     * own, so what counts as an install here is the same declaration that decides which sites the
+     * emitters are wired for. Presence in the view alone would not do: it resolves a projection at
+     * every site, and what leaves only the emitting ones is that {@link ArgmappingProjectionDefects}
+     * has already failed the build for the rest.
      */
     private static Set<NodeIdDecodeCoordinate> projectedInstalls(DSLContext dsl, String graphName) {
         var v = INTENT_RESOLVED_NODE_KEY_PROJECTION;
@@ -171,7 +161,8 @@ public final class NodeIdDecodeCoverageFacts {
         dsl.selectDistinct(v.BOUND_KIND, v.BOUND_TYPE_NAME, v.BOUND_FIELD_NAME,
                 v.BOUND_ARGUMENT_NAME, v.TYPE_NAME, v.FIELD_NAME)
             .from(v)
-            .where(v.GRAPH_NAME.eq(graphName), v.SITE.in(PROJECTED_INSTALL_SITES))
+            .where(v.GRAPH_NAME.eq(graphName), ArgmappingProjectionDefects.Site.anyOf(
+                ArgmappingProjectionDefects.EMITTING_SITES, v.DIRECTIVE_NAME, v.ELEMENT_KIND))
             .forEach(row -> {
                 if ("ARGUMENT".equals(row.value1())) {
                     out.add(new NodeIdDecodeCoordinate.Argument(

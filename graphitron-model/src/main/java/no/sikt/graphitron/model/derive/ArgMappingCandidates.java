@@ -5,7 +5,8 @@ import org.jooq.DSLContext;
 import java.util.ArrayList;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_CANDIDATE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_SITE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ARGMAPPING_PAIR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT;
@@ -272,22 +273,24 @@ public final class ArgMappingCandidates {
      * way; what it is not is a position on the input surface, which is why it has no named type and
      * why nothing descends from it.
      *
-     * <p>Seeded from the entries rather than from a vocabulary, so which sites admit a sigil stays
-     * one rule in {@code ArgMappingSigil} and is never restated here. An entry at a site that does
-     * not admit one is rejected at parse and never reaches this relation, so a candidate exists
-     * exactly where a sigil was both admitted and written. DISTINCT because one site may bind the
-     * same sigil to several parameters, which is several entries and one candidate. A sigil begins
-     * with a character no GraphQL name may begin with, so it collides with nothing here.
+     * <p>Seeded from what the entries were written as rather than from a vocabulary, so a sigil is
+     * a candidate wherever an author wrote one. Which sites admit it is the site's rule and not the
+     * string's, so it is not restated here. DISTINCT because one site may bind the same sigil to
+     * several parameters, which is several entries and one candidate. A sigil begins with a
+     * character no GraphQL name may begin with, so it collides with nothing here.
      */
     private static void seedSigilRoots(DSLContext dsl, String graphName) {
-        var e = GRAPHITRON_ARGMAPPING_ENTRY;
+        var p = GRAPHITRON_AST_ARGMAPPING_PAIR_ENTRY;
+        var s = GRAPHITRON_ARGMAPPING_SITE;
         dsl.insertInto(GRAPHITRON_ARGMAPPING_CANDIDATE, columns())
-            .select(dsl.selectDistinct(e.GRAPH_NAME, e.COORDINATE, e.WRITTEN_PATH,
-                    inline((String) null), e.TAIL_NAME, val("SIGIL"),
+            .select(dsl.selectDistinct(p.GRAPH_NAME, s.COORDINATE, p.BOUND_TO,
+                    inline((String) null), p.TAIL_NAME, val("SIGIL"),
                     inline((String) null), inline((String) null), val(false), val(0),
                     val(false), val(false), val(false))
-                .from(e)
-                .where(e.GRAPH_NAME.eq(graphName).and(e.WRITTEN_PATH.startsWith("$"))))
+                .from(p)
+                .join(s).on(s.GRAPH_NAME.eq(p.GRAPH_NAME), s.SOURCE_NAME.eq(p.SOURCE_NAME),
+                    s.SOURCE_LINE.eq(p.SOURCE_LINE), s.SOURCE_COLUMN.eq(p.SOURCE_COLUMN))
+                .where(p.GRAPH_NAME.eq(graphName).and(p.BOUND_TO.startsWith("$"))))
             .execute();
     }
 

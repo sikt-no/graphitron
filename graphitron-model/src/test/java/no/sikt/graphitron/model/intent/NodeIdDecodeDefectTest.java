@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_ARGMAPPING_PROJECTION_DEFECT;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_DECODE;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_DECODE_DEFECT;
 import static no.sikt.graphitron.model.test.SeededStore.OccurrenceStep;
@@ -30,7 +29,6 @@ import static no.sikt.graphitron.model.test.SeededStore.seedNodeKeyColumnRef;
 import static no.sikt.graphitron.model.test.SeededStore.seedOccurrencePath;
 import static no.sikt.graphitron.model.test.SeededStore.seedPrimaryKey;
 import static no.sikt.graphitron.model.test.SeededStore.seedService;
-import static no.sikt.graphitron.model.test.SeededStore.seedServiceArgmappingEntry;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedTable;
 import static no.sikt.graphitron.model.test.SeededStore.seedTableBinding;
@@ -55,9 +53,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * mapped parameter, which the pair-grain {@code argMapping} family judges already and with a better
  * message; an input-field slot, where the value lands inside a container and no comparison this
  * relation can make is an author error; and an operand no census or catalog could read, where
- * refusing would close a coordinate on the strength of a missing fact. Each has a case, and the
- * mapped one asserts the other family's row as well, so the boundary is pinned from both sides
- * rather than asserted as an absence here.
+ * refusing would close a coordinate on the strength of a missing fact. Each has a case. The mapped
+ * one is the fact document {@code node-id-decode-mapped-parameter.graphqls}, which asserts the other
+ * family's row as well, so the boundary is pinned from both sides rather than asserted as an
+ * absence.
  */
 class NodeIdDecodeDefectTest {
 
@@ -350,30 +349,6 @@ class NodeIdDecodeDefectTest {
     // ===== The populations this relation may not judge =====
 
     /**
-     * The same type disagreement reached through an {@code argMapping} entry is the pair-grain
-     * family's, and the case asserts both halves of that boundary: no row here, and the row there.
-     * Two verdicts for one fact is the failure this exclusion exists to prevent, and it would be
-     * invisible in a case that only asserted the absence.
-     */
-    @Test
-    void aMappedParameterIsTheArgmappingFamilysToJudge() {
-        withCatalog(dsl -> {
-            seedNodeType(dsl, "Film", "film");
-            seedField(dsl, GRAPH, "Query", "films", "Film", true);
-            seedArgumentNodeId(dsl, GRAPH, "Query", "films", "ids", "Film");
-            seedProducer(dsl, "Query", "films", "filmId", "java.lang.Long");
-            seedServiceArgmappingEntry(dsl, GRAPH, "Query", "films", 0, "filmId", "ids");
-
-            assertThat(rows(dsl)).isEmpty();
-            // The other family's use site is the directive application's coordinate and this one's
-            // is the argument, which is why the boundary is drawn on the carrier rather than by
-            // joining the two use sites: the same fault is keyed differently on each side.
-            assertThat(argmappingVerdicts(dsl))
-                .containsExactly("Query.films KEY_COLUMN_TYPE_MISMATCH");
-        });
-    }
-
-    /**
      * An overloaded producer resolves several candidate slots and no destination, and draws no
      * verdict here either. Not a silence: the reference itself is refused where references are
      * resolved, so the coordinate never reaches emission, and a verdict here would answer a question
@@ -569,17 +544,5 @@ class NodeIdDecodeDefectTest {
             .fetch()
             .map(row -> row.get(d.USE_SITE) + " " + row.get(d.NODE_TYPE_NAME) + " "
                 + row.get(d.DESTINATION) + " " + row.get(d.ARITY));
-    }
-
-    /** The pair-grain family's own verdicts, for the one case whose subject is the boundary. */
-    private static List<String> argmappingVerdicts(DSLContext dsl) {
-        derive(dsl);
-        var p = INTENT_ARGMAPPING_PROJECTION_DEFECT;
-        return dsl.select(p.USE_SITE, p.VERDICT)
-            .from(p)
-            .where(p.GRAPH_NAME.eq(GRAPH))
-            .orderBy(p.USE_SITE, p.VERDICT)
-            .fetch()
-            .map(row -> row.get(p.USE_SITE) + " " + row.get(p.VERDICT));
     }
 }

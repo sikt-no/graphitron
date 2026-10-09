@@ -174,29 +174,6 @@ class NodeIdDecodeDestinationTest {
     }
 
     /**
-     * The same coordinate reached the other way: an {@code argMapping} entry names the parameter, so
-     * the pair answers rather than the name match. Both carriers are one destination and the case
-     * pins that they do not both fire, the name match standing aside where a pair claims the
-     * parameter.
-     */
-    @Test
-    void anArgumentMappedToAParameterDescendsIntoItOnce() {
-        withCatalog(dsl -> {
-            seedNodeType(dsl, "Film", "film");
-            seedField(dsl, GRAPH, "Query", "films", "Film", true);
-            seedArgumentNodeId(dsl, GRAPH, "Query", "films", "ids", "Film");
-            seedProducer(dsl, "Query", "films", "filmId", "java.lang.String");
-            seedServiceArgmappingEntry(dsl, GRAPH, "Query", "films", 0, "filmId", "ids");
-
-            assertThat(slots(dsl)).containsExactly(
-                "Query.films(ids) MAPPED_PARAMETER filmId java.lang.String"
-                    + " root Query.films(ids) candidates 1");
-            assertThat(destinations(dsl))
-                .containsExactly("Query.films(ids) Film SINGLE_KEY_COLUMN 1");
-        });
-    }
-
-    /**
      * A parameter an {@code argMapping} entry redirects to some other argument is not the slot for
      * this one, even though its name matches. The absence is read on the parameter rather than on the
      * argument for exactly this shape, and without that reading the decode would claim a parameter

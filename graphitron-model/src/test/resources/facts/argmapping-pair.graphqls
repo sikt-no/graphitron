@@ -57,3 +57,30 @@ extend schema @expectEquals(relation: "graphitron_ast_argmapping_pair_entry", ro
   0,        pathCondition,         actorId
   0,        pCustomer,             customer
   """)
+
+# The parts of what an entry binds to, which the database generates from the written text: a dotted
+# path has a root, a head and a tail, and a one-segment value is its own root and tail.
+extend schema @expectEquals(relation: "graphitron_ast_argmapping_pair_entry", rows: """
+  param_name,            root_name, head_path, tail_name
+  serviceInput,          input,     input,     value
+  serviceSession,        $session,  ,          $session
+  externalFieldParam,    film,      ,          film
+  conditionOnArgument,   name,      ,          name
+  conditionOnField,      name,      ,          name
+  conditionOnInputField, title,     ,          title
+  pathCondition,         actorId,   ,          actorId
+  pCustomer,             customer,  ,          customer
+  """)
+
+# Where each mapping sits, one row per mapping that wrote an entry: the directive and its repeat,
+# the element and its kind, and the path step where the reference is a path element's.
+extend schema @expectEquals(relation: "graphitron_argmapping_site", rows: """
+  directive_name, ordinal, coordinate,         element_kind,     step_position
+  service,        0,       Film.rating,        FIELD_DEFINITION,
+  externalField,  0,       Film.lengthBand,    FIELD_DEFINITION,
+  condition,      0,       Film.actors(name:), FIELD_ARGUMENT,
+  condition,      0,       Film.actors,        FIELD_DEFINITION,
+  condition,      0,       FilmFilter.title,   INPUT_FIELD,
+  reference,      0,       Actor.films,        FIELD_DEFINITION, 0
+  routine,        0,       Mutation.rentFilm,  FIELD_DEFINITION,
+  """)

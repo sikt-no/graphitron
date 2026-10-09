@@ -192,6 +192,20 @@ public final class FilmReviewService {
     }
 
     /**
+     * The mapped list twin of {@link #assignOccupantByArgument}: an argMapping entry hands the
+     * argument's decoded records to a parameter named for neither, each element decoded on its own
+     * prefix.
+     */
+    public static String assignOccupantsByMapping(java.util.List<org.jooq.UpdatableRecord<?>> keys) {
+        if (keys == null) {
+            return "none";
+        }
+        return "occupants:" + keys.stream()
+            .map(FilmReviewService::describeOccupant)
+            .collect(java.util.stream.Collectors.joining(","));
+    }
+
+    /**
      * One decoded occupant as the fixtures report it: the record's runtime class, then its loaded key
      * column. Dispatching on {@code instanceof} rather than reading the key generically is the point
      * of the shape being tested: what the polymorphic decode delivers is a typed record, so a service

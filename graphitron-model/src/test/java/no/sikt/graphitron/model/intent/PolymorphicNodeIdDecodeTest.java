@@ -38,7 +38,6 @@ import static no.sikt.graphitron.model.test.SeededStore.seedOccurrencePath;
 import static no.sikt.graphitron.model.test.SeededStore.seedPrimaryKey;
 import static no.sikt.graphitron.model.test.SeededStore.seedRecordSupertypes;
 import static no.sikt.graphitron.model.test.SeededStore.seedService;
-import static no.sikt.graphitron.model.test.SeededStore.seedServiceArgmappingEntry;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedTable;
 import static no.sikt.graphitron.model.test.SeededStore.seedTableBinding;
@@ -329,27 +328,6 @@ class PolymorphicNodeIdDecodeTest {
             seedUnion(dsl);
             seedListArgument(dsl, GRAPH, "Query", "occupants", "occupant", "ID");
             seedProducerSlot(dsl, "occupant", Map.of("", "java.util.List", "0", UPDATABLE));
-            seedArgumentNodeId(dsl, GRAPH, "Query", "occupants", "occupant", "AddressOccupant");
-
-            assertThat(destinations(dsl)).containsExactly(
-                "Query.occupants(occupant) Customer POLYMORPHIC_RECORD 1",
-                "Query.occupants(occupant) Staff POLYMORPHIC_RECORD 1");
-            assertThat(polymorphicDefects(dsl)).isEmpty();
-        });
-    }
-
-    /**
-     * The same reached through an {@code argMapping} pair, the mapped carrier this view also reads:
-     * the pair's parameter type relation carries the peel the named arm reads off the parameter row,
-     * so both carriers judge the slot on one fact.
-     */
-    @Test
-    void aMappedListOfARecordSupertypeIsAssignableFromEveryMembersRecord() {
-        withCatalog(dsl -> {
-            seedUnion(dsl);
-            seedListArgument(dsl, GRAPH, "Query", "occupants", "occupant", "ID");
-            seedProducerSlot(dsl, "keys", Map.of("", "java.util.List", "0", UPDATABLE));
-            seedServiceArgmappingEntry(dsl, GRAPH, "Query", "occupants", 0, "keys", "occupant");
             seedArgumentNodeId(dsl, GRAPH, "Query", "occupants", "occupant", "AddressOccupant");
 
             assertThat(destinations(dsl)).containsExactly(

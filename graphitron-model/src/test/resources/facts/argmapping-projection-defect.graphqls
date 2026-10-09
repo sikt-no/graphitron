@@ -1,0 +1,126 @@
+# What is wrong with an argMapping binding that opens past what it bound: five verdicts, one row per
+# defective entry, and no row for a binding that is fine. The count of names past the bound element
+# picks the arm, so the arms are disjoint: none past is BARE_NODE_ID where no column can be inferred,
+# one past is MISSING_TYPE_NAME, UNKNOWN_KEY_COLUMN or UNDECLARED_NODE_ID by what the element
+# declares, and KEY_COLUMN_TYPE_MISMATCH is a key column the parameter cannot take, named or
+# inferred. Two names past is no row: it names nothing at the coordinate, a refusal reported before.
+
+type Inventory @table(name: "inventory") @node(keyColumns: ["inventory_id"]) {
+  inventoryId: Int @field(name: "inventory_id")
+}
+
+# Two key columns, so a binding naming neither has nothing to infer.
+type FilmActor @table(name: "film_actor") @node(keyColumns: ["actor_id", "film_id"]) {
+  actorId: Int @field(name: "actor_id")
+}
+
+# No primary key and no pin: no key columns on any tier, and the bare and unknown forms still report.
+type FilmListEntry @table(name: "film_list") @node {
+  title: String
+}
+
+input InventoryInput { inventoryId: ID @nodeId(typeName: "Inventory") }
+input FilmActorInput { inventoryId: ID @nodeId(typeName: "FilmActor") }
+input FilmListInput { id: ID @nodeId(typeName: "FilmListEntry") }
+input UntypedInput { inventoryId: ID @nodeId }
+input PlainInput { inventoryId: ID, note: String }
+
+# The arm is picked by the count of names past the node id, so three spellings at three positions of
+# one application are three verdicts.
+input MixedInput {
+  inventoryId: ID @nodeId(typeName: "FilmActor")
+  bareId: ID @nodeId
+}
+
+type Mutation {
+  bare(input: FilmActorInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId")
+  bareArgument(inventoryId: ID @nodeId(typeName: "FilmActor")): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId")
+  bareUntyped(input: UntypedInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId")
+  bareKeyless(input: FilmListInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.id")
+  # A one-column key is inferred, not reported.
+  inferred(input: InventoryInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId")
+  # An inferred column the parameter cannot take is the mismatch all the same, with no name spelled.
+  inferredMismatch(input: InventoryInput): String
+    @routine(name: "create_secure_note", argMapping: "pOwner: input.inventoryId")
+  mismatch(input: InventoryInput): String
+    @routine(name: "create_secure_note", argMapping: "pOwner: input.inventoryId.inventory_id")
+  # A routine the catalog lacks types no parameter, which is no mismatch.
+  untypedParameter(input: InventoryInput): String
+    @routine(name: "no_such_routine", argMapping: "pInventoryId: input.inventoryId.inventory_id")
+  missingTypeName(input: UntypedInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId.inventory_id")
+  unknownColumn(input: InventoryInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId.no_such_column")
+  unknownKeyless(input: FilmListInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.id.nope")
+  # Case-insensitive, so the other spelling of a key column is that column.
+  otherSpelling(input: InventoryInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId.INVENTORY_ID")
+  # Opening an ID that declares no @nodeId, and opening a String: one arm, two remedies, told apart
+  # by leaf_named_type.
+  undeclared(input: PlainInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId.inventory_id")
+  undeclaredString(input: PlainInput): String
+    @routine(name: "rent_film", argMapping: "pNote: input.note.nope")
+  byCount(input: MixedInput): String
+    @routine(name: "rent_film", argMapping: "pBare: input.inventoryId, pUnknown: input.inventoryId.nope, pUntyped: input.bareId.inventory_id")
+  # Two applications of a repeatable directive are two rows, each at its own mapping.
+  twice(input: FilmActorInput): String
+    @routine(name: "rent_film", argMapping: "pFirst: input.inventoryId")
+    @routine(name: "rent_film", argMapping: "pSecond: input.inventoryId")
+  # What is fine is no row: a projection that resolves, an ordinary binding, two names past, and a
+  # head naming nothing.
+  resolves(input: InventoryInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId.inventory_id")
+  ordinary(input: PlainInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId")
+  twoPast(input: InventoryInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId.inventory_id.nope")
+  noSlot(input: InventoryInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: notAnArgument.inventory_id")
+}
+
+type Film @table(name: "film") {
+  title: String
+  # A @service and an argument's @condition report as the routine does.
+  rentals(
+    byInventory: ID @nodeId(typeName: "FilmActor") @condition(condition: {className: "example.Ref", method: "m", argMapping: "p: byInventory"}),
+    # Only the argument the condition sits on is in scope, so the sibling's id is not this pair's.
+    other: ID @nodeId(typeName: "FilmActor") @condition(condition: {className: "example.Ref", method: "m", argMapping: "p: byInventory"})
+  ): [Film!]!
+  # A mapping in a @reference path element binds against the step's table and reports nothing here.
+  actors(byInventory: ID @nodeId(typeName: "Inventory")): [Film!]!
+    @reference(path: [{table: "film", condition: {className: "example.Ref", method: "m", argMapping: "p: byInventory.nope"}}])
+}
+
+extend type Query {
+  films(input: FilmActorInput): [Film!]!
+    @service(service: {className: "example.Ref", method: "m", argMapping: "javaParam: input.inventoryId"})
+}
+
+extend schema @expectEquals(relation: "intent_argmapping_projection_defect", rows: """
+  coordinate,                 directive_name, ordinal, position, param_name,   written_path,                     verdict,                  bound_kind,  node_type_ref, trailing_name,  leaf_named_type, column_java_type,  param_java_type
+  Mutation.bare,              routine,        0,       0,        pInventoryId, input.inventoryId,                BARE_NODE_ID,             INPUT_FIELD, FilmActor,     ,               ID,              ,
+  Mutation.bareArgument,      routine,        0,       0,        pInventoryId, inventoryId,                      BARE_NODE_ID,             ARGUMENT,    FilmActor,     ,               ID,              ,
+  Mutation.bareUntyped,       routine,        0,       0,        pInventoryId, input.inventoryId,                BARE_NODE_ID,             INPUT_FIELD, ,              ,               ID,              ,
+  Mutation.bareKeyless,       routine,        0,       0,        pInventoryId, input.id,                         BARE_NODE_ID,             INPUT_FIELD, FilmListEntry, ,               ID,              ,
+  Mutation.inferredMismatch,  routine,        0,       0,        pOwner,       input.inventoryId,                KEY_COLUMN_TYPE_MISMATCH, INPUT_FIELD, Inventory,     ,               ID,              java.lang.Integer, java.lang.String
+  Mutation.mismatch,          routine,        0,       0,        pOwner,       input.inventoryId.inventory_id,   KEY_COLUMN_TYPE_MISMATCH, INPUT_FIELD, Inventory,     inventory_id,   ID,              java.lang.Integer, java.lang.String
+  Mutation.missingTypeName,   routine,        0,       0,        pInventoryId, input.inventoryId.inventory_id,   MISSING_TYPE_NAME,        INPUT_FIELD, ,              inventory_id,   ID,              ,
+  Mutation.unknownColumn,     routine,        0,       0,        pInventoryId, input.inventoryId.no_such_column, UNKNOWN_KEY_COLUMN,       INPUT_FIELD, Inventory,     no_such_column, ID,              ,
+  Mutation.unknownKeyless,    routine,        0,       0,        pInventoryId, input.id.nope,                    UNKNOWN_KEY_COLUMN,       INPUT_FIELD, FilmListEntry, nope,           ID,              ,
+  Mutation.undeclared,        routine,        0,       0,        pInventoryId, input.inventoryId.inventory_id,   UNDECLARED_NODE_ID,       INPUT_FIELD, ,              inventory_id,   ID,              ,
+  Mutation.undeclaredString,  routine,        0,       0,        pNote,        input.note.nope,                  UNDECLARED_NODE_ID,       INPUT_FIELD, ,              nope,           String,          ,
+  Mutation.byCount,           routine,        0,       0,        pBare,        input.inventoryId,                BARE_NODE_ID,             INPUT_FIELD, FilmActor,     ,               ID,              ,
+  Mutation.byCount,           routine,        0,       1,        pUnknown,     input.inventoryId.nope,           UNKNOWN_KEY_COLUMN,       INPUT_FIELD, FilmActor,     nope,           ID,              ,
+  Mutation.byCount,           routine,        0,       2,        pUntyped,     input.bareId.inventory_id,        MISSING_TYPE_NAME,        INPUT_FIELD, ,              inventory_id,   ID,              ,
+  Mutation.twice,             routine,        0,       0,        pFirst,       input.inventoryId,                BARE_NODE_ID,             INPUT_FIELD, FilmActor,     ,               ID,              ,
+  Mutation.twice,             routine,        1,       0,        pSecond,      input.inventoryId,                BARE_NODE_ID,             INPUT_FIELD, FilmActor,     ,               ID,              ,
+  Film.rentals(byInventory:), condition,      0,       0,        p,            byInventory,                      BARE_NODE_ID,             ARGUMENT,    FilmActor,     ,               ID,              ,
+  Query.films,                service,        0,       0,        javaParam,    input.inventoryId,                BARE_NODE_ID,             INPUT_FIELD, FilmActor,     ,               ID,              ,
+  """)

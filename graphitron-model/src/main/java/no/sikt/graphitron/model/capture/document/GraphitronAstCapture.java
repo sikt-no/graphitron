@@ -108,6 +108,8 @@ public final class GraphitronAstCapture {
         // What each written code reference names on the classpath, which this anchor can ask now it
         // runs after the classpath has been read.
         GraphitronCodeReferences.write(dsl, graph.name(), readAt);
+        // Where each written argMapping sits, which its readers join into views of their own.
+        GraphitronArgMappingSites.write(dsl, graph.name(), readAt);
         // Which types are bound to a table and which of those are nodes. Both read the anchors just
         // written and corpora captured before this one, and the mint below reads the second.
         TableTypes.derive(dsl, graph.name());

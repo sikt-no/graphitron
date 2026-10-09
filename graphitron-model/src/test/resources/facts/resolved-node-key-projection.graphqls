@@ -1,0 +1,95 @@
+# The argMapping bindings that decode a node id and project one column out of the decoded key: the
+# row an emitter reads to know which column of a decoded record a parameter gets. A reduction over
+# the relations beside it with one rule of its own, the type agreement, so most of what is here is
+# where the meeting fails. Each failure is no row, and each is another relation's to report.
+#
+# trailing_name is the author's spelling of the column where they spelled one and empty where the
+# key's arity named it, which is where in the written path the encoded id sits, so the rows state
+# the column and the name together.
+#
+# The type agreement holds only where both types are known. An unresolvable parameter leaves the
+# pair projecting as it would without the gate: requiring the match would make a pair that is
+# neither a projection nor a defect.
+
+# Pinned, so the SDL tier answers.
+type Inventory @table(name: "inventory") @node(keyColumns: ["inventory_id"]) {
+  inventoryId: Int @field(name: "inventory_id")
+}
+
+# The same table unpinned, so the primary key answers.
+type InventoryByKey @table(name: "inventory") @node {
+  inventoryId: Int @field(name: "inventory_id")
+}
+
+# A key of two columns opens into each of them, and a binding naming neither has nothing to infer.
+type FilmActor @table(name: "film_actor") @node(keyColumns: ["actor_id", "film_id"]) {
+  actorId: Int @field(name: "actor_id")
+}
+
+# A table with no primary key and no pin resolves no key columns on any tier.
+type FilmListEntry @table(name: "film_list") @node {
+  title: String
+}
+
+# No @table, so not a node, so no key column, whatever it pins.
+type Unbound @node(keyColumns: ["inventory_id"]) {
+  name: String
+}
+
+input InventoryInput { inventoryId: ID @nodeId(typeName: "Inventory") }
+input InventoryByKeyInput { inventoryId: ID @nodeId(typeName: "InventoryByKey") }
+input FilmActorInput { id: ID @nodeId(typeName: "FilmActor") }
+input FilmListInput { id: ID @nodeId(typeName: "FilmListEntry") }
+input UnboundInput { id: ID @nodeId(typeName: "Unbound") }
+input UntypedInput { inventoryId: ID @nodeId }
+
+type Mutation {
+  pinned(input: InventoryInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId.inventory_id")
+  onArgument(inventoryId: ID @nodeId(typeName: "Inventory")): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId.inventory_id")
+  # Matched case-insensitively, and named as the tier spells it rather than as the author did.
+  otherSpelling(input: InventoryInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId.INVENTORY_ID")
+  # One id bound to two parameters is two rows at two key positions.
+  composite(ref: FilmActorInput): String
+    @routine(name: "rent_film", argMapping: "pActorId: ref.id.actor_id, pFilmId: ref.id.film_id")
+  compositeBare(ref: FilmActorInput): String
+    @routine(name: "rent_film", argMapping: "pActorId: ref.id")
+  primaryKey(input: InventoryByKeyInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId.inventory_id")
+  # An Integer key column bound to a String parameter is not a projection; the candidate stays, so
+  # the defect can say the name was right and the type was not.
+  disagrees(input: InventoryInput): String
+    @routine(name: "create_secure_note", argMapping: "pOwner: input.inventoryId.inventory_id")
+  # A routine the catalog lacks types no parameter, and the gate stands aside.
+  untypedParameter(input: InventoryInput): String
+    @routine(name: "no_such_routine", argMapping: "pInventoryId: input.inventoryId.inventory_id")
+  # Nothing past the node id against a one-column key is that column, with no name spelled.
+  inferred(input: InventoryInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId")
+  noSuchColumn(input: InventoryInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId.no_such_column")
+  twoPast(input: InventoryInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId.inventory_id.nope")
+  untypedNodeId(input: UntypedInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId.inventory_id")
+  keyless(input: FilmListInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.id.film_id")
+  unbound(input: UnboundInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: input.id.inventory_id")
+  bindsNothing(input: InventoryInput): String
+    @routine(name: "rent_film", argMapping: "pInventoryId: notAnArgument.inventory_id")
+}
+
+extend schema @expectEquals(relation: "intent_resolved_node_key_projection", rows: """
+  coordinate,                position, written_path,                    bound_kind,  node_type_name, column_name,  key_position, tier,                trailing_name, column_java_type,  param_java_type
+  Mutation.pinned,           0,        input.inventoryId.inventory_id,  INPUT_FIELD, Inventory,      inventory_id, 0,            SDL_PINNED,          inventory_id,  java.lang.Integer, java.lang.Integer
+  Mutation.onArgument,       0,        inventoryId.inventory_id,        ARGUMENT,    Inventory,      inventory_id, 0,            SDL_PINNED,          inventory_id,  java.lang.Integer, java.lang.Integer
+  Mutation.otherSpelling,    0,        input.inventoryId.INVENTORY_ID,  INPUT_FIELD, Inventory,      inventory_id, 0,            SDL_PINNED,          INVENTORY_ID,  java.lang.Integer, java.lang.Integer
+  Mutation.composite,        0,        ref.id.actor_id,                 INPUT_FIELD, FilmActor,      actor_id,     0,            SDL_PINNED,          actor_id,      java.lang.Integer,
+  Mutation.composite,        1,        ref.id.film_id,                  INPUT_FIELD, FilmActor,      film_id,      1,            SDL_PINNED,          film_id,       java.lang.Integer,
+  Mutation.primaryKey,       0,        input.inventoryId.inventory_id,  INPUT_FIELD, InventoryByKey, inventory_id, 0,            CATALOG_PRIMARY_KEY, inventory_id,  java.lang.Integer, java.lang.Integer
+  Mutation.untypedParameter, 0,        input.inventoryId.inventory_id,  INPUT_FIELD, Inventory,      inventory_id, 0,            SDL_PINNED,          inventory_id,  java.lang.Integer,
+  Mutation.inferred,         0,        input.inventoryId,               INPUT_FIELD, Inventory,      inventory_id, 0,            SDL_PINNED,          ,              java.lang.Integer, java.lang.Integer
+  """)

@@ -1,0 +1,42 @@
+# A @nodeId argument whose value an argMapping entry hands to a parameter the key column cannot
+# take: one fault, judged once. The pair-grain family reports it at the entry, and the decode-defect
+# relation, which judges a slot at the argument, stands aside on a mapped parameter. Both halves are
+# stated, because two verdicts for one fact would be invisible to a case asserting only an absence.
+
+# film_id is an Integer, and greet takes its userId as a String.
+type Film @table(name: "film") @node {
+  title: String
+}
+
+extend type Query {
+  films(ids: ID @nodeId(typeName: "Film")): [Film!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService", method: "greet", argMapping: "userId: ids"})
+  # lookup takes its id as an Integer, so the decode is carried out into it.
+  film(ids: ID @nodeId(typeName: "Film")): Film
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService", method: "lookup", argMapping: "id: ids"})
+}
+
+# The slot is the mapped parameter, typed off the method the reference resolved to.
+extend schema @expectEquals(relation: "intent_node_id_decode_slot", rows: """
+  use_site,          carrier,          param_name, java_type
+  Query.film(ids),   MAPPED_PARAMETER, id,         java.lang.Integer
+  Query.films(ids),  MAPPED_PARAMETER, userId,     java.lang.String
+  """)
+
+# One destination however the parameter was reached: the name match stands aside where a pair
+# claims the parameter, so each slot above is its argument's only one. The refused one has none.
+extend schema @expectEquals(relation: "intent_node_id_decode", rows: """
+  use_site,        node_type_name, destination,       arity
+  Query.film(ids), Film,           SINGLE_KEY_COLUMN, 1
+  """)
+
+extend schema @expectEquals(relation: "intent_argmapping_projection_defect", rows: """
+  coordinate,  directive_name, param_name, written_path, verdict,                  column_java_type,  param_java_type
+  Query.films, service,        userId,     ids,          KEY_COLUMN_TYPE_MISMATCH, java.lang.Integer, java.lang.String
+  """)
+
+# And no refusal at the argument, which is the stand-aside.
+extend schema @assertAbsent(relation: "intent_node_id_decode_defect", rows: """
+  use_site
+  Query.films(ids)
+  """)

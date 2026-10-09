@@ -1,0 +1,30 @@
+# A list of polymorphic node ids an argMapping entry hands to a list of a record supertype: every
+# member's record is assignable to the element, so each member is a record destination and nothing
+# is refused. The pair's parameter type relation carries the peel the name-matched slot reads off
+# the parameter row, so both carriers judge the slot on one fact.
+
+type Customer @table(name: "customer") @node {
+  firstName: String @field(name: "first_name")
+}
+
+type Staff @table(name: "staff") @node {
+  firstName: String @field(name: "first_name")
+}
+
+union AddressOccupant = Customer | Staff
+
+extend type Query {
+  occupants(occupant: [ID!] @nodeId(typeName: "AddressOccupant")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantsByMapping", argMapping: "keys: occupant"})
+}
+
+extend schema @expectEquals(relation: "intent_node_id_decode", rows: """
+  use_site,                  node_type_name, destination,        arity
+  Query.occupants(occupant), Customer,       POLYMORPHIC_RECORD, 1
+  Query.occupants(occupant), Staff,          POLYMORPHIC_RECORD, 1
+  """)
+
+extend schema @assertAbsent(relation: "intent_node_id_polymorphic_decode_defect", rows: """
+  use_site
+  Query.occupants(occupant)
+  """)
