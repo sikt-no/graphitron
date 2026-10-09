@@ -31,7 +31,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
-| `R1007` | A second graphitron-model build in the same mvnd daemon fails jOOQ codegen with Table already exists | In Review | 2026-10-09 | [plan](mvnd-rebuild-model-codegen-table-exists.md) |
 | `R808` | DML film_actor cases seed rows that concurrent reader cases see on -Plocal-db | In Review | 2026-10-09 <sub>created 2026-08-22</sub> | [plan](bridging-condition-join-execution-flake.md) |
 | `R1003` | createFilm execution test counts the film table, so a parallel writer fails it | In Review | 2026-10-08 | [plan](create-film-test-counts-its-own-row.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
@@ -741,7 +740,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R872` [**The keys say what a source owns, and the gatherer decides how to refresh it**](warm-capture-empties-unpartitioned-catalog-relations.md) — Spec, architecture
 - `R764` [**graphitron-model ships its junit-platform.properties to four consumers that never asked for it**](model-test-jar-leaks-parallelism-config.md) — Backlog, dx
 - `R780` [**srp names the reviewer as the disqualified party: the session grep takes the first ID in the body, not the trailer**](srp-disqualified-session-read-from-trailer.md) — Backlog, dx
-- `R1007` [**A second graphitron-model build in the same mvnd daemon fails jOOQ codegen with Table already exists**](mvnd-rebuild-model-codegen-table-exists.md) — In Review, dx
 - `R917` [**A store too large to service is discarded rather than cleared**](store-too-large-to-service.md) — Backlog, dx
 - `R779` [**Did findings-not-fixes cut the bounce loop? Measure the plan-body blame fraction over three bounced items**](findings-convention-round-count-measurement.md) — Backlog, dx
 - `R766` [**Five generate executions run one after another on the last node of the critical path**](sakila-example-generate-executions-serialize.md) — Backlog, dx
