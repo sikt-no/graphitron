@@ -145,7 +145,11 @@
                 come with it, which silently drops 1142 of this schema's 3468 column comments from
                 the generated source. Running the script on the generating connection is what
                 keeps them, and is why this is one execution rather than a schema step and a
-                codegen step.
+                codegen step. The database is also unnamed, so it lives exactly as long as the
+                generating connection: a name plus DB_CLOSE_DELAY=-1 would keep it alive for the
+                life of the JVM, and a long-lived JVM such as an mvnd daemon would then hand a
+                later build an earlier build's tables, failing the init script on its first
+                CREATE TABLE.
 
                 Reading the DDL from src/main/resources directly, rather than off the classpath,
                 is what makes "edit the DDL and follow the compiler" true on every build without a
@@ -169,7 +173,7 @@
                         <configuration>
                             <jdbc>
                                 <driver>org.h2.Driver</driver>
-                                <url>jdbc:h2:mem:graphitron-model-codegen;DB_CLOSE_DELAY=-1;INIT=RUNSCRIPT FROM '${project.basedir}/src/main/resources/no/sikt/graphitron/model/graphitron-model.sql'</url>
+                                <url>jdbc:h2:mem:;INIT=RUNSCRIPT FROM '${project.basedir}/src/main/resources/no/sikt/graphitron/model/graphitron-model.sql'</url>
                                 <user>sa</user>
                                 <password></password>
                             </jdbc>
