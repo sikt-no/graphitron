@@ -1,7 +1,7 @@
 ---
 id: R1007
 title: "A second graphitron-model build in the same mvnd daemon fails jOOQ codegen with Table already exists"
-status: Spec
+status: Ready
 bucket: dx
 priority: 3
 theme: tooling

@@ -23,13 +23,13 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R942` | A rule that evaluates an unregistered view once per driving row fails the build, whoever writes the next one | Spec | 2026-09-09 | [plan](per-row-view-naming-fails-the-build.md) |
-| `R1007` | A second graphitron-model build in the same mvnd daemon fails jOOQ codegen with Table already exists | Spec | 2026-10-09 | [plan](mvnd-rebuild-model-codegen-table-exists.md) |
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Spec | 2026-09-22 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | Spec | 2026-09-25 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
+| `R1007` | A second graphitron-model build in the same mvnd daemon fails jOOQ codegen with Table already exists | Ready | 2026-10-09 | [plan](mvnd-rebuild-model-codegen-table-exists.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R808` | DML film_actor cases seed rows that concurrent reader cases see on -Plocal-db | In Progress | 2026-10-09 <sub>created 2026-08-22</sub> | [plan](bridging-condition-join-execution-flake.md) |
@@ -739,7 +739,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R872` [**The keys say what a source owns, and the gatherer decides how to refresh it**](warm-capture-empties-unpartitioned-catalog-relations.md) — Spec, architecture
 - `R764` [**graphitron-model ships its junit-platform.properties to four consumers that never asked for it**](model-test-jar-leaks-parallelism-config.md) — Backlog, dx
 - `R780` [**srp names the reviewer as the disqualified party: the session grep takes the first ID in the body, not the trailer**](srp-disqualified-session-read-from-trailer.md) — Backlog, dx
-- `R1007` [**A second graphitron-model build in the same mvnd daemon fails jOOQ codegen with Table already exists**](mvnd-rebuild-model-codegen-table-exists.md) — Spec, dx
+- `R1007` [**A second graphitron-model build in the same mvnd daemon fails jOOQ codegen with Table already exists**](mvnd-rebuild-model-codegen-table-exists.md) — Ready, dx
 - `R917` [**A store too large to service is discarded rather than cleared**](store-too-large-to-service.md) — Backlog, dx
 - `R779` [**Did findings-not-fixes cut the bounce loop? Measure the plan-body blame fraction over three bounced items**](findings-convention-round-count-measurement.md) — Backlog, dx
 - `R766` [**Five generate executions run one after another on the last node of the critical path**](sakila-example-generate-executions-serialize.md) — Backlog, dx
