@@ -7,7 +7,7 @@ priority: 3
 theme: testing
 depends-on: []
 created: 2026-08-22
-last-updated: 2026-09-14
+last-updated: 2026-10-09
 ---
 
 # A bridging-condition split-table execution case returns a second actor only in a full-module run
@@ -57,3 +57,36 @@ predicate is not the variable: the bridged and unbridged forms of one split-tabl
 which narrows the search further toward residual rows in the shared table over any one rule.
 Observed while verifying the node-type decode identity, which touches neither this module's fixtures
 nor the split-table path.
+
+A fourth occurrence, on 2026-10-09, names the mechanism. The opening case failed again in a full
+verification build, expecting `[1]` for film 3 and getting `[1, 3]`, then passed on a
+`-rf :graphitron-sakila-example` rerun. The writer is `DmlBulkMutationsExecutionTest`: its
+composite-key DELETE cases insert `film_actor` pairs that `init.sql` does not seed, `(3, 3)`,
+`(2, 3)`, `(3, 4)` and `(1, 4)`, commit them, and delete them again in `finally`. Those pairs line up
+with every row-too-many seen so far: `(3, 3)` is the `[1, 3]`, `(2, 3)` is the `[1, 2]` this item
+opens with, and the film-4 pairs fit the reverse-hop case's extra `4`. `junit-platform.properties`
+runs test classes concurrently at parallelism 4, so a read-side class can query `film_actor` between
+an insert and its cleanup. That window is why a single class, or a single case, never reproduces it.
+
+The race needs one shared database, so it is a `-Plocal-db` failure. Each execution class's
+`@BeforeAll` starts its own PostgreSQL container unless `test.db.url` is set, and only the
+`local-db` profile sets it. On the default Testcontainers profile the writer and the readers are in
+different databases and cannot see each other's rows. Every occurrence on record was a `-Plocal-db`
+build. That still matters, because the web sandbox, which has no Docker, builds that way.
+
+The fix options are now concrete:
+
+* Move the DML cases' seeded pairs onto films and actors that no read-side case asserts on. That is
+  local and cheap, but it is a convention nothing enforces, and the next writer can break it.
+* Put a shared JUnit `@ResourceLock` on `film_actor` across the classes that write it and the classes
+  that read it. `QuarkusTestLock.KEY` is the existing pattern for this, including its enforcement
+  test. The cost is serialising those classes.
+* Seed inside a transaction the case rolls back, so no other connection ever sees the rows. Whether
+  that works depends on whether the generated mutation can run on the test's transaction-bound
+  connection.
+
+The `junit-platform.properties` comment already states the module's rule: writers scope cleanup to
+rows they can name, and readers assert what their own query means. R1003 fixed a sibling of this
+pattern on the reader side, with `createFilm` counting only its own row. Here the readers'
+exact-list assertions over seeded films are reasonable, so the fix most likely belongs on the writer
+side: a cleanup in `finally` scopes what the table holds afterwards, not what it holds meanwhile.
