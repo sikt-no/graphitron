@@ -15,7 +15,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-10-06 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
-| `R951` | A second jOOQ where graphitron can see it fails the build far from its cause, naming neither the jar nor the pom entry that brought it | In Review | 2026-10-08 <sub>created 2026-09-15</sub> | [plan](plugin-realm-shadows-graphitron-jooq.md) |
 | `R998` | Four unindexed H2 statements cost the sis dev loop about a minute per run | In Review | 2026-10-08 <sub>created 2026-10-07</sub> | [plan](dev-startup-unserved-h2-joins.md) |
 | `R1006` | MCP test suite: share read-only store fixtures, time only the read under test, cache the docs index across clean | In Review | 2026-10-08 | [plan](mcp-test-suite-cost.md) |
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |
@@ -623,7 +622,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### dev-loop
 
-- `R951` [**A second jOOQ where graphitron can see it fails the build far from its cause, naming neither the jar nor the pom entry that brought it**](plugin-realm-shadows-graphitron-jooq.md) — In Review, dx
 - `R762` [**The census stores every class member to answer questions only ever asked by name**](census-stores-members-it-reads-by-name.md) — Backlog, architecture
 - `R925` [**A java_file row's stamp and its declarations come from one read of the file**](one-read-behind-a-java-file-row.md) — Backlog, correctness
 - `R522` [**Reconcile the emitted-code seam-pin assertion convention with the testing doc**](emitted-seam-pin-assertion-convention.md) — Backlog, tech-debt
