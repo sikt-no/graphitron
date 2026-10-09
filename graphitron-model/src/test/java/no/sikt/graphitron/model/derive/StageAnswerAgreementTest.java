@@ -57,6 +57,9 @@ class StageAnswerAgreementTest {
         new Stage("graphitron_field_chain_link_resolution",
             "graphitron_field_chain_link_resolution_rule"),
         new Stage("graphitron_type_backing", "graphitron_type_backing_rule"),
+        new Stage("graphitron_configured_tag", "graphitron_configured_tag_rule"),
+        new Stage("graphitron_minted_coinage", "graphitron_minted_coinage_rule"),
+        new Stage("graphitron_carrier_directive", "graphitron_carrier_directive_rule"),
         new Stage("graphitron_type_reach", "graphitron_type_reach_rule"),
         new Stage("graphitron_type_arrival", "graphitron_type_arrival_rule"),
         new Stage("graphitron_field_source", "graphitron_field_source_rule"),
@@ -269,9 +272,11 @@ class StageAnswerAgreementTest {
      * The captured schemas the agreement runs over. {@link #sdl()} reaches every arm the per-rule
      * cases name; the scaled fixture reaches the {@code @nodeId} decode chain and the
      * input-field roles with rows to compare; {@link #mutationSdl()} reaches the write payload's
-     * refusal, key membership and destination, which neither of the other two populates.
+     * refusal, key membership and destination, which neither of the other two populates;
+     * {@link #federationSdl()}, captured with a configured tag, reaches the configured tags, the
+     * minted types' coinage and the directives their carriers carry.
      */
-    private enum Fixture { ARMS, NODE_ID, MUTATION }
+    private enum Fixture { ARMS, NODE_ID, MUTATION, FEDERATION }
 
     private void withCapturedStore(java.util.function.Consumer<DSLContext> body) {
         withCapturedStore(Fixture.ARMS, body);
@@ -284,11 +289,26 @@ class StageAnswerAgreementTest {
             case ARMS -> sdl();
             case NODE_ID -> no.sikt.graphitron.model.test.ScaledSchemaFixture.scaledSdl(2);
             case MUTATION -> mutationSdl();
+            case FEDERATION -> federationSdl();
         };
-        try (var store = CapturedStore.ownStoreOfCatalog(
-                tmp.resolve("stages-" + fixture.name().toLowerCase()), schema, jooq)) {
+        Path directory = tmp.resolve("stages-" + fixture.name().toLowerCase());
+        try (var store = fixture == Fixture.FEDERATION
+                ? CapturedStore.tagged(directory, schema, "catalog")
+                : CapturedStore.ownStoreOfCatalog(directory, schema, jooq)) {
             body.accept(store.dsl());
         }
+    }
+
+    /**
+     * A connection carrier tagged by its author, in a file the configuration tags: the carrier coins
+     * the connection, its edge and the page info, carries its own tag, and every field it does not
+     * tag itself takes the configured one.
+     */
+    private static String federationSdl() {
+        return """
+            type Query { films: [Film!]! @asConnection @tag(name: "public") }
+            type Film { title: String }
+            """;
     }
 
     /**

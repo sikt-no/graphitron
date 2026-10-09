@@ -4954,7 +4954,7 @@ COMMENT ON COLUMN graphitron_carrier_facet_mint.value_nullable IS 'whether a nul
 -- than of the thing that minted it. A reader wanting to carry something from the application to
 -- what it coined needs the pairing back, and deriving it here keeps it one statement rather than
 -- an enumeration of arms restated wherever it is wanted.
-CREATE VIEW graphitron_minted_coinage (graph_name, type_name, coordinate) AS
+CREATE VIEW graphitron_minted_coinage_rule (graph_name, type_name, coordinate) AS
 SELECT DISTINCT graph_name, type_name, coordinate
   FROM (SELECT graph_name, connection_name AS type_name, coordinate
           FROM graphitron_connection_carrier
@@ -4977,10 +4977,23 @@ SELECT DISTINCT graph_name, type_name, coordinate
             ON c.graph_name = f.graph_name AND c.type_name = f.type_name
            AND c.field_name = f.field_name) m
 ;
-COMMENT ON VIEW graphitron_minted_coinage IS 'Which coordinate coined each type the expansion mints: one row per minted type name and the application it was derived from. For example films: [Film!]! @asConnection with a title facet coins QueryFilmsConnection, QueryFilmsConnectionEdge, PageInfo, QueryFilmsConnectionFacets and StringFacetValue, all at Query.films.';
+COMMENT ON VIEW graphitron_minted_coinage_rule IS 'One row the coinage rule computes, in the shape graphitron_minted_coinage stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_minted_coinage, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
+COMMENT ON COLUMN graphitron_minted_coinage_rule.graph_name IS 'the owning graph''''s partition, carried from the carrier';
+COMMENT ON COLUMN graphitron_minted_coinage_rule.type_name IS 'the minted type''''s name; not unique here, one name being coinable by several applications';
+COMMENT ON COLUMN graphitron_minted_coinage_rule.coordinate IS 'the application that coined it, on graphitron_element_authored.coordinate''''s terms; with the name above, the grain';
+CREATE TABLE graphitron_minted_coinage (
+  graph_name     VARCHAR NOT NULL,
+  type_name      VARCHAR NOT NULL,
+  coordinate     VARCHAR NOT NULL,
+  touched_at     TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, coordinate),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+COMMENT ON TABLE graphitron_minted_coinage IS 'Which coordinate coined each type the expansion mints: one row per minted type name and the application it was derived from. For example films: [Film!]! @asConnection with a title facet coins QueryFilmsConnection, QueryFilmsConnectionEdge, PageInfo, QueryFilmsConnectionFacets and StringFacetValue, all at Query.films.';
 COMMENT ON COLUMN graphitron_minted_coinage.graph_name IS 'the owning graph''''s partition, carried from the carrier';
 COMMENT ON COLUMN graphitron_minted_coinage.type_name IS 'the minted type''''s name; not unique here, one name being coinable by several applications';
 COMMENT ON COLUMN graphitron_minted_coinage.coordinate IS 'the application that coined it, on graphitron_element_authored.coordinate''''s terms; with the name above, the grain';
+COMMENT ON COLUMN graphitron_minted_coinage.touched_at IS 'when the reading that last found this coinage ran: the mark the sweep reads, so a coinage still made survives a reading and one no longer made goes';
 
 CREATE VIEW graphitron_type_minted_candidate (graph_name, type_name, coordinate, kind, description) AS
 SELECT DISTINCT graph_name, type_name, type_name, 'OBJECT', description
@@ -7855,7 +7868,7 @@ COMMENT ON COLUMN graphitron_directive_application_authored.source_name IS 'the 
 COMMENT ON COLUMN graphitron_directive_application_authored.source_line IS 'source line of the at sign';
 COMMENT ON COLUMN graphitron_directive_application_authored.source_column IS 'source column of the at sign';
 
-CREATE VIEW graphitron_configured_tag (graph_name, coordinate, ordinal, value_sdl) AS
+CREATE VIEW graphitron_configured_tag_rule (graph_name, coordinate, ordinal, value_sdl) AS
 WITH applied (graph_name, coordinate, site_order, tag) AS (
   -- A field or an input field, declared at one site, takes the tag of its file unless it carries one.
   SELECT f.graph_name, f.type_name || '.' || f.field_name, 0, s.tag
@@ -7896,11 +7909,26 @@ SELECT p.graph_name, p.coordinate,
        '"' || p.tag || '"'
   FROM applied p
   JOIN graphitron_element e ON e.graph_name = p.graph_name AND e.coordinate = p.coordinate;
-COMMENT ON VIEW graphitron_configured_tag IS 'The rule <schemaInput tag> states, as a relation: one row per @tag the configuration applies to an element of the emitted population. For example a field declared in a file whose entry carries tag stable, and which carries no @tag of its own, is one row naming stable.';
+COMMENT ON VIEW graphitron_configured_tag_rule IS 'One row the configured-tag rule computes, in the shape graphitron_configured_tag stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_configured_tag, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
+COMMENT ON COLUMN graphitron_configured_tag_rule.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_configured_tag_rule.coordinate IS 'the element the tag is applied to: a field, an input field, an argument, or a union';
+COMMENT ON COLUMN graphitron_configured_tag_rule.ordinal IS 'after every authored @tag at the coordinate, in declaration-site order where a union takes several';
+COMMENT ON COLUMN graphitron_configured_tag_rule.value_sdl IS 'the tag as the name: argument an author would have written';
+CREATE TABLE graphitron_configured_tag (
+  graph_name     VARCHAR NOT NULL,
+  coordinate     VARCHAR NOT NULL,
+  ordinal        INT NOT NULL,
+  value_sdl      VARCHAR NOT NULL,
+  touched_at     TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, ordinal),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+COMMENT ON TABLE graphitron_configured_tag IS 'The rule <schemaInput tag> states, as a relation: one row per @tag the configuration applies to an element of the emitted population. For example a field declared in a file whose entry carries tag stable, and which carries no @tag of its own, is one row naming stable.';
 COMMENT ON COLUMN graphitron_configured_tag.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_configured_tag.coordinate IS 'the element the tag is applied to: a field, an input field, an argument, or a union';
 COMMENT ON COLUMN graphitron_configured_tag.ordinal IS 'after every authored @tag at the coordinate, in declaration-site order where a union takes several';
 COMMENT ON COLUMN graphitron_configured_tag.value_sdl IS 'the tag as the name: argument an author would have written';
+COMMENT ON COLUMN graphitron_configured_tag.touched_at IS 'when the reading that last found this tag ran: the mark the sweep reads, so a tag still applied survives a reading and one no longer applied goes';
 
 CREATE VIEW graphitron_directive_application_configured
   (graph_name, coordinate, directive_name, ordinal, origin,
@@ -7918,7 +7946,7 @@ COMMENT ON COLUMN graphitron_directive_application_configured.source_name IS 'al
 COMMENT ON COLUMN graphitron_directive_application_configured.source_line IS 'always NULL';
 COMMENT ON COLUMN graphitron_directive_application_configured.source_column IS 'always NULL';
 
-CREATE VIEW graphitron_carrier_directive
+CREATE VIEW graphitron_carrier_directive_rule
   (graph_name, type_name, coordinate, directive_name, ordinal, value_sdl) AS
 WITH carried (graph_name, coordinate, directive_name, ordinal, value_sdl) AS (
   SELECT d.graph_name, d.coordinate, d.directive_name, d.ordinal, a.value_sdl
@@ -7935,13 +7963,32 @@ SELECT m.graph_name, m.type_name, m.coordinate, c.directive_name, c.ordinal, c.v
   FROM graphitron_minted_coinage m
   JOIN graphitron_type_minted t ON t.graph_name = m.graph_name AND t.type_name = m.type_name
   JOIN carried c ON c.graph_name = m.graph_name AND c.coordinate = m.coordinate;
-COMMENT ON VIEW graphitron_carrier_directive IS 'The federation directives on the fields that coined a minted type: one row per @tag or @shareable a carrier carries, authored or configured. For example films: [Film!]! @asConnection @tag(name: "public") gives QueryFilmsConnection a row naming the public tag on Query.films.';
+COMMENT ON VIEW graphitron_carrier_directive_rule IS 'One row the carrier-directive rule computes, in the shape graphitron_carrier_directive stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_carrier_directive, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
+COMMENT ON COLUMN graphitron_carrier_directive_rule.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_carrier_directive_rule.type_name IS 'the minted type the carrier coined; only a type the mint did not stand down for, an author''s declaration inheriting nothing';
+COMMENT ON COLUMN graphitron_carrier_directive_rule.coordinate IS 'the carrier field';
+COMMENT ON COLUMN graphitron_carrier_directive_rule.directive_name IS 'tag or shareable';
+COMMENT ON COLUMN graphitron_carrier_directive_rule.ordinal IS 'the application''s order on the carrier';
+COMMENT ON COLUMN graphitron_carrier_directive_rule.value_sdl IS 'the tag''s name: argument as SDL; NULL on @shareable, which takes none';
+CREATE TABLE graphitron_carrier_directive (
+  graph_name     VARCHAR NOT NULL,
+  type_name      VARCHAR NOT NULL,
+  coordinate     VARCHAR NOT NULL,
+  directive_name VARCHAR NOT NULL,
+  ordinal        INT NOT NULL,
+  value_sdl      VARCHAR,
+  touched_at     TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, coordinate, directive_name, ordinal),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+COMMENT ON TABLE graphitron_carrier_directive IS 'The federation directives on the fields that coined a minted type: one row per @tag or @shareable a carrier carries, authored or configured. For example films: [Film!]! @asConnection @tag(name: "public") gives QueryFilmsConnection a row naming the public tag on Query.films.';
 COMMENT ON COLUMN graphitron_carrier_directive.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_carrier_directive.type_name IS 'the minted type the carrier coined; only a type the mint did not stand down for, an author''s declaration inheriting nothing';
 COMMENT ON COLUMN graphitron_carrier_directive.coordinate IS 'the carrier field';
 COMMENT ON COLUMN graphitron_carrier_directive.directive_name IS 'tag or shareable';
 COMMENT ON COLUMN graphitron_carrier_directive.ordinal IS 'the application''s order on the carrier';
 COMMENT ON COLUMN graphitron_carrier_directive.value_sdl IS 'the tag''s name: argument as SDL; NULL on @shareable, which takes none';
+COMMENT ON COLUMN graphitron_carrier_directive.touched_at IS 'when the reading that last found this directive on this carrier ran: the mark the sweep reads, so one still carried survives a reading and one no longer carried goes';
 
 CREATE VIEW graphitron_inherited_directive
   (graph_name, type_name, directive_name, ordinal, value_sdl) AS
@@ -15665,6 +15712,12 @@ INSERT INTO meta_grain VALUES
   ('carrier-directive',
    'one federation directive application on one carrier of one minted type, in one graph',
    'graph_name, type_name, coordinate, directive_name, ordinal', 'sdl'),
+  ('minted-coinage',
+   'one type the expansion mints and one application that coined it, in one graph',
+   'graph_name, type_name, coordinate', 'sdl'),
+  ('configured-tag',
+   'one @tag the configuration applies to one element, at its place among the element''s tags, in one graph',
+   'graph_name, coordinate, ordinal', 'configuration'),
   ('inherited-directive',
    'one federation directive one minted type inherits from its carriers, in one graph',
    'graph_name, type_name, directive_name, ordinal', 'sdl'),
@@ -16261,10 +16314,14 @@ INSERT INTO meta_relation VALUES
    'One of the four sets graphitron_element is the union of: an element an author declared, at the coordinate the transcription spells for it, of a kind this family anchors.',
    'For example the Film in type Film { title: String } is one row, and the Film.title written inside it is another.',
    'Named rather than left inside the anchor''s writer, where it was one arm of a four-arm insert whose admission rules lived in Java predicates a reader of the schema could not find. The four kinds it claims are listed rather than the other three excluded, so a kind added to graphql_element arrives refused rather than uninvited, and the refusal is a row missing from the schema rather than a silent widening. This set alone carries no precedence: an author''s declaration is the thing the minted sets stand down to, so what admits a row here is only that the transcription anchors it.'),
-  ('graphitron_minted_coinage', 'expanded-type', 'graphitron',
+  ('graphitron_minted_coinage', 'minted-coinage', 'graphitron',
    'Which coordinate coined each type the expansion mints: one row per minted type name and the application it was derived from.',
    'For example films: [Film!]! @asConnection with a title facet coins QueryFilmsConnection, QueryFilmsConnectionEdge, PageInfo, QueryFilmsConnectionFacets and StringFacetValue, all at Query.films.',
    'Named because the pairing was being restated by each reader that wanted it, once as a staging table''s column and then as an enumeration of arms in Java. Distinct because shared machinery is coined by every carrier that wants it and a name coined twice at one coordinate is one row; not distinct across coordinates, because which application coined a name is the fact this relation exists to carry.'),
+  ('graphitron_minted_coinage_rule', 'minted-coinage', 'graphitron',
+   'One row the coinage rule computes, in the shape graphitron_minted_coinage stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a capture inserts this view''s rows for one graph into graphitron_minted_coinage, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
+   'The rule, kept in the catalog rather than in the step that runs it, on graphitron_type_backing_rule''s terms. Stored by EmittedAnchor before the directive anchor reads it, because H2 evaluates a view again for every row joined to it and the federation chain joins these three to each other: on a consumer schema configuring 7734 tags over 654 coinages the directive upsert did not finish, and with the three stored it reads in a fifth of a second.'),
   ('graphitron_element_minted_type', 'expanded-element', 'graphitron',
    'One of the four sets graphitron_element is the union of: a type macro expansion adds to the schema, which no author declared and no two applications disagree about.',
    'For example an author writing films: [Film!]! @asConnection and nothing else gets QueryFilmsConnection here, where an author who also wrote their own QueryFilmsConnection gets no row.',
@@ -16361,14 +16418,22 @@ INSERT INTO meta_relation VALUES
    'One of the three sets graphitron_directive_application_arg is the union of: an argument macro expansion passes to an application it adds.',
    'For example the fields: "id" and resolvable: true of a synthesised @key are two rows here.',
    'Stated as the SDL an author would have written, so the renderer needs no rule for what a macro means by its arguments.'),
-  ('graphitron_configured_tag', 'expanded-directive-application', 'graphitron',
+  ('graphitron_configured_tag', 'configured-tag', 'graphitron',
    'The rule <schemaInput tag> states, as a relation: one row per @tag the configuration applies to an element of the emitted population.',
    'For example a field declared in a file whose entry carries tag stable, and which carries no @tag of its own, is one row naming stable.',
    'TagApplier''s rule restated over what the source reading records, so the store holds the tags the loading rewrites apply. Fields, input fields and arguments take their file''s tag; a union takes one per declaration site, each site judged on its own applications. Enum values are tagged too and are not here, graphitron_element anchoring none.'),
+  ('graphitron_configured_tag_rule', 'configured-tag', 'graphitron',
+   'One row the configured-tag rule computes, in the shape graphitron_configured_tag stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a capture inserts this view''s rows for one graph into graphitron_configured_tag, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
+   'The rule, kept in the catalog rather than in the step that runs it, on graphitron_type_backing_rule''s terms. Stored by EmittedAnchor before the directive anchor reads it, because H2 evaluates a view again for every row joined to it and the federation chain joins these three to each other: on a consumer schema configuring 7734 tags over 654 coinages the directive upsert did not finish, and with the three stored it reads in a fifth of a second.'),
   ('graphitron_carrier_directive', 'carrier-directive', 'graphitron',
    'The federation directives on the fields that coined a minted type: one row per @tag or @shareable a carrier carries, authored or configured.',
    'For example films: [Film!]! @asConnection @tag(name: "public") gives QueryFilmsConnection a row naming the public tag on Query.films.',
    'The input to inheritance and to the narrowing finding, stated once so both read one population. Only types the mint did not stand down for, an author''s declaration inheriting nothing.'),
+  ('graphitron_carrier_directive_rule', 'carrier-directive', 'graphitron',
+   'One row the carrier-directive rule computes, in the shape graphitron_carrier_directive stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a capture inserts this view''s rows for one graph into graphitron_carrier_directive, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
+   'The rule, kept in the catalog rather than in the step that runs it, on graphitron_type_backing_rule''s terms. Stored by EmittedAnchor before the directive anchor reads it, because H2 evaluates a view again for every row joined to it and the federation chain joins these three to each other: on a consumer schema configuring 7734 tags over 654 coinages the directive upsert did not finish, and with the three stored it reads in a fifth of a second.'),
   ('graphitron_inherited_directive', 'inherited-directive', 'graphitron',
    'The federation directives a minted type inherits from its carriers: the tags every carrier carries and @shareable when any carrier is.',
    'For example a PageInfo two carriers share carries only the tag both carry, and is shareable because one of them is.',

@@ -3,10 +3,19 @@ package no.sikt.graphitron.model.capture.document;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
+import org.jooq.Table;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.stream.Stream;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CARRIER_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CARRIER_DIRECTIVE_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONFIGURED_TAG;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONFIGURED_TAG_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION_ARG_AUTHORED;
@@ -27,6 +36,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_AUTHORED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_MINTED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_MINTED_CANDIDATE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_MINTED_CANDIDATE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_COINAGE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_COINAGE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_CONFLICT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MINTED_CANDIDATE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
@@ -93,6 +104,7 @@ public final class EmittedAnchor {
         arguments(dsl, graphName);
         sweep(dsl, graphName, touchedAt);
         // After the sweep, so the sets join only the coordinates this reading kept.
+        federation(dsl, graphName, touchedAt);
         directives(dsl, graphName, touchedAt);
     }
 
@@ -214,6 +226,56 @@ public final class EmittedAnchor {
         dsl.deleteFrom(GRAPHITRON_ELEMENT)
             .where(GRAPHITRON_ELEMENT.GRAPH_NAME.eq(graphName))
             .and(GRAPHITRON_ELEMENT.COORDINATE.in(stale)).execute();
+    }
+
+    /**
+     * What the federation directives of the minted types are read from, stored rather than left as
+     * views: the tags the configuration applies, which application coined each minted type, and the
+     * tags and {@code @shareable} each such carrier carries. H2 evaluates a view again for every row
+     * joined to it, and the directive grain below joins these to each other, so on a consumer schema
+     * configuring thousands of tags left as views they cost the reading its directive anchor.
+     *
+     * <p>Each is written from its rule, marked with the reading's instant and swept of the graph's
+     * rows carrying another, in the order the rules read each other: the carriers read the other two.
+     */
+    private static void federation(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
+        store(dsl, graphName, touchedAt, GRAPHITRON_CONFIGURED_TAG, GRAPHITRON_CONFIGURED_TAG_RULE);
+        store(dsl, graphName, touchedAt, GRAPHITRON_MINTED_COINAGE, GRAPHITRON_MINTED_COINAGE_RULE);
+        store(dsl, graphName, touchedAt, GRAPHITRON_CARRIER_DIRECTIVE,
+            GRAPHITRON_CARRIER_DIRECTIVE_RULE);
+    }
+
+    /**
+     * One stored relation written from its rule: every row the rule answers for the graph upserted
+     * with the reading's instant, the columns outside the key brought up to date, and the graph's
+     * rows carrying another instant swept. The rule's columns are the target's but its mark, by name.
+     */
+    private static void store(DSLContext dsl, String graphName, LocalDateTime touchedAt,
+                              Table<?> target, Table<?> rule) {
+        Field<String> graph = target.field("GRAPH_NAME", String.class);
+        Field<LocalDateTime> touched = target.field("TOUCHED_AT", LocalDateTime.class);
+        var key = target.getPrimaryKey().getFields();
+        var columns = Arrays.stream(target.fields()).filter(f -> !f.equals(touched)).toList();
+        var selected = new ArrayList<Field<?>>();
+        columns.forEach(c -> selected.add(rule.field(c.getName())));
+        selected.add(val(touchedAt, touched));
+        var all = new ArrayList<Field<?>>(columns);
+        all.add(touched);
+        var updates = new LinkedHashMap<Field<?>, Field<?>>();
+        Stream.concat(columns.stream().filter(c -> !key.contains(c)), Stream.of(touched))
+            .forEach(c -> updates.put(c, excluded(c)));
+        dsl.insertInto(target)
+            .columns(all)
+            .select(dsl.select(selected)
+                .from(rule)
+                .where(rule.field("GRAPH_NAME", String.class).eq(graphName)))
+            .onDuplicateKeyUpdate()
+            .set(updates)
+            .execute();
+        dsl.deleteFrom(target)
+            .where(graph.eq(graphName))
+            .and(touched.ne(touchedAt))
+            .execute();
     }
 
     /**

@@ -611,6 +611,10 @@ reads nothing off the classpath that capture has already read, and builds no sch
       `graphql_source_input` records what each file's entry configures, `graphitron_configured_tag`
       states the tag rule over it as a third set of the directive anchor, and
       `graphitron_inherited_directive` is the intersection over the carriers.
+      * **The inheritance reads stored carriers** `done`. `graphitron_configured_tag`,
+        `graphitron_minted_coinage` and `graphitron_carrier_directive` are stored by `EmittedAnchor`
+        from `_rule` views, H2 having re-run each view per joined row until a capture of sis never
+        finished its directive anchor; `roadmap/audits/2026-10-09-federation-chain-hang.md`.
     * **The rule reads no deprecated decode** `done`. The key and link entries it read are retired;
       see "No `graphitron_*_entry` survives".
     * **`EmittedRegistry` renders the anchors and states no rule** `done`. It patches the anchored

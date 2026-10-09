@@ -83,11 +83,11 @@ graphitron_entry_defect_rule graphql_type
 
 # Adjudicated and kept: the tags the configuration applies.
 #
-# graphitron_configured_tag reads graphql_field for the file each field was declared in, which is the
+# graphitron_configured_tag_rule reads graphql_field for the file each field was declared in, which is the
 # whole of the configuration's rule: a <schemaInput tag> reaches what its matched files declare. A
 # minted field was declared in no file and takes no configured tag, so the emitted anchor would ask a
 # question the rule does not.
-graphitron_configured_tag graphql_field
+graphitron_configured_tag_rule graphql_field
 
 # Adjudicated and kept: arrival is read before any macro rewrites a field.
 #

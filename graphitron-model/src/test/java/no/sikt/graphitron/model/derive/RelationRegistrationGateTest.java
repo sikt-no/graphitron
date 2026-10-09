@@ -324,7 +324,9 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_directive_application_configured", Arm.DERIVED);
         registrations.put("graphitron_directive_application_arg_configured", Arm.DERIVED);
         registrations.put("graphitron_configured_tag", Arm.DERIVED);
+        registrations.put("graphitron_configured_tag_rule", Arm.DERIVED);
         registrations.put("graphitron_carrier_directive", Arm.DERIVED);
+        registrations.put("graphitron_carrier_directive_rule", Arm.DERIVED);
         registrations.put("graphitron_inherited_directive", Arm.DERIVED);
         registrations.put("graphitron_minted_conflict", Arm.DERIVED);
         registrations.put("graphitron_field_chain_application", Arm.DERIVED);
@@ -455,6 +457,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_connection_carrier", Arm.DERIVED);
         registrations.put("graphitron_carrier_facet_mint", Arm.DERIVED);
         registrations.put("graphitron_minted_coinage", Arm.DERIVED);
+        registrations.put("graphitron_minted_coinage_rule", Arm.DERIVED);
         registrations.put("graphitron_type_minted_candidate", Arm.DERIVED);
         registrations.put("graphitron_field_minted_candidate", Arm.DERIVED);
         registrations.put("graphitron_argument_minted_candidate", Arm.DERIVED);

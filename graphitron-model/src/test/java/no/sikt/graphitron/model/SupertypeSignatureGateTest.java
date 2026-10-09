@@ -232,7 +232,12 @@ class SupertypeSignatureGateTest {
         // emitted population's arguments are the third, on graphitron_element's terms below: the
         // same fact over the generator's coordinates, an authored row carried across beside a
         // minted one, so a supertype would be the two families folded back into one.
-        Set.of("graphitron_directive_application_arg", "graphitron_undecoded_argument_entry",
+        // The configured tags and the carrier directives joined when they became stored: each is a
+        // rule's answer kept as a table because H2 evaluates a view again for every row joined to
+        // it, so they carry the payload of what they are read from rather than being siblings of
+        // it, and a supertype would fold a cache back into its source.
+        Set.of("graphitron_carrier_directive", "graphitron_configured_tag",
+               "graphitron_directive_application_arg", "graphitron_undecoded_argument_entry",
                "graphql_directive_application_arg"),
         Set.of("graphitron_argument_reference_for_step_entry", "graphitron_argument_reference_step_entry",
                "graphitron_field_reference_step_entry", "graphitron_reference_for_step_entry"),
@@ -398,6 +403,10 @@ class SupertypeSignatureGateTest {
         // the row goes when the condition copies do.
         "graphitron_entry_defect_rule|graphitron_argument_condition_entry,graphitron_field_condition_entry",
         "intent_field_producer_reference|graphitron_external_field_entry,graphitron_service_entry",
+        // The carriers' tags, authored or configured: the union graphitron_directive_application_arg
+        // makes for every coordinate, made here for carriers alone, and stored for the reason the
+        // set above gives.
+        "graphitron_carrier_directive_rule|graphitron_configured_tag,graphql_directive_application_arg",
         "graphitron_node_id_instruction_rule|graphitron_argument_node_id_entry,graphitron_field_node_id_entry",
         "intent_reference_for_application|graphitron_argument_reference_for_entry,graphitron_reference_for_entry",
         // The scope rule reaching a table by either keying of one resolution, which became visible
