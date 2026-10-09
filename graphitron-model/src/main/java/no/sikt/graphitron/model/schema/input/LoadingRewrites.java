@@ -19,12 +19,13 @@ import java.util.Set;
  * The loading rewrites, composed once: the in-place edits that stand between the documents an
  * author wrote and the registry the rest of a run sees.
  *
- * <p>Four of them, in this order. {@link TagLinkSynthesiser} adds an {@code @link} importing
+ * <p>Three of them, in this order. {@link TagLinkSynthesiser} adds an {@code @link} importing
  * {@code @tag} where a tag is configured and the author wrote none, {@link FederationLinkApplier}
- * adds the definitions the federation {@code @link} imports, {@link TagApplier} applies the
- * configured tags and {@link DescriptionNoteApplier} appends the configured notes. The order is a
- * dependency: the federation library reads the {@code @link} the first may have written, and the
- * last two apply to declarations the second may have added.
+ * adds the definitions the federation {@code @link} imports, and {@link DescriptionNoteApplier}
+ * appends the configured notes. The order is a dependency: the federation library reads the
+ * {@code @link} the first may have written, and the notes apply to declarations the second may
+ * have added. The configured tags are not here: {@code graphitron_configured_tag} states them, and
+ * the emitted schema applies them.
  *
  * <p>Two callers, which is the reason this is one function: the generator's load and the store's
  * assembly. Composed twice, the two would assemble different schemas from one corpus, and a
@@ -168,7 +169,7 @@ public final class LoadingRewrites {
     }
 
     /**
-     * Runs the four rewrites over {@code registry}, attributing its sources by {@code inputs}.
+     * Runs the three rewrites over {@code registry}, attributing its sources by {@code inputs}.
      *
      * <p>{@code inputs} is the run's whole input list in recipe order, the shape a
      * {@link no.sikt.graphitron.model.config.RunContext} holds, rather than one input per document:
@@ -193,7 +194,6 @@ public final class LoadingRewrites {
         if (!(injected instanceof Outcome.Applied applied)) {
             return injected;
         }
-        TagApplier.apply(registry, bySource);
         DescriptionNoteApplier.apply(registry, bySource);
         return new Outcome.Applied(registry, applied.injectedNames(),
             tagLink instanceof TagLinkSynthesiser.Result.Synthesised);

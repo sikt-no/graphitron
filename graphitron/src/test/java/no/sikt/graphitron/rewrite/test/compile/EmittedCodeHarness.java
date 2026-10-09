@@ -20,6 +20,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -58,6 +59,26 @@ public final class EmittedCodeHarness implements AutoCloseable {
      *              source in one round)
      */
     public static EmittedCodeHarness compile(Map<String, TypeSpec> units) {
+        return compile(fileManager -> renderSources(units));
+    }
+
+    /**
+     * Compiles the source files a run wrote and returns a harness that can load them, for a test
+     * that drives what {@code generate} put on disk rather than a unit it rendered itself.
+     *
+     * @param files every {@code .java} file the classes under test reference, on the terms of
+     *              {@link #compile(Map)}
+     */
+    public static EmittedCodeHarness compileFiles(List<Path> files) {
+        return compile(fileManager -> {
+            var sources = new ArrayList<JavaFileObject>();
+            fileManager.getJavaFileObjectsFromPaths(files).forEach(sources::add);
+            return sources;
+        });
+    }
+
+    private static EmittedCodeHarness compile(
+            Function<StandardJavaFileManager, List<JavaFileObject>> sourcesOf) {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         if (compiler == null) {
             throw new IllegalStateException(
@@ -81,7 +102,7 @@ public final class EmittedCodeHarness implements AutoCloseable {
             }
             fileManager.setLocation(StandardLocation.CLASS_PATH, classpath);
 
-            List<JavaFileObject> sources = renderSources(units);
+            List<JavaFileObject> sources = sourcesOf.apply(fileManager);
             JavaCompiler.CompilationTask task = compiler.getTask(
                 null, fileManager, collector, List.of("-proc:none"), null, sources);
             boolean success = task.call();

@@ -16,8 +16,9 @@ import java.util.Optional;
  * string is returned by {@code SourceLocation.getSourceName()} at applier
  * time, so map lookups keyed on it match byte-for-byte without renormalisation.
  *
- * <p>A {@code tag} causes {@link TagApplier} to append {@code @tag(name: "<tag>")}
- * to every in-scope element defined in the source. A {@code descriptionNote}
+ * <p>A {@code tag} puts {@code @tag(name: "<tag>")} on every in-scope element
+ * defined in the source, which {@code graphitron_configured_tag} states and the
+ * emitted schema applies. A {@code descriptionNote}
  * causes {@link DescriptionNoteApplier} to append the note (with a blank-line
  * separator) to the description of every in-scope element. The two are
  * independent; either, both, or neither may be present on a given entry.

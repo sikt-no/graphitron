@@ -29,15 +29,20 @@ public interface CarriesObjectForm {
     GraphQLObjectType schemaType();
 
     /**
-     * The graphql-java form for {@code variant}: its own when it carries one, otherwise the
-     * {@code assembled} schema's type of that name, or {@code null} when neither has one. The
-     * single home of that resolution, so the emitters and the build-time guards that sweep the
-     * emitted population read one rule.
+     * The graphql-java form for {@code variant}: the {@code assembled} schema's type of that name,
+     * otherwise its own when it carries one, or {@code null} when neither has one. The single home
+     * of that resolution, so the emitters and the build-time guards that sweep the emitted
+     * population read one rule.
+     *
+     * <p>The schema first: handed the post-synthesis schema, a minted type renders as the store
+     * minted it, with what it inherits from the configuration, rather than as the walk synthesised
+     * it from the schema as written. The carried form answers only where the schema has no such
+     * type, which is the walk's own schema before its synthesis is added.
      */
     static GraphQLNamedType formOf(GraphitronType variant, String name, GraphQLSchema assembled) {
-        if (variant instanceof CarriesObjectForm carrier) {
-            return carrier.schemaType();
+        if (assembled.getType(name) instanceof GraphQLNamedType named) {
+            return named;
         }
-        return assembled.getType(name) instanceof GraphQLNamedType named ? named : null;
+        return variant instanceof CarriesObjectForm carrier ? carrier.schemaType() : null;
     }
 }

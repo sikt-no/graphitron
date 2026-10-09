@@ -26,9 +26,9 @@ import java.util.Map;
  * Appends a description note to every in-scope element defined in a source
  * whose corresponding {@link SchemaInput} carries a {@code descriptionNote}.
  *
- * <p>Element scope (widened past legacy): everything {@link TagApplier}
- * touches plus the type declarations themselves (object, interface, enum,
- * input). Notes are documentation, and the type declaration is the most
+ * <p>Element scope (widened past legacy): the fields, input fields, enum
+ * values, field arguments and unions a configured tag lands on, plus the type
+ * declarations themselves (object, interface, enum, input). Notes are documentation, and the type declaration is the most
  * discoverable place a reader looks.
  *
  * <p>The note is appended with a blank-line separator when the element
@@ -38,8 +38,8 @@ import java.util.Map;
  * output is identical across build hosts, unlike the legacy behaviour that
  * used {@link System#lineSeparator()}.
  *
- * <p>Like {@link TagApplier}, uses a two-pass collect-then-replace pattern
- * against the {@link TypeDefinitionRegistry}.
+ * <p>Uses a two-pass collect-then-replace pattern against the
+ * {@link TypeDefinitionRegistry}.
  */
 public final class DescriptionNoteApplier {
 

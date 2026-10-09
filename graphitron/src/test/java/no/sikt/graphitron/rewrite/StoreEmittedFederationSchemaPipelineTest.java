@@ -2,6 +2,10 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.language.AstPrinter;
 import graphql.language.ObjectTypeDefinition;
+import graphql.schema.GraphQLDirectiveContainer;
+import graphql.schema.GraphQLEnumType;
+import graphql.schema.GraphQLInputObjectType;
+import graphql.schema.GraphQLObjectType;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.config.RunContext;
@@ -13,6 +17,7 @@ import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.LoadingRewrites;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
+import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -50,6 +55,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * carrier's tag keeps the shared type for the others. {@code @shareable} is the other way round,
  * a shared type being shareable when any carrier is. Where carriers disagree on a tag the build
  * says so, under a rule an exclude-based subgraph disables.
+ *
+ * <p>The schema classes a run writes carry what the published schema carries, configured tags
+ * included: they are compiled and loaded, and the types they build are read.
  */
 @PipelineTier
 class StoreEmittedFederationSchemaPipelineTest {
@@ -308,6 +316,38 @@ class StoreEmittedFederationSchemaPipelineTest {
         assertThat(narrowedFindings(ctx)).isEmpty();
     }
 
+    @Test
+    @DisplayName("the schema classes carry the configured tags the published schema does")
+    void theSchemaClassesCarryTheConfiguredTags(@TempDir Path tmp) throws Exception {
+        var ctx = context(tmp,
+            input(tmp, "stable.graphqls", LINK + NODE + """
+                enum Rating { G PG }
+                input FilmFilter { title: String }
+                """, "stable"),
+            input(tmp, "experimental.graphqls", """
+                extend type Query {
+                  films(filter: FilmFilter, rating: Rating): [Film!]!
+                    @asConnection @defaultOrder(primaryKey: true)
+                }
+                """, "experimental"));
+
+        try (var classes = schemaClasses(ctx)) {
+            var query = (GraphQLObjectType) classes.type("QueryType");
+            assertThat(tagNames(query.getFieldDefinition("films").getArgument("filter")))
+                .containsExactly("experimental");
+            var film = (GraphQLObjectType) classes.type("FilmType");
+            assertThat(tagNames(film.getFieldDefinition("title"))).containsExactly("stable");
+            assertThat(tagNames(film)).as("a type declaration is never tagged").isEmpty();
+            var connection = (GraphQLObjectType) classes.type("QueryFilmsConnectionType");
+            assertThat(tagNames(connection)).as("inherited from the carrier")
+                .containsExactly("experimental");
+            var rating = (GraphQLEnumType) classes.type("RatingType");
+            assertThat(tagNames(rating.getValue("G"))).containsExactly("stable");
+            var filter = (GraphQLInputObjectType) classes.type("FilmFilterType");
+            assertThat(tagNames(filter.getFieldDefinition("title"))).containsExactly("stable");
+        }
+    }
+
     /**
      * The synthesised {@code @link} imports {@code @tag} alone, so a graph with no {@code @link}
      * of its own declares {@code @key} itself, which is what the build's refusal tells an author
@@ -394,6 +434,45 @@ class StoreEmittedFederationSchemaPipelineTest {
             .filter(path -> path.getFileName().toString().equals("schema.graphqls"))
             .findFirst().orElseThrow();
         return new SchemaParser().parse(Files.readString(schema, StandardCharsets.UTF_8));
+    }
+
+    /** The schema classes a run over {@code ctx} wrote, compiled with everything else it wrote. */
+    private static SchemaClasses schemaClasses(RunContext ctx) {
+        GraphQLRewriteGenerator.GenerationResult result;
+        try (var store = GraphitronStore.captured(ctx)) {
+            result = new GraphQLRewriteGenerator(ctx, store).generate();
+        }
+        var sources = result.emitted().stream()
+            .filter(path -> path.getFileName().toString().endsWith(".java"))
+            .toList();
+        return new SchemaClasses(EmittedCodeHarness.compileFiles(sources), sources,
+            ctx.outputDirectory());
+    }
+
+    private record SchemaClasses(EmittedCodeHarness harness, List<Path> sources, Path root)
+            implements AutoCloseable {
+
+        /** What the named class's {@code type()} builds. */
+        Object type(String simpleName) throws ReflectiveOperationException {
+            var source = sources.stream()
+                .filter(path -> path.getFileName().toString().equals(simpleName + ".java"))
+                .findFirst().orElseThrow(() -> new AssertionError("no " + simpleName + " written"));
+            var relative = root.relativize(source).toString();
+            var fqcn = relative.substring(0, relative.length() - ".java".length())
+                .replace(source.getFileSystem().getSeparator(), ".");
+            return harness.load(fqcn).getMethod("type").invoke(null);
+        }
+
+        @Override
+        public void close() {
+            harness.close();
+        }
+    }
+
+    private static List<String> tagNames(GraphQLDirectiveContainer element) {
+        return element.getAppliedDirectives("tag").stream()
+            .map(d -> (String) d.getArgument("name").getValue())
+            .toList();
     }
 
     /** The {@code shared-type-tags-narrowed} findings in the report the build assembles. */

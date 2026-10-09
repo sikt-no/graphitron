@@ -6,7 +6,7 @@ import java.util.Map;
 
 /**
  * Converts a list of {@link SchemaInput} entries into a source-name-keyed
- * map consumed by {@link TagApplier} and {@link DescriptionNoteApplier}.
+ * map consumed by {@link TagLinkSynthesiser} and {@link DescriptionNoteApplier}.
  *
  * <p>The map is a {@link LinkedHashMap} so iteration order matches the
  * caller's input-list order; this keeps tag/note application reproducible

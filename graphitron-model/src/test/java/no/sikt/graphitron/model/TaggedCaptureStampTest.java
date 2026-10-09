@@ -16,15 +16,14 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
  * A tagged capture: the one fixture in the tree whose capture is configured with a
- * {@code <schemaInput tag>}, so the capture's assembly composes the corpus with the tag rewrites the
- * way the generator does, the synthesised {@code @link} importing {@code @tag} included. No other
- * capture-running fixture configures a tag and no pom in the tree sets one, so without this case a
- * tagged composition would meet the store first on a consumer's build.
+ * {@code <schemaInput tag>}, so the capture's assembly composes the corpus with the synthesised
+ * {@code @link} importing {@code @tag}. No other capture-running fixture configures a tag and no pom
+ * in the tree sets one, so without this case a tagged composition would meet the store first on a
+ * consumer's build. {@link ConfiguredTagTest} pins where the tags themselves land.
  *
- * <p>Two things are pinned. The capture composed and assembled the tagged corpus cleanly: the tag
- * applications are declared by the synthesised {@code @link}, so the verdict is empty. And the stamp
- * lookup records the tagged file stamped, any generator-injected name it meets being recorded
- * unstamped rather than stamped or refused.
+ * <p>Two things are pinned. The capture composed and assembled the tagged corpus cleanly, so the
+ * verdict is empty. And the stamp lookup records the tagged file stamped, any generator-injected
+ * name it meets being recorded unstamped rather than stamped or refused.
  */
 class TaggedCaptureStampTest {
 
@@ -45,7 +44,7 @@ class TaggedCaptureStampTest {
                 assertThat(store.dsl()
                         .select(GRAPHQL_SCHEMA_PROBLEM.STAGE, GRAPHQL_SCHEMA_PROBLEM.MESSAGE)
                         .from(GRAPHQL_SCHEMA_PROBLEM).fetch())
-                    .as("the tagged composition assembled: the synthesised @link declares @tag")
+                    .as("the tagged composition assembled")
                     .isEmpty();
 
                 assertThat(store.dsl().select(STORE_SOURCE.SOURCE_NAME, STORE_SOURCE.STAMP)

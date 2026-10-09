@@ -477,8 +477,8 @@ final class ConnectionPromoter {
             String connName = resolveConnectionName(parent.getName(), fieldDef);
             String edgeName = ConnectionNaming.defaultEdgeName(connName);
             boolean shareable = fieldDef.hasAppliedDirective("shareable");
-            // Directive arm: the carrier field is the tag source. TagApplier tags fields
-            // (never type declarations), so a <schemaInput tag> source surfaces here too.
+            // Directive arm: the carrier field is the tag source, for the tags its author wrote. A
+            // configured tag is not in the written schema; the emitted one inherits it.
             var tags = fieldDef.getAppliedDirectives(TAG_DIRECTIVE);
             var facets = facetSpecsFor(fieldDef);
             var connSchema = buildSynthesisedConnection(connName, edgeName, elementTypeName, itemNullable, shareable, tags, facets);
@@ -740,7 +740,7 @@ final class ConnectionPromoter {
     }
 
     /**
-     * The federation {@code @tag} directive name; matches {@code TagApplier.TAG_DIRECTIVE_NAME}.
+     * The federation {@code @tag} directive name.
      * Read by {@link #promotionFor} to seed the synthesised forms; the cross-carrier {@code @tag}
      * intersection itself lives in {@code TypeRegistry.register}.
      */

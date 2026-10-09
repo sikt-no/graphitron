@@ -6,6 +6,16 @@ import graphql.language.Description;
 import graphql.language.DirectiveDefinition;
 import graphql.language.Directive;
 import graphql.language.FieldDefinition;
+import graphql.language.DirectivesContainer;
+import graphql.language.EnumTypeDefinition;
+import graphql.language.EnumTypeExtensionDefinition;
+import graphql.language.EnumValueDefinition;
+import graphql.language.InputObjectTypeDefinition;
+import graphql.language.InputObjectTypeExtensionDefinition;
+import graphql.language.InterfaceTypeDefinition;
+import graphql.language.InterfaceTypeExtensionDefinition;
+import graphql.language.ScalarTypeDefinition;
+import graphql.language.UnionTypeDefinition;
 import graphql.language.InputValueDefinition;
 import graphql.language.ObjectTypeDefinition;
 import graphql.language.ObjectTypeExtensionDefinition;
@@ -73,9 +83,9 @@ import static org.jooq.impl.DSL.val;
  * contested coordinate reaches this patch as an absence and needs no arm.
  *
  * <p>Directive applications a macro adds, a federation key among them, come from
- * {@code graphitron_directive_application}'s minted rows, told from authored ones by carrying no
- * position. Only those are applied, the authored applications already being in the registry this
- * patch started from.
+ * {@code graphitron_directive_application}'s minted rows, and the {@code @tag} a file's entry
+ * configures from its configured ones. Only those are applied, the authored applications already
+ * being in the registry this patch started from.
  *
  * <h3>Additive and type-replacing, never wholesale</h3>
  *
@@ -92,9 +102,10 @@ import static org.jooq.impl.DSL.val;
  * <p>Nothing is removed. The store holding no row for something the registry declares would be a
  * capture defect rather than a deletion to perform, and stating it as a difference is a gate's job.
  *
- * <p>Object types only. Every row of {@code graphitron_type_minted} is an {@code OBJECT}, because
- * the macros mint nothing else, so an input object, enum, union, interface or scalar reaches the
- * emitted registry exactly as the author wrote it and this class does not visit one.
+ * <p>The elements are patched on object types only. Every row of {@code graphitron_type_minted} is
+ * an {@code OBJECT}, because the macros mint nothing else, so an input object, enum, union,
+ * interface or scalar reaches the emitted registry as the author wrote it, with only the
+ * configured applications added.
  *
  * <h3>Which registry it starts from</h3>
  *
@@ -110,7 +121,8 @@ public final class EmittedRegistry {
 
     private static final String TAG_DIRECTIVE = "tag";
 
-    /** The origin of the applications a macro adds, which are the ones this patch applies. */
+    /** The origins of the applications no document states, which are the ones this patch applies. */
+    private static final String CONFIGURED = "CONFIGURED";
     private static final String MINTED = "MINTED";
     private static final String SHAREABLE_DIRECTIVE = "shareable";
 
@@ -224,7 +236,7 @@ public final class EmittedRegistry {
         apply(patched, replacements);
         var nodeTypes = mintedNodeTypes(store);
         refuseAuthoredNodeType(patched, nodeTypes);
-        applyMintedDirectives(patched, store);
+        applyDirectives(patched, store);
         defineNodeType(patched, nodeTypes);
         return new Emitted(patched, narrowings(store));
     }
@@ -556,18 +568,20 @@ public final class EmittedRegistry {
     }
 
     /**
-     * Applies the directive applications the anchor minted, which no author wrote.
+     * Applies the directive applications no document states: the ones the configuration adds and
+     * the ones a macro mints.
      *
-     * <p>Read from {@code graphitron_directive_application}'s minted rows, the registry this patches
-     * already holding the authored and configured ones, and rendered from their arguments as the
-     * macro stated them, so nothing here knows what any macro means. Arguments come in name order, which
-     * for every macro that applies one today is the definition's order.
+     * <p>Read from {@code graphitron_directive_application}'s {@code CONFIGURED} and {@code MINTED}
+     * rows, the registry this patches already holding the authored ones, and rendered from their
+     * arguments as the rule stated them, so nothing here knows what any of them means. Arguments
+     * come in name order, which for every application of this kind today is the definition's order.
+     * Each lands after what its element already carries.
      *
-     * <p>A type already carrying the same application means a mint was applied to a registry that
-     * had already been through it, which is a generator defect and ends the run instead of being
-     * skipped.
+     * <p>An element already carrying the same application means the rule was applied to a registry
+     * that had already been through it, which is a generator defect and ends the run instead of
+     * being skipped.
      */
-    private static void applyMintedDirectives(TypeDefinitionRegistry patched, StoreHandle store) {
+    private static void applyDirectives(TypeDefinitionRegistry patched, StoreHandle store) {
         var d = GRAPHITRON_DIRECTIVE_APPLICATION;
         var a = GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
         var rows = store.dsl()
@@ -576,7 +590,7 @@ public final class EmittedRegistry {
             .leftJoin(a).on(a.GRAPH_NAME.eq(d.GRAPH_NAME).and(a.COORDINATE.eq(d.COORDINATE))
                 .and(a.DIRECTIVE_NAME.eq(d.DIRECTIVE_NAME)).and(a.ORDINAL.eq(d.ORDINAL)))
             .where(d.GRAPH_NAME.eq(store.graphName()))
-            .and(d.ORIGIN.eq(MINTED))
+            .and(d.ORIGIN.in(CONFIGURED, MINTED))
             .orderBy(d.COORDINATE, d.DIRECTIVE_NAME, d.ORDINAL, a.DIRECTIVE_ARGUMENT_NAME)
             .fetch();
         var applications = new LinkedHashMap<List<Object>, Directive.Builder>();
@@ -592,39 +606,144 @@ public final class EmittedRegistry {
                     Parser.parseValue(row.get(a.VALUE_SDL))).build());
             }
         }
-        var byType = new LinkedHashMap<String, List<Directive>>();
+        var byCoordinate = new LinkedHashMap<String, List<Directive>>();
         applications.forEach((key, builder) ->
-            byType.computeIfAbsent(coordinates.get(key), c -> new ArrayList<>()).add(builder.build()));
-        var replacements = new ArrayList<Replacement>();
-        byType.forEach((coordinate, minted) -> {
-            if (!(patched.getTypeOrNull(coordinate) instanceof ObjectTypeDefinition object)) {
-                throw new IllegalStateException("The store mints a directive application at '"
-                    + coordinate + "', which is not an object type the emitted registry holds."
-                    + " This is a defect in graphitron, not in the schema.");
+            byCoordinate.computeIfAbsent(coordinates.get(key), c -> new ArrayList<>())
+                .add(builder.build()));
+        byCoordinate.forEach((coordinate, added) -> {
+            var site = ElementSite.of(patched, coordinate);
+            patched.remove(site.definition());
+            patched.add(site.with(added));
+        });
+    }
+
+    /**
+     * The definition that declares the element at a coordinate: the type's own for a type, and for
+     * a member or an argument whichever of the type's definition and extensions declares the
+     * member. A registry does not merge a type's sites, so a directive lands on the one its element
+     * is written in.
+     */
+    private record ElementSite(SDLDefinition<?> definition, String coordinate, String member,
+                               String argument) {
+
+        static ElementSite of(TypeDefinitionRegistry registry, String coordinate) {
+            int dot = coordinate.indexOf('.');
+            int paren = coordinate.indexOf('(');
+            String typeName = dot < 0 ? coordinate : coordinate.substring(0, dot);
+            String member = dot < 0 ? null
+                : coordinate.substring(dot + 1, paren < 0 ? coordinate.length() : paren);
+            String argument = paren < 0 ? null
+                : coordinate.substring(paren + 1, coordinate.length() - 2);
+            var base = registry.getTypeOrNull(typeName);
+            if (base != null && (member == null || declares(base, member))) {
+                return new ElementSite(base, coordinate, member, argument);
             }
-            var directives = new ArrayList<>(object.getDirectives());
-            for (var directive : minted) {
+            var extensions = new ArrayList<SDLDefinition<?>>();
+            extensions.addAll(registry.objectTypeExtensions().getOrDefault(typeName, List.of()));
+            extensions.addAll(registry.interfaceTypeExtensions().getOrDefault(typeName, List.of()));
+            extensions.addAll(registry.inputObjectTypeExtensions().getOrDefault(typeName, List.of()));
+            extensions.addAll(registry.enumTypeExtensions().getOrDefault(typeName, List.of()));
+            for (var extension : extensions) {
+                if (member != null && declares(extension, member)) {
+                    return new ElementSite(extension, coordinate, member, argument);
+                }
+            }
+            throw new IllegalStateException("The store applies a directive at '" + coordinate
+                + "', which the emitted registry does not hold. This is a defect in graphitron,"
+                + " not in the schema.");
+        }
+
+        private static boolean declares(SDLDefinition<?> site, String member) {
+            return switch (site) {
+                case ObjectTypeDefinition o -> o.getFieldDefinitions().stream()
+                    .anyMatch(f -> f.getName().equals(member));
+                case InterfaceTypeDefinition i -> i.getFieldDefinitions().stream()
+                    .anyMatch(f -> f.getName().equals(member));
+                case InputObjectTypeDefinition i -> i.getInputValueDefinitions().stream()
+                    .anyMatch(v -> v.getName().equals(member));
+                case EnumTypeDefinition e -> e.getEnumValueDefinitions().stream()
+                    .anyMatch(v -> v.getName().equals(member));
+                default -> false;
+            };
+        }
+
+        /** The site with {@code added} applied to its element, an extension staying one. */
+        SDLDefinition<?> with(List<Directive> added) {
+            if (member == null) {
+                return switch (definition) {
+                    case ObjectTypeDefinition o -> o.transform(b -> b.directives(appended(o, added)));
+                    case InterfaceTypeDefinition i -> i.transform(b -> b.directives(appended(i, added)));
+                    case UnionTypeDefinition u -> u.transform(b -> b.directives(appended(u, added)));
+                    case EnumTypeDefinition e -> e.transform(b -> b.directives(appended(e, added)));
+                    case InputObjectTypeDefinition i -> i.transform(b -> b.directives(appended(i, added)));
+                    case ScalarTypeDefinition sc -> sc.transform(b -> b.directives(appended(sc, added)));
+                    default -> throw new IllegalStateException("No directive lands on " + definition);
+                };
+            }
+            // Extensions before their base types: transform() on an extension builds the base type,
+            // which would turn the extension into a second definition.
+            return switch (definition) {
+                case ObjectTypeExtensionDefinition o ->
+                    o.transformExtension(b -> b.fieldDefinitions(fields(o.getFieldDefinitions(), added)));
+                case ObjectTypeDefinition o ->
+                    o.transform(b -> b.fieldDefinitions(fields(o.getFieldDefinitions(), added)));
+                case InterfaceTypeExtensionDefinition i ->
+                    i.transformExtension(b -> b.definitions(fields(i.getFieldDefinitions(), added)));
+                case InterfaceTypeDefinition i ->
+                    i.transform(b -> b.definitions(fields(i.getFieldDefinitions(), added)));
+                case InputObjectTypeExtensionDefinition i -> i.transformExtension(
+                    b -> b.inputValueDefinitions(inputValues(i.getInputValueDefinitions(), member, added)));
+                case InputObjectTypeDefinition i -> i.transform(
+                    b -> b.inputValueDefinitions(inputValues(i.getInputValueDefinitions(), member, added)));
+                case EnumTypeExtensionDefinition e -> e.transformExtension(
+                    b -> b.enumValueDefinitions(enumValues(e.getEnumValueDefinitions(), added)));
+                case EnumTypeDefinition e -> e.transform(
+                    b -> b.enumValueDefinitions(enumValues(e.getEnumValueDefinitions(), added)));
+                default -> throw new IllegalStateException("No member lands on " + definition);
+            };
+        }
+
+        private List<FieldDefinition> fields(List<FieldDefinition> fields, List<Directive> added) {
+            return fields.stream().map(f -> !f.getName().equals(member) ? f
+                : argument == null
+                    ? f.transform(b -> b.directives(appended(f, added)))
+                    : f.transform(b -> b.inputValueDefinitions(
+                        inputValues(f.getInputValueDefinitions(), argument, added))))
+                .toList();
+        }
+
+        private List<InputValueDefinition> inputValues(List<InputValueDefinition> values,
+                                                       String name, List<Directive> added) {
+            return values.stream().map(v -> !v.getName().equals(name) ? v
+                : v.transform(b -> b.directives(appended(v, added)))).toList();
+        }
+
+        private List<EnumValueDefinition> enumValues(List<EnumValueDefinition> values,
+                                                     List<Directive> added) {
+            return values.stream().map(v -> !v.getName().equals(member) ? v
+                : v.transform(b -> b.directives(appended(v, added)))).toList();
+        }
+
+        private List<Directive> appended(DirectivesContainer<?> element, List<Directive> added) {
+            var directives = new ArrayList<>(element.getDirectives());
+            for (var directive : added) {
                 var printed = AstPrinter.printAst(directive);
                 if (directives.stream().anyMatch(held -> AstPrinter.printAst(held).equals(printed))) {
-                    throw new IllegalStateException("Type '" + coordinate + "' already carries the "
-                        + printed + " the store mints for it. This is a defect in graphitron, not in"
-                        + " the schema: the mint was applied twice, the emitted registry having been"
-                        + " derived from a registry that had already been through it.");
+                    throw new IllegalStateException("'" + coordinate + "' already carries the "
+                        + printed + " the store applies to it. This is a defect in graphitron, not"
+                        + " in the schema: the emitted registry was derived from a registry that"
+                        + " had already been through it.");
                 }
                 directives.add(directive);
             }
-            replacements.add(new Replacement(object, object.transform(b -> b.directives(directives))));
-        });
-        for (var replacement : replacements) {
-            patched.remove(replacement.old());
-            patched.add(replacement.replacement());
+            return directives;
         }
     }
 
     /**
      * The node types the anchor mints {@code @nodeType} on, which is every node type of a graph that
      * composes the directive and none of any other. The applications themselves are
-     * {@link #applyMintedDirectives}'s, rendered like any minted one; what this and the two methods
+     * {@link #applyDirectives}'s, rendered like any minted one; what this and the two methods
      * below add is the directive's definition and the refusal of an author who wrote it.
      */
     private static List<String> mintedNodeTypes(StoreHandle store) {

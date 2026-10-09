@@ -5,11 +5,13 @@ import graphql.schema.GraphQLInputType;
 import graphql.schema.GraphQLList;
 import graphql.schema.GraphQLNamedType;
 import graphql.schema.GraphQLNonNull;
+import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.model.CarriesObjectForm;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 
 import javax.lang.model.element.Modifier;
@@ -50,9 +52,14 @@ public final class InputTypeGenerator {
      * Renders the {@code <Name>Type} class for one input row of the type-keyed command
      * relation. Membership (which input types get a class) lives on the relation's schema-shape
      * rows; this method only renders content.
+     *
+     * <p>Rendered from {@code assembled}'s form of the type, so a field carries what the
+     * post-synthesis schema gives it, a configured {@code @tag} among them.
      */
-    public static TypeSpec generateFor(GraphitronType.InputType it) {
-        return buildInputTypeSpec(it.schemaType());
+    public static TypeSpec generateFor(GraphitronType.InputType it, GraphQLSchema assembled) {
+        return buildInputTypeSpec(
+            CarriesObjectForm.formOf(it, it.name(), assembled) instanceof GraphQLInputObjectType form
+                ? form : it.schemaType());
     }
 
     private static TypeSpec buildInputTypeSpec(GraphQLInputObjectType inputType) {

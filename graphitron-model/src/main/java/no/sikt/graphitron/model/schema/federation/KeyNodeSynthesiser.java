@@ -30,8 +30,7 @@ import java.util.List;
  * rather than a read of the classified registry: there is nothing classified to read here.
  *
  * <p>Runs in {@link no.sikt.graphitron.model.schema.AttributedRegistry#of} after {@link FederationLinkApplier}
- * (so the {@code @key} directive declaration is in scope) and before {@code TagApplier}
- * (which iterates {@code @tag}s; ordering is independent but stable). The orchestrator only
+ * (so the {@code @key} directive declaration is in scope). The orchestrator only
  * invokes this when {@code federationLink} is true; calling it on a registry without
  * federation directives in scope would fail validation in
  * {@code SchemaGenerator.makeExecutableSchema}.

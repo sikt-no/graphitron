@@ -181,7 +181,7 @@ public final class TypeRegistry {
         return existing.transform(b -> b.replaceAppliedDirectives(merged));
     }
 
-    /** The federation {@code @tag} directive name; matches {@code TagApplier.TAG_DIRECTIVE_NAME}. */
+    /** The federation {@code @tag} directive name. */
     private static final String TAG_DIRECTIVE = "tag";
 
     private static Object directiveKey(GraphQLAppliedDirective directive) {

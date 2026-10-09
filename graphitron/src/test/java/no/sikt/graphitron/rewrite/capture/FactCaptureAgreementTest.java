@@ -518,10 +518,11 @@ class FactCaptureAgreementTest {
             // The supertype against the three under it, on the transcription family's terms: a
             // foreign key refuses an anchor with no supertype row and nothing refuses a supertype
             // row no anchor claimed. The field arm derives its kind from the declaring type rather
-            // than asserting a literal, exactly as the transcription's own arm does.
+            // than asserting a literal, exactly as the transcription's own arm does. An enum value
+            // has no part relation, nothing minting one, so its arm is the transcription's.
             assertThat(dsl.select(GRAPHITRON_ELEMENT.COORDINATE, GRAPHITRON_ELEMENT.ELEMENT_KIND)
                 .from(GRAPHITRON_ELEMENT).fetch())
-                .as("the emitted element supertype against the union of its three anchors")
+                .as("the emitted element supertype against its three anchors and the enum values")
                 .containsExactlyInAnyOrderElementsOf(
                     dsl.select(GRAPHITRON_TYPE.COORDINATE, val("NAMED_TYPE")).from(GRAPHITRON_TYPE)
                     .unionAll(dsl.select(GRAPHITRON_FIELD.COORDINATE,
@@ -533,12 +534,16 @@ class FactCaptureAgreementTest {
                         .and(GRAPHITRON_TYPE.TYPE_NAME.eq(GRAPHITRON_FIELD.TYPE_NAME)))
                     .unionAll(dsl.select(GRAPHITRON_ARGUMENT.COORDINATE, val("FIELD_ARGUMENT"))
                         .from(GRAPHITRON_ARGUMENT))
+                    .unionAll(dsl.select(GRAPHQL_ENUM_VALUE.TYPE_NAME.concat(".")
+                            .concat(GRAPHQL_ENUM_VALUE.VALUE_NAME), val("ENUM_VALUE"))
+                        .from(GRAPHQL_ENUM_VALUE))
                     .fetch());
             assertThat(dsl.select(GRAPHITRON_ELEMENT.ELEMENT_KIND).from(GRAPHITRON_ELEMENT)
                 .fetchSet(GRAPHITRON_ELEMENT.ELEMENT_KIND))
                 .as("the fixture has to reach every kind this family holds, or the supertype"
                     + " equality above is partly vacuous")
-                .containsExactlyInAnyOrder("NAMED_TYPE", "FIELD", "INPUT_FIELD", "FIELD_ARGUMENT");
+                .containsExactlyInAnyOrder("NAMED_TYPE", "FIELD", "INPUT_FIELD", "ENUM_VALUE",
+                    "FIELD_ARGUMENT");
             assertThat(dsl.select(GRAPHITRON_TYPE_MINTED.TYPE_NAME).from(GRAPHITRON_TYPE_MINTED)
                 .fetch(0, String.class))
                 .as("the fixture has to mint a type, or every union above is a copy of one arm")

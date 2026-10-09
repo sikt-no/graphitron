@@ -11,8 +11,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Federation {@code @tag} inheritance on the walk: an explicit {@code @tag} on an
- * {@code @asConnection} carrier reaches the Connection / Edge / PageInfo types the walk synthesises,
- * which the schema classes are still rendered from. The store's inheritance, configured tags
+ * {@code @asConnection} carrier reaches the Connection / Edge / PageInfo types the walk synthesises.
+ * The schema classes render the store's synthesis instead; its inheritance, configured tags
  * included, is pinned through {@code generate} by {@code StoreEmittedFederationSchemaPipelineTest}.
  */
 @PipelineTier

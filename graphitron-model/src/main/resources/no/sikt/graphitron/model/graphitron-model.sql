@@ -4518,12 +4518,12 @@ CREATE TABLE graphitron_element (
   touched_at        TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  CHECK (element_kind IN ('NAMED_TYPE', 'FIELD', 'INPUT_FIELD', 'FIELD_ARGUMENT'))
+  CHECK (element_kind IN ('NAMED_TYPE', 'FIELD', 'INPUT_FIELD', 'ENUM_VALUE', 'FIELD_ARGUMENT'))
 );
 COMMENT ON TABLE graphitron_element IS 'A schema element the generator emits exists in this graph, whether an author declared it or macro expansion minted it: the supertype of the three element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it. For example a QueryFilmsConnection no author wrote is the row QueryFilmsConnection here and no row at all in graphql_element, and the field carrying the macro is one row in each.';
 COMMENT ON COLUMN graphitron_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_element.coordinate IS 'the coordinate itself, in the specification''s own grammar and spelled exactly as graphql_element spells it: Type for a named type, Type.field for a field or an input field of one, and Type.field(argument:) for an argument of a field. Total by construction, which is what lets one column stand for a coordinate of any kind where the decomposed keys beside it cannot';
-COMMENT ON COLUMN graphitron_element.element_kind IS 'which kind of schema element this row is, in the specification''s own vocabulary, and so which relation beside this one a reader joins to get the parts, FIELD and INPUT_FIELD sharing one. Four of the specification''s seven kinds, the vocabulary being narrower than graphql_element''s by exactly the enum value this family holds no anchor for';
+COMMENT ON COLUMN graphitron_element.element_kind IS 'which kind of schema element this row is, in the specification''s own vocabulary, and so which relation beside this one a reader joins to get the parts, FIELD and INPUT_FIELD sharing one. Five of the specification''s seven kinds, the two directive forms being the ones left out; an enum value has no part relation, nothing patching one, and is here so a directive application can be anchored at it';
 COMMENT ON COLUMN graphitron_element.touched_at IS 'the reading that last wrote this row, which is what its sweep tells readings apart by: a row this reading did not rewrite is one the corpus stopped stating and goes. The other half of the lifecycle the walk''s clear used to stand in for, the cascade above being the first';
 
 CREATE TABLE graphitron_type (
@@ -4796,11 +4796,11 @@ COMMENT ON COLUMN graphitron_connection_carrier.source_column IS 'the applicatio
 CREATE VIEW graphitron_element_authored (graph_name, coordinate, element_kind) AS
 SELECT graph_name, coordinate, element_kind
   FROM graphql_element
- WHERE element_kind IN ('NAMED_TYPE', 'FIELD', 'INPUT_FIELD', 'FIELD_ARGUMENT');
+ WHERE element_kind IN ('NAMED_TYPE', 'FIELD', 'INPUT_FIELD', 'ENUM_VALUE', 'FIELD_ARGUMENT');
 COMMENT ON VIEW graphitron_element_authored IS 'One of the four sets graphitron_element is the union of: an element an author declared, at the coordinate the transcription spells for it, of a kind this family anchors. For example the Film in type Film { title: String } is one row, and the Film.title written inside it is another.';
 COMMENT ON COLUMN graphitron_element_authored.graph_name IS 'the owning graph''s partition, carried from the transcription';
 COMMENT ON COLUMN graphitron_element_authored.coordinate IS 'the coordinate itself, as graphql_element spells it';
-COMMENT ON COLUMN graphitron_element_authored.element_kind IS 'the kind, in the specification''s own vocabulary and narrowed to the four this family anchors';
+COMMENT ON COLUMN graphitron_element_authored.element_kind IS 'the kind, in the specification''s own vocabulary and narrowed to the five this family anchors';
 
 
 
@@ -7840,6 +7840,15 @@ WITH applied (graph_name, coordinate, site_order, tag) AS (
                                            || '(' || a.argument_name || ':)'
                         AND d.directive_name = 'tag')
   UNION ALL
+  SELECT v.graph_name, v.type_name || '.' || v.value_name, 0, s.tag
+    FROM graphql_enum_value v
+    JOIN graphql_source_input s ON s.graph_name = v.graph_name AND s.source_name = v.source_name
+   WHERE s.tag IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
+                      WHERE d.graph_name = v.graph_name
+                        AND d.coordinate = v.type_name || '.' || v.value_name
+                        AND d.directive_name = 'tag')
+  UNION ALL
   -- A union is tagged per declaration site, each site taking the tag of its own file unless the site
   -- carries one, so a union declared in two tagged files carries both.
   SELECT t.graph_name, t.type_name, t.merge_ordinal, s.tag
@@ -7861,7 +7870,7 @@ SELECT p.graph_name, p.coordinate,
   JOIN graphitron_element e ON e.graph_name = p.graph_name AND e.coordinate = p.coordinate;
 COMMENT ON VIEW graphitron_configured_tag_rule IS 'One row the configured-tag rule computes, in the shape graphitron_configured_tag stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_configured_tag, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
 COMMENT ON COLUMN graphitron_configured_tag_rule.graph_name IS 'the owning graph''s partition';
-COMMENT ON COLUMN graphitron_configured_tag_rule.coordinate IS 'the element the tag is applied to: a field, an input field, an argument, or a union';
+COMMENT ON COLUMN graphitron_configured_tag_rule.coordinate IS 'the element the tag is applied to: a field, an input field, an argument, an enum value, or a union';
 COMMENT ON COLUMN graphitron_configured_tag_rule.ordinal IS 'after every authored @tag at the coordinate, in declaration-site order where a union takes several';
 COMMENT ON COLUMN graphitron_configured_tag_rule.value_sdl IS 'the tag as the name: argument an author would have written';
 CREATE TABLE graphitron_configured_tag (
@@ -7875,7 +7884,7 @@ CREATE TABLE graphitron_configured_tag (
 );
 COMMENT ON TABLE graphitron_configured_tag IS 'The rule <schemaInput tag> states, as a relation: one row per @tag the configuration applies to an element of the emitted population. For example a field declared in a file whose entry carries tag stable, and which carries no @tag of its own, is one row naming stable.';
 COMMENT ON COLUMN graphitron_configured_tag.graph_name IS 'the owning graph''s partition';
-COMMENT ON COLUMN graphitron_configured_tag.coordinate IS 'the element the tag is applied to: a field, an input field, an argument, or a union';
+COMMENT ON COLUMN graphitron_configured_tag.coordinate IS 'the element the tag is applied to: a field, an input field, an argument, an enum value, or a union';
 COMMENT ON COLUMN graphitron_configured_tag.ordinal IS 'after every authored @tag at the coordinate, in declaration-site order where a union takes several';
 COMMENT ON COLUMN graphitron_configured_tag.value_sdl IS 'the tag as the name: argument an author would have written';
 COMMENT ON COLUMN graphitron_configured_tag.touched_at IS 'when the reading that last found this tag ran: the mark the sweep reads, so a tag still applied survives a reading and one no longer applied goes';
@@ -16310,7 +16319,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_element_authored', 'expanded-element', 'graphitron',
    'One of the four sets graphitron_element is the union of: an element an author declared, at the coordinate the transcription spells for it, of a kind this family anchors.',
    'For example the Film in type Film { title: String } is one row, and the Film.title written inside it is another.',
-   'Named rather than left inside the anchor''s writer, where it was one arm of a four-arm insert whose admission rules lived in Java predicates a reader of the schema could not find. The four kinds it claims are listed rather than the other three excluded, so a kind added to graphql_element arrives refused rather than uninvited, and the refusal is a row missing from the schema rather than a silent widening. This set alone carries no precedence: an author''s declaration is the thing the minted sets stand down to, so what admits a row here is only that the transcription anchors it.'),
+   'Named rather than left inside the anchor''s writer, where it was one arm of a four-arm insert whose admission rules lived in Java predicates a reader of the schema could not find. The five kinds it claims are listed rather than the other two excluded, so a kind added to graphql_element arrives refused rather than uninvited, and the refusal is a row missing from the schema rather than a silent widening. This set alone carries no precedence: an author''s declaration is the thing the minted sets stand down to, so what admits a row here is only that the transcription anchors it.'),
   ('graphitron_minted_coinage', 'minted-coinage', 'graphitron',
    'Which coordinate coined each type the expansion mints: one row per minted type name and the application it was derived from.',
    'For example films: [Film!]! @asConnection with a title facet coins QueryFilmsConnection, QueryFilmsConnectionEdge, PageInfo, QueryFilmsConnectionFacets and StringFacetValue, all at Query.films.',
@@ -16418,7 +16427,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_configured_tag', 'configured-tag', 'graphitron',
    'The rule <schemaInput tag> states, as a relation: one row per @tag the configuration applies to an element of the emitted population.',
    'For example a field declared in a file whose entry carries tag stable, and which carries no @tag of its own, is one row naming stable.',
-   'TagApplier''s rule restated over what the source reading records, so the store holds the tags the loading rewrites apply. Fields, input fields and arguments take their file''s tag; a union takes one per declaration site, each site judged on its own applications. Enum values are tagged too and are not here, graphitron_element anchoring none.'),
+   'The one statement of the rule: the emitted schema applies these rows, and inheritance reads them, so a carrier''s tags and the ones its minted types inherit cannot disagree. Fields, input fields, arguments and enum values take their file''s tag; a union takes one per declaration site, each site judged on its own applications.'),
   ('graphitron_configured_tag_rule', 'configured-tag', 'graphitron',
    'One row the configured-tag rule computes, in the shape graphitron_configured_tag stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_configured_tag, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',

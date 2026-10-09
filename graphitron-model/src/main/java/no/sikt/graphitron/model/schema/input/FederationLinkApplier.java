@@ -32,9 +32,9 @@ import no.sikt.graphitron.model.schema.AttributedRegistry;
  * {@code federation-graphql-java-support}, which tracks the federation spec and gates each
  * directive on its minimum spec version.
  *
- * <p>Runs in the {@link LoadingRewrites#apply} composition before {@link TagApplier}, so the
- * injected declarations are available when {@code SchemaGenerator.makeExecutableSchema} validates
- * directive uses. Must run after any schema-extension synthesiser (e.g. {@link TagLinkSynthesiser})
+ * <p>Runs in the {@link LoadingRewrites#apply} composition, so the injected declarations are
+ * available when {@code SchemaGenerator.makeExecutableSchema} validates directive uses, the
+ * configured {@code @tag}s the emitted schema applies among them. Must run after any schema-extension synthesiser (e.g. {@link TagLinkSynthesiser})
  * that injects a {@code @link} the author omitted.
  *
  * <p>The canonical {@code @link} URL lives on

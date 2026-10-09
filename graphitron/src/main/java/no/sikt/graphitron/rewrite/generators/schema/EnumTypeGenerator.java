@@ -1,10 +1,13 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
+import graphql.schema.GraphQLEnumType;
+import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.model.CarriesObjectForm;
 import no.sikt.graphitron.rewrite.model.EnumValueSpec;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 
@@ -34,13 +37,18 @@ public final class EnumTypeGenerator {
      * Renders the {@code <Name>Type} class for one enum row of the type-keyed command relation.
      * Membership (which enums get a class) lives on the relation's schema-shape rows; this
      * method only renders content.
+     *
+     * <p>The directives come from {@code assembled}'s form of the enum, so a value carries what the
+     * post-synthesis schema gives it, a configured {@code @tag} among them, rather than what the
+     * walk read off the schema as written.
      */
-    public static TypeSpec generateFor(GraphitronType.EnumType et) {
-        return buildEnumTypeSpec(et);
+    public static TypeSpec generateFor(GraphitronType.EnumType et, GraphQLSchema assembled) {
+        var schemaType = CarriesObjectForm.formOf(et, et.name(), assembled) instanceof GraphQLEnumType form
+            ? form : et.schemaType();
+        return buildEnumTypeSpec(et, schemaType);
     }
 
-    private static TypeSpec buildEnumTypeSpec(GraphitronType.EnumType et) {
-        var schemaType = et.schemaType();
+    private static TypeSpec buildEnumTypeSpec(GraphitronType.EnumType et, GraphQLEnumType schemaType) {
         var sink = new HelperMethodSink();
         var body = CodeBlock.builder();
         body.addStatement("$T.Builder b = $T.newEnum()", ENUM_TYPE, ENUM_TYPE);
@@ -50,7 +58,10 @@ public final class EnumTypeGenerator {
             body.addStatement("b.description($S)", enumDescription);
         }
         for (var value : et.values()) {
-            String helper = sink.addEnumValueDef(value);
+            var source = schemaType.getValue(value.sdlName());
+            String helper = sink.addEnumValueDef(source == null ? value
+                : new EnumValueSpec(value.sdlName(), value.runtimeValue(), value.description(),
+                    value.deprecationReason(), source));
             body.addStatement("b.value($L())", helper);
         }
         AppliedDirectiveEmitter.emitApplications(body, "b", schemaType, sink);

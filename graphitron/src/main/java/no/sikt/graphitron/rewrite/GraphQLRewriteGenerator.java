@@ -31,7 +31,6 @@ import no.sikt.graphitron.model.schema.input.FederationLinkApplier;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
-import no.sikt.graphitron.model.schema.input.TagApplier;
 import no.sikt.graphitron.model.schema.input.TagLinkSynthesiser;
 import no.sikt.graphitron.rewrite.generators.schema.ConstraintViolationsClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.EnumTypeGenerator;
@@ -585,9 +584,11 @@ public class GraphQLRewriteGenerator {
             plan.typeUnits().schemaShapes().stream()
                 .map(row -> switch (row.form()) {
                     case ENUM -> EnumTypeGenerator.generateFor(
-                        (no.sikt.graphitron.rewrite.model.GraphitronType.EnumType) schema.type(row.typeName()));
+                        (no.sikt.graphitron.rewrite.model.GraphitronType.EnumType) schema.type(row.typeName()),
+                        assembled);
                     case INPUT -> InputTypeGenerator.generateFor(
-                        (no.sikt.graphitron.rewrite.model.GraphitronType.InputType) schema.type(row.typeName()));
+                        (no.sikt.graphitron.rewrite.model.GraphitronType.InputType) schema.type(row.typeName()),
+                        assembled);
                     case OBJECT, INTERFACE, UNION -> ObjectTypeGenerator.generateFor(
                         schema, assembled, row, fetcherBodies.get(row.typeName()));
                 })

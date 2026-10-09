@@ -31,18 +31,20 @@ public final class SchemaShapeRenderTestSupport {
     private SchemaShapeRenderTestSupport() {}
 
     /** The enum-form classes, planned then rendered. */
-    public static List<TypeSpec> enumTypes(GraphitronSchema schema) {
+    public static List<TypeSpec> enumTypes(GraphitronSchema schema, GraphQLSchema assembled) {
         return SchemaShapePlanner.produce(schema, "").stream()
             .filter(r -> r.form() == TypeUnitCommand.SchemaShapeForm.ENUM)
-            .map(r -> EnumTypeGenerator.generateFor((GraphitronType.EnumType) schema.type(r.typeName())))
+            .map(r -> EnumTypeGenerator.generateFor((GraphitronType.EnumType) schema.type(r.typeName()),
+                assembled))
             .toList();
     }
 
     /** The input-form classes, planned then rendered. */
-    public static List<TypeSpec> inputTypes(GraphitronSchema schema) {
+    public static List<TypeSpec> inputTypes(GraphitronSchema schema, GraphQLSchema assembled) {
         return SchemaShapePlanner.produce(schema, "").stream()
             .filter(r -> r.form() == TypeUnitCommand.SchemaShapeForm.INPUT)
-            .map(r -> InputTypeGenerator.generateFor((GraphitronType.InputType) schema.type(r.typeName())))
+            .map(r -> InputTypeGenerator.generateFor((GraphitronType.InputType) schema.type(r.typeName()),
+                assembled))
             .toList();
     }
 

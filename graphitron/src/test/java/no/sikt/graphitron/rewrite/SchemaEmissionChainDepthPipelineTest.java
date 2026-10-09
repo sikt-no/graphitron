@@ -171,8 +171,8 @@ class SchemaEmissionChainDepthPipelineTest {
         var bundle = TestSchemaHelper.buildBundle(sdl);
         var perType = new ArrayList<TypeSpec>();
         perType.addAll(SchemaShapeRenderTestSupport.objectTypes(bundle.model(), bundle.assembled()));
-        perType.addAll(SchemaShapeRenderTestSupport.inputTypes(bundle.model()));
-        perType.addAll(SchemaShapeRenderTestSupport.enumTypes(bundle.model()));
+        perType.addAll(SchemaShapeRenderTestSupport.inputTypes(bundle.model(), bundle.assembled()));
+        perType.addAll(SchemaShapeRenderTestSupport.enumTypes(bundle.model(), bundle.assembled()));
 
         assertThat(perType).isNotEmpty();
         for (var spec : perType) {

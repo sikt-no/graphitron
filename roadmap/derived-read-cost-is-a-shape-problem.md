@@ -630,8 +630,9 @@ reads nothing off the classpath that capture has already read, and builds no sch
       elements and applies the minted applications, and the narrowing it reports reads the rule's
       output.
 * **The schema classes and the SDL read only the post-synthesis schema** `open`.
-  `CarriesObjectForm.formOf` takes a minted type's form from the walk's own synthesis, and
-  `SchemaSdlEmitter` asks the walk which support types to drop.
+  `SchemaSdlEmitter` asks the walk which support types to drop. The schema classes take their forms
+  from the post-synthesis schema, `CarriesObjectForm.formOf` reading it before a variant's own form,
+  so the walk's synthesis renders nothing; the variants still carry it.
 * **The datafetchers and the rest are generated from the store** `open`. `EmitPlan` reads the store
   already; the per-type generators still take the walk's model.
 * **The generator builds no schema** `blocked`, on the three above. `KeyNodeSynthesiser`, the walk's
@@ -639,18 +640,24 @@ reads nothing off the classpath that capture has already read, and builds no sch
 * **Its inputs are values** `open`. A `StoreHandle`, the `CapturedSchema` and the run's
   configuration; not `CapturedGraph`, which owns the store and its lifetime, so the constructor that
   takes one goes.
-* **Configured tags have one producer** `open`. `TagApplier` puts them into the written composition
-  in Java, and `graphitron_configured_tag` states the same rule in SQL for inheritance to read, so a
-  carrier's own tags and the ones its minted types inherit come from two rules nothing compares.
-  The emitted schema applies the `CONFIGURED` rows as it applies the `MINTED` ones, and the
-  configuration's rewrites leave the composition, so the written schema is what was written.
-  * **Enum values are anchored** `open`. `TagApplier` tags them and `graphitron_element` holds
-    none, so the rule cannot state their tags yet.
+* **Configured tags have one producer** `done`. `TagApplier` put them into the written composition
+  in Java while `graphitron_configured_tag` stated the same rule in SQL for inheritance to read, so a
+  carrier's own tags and the ones its minted types inherit came from two rules nothing compared.
+  `TagApplier` is gone: the emitted schema applies the `CONFIGURED` rows as it applies the `MINTED`
+  ones, at any coordinate kind, and the written schema carries no configured tag.
+  `ConfiguredTagTest` pins every kind the rule names on both schemas, and the federation pipeline
+  test compiles the schema classes a run writes and reads the tags off the types they build.
+  * **Enum values are anchored** `done`. `graphitron_element` admits them, with no part relation
+    since nothing patches one, so the rule states their tags.
+  * **The schema classes read the configured tags off the post-synthesis schema** `done`. The walk's
+    synthesis inherits only authored tags now, so `CarriesObjectForm.formOf` reads the schema's
+    type first, and the enum and input classes render the schema's forms rather than the walk's.
+* **The configuration's rewrites leave the composition** `open`, so the written schema is what was
+  written.
   * **The `@link` a configured tag needs reaches the emitted schema** `open`. `TagLinkSynthesiser`
-    adds it in the composition today, and the tags it declares stop arriving there.
-  * **The schema classes read only the post-synthesis schema** first, see the node above: they are
-    rendered from the walk's synthesis, which inherits carriers' tags from the composition.
-  * **`DescriptionNoteApplier` follows** `open`. One producer today, but configuration applied in the
+    still adds it in the composition, and the walk's federation opt-in reads it there, so it moves
+    with `federationLink`.
+  * **`DescriptionNoteApplier` follows** `open`. One producer, but configuration applied in the
     composition all the same.
 * **Capture's added cost is measured** `open`. Capture now also derives `graphitron_configured_tag`
   and `graphitron_inherited_directive` and builds the post-synthesis schema, `graphitron:capture`
@@ -1137,6 +1144,7 @@ decode, its readers having moved to `graphitron_ast_argmapping_pair_entry` and
 cluster, into `graphitron_type_backing`: `intent_type_backing_seed`, `intent_type_backing_class`,
 `intent_type_backing` and `intent_field_accessor_hop`, with the grain `type-backing-class` and the
 value `BACKING_CLOSURE` (now `PRODUCER` and `ACCESSOR`).
+`graphitron_element` gained `ENUM_VALUE`, added rather than retired.
 
 **Renamed, by rule rather than by list.** Every relation of the as-written half of `graphitron_`
 gained the `_entry` suffix. A sweep for a survivor is a search for a `graphitron_` name that is
@@ -1182,7 +1190,8 @@ census parameter on `CapturedStore`'s arms; `TestSchemaHelper.classpathCensus` (
 `reactorClass`, `jarRecord`, `reference`, `method`, `parameter`, `producing`, `genericMethod`,
 `genericParameter`, `component`, `scalarHolder`, `lifterHolder`, `withScalarConstants` and
 `withExternalFieldLifters`; the MCP fixture's `codeFixtureCensus` (now `codeFixtureClasspath`);
-`SeededStore.seedScalarConstant` and `seedExternalFieldMethod`. The specification's built-ins
+`SeededStore.seedScalarConstant` and `seedExternalFieldMethod`. `TagApplier` and `TagApplierTest`, the configured tags being
+`graphitron_configured_tag`'s; `EmittedRegistry.applyMintedDirectives` (now `applyDirectives`). The specification's built-ins
 as constants beside the entries:
 `GraphQLAstCapture.SPECIFIED_SCALARS`, `SPECIFIED_DIRECTIVES` with its three column fields and
 `specifiedDirectivesUndeclared`, `SdlFactCapture.SPECIFIED_DIRECTIVES`, and the transcription's

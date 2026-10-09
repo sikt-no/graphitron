@@ -242,7 +242,7 @@ class DescriptionNoteApplierTest {
 
     @Test
     void extendTypeFieldGainsNoteAndExtensionStaysInExtensionsMap() {
-        // Mirror of TagApplier's extend-type test: only the extension source carries
+        // Only the extension source carries
         // a note; assert the extension's field picks up the note AND the extension
         // survives the remove+add round-trip inside objectTypeExtensions().
         var registry = InMemoryRegistry.of(Map.of(
