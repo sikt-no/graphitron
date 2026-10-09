@@ -8996,6 +8996,172 @@ COMMENT ON COLUMN intent_field_reference_step_fanout.source_name IS 'the documen
 COMMENT ON COLUMN intent_field_reference_step_fanout.source_line IS 'source line of the @reference application, 1-based per the graphql-java convention';
 COMMENT ON COLUMN intent_field_reference_step_fanout.source_column IS 'source column of the @reference application, 1-based per the graphql-java convention';
 
+CREATE TABLE graphitron_type_reach (
+  graph_name  VARCHAR NOT NULL,
+  type_name   VARCHAR NOT NULL,
+  edges       INT     NOT NULL,
+  parent_name VARCHAR,
+  parent_list BOOLEAN,
+  batched     BOOLEAN NOT NULL,
+  is_root     BOOLEAN NOT NULL,
+  touched_at  TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  CHECK ((edges = 1) = (parent_name IS NOT NULL)),
+  CHECK ((parent_name IS NULL) = (parent_list IS NULL))
+);
+COMMENT ON TABLE graphitron_type_reach IS 'How the authored schema reaches one object or interface type: how many field edges reach it, the one edge where there is exactly one, and whether it is a root or arrives batched whatever reaches it. For example Film reached only through Query.films counts one edge, from Query, a list.';
+COMMENT ON COLUMN graphitron_type_reach.graph_name IS 'the owning graph''s partition, carried from the type''s own row';
+COMMENT ON COLUMN graphitron_type_reach.type_name IS 'the type reached, an object or interface type as authored; with the graph, the grain';
+COMMENT ON COLUMN graphitron_type_reach.edges IS 'how many field edges reach the type: an object type''s field naming it, or naming an interface or union it is a member of, the same instances. Interface parents emit none, their implementors carrying the edge';
+COMMENT ON COLUMN graphitron_type_reach.parent_name IS 'the type declaring the one reaching field, where edges is exactly one; null otherwise';
+COMMENT ON COLUMN graphitron_type_reach.parent_list IS 'whether that one field is a list as authored, before any macro rewrites it; null where parent_name is';
+COMMENT ON COLUMN graphitron_type_reach.batched IS 'whether the type arrives batched whatever reaches it: a node type, or a type carrying @key';
+COMMENT ON COLUMN graphitron_type_reach.is_root IS 'whether the type is an operation root';
+COMMENT ON COLUMN graphitron_type_reach.touched_at IS 'when the reading that last found this row ran: the mark the sweep reads, so a row still true survives a reading and one no longer found goes';
+
+CREATE VIEW graphitron_type_reach_rule
+  (graph_name, type_name, edges, parent_name, parent_list, batched, is_root) AS
+-- Every field edge reaching a composite type, from an object type's field as authored: the list-ness
+-- is the SDL's own, before any macro rewrites a field, so @asConnection's list is a list. An
+-- interface or union reached names its object members too, the same instances, so a member counts
+-- the edge as reached itself.
+WITH reach (graph_name, type_name, parent_name, is_list) AS (
+  SELECT f.graph_name, f.named_type, f.type_name, f.is_list
+    FROM graphql_field f
+    JOIN graphql_type p
+      ON p.graph_name = f.graph_name AND p.type_name = f.type_name AND p.kind = 'OBJECT'
+  UNION ALL
+  SELECT f.graph_name, m.member_type_name, f.type_name, f.is_list
+    FROM graphql_field f
+    JOIN graphql_type p
+      ON p.graph_name = f.graph_name AND p.type_name = f.type_name AND p.kind = 'OBJECT'
+    JOIN graphql_poly_member m
+      ON m.graph_name = f.graph_name AND m.container_name = f.named_type
+    JOIN graphql_type mt
+      ON mt.graph_name = m.graph_name AND mt.type_name = m.member_type_name AND mt.kind = 'OBJECT'
+),
+edges (graph_name, type_name, edges, parent_name, parent_list) AS (
+  SELECT graph_name, type_name, COUNT(*), MIN(parent_name), BOOL_OR(is_list)
+    FROM reach
+   GROUP BY graph_name, type_name
+)
+SELECT t.graph_name, t.type_name, CAST(COALESCE(e.edges, 0) AS INT),
+       CASE WHEN e.edges = 1 THEN e.parent_name END,
+       CASE WHEN e.edges = 1 THEN e.parent_list END,
+       EXISTS (SELECT 1 FROM graphitron_node_type n
+                WHERE n.graph_name = t.graph_name AND n.type_name = t.type_name)
+         OR (t.kind = 'OBJECT'
+             AND EXISTS (SELECT 1 FROM graphql_directive_application a
+                          WHERE a.graph_name = t.graph_name AND a.coordinate = t.type_name
+                            AND a.directive_name = 'key')),
+       EXISTS (SELECT 1 FROM graphql_root_operation r
+                WHERE r.graph_name = t.graph_name AND r.type_name = t.type_name)
+  FROM graphql_type t
+  LEFT JOIN edges e ON e.graph_name = t.graph_name AND e.type_name = t.type_name
+ WHERE t.kind IN ('OBJECT', 'INTERFACE');
+COMMENT ON VIEW graphitron_type_reach_rule IS 'One row the reach rule computes, in the shape graphitron_type_reach stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_type_reach, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
+COMMENT ON COLUMN graphitron_type_reach_rule.graph_name IS 'the owning graph''s partition, carried from the type''s own row';
+COMMENT ON COLUMN graphitron_type_reach_rule.type_name IS 'the type reached';
+COMMENT ON COLUMN graphitron_type_reach_rule.edges IS 'how many field edges reach it, on graphitron_type_reach.edges''s terms';
+COMMENT ON COLUMN graphitron_type_reach_rule.parent_name IS 'the one reaching field''s type, where there is one';
+COMMENT ON COLUMN graphitron_type_reach_rule.parent_list IS 'whether that field is a list as authored';
+COMMENT ON COLUMN graphitron_type_reach_rule.batched IS 'whether the type is a node type or carries @key';
+COMMENT ON COLUMN graphitron_type_reach_rule.is_root IS 'whether the type is an operation root';
+
+CREATE TABLE graphitron_type_arrival (
+  graph_name VARCHAR NOT NULL,
+  type_name  VARCHAR NOT NULL,
+  arrival    VARCHAR NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  CHECK (arrival IN ('ONE', 'MANY'))
+);
+COMMENT ON TABLE graphitron_type_arrival IS 'How many objects of a type can reach one of its fields in one request: one row per authored object and interface type. For example Film reached only through Query.film arrives ONE, and reached through Query.films arrives MANY.';
+COMMENT ON COLUMN graphitron_type_arrival.graph_name IS 'the owning graph''s partition, carried from the type''s own row';
+COMMENT ON COLUMN graphitron_type_arrival.type_name IS 'the type whose objects arrive, an object or interface type as authored; with the graph, the grain';
+COMMENT ON COLUMN graphitron_type_arrival.arrival IS 'ONE where exactly one object can arrive, MANY where more can. MANY absorbs: a node type or a @key type arrives MANY, as does a type two field edges reach; a type one edge reaches arrives as its parent does, made MANY by a list on the way; a type no edge reaches, a root among them, arrives ONE';
+COMMENT ON COLUMN graphitron_type_arrival.touched_at IS 'when the reading that last found this row ran: the mark the sweep reads, so a row still true survives a reading and one no longer found goes';
+
+CREATE VIEW graphitron_type_arrival_rule (graph_name, type_name, arrival) AS
+-- Up each type's single reaching edges, over graphitron_type_reach alone, to the first type that ends
+-- the chain. Each step carries whether it ended there and the arrival it ended with, so a type's
+-- answer is its one ended row. The type itself ends it when it is batched or reached by none or by
+-- two; an ancestor ends it as well when it is a root, the walk counting a root parent as ONE. A list
+-- crossed on the way makes a ONE end MANY. A chain of single edges closing on itself never ends, so
+-- the walk is bounded, and a type with no ended row arrives MANY, the absorber.
+WITH RECURSIVE chain (graph_name, type_name, at_name, crossed_list, ended, arrival, depth) AS (
+  SELECT r.graph_name, r.type_name, r.type_name, FALSE,
+         r.batched OR r.edges <> 1,
+         CASE WHEN r.batched OR r.edges >= 2 THEN 'MANY' WHEN r.edges = 0 THEN 'ONE' END,
+         0
+    FROM graphitron_type_reach r
+  UNION ALL
+  SELECT c.graph_name, c.type_name, p.type_name, c.crossed_list OR a.parent_list,
+         p.is_root OR p.batched OR p.edges <> 1,
+         CASE WHEN p.batched OR p.edges >= 2 THEN 'MANY'
+              WHEN p.is_root OR p.edges = 0 THEN
+                CASE WHEN c.crossed_list OR a.parent_list THEN 'MANY' ELSE 'ONE' END END,
+         c.depth + 1
+    FROM chain c
+    JOIN graphitron_type_reach a
+      ON a.graph_name = c.graph_name AND a.type_name = c.at_name
+    JOIN graphitron_type_reach p
+      ON p.graph_name = a.graph_name AND p.type_name = a.parent_name
+   WHERE NOT c.ended
+     AND c.depth < 1000
+)
+SELECT r.graph_name, r.type_name, COALESCE(c.arrival, 'MANY')
+  FROM graphitron_type_reach r
+  LEFT JOIN chain c
+    ON c.graph_name = r.graph_name AND c.type_name = r.type_name AND c.ended;
+COMMENT ON VIEW graphitron_type_arrival_rule IS 'One row the arrival rule computes, in the shape graphitron_type_arrival stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_type_arrival, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
+COMMENT ON COLUMN graphitron_type_arrival_rule.graph_name IS 'the owning graph''s partition, carried from the type''s own row';
+COMMENT ON COLUMN graphitron_type_arrival_rule.type_name IS 'the type whose objects arrive';
+COMMENT ON COLUMN graphitron_type_arrival_rule.arrival IS 'ONE or MANY, on graphitron_type_arrival.arrival''s terms';
+
+CREATE TABLE graphitron_field_source (
+  graph_name VARCHAR NOT NULL,
+  type_name  VARCHAR NOT NULL,
+  field_name VARCHAR NOT NULL,
+  kind       VARCHAR NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  FOREIGN KEY (graph_name, type_name, field_name)
+    REFERENCES graphitron_field (graph_name, type_name, field_name) ON DELETE CASCADE,
+  CHECK (kind IN ('ROOT', 'ONLY_CHILD', 'CHILD'))
+);
+COMMENT ON TABLE graphitron_field_source IS 'Where a field''s source object arrives from and how many arrive: one row per output field the generator can serve. For example Query.film is ROOT, Film.language under a Film that arrives once is ONLY_CHILD, and the same field under a list of films is CHILD.';
+COMMENT ON COLUMN graphitron_field_source.graph_name IS 'the owning graph''s partition, carried from the field''s own row';
+COMMENT ON COLUMN graphitron_field_source.type_name IS 'the field''s parent type, an object or interface type';
+COMMENT ON COLUMN graphitron_field_source.field_name IS 'the field; with the two columns above the grain and a reference into graphitron_field';
+COMMENT ON COLUMN graphitron_field_source.kind IS 'ROOT on the query or mutation root, where no source object arrives; ONLY_CHILD where the parent arrives ONE, so the field runs once; CHILD where it arrives MANY or is a type the authored schema does not hold, so the field is batched. A field on the subscription root has no row: graphitron serves none, and SUBSCRIPTION_FIELD says so';
+COMMENT ON COLUMN graphitron_field_source.touched_at IS 'when the reading that last found this row ran: the mark the sweep reads, so a row still true survives a reading and one no longer found goes';
+
+CREATE VIEW graphitron_field_source_rule (graph_name, type_name, field_name, kind) AS
+SELECT f.graph_name, f.type_name, f.field_name,
+       CASE WHEN r.operation IS NOT NULL THEN 'ROOT'
+            WHEN a.arrival = 'ONE' THEN 'ONLY_CHILD'
+            ELSE 'CHILD' END
+  FROM graphitron_field f
+  JOIN graphitron_type p
+    ON p.graph_name = f.graph_name AND p.type_name = f.type_name
+   AND p.kind IN ('OBJECT', 'INTERFACE')
+  LEFT JOIN graphql_root_operation r
+    ON r.graph_name = f.graph_name AND r.type_name = f.type_name
+   AND r.operation IN ('QUERY', 'MUTATION')
+  LEFT JOIN graphitron_type_arrival a
+    ON a.graph_name = f.graph_name AND a.type_name = f.type_name
+ WHERE NOT EXISTS (SELECT 1 FROM graphql_root_operation s
+                    WHERE s.graph_name = f.graph_name AND s.type_name = f.type_name
+                      AND s.operation = 'SUBSCRIPTION');
+COMMENT ON VIEW graphitron_field_source_rule IS 'One row the field-source rule computes, in the shape graphitron_field_source stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_field_source, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
+COMMENT ON COLUMN graphitron_field_source_rule.graph_name IS 'the owning graph''s partition, carried from the field';
+COMMENT ON COLUMN graphitron_field_source_rule.type_name IS 'the field''s parent type';
+COMMENT ON COLUMN graphitron_field_source_rule.field_name IS 'the field';
+COMMENT ON COLUMN graphitron_field_source_rule.kind IS 'ROOT, ONLY_CHILD or CHILD, on graphitron_field_source.kind''s terms';
+
 CREATE TABLE graphitron_field_column_scope (
   graph_name        VARCHAR NOT NULL,
   type_name         VARCHAR NOT NULL,
@@ -16268,6 +16434,30 @@ INSERT INTO meta_relation VALUES
    'How a written table name resolves against the catalog census: one row per candidate table, keyed on the spelling itself rather than on any one site that wrote it.',
    'For example a schema writing @table(name: "film") and a @reference path element naming film draws one row between them, and a name two schemas both declare draws two rows saying two candidates.',
    'The resolution does not vary by site, so one relation answers for all of them: @table(name:), a @reference path element''s table, its argument-site and @referenceFor siblings, @mutation''s delete target and @routine(name:) all name a table the same way, and a spelling written at five coordinates is one fact and one row. A spelling arrives already split, capture having written the namespace half and the name half beside the value, so both sides of both comparisons are stored folded columns and the match is an equality an index can serve rather than a fold computed per candidate row; an unqualified spelling, whose namespace half is null, matches on its name half alone. The catalog side scopes through the graph''s own sources, so a sibling graph''s tables never resolve here. A routine name is a table spelling too, jOOQ modelling a function result as a catalog table, and what makes a resolved row a function is sql_table.table_type, which a reader meaning that form filters on. Ambiguity is rows and never a decline: a name two schemas both declare is two rows and the count says how many, leaving the reading to the reader. Written once per capture by a stage of the graphitron gatherer where it used to be refilled by the register, the rule stated once and still in SQL.'),
+  ('graphitron_type_reach', 'graph-type', 'graphitron',
+   'How the authored schema reaches one object or interface type: how many field edges reach it, the one edge where there is exactly one, and whether it is a root or arrives batched whatever reaches it.',
+   'For example Film reached only through Query.films counts one edge, from Query, a list.',
+   'What the arrival fold reads about each type, stated once and keyed so the fold''s recursion is a walk over one indexed table. The edge count, the single edge, and whether the type is batched or a root are each a plain aggregate over the authored schema; stored by a stage because the recursion that reads them would otherwise re-derive them at every step. Read over the authored SDL, list-ness being read before any macro rewrites a field, as the walk reads it.'),
+  ('graphitron_type_reach_rule', 'graph-type', 'graphitron',
+   'One row the reach rule computes, in the shape graphitron_type_reach stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a capture inserts this view''s rows for one graph into graphitron_type_reach, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_field_scope_table_rule''s terms. Not recursive: every column is an aggregate or an existence test over the authored schema and the node population.'),
+  ('graphitron_type_arrival', 'graph-type', 'graphitron',
+   'How many objects of a type can reach one of its fields in one request: one row per authored object and interface type.',
+   'For example Film reached only through Query.film arrives ONE, and reached through Query.films arrives MANY.',
+   'The walk folds arrival per type to choose between running a field''s SQL once and batching it, and the fold is a fact about the authored schema: which field edges reach a type and whether one is a list. Stated over the authored SDL rather than the expanded one because list-ness is read before any macro rewrites a field, as the walk reads it. A type no edge reaches arrives ONE, a root among them; MANY absorbs, so a chain of single edges closing on itself, which the walk guards against, arrives MANY here too.'),
+  ('graphitron_type_arrival_rule', 'graph-type', 'graphitron',
+   'One row the arrival rule computes, in the shape graphitron_type_arrival stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a capture inserts this view''s rows for one graph into graphitron_type_arrival, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_field_scope_table_rule''s terms. Recursive, walking each type up its single reaching edges over graphitron_type_reach alone to the first type that ends the chain, each step carrying whether it ended and with what, so no step reads anything but that one keyed table. Stored by a stage rather than read: H2 evaluates a recursive view again for every row joined to it.'),
+  ('graphitron_field_source', 'expanded-field', 'graphitron',
+   'Where a field''s source object arrives from and how many arrive: one row per output field the generator can serve.',
+   'For example Query.film is ROOT, Film.language under a Film that arrives once is ONLY_CHILD, and the same field under a list of films is CHILD.',
+   'R333''s source fact for an output field, the half the store can state today: whether a source object arrives and how many. The shape it arrives in, a table row or a record, waits on the type-level source object leaving intent_. Total over the fields the generator can serve, so a field with no row is a field something explains: today SUBSCRIPTION_FIELD, the subscription root having no arm.'),
+  ('graphitron_field_source_rule', 'expanded-field', 'graphitron',
+   'One row the field-source rule computes, in the shape graphitron_field_source stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a capture inserts this view''s rows for one graph into graphitron_field_source, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_field_scope_table_rule''s terms. A plain derivation from the root operations and graphitron_type_arrival, stored by its stage so readers of the fact join a table.'),
   ('graphitron_field_column_scope', 'graph-field', 'graphitron',
    'Which table the column names written at a field''s site resolve against: one row per site where a name resolves at all, naming the table and which of three disjoint navigation rules answered.',
    'For example Film.title resolves against film through its own parent''s binding, and a field carrying @reference(path: [{key: "film_actor_film_id_fkey"}]) resolves against the table that path''s terminal element reaches.',

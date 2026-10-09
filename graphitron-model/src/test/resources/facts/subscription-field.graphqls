@@ -1,7 +1,8 @@
 # A field on the subscription root is a subscription, which graphitron does not generate yet. The
 # schema is valid and means something, so the verdict rests on UNSUPPORTED: the defect sits at the
 # field's own declaration, and the diagnostic surface reports it as something an author works
-# around rather than fixes.
+# around rather than fixes. The field has no source, the subscription root having no arm, and the
+# defect is what explains its absence.
 
 type Subscription { filmAdded: String }
 
@@ -13,4 +14,9 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
 extend schema @assertContains(relation: "diagnostic", rows: """
   lsp_code,                      coordinate,             severity, actionable
   GRAPHITRON_SUBSCRIPTION_FIELD, Subscription.filmAdded, error,    FALSE
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_field_source", rows: """
+  type_name,    field_name
+  Subscription, filmAdded
   """)

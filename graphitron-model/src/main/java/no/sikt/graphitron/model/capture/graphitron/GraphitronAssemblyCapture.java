@@ -6,10 +6,13 @@ import no.sikt.graphitron.model.derive.FieldEndpoints;
 import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
 import no.sikt.graphitron.model.derive.FieldReferenceStepTargets;
 import no.sikt.graphitron.model.derive.FieldRoutines;
+import no.sikt.graphitron.model.derive.FieldSources;
 import no.sikt.graphitron.model.derive.FieldTableLinks;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.ResolvedTypeBindings;
 import no.sikt.graphitron.model.derive.SpelledTables;
+import no.sikt.graphitron.model.derive.TypeArrivals;
+import no.sikt.graphitron.model.derive.TypeReaches;
 import org.jooq.DSLContext;
 
 import java.time.LocalDateTime;
@@ -63,6 +66,12 @@ public final class GraphitronAssemblyCapture {
         FieldChainApplications.derive(dsl, graph);
         // Over the nodes the anchor settled.
         NodeKeyColumns.derive(dsl, graph);
+        // How many objects reach each field: the reach the authored schema states, the arrival
+        // folded over it, and each output field's source kind. After the nodes, a node type
+        // arriving batched whatever reaches it.
+        TypeReaches.derive(dsl, graph, readAt);
+        TypeArrivals.derive(dsl, graph, readAt);
+        FieldSources.derive(dsl, graph, readAt);
         navigation(dsl, graph, readAt);
         // The reference stratum's own resolutions, bottom rung first: what a written table name
         // resolves to against the catalog census, then the hops a @reference path element could

@@ -90,3 +90,12 @@ graphitron_entry_defect_rule graphql_type
 # minted field was declared in no file and takes no configured tag, so the emitted anchor would ask a
 # question the rule does not.
 graphitron_configured_tag graphql_field
+
+# Adjudicated and kept: arrival is read before any macro rewrites a field.
+#
+# graphitron_type_reach_rule counts the field edges reaching a type and whether each is a list, as
+# the walk does over the assembled schema before connection promotion: @asConnection's list is a list
+# there, and a native connection's many-ness arrives through its edges field. The expanded schema
+# would read a promoted field as a single connection and fold a batched type to ONE.
+graphitron_type_reach_rule graphql_field
+graphitron_type_reach_rule graphql_type

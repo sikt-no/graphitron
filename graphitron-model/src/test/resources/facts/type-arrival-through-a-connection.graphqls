@@ -1,0 +1,18 @@
+# Arrival reads the field as its author wrote it. @asConnection rewrites films into a single
+# connection, but the author wrote a list, and a list of films is many films: Film arrives MANY,
+# so its fields are batched.
+
+extend type Query { films: [Film] @asConnection }
+
+type Film @table(name: "film") { title: String }
+
+extend schema @assertContains(relation: "graphitron_type_arrival", rows: """
+  type_name, arrival
+  Film,      MANY
+  """)
+
+extend schema @assertContains(relation: "graphitron_field_source", rows: """
+  type_name, field_name, kind
+  Query,     films,      ROOT
+  Film,      title,      CHILD
+  """)

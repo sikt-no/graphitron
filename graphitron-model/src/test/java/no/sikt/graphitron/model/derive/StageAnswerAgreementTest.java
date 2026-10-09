@@ -12,7 +12,6 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.jooq.impl.DSL.asterisk;
 import static org.jooq.impl.DSL.name;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.table;
@@ -57,6 +56,9 @@ class StageAnswerAgreementTest {
         new Stage("graphql_ast_element_declaration", "graphql_ast_element_declaration_rule"),
         new Stage("graphitron_field_chain_link_resolution",
             "graphitron_field_chain_link_resolution_rule"),
+        new Stage("graphitron_type_reach", "graphitron_type_reach_rule"),
+        new Stage("graphitron_type_arrival", "graphitron_type_arrival_rule"),
+        new Stage("graphitron_field_source", "graphitron_field_source_rule"),
         new Stage("graphitron_field_column_scope", "graphitron_field_column_scope_rule"),
         new Stage("graphitron_carrier_data_field", "graphitron_carrier_data_field_rule"),
         new Stage("graphitron_field_scope_table", "graphitron_field_scope_table_rule"),
@@ -85,12 +87,12 @@ class StageAnswerAgreementTest {
         for (var fixture : Fixture.values()) {
             withCapturedStore(fixture, dsl -> {
                 for (Stage stage : STAGES) {
-                    assertThat(difference(dsl, stage.target(), stage.ruleView()))
+                    assertThat(difference(dsl, stage.target(), stage.ruleView(), stage.ruleView()))
                         .as(stage.target() + " holds rows " + stage.ruleView() + " does not compute"
                             + " on the " + fixture + " fixture; a previous capture's rows the stage"
                             + " did not clear, or rows written twice")
                         .isEmpty();
-                    assertThat(difference(dsl, stage.ruleView(), stage.target()))
+                    assertThat(difference(dsl, stage.ruleView(), stage.target(), stage.ruleView()))
                         .as(stage.ruleView() + " computes rows " + stage.target() + " does not hold"
                             + " on the " + fixture + " fixture; the stage did not write what the"
                             + " rule states")
@@ -242,9 +244,21 @@ class StageAnswerAgreementTest {
             .isEmpty();
     }
 
-    private static List<String> difference(DSLContext dsl, String left, String right) {
-        return dsl.select(asterisk()).from(table(name(left.toUpperCase())))
-            .except(select(asterisk()).from(table(name(right.toUpperCase()))))
+    /**
+     * The rows of {@code left} that {@code right} lacks, compared on the rule's own columns. A
+     * table marking and sweeping carries the reading's instant beside what the rule states, and the
+     * instant is the writer's, not the rule's, so it is no part of whether the two agree.
+     */
+    private static List<String> difference(DSLContext dsl, String left, String right, String rule) {
+        var columns = dsl.select(org.jooq.impl.DSL.field(name("COLUMN_NAME"), String.class))
+            .from(table(name("INFORMATION_SCHEMA", "COLUMNS")))
+            .where(org.jooq.impl.DSL.field(name("TABLE_NAME"), String.class).eq(rule.toUpperCase()))
+            .orderBy(org.jooq.impl.DSL.field(name("ORDINAL_POSITION")))
+            .fetch(0, String.class).stream()
+            .map(column -> org.jooq.impl.DSL.field(name(column)))
+            .toList();
+        return dsl.select(columns).from(table(name(left.toUpperCase())))
+            .except(select(columns).from(table(name(right.toUpperCase()))))
             .fetch().stream()
             .map(Object::toString)
             .toList();

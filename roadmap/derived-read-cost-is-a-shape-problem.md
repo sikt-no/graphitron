@@ -475,6 +475,15 @@ and the emitters read, and it goes when nothing reads what it builds.
     `graphitron_entry_defect_site`'s fixed hops away.
   * **`source` and `target` are stated for every coordinate** `open`. The two total facts no relation
     states whole, and totality is what the defect model's gate checks.
+    * **A field's source says how many objects arrive** `done`. `graphitron_type_arrival` folds each
+      type's arrival as the walk does, over the authored SDL; `graphitron_field_source` names ROOT,
+      ONLY_CHILD or CHILD, agrees with the walk on every field it classifies, and a gate over the fact
+      examples holds every output field to a source or a defect explaining it.
+    * **The source object is stated by `graphitron_` relations** `open`. Whether a type is
+      table-bound, a record, or a nesting type passing its parent's row through, which only
+      `intent_type_backing` says today.
+    * **The source's shape and the target's shape** `blocked`, on the node above. A record is a
+      class-backed type, and a column read differs from a field read by the source's shape.
 * **`validate` reads only the store** `open`, as "Validate is a query over the store". Second to
   last, a verdict being a narrower read than an emission.
 * **`generate` and `dev` read only the store** `blocked`, on the node above. The last step: the

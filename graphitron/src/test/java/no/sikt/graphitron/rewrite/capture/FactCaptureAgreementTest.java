@@ -36,6 +36,8 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -48,6 +50,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SOURCE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
@@ -732,6 +735,41 @@ class FactCaptureAgreementTest {
      * return type was rewritten; the store keeps the expression the field was written with, and the
      * two have to be talking about the same set of carriers.
      */
+    @ParameterizedTest
+    @ValueSource(strings = {"agreement", "connection"})
+    @DisplayName("every field's source kind agrees with the model's arrival fold")
+    void fieldSourcesAgreeWithTheModel(String corpus, @TempDir Path tmp) {
+        String sdl = corpus.equals("agreement") ? AgreementCorpus.SDL : CONNECTION_FIXTURE;
+        try (var store = CapturedStore.of(tmp, sdl)) {
+            var model = GraphitronSchemaBuilder.build(store.registry(), testContext());
+            var captured = new java.util.LinkedHashMap<String, String>();
+            store.dsl().selectFrom(GRAPHITRON_FIELD_SOURCE)
+                .forEach(r -> captured.put(r.getTypeName() + "." + r.getFieldName(), r.getKind()));
+
+            // Every field the walk gives a source has the store's row, at the same kind. Asked of
+            // every field the store holds, output and input alike, so a field the store gives no
+            // source while the walk does is a failure here. A store row the walk has no source for
+            // is a field the walk could not classify, which is its verdict on something else.
+            var expected = new java.util.LinkedHashMap<String, String>();
+            store.dsl().select(GRAPHITRON_FIELD.TYPE_NAME, GRAPHITRON_FIELD.FIELD_NAME)
+                .from(GRAPHITRON_FIELD)
+                .forEach(field -> {
+                var coordinate = field.value1() + "." + field.value2();
+                var source = model.sourceOf(field.value1(), field.value2());
+                if (source != null) {
+                    expected.put(coordinate, switch (source) {
+                        case no.sikt.graphitron.rewrite.model.Source.Root _ -> "ROOT";
+                        case no.sikt.graphitron.rewrite.model.Source.OnlyChild _ -> "ONLY_CHILD";
+                        case no.sikt.graphitron.rewrite.model.Source.Child _ -> "CHILD";
+                    });
+                }
+                });
+            assertThat(expected).as("the walk classifies some fields, or this compares nothing")
+                .isNotEmpty();
+            assertThat(captured).containsAllEntriesOf(expected);
+        }
+    }
+
     @Test
     @DisplayName("rewritten carriers agree with the model's directive-driven rows")
     void rewrittenCarriersAgreeWithTheModel(@TempDir Path tmp) {

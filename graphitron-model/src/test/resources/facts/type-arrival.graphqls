@@ -1,0 +1,55 @@
+# How many objects of a type reach one of its fields, and what that makes each field's source.
+# A root's fields arrive with no source object. A type one single field reaches arrives once, as its
+# parent does; a list on the way, or a second reaching field, makes it arrive many times, and a node
+# type arrives many times whatever reaches it. An interface reached names its members too.
+
+interface Node { id: ID! }
+
+extend type Query { single: Single, listed: [Listed], chain: Chain, pet: Pet }
+
+type Single { name: String, inner: Inner }
+type Inner { name: String }
+type Listed { name: String, leaf: Leaf }
+type Leaf { name: String }
+type Chain { first: Shared, second: Shared }
+type Shared { name: String }
+interface Pet { name: String }
+type Cat implements Pet { name: String }
+type Film implements Node @table(name: "film") @node { id: ID! }
+
+extend schema @expectEquals(relation: "graphitron_type_arrival", rows: """
+  type_name, arrival
+  Query,     ONE
+  Single,    ONE
+  Inner,     ONE
+  Listed,    MANY
+  Leaf,      MANY
+  Chain,     ONE
+  Shared,    MANY
+  Pet,       ONE
+  Cat,       ONE
+  Node,      ONE
+  Film,      MANY
+  """)
+
+extend schema @expectEquals(relation: "graphitron_field_source", rows: """
+  type_name, field_name, kind
+  Query,     ping,       ROOT
+  Query,     single,     ROOT
+  Query,     listed,     ROOT
+  Query,     chain,      ROOT
+  Query,     pet,        ROOT
+  Single,    name,       ONLY_CHILD
+  Single,    inner,      ONLY_CHILD
+  Inner,     name,       ONLY_CHILD
+  Listed,    name,       CHILD
+  Listed,    leaf,       CHILD
+  Leaf,      name,       CHILD
+  Chain,     first,      ONLY_CHILD
+  Chain,     second,     ONLY_CHILD
+  Shared,    name,       CHILD
+  Pet,       name,       ONLY_CHILD
+  Cat,       name,       ONLY_CHILD
+  Node,      id,         ONLY_CHILD
+  Film,      id,         CHILD
+  """)

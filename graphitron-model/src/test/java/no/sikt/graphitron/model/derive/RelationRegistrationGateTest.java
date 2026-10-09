@@ -437,6 +437,12 @@ class RelationRegistrationGateTest {
         registrations.put("intent_mutation_routine_seat", Arm.DERIVED);
         registrations.put("intent_column_match_claim", Arm.DERIVED);
         registrations.put("graphitron_field_column_scope", Arm.DERIVED);
+        registrations.put("graphitron_type_reach", Arm.DERIVED);
+        registrations.put("graphitron_type_reach_rule", Arm.DERIVED);
+        registrations.put("graphitron_type_arrival", Arm.DERIVED);
+        registrations.put("graphitron_type_arrival_rule", Arm.DERIVED);
+        registrations.put("graphitron_field_source", Arm.DERIVED);
+        registrations.put("graphitron_field_source_rule", Arm.DERIVED);
         registrations.put("graphitron_argument_column_scope", Arm.DERIVED);
         registrations.put("graphitron_argument_column_scope_rule", Arm.DERIVED);
         registrations.put("graphitron_argument_column_match", Arm.DERIVED);
