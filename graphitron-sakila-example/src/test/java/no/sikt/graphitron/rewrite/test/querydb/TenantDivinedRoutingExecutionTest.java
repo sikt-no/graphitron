@@ -63,6 +63,10 @@ class TenantDivinedRoutingExecutionTest {
         no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures.TENANT_ENDORSEMENT_NOTE;
     /** The note this class's global-write case writes under, told apart from the read fixture's. */
     static final String WRITTEN_ENDORSEMENT_NOTE = ENDORSEMENT_NOTE + " (global write)";
+    /** Bookmarks of each tenant's film. */
+    static final String ROUTED_BOOKMARK_NOTE = "parent-row tenant fixture (routed)";
+    /** A bookmark of no film, whose reference names no tenant. */
+    static final String UNSET_BOOKMARK_NOTE = "parent-row tenant fixture (unset)";
 
     @BeforeAll
     static void startDatabase() {
@@ -131,6 +135,9 @@ class TenantDivinedRoutingExecutionTest {
         dsl.execute("delete from film_endorsement where note in (?, ?)", ENDORSEMENT_NOTE, WRITTEN_ENDORSEMENT_NOTE);
         dsl.execute("insert into film_endorsement (endorsed_film, note) values (1, ?), (2, ?)",
             ENDORSEMENT_NOTE, ENDORSEMENT_NOTE);
+        dsl.execute("delete from film_bookmark where note in (?, ?)", ROUTED_BOOKMARK_NOTE, UNSET_BOOKMARK_NOTE);
+        dsl.execute("insert into film_bookmark (bookmarked_film, note) values (1, ?), (2, ?), (null, ?)",
+            ROUTED_BOOKMARK_NOTE, ROUTED_BOOKMARK_NOTE, UNSET_BOOKMARK_NOTE);
 
         // Typed tenant key: Map<Integer, DataSource> compiles against the generated constructor
         // because the catalog's film_id column types every tenant-keyed surface.
@@ -147,6 +154,8 @@ class TenantDivinedRoutingExecutionTest {
         if (dsl != null) {
             dsl.execute("delete from film_endorsement where note in (?, ?)", ENDORSEMENT_NOTE,
                 WRITTEN_ENDORSEMENT_NOTE);
+            dsl.execute("delete from film_bookmark where note in (?, ?)", ROUTED_BOOKMARK_NOTE,
+                UNSET_BOOKMARK_NOTE);
             dsl.execute("drop database if exists tenant_1 with (force)");
             dsl.execute("drop database if exists tenant_2 with (force)");
         }
@@ -678,6 +687,65 @@ class TenantDivinedRoutingExecutionTest {
             .anySatisfy(e -> assertThat(e.getMessage()).contains("'2' is not permitted for this request"));
         assertThat(titlesUnderTenant1(result)).contains("Tenant One Film").containsNull();
         assertThat(TENANT_2_OPENED.get()).isZero();
+    }
+
+    private static String bookmarks(String note, String selection) {
+        return "{ bookmarks(note: \"" + note + "\") { " + selection + " } }";
+    }
+
+    /** Each bookmark's selected value, keyed by the title of the film it bookmarks. */
+    private static Map<String, Object> byBookmarkedTitle(ExecutionResult result, String field) {
+        var out = new java.util.HashMap<String, Object>();
+        for (var bookmark : (List<Map<String, Object>>) data(result, "bookmarks")) {
+            out.put((String) ((Map<String, Object>) bookmark.get("film")).get("title"), bookmark.get(field));
+        }
+        return out;
+    }
+
+    @Test
+    void parentRowBound_aListFieldReadsEachRowsTenant() {
+        // Tenant 1 holds film 1's two inventories and tenant 2 holds none, so a list read on the
+        // wrong tenant shows as a size mismatch, and the acquisitions show one batch per tenant.
+        var result = execute(bookmarks(ROUTED_BOOKMARK_NOTE, "inventories { inventoryId }"));
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        var sizes = ((List<Map<String, Object>>) data(result, "bookmarks")).stream()
+            .map(b -> ((List<?>) b.get("inventories")).size()).toList();
+        assertThat(sizes).containsExactlyInAnyOrder(2, 0);
+        assertThat(TENANT_1_OPENED.get()).as("one acquisition for tenant 1's batch").isEqualTo(1);
+        assertThat(TENANT_2_OPENED.get()).as("one acquisition for tenant 2's batch").isEqualTo(1);
+
+        var withTitles = execute(bookmarks(ROUTED_BOOKMARK_NOTE, "film { title } inventories { inventoryId }"));
+        assertThat(byBookmarkedTitle(withTitles, "inventories"))
+            .hasEntrySatisfying("Tenant One Film", inv -> assertThat((List<?>) inv).hasSize(2))
+            .hasEntrySatisfying("Tenant Two Film", inv -> assertThat((List<?>) inv).isEmpty());
+    }
+
+    @Test
+    void parentRowBound_aConnectionFieldPagesEachRowsTenant() {
+        var result = execute(bookmarks(ROUTED_BOOKMARK_NOTE,
+            "film { title } inventoriesConnection(first: 10) { edges { node { inventoryId } } }"));
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        assertThat(byBookmarkedTitle(result, "inventoriesConnection"))
+            .hasEntrySatisfying("Tenant One Film",
+                page -> assertThat((List<?>) ((Map<String, Object>) page).get("edges")).hasSize(2))
+            .hasEntrySatisfying("Tenant Two Film",
+                page -> assertThat((List<?>) ((Map<String, Object>) page).get("edges")).isEmpty());
+    }
+
+    @Test
+    void parentRowBound_aRowWithNoTenantAnswersTheEmptyValueWithoutAConnection() {
+        var result = execute(bookmarks(UNSET_BOOKMARK_NOTE, "film { title } inventories { inventoryId }"
+            + " inventoriesConnection(first: 10) { edges { node { inventoryId } } pageInfo { hasNextPage } }"));
+        var bookmarks = (List<Map<String, Object>>) data(result, "bookmarks");
+        assertThat(bookmarks).singleElement().satisfies(bookmark -> {
+            assertThat(bookmark.get("film")).as("single: null").isNull();
+            assertThat((List<?>) bookmark.get("inventories")).as("list: empty").isEmpty();
+            var page = (Map<String, Object>) bookmark.get("inventoriesConnection");
+            assertThat((List<?>) page.get("edges")).as("connection: an empty page").isEmpty();
+            assertThat((Map<String, Object>) page.get("pageInfo")).containsEntry("hasNextPage", false);
+        });
+        assertThat(TENANT_1_OPENED.get()).as("no tenant is named, so none is acquired").isZero();
+        assertThat(TENANT_2_OPENED.get()).as("no tenant is named, so none is acquired").isZero();
     }
 
     // ===== Unknown divined tenant: request-level error before any SQL =====

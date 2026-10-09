@@ -248,67 +248,6 @@ class TenantRoutedFetcherPipelineTest {
             .doesNotContain("String.join");
     }
 
-    // ===== A reference landing on the tenant column routes on the parent row =====
-
-    private static final String ENDORSEMENTS = """
-        type FilmEndorsement @table(name: "film_endorsement") {
-            note: String
-            film: Film @splitQuery
-            inventories: [Inventory!]! @splitQuery @reference(path: [
-                {key: "film_endorsement_endorsed_film_fkey"}, {key: "inventory_film_id_fkey"}])
-        }
-        type Film @table(name: "film") {
-            title: String
-            inventories: [Inventory!]! @splitQuery
-        }
-        type Inventory @table(name: "inventory") { inventoryId: Int }
-        type Query { endorsements: [FilmEndorsement!]! }
-        """;
-
-    /**
-     * The fetcher reads the tenant off the key extraction's local for the slot's column, so the
-     * extraction runs ahead of the loader name, which partitions on that tenant; the loaded value
-     * hands it down. A null column answers the field's empty value before any loader exists.
-     */
-    @Test
-    void parentRowBoundFetcherPartitionsOnTheRowsTenantAndHandsItDown() {
-        var schema = multiTenant(ENDORSEMENTS);
-        var tenantRead = "java.lang.Integer _divinedTenant = fake.code.generated.schema.TenantConnections.divinedTenant(fkVal0);";
-        var loaderName = "java.lang.String name = fake.code.generated.schema.TenantConnections.tenantLoaderName(env, _divinedTenant);";
-
-        var film = render(schema, "FilmEndorsementFetchers", "film");
-        assertThat(film)
-            .contains("java.lang.Integer fkVal0 = ((org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.Tables.FILM_ENDORSEMENT.ENDORSED_FILM);")
-            .contains("if (fkVal0 == null) {\n      return java.util.concurrent.CompletableFuture.completedFuture(null);")
-            .contains(tenantRead)
-            .contains(loaderName)
-            .contains(".data(payload).localContext(_divinedTenant).build()")
-            .doesNotContain("String.join");
-        assertThat(film.indexOf("if (fkVal0 == null)")).isLessThan(film.indexOf(loaderName));
-        assertThat(film.indexOf("try {")).isLessThan(film.indexOf("fkVal0"));
-
-        var inventories = render(schema, "FilmEndorsementFetchers", "inventories");
-        assertThat(inventories)
-            .contains("if (fkVal0 == null) {\n      return java.util.concurrent.CompletableFuture.completedFuture(graphql.execution.DataFetcherResult.<java.util.List<org.jooq.Record>>newResult().data(java.util.List.of()).build());")
-            .contains(tenantRead)
-            .contains(loaderName)
-            .contains(".localContext(_divinedTenant)");
-    }
-
-    @Test
-    void parentRowBoundRowsMethodAcquiresThroughTheSlotRead() {
-        assertThat(render(multiTenant(ENDORSEMENTS), "FilmEndorsementFetchers", "rowsFilm"))
-            .contains("org.jooq.DSLContext dsl = fake.code.generated.schema.TenantConnections.dslFor(env, fake.code.generated.schema.TenantConnections.divinedTenant(((org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.Tables.FILM_ENDORSEMENT.ENDORSED_FILM)));")
-            .doesNotContain("getLocalContext")
-            .doesNotContain("getDslContext(env)");
-    }
-
-    @Test
-    void parentRowBoundChildInheritsTheHandedDownTenant() {
-        assertThat(render(multiTenant(ENDORSEMENTS), "FilmFetchers", "rowsInventories"))
-            .contains("dslFor(env, fake.code.generated.schema.TenantConnections.divinedTenant(env.<Object>getLocalContext()))");
-    }
-
     /**
      * The discriminated interface child's batched half partitions its loader the same way, and
      * the assertion is on the emitted <em>name expression</em> rather than on the presence of a

@@ -2332,6 +2332,29 @@ class TenantBindingClassificationTest {
     }
 
     @Test
+    void aListOrConnectionWhoseFirstHopLandsOnTheTenantColumnRoutesOnTheParentRow() {
+        var schema = build("""
+            type FilmEndorsement @table(name: "film_endorsement") {
+                note: String
+                inventories: [Inventory!]! @splitQuery @reference(path: [
+                    {key: "film_endorsement_endorsed_film_fkey"}, {key: "inventory_film_id_fkey"}])
+                inventoriesConnection: [Inventory!]! @asConnection @splitQuery @reference(path: [
+                    {key: "film_endorsement_endorsed_film_fkey"}, {key: "inventory_film_id_fkey"}])
+                    @defaultOrder(primaryKey: true)
+            }
+            type Inventory @table(name: "inventory") { inventoryId: Int }
+            type Query { endorsements: [FilmEndorsement!]! }
+            """);
+
+        for (var field : List.of("inventories", "inventoriesConnection")) {
+            assertThat(schema.tenantBindingOf("FilmEndorsement", field)).as(field)
+                .isInstanceOfSatisfying(TenantBinding.ParentRowBound.class, parentRow ->
+                    assertThat(parentRow.slot().sourceSide().sqlName()).isEqualToIgnoringCase("endorsed_film"));
+        }
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
     void anInlineReferenceLandingOnTheTenantColumnNamesSplitQueryInItsRejection() {
         var schema = endorsements("", "");
 

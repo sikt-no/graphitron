@@ -66,6 +66,20 @@ type FilmEndorsement @table(name: "film_endorsement") {
     film: Film @splitQuery
 }
 
+# ParentRowBound at every cardinality, over a reference that may point nowhere: film_bookmark is
+# global and its nullable bookmarked_film lands on film.film_id. The list and connection fields
+# take a two-hop path whose first hop carries the tenant, so the inventory statement runs in the
+# tenant the bookmark names. A bookmark of no film answers null, [] and an empty page.
+type FilmBookmark @table(name: "film_bookmark") {
+    note: String
+    film: Film @splitQuery
+    inventories: [Inventory!]! @splitQuery @reference(path: [
+        {key: "film_bookmark_bookmarked_film_fkey"}, {key: "inventory_film_id_fkey"}])
+    inventoriesConnection(first: Int, after: String): [Inventory!]! @asConnection @splitQuery
+        @reference(path: [{key: "film_bookmark_bookmarked_film_fkey"}, {key: "inventory_film_id_fkey"}])
+        @defaultOrder(primaryKey: true)
+}
+
 # Global-read arm: global reference data on the request's default tenant, else the default source.
 type Language @table(name: "language") {
     name: String
@@ -149,6 +163,8 @@ type Query {
         method: "languagesOnConnection"})
     # Untenanted root over the global endorsements, whose film child routes on each row.
     endorsements(note: String! @field(name: "note")): [FilmEndorsement!]!
+    # Untenanted root over the global bookmarks, whose children route on each row or answer empty.
+    bookmarks(note: String! @field(name: "note")): [FilmBookmark!]!
     # @globalData: a root service handed a connection whose arguments name no tenant. Unmarked
     # it would be a build error; the marker states its SQL touches only global data, so it runs on
     # the default source.

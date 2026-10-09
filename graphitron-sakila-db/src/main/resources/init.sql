@@ -243,6 +243,19 @@ CREATE TABLE film_endorsement (
 );
 
 -- -------------------------
+-- film_bookmark: a global table whose reference onto film.film_id is nullable. Under the
+-- multi-tenant fixture's film_id tenant column a bookmark's film names the tenant holding that
+-- film, and a bookmark of no film names no tenant: its batched children answer the empty value
+-- without taking a connection. film_endorsement cannot serve that case, its reference is NOT NULL.
+-- -------------------------
+
+CREATE TABLE film_bookmark (
+    bookmark_id     serial        PRIMARY KEY,
+    bookmarked_film int           REFERENCES film(film_id),
+    note            varchar(255)
+);
+
+-- -------------------------
 -- jti_subject (+ jti_app_account, jti_person): R389 COMPOSITE-shared-key discriminated joined-table
 -- (class-table) inheritance fixture (the composite counterpart of the single-column party fixture
 -- below). A discriminated base table (jti_subject, carrying the subject_kind discriminator) plus one
