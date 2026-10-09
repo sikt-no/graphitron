@@ -577,14 +577,15 @@ types and its formatter are already model-side, so what stands between here and 
   and the `VALIDATE` projection go, and with them the plugin's last use of the generator outside
   `generate` and `dev`.
 
-### `generate` is a function of the store and the post-synthesis schema
+### `generate` is a function of the store and the emitted schema
 
-Capture builds both schemas: the schema as written, and the post-synthesis schema the macros' rows
-make of it. `generate` renders the post-synthesis schema as SDL and as the schema classes and wiring,
-and the datafetchers and the rest from the store.
+Capture builds both schemas: the schema as written, and the emitted schema the minted rows make of
+it. `generate` renders the emitted schema as SDL and as the schema classes and wiring, and the
+datafetchers and the rest from the store. The walk reads the emitted schema too, and mints nothing
+of its own: every type and application graphitron adds is the store's.
 
 It is a function onto the output directory rather than a pipeline: after a run the directory is
-fixed by the store, the post-synthesis schema and the run's configuration, a file whose content
+fixed by the store, the emitted schema and the run's configuration, a file whose content
 would not change is left alone and a file no longer produced is swept. Writing, that comparison and
 the sweep are how it delivers its result. What it does not do is fetch or build its inputs: it opens
 no store and captures nothing, which is the generate mojo's and the test harnesses' orchestration,
@@ -597,13 +598,13 @@ reads nothing off the classpath that capture has already read, and builds no sch
     session's generator factory captures first.
   * **`AttributedRegistry.load` dissolves** `done`. The refusal cases and the walk's configured-tag
     cases dissolved into what the capture path already pins, the configured tags and notes are read
-    off the post-synthesis schema, and `CapturedSchemaAgreementTest` went with the second reading it
+    off the emitted schema, and `CapturedSchemaAgreementTest` went with the second reading it
     compared. `EmittedRegistry`'s overloads over `AttributedRegistry`, kept alive only by tests, went
-    after it, and with them the pre-synthesis handle nothing else read.
-* **Capture hands back the post-synthesis schema** `done`. `EmittedRegistry` runs in capture and
-  `CapturedSchema` carries both; the generator renders the post-synthesis one and reads the
-  written one only for the walk.
-  * **The post-synthesis schema is derived right after the anchor** `done`, the macros being one
+    after it, and with them the handle on the composition nothing else read.
+* **Capture hands back the emitted schema** `done`. `EmittedRegistry` runs in capture and
+  `CapturedSchema` carries both; the generator renders the emitted one and reads the written one
+  only for the walk.
+  * **The emitted schema is derived right after the anchor** `done`, the macros being one
     mint. They had diverged: the connection and facet mint was anchored by `EmittedAnchor`, while key
     synthesis was a view over the deprecated decode and the node rule, and tag inheritance was Java
     inside `EmittedRegistry`, the `graphitron_` anchors having no relation for a directive
@@ -613,7 +614,7 @@ reads nothing off the classpath that capture has already read, and builds no sch
     * **The anchors hold directive applications** `done`. `graphitron_directive_application` and its
       arguments, at the coordinate, carrying the authored ones across from `graphql_` beside the
       minted, which carry no position.
-    * **Key synthesis is minted by `EmittedAnchor`** `done`, over the `ast_` link and key entries
+    * **The federation key is minted by `EmittedAnchor`** `done`, over the `ast_` link and key entries
       joined to the honoured application, and `EmittedRegistry` renders minted applications without
       knowing which macro wrote them.
     * **Tag and `@shareable` inheritance is minted by `EmittedAnchor`** `done`.
@@ -629,14 +630,26 @@ reads nothing off the classpath that capture has already read, and builds no sch
     * **`EmittedRegistry` renders the anchors and states no rule** `done`. It patches the anchored
       elements and applies the minted applications, and the narrowing it reports reads the rule's
       output.
-* **The schema classes and the SDL read only the post-synthesis schema** `open`.
+* **The schema classes and the SDL read only the emitted schema** `open`.
   `SchemaSdlEmitter` asks the walk which support types to drop. The schema classes take their forms
-  from the post-synthesis schema, `CarriesObjectForm.formOf` reading it before a variant's own form,
-  so the walk's synthesis renders nothing; the variants still carry it.
+  from the emitted schema, `CarriesObjectForm.formOf` reading it before a variant's own form, so the
+  walk's own forms render nothing; the variants still carry them.
 * **The datafetchers and the rest are generated from the store** `open`. `EmitPlan` reads the store
   already; the per-type generators still take the walk's model.
-* **The generator builds no schema** `blocked`, on the three above. `KeyNodeSynthesiser`, the walk's
-  connection expansion and what is left of `AttributedRegistry` go with the walk.
+* **The walk reads the emitted schema** `open`. It is handed what capture derived from the store,
+  every minted type and application in it, where it is handed the written composition and mints a
+  second time on top: `KeyNodeSynthesiser` keys the node types and `ConnectionPromoter`'s directive
+  arm expands the carriers, two mints the store already makes. A probe comes first, switching the
+  input and reading what fails.
+  * **The emitted schema carries the configured link** `open`, and the definitions it imports, for a
+    `CONFIGURED` row of `graphitron_federation_link`; whether a run is federated is then whether the
+    schema it is handed is linked, rather than what the composition injected.
+  * **The parser's refusals and the injected names come from `CapturedSchema`** `open`. The walk
+    reads both off `AttributedRegistry`, a registry of its own built from the written composition.
+* **The generator builds no schema** `blocked`, on the walk reading the emitted schema.
+  `KeyNodeSynthesiser`, `ConnectionPromoter`'s directive arm and what is left of
+  `AttributedRegistry` go, and R289, which corrects `KeyNodeSynthesiser`'s javadoc, dissolves with
+  it.
 * **Its inputs are values** `open`. A `StoreHandle`, the `CapturedSchema` and the run's
   configuration; not `CapturedGraph`, which owns the store and its lifetime, so the constructor that
   takes one goes.
@@ -650,14 +663,14 @@ reads nothing off the classpath that capture has already read, and builds no sch
   * **Enum values are anchored** `done`. `graphitron_element` admits them, so the rule states their
     tags, and `graphitron_enum_value` is their part relation beside the other three, so a reader
     reaches an enum value's type and name by a join rather than by taking its coordinate apart.
-  * **The schema classes read the configured tags off the post-synthesis schema** `done`. The walk's
-    synthesis inherits only authored tags now, so `CarriesObjectForm.formOf` reads the schema's
+  * **The schema classes read the configured tags off the emitted schema** `done`. The walk's
+    own connection types inherit only authored tags now, so `CarriesObjectForm.formOf` reads the schema's
     type first, and the enum and input classes render the schema's forms rather than the walk's.
 * **The configuration's rewrites leave the composition** `open`, so the written schema is what was
   written.
-  * **The `@link` a configured tag needs reaches the emitted schema** `open`. `TagLinkSynthesiser`
-    still adds it in the composition, and the walk's federation opt-in reads it there, so it moves
-    with `federationLink`.
+  * **`TagLinkSynthesiser` leaves the composition** `blocked`, on the emitted schema carrying the
+    configured link and the walk reading it. The written schema needs no `@tag` declaration now; the
+    walk's federation opt-in is the one reader left.
     * **The opt-in is one relation** `done`. `graphitron_federation_link` states whether a graph is
       federated and how, an authored federation `@link` or a configured tag where none is written,
       and `graphitron_federation_link_import` what the link imports, both anchored and marked and
@@ -669,11 +682,6 @@ reads nothing off the classpath that capture has already read, and builds no sch
         that literal to the constant dissolves.
     * **A configured tag the authored link does not import is a detection** `open`, over the
       relation, where it is a refusal of the composition today.
-    * **`TagLinkSynthesiser` leaves the composition** `open`: the written schema needs no `@tag`
-      declaration now, and the emitted schema applies the configured link and the definitions it
-      imports.
-    * **`federationLink` is read from the store** `open`, by the generator and by the walk's key
-      synthesis, so a tag-only graph stays federated once the composition stops saying so.
   * **`DescriptionNoteApplier` follows** `done`. The original description is the document's, in
     `graphql_`; the note is the document's configuration, in `graphql_source_input`; and the
     description the generator emits is minted, the anchor appending each element's note to it in the
@@ -684,8 +692,19 @@ reads nothing off the classpath that capture has already read, and builds no sch
     * **The part relations are read by their columns** `done`. `EmittedRegistry` reads the type,
       member and argument from the four part relations, where it took coordinates apart, and sets
       an element's description from its part relation where the anchor minted one.
+* **The vocabulary is emitted and minted** `open`. "Synthesis" named code that edited a registry in
+  place; what graphitron adds to the schema is minted, by a rule over the store, and the schema
+  capture derives is the emitted schema. `CapturedSchema.synthesised` becomes `emitted`, with the
+  javadoc and tests that say "post-synthesis", and what is left of the old word goes with the code
+  it names.
+  * **The federation key is one rule of the mint** `open`. `graphitron_synthesized_federation_key`
+    is a filter now that the opt-in is a relation: the node types of a federated graph with no
+    authored id key. It dissolves into `graphitron_directive_application_minted`, and its readers
+    read the minted applications.
+  * **`graphitron_synthesized_node_type_id` is named in the mint's vocabulary** `open`, its author's
+    to rename.
 * **Capture's added cost is measured** `open`. Capture now also derives `graphitron_configured_tag`
-  and `graphitron_inherited_directive` and builds the post-synthesis schema, `graphitron:capture`
+  and `graphitron_inherited_directive` and builds the emitted schema, `graphitron:capture`
   alone included, and the dev loop's classpath-change and quiet-startup rounds now capture too. The
   builds stayed green and in their usual time; the relations themselves are untimed.
 * **The jOOQ catalog and the classpath census are read from the store** `open`. Capture has read
