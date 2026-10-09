@@ -36,8 +36,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
-| `R1002` | Publish each node type's typeId as a composable directive so the supergraph can map type IDs to type names | In Progress | 2026-10-08 | [plan](node-type-id-composable-directive.md) |
 | `R992` | A reference whose FK lands on the tenant column routes on the parent row value | In Review | 2026-10-09 <sub>created 2026-10-07</sub> | [plan](tenant-from-fk-terminal-column.md) |
+| `R1002` | Publish each node type's typeId as a composable directive so the supergraph can map type IDs to type names | In Review | 2026-10-09 <sub>created 2026-10-08</sub> | [plan](node-type-id-composable-directive.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -506,7 +506,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R929` [**A @referenceFor route is a discovered key in the store**](store-reads-no-referencefor-step.md) — Backlog, bug
 - `R897` [**typeId uniqueness is enforced per graph and claimed at supergraph scope**](typeid-unique-at-supergraph-scope.md) — Backlog, validation
 - `R588` [**Diagnostics for `implements Node @table` over a table with no node metadata**](node-without-metadata-diagnostics.md) — Backlog, dx
-- `R1002` [**Publish each node type's typeId as a composable directive so the supergraph can map type IDs to type names**](node-type-id-composable-directive.md) — In Progress, feature
+- `R1002` [**Publish each node type's typeId as a composable directive so the supergraph can map type IDs to type names**](node-type-id-composable-directive.md) — In Review, feature
 - `R267` [**Replace deprecated-for-removal DataType.convert(Object) in NodeIdEncoder.decode<Type>**](nodeid-encoder-deprecated-convert.md) — Backlog, tech-debt
 - `R273` [**Land or retire R265's deferred compile-tier guard**](bare-scalar-id-arm-modernisation.md) — Backlog, architecture
 - `R24` [**Rooted-at-parent NodeId reference JOIN-projection emitter (ColumnBackedReferenceField, both arities)**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup

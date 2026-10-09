@@ -1,13 +1,13 @@
 ---
 id: R1002
 title: "Publish each node type's typeId as a composable directive so the supergraph can map type IDs to type names"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 4
 theme: nodeid
 depends-on: []
 created: 2026-10-08
-last-updated: 2026-10-08
+last-updated: 2026-10-09
 ---
 
 # Publish each node type's typeId as a composable directive so the supergraph can map type IDs to type names
@@ -74,6 +74,17 @@ For `docs/manual/how-to/apollo-federation.adoc`, a new section after "The `<sche
 > Graphitron then defines `@nodeType` and puts `@nodeType(typeId: "...")` on every node type, the value being the id it encodes into IDs for that type, and composition keeps it, so the supergraph holds the mapping from typeId to type name and the node subgraph decodes an ID without calling the owning subgraph. Do not write `@nodeType` yourself; the build refuses it.
 >
 > **Keep typeIds unique across subgraphs.** Composition checks neither that two types share a `typeId` nor that two subgraphs disagree about one. Pick the ids from one scheme for the whole supergraph. Within one subgraph the build already refuses a duplicate (`validateNodeTypeIdUniqueness`).
+
+## Implementation notes
+
+Shipped at `8ec35f5`. The plan above is what landed, with these disclosed differences:
+
+- **Applied through the minted anchor.** Trunk changed under the item mid-flight: directive applications became the anchor `graphitron_directive_application`, applied generically by `EmittedRegistry`. The view `graphitron_synthesized_node_type_id` therefore joins `graphitron_directive_application_minted` and `graphitron_directive_application_arg_minted` with a `nodeType` arm and a `typeId` arm, and `EmittedRegistry` adds only the directive's definition and the author-error refusals. The refusal now fires during capture, where the emitted registry is derived.
+- **Corpus covers three id tiers, not four.** The test catalog has no table carrying defective node metadata, so the corpus document `node-type-id` shows the declared, class-published and type-name tiers. The defect-carrying tier is pinned at its source, `NodesTest`, since the view reads `graphitron_node.type_id`.
+- **The corpus document is self-contained.** It declares `@composeDirective` itself and has no federation `@link`, because corpus documents carry no federation machinery and the trigger is the composition, not the link. It has no projection query, so it needs no rendered fragment.
+- **The authored-application refusal is mostly defensive.** In a real build an undeclared authored `@nodeType` fails assembly first; the case is pinned by calling `EmittedRegistry.derive` on a registry that carries one.
+- **Completeness evidence.** `NodeTypeIdDerivationTest` (view rows per tier, controls, both spellings, both refusals), `StoreEmittedFederationSchemaPipelineTest.composingNodeTypePublishesTheId` (both spellings through the generator), `GraphitronSchemaEntriesTest` (the decode), `EmittedRegistryAgreementTest` with `node-type-id` recorded as the store-only difference, and in `graphitron-sakila-example` `SchemaSdlEmissionTest.federatedSdlPublishesEachNodeTypesId` and `FederationBuildSmokeTest.serviceSdlPublishesNodeTypeIds` over the federated fixture, which now composes the directive. Full `mvn install -Plocal-db` green on the tree.
+- **Not run:** Apollo composition itself over the published SDL; the composition behaviour on conflicting ids is still open.
 
 ## Other solutions we've considered
 
