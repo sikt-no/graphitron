@@ -19,10 +19,6 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
 
-import static no.sikt.graphitron.model.test.SeededStore.seedFederationKey;
-import static no.sikt.graphitron.model.test.SeededStore.seedLink;
-import static no.sikt.graphitron.model.test.SeededStore.seedNode;
-import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -81,32 +77,6 @@ class EmittedRegistryTest {
         }
         """;
 
-    private static final String NODE_SCHEMA = """
-        interface Node { id: ID! }
-
-        type Query {
-          film: Film
-        }
-
-        type Film implements Node {
-          id: ID!
-          title: String!
-        }
-        """;
-
-    private static final String AUTHORED_KEY_SCHEMA = """
-        interface Node { id: ID! }
-
-        type Query {
-          film: Film
-        }
-
-        type Film implements Node @key(fields: "id") {
-          id: ID!
-          title: String!
-        }
-        """;
-
     /**
      * A tagged carrier beside a {@code PageInfo} its author declared. The mint of the shared page
      * info stands down to the author, so the declared type is the author's and takes no tag from
@@ -153,24 +123,54 @@ class EmittedRegistryTest {
         }
         """;
 
-    /** {@link #NODE_SCHEMA} as it stands after key synthesis, which is not what emission starts from. */
-    private static final String SYNTHESISED_KEY_SCHEMA = """
+    /** The federation opt-in an author writes, as the documents below carry it. */
+    private static final String LINK =
+        "extend schema @link(url: \"https://specs.apollo.dev/federation/v2.10\", import: [\"@key\"])\n";
+
+    /** A node type in a graph that never linked federation. */
+    private static final String UNLINKED_NODE_SCHEMA = """
         interface Node { id: ID! }
 
         type Query {
           film: Film
         }
 
-        type Film implements Node @key(fields: "id", resolvable: true) {
+        type Film implements Node @node {
           id: ID!
           title: String!
         }
         """;
 
-    private static final String FEDERATION_GRAPH = "federation";
+    /** The same node type in a federation-linked graph, whose author declared no key. */
+    private static final String LINKED_NODE_SCHEMA = LINK + UNLINKED_NODE_SCHEMA;
 
-    /** The federation spec prefix as a url a real {@code @link} carries. */
-    private static final String FEDERATION_URL = "https://specs.apollo.dev/federation/v2.10";
+    /** The linked node type with the id key its author wrote. */
+    private static final String LINKED_AUTHORED_KEY_SCHEMA = LINK + """
+        interface Node { id: ID! }
+
+        type Query {
+          film: Film
+        }
+
+        type Film implements Node @node @key(fields: "id") {
+          id: ID!
+          title: String!
+        }
+        """;
+
+    /** {@link #LINKED_NODE_SCHEMA} as it stands after the mint, which is not what emission starts from. */
+    private static final String MINTED_KEY_SCHEMA = LINK + """
+        interface Node { id: ID! }
+
+        type Query {
+          film: Film
+        }
+
+        type Film implements Node @node @key(fields: "id", resolvable: true) {
+          id: ID!
+          title: String!
+        }
+        """;
 
     @TempDir
     static Path tmp;
@@ -376,144 +376,70 @@ class EmittedRegistryTest {
             });
     }
 
-    /**
-     * Under the intersection a carrier read as untagged strips every tag from the type it coined,
-     * so a coordinate the registry does not declare is a defect to end the run on rather than a
-     * carrier with no tags. Provoked here by deriving against a registry that disagrees with the
-     * store about what {@code Query} is, which no real run does.
-     */
-    @Test
-    @DisplayName("a coining coordinate the registry does not declare ends the run")
-    void aCarrierTheRegistryLacksIsADefect() {
-        CapturedStore.withCapturedStore(tmp.resolve("missing-carrier"), CONNECTION_SCHEMA, dsl ->
-            assertThatThrownBy(() -> EmittedRegistry.of(
-                    attributed(parse("scalar Query\n\ntype Film { title: String! }")),
-                    new StoreHandle(dsl, CapturedStore.GRAPH)))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("Query.films"));
-    }
-
-    // ===== The keys the rule derives =====
+    // ===== The keys the anchor mints =====
 
     /**
-     * The derived {@code @key} arrives, and it arrives with the constants the relation states
-     * rather than ones this patch re-mints.
-     *
-     * <p>These cases seed the rule's inputs and let the view derive, which is a different bargain
-     * from the capture-driven ones above and the right one here. What is under test is whether the
-     * patch applies what {@code graphitron_synthesized_federation_key} says, not whether that relation
-     * decides correctly; deciding is the relation's own subject and is pinned where it lives. So
-     * seeding a link and a node is seeding inputs, not seeding the answer.
-     *
-     * <p>They also cost no store boot, running on the funnel, which the capture-driven cases above
-     * cannot.
+     * The minted {@code @key} arrives, with the arguments the anchor states rather than ones the
+     * patch re-mints. Captured whole, so the rule that decides it and the patch that renders it are
+     * read together over what an author wrote.
      */
     @Test
-    @DisplayName("a node type in a federation-linked graph gets the key the rule derived")
-    void theDerivedKeyIsApplied() {
-        withSeededStore(FEDERATION_GRAPH, dsl -> {
-            seedLink(dsl, FEDERATION_GRAPH, 0, FEDERATION_URL);
-            seedNode(dsl, FEDERATION_GRAPH, "Film");
+    @DisplayName("a node type in a federation-linked graph gets the key the anchor minted")
+    void theMintedKeyIsApplied() {
+        CapturedStore.withCapturedStore(tmp.resolve("minted-key"), LINKED_NODE_SCHEMA, dsl -> {
+            var emitted = EmittedRegistry.of(attributed(parse(LINKED_NODE_SCHEMA)),
+                new StoreHandle(dsl, CapturedStore.GRAPH));
 
-            var emitted = EmittedRegistry.of(attributed(parse(NODE_SCHEMA)),
-                new StoreHandle(dsl, FEDERATION_GRAPH));
-
-            var film = (ObjectTypeDefinition) emitted.getTypeOrNull("Film");
-            assertThat(film.getDirectives())
-                .extracting(AstPrinter::printAst)
-                .containsExactly("@key(fields: \"id\", resolvable: true)");
+            assertThat(typeDirectives(emitted, "Film"))
+                .containsExactly("@node", "@key(fields: \"id\", resolvable: true)");
         });
     }
 
-    /**
-     * The opt-in is the whole rule, so a graph that never linked federation gets no key. Here to
-     * catch a patch that reached for the composed relation or invented the application itself: both
-     * would put a key on this type, and the correct read cannot.
-     */
+    /** The opt-in is the whole rule, so a graph that never linked federation gets no key. */
     @Test
     @DisplayName("an unlinked graph has no key to apply")
     void nothingIsAppliedWithoutTheOptIn() {
-        withSeededStore(FEDERATION_GRAPH, dsl -> {
-            seedNode(dsl, FEDERATION_GRAPH, "Film");
+        CapturedStore.withCapturedStore(tmp.resolve("unlinked"), UNLINKED_NODE_SCHEMA, dsl -> {
+            var emitted = EmittedRegistry.of(attributed(parse(UNLINKED_NODE_SCHEMA)),
+                new StoreHandle(dsl, CapturedStore.GRAPH));
 
-            var emitted = EmittedRegistry.of(attributed(parse(NODE_SCHEMA)),
-                new StoreHandle(dsl, FEDERATION_GRAPH));
-
-            assertThat(((ObjectTypeDefinition) emitted.getTypeOrNull("Film")).getDirectives())
-                .isEmpty();
+            assertThat(typeDirectives(emitted, "Film")).containsExactly("@node");
         });
     }
 
     /**
-     * The authored key the author already wrote is not applied a second time, and this is the case
-     * that pins how the derived rows are found rather than what is done with them.
-     *
-     * <p>An authored {@code @key} is in the registry because its author wrote it there, so anything
-     * that applies it again duplicates it. Reading the composed {@code intent_federation_key} is
-     * exactly that mistake, and it is available: the composition holds this authored row. What
-     * makes it unreachable is naming the derived relation instead, so this case fails on a patch
-     * that reaches for the composition and passes on one that does not, whatever it then does with
-     * what it read.
+     * A key the author already wrote is not applied a second time. The authored application is in
+     * the registry because its author wrote it there, and it is in the directive anchor's authored
+     * set too; only the minted set is applied, so this fails on a patch that applies both.
      */
     @Test
     @DisplayName("an authored key is not applied a second time")
     void theAuthoredKeyIsNotReapplied() {
-        withSeededStore(FEDERATION_GRAPH, dsl -> {
-            seedLink(dsl, FEDERATION_GRAPH, 0, FEDERATION_URL);
-            seedNode(dsl, FEDERATION_GRAPH, "Film");
-            seedFederationKey(dsl, FEDERATION_GRAPH, "Film", 0, "id", true, "id");
+        CapturedStore.withCapturedStore(tmp.resolve("authored-key"), LINKED_AUTHORED_KEY_SCHEMA,
+            dsl -> {
+                var emitted = EmittedRegistry.of(attributed(parse(LINKED_AUTHORED_KEY_SCHEMA)),
+                    new StoreHandle(dsl, CapturedStore.GRAPH));
 
-            var emitted = EmittedRegistry.of(attributed(parse(AUTHORED_KEY_SCHEMA)),
-                new StoreHandle(dsl, FEDERATION_GRAPH));
-
-            assertThat(((ObjectTypeDefinition) emitted.getTypeOrNull("Film")).getDirectives())
-                .as("the author's own application, once")
-                .extracting(AstPrinter::printAst)
-                .containsExactly("@key(fields: \"id\")");
-        });
+                assertThat(typeDirectives(emitted, "Film"))
+                    .as("the author's own application, once")
+                    .containsExactly("@node", "@key(fields: \"id\")");
+            });
     }
 
     /**
-     * A derived row naming a type the registry does not declare is skipped rather than throwing.
-     * The rule reads node metadata off generated classes as well as the SDL, so the two corpora can
-     * disagree, and a run whose classes name a type its documents no longer do should not die in
-     * the patch: the disagreement is a fact for a gate to state.
+     * The derivation starts from the registry before synthesis, and an application it finds there
+     * already is a mint applied twice. Stated by handing it a registry that already carries the
+     * minted key: the patch has to say so rather than append a second one or quietly skip.
      */
     @Test
-    @DisplayName("a derived key for a type the document does not declare is skipped")
-    void aKeyForAnUndeclaredTypeIsSkipped() {
-        withSeededStore(FEDERATION_GRAPH, dsl -> {
-            seedLink(dsl, FEDERATION_GRAPH, 0, FEDERATION_URL);
-            seedNode(dsl, FEDERATION_GRAPH, "Ghost");
-
-            var emitted = EmittedRegistry.of(attributed(parse(NODE_SCHEMA)),
-                new StoreHandle(dsl, FEDERATION_GRAPH));
-
-            assertThat(emitted.getTypeOrNull("Ghost")).isNull();
-            assertThat(((ObjectTypeDefinition) emitted.getTypeOrNull("Film")).getDirectives())
-                .isEmpty();
-        });
-    }
-
-    /**
-     * The derivation starts from the registry before synthesis, and a key it finds already there
-     * is synthesis having been applied twice. Stated by handing it a pre-synthesis handle that is
-     * not one: the patch has to say so rather than append a second key or quietly skip, either of
-     * which would let the wrong input through.
-     */
-    @Test
-    @DisplayName("a registry already carrying the synthesised key is refused as a generator defect")
-    void aKeyAlreadySynthesisedIsRefused() {
-        withSeededStore(FEDERATION_GRAPH, dsl -> {
-            seedLink(dsl, FEDERATION_GRAPH, 0, FEDERATION_URL);
-            seedNode(dsl, FEDERATION_GRAPH, "Film");
-
-            assertThatThrownBy(() -> EmittedRegistry.of(attributed(parse(SYNTHESISED_KEY_SCHEMA)),
-                    new StoreHandle(dsl, FEDERATION_GRAPH)))
+    @DisplayName("a registry already carrying the minted key is refused as a generator defect")
+    void aKeyAlreadyMintedIsRefused() {
+        CapturedStore.withCapturedStore(tmp.resolve("minted-twice"), LINKED_NODE_SCHEMA, dsl ->
+            assertThatThrownBy(() -> EmittedRegistry.of(attributed(parse(MINTED_KEY_SCHEMA)),
+                    new StoreHandle(dsl, CapturedStore.GRAPH)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("'Film'")
-                .hasMessageContaining("defect in graphitron");
-        });
+                .hasMessageContaining("defect in graphitron"));
     }
 
     // ---------------------------------------------------------------------------------------

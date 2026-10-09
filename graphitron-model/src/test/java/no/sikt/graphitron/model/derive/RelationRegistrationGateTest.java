@@ -244,7 +244,12 @@ class RelationRegistrationGateTest {
             // GraphitronSchema is built from the composed registry and holds the link it added
             // with no word on who wrote it, so there is nothing to agree with.
             // FederationKeyDerivationTest pins it, over a corpus tagged and linked each way.
-            "graphql_assembly_synthesised_link")) {
+            "graphql_assembly_synthesised_link",
+            // What each file's recipe entry configures for it. GraphitronSchema is built from the
+            // registry the configuration already rewrote and keeps no word on which file a tag came
+            // from, so there is nothing to agree with. StoreEmittedFederationSchemaPipelineTest pins
+            // it through the tags its configured inputs reach the emitted schema with.
+            "graphql_source_input")) {
             registrations.put(relation, Arm.UNSHADOWED);
         }
         // The classfile census: what the compiled classes on the classpath declare, read with no
@@ -306,6 +311,18 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_field_minted", Arm.DERIVED);
         registrations.put("graphitron_argument_authored", Arm.DERIVED);
         registrations.put("graphitron_argument_minted", Arm.DERIVED);
+        // The directive grain of the same population and its sets, on the same claim.
+        registrations.put("graphitron_directive_application", Arm.DERIVED);
+        registrations.put("graphitron_directive_application_arg", Arm.DERIVED);
+        registrations.put("graphitron_directive_application_authored", Arm.DERIVED);
+        registrations.put("graphitron_directive_application_minted", Arm.DERIVED);
+        registrations.put("graphitron_directive_application_arg_authored", Arm.DERIVED);
+        registrations.put("graphitron_directive_application_arg_minted", Arm.DERIVED);
+        registrations.put("graphitron_directive_application_configured", Arm.DERIVED);
+        registrations.put("graphitron_directive_application_arg_configured", Arm.DERIVED);
+        registrations.put("graphitron_configured_tag", Arm.DERIVED);
+        registrations.put("graphitron_carrier_directive", Arm.DERIVED);
+        registrations.put("graphitron_inherited_directive", Arm.DERIVED);
         registrations.put("graphitron_minted_conflict", Arm.DERIVED);
         registrations.put("graphitron_field_chain_application", Arm.DERIVED);
         registrations.put("intent_authored_field_claim", Arm.DERIVED);

@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static no.sikt.graphitron.model.Tables.GRAPHQL_SOURCE_INPUT;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 
@@ -199,6 +200,7 @@ public final class GraphQLSourceCapture {
         documents.add(readSpecification(dsl, graph.name(), readAt));
         configured.add(SchemaLoader.SPECIFICATION_SOURCE_NAME);
         dropMembership(dsl, graph.name(), configured);
+        writeInputs(dsl, graph.name(), inputs, configured, readAt);
         GraphQLSchemaProblems.writeParsed(dsl, graph.name(), parse.failures(), readAt);
         documents.sort(OLDEST_FIRST);
         return new CorpusReading(documents, inputs, parse.failures());
@@ -324,6 +326,36 @@ public final class GraphQLSourceCapture {
             scope = scope.and(m.SOURCE_NAME.notIn(configured));
         }
         dsl.deleteFrom(m).where(scope).execute();
+    }
+
+    /**
+     * Makes {@code graph}'s {@code graphql_source_input} rows be what each claimed file's recipe
+     * entry configures for it, sweeping the files the recipe stopped matching.
+     *
+     * <p>Every reading writes every match, the unchanged files included: a tag is configuration
+     * rather than something the bytes say, so a file whose bytes stood still can still have changed
+     * entry.
+     */
+    private static void writeInputs(DSLContext dsl, String graph, List<SchemaInput> inputs,
+                                    Set<String> claimed, LocalDateTime readAt) {
+        var t = GRAPHQL_SOURCE_INPUT;
+        for (var input : inputs) {
+            if (!claimed.contains(input.sourceName())) {
+                continue;
+            }
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.TAG, t.DESCRIPTION_NOTE, t.TOUCHED_AT)
+                .values(graph, input.sourceName(), input.tag().orElse(null),
+                    input.descriptionNote().orElse(null), readAt)
+                .onDuplicateKeyUpdate()
+                .set(t.TAG, input.tag().orElse(null))
+                .set(t.DESCRIPTION_NOTE, input.descriptionNote().orElse(null))
+                .set(t.TOUCHED_AT, readAt)
+                .execute();
+        }
+        dsl.deleteFrom(t)
+            .where(t.GRAPH_NAME.eq(graph))
+            .and(t.TOUCHED_AT.ne(readAt))
+            .execute();
     }
 
     /**

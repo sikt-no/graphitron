@@ -1,5 +1,7 @@
 package no.sikt.graphitron.model.capture.document;
 
+import no.sikt.graphitron.model.derive.Nodes;
+import no.sikt.graphitron.model.derive.TableTypes;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import org.jooq.DSLContext;
@@ -106,6 +108,10 @@ public final class GraphitronAstCapture {
         // What each written code reference names on the classpath, which this anchor can ask now it
         // runs after the classpath has been read.
         GraphitronCodeReferences.write(dsl, graph.name(), readAt);
+        // Which types are bound to a table and which of those are nodes. Both read the anchors just
+        // written and corpora captured before this one, and the mint below reads the second.
+        TableTypes.derive(dsl, graph.name());
+        Nodes.derive(dsl, graph.name());
         // Then what the applications just anchored mint. Second by our choice rather than by
         // necessity of the entries: at the entry grain an @asConnection and an @asFacet are
         // siblings, each decoded from its own position and reading nothing of the other. It is

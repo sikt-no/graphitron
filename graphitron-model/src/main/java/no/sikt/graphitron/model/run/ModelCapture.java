@@ -79,6 +79,8 @@ public final class ModelCapture {
         GraphQLSourceCapture.reclaim(dsl, documents);
 
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);
+        // The post-synthesis schema, as soon as the anchor has resolved what the macros mint.
+        var schemas = schemas(dsl, graph, assembled);
         var decode = new FactSink(dsl, graph.name(), readAt);
         GraphitronFactCapture.clear(dsl, graph.name());
         SdlFactCapture.capture(decode, assembled.merged());
@@ -93,12 +95,12 @@ public final class ModelCapture {
             FactCapture.derive(dsl, graph, assembled.assembly(), progress);
         }
         dsl.execute("ANALYZE");
-        return schemas(dsl, graph, assembled);
+        return schemas;
     }
 
     /**
      * The written schema and the post-synthesis one, which is the written composition with what
-     * the derivations above minted applied to it. Last, because it reads their rows.
+     * the anchor minted applied to it.
      */
     private static CapturedSchema schemas(DSLContext dsl, GraphIdentity graph,
                                           AssemblyReading written) {

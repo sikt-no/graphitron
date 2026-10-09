@@ -305,6 +305,24 @@ COMMENT ON COLUMN store_source.mtime IS 'the filesystem''s last-modified time fo
 COMMENT ON COLUMN store_source.last_seen IS 'when a run last named this source in its input set; the age half of the age/currency distinction, and the bookkeeping a future eviction surface reads';
 COMMENT ON COLUMN store_source.read_at IS 'when the content behind this row''s stamp began being read; the currency half of the distinction last_seen names the age half of, and never the same question. last_seen moves when a run names the source in its input set, whether or not it opened it; this moves only where a pass read the bytes, and it moves for every source a pass verified rather than only the ones it rewrote, a source hashed and found equal to its stamp having been read as surely as one that was rewritten. Taken before the read rather than at the write, which is the whole of the concurrency argument: a change landing between the read and the commit is later than this value and is correctly read as a change, where a value taken at the write would swallow that window in silence. NULL reads as never, the conservative answer for a row that exists before any pass read its content. What makes the column mean anything is a comparison against a reading process''s own two instants: when it began watching this source''s corpus, and when it last saw this source move. A value below either says the row is not known to be current, so a value written while nothing was watching buys nothing, and one written by another process while we were watching counts as ours';
 
+
+CREATE TABLE graphql_source_input (
+  graph_name       VARCHAR NOT NULL,
+  source_name      VARCHAR NOT NULL,
+  tag              VARCHAR,
+  description_note VARCHAR,
+  touched_at       TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name),
+  FOREIGN KEY (graph_name, source_name) REFERENCES store_graph_source (graph_name, source_name)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphql_source_input IS 'What a graph''s configuration says about one schema file it reads: one row per file the recipe matched, with the tag and description note its entry carries. For example a file matched by an entry configured with tag stable is one row carrying stable, and a file matched by an untagged entry is a row carrying none.';
+COMMENT ON COLUMN graphql_source_input.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphql_source_input.source_name IS 'the file, as the source rows name it; with the graph, the grain, and a reference into the graph''s claim on it';
+COMMENT ON COLUMN graphql_source_input.tag IS 'the tag the matching entry configures, which the loading rewrites apply to every element the file declares that carries no @tag of its own; NULL where the entry configures none';
+COMMENT ON COLUMN graphql_source_input.description_note IS 'the note the matching entry configures, which the loading rewrites append to the descriptions the file declares; NULL where the entry configures none';
+COMMENT ON COLUMN graphql_source_input.touched_at IS 'when the reading that wrote this row ran. Every reading writes the whole recipe''s matches, so it finishes by deleting the graph''s rows carrying another instant, which are the files the recipe stopped matching';
+
 CREATE TABLE store_stamp (
   singleton         CHAR(1) NOT NULL,
   ddl_hash          VARCHAR NOT NULL,
@@ -4561,55 +4579,69 @@ COMMENT ON COLUMN graphitron_argument.item_non_null IS 'whether a list''s item i
 COMMENT ON COLUMN graphitron_argument.default_value_sdl IS 'the default literal where the argument has one, authored or written by the macro; display material, never a dimension';
 COMMENT ON COLUMN graphitron_argument.description IS 'the docstring, authored or macro-written; display material, never a dimension';
 
+CREATE TABLE graphitron_directive_application (
+  graph_name     VARCHAR NOT NULL,
+  coordinate     VARCHAR NOT NULL,
+  directive_name VARCHAR NOT NULL,
+  ordinal        INT     NOT NULL,
+  origin         VARCHAR NOT NULL,
+  source_name    VARCHAR,
+  source_line    INT,
+  source_column  INT,
+  PRIMARY KEY (graph_name, coordinate, directive_name, ordinal),
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphitron_element (graph_name, coordinate)
+    ON DELETE CASCADE,
+  CHECK (origin IN ('AUTHORED', 'CONFIGURED', 'MINTED')),
+  CHECK ((origin = 'AUTHORED') = (source_name IS NOT NULL))
+);
+COMMENT ON TABLE graphitron_directive_application IS 'Every directive application the generator emits, the author''s and the ones macro expansion minted, at the coordinate it is applied to: one row per application. For example the @key(fields: "id") federation synthesises for a node type sits here beside the @table its author wrote on it, at the same grain and answering the same questions.';
+COMMENT ON COLUMN graphitron_directive_application.graph_name IS 'the owning graph''s partition, carried from whichever set supplied the row';
+COMMENT ON COLUMN graphitron_directive_application.coordinate IS 'the coordinate the application sits on, as graphitron_element spells it; a reference into that relation, so an element the reading stopped emitting takes its applications with it';
+COMMENT ON COLUMN graphitron_directive_application.directive_name IS 'the applied directive''s name, without the leading @';
+COMMENT ON COLUMN graphitron_directive_application.ordinal IS 'the repeat within one coordinate and one directive name, numbered from zero: the author''s order on an authored application, and after every authored one on the others';
+COMMENT ON COLUMN graphitron_directive_application.origin IS 'which set supplied the row: AUTHORED where a document states the application, CONFIGURED where the configuration applies it to what a document declares, MINTED where macro expansion adds it. What the renderer reads, the registry it patches already holding the first two';
+COMMENT ON COLUMN graphitron_directive_application.source_name IS 'the file an authored application was written in; NULL on the others, which no document states, the CHECK holding the two columns together';
+COMMENT ON COLUMN graphitron_directive_application.source_line IS 'source line of the at sign, 1-based; NULL where the application is not authored';
+COMMENT ON COLUMN graphitron_directive_application.source_column IS 'source column of the same; NULL where the application is not authored';
+
+CREATE TABLE graphitron_directive_application_arg (
+  graph_name              VARCHAR NOT NULL,
+  coordinate              VARCHAR NOT NULL,
+  directive_name          VARCHAR NOT NULL,
+  ordinal                 INT     NOT NULL,
+  directive_argument_name VARCHAR NOT NULL,
+  value_sdl               VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, directive_name, ordinal, directive_argument_name),
+  FOREIGN KEY (graph_name, coordinate, directive_name, ordinal)
+    REFERENCES graphitron_directive_application (graph_name, coordinate, directive_name, ordinal)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_directive_application_arg IS 'One argument of an application graphitron_directive_application holds: the application''s own key and the formal argument the value binds. For example the fields: "id" of a synthesised @key is one row, its value the literal an author would have typed.';
+COMMENT ON COLUMN graphitron_directive_application_arg.graph_name IS 'the owning graph''s partition, carried from the application';
+COMMENT ON COLUMN graphitron_directive_application_arg.coordinate IS 'the owning application''s coordinate, the second of the four columns naming it';
+COMMENT ON COLUMN graphitron_directive_application_arg.directive_name IS 'the owning application''s directive name, the third';
+COMMENT ON COLUMN graphitron_directive_application_arg.ordinal IS 'the owning application''s ordinal, the fourth; with the three above, a reference into graphitron_directive_application';
+COMMENT ON COLUMN graphitron_directive_application_arg.directive_argument_name IS 'the definition''s formal argument this value binds, and the rest of the grain';
+COMMENT ON COLUMN graphitron_directive_application_arg.value_sdl IS 'the value as SDL: as written on an authored application, and as the macro states it on a minted one, so a reader renders both the same way';
+
 -- ==== Macro synthesis provenance ==================================================
--- What macro expansion mints, one row per minted element per minting site. Three relations, one per
--- element kind, and the anchors above are the union of these with the transcription.
+-- What macro expansion mints is stated by views and anchored by EmittedAnchor, beside the authored
+-- sets, into the tables above. Per element kind a candidate view states what the arms mint before
+-- any disagreement between them is resolved, and a minted set states what survives:
+-- graphitron_type_minted_candidate and graphitron_type_minted, and the field and argument pairs.
+-- graphitron_minted_coinage says which application coined each minted type. A coordinate the
+-- applications disagree about is withheld from every set and recorded in graphitron_minted_conflict
+-- below, so no shape enters the population that no application asked for.
 --
--- The key leads with the coordinate that coined the row. A minted coordinate is not unique here and
--- must not be: the shared PageInfo is minted by every carrier, so each carrier writes its own whole
--- contribution and the primary key is the only dedupe there is. Leading with the source makes a
--- cascade from it a seek and "what did this application mint" one range scan, and it is the one
--- foreign key each relation carries: into graphql_element, ON DELETE CASCADE. Minting is single
--- level, every source being a coordinate an author wrote, and that key is where the day a macro
--- expands into another macro's output fails, at capture rather than in a reader.
+-- Precedence lives in the sets rather than in a column. A mint fills a name nobody took, so an
+-- author's type or machinery field always survives; the one replacement is the carrier field an
+-- @asConnection rewrites, which the field sets mark with their rewrite flag, and an argument yields
+-- per name. Coinage is written for every carrier whether or not its mint wins, so a mint that stood
+-- down to an author is still a row saying which application would have minted what.
 --
--- Positions are not carried. The source coordinate reaches the field's own position through
--- graphql_field and the application's through graphql_directive_application, which is strictly more than
--- a flattened site row held.
---
--- Each carries an index on its own coordinate tuple, which the key leads with the source instead of.
--- Both directions of the precedence resolution need it: the transcription's arm anti-joins these
--- relations on the coordinate it holds, once per authored element, and a reader asking whether one
--- coordinate was minted has no other way in. The key answers "what did this application mint" and
--- the index answers "who minted this", and the family is read both ways.
---
--- The coining directive is a directive and not an enum. A macro vocabulary with a CHECK is a list
--- that has to be edited every time an expansion is added, and it names something the schema already
--- describes: the directive is an element of the graph with a definition and a description of what it
--- does, so a reader asking why a coordinate exists gets the documentation rather than a label. Today
--- that is a key into graphql_directive by name; it becomes a directive coordinate when the graphql
--- family gains an anchor for one.
---
--- Precedence is a column because it is not derivable. Whether a mint beats the author's declaration
--- is a property of what the expansion is doing rather than of whether a collision happened, and
--- @asConnection settles it both ways at once: rewriting Query.films replaces the authored field,
--- while minting PageInfo yields to an author who declared that name. Both are collisions with an
--- authored coordinate and they resolve opposite ways, so no predicate over the two populations can
--- tell them apart. A replacing row states its whole row, copying the ordinal and the description it
--- does not change, so the winner is taken wholesale and neither side coalesces.
---
--- Capture writes the row whether or not it wins, and that is worth more than the tidiness. The
--- expansion used to read every declared type name in the schema into a set and return early against
--- it, so it was not a function of one carrier's own declaration, which is the qualification rule
--- this family's own comment gives as the reason @asConnection may run inside capture at all. Writing
--- unconditionally makes the stated rule true, and it gains the rows a suppressed mint used to leave
--- as silence: which application would have minted what, and stood down.
---
--- Two macros still do not qualify and neither appears here. @asFacet reads through the carrier's
--- arguments into the filter input type's fields, so it is an aggregate over the whole schema rather
--- than a local expansion. And federation's key synthesis conjoins the SDL claim with metadata a
--- generated jOOQ class publishes, a second corpus, so it is a derivation
--- (graphitron_synthesized_federation_key) whose rows are their own provenance.
+-- Every macro mints here. @asFacet adds its types through graphitron_carrier_facet_mint, and the
+-- directive applications a macro adds, the synthesised federation key and the federation directives
+-- a minted type inherits from its carriers, are graphitron_directive_application's MINTED set.
 
 CREATE TABLE graphitron_minted_conflict (
   graph_name   VARCHAR NOT NULL,
@@ -7723,28 +7755,257 @@ CREATE VIEW graphitron_synthesized_federation_key
   (graph_name, type_name, fields_sdl, resolvable) AS
 SELECT n.graph_name, n.type_name, 'id', TRUE
   FROM graphitron_node_type n
- WHERE (EXISTS (SELECT 1 FROM graphitron_link_entry l
+ WHERE (EXISTS (SELECT 1 FROM graphitron_ast_link_entry l
                  WHERE l.graph_name = n.graph_name
                    AND l.url LIKE 'https://specs.apollo.dev/federation/%')
         OR EXISTS (SELECT 1 FROM graphql_assembly_synthesised_link a
                     WHERE a.graph_name = n.graph_name))
-   AND NOT EXISTS (SELECT 1 FROM graphitron_federation_key_entry k
-                    WHERE k.graph_name = n.graph_name AND k.type_name = n.type_name
-                      AND 1 = (SELECT COUNT(*) FROM graphitron_federation_key_field_entry f
-                                WHERE f.graph_name = k.graph_name
-                                  AND f.type_name = k.type_name AND f.ordinal = k.ordinal)
-                      AND 1 = (SELECT COUNT(*) FROM graphitron_federation_key_field_segment_entry s
-                                WHERE s.graph_name = k.graph_name
-                                  AND s.type_name = k.type_name AND s.ordinal = k.ordinal)
-                      AND EXISTS (SELECT 1 FROM graphitron_federation_key_field_segment_entry s
-                                   WHERE s.graph_name = k.graph_name
-                                     AND s.type_name = k.type_name AND s.ordinal = k.ordinal
-                                     AND s.segment_name = 'id'));
+   -- An authored key states the id contract when it selects one path and that path is id. The
+   -- decode is reached through the application the corpus honours, at the at sign both share.
+   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
+                     JOIN graphitron_ast_federation_key_entry k
+                       ON k.graph_name = d.graph_name AND k.source_name = d.source_name
+                      AND k.source_line = d.source_line AND k.source_column = d.source_column
+                    WHERE d.graph_name = n.graph_name AND d.coordinate = n.type_name
+                      AND d.directive_name = 'key'
+                      AND 1 = (SELECT COUNT(*) FROM graphitron_ast_federation_key_selection_entry p
+                                WHERE p.graph_name = k.graph_name AND p.source_name = k.source_name
+                                  AND p.source_line = k.source_line
+                                  AND p.source_column = k.source_column)
+                      AND 1 = (SELECT COUNT(*) FROM graphitron_ast_federation_key_segment_entry g
+                                WHERE g.graph_name = k.graph_name AND g.source_name = k.source_name
+                                  AND g.source_line = k.source_line
+                                  AND g.source_column = k.source_column)
+                      AND EXISTS (SELECT 1 FROM graphitron_ast_federation_key_segment_entry g
+                                   WHERE g.graph_name = k.graph_name AND g.source_name = k.source_name
+                                     AND g.source_line = k.source_line
+                                     AND g.source_column = k.source_column
+                                     AND g.segment_name = 'id'));
 COMMENT ON VIEW graphitron_synthesized_federation_key IS 'Federation''s node-entity rule as a relation: which node types get a @key(fields: "id") nobody wrote, federation needing the entity declaration visible in the emitted SDL and a node carrying a globally-unique id by definition. For example a federation-linked graph whose Film is a node and declares no id key of its own gets one row.';
 COMMENT ON COLUMN graphitron_synthesized_federation_key.graph_name IS 'the owning graph''s partition, carried from the membership relation';
 COMMENT ON COLUMN graphitron_synthesized_federation_key.type_name IS 'the node type the key is synthesized for; keyed with the graph, one row per type that gets one';
 COMMENT ON COLUMN graphitron_synthesized_federation_key.fields_sdl IS 'the field-set literal the rule states, always id; a column and not an implied constant, so a reader composing this arm with the authored one projects the same shape from both';
 COMMENT ON COLUMN graphitron_synthesized_federation_key.resolvable IS 'the resolvable: the rule states, always true; the synthesized entity is resolvable by construction, an opt-out being something only an author can write';
+
+CREATE VIEW graphitron_directive_application_authored
+  (graph_name, coordinate, directive_name, ordinal, origin,
+   source_name, source_line, source_column) AS
+SELECT d.graph_name, d.coordinate, d.directive_name, d.ordinal, 'AUTHORED',
+       d.source_name, d.source_line, d.source_column
+  FROM graphql_directive_application d
+  JOIN graphitron_element e ON e.graph_name = d.graph_name AND e.coordinate = d.coordinate;
+COMMENT ON VIEW graphitron_directive_application_authored IS 'One of the three sets graphitron_directive_application is the union of: an application an author wrote at a coordinate the emitted population holds, carried across whole. For example the @table on type Film @table(name: "film") is a row at Film here, with the position the author wrote it at.';
+COMMENT ON COLUMN graphitron_directive_application_authored.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_directive_application_authored.coordinate IS 'the coordinate the application sits on';
+COMMENT ON COLUMN graphitron_directive_application_authored.directive_name IS 'the applied directive''s name';
+COMMENT ON COLUMN graphitron_directive_application_authored.ordinal IS 'the repeat, as graphql_directive_application numbers it';
+COMMENT ON COLUMN graphitron_directive_application_authored.origin IS 'always AUTHORED';
+COMMENT ON COLUMN graphitron_directive_application_authored.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_directive_application_authored.source_line IS 'source line of the at sign';
+COMMENT ON COLUMN graphitron_directive_application_authored.source_column IS 'source column of the at sign';
+
+CREATE VIEW graphitron_configured_tag (graph_name, coordinate, ordinal, value_sdl) AS
+WITH applied (graph_name, coordinate, site_order, tag) AS (
+  -- A field or an input field, declared at one site, takes the tag of its file unless it carries one.
+  SELECT f.graph_name, f.type_name || '.' || f.field_name, 0, s.tag
+    FROM graphql_field f
+    JOIN graphql_source_input s ON s.graph_name = f.graph_name AND s.source_name = f.source_name
+   WHERE s.tag IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
+                      WHERE d.graph_name = f.graph_name
+                        AND d.coordinate = f.type_name || '.' || f.field_name
+                        AND d.directive_name = 'tag')
+  UNION ALL
+  SELECT a.graph_name, a.type_name || '.' || a.field_name || '(' || a.argument_name || ':)', 0, s.tag
+    FROM graphql_argument a
+    JOIN graphql_source_input s ON s.graph_name = a.graph_name AND s.source_name = a.source_name
+   WHERE s.tag IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
+                      WHERE d.graph_name = a.graph_name
+                        AND d.coordinate = a.type_name || '.' || a.field_name
+                                           || '(' || a.argument_name || ':)'
+                        AND d.directive_name = 'tag')
+  UNION ALL
+  -- A union is tagged per declaration site, each site taking the tag of its own file unless the site
+  -- carries one, so a union declared in two tagged files carries both.
+  SELECT t.graph_name, t.type_name, t.merge_ordinal, s.tag
+    FROM graphql_type_declaration t
+    JOIN graphql_source_input s ON s.graph_name = t.graph_name AND s.source_name = t.source_name
+   WHERE t.kind = 'UNION' AND s.tag IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM graphql_ast_type_directive_entry e
+                      WHERE e.graph_name = t.graph_name AND e.source_name = t.source_name
+                        AND e.parent_line = t.source_line AND e.parent_column = t.source_column
+                        AND e.name = 'tag'))
+SELECT p.graph_name, p.coordinate,
+       CAST((SELECT COUNT(*) FROM graphql_directive_application d
+              WHERE d.graph_name = p.graph_name AND d.coordinate = p.coordinate
+                AND d.directive_name = 'tag') AS INT)
+         + CAST(ROW_NUMBER() OVER (PARTITION BY p.graph_name, p.coordinate
+                                   ORDER BY p.site_order) AS INT) - 1,
+       '"' || p.tag || '"'
+  FROM applied p
+  JOIN graphitron_element e ON e.graph_name = p.graph_name AND e.coordinate = p.coordinate;
+COMMENT ON VIEW graphitron_configured_tag IS 'The rule <schemaInput tag> states, as a relation: one row per @tag the configuration applies to an element of the emitted population. For example a field declared in a file whose entry carries tag stable, and which carries no @tag of its own, is one row naming stable.';
+COMMENT ON COLUMN graphitron_configured_tag.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_configured_tag.coordinate IS 'the element the tag is applied to: a field, an input field, an argument, or a union';
+COMMENT ON COLUMN graphitron_configured_tag.ordinal IS 'after every authored @tag at the coordinate, in declaration-site order where a union takes several';
+COMMENT ON COLUMN graphitron_configured_tag.value_sdl IS 'the tag as the name: argument an author would have written';
+
+CREATE VIEW graphitron_directive_application_configured
+  (graph_name, coordinate, directive_name, ordinal, origin,
+   source_name, source_line, source_column) AS
+SELECT c.graph_name, c.coordinate, 'tag', c.ordinal, 'CONFIGURED',
+       CAST(NULL AS VARCHAR), CAST(NULL AS INT), CAST(NULL AS INT)
+  FROM graphitron_configured_tag c;
+COMMENT ON VIEW graphitron_directive_application_configured IS 'One of the three sets graphitron_directive_application is the union of: an application the configuration adds to what a document declares. For example the @tag(name: "stable") a field takes from the entry its file was matched by.';
+COMMENT ON COLUMN graphitron_directive_application_configured.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_directive_application_configured.coordinate IS 'the element the configuration applies the directive to';
+COMMENT ON COLUMN graphitron_directive_application_configured.directive_name IS 'the directive the configuration applies';
+COMMENT ON COLUMN graphitron_directive_application_configured.ordinal IS 'after every authored application of the same directive at the same coordinate';
+COMMENT ON COLUMN graphitron_directive_application_configured.origin IS 'always CONFIGURED';
+COMMENT ON COLUMN graphitron_directive_application_configured.source_name IS 'always NULL, a configured application having no position';
+COMMENT ON COLUMN graphitron_directive_application_configured.source_line IS 'always NULL';
+COMMENT ON COLUMN graphitron_directive_application_configured.source_column IS 'always NULL';
+
+CREATE VIEW graphitron_carrier_directive
+  (graph_name, type_name, coordinate, directive_name, ordinal, value_sdl) AS
+WITH carried (graph_name, coordinate, directive_name, ordinal, value_sdl) AS (
+  SELECT d.graph_name, d.coordinate, d.directive_name, d.ordinal, a.value_sdl
+    FROM graphql_directive_application d
+    LEFT JOIN graphql_directive_application_arg a
+      ON a.graph_name = d.graph_name AND a.coordinate = d.coordinate
+     AND a.directive_name = d.directive_name AND a.ordinal = d.ordinal
+     AND a.directive_argument_name = 'name'
+   WHERE d.directive_name IN ('tag', 'shareable')
+  UNION ALL
+  SELECT c.graph_name, c.coordinate, 'tag', c.ordinal, c.value_sdl
+    FROM graphitron_configured_tag c)
+SELECT m.graph_name, m.type_name, m.coordinate, c.directive_name, c.ordinal, c.value_sdl
+  FROM graphitron_minted_coinage m
+  JOIN graphitron_type_minted t ON t.graph_name = m.graph_name AND t.type_name = m.type_name
+  JOIN carried c ON c.graph_name = m.graph_name AND c.coordinate = m.coordinate;
+COMMENT ON VIEW graphitron_carrier_directive IS 'The federation directives on the fields that coined a minted type: one row per @tag or @shareable a carrier carries, authored or configured. For example films: [Film!]! @asConnection @tag(name: "public") gives QueryFilmsConnection a row naming the public tag on Query.films.';
+COMMENT ON COLUMN graphitron_carrier_directive.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_carrier_directive.type_name IS 'the minted type the carrier coined; only a type the mint did not stand down for, an author''s declaration inheriting nothing';
+COMMENT ON COLUMN graphitron_carrier_directive.coordinate IS 'the carrier field';
+COMMENT ON COLUMN graphitron_carrier_directive.directive_name IS 'tag or shareable';
+COMMENT ON COLUMN graphitron_carrier_directive.ordinal IS 'the application''s order on the carrier';
+COMMENT ON COLUMN graphitron_carrier_directive.value_sdl IS 'the tag''s name: argument as SDL; NULL on @shareable, which takes none';
+
+CREATE VIEW graphitron_inherited_directive
+  (graph_name, type_name, directive_name, ordinal, value_sdl) AS
+WITH carriers (graph_name, type_name, carrier_count, first_carrier) AS (
+  SELECT graph_name, type_name, COUNT(DISTINCT coordinate), MIN(coordinate)
+    FROM graphitron_minted_coinage
+   GROUP BY graph_name, type_name),
+kept (graph_name, type_name, value_sdl) AS (
+  SELECT d.graph_name, d.type_name, d.value_sdl
+    FROM graphitron_carrier_directive d
+    JOIN carriers c ON c.graph_name = d.graph_name AND c.type_name = d.type_name
+   WHERE d.directive_name = 'tag' AND d.value_sdl IS NOT NULL
+   GROUP BY d.graph_name, d.type_name, d.value_sdl, c.carrier_count
+  HAVING COUNT(DISTINCT d.coordinate) = c.carrier_count)
+-- A tag every carrier carries, in the first carrier's order.
+SELECT k.graph_name, k.type_name, 'tag',
+       CAST(ROW_NUMBER() OVER (PARTITION BY k.graph_name, k.type_name
+                               ORDER BY MIN(f.ordinal)) AS INT) - 1,
+       k.value_sdl
+  FROM kept k
+  JOIN carriers c ON c.graph_name = k.graph_name AND c.type_name = k.type_name
+  JOIN graphitron_carrier_directive f
+    ON f.graph_name = k.graph_name AND f.type_name = k.type_name
+   AND f.coordinate = c.first_carrier AND f.directive_name = 'tag' AND f.value_sdl = k.value_sdl
+ GROUP BY k.graph_name, k.type_name, k.value_sdl
+UNION ALL
+-- @shareable where any carrier is.
+SELECT DISTINCT d.graph_name, d.type_name, 'shareable', 0, CAST(NULL AS VARCHAR)
+  FROM graphitron_carrier_directive d
+ WHERE d.directive_name = 'shareable';
+COMMENT ON VIEW graphitron_inherited_directive IS 'The federation directives a minted type inherits from its carriers: the tags every carrier carries and @shareable when any carrier is. For example a PageInfo two carriers share carries only the tag both carry, and is shareable because one of them is.';
+COMMENT ON COLUMN graphitron_inherited_directive.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_inherited_directive.type_name IS 'the minted type that inherits';
+COMMENT ON COLUMN graphitron_inherited_directive.directive_name IS 'tag or shareable';
+COMMENT ON COLUMN graphitron_inherited_directive.ordinal IS 'a tag''s position in the first carrier''s order, the first carrier being the least coordinate; zero on @shareable';
+COMMENT ON COLUMN graphitron_inherited_directive.value_sdl IS 'the tag''s name: argument as SDL; NULL on @shareable';
+
+CREATE VIEW graphitron_directive_application_minted
+  (graph_name, coordinate, directive_name, ordinal, origin,
+   source_name, source_line, source_column) AS
+SELECT k.graph_name, k.type_name, 'key',
+       CAST((SELECT COUNT(*) FROM graphql_directive_application d
+              WHERE d.graph_name = k.graph_name AND d.coordinate = k.type_name
+                AND d.directive_name = 'key') AS INT),
+       'MINTED', CAST(NULL AS VARCHAR), CAST(NULL AS INT), CAST(NULL AS INT)
+  FROM graphitron_synthesized_federation_key k
+  JOIN graphitron_element e ON e.graph_name = k.graph_name AND e.coordinate = k.type_name
+UNION ALL
+SELECT i.graph_name, i.type_name, i.directive_name, i.ordinal,
+       'MINTED', CAST(NULL AS VARCHAR), CAST(NULL AS INT), CAST(NULL AS INT)
+  FROM graphitron_inherited_directive i
+  JOIN graphitron_element e ON e.graph_name = i.graph_name AND e.coordinate = i.type_name;
+COMMENT ON VIEW graphitron_directive_application_minted IS 'One of the three sets graphitron_directive_application is the union of: an application macro expansion adds. For example @key(fields: "id") on a node type in a federation-linked graph whose author declared no id key, or the @tag a minted Connection inherits from its carrier.';
+COMMENT ON COLUMN graphitron_directive_application_minted.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_directive_application_minted.coordinate IS 'the coordinate the macro applies the directive to';
+COMMENT ON COLUMN graphitron_directive_application_minted.directive_name IS 'the directive the macro applies';
+COMMENT ON COLUMN graphitron_directive_application_minted.ordinal IS 'after every authored application of the same directive at the same coordinate, a minted type having none';
+COMMENT ON COLUMN graphitron_directive_application_minted.origin IS 'always MINTED';
+COMMENT ON COLUMN graphitron_directive_application_minted.source_name IS 'always NULL, a minted application having no position';
+COMMENT ON COLUMN graphitron_directive_application_minted.source_line IS 'always NULL';
+COMMENT ON COLUMN graphitron_directive_application_minted.source_column IS 'always NULL';
+
+CREATE VIEW graphitron_directive_application_arg_authored
+  (graph_name, coordinate, directive_name, ordinal, directive_argument_name, value_sdl) AS
+SELECT a.graph_name, a.coordinate, a.directive_name, a.ordinal,
+       a.directive_argument_name, a.value_sdl
+  FROM graphql_directive_application_arg a
+  JOIN graphitron_element e ON e.graph_name = a.graph_name AND e.coordinate = a.coordinate;
+COMMENT ON VIEW graphitron_directive_application_arg_authored IS 'One of the three sets graphitron_directive_application_arg is the union of: an argument an author passed to an application the authored set carries. For example the name: "film" of type Film @table(name: "film") is one row here.';
+COMMENT ON COLUMN graphitron_directive_application_arg_authored.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_directive_application_arg_authored.coordinate IS 'the owning application''s coordinate';
+COMMENT ON COLUMN graphitron_directive_application_arg_authored.directive_name IS 'the owning application''s directive name';
+COMMENT ON COLUMN graphitron_directive_application_arg_authored.ordinal IS 'the owning application''s ordinal';
+COMMENT ON COLUMN graphitron_directive_application_arg_authored.directive_argument_name IS 'the formal argument the value binds';
+COMMENT ON COLUMN graphitron_directive_application_arg_authored.value_sdl IS 'the value as written';
+
+CREATE VIEW graphitron_directive_application_arg_configured
+  (graph_name, coordinate, directive_name, ordinal, directive_argument_name, value_sdl) AS
+SELECT c.graph_name, c.coordinate, 'tag', c.ordinal, 'name', c.value_sdl
+  FROM graphitron_configured_tag c;
+COMMENT ON VIEW graphitron_directive_application_arg_configured IS 'One of the three sets graphitron_directive_application_arg is the union of: an argument the configuration passes to an application it adds. For example the name: "stable" of a configured tag is one row here.';
+COMMENT ON COLUMN graphitron_directive_application_arg_configured.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_directive_application_arg_configured.coordinate IS 'the owning application''s coordinate';
+COMMENT ON COLUMN graphitron_directive_application_arg_configured.directive_name IS 'the owning application''s directive name';
+COMMENT ON COLUMN graphitron_directive_application_arg_configured.ordinal IS 'the owning application''s ordinal';
+COMMENT ON COLUMN graphitron_directive_application_arg_configured.directive_argument_name IS 'always name, the one argument @tag takes';
+COMMENT ON COLUMN graphitron_directive_application_arg_configured.value_sdl IS 'the configured tag as SDL';
+
+CREATE VIEW graphitron_directive_application_arg_minted
+  (graph_name, coordinate, directive_name, ordinal, directive_argument_name, value_sdl) AS
+SELECT m.graph_name, m.coordinate, m.directive_name, m.ordinal, 'fields',
+       '"' || k.fields_sdl || '"'
+  FROM graphitron_directive_application_minted m
+  JOIN graphitron_synthesized_federation_key k
+    ON k.graph_name = m.graph_name AND k.type_name = m.coordinate
+ WHERE m.directive_name = 'key'
+UNION ALL
+SELECT m.graph_name, m.coordinate, m.directive_name, m.ordinal, 'resolvable',
+       CASE WHEN k.resolvable THEN 'true' ELSE 'false' END
+  FROM graphitron_directive_application_minted m
+  JOIN graphitron_synthesized_federation_key k
+    ON k.graph_name = m.graph_name AND k.type_name = m.coordinate
+ WHERE m.directive_name = 'key'
+UNION ALL
+SELECT i.graph_name, i.type_name, i.directive_name, i.ordinal, 'name', i.value_sdl
+  FROM graphitron_inherited_directive i
+  JOIN graphitron_element e ON e.graph_name = i.graph_name AND e.coordinate = i.type_name
+ WHERE i.directive_name = 'tag';
+COMMENT ON VIEW graphitron_directive_application_arg_minted IS 'One of the three sets graphitron_directive_application_arg is the union of: an argument macro expansion passes to an application it adds. For example the fields: "id" and resolvable: true of a synthesised @key are two rows here.';
+COMMENT ON COLUMN graphitron_directive_application_arg_minted.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_directive_application_arg_minted.coordinate IS 'the owning application''s coordinate';
+COMMENT ON COLUMN graphitron_directive_application_arg_minted.directive_name IS 'the owning application''s directive name';
+COMMENT ON COLUMN graphitron_directive_application_arg_minted.ordinal IS 'the owning application''s ordinal';
+COMMENT ON COLUMN graphitron_directive_application_arg_minted.directive_argument_name IS 'the formal argument the value binds';
+COMMENT ON COLUMN graphitron_directive_application_arg_minted.value_sdl IS 'the value as SDL, which the macro states';
 
 CREATE VIEW intent_federation_key
   (graph_name, type_name, ordinal, fields_sdl, resolvable) AS
@@ -14731,6 +14992,9 @@ INSERT INTO meta_gatherer_corpus VALUES
   ('classpath-source', 'classpath'),
   ('code', 'classpath'),
   ('graphql-source', 'sdl'),
+  -- The reading expands the recipe to find the files, and what each matching entry configures for
+  -- its files is recorded where the match is made.
+  ('graphql-source', 'configuration'),
   ('graphql-ast', 'sdl'),
   ('graphitron-ast', 'sdl'),
   ('graphql-assembly', 'sdl'),
@@ -14776,6 +15040,9 @@ INSERT INTO meta_gatherer_dependency VALUES
   -- stated by no document, so the synthesised key reads it from the composition that added it.
   -- ModelCapture runs the assembly before the graphitron decode.
   ('graphitron', 'graphql-assembly'),
+  -- The tags the configuration applies are a rule over what each file's entry configures, which the
+  -- source reading records. ModelCapture runs it first.
+  ('graphitron', 'graphql-source'),
   -- The graphitron decode keys each application to the node the transcription wrote at its position,
   -- and its anchor resolves against the elements the transcription anchored.
   ('graphitron-ast', 'graphql-ast'),
@@ -15108,6 +15375,21 @@ INSERT INTO meta_grain VALUES
   ('expanded-argument',
    'one field-argument coordinate the generator works with in one graph',
    'graph_name, type_name, field_name, argument_name', 'sdl'),
+  ('expanded-directive-application',
+   'one directive application the generator emits at one coordinate in one graph, whether an author wrote it or macro expansion minted it',
+   'graph_name, coordinate, directive_name, ordinal', 'sdl'),
+  ('graph-source-input',
+   'one schema file one graph reads, with what its recipe entry configures for it',
+   'graph_name, source_name', 'configuration'),
+  ('expanded-directive-application-argument',
+   'one argument of one directive application the generator emits, in one graph',
+   'graph_name, coordinate, directive_name, ordinal, directive_argument_name', 'sdl'),
+  ('carrier-directive',
+   'one federation directive application on one carrier of one minted type, in one graph',
+   'graph_name, type_name, coordinate, directive_name, ordinal', 'sdl'),
+  ('inherited-directive',
+   'one federation directive one minted type inherits from its carriers, in one graph',
+   'graph_name, type_name, directive_name, ordinal', 'sdl'),
   ('database-schema',
    'one schema of one generated catalog source',
    'source_name, table_schema', 'catalog'),
@@ -15676,7 +15958,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_synthesized_federation_key', 'synthesized-federation-key', 'graphitron',
    'Federation''s node-entity rule as a relation: which node types get a @key(fields: "id") nobody wrote, federation needing the entity declaration visible in the emitted SDL and a node carrying a globally-unique id by definition.',
    'For example a federation-linked graph whose Film is a node and declares no id key of its own gets one row.',
-   'Moved out of the intent_ family by the arc that owns macro expansion. That family has no owning gatherer and is being retired, and what this derives from is graphitron''s own vocabulary decoded, so this is where the fact belongs and the graphitron gatherer, which runs the expansion, is who answers for it. A derivation and not a capture: the rule reads the SDL claim rows and the node metadata a generated class publishes, so its inputs span two corpora and its output is computable from captured facts. Three conditions, all the live rule''s. The graph is federation-linked, by either arm of the generator''s opt-in: an authored federation @link, read from the decode rather than the verbatim twin so no reader compensates for AST quoting, or the one <schemaInput tag> synthesised, which no document states and graphql_assembly_synthesised_link records. The type is a node. And no authored key already states the id contract, meaning no @key whose decode is exactly the single path id. A malformed fields: argument decodes to no field rows and so does not count as the id key, which sends the misuse to its detection instead of suppressing synthesis on a parse failure. This relation is its own provenance, which is what lets the synthesized application stay out of the transcription families entirely.'),
+   'Moved out of the intent_ family by the arc that owns macro expansion. That family has no owning gatherer and is being retired, and what this derives from is graphitron''s own vocabulary decoded, so this is where the fact belongs and the graphitron gatherer, which runs the expansion, is who answers for it. A derivation and not a capture: the rule reads the SDL claim rows and the node metadata a generated class publishes, so its inputs span two corpora and its output is computable from captured facts. Three conditions, all the live rule''s. The graph is federation-linked, by either arm of the generator''s opt-in: an authored federation @link, read from the decode rather than the verbatim twin so no reader compensates for AST quoting, or the one <schemaInput tag> synthesised, which no document states and graphql_assembly_synthesised_link records. The type is a node. And no authored key already states the id contract, meaning no @key whose decode is exactly the single path id. A malformed fields: argument decodes to no field rows and so does not count as the id key, which sends the misuse to its detection instead of suppressing synthesis on a parse failure. The application it states is anchored by graphitron_directive_application, whose minted set reads this; read from the ast_ decode and the anchored application, so every input is settled when the anchor runs.'),
   ('graphitron_element_authored', 'expanded-element', 'graphitron',
    'One of the four sets graphitron_element is the union of: an element an author declared, at the coordinate the transcription spells for it, of a kind this family anchors.',
    'For example the Film in type Film { title: String } is one row, and the Film.title written inside it is another.',
@@ -15745,6 +16027,54 @@ INSERT INTO meta_relation VALUES
    'Every field the generator works with, at the type expression it works with: one row per field coordinate, output and input alike, carrying the wrapping columns graphql_field carries.',
    'For example a field the connection macro rewrote reads here as the Connection it returns, where graphql_field is where a reader goes for what the author wrote instead.',
    'The field grain of graphitron_type''s argument, with one difference worth stating. A type is minted or authored and never both, so that population is a disjoint union; a field can be authored at a coordinate whose type expression a macro then rewrote, which is a disagreement at a coordinate both populations hold rather than a row only one of them has. This relation states the generator''s reading at such a coordinate and graphql_field states the author''s, so the two are recoverable separately instead of the authored expression surviving only in a provenance record no anti-join reaches.'),
+  ('graphql_source_input', 'graph-source-input', 'graphql-source',
+   'What a graph''s configuration says about one schema file it reads: one row per file the recipe matched, with the tag and description note its entry carries.',
+   'For example a file matched by an entry configured with tag stable is one row carrying stable, and a file matched by an untagged entry is a row carrying none.',
+   'The configuration''s tags and notes reached the schema the run emits and no relation said which element they reached, so a store-sourced reader dropped them: the tag a carrier takes from its file never reached the type it coined. The recipe entry''s own row cannot answer it, a pattern entry matching many files and the match being made only where the files are read; so it is recorded there, at the file grain the elements already carry.'),
+  ('graphitron_directive_application', 'expanded-directive-application', 'graphitron',
+   'Every directive application the generator emits, the author''s and the ones macro expansion minted, at the coordinate it is applied to: one row per application.',
+   'For example the @key(fields: "id") federation synthesises for a node type sits here beside the @table its author wrote on it, at the same grain and answering the same questions.',
+   'The directive grain of the emitted population, which the anchors lacked: a macro that applies a directive rather than minting an element had nowhere to put it, so the federation key rule stayed a view outside the anchor and the renderer patched it in. Three sets, told apart by origin: what a document states, carried across from graphql_directive_application, what the configuration applies to what a document declares, and what a macro adds. Cleared and refilled each reading after the element sweep, nothing but its arguments keying into it.'),
+  ('graphitron_directive_application_arg', 'expanded-directive-application-argument', 'graphitron',
+   'One argument of an application graphitron_directive_application holds: the application''s own key and the formal argument the value binds.',
+   'For example the fields: "id" of a synthesised @key is one row, its value the literal an author would have typed.',
+   'On graphql_directive_application_arg''s terms, so a reader renders every origin the same way.'),
+  ('graphitron_directive_application_authored', 'expanded-directive-application', 'graphitron',
+   'One of the three sets graphitron_directive_application is the union of: an application an author wrote at a coordinate the emitted population holds, carried across whole.',
+   'For example the @table on type Film @table(name: "film") is a row at Film here, with the position the author wrote it at.',
+   'Restricted to the coordinates graphitron_element holds, which is the boundary that relation''s CHECK states: an application on an enum value or on the schema block stays in graphql_directive_application until an emitter wants the whole schema from this family.'),
+  ('graphitron_directive_application_configured', 'expanded-directive-application', 'graphitron',
+   'One of the three sets graphitron_directive_application is the union of: an application the configuration adds to what a document declares.',
+   'For example the @tag(name: "stable") a field takes from the entry its file was matched by.',
+   'The loading rewrites apply it and no document states it, so it is a set of its own rather than authored; graphitron_configured_tag states the rule.'),
+  ('graphitron_directive_application_minted', 'expanded-directive-application', 'graphitron',
+   'One of the three sets graphitron_directive_application is the union of: an application macro expansion adds.',
+   'For example @key(fields: "id") on a node type in a federation-linked graph whose author declared no id key, or the @tag a minted Connection inherits from its carrier.',
+   'One arm per macro that applies a directive: federation key synthesis, and the federation directives a minted type inherits. Numbered after every authored application of its directive at its coordinate, so the sets cannot collide.'),
+  ('graphitron_directive_application_arg_authored', 'expanded-directive-application-argument', 'graphitron',
+   'One of the three sets graphitron_directive_application_arg is the union of: an argument an author passed to an application the authored set carries.',
+   'For example the name: "film" of type Film @table(name: "film") is one row here.',
+   'On graphitron_directive_application_authored''s terms, at the argument grain.'),
+  ('graphitron_directive_application_arg_configured', 'expanded-directive-application-argument', 'graphitron',
+   'One of the three sets graphitron_directive_application_arg is the union of: an argument the configuration passes to an application it adds.',
+   'For example the name: "stable" of a configured tag is one row here.',
+   'On graphitron_directive_application_configured''s terms, at the argument grain.'),
+  ('graphitron_directive_application_arg_minted', 'expanded-directive-application-argument', 'graphitron',
+   'One of the three sets graphitron_directive_application_arg is the union of: an argument macro expansion passes to an application it adds.',
+   'For example the fields: "id" and resolvable: true of a synthesised @key are two rows here.',
+   'Stated as the SDL an author would have written, so the renderer needs no rule for what a macro means by its arguments.'),
+  ('graphitron_configured_tag', 'expanded-directive-application', 'graphitron',
+   'The rule <schemaInput tag> states, as a relation: one row per @tag the configuration applies to an element of the emitted population.',
+   'For example a field declared in a file whose entry carries tag stable, and which carries no @tag of its own, is one row naming stable.',
+   'TagApplier''s rule restated over what the source reading records, so the store holds the tags the loading rewrites apply. Fields, input fields and arguments take their file''s tag; a union takes one per declaration site, each site judged on its own applications. Enum values are tagged too and are not here, graphitron_element anchoring none.'),
+  ('graphitron_carrier_directive', 'carrier-directive', 'graphitron',
+   'The federation directives on the fields that coined a minted type: one row per @tag or @shareable a carrier carries, authored or configured.',
+   'For example films: [Film!]! @asConnection @tag(name: "public") gives QueryFilmsConnection a row naming the public tag on Query.films.',
+   'The input to inheritance and to the narrowing finding, stated once so both read one population. Only types the mint did not stand down for, an author''s declaration inheriting nothing.'),
+  ('graphitron_inherited_directive', 'inherited-directive', 'graphitron',
+   'The federation directives a minted type inherits from its carriers: the tags every carrier carries and @shareable when any carrier is.',
+   'For example a PageInfo two carriers share carries only the tag both carry, and is shareable because one of them is.',
+   'Apollo''s contract rule read over the carriers: a tag on a type also belongs on every field returning it, so the tags are the intersection, a relational division over type, carrier and tag. @shareable is a composition requirement rather than a filter, so it is the union.'),
   ('graphitron_argument', 'expanded-argument', 'graphitron',
    'Every field argument the generator works with, the author''s and the ones macro expansion minted: one row per argument coordinate, carrying the wrapping columns graphql_argument carries.',
    'For example the first and after arguments a connection carrier gets when its author wrote no pagination argument sit here, where graphql_argument holds only what the document declares and therefore holds no row for them.',

@@ -1,11 +1,10 @@
 package no.sikt.graphitron.model.schema;
 
+import graphql.language.AstPrinter;
 import graphql.language.Argument;
-import graphql.language.BooleanValue;
 import graphql.language.Description;
 import graphql.language.Directive;
 import graphql.language.FieldDefinition;
-import graphql.language.ImplementingTypeDefinition;
 import graphql.language.InputValueDefinition;
 import graphql.language.ObjectTypeDefinition;
 import graphql.language.ObjectTypeExtensionDefinition;
@@ -19,7 +18,6 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.model.lint.LintRule;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.model.schema.federation.FederationKeyFieldsParser;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -30,14 +28,19 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CARRIER_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_INHERITED_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_COINAGE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SYNTHESIZED_FEDERATION_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MINTED;
+import static org.jooq.impl.DSL.concat;
 import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.select;
-import static org.jooq.impl.DSL.selectOne;
+import static org.jooq.impl.DSL.val;
 
 /**
  * The registry the generator emits, derived from the one capture transcribed plus what the store
@@ -60,18 +63,16 @@ import static org.jooq.impl.DSL.selectOne;
  *
  * <p>It reads {@code graphitron_type}, {@code graphitron_field} and {@code graphitron_argument},
  * which are the resolved population: the minted rows already reconciled against the transcription,
- * with {@code graphitron_minted_*.precedence} applied. Reading the minted relations directly and
- * re-applying precedence here would put that rule in two places, which is the defect this class
+ * the author winning wherever the mint fills a name. Reading the minted sets directly and
+ * re-applying that rule here would put it in two places, which is the defect this class
  * exists to remove rather than to reproduce. A coordinate several applications disagree about is
  * {@code graphitron_minted_conflict}'s and the anchors deliberately hold no row for it, so a
  * contested coordinate reaches this patch as an absence and needs no arm.
  *
- * <p>Federation keys come from {@code graphitron_synthesized_federation_key}, the derivation itself,
- * whose own comment says the relation is its own provenance. That is the whole of how a derived
- * application is told from an authored one here: by which relation it was read from. The composed
- * {@code intent_federation_key} beside it is for a reader wanting every key the emitted schema
- * carries, which this is not, the authored applications already being in the registry this patch
- * started from.
+ * <p>Directive applications a macro adds, a federation key among them, come from
+ * {@code graphitron_directive_application}'s minted rows, told from authored ones by carrying no
+ * position. Only those are applied, the authored applications already being in the registry this
+ * patch started from.
  *
  * <h3>Additive and type-replacing, never wholesale</h3>
  *
@@ -88,10 +89,9 @@ import static org.jooq.impl.DSL.selectOne;
  * <p>Nothing is removed. The store holding no row for something the registry declares would be a
  * capture defect rather than a deletion to perform, and stating it as a difference is a gate's job.
  *
- * <p>Object types only. The {@code CHECK} on {@code graphitron_minted_type.kind} admits
- * {@code OBJECT} and nothing else, because the macros mint nothing else, so an input object, enum,
- * union, interface or scalar reaches the emitted registry exactly as the author wrote it and this
- * class does not visit one.
+ * <p>Object types only. Every row of {@code graphitron_type_minted} is an {@code OBJECT}, because
+ * the macros mint nothing else, so an input object, enum, union, interface or scalar reaches the
+ * emitted registry exactly as the author wrote it and this class does not visit one.
  *
  * <h3>Which registry it starts from</h3>
  *
@@ -106,15 +106,14 @@ import static org.jooq.impl.DSL.selectOne;
  */
 public final class EmittedRegistry {
 
-    /** The one kind {@code graphitron_minted_type.kind}'s CHECK admits, and so the only kind here. */
+    /** The one kind the macros mint, and so the only kind here. */
     private static final String OBJECT = "OBJECT";
 
     private static final String TAG_DIRECTIVE = "tag";
-    private static final String TAG_NAME_ARG = "name";
+
+    /** The origin of the applications a macro adds, which are the ones this patch applies. */
+    private static final String MINTED = "MINTED";
     private static final String SHAREABLE_DIRECTIVE = "shareable";
-    private static final String KEY_DIRECTIVE = "key";
-    private static final String KEY_FIELDS_ARG = "fields";
-    private static final String KEY_RESOLVABLE_ARG = "resolvable";
 
     private EmittedRegistry() {}
 
@@ -239,9 +238,8 @@ public final class EmittedRegistry {
             }
         }
         apply(patched, replacements);
-        var narrowings = applyInheritedFederationDirectives(patched, store);
-        applySynthesisedKeys(patched, store);
-        return new Emitted(patched, narrowings);
+        applyMintedDirectives(patched, store);
+        return new Emitted(patched, narrowings(store));
     }
 
     // ---------------------------------------------------------------------------------------
@@ -273,9 +271,9 @@ public final class EmittedRegistry {
      * element and the order the macro wrote them on a minted one. So a type built from these rows
      * carries the order the store says the generator emits rather than one this class invents.
      *
-     * <p>Object types only, and stated once here rather than in each pass. The {@code CHECK} on
-     * {@code graphitron_minted_type.kind} admits {@code OBJECT} and nothing else, the macros minting
-     * nothing else, so every other kind reaches the emitted registry exactly as its author wrote it.
+     * <p>Object types only, and stated once here rather than in each pass. The macros mint nothing
+     * but {@code OBJECT}s, so every other kind reaches the emitted registry exactly as its author
+     * wrote it.
      */
     private static List<TypeRow> emittedTypes(StoreHandle store) {
         return store.dsl()
@@ -481,265 +479,153 @@ public final class EmittedRegistry {
     // ---------------------------------------------------------------------------------------
 
     /**
-     * The federation directives a minted type inherits from the fields that coined it, its
-     * carriers: the {@code @tag}s every carrier carries, and {@code @shareable} when any carrier
-     * is. Returns each type the tag rule narrowed, for the build to report.
+     * The minted types whose inherited tags the carriers' disagreement narrowed, for the build to
+     * report: each carrier's tags beside the ones the type was given.
      *
-     * <h4>Tags: the intersection over the carriers</h4>
-     *
-     * <p>For a minted type {@code T} with carriers {@code C(T)}, {@code T} carries
-     * {@code ⋂ { tags(c) : c ∈ C(T) }}. That is Apollo's contract rule, that a tag on a type also
-     * belongs on every field returning it, read over the carriers: a minted Connection is returned
-     * only by its carriers, its Edge only by the Connection's {@code edges}, and {@code PageInfo}
-     * and the facet types only by fields on minted types whose tags are their carriers'. So a
-     * contract that excludes one carrier's tag keeps a shared type for every carrier it keeps, and
-     * a type with one carrier takes that carrier's tags exactly. The cost falls on a contract that
-     * includes by tag, which drops a type its carriers disagree about; the narrowing returned here
-     * is what tells that author to declare the type themselves. Ordered by the first carrier's tag
-     * order, so emission is deterministic.
-     *
-     * <p>{@code @shareable} is a composition requirement rather than a contract filter, so it is
-     * the union instead: a type two subgraphs may both resolve for any one carrier is shareable.
-     * The two are folded here together and kept apart in the arithmetic, since intersecting
-     * {@code @shareable} would drop it whenever carriers disagree.
-     *
-     * <h4>Only minted types, and where the directives are read from</h4>
-     *
-     * <p>Only a type the store says was minted inherits. Coinage is written for every carrier
-     * whether or not its mint wins, so a {@code PageInfo} the author declared has coinage rows
-     * like any other, and stamping their directives on it would publish a type the author wrote
-     * as something they did not write. Whether the mint stood down is
-     * {@code graphitron_type_minted}'s to say, which is where the author-wins rule already lives,
-     * so the coinage is joined to it rather than checked against the registry here: a second
-     * statement of precedence, and one whose answer would depend on which registry was passed.
-     *
-     * <p>The store names the coining coordinates; the directives themselves are read off the
-     * registry being patched. That is not a shortcut around the store, and the alternative was
-     * tried. A tag reaches an element two ways: an author writes it, or a schema input carries one
-     * and the tag applier stamps it on everything that input declared. Only the first is captured:
-     * the applier's tags reach the store's assembly but no relation transcribes them, so a
-     * store-sourced inheritance silently drops the second and a federated build configuring
-     * {@code <schemaInput tag>} emits synthesised types a gateway can no longer filter. The
-     * registry has both by the time this runs, because the applier has already rewritten it.
-     * {@code @shareable} is read from the same place so that the one fold has one source.
-     *
-     * <p>The store owing those tags is a real gap and it is not this method's to close. It is a
-     * relation transcribing them, which is a fact arriving earlier rather than a reader
-     * compensating; the intersection above is then a relational division over (type, carrier,
-     * tag).
+     * <p>Read off the store rather than worked out again: the type's tags are
+     * {@code graphitron_inherited_directive}'s, the rule's own output, and a narrowing is any tag a
+     * carrier carries that is not among them.
      */
-    private static List<TagNarrowing> applyInheritedFederationDirectives(
-            TypeDefinitionRegistry patched, StoreHandle store) {
-        var m = GRAPHITRON_MINTED_COINAGE;
-        // Which application coined each minted name, asked of the relation that states it. The
-        // arms are not enumerated here: a mint arm added to the schema is one this fold already
-        // reads. The whole fold goes when the emitted population carries its own applied
-        // directives; see the method's note.
+    private static List<TagNarrowing> narrowings(StoreHandle store) {
+        var coinage = GRAPHITRON_MINTED_COINAGE;
         var minted = GRAPHITRON_TYPE_MINTED;
-        var coined = store.dsl()
-            .select(m.TYPE_NAME, m.COORDINATE)
-            .from(m)
-            .where(m.GRAPH_NAME.eq(store.graphName()))
-            .andExists(selectOne().from(minted)
-                .where(minted.GRAPH_NAME.eq(m.GRAPH_NAME))
-                .and(minted.TYPE_NAME.eq(m.TYPE_NAME)))
-            .orderBy(m.TYPE_NAME, m.COORDINATE)
+        var field = GRAPHQL_FIELD;
+        var carriers = store.dsl()
+            .select(coinage.TYPE_NAME, coinage.COORDINATE, field.SOURCE_NAME, field.SOURCE_LINE,
+                field.SOURCE_COLUMN)
+            .from(coinage)
+            .join(minted).on(minted.GRAPH_NAME.eq(coinage.GRAPH_NAME)
+                .and(minted.TYPE_NAME.eq(coinage.TYPE_NAME)))
+            .leftJoin(field).on(field.GRAPH_NAME.eq(coinage.GRAPH_NAME)
+                .and(concat(field.TYPE_NAME, val("."), field.FIELD_NAME).eq(coinage.COORDINATE)))
+            .where(coinage.GRAPH_NAME.eq(store.graphName()))
+            .orderBy(coinage.TYPE_NAME, coinage.COORDINATE)
+            .fetch();
+        var d = GRAPHITRON_CARRIER_DIRECTIVE;
+        var carried = store.dsl()
+            .select(d.TYPE_NAME, d.COORDINATE, d.DIRECTIVE_NAME, d.VALUE_SDL)
+            .from(d)
+            .where(d.GRAPH_NAME.eq(store.graphName()))
+            .orderBy(d.TYPE_NAME, d.COORDINATE, d.DIRECTIVE_NAME, d.ORDINAL)
+            .fetch();
+        var i = GRAPHITRON_INHERITED_DIRECTIVE;
+        var inherited = store.dsl()
+            .select(i.TYPE_NAME, i.VALUE_SDL)
+            .from(i)
+            .where(i.GRAPH_NAME.eq(store.graphName()))
+            .and(i.DIRECTIVE_NAME.eq(TAG_DIRECTIVE))
+            .orderBy(i.TYPE_NAME, i.ORDINAL)
             .fetch();
 
-        var byType = new LinkedHashMap<String, List<Carrier>>();
-        for (var row : coined) {
-            byType.computeIfAbsent(row.get(m.TYPE_NAME), ignored -> new ArrayList<>())
-                .add(carrierAt(patched, row.get(m.COORDINATE)));
+        var keptByType = new LinkedHashMap<String, List<String>>();
+        inherited.forEach(row -> keptByType.computeIfAbsent(row.get(i.TYPE_NAME),
+            t -> new ArrayList<>()).add(tagName(row.get(i.VALUE_SDL))));
+        var tagsByCarrier = new LinkedHashMap<List<String>, List<String>>();
+        var shareableCarriers = new LinkedHashSet<List<String>>();
+        for (var row : carried) {
+            var key = List.of(row.get(d.TYPE_NAME), row.get(d.COORDINATE));
+            if (SHAREABLE_DIRECTIVE.equals(row.get(d.DIRECTIVE_NAME))) {
+                shareableCarriers.add(key);
+            } else if (row.get(d.VALUE_SDL) != null) {
+                var names = tagsByCarrier.computeIfAbsent(key, k -> new ArrayList<>());
+                var name = tagName(row.get(d.VALUE_SDL));
+                if (!names.contains(name)) {
+                    names.add(name);
+                }
+            }
         }
-
-        var replacements = new ArrayList<Replacement>();
+        var carriersByType = new LinkedHashMap<String, List<Carrier>>();
+        for (var row : carriers) {
+            var key = List.of(row.get(coinage.TYPE_NAME), row.get(coinage.COORDINATE));
+            var location = row.get(field.SOURCE_LINE) == null ? null
+                : new SourceLocation(row.get(field.SOURCE_LINE), row.get(field.SOURCE_COLUMN),
+                    row.get(field.SOURCE_NAME));
+            carriersByType.computeIfAbsent(row.get(coinage.TYPE_NAME), t -> new ArrayList<>())
+                .add(new Carrier(row.get(coinage.COORDINATE), tagsByCarrier.getOrDefault(key, List.of()),
+                    shareableCarriers.contains(key), location));
+        }
         var narrowings = new ArrayList<TagNarrowing>();
-        byType.forEach((typeName, carriers) -> {
-            if (!(patched.getTypeOrNull(typeName) instanceof ObjectTypeDefinition object)) {
-                return;
+        carriersByType.forEach((typeName, typeCarriers) -> {
+            var kept = keptByType.getOrDefault(typeName, List.of());
+            var dropped = new LinkedHashSet<String>();
+            typeCarriers.forEach(c -> c.tags().stream().filter(t -> !kept.contains(t))
+                .forEach(dropped::add));
+            if (!dropped.isEmpty()) {
+                narrowings.add(new TagNarrowing(typeName, kept, List.copyOf(dropped), typeCarriers));
             }
-            var kept = new LinkedHashSet<>(carriers.getFirst().tags());
-            var union = new LinkedHashSet<String>();
-            for (var carrier : carriers) {
-                kept.retainAll(carrier.tags());
-                union.addAll(carrier.tags());
-            }
-            union.removeAll(kept);
-            if (!union.isEmpty()) {
-                narrowings.add(new TagNarrowing(typeName, List.copyOf(kept), List.copyOf(union),
-                    carriers));
-            }
-            boolean shareable = carriers.stream().anyMatch(Carrier::shareable)
-                && object.getDirectives(SHAREABLE_DIRECTIVE).isEmpty();
-            if (kept.isEmpty() && !shareable) {
-                return;
-            }
-            var directives = new ArrayList<>(object.getDirectives());
-            if (shareable) {
-                directives.add(Directive.newDirective().name(SHAREABLE_DIRECTIVE).build());
-            }
-            kept.forEach(tag -> directives.add(tagDirective(tag)));
-            replacements.add(new Replacement(object,
-                object.transform(b -> b.directives(directives))));
         });
-        apply(patched, replacements);
         return narrowings;
     }
 
-    /**
-     * The carrier at one field coordinate, as the registry holds it.
-     *
-     * <p>A coining coordinate is a field, every expansion being a rewrite of one, so this resolves
-     * {@code Type.field} against the declaration sites of that type. Extensions are searched
-     * beside the base definition: a carrier an extension declared is as much a carrier as one the
-     * base did. Interface sites are searched as well as object ones, the carrier relation not
-     * asking which kind declared the field.
-     *
-     * <p>A coordinate no site declares is a defect in this lookup and ends the run. Coinage is
-     * written from fields that exist, and under the intersection a carrier read as untagged
-     * strips every tag from the type it coined, which is not a failure to have quietly.
-     */
-    private static Carrier carrierAt(TypeDefinitionRegistry patched, String coordinate) {
-        int dot = coordinate.indexOf('.');
-        String typeName = dot < 0 ? coordinate : coordinate.substring(0, dot);
-        String fieldName = dot < 0 ? "" : coordinate.substring(dot + 1);
-        var sites = new ArrayList<ImplementingTypeDefinition<?>>();
-        if (patched.getTypeOrNull(typeName) instanceof ImplementingTypeDefinition<?> base) {
-            sites.add(base);
-        }
-        sites.addAll(patched.objectTypeExtensions().getOrDefault(typeName, List.of()));
-        sites.addAll(patched.interfaceTypeExtensions().getOrDefault(typeName, List.of()));
-
-        FieldDefinition found = null;
-        var names = new ArrayList<String>();
-        boolean shareable = false;
-        for (var site : sites) {
-            for (var field : site.getFieldDefinitions()) {
-                if (!field.getName().equals(fieldName)) {
-                    continue;
-                }
-                if (found == null) {
-                    found = field;
-                }
-                shareable |= !field.getDirectives(SHAREABLE_DIRECTIVE).isEmpty();
-                for (var directive : field.getDirectives(TAG_DIRECTIVE)) {
-                    var argument = directive.getArgument(TAG_NAME_ARG);
-                    if (argument != null && argument.getValue() instanceof StringValue value
-                            && !names.contains(value.getValue())) {
-                        names.add(value.getValue());
-                    }
-                }
-            }
-        }
-        if (found == null) {
-            throw new IllegalStateException("The store names '" + coordinate + "' as the field"
-                + " that coined a generated type, and no declaration of that field is in the"
-                + " registry being patched. This is a defect in graphitron, not in the schema:"
-                + " coinage is written from fields that exist.");
-        }
-        return new Carrier(coordinate, names, shareable, found.getSourceLocation());
-    }
-
-    /** One {@code @tag} application, with the name the relation holds. */
-    private static Directive tagDirective(String tagName) {
-        return Directive.newDirective()
-            .name(TAG_DIRECTIVE)
-            .argument(Argument.newArgument(TAG_NAME_ARG, new StringValue(tagName)).build())
-            .build();
+    /** The name a {@code @tag}'s {@code name:} argument states, from its SDL. */
+    private static String tagName(String valueSdl) {
+        return Parser.parseValue(valueSdl) instanceof StringValue value ? value.getValue() : valueSdl;
     }
 
     /**
-     * Applies the {@code @key} applications the rule derived and no author wrote.
+     * Applies the directive applications the anchor minted, which no author wrote.
      *
-     * <p>Read from {@code graphitron_synthesized_federation_key}, which is the derivation itself. Its
-     * own comment puts it exactly: the relation is its own provenance, which is what lets a
-     * synthesized application leave the transcription families entirely. So a reader wanting the
-     * derived applications names that relation and gets them, and needs no test to tell derived
-     * from authored.
+     * <p>Read from {@code graphitron_directive_application}'s minted rows, the registry this patches
+     * already holding the authored and configured ones, and rendered from their arguments as the
+     * macro stated them, so nothing here knows what any macro means. Arguments come in name order, which
+     * for every macro that applies one today is the definition's order.
      *
-     * <p>Deliberately not {@code intent_federation_key} with the authored arm filtered out. That
-     * view is the composition of both, for a reader that wants every key the emitted schema
-     * carries; this patch is not one, the authored applications already being in the registry it
-     * started from. Filtering the composition would also have to discriminate on the null ordinal
-     * the union puts on its derived arm, which is a statement about document position rather than
-     * about provenance, and reading it as provenance would work only for as long as those two facts
-     * happen to coincide.
-     *
-     * <p>The relation's third condition is that no authored key states the id contract, so its
-     * rows are disjoint from the registry's applications by construction, provided the registry is
-     * the pre-synthesis one. This method enforces that rather than trusting it: a type already
-     * carrying a key with the row's field set means synthesis was applied twice, which is a
-     * generator defect, and it ends the run instead of being skipped, a skip hiding the wrong input
-     * rather than reporting it.
+     * <p>A type already carrying the same application means a mint was applied to a registry that
+     * had already been through it, which is a generator defect and ends the run instead of being
+     * skipped.
      */
-    private static void applySynthesisedKeys(TypeDefinitionRegistry patched, StoreHandle store) {
-        var t = GRAPHITRON_SYNTHESIZED_FEDERATION_KEY;
-        var derived = store.dsl()
-            .select(t.TYPE_NAME, t.FIELDS_SDL, t.RESOLVABLE)
-            .from(t)
-            .where(t.GRAPH_NAME.eq(store.graphName()))
-            .orderBy(t.TYPE_NAME)
+    private static void applyMintedDirectives(TypeDefinitionRegistry patched, StoreHandle store) {
+        var d = GRAPHITRON_DIRECTIVE_APPLICATION;
+        var a = GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
+        var rows = store.dsl()
+            .select(d.COORDINATE, d.DIRECTIVE_NAME, d.ORDINAL, a.DIRECTIVE_ARGUMENT_NAME, a.VALUE_SDL)
+            .from(d)
+            .leftJoin(a).on(a.GRAPH_NAME.eq(d.GRAPH_NAME).and(a.COORDINATE.eq(d.COORDINATE))
+                .and(a.DIRECTIVE_NAME.eq(d.DIRECTIVE_NAME)).and(a.ORDINAL.eq(d.ORDINAL)))
+            .where(d.GRAPH_NAME.eq(store.graphName()))
+            .and(d.ORIGIN.eq(MINTED))
+            .orderBy(d.COORDINATE, d.DIRECTIVE_NAME, d.ORDINAL, a.DIRECTIVE_ARGUMENT_NAME)
             .fetch();
-        var replacements = new ArrayList<Replacement>();
-        for (var row : derived) {
-            if (!(patched.getTypeOrNull(row.get(t.TYPE_NAME))
-                    instanceof ObjectTypeDefinition object)) {
-                continue;
+        var applications = new LinkedHashMap<List<Object>, Directive.Builder>();
+        var coordinates = new LinkedHashMap<List<Object>, String>();
+        for (var row : rows) {
+            var key = List.<Object>of(row.get(d.COORDINATE), row.get(d.DIRECTIVE_NAME),
+                row.get(d.ORDINAL));
+            var builder = applications.computeIfAbsent(key,
+                k -> Directive.newDirective().name(row.get(d.DIRECTIVE_NAME)));
+            coordinates.putIfAbsent(key, row.get(d.COORDINATE));
+            if (row.get(a.DIRECTIVE_ARGUMENT_NAME) != null) {
+                builder.argument(Argument.newArgument(row.get(a.DIRECTIVE_ARGUMENT_NAME),
+                    Parser.parseValue(row.get(a.VALUE_SDL))).build());
             }
-            if (carriesKey(object, row.get(t.FIELDS_SDL))) {
-                throw new IllegalStateException("Type '" + object.getName() + "' already carries"
-                    + " the @key(fields: \"" + row.get(t.FIELDS_SDL) + "\") the store synthesises"
-                    + " for it. This is a defect in graphitron, not in the schema: key synthesis was"
-                    + " applied twice, the emitted registry having been derived from a registry"
-                    + " that had already been through it.");
+        }
+        var byType = new LinkedHashMap<String, List<Directive>>();
+        applications.forEach((key, builder) ->
+            byType.computeIfAbsent(coordinates.get(key), c -> new ArrayList<>()).add(builder.build()));
+        var replacements = new ArrayList<Replacement>();
+        byType.forEach((coordinate, minted) -> {
+            if (!(patched.getTypeOrNull(coordinate) instanceof ObjectTypeDefinition object)) {
+                throw new IllegalStateException("The store mints a directive application at '"
+                    + coordinate + "', which is not an object type the emitted registry holds."
+                    + " This is a defect in graphitron, not in the schema.");
             }
             var directives = new ArrayList<>(object.getDirectives());
-            directives.add(keyDirective(row.get(t.FIELDS_SDL), row.get(t.RESOLVABLE)));
-            replacements.add(new Replacement(object,
-                object.transform(b -> b.directives(directives))));
-        }
+            for (var directive : minted) {
+                var printed = AstPrinter.printAst(directive);
+                if (directives.stream().anyMatch(held -> AstPrinter.printAst(held).equals(printed))) {
+                    throw new IllegalStateException("Type '" + coordinate + "' already carries the "
+                        + printed + " the store mints for it. This is a defect in graphitron, not in"
+                        + " the schema: the mint was applied twice, the emitted registry having been"
+                        + " derived from a registry that had already been through it.");
+                }
+                directives.add(directive);
+            }
+            replacements.add(new Replacement(object, object.transform(b -> b.directives(directives))));
+        });
         for (var replacement : replacements) {
             patched.remove(replacement.old());
             patched.add(replacement.replacement());
         }
-    }
-
-    /**
-     * Whether {@code object} already carries a {@code @key} whose {@code fields:} decodes to the
-     * same field set as {@code fieldsSdl}, decoded the way {@code KeyNodeSynthesiser} decides it.
-     * A {@code fields:} that does not decode states no field set and so matches nothing.
-     */
-    private static boolean carriesKey(ObjectTypeDefinition object, String fieldsSdl) {
-        var wanted = FederationKeyFieldsParser.parse(fieldsSdl);
-        for (var directive : object.getDirectives(KEY_DIRECTIVE)) {
-            var argument = directive.getArgument(KEY_FIELDS_ARG);
-            if (argument == null || !(argument.getValue() instanceof StringValue value)) {
-                continue;
-            }
-            try {
-                if (FederationKeyFieldsParser.parse(value.getValue()).equals(wanted)) {
-                    return true;
-                }
-            } catch (FederationKeyFieldsParser.ParseException ignored) {
-                // A malformed fields: argument is the classifier's to report; it is no key here.
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Both arguments come off the row rather than being restated here. The relation's own comment
-     * says the rule's constants live in it "rather than in a comment each composing reader re-mints
-     * from", so a {@code true} written at this site would be that re-minting. {@code resolvable}
-     * unboxes: the relation states it is always true, and a null would be the relation failing its
-     * own contract, which should end the run rather than quietly emit a key without it.
-     */
-    private static Directive keyDirective(String fieldsSdl, boolean resolvable) {
-        return Directive.newDirective()
-            .name(KEY_DIRECTIVE)
-            .argument(Argument.newArgument(KEY_FIELDS_ARG, new StringValue(fieldsSdl)).build())
-            .argument(Argument.newArgument(KEY_RESOLVABLE_ARG, new BooleanValue(resolvable)).build())
-            .build();
     }
 
     // ---------------------------------------------------------------------------------------

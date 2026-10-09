@@ -500,9 +500,29 @@ own.
   `CapturedSchemaAgreementTest` holds the reading equal to the generator's own.
   * **A dev round whose capture was skipped still has a schema** `done`. The skip yields: the
     session's generator factory captures first.
-* **Capture hands back the post-synthesis schema** `done`. `EmittedRegistry` runs as capture's last
-  step and `CapturedSchema` carries both; the generator renders the post-synthesis one and reads the
+* **Capture hands back the post-synthesis schema** `done`. `EmittedRegistry` runs in capture and
+  `CapturedSchema` carries both; the generator renders the post-synthesis one and reads the
   written one only for the walk.
+  * **The post-synthesis schema is derived right after the anchor** `done`, the macros being one
+    mint. They had diverged: the connection and facet mint was anchored by `EmittedAnchor`, while key
+    synthesis was a view over the deprecated decode and the node rule, and tag inheritance was Java
+    inside `EmittedRegistry`, the `graphitron_` anchors having no relation for a directive
+    application to be minted to.
+    * **Which types are nodes is settled in the anchor** `done`. `TableTypes.derive` and
+      `Nodes.derive` read nothing written after it, and run there.
+    * **The anchors hold directive applications** `done`. `graphitron_directive_application` and its
+      arguments, at the coordinate, carrying the authored ones across from `graphql_` beside the
+      minted, which carry no position.
+    * **Key synthesis is minted by `EmittedAnchor`** `done`, over the `ast_` link and key entries
+      joined to the honoured application, and `EmittedRegistry` renders minted applications without
+      knowing which macro wrote them.
+    * **Tag and `@shareable` inheritance is minted by `EmittedAnchor`** `done`.
+      `graphql_source_input` records what each file's entry configures, `graphitron_configured_tag`
+      states the tag rule over it as a third set of the directive anchor, and
+      `graphitron_inherited_directive` is the intersection over the carriers.
+    * **`EmittedRegistry` renders the anchors and states no rule** `done`. It patches the anchored
+      elements and applies the minted applications, and the narrowing it reports reads the rule's
+      output.
 * **The schema classes and the SDL read only the post-synthesis schema** `open`.
   `CarriesObjectForm.formOf` takes a minted type's form from the walk's own synthesis, and
   `SchemaSdlEmitter` asks the walk which support types to drop.

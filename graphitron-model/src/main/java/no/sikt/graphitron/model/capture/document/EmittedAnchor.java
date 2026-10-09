@@ -7,6 +7,14 @@ import org.jooq.Field;
 import java.time.LocalDateTime;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION_ARG_AUTHORED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION_ARG_CONFIGURED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION_ARG_MINTED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION_AUTHORED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION_CONFIGURED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION_MINTED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_AUTHORED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_MINTED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ELEMENT;
@@ -84,6 +92,72 @@ public final class EmittedAnchor {
         fields(dsl, graphName);
         arguments(dsl, graphName);
         sweep(dsl, graphName, touchedAt);
+        // After the sweep, so the sets join only the coordinates this reading kept.
+        directives(dsl, graphName);
+    }
+
+    /**
+     * The directive grain, on {@link #elements}' terms: three sets, what a document states, what the
+     * configuration applies and what a macro adds, unioned into the anchor and then their arguments
+     * the same way.
+     *
+     * <p>Cleared and refilled rather than upserted, which the element grains cannot be: nothing keys
+     * into these rows but their arguments, which go with them, so emptying the graph's applications
+     * takes nothing else, and an application the author removed from a coordinate that still stands
+     * has to stop being a row.
+     */
+    private static void directives(DSLContext dsl, String graphName) {
+        var t = GRAPHITRON_DIRECTIVE_APPLICATION;
+        dsl.deleteFrom(t).where(t.GRAPH_NAME.eq(graphName)).execute();
+        var authored = GRAPHITRON_DIRECTIVE_APPLICATION_AUTHORED;
+        var configured = GRAPHITRON_DIRECTIVE_APPLICATION_CONFIGURED;
+        var minted = GRAPHITRON_DIRECTIVE_APPLICATION_MINTED;
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.COORDINATE, t.DIRECTIVE_NAME, t.ORDINAL, t.ORIGIN,
+                t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN)
+            .select(dsl
+                .select(authored.GRAPH_NAME, authored.COORDINATE, authored.DIRECTIVE_NAME,
+                    authored.ORDINAL, authored.ORIGIN, authored.SOURCE_NAME, authored.SOURCE_LINE,
+                    authored.SOURCE_COLUMN)
+                .from(authored)
+                .where(authored.GRAPH_NAME.eq(graphName))
+                .unionAll(dsl
+                    .select(configured.GRAPH_NAME, configured.COORDINATE, configured.DIRECTIVE_NAME,
+                        configured.ORDINAL, configured.ORIGIN, configured.SOURCE_NAME,
+                        configured.SOURCE_LINE, configured.SOURCE_COLUMN)
+                    .from(configured)
+                    .where(configured.GRAPH_NAME.eq(graphName)))
+                .unionAll(dsl
+                    .select(minted.GRAPH_NAME, minted.COORDINATE, minted.DIRECTIVE_NAME,
+                        minted.ORDINAL, minted.ORIGIN, minted.SOURCE_NAME, minted.SOURCE_LINE,
+                        minted.SOURCE_COLUMN)
+                    .from(minted)
+                    .where(minted.GRAPH_NAME.eq(graphName))))
+            .execute();
+        var a = GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
+        var authoredArg = GRAPHITRON_DIRECTIVE_APPLICATION_ARG_AUTHORED;
+        var configuredArg = GRAPHITRON_DIRECTIVE_APPLICATION_ARG_CONFIGURED;
+        var mintedArg = GRAPHITRON_DIRECTIVE_APPLICATION_ARG_MINTED;
+        dsl.insertInto(a)
+            .columns(a.GRAPH_NAME, a.COORDINATE, a.DIRECTIVE_NAME, a.ORDINAL,
+                a.DIRECTIVE_ARGUMENT_NAME, a.VALUE_SDL)
+            .select(dsl
+                .select(authoredArg.GRAPH_NAME, authoredArg.COORDINATE, authoredArg.DIRECTIVE_NAME,
+                    authoredArg.ORDINAL, authoredArg.DIRECTIVE_ARGUMENT_NAME, authoredArg.VALUE_SDL)
+                .from(authoredArg)
+                .where(authoredArg.GRAPH_NAME.eq(graphName))
+                .unionAll(dsl
+                    .select(configuredArg.GRAPH_NAME, configuredArg.COORDINATE,
+                        configuredArg.DIRECTIVE_NAME, configuredArg.ORDINAL,
+                        configuredArg.DIRECTIVE_ARGUMENT_NAME, configuredArg.VALUE_SDL)
+                    .from(configuredArg)
+                    .where(configuredArg.GRAPH_NAME.eq(graphName)))
+                .unionAll(dsl
+                    .select(mintedArg.GRAPH_NAME, mintedArg.COORDINATE, mintedArg.DIRECTIVE_NAME,
+                        mintedArg.ORDINAL, mintedArg.DIRECTIVE_ARGUMENT_NAME, mintedArg.VALUE_SDL)
+                    .from(mintedArg)
+                    .where(mintedArg.GRAPH_NAME.eq(graphName))))
+            .execute();
     }
 
     /**
@@ -95,10 +169,8 @@ public final class EmittedAnchor {
      * when its supertype row does, so the supertype's is the whole of the question, and the three
      * arms above rewrite every row they keep.
      *
-     * <p>This is the half of the lifecycle the walk's clear used to stand in for. The other half is
-     * the cascade on {@code source_coordinate}, and the two answer different questions: a
-     * contributor disappearing between readings nulls the provenance and leaves the element
-     * standing, and an element this reading stopped deriving at all goes here.
+     * <p>This is the lifecycle the walk's clear used to stand in for: an element this reading
+     * stopped deriving goes here, and its directive applications go with it through their cascade.
      */
     private static void sweep(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
         var stale = dsl.select(GRAPHITRON_ELEMENT.COORDINATE)
@@ -244,10 +316,9 @@ public final class EmittedAnchor {
     /**
      * The type grain, on {@link #elements}' terms: two named sets and a union over them.
      *
-     * <p>The authored set excludes nothing. That is the {@code CHECK} on
-     * {@code graphitron_minted_type.precedence} showing up as absence: where no mint can replace, an
-     * author's declaration always survives, and a view saying so with an exclusion that excludes
-     * nothing would read as though something could.
+     * <p>The authored set excludes nothing. That is the minting rule showing up as absence: no arm of
+     * the type mint replaces, so an author's declaration always survives, and a view saying so with
+     * an exclusion that excludes nothing would read as though something could.
      */
     private static void types(DSLContext dsl, String graphName) {
         var authored = GRAPHITRON_TYPE_AUTHORED;

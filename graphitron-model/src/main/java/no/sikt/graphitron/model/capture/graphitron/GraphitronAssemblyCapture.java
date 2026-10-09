@@ -8,10 +8,8 @@ import no.sikt.graphitron.model.derive.FieldReferenceStepTargets;
 import no.sikt.graphitron.model.derive.FieldRoutines;
 import no.sikt.graphitron.model.derive.FieldTableLinks;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
-import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.ResolvedTypeBindings;
 import no.sikt.graphitron.model.derive.SpelledTables;
-import no.sikt.graphitron.model.derive.TableTypes;
 import org.jooq.DSLContext;
 
 import java.time.LocalDateTime;
@@ -63,8 +61,7 @@ public final class GraphitronAssemblyCapture {
         // First of the stages: it reads the transcription alone, and the written order of a field's
         // applications is what everything below that walks a chain wants.
         FieldChainApplications.derive(dsl, graph);
-        TableTypes.derive(dsl, graph);
-        Nodes.derive(dsl, graph);
+        // Over the nodes the anchor settled.
         NodeKeyColumns.derive(dsl, graph);
         navigation(dsl, graph, readAt);
         // The reference stratum's own resolutions, bottom rung first: what a written table name

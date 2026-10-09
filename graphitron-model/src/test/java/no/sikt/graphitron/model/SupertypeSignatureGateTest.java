@@ -228,8 +228,12 @@ class SupertypeSignatureGateTest {
         // five application sites, and they shared a payload because they were one fact keyed five
         // ways; they are one relation now, keyed at the coordinate, so the sharing they were
         // recorded for is gone rather than discharged. What is left is the pair that genuinely
-        // shares one: an argument an author passed and an argument the decode could not read.
-        Set.of("graphitron_undecoded_argument_entry", "graphql_directive_application_arg"),
+        // shares one: an argument an author passed and an argument the decode could not read. The
+        // emitted population's arguments are the third, on graphitron_element's terms below: the
+        // same fact over the generator's coordinates, an authored row carried across beside a
+        // minted one, so a supertype would be the two families folded back into one.
+        Set.of("graphitron_directive_application_arg", "graphitron_undecoded_argument_entry",
+               "graphql_directive_application_arg"),
         Set.of("graphitron_argument_reference_for_step_entry", "graphitron_argument_reference_step_entry",
                "graphitron_field_reference_step_entry", "graphitron_reference_for_step_entry"),
         Set.of("sql_constraint_column", "sql_index_column", "sql_node_key_column"),
