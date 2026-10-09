@@ -261,9 +261,11 @@ public class DataFetcherHelper extends AbstractFetcher {
             if (entityValString.equals(representationKey.getValue())) {
                 return true;
             }
-            return Optional.ofNullable(nodeIdStrategy)
-                    .map(n -> n.areEqualNodeIds(entityValString, repValString))
-                    .orElse(false);
+            // Clients and routers may send a node ID in a non-canonical encoding, such as with base64 padding.
+            // Without a strategy (NodeIdHandler mode) the IDs are still compared by their decoded value.
+            return nodeIdStrategy != null
+                    ? nodeIdStrategy.areEqualNodeIds(entityValString, repValString)
+                    : isSameNodeId(entityValString, repValString);
         }
         return valueForEntity.toString().equals(representationKey.getValue().toString());
     }
@@ -324,11 +326,50 @@ public class DataFetcherHelper extends AbstractFetcher {
                 .getDataLoaderRegistry()
                 .<K, V1>computeIfAbsent(loaderName, name ->
                         DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<K, V0>) (keys, loaderEnvironment) ->
-                                CompletableFuture.completedFuture(dbFunction.callDBMethod(dslContext, keys, new SelectionSet(getSelectionSetsFromEnvironment(loaderEnvironment)))),
+                                CompletableFuture.completedFuture(matchRequestedNodeIds(
+                                        keys,
+                                        dbFunction.callDBMethod(dslContext, keys, new SelectionSet(getSelectionSetsFromEnvironment(loaderEnvironment)))
+                                )),
                                 dataLoaderOptions
                         )
                 )
                 .load(key, env);
+    }
+
+    /**
+     * The node queries key their results by the ID re-encoded from the row, which is always canonical. A requested ID
+     * in a non-canonical encoding (for example with base64 padding) still finds its row, but is not a key in the result.
+     * Such IDs are added to the result under the requested key, matched by decoded value.
+     */
+    private static <K, V> Map<K, V> matchRequestedNodeIds(Set<K> requestedKeys, Map<K, V> result) {
+        var unmatched = requestedKeys.stream().filter(it -> it instanceof String && !result.containsKey(it)).toList();
+        if (unmatched.isEmpty() || result.isEmpty()) {
+            return result;
+        }
+
+        var resultByDecodedId = new HashMap<String, V>();
+        result.forEach((k, v) -> {
+            if (k instanceof String s) {
+                var decoded = NodeIdStrategy.decodeAsNodeId(s);
+                if (decoded != null) {
+                    resultByDecodedId.putIfAbsent(decoded, v);
+                }
+            }
+        });
+
+        var matched = new HashMap<>(result);
+        for (var key : unmatched) {
+            var decoded = NodeIdStrategy.decodeAsNodeId((String) key);
+            if (decoded != null && resultByDecodedId.containsKey(decoded)) {
+                matched.put(key, resultByDecodedId.get(decoded));
+            }
+        }
+        return matched;
+    }
+
+    private static boolean isSameNodeId(String a, String b) {
+        var decodedA = NodeIdStrategy.decodeAsNodeId(a);
+        return decodedA != null && decodedA.equals(NodeIdStrategy.decodeAsNodeId(b));
     }
 
     /**

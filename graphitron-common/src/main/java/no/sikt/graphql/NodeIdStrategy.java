@@ -203,8 +203,11 @@ public class NodeIdStrategy {
      * {@code typeId:keys} separator that every ID produced by {@link #createId} contains. Plain
      * {@code @key} values (numeric codes and the like) therefore decode to {@code null} and are
      * never mistaken for a node ID.
+     *
+     * <p>Two IDs that decode to the same non-null value identify the same node, even when their
+     * encoded strings differ (padding, or non-zero trailing bits that the decoder ignores).
      */
-    private static String decodeAsNodeId(String s) {
+    public static String decodeAsNodeId(String s) {
         if (s == null) {
             return null;
         }
