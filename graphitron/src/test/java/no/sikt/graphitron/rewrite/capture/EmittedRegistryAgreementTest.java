@@ -102,12 +102,19 @@ class EmittedRegistryAgreementTest {
      * The corpus documents whose two printings differ today. Struck off as each cause is settled; a
      * document that starts or stops disagreeing fails this test either way.
      *
-     * <p>The entry here is not owed a fix in capture. The synthesis replaces an authored
+     * <p>{@code node-type-id} is the second kind: the store emits something the walk never will. A
+     * graph composing {@code @nodeType} gets the directive and its definition from the store, and the
+     * walk is deliberately not taught to emit them, a second producer of one population being what
+     * this gate exists to remove. It leaves the set when the walk does, and nothing else would
+     * remove it.
+     *
+     * <p>The entry for {@code authored-pagination-argument} is not owed a fix in capture. The synthesis replaces an authored
      * {@code first} with one carrying the connection's page size, and the store yields to what the
      * author wrote; the class comment argues why that makes the store right. It stops being a
      * disagreement when the synthesis goes, not when capture changes.
      */
-    private static final Set<String> KNOWN_DISAGREEMENTS = Set.of("authored-pagination-argument");
+    private static final Set<String> KNOWN_DISAGREEMENTS =
+        Set.of("authored-pagination-argument", "node-type-id");
 
     @Test
     @DisplayName("the store-derived schema and the incumbent agree on every corpus document but the recorded ones")

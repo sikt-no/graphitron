@@ -30,6 +30,8 @@ Already-issued IDs continue to decode after the rename because the wire format n
 
 *Shorter or namespaced IDs.* The `typeId` is part of every ID's wire bytes. Trimming `Customer` (8 bytes) to `C` (1 byte) compounds across batched lookups. Conversely, prefixing `typeId` per service (`shop:Customer`) is one way to keep IDs unique across federated subgraphs without coordinating on type names.
 
+A federated graph can also publish each node type's `typeId` in the supergraph, which lets a dedicated node subgraph decode an ID without calling the owning subgraph; see xref:apollo-federation.adoc#publish-typeids[Publish typeIds to the supergraph].
+
 The build rejects two `@node` types that share a `typeId` (whether explicit or defaulted): `Query.node(id:)` cannot dispatch unambiguously, and the rewrite refuses to compile rather than silently route to the wrong table.
 
 == `keyColumns` migrations

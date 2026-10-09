@@ -228,8 +228,11 @@ class RelationRegistrationGateTest {
             // than an element of it. GraphitronSchema holds federation's opt-in as a parsed
             // specification list where these hold what was written, so there is nothing to compare.
             // GraphitronSchemaEntriesTest pins them, over a corpus writing both import spellings
-            // and repeating the directive on one schema.
+            // and repeating the directive on one schema. The compose entry rides the same terms: the
+            // directive it decodes asks for another directive by name, which GraphitronSchema has no
+            // word for, and the same test pins both spellings of it.
             "graphitron_ast_link_entry", "graphitron_ast_link_import_entry",
+            "graphitron_ast_compose_directive_entry",
             // What went wrong making a schema out of the documents, as the build's toolchain
             // stated it, at whichever reading stage said so. GraphitronSchema is only ever
             // built from a corpus that made a schema, so it has nothing to say about one that did
@@ -337,6 +340,7 @@ class RelationRegistrationGateTest {
         registrations.put("intent_node_metadata_defect", Arm.DERIVED);
         registrations.put("graphitron_node_type", Arm.DERIVED);
         registrations.put("graphitron_synthesized_federation_key", Arm.DERIVED);
+        registrations.put("graphitron_synthesized_node_type_id", Arm.DERIVED);
         registrations.put("graphitron_field_reference_step_target", Arm.DERIVED);
         registrations.put("graphitron_field_reference_step_target_keyed", Arm.DERIVED);
         registrations.put("graphitron_field_reference_step_target_keyless", Arm.DERIVED);

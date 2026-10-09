@@ -62,7 +62,7 @@ class SchemaSdlEmissionTest {
             .as("federated SDL carries the @link directive referencing FederationSpec.URL")
             .contains(FederationSpec.URL)
             .as("federated SDL carries the schema-applied @link declaration (R250)")
-            .containsPattern("schema\\s+@link\\s*\\(");
+            .containsPattern("schema\\s+[^{]*@link\\s*\\(");
     }
 
     /**
@@ -84,6 +84,38 @@ class SchemaSdlEmissionTest {
                 .as("the @key applications on %s, by fields: and resolvable:", type.getName())
                 .doesNotHaveDuplicates();
         });
+    }
+
+    /**
+     * The federated fixture composes {@code @nodeType}, so the emitted SDL defines it, asks the
+     * supergraph to carry it, and applies it to every node type with the id the generator encodes
+     * into that type's ids, and to nothing else. Stated structurally over the re-parsed file: the
+     * four {@code @node} types carry it and the reference-only stubs, which are entities and not
+     * nodes, do not.
+     */
+    @Test
+    void federatedSdlPublishesEachNodeTypesId() throws IOException {
+        var registry = new SchemaParser().parse(Files.readString(
+            sdlFor("no.sikt.graphitron.generated.federated"), StandardCharsets.UTF_8));
+
+        assertThat(registry.getDirectiveDefinition("nodeType"))
+            .as("graphitron defines @nodeType, federation-jvm knowing nothing of it").isPresent();
+        assertThat(registry.schemaDefinition().orElseThrow().getDirectives("composeDirective")
+                .stream().map(d -> argument(d, "name")))
+            .as("the author's own opt-in survives into the published schema")
+            .containsExactly("\"@nodeType\"");
+
+        for (String node : List.of("Customer", "Address", "Film", "FilmActor")) {
+            var type = requireNonNull(registry.getTypeOrNull(node, ObjectTypeDefinition.class), node);
+            assertThat(type.getDirectives("nodeType").stream().map(d -> argument(d, "typeId")))
+                .as("@nodeType on node type %s, carrying the id it encodes", node)
+                .containsExactly("\"" + node + "\"");
+        }
+        for (String entityOnly : List.of("Language", "City", "FilmRefStub")) {
+            var type = requireNonNull(registry.getTypeOrNull(entityOnly, ObjectTypeDefinition.class), entityOnly);
+            assertThat(type.getDirectives("nodeType"))
+                .as("%s is an entity and not a node, so it publishes no type id", entityOnly).isEmpty();
+        }
     }
 
     private static String argument(Directive directive, String name) {

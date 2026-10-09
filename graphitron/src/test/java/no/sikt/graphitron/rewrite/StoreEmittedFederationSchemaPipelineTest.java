@@ -121,6 +121,46 @@ class StoreEmittedFederationSchemaPipelineTest {
         assertThat(tags(emitted, "QueryFilmsConnectionEdge")).containsExactly("experimental");
     }
 
+    /**
+     * Composing {@code @nodeType} is the only opt-in, and federation spells the directive two ways
+     * depending on the author's own {@code @link}: plain where the import list carries it, and
+     * namespaced where it does not. Both reach the same published schema, the definition and one
+     * application on the node type, and the namespaced spelling is the case the library supplies a
+     * definition for only when the name is not imported.
+     */
+    @Test
+    @DisplayName("a graph composing @nodeType, however it spells the directive, publishes each node type's id")
+    void composingNodeTypePublishesTheId(@TempDir Path tmp) throws IOException {
+        var imported = """
+            extend schema @link(url: "https://specs.apollo.dev/federation/v2.10",
+              import: ["@key", "@composeDirective"]) @composeDirective(name: "@nodeType")
+            """;
+        var namespaced = """
+            extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+              @federation__composeDirective(name: "@nodeType")
+            """;
+        for (var spelling : List.of(imported, namespaced)) {
+            var dir = Files.createTempDirectory(tmp, "spelling");
+            var emitted = generate(context(dir,
+                input(dir, "schema.graphqls", spelling + NODE, null)));
+
+            assertThat(emitted.getDirectiveDefinition("nodeType"))
+                .as("the definition, which federation-jvm cannot supply").isPresent();
+            assertThat(typeDirectives(emitted, "Film"))
+                .as("the application carries the id the generator encodes, the type's own name here")
+                .contains("@nodeType(typeId: \"Film\")");
+        }
+    }
+
+    @Test
+    @DisplayName("a federated graph that does not compose @nodeType publishes none")
+    void notComposingNodeTypePublishesNothing(@TempDir Path tmp) throws IOException {
+        var emitted = generate(context(tmp, input(tmp, "schema.graphqls", LINK + NODE, null)));
+
+        assertThat(emitted.getDirectiveDefinition("nodeType")).isEmpty();
+        assertThat(typeDirectives(emitted, "Film")).noneMatch(d -> d.startsWith("@nodeType"));
+    }
+
     @Test
     @DisplayName("a PageInfo nobody declared is minted and inherits the carrier's tag")
     void aMintedPageInfoStillInherits(@TempDir Path tmp) throws IOException {

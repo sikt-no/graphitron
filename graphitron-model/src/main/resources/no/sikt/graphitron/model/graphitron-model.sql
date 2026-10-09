@@ -3108,6 +3108,27 @@ COMMENT ON COLUMN graphitron_ast_link_import_entry.touched_at IS 'when the readi
 COMMENT ON COLUMN graphitron_ast_link_import_entry.name IS 'the name the element imports, taken from the element itself where it was written as a bare string and from its name field where it was written as an object. NOT NULL because it is the element''s whole identity: an element that named nothing imports nothing, and the applied-directive row already says the @link was applied';
 COMMENT ON COLUMN graphitron_ast_link_import_entry.alias IS 'the local name the element binds the import to, from an object element''s as field, NULL on a bare string and on an object that wrote none. NULL is the fact that the import keeps its own name rather than a default filled in here';
 
+CREATE TABLE graphitron_ast_compose_directive_entry (
+  graph_name     VARCHAR NOT NULL,
+  source_name    VARCHAR NOT NULL,
+  source_line    INT     NOT NULL,
+  source_column  INT     NOT NULL,
+  touched_at     TIMESTAMP NOT NULL,
+  directive_name VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_schema_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_compose_directive_entry IS 'What a schema-level @composeDirective application says: the directive the schema asks the supergraph to carry, as written. For example extend schema @composeDirective(name: "@nodeType") gives one row whose directive_name is @nodeType.';
+COMMENT ON COLUMN graphitron_ast_compose_directive_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_compose_directive_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_compose_directive_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_compose_directive_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_schema_directive_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_compose_directive_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_compose_directive_entry.directive_name IS 'the name argument decoded to the string the author wrote, with its leading at sign, which is how federation asks for a directive by name. NOT NULL because it is the application''s whole payload: an application that wrote no string name asks for nothing, and the applied-directive row already says the directive was applied';
+
 CREATE TABLE graphitron_ast_node_entry (
   graph_name    VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL,
@@ -7709,6 +7730,18 @@ COMMENT ON COLUMN graphitron_synthesized_federation_key.type_name IS 'the node t
 COMMENT ON COLUMN graphitron_synthesized_federation_key.fields_sdl IS 'the field-set literal the rule states, always id; a column and not an implied constant, so a reader composing this arm with the authored one projects the same shape from both';
 COMMENT ON COLUMN graphitron_synthesized_federation_key.resolvable IS 'the resolvable: the rule states, always true; the synthesized entity is resolvable by construction, an opt-out being something only an author can write';
 
+CREATE VIEW graphitron_synthesized_node_type_id
+  (graph_name, type_name, type_id) AS
+SELECT n.graph_name, n.type_name, n.type_id
+  FROM graphitron_node n
+ WHERE EXISTS (SELECT 1 FROM graphitron_ast_compose_directive_entry c
+                WHERE c.graph_name = n.graph_name
+                  AND c.directive_name = '@nodeType');
+COMMENT ON VIEW graphitron_synthesized_node_type_id IS 'Which node types publish their wire type id in the emitted schema as @nodeType, because the graph composes that directive. For example a graph whose schema applies @composeDirective(name: "@nodeType") gets one row per node type, Film''s carrying the id its @node declares, its class publishes, or its own name.';
+COMMENT ON COLUMN graphitron_synthesized_node_type_id.graph_name IS 'the owning graph''s partition, carried from the node relation';
+COMMENT ON COLUMN graphitron_synthesized_node_type_id.type_name IS 'the node type the application is synthesized for; keyed with the graph, one row per node type that gets one';
+COMMENT ON COLUMN graphitron_synthesized_node_type_id.type_id IS 'the wire type id the application carries, as graphitron_node resolved it: what the author declared, else what the backing class publishes, else the type''s own name. Never null, graphitron_node''s last tier always answering';
+
 CREATE VIEW graphitron_directive_application_authored
   (graph_name, coordinate, directive_name, ordinal, origin,
    source_name, source_line, source_column) AS
@@ -7864,7 +7897,15 @@ UNION ALL
 SELECT i.graph_name, i.type_name, i.directive_name, i.ordinal,
        'MINTED', CAST(NULL AS VARCHAR), CAST(NULL AS INT), CAST(NULL AS INT)
   FROM graphitron_inherited_directive i
-  JOIN graphitron_element e ON e.graph_name = i.graph_name AND e.coordinate = i.type_name;
+  JOIN graphitron_element e ON e.graph_name = i.graph_name AND e.coordinate = i.type_name
+UNION ALL
+SELECT t.graph_name, t.type_name, 'nodeType',
+       CAST((SELECT COUNT(*) FROM graphql_directive_application d
+              WHERE d.graph_name = t.graph_name AND d.coordinate = t.type_name
+                AND d.directive_name = 'nodeType') AS INT),
+       'MINTED', CAST(NULL AS VARCHAR), CAST(NULL AS INT), CAST(NULL AS INT)
+  FROM graphitron_synthesized_node_type_id t
+  JOIN graphitron_element e ON e.graph_name = t.graph_name AND e.coordinate = t.type_name;
 COMMENT ON VIEW graphitron_directive_application_minted IS 'One of the three sets graphitron_directive_application is the union of: an application macro expansion adds. For example @key(fields: "id") on a node type in a federation-linked graph whose author declared no id key, or the @tag a minted Connection inherits from its carrier.';
 COMMENT ON COLUMN graphitron_directive_application_minted.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_directive_application_minted.coordinate IS 'the coordinate the macro applies the directive to';
@@ -7920,7 +7961,14 @@ UNION ALL
 SELECT i.graph_name, i.type_name, i.directive_name, i.ordinal, 'name', i.value_sdl
   FROM graphitron_inherited_directive i
   JOIN graphitron_element e ON e.graph_name = i.graph_name AND e.coordinate = i.type_name
- WHERE i.directive_name = 'tag';
+ WHERE i.directive_name = 'tag'
+UNION ALL
+SELECT m.graph_name, m.coordinate, m.directive_name, m.ordinal, 'typeId',
+       '"' || REPLACE(REPLACE(t.type_id, '\', '\\'), '"', '\"') || '"'
+  FROM graphitron_directive_application_minted m
+  JOIN graphitron_synthesized_node_type_id t
+    ON t.graph_name = m.graph_name AND t.type_name = m.coordinate
+ WHERE m.directive_name = 'nodeType';
 COMMENT ON VIEW graphitron_directive_application_arg_minted IS 'One of the three sets graphitron_directive_application_arg is the union of: an argument macro expansion passes to an application it adds. For example the fields: "id" and resolvable: true of a synthesised @key are two rows here.';
 COMMENT ON COLUMN graphitron_directive_application_arg_minted.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_directive_application_arg_minted.coordinate IS 'the owning application''s coordinate';
@@ -15027,6 +15075,9 @@ INSERT INTO meta_grain VALUES
   ('synthesized-federation-key',
    'one synthesized federation key, on one type, in one graph',
    'graph_name, type_name', 'sdl'),
+  ('synthesized-node-type-id',
+   'one node type whose wire type id the emitted schema publishes, in one graph',
+   'graph_name, type_name', 'sdl'),
   ('graph-synthesised-link',
    'one graph whose composed schema gained a link its author did not write',
    'graph_name', 'sdl'),
@@ -15775,6 +15826,11 @@ INSERT INTO meta_relation VALUES
    'One import element of a @link application, at its position in the list, as written.',
    'For example import: ["@key", {name: "@shareable", as: "@federatedShareable"}] gives two rows, the second carrying an alias.',
    'A list argument becomes rows rather than a column, and this list is the one place in the family where an element admits two spellings: federation writes an import as a bare string or as an object binding it to a local name, and both are the same fact with the alias absent in the first. So the two spellings are one relation with a nullable alias rather than two relations or a column saying which was written, the spelling being syntax and the import being what a reader wants. An element that names nothing writes no row, the name being the import''s whole identity, and it costs its neighbours nothing: every element keys by where it was written rather than by a count, so a row missing here removes a row and not a number. @link is federation''s vocabulary and this generator declares no definition for it, so the legality rule does not reach these elements and that gap is the ordinary one a NOT NULL column makes.'),
+  ('graphitron_ast_compose_directive_entry', 'sdl-declaration-site', 'graphitron-ast',
+   'What a schema-level @composeDirective application says: the directive the schema asks the supergraph to carry, as written.',
+   'For example extend schema @composeDirective(name: "@nodeType") gives one row whose directive_name is @nodeType.',
+   'A decode of one directive application, keyed by the application''s own position, which is also what tells two applications apart: the directive repeats and no ordinal is assigned here. Federation spells the directive two ways, @composeDirective where the schema''s @link imports it and @federation__composeDirective where it does not, and both are the same fact, so the writer reads both into this one relation rather than leaving every reader to ask twice. A row is written only for an application that wrote its name as a string: the argument is required, so an application without one asserts nothing a row can hold, and the applied-directive row already says it was applied. The question it answers is which directives a graph composes, which graphitron_synthesized_node_type_id asks of @nodeType; an import under an alias is not resolved and so is not recognised.'),
+
   ('graphitron_ast_enum_value_binding_entry', 'sdl-declaration-site', 'graphitron-ast',
    'What a @field application on an enum value says: the database column the value binds to, as written.',
    'For example TITLE @field(name: "title") gives one row whose name_ref is title.',
@@ -15867,6 +15923,11 @@ INSERT INTO meta_relation VALUES
    'Federation''s node-entity rule as a relation: which node types get a @key(fields: "id") nobody wrote, federation needing the entity declaration visible in the emitted SDL and a node carrying a globally-unique id by definition.',
    'For example a federation-linked graph whose Film is a node and declares no id key of its own gets one row.',
    'Moved out of the intent_ family by the arc that owns macro expansion. That family has no owning gatherer and is being retired, and what this derives from is graphitron''s own vocabulary decoded, so this is where the fact belongs and the graphitron gatherer, which runs the expansion, is who answers for it. A derivation and not a capture: the rule reads the SDL claim rows and the node metadata a generated class publishes, so its inputs span two corpora and its output is computable from captured facts. Three conditions, all the live rule''s. The graph is federation-linked, by either arm of the generator''s opt-in: an authored federation @link, read from the decode rather than the verbatim twin so no reader compensates for AST quoting, or the one <schemaInput tag> synthesised, which no document states and graphql_assembly_synthesised_link records. The type is a node. And no authored key already states the id contract, meaning no @key whose decode is exactly the single path id. A malformed fields: argument decodes to no field rows and so does not count as the id key, which sends the misuse to its detection instead of suppressing synthesis on a parse failure. The application it states is anchored by graphitron_directive_application, whose minted set reads this; read from the ast_ decode and the anchored application, so every input is settled when the anchor runs.'),
+  ('graphitron_synthesized_node_type_id', 'synthesized-node-type-id', 'graphitron',
+   'Which node types publish their wire type id in the emitted schema as @nodeType, because the graph composes that directive.',
+   'For example a graph whose schema applies @composeDirective(name: "@nodeType") gets one row per node type, Film''s carrying the id its @node declares, its class publishes, or its own name.',
+   'A derivation and not a capture, on graphitron_synthesized_federation_key''s terms: a node subgraph resolving Query.node(id) has to learn which type an id belongs to, and the supergraph can only carry that if the owning subgraph publishes it, so the emitted schema gains a directive no author wrote. The type id is graphitron_node.type_id as resolved, so nothing here restates the three-tier rule or the node population, which is that relation''s, table-bound by its key. The condition is the author''s own composition of the directive, read from graphitron_ast_compose_directive_entry: composing it is the opt-in, so no setting exists and a graph that does not compose it publishes what it published before. This relation is its own provenance, which is what lets the synthesized application stay out of the transcription families entirely.'),
+
   ('graphitron_element_authored', 'expanded-element', 'graphitron',
    'One of the four sets graphitron_element is the union of: an element an author declared, at the coordinate the transcription spells for it, of a kind this family anchors.',
    'For example the Film in type Film { title: String } is one row, and the Film.title written inside it is another.',

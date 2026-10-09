@@ -127,6 +127,8 @@ Two boundaries are worth knowing:
 * `implements Node` is what opts the type in. `@table` plus metadata and *no* interface stays an ordinary table type, which is what lets a nesting projection sit over a node-bearing table without becoming a second node.
 * `@node` still wins on any axis it names. Write `@node(typeId: "46")` to pin a wire `typeId` different from the published one; the key columns still come from the catalog.
 
+In a federated graph the resolved `typeId` can also be published to the supergraph, so a node subgraph can map an ID to its type without asking the owning subgraph; see xref:../../how-to/apollo-federation.adoc#publish-typeids[Publish typeIds to the supergraph].
+
 === When the table has its own `id` column
 
 A table can publish node metadata *and* have a column literally named `id`. Graphitron will not choose for you: `id` could mean the encoded global ID or the column's own value, both are legitimate, and the two are different values on the wire. The build fails until you say which:

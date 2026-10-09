@@ -1,5 +1,6 @@
 extend schema
-  @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+  @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key", "@composeDirective"])
+  @composeDirective(name: "@nodeType")
 
 # Slim federation-only test fixture. Types here exercise the entity dispatcher
 # (FederationEntitiesDispatchTest, FederationBuildSmokeTest) without putting

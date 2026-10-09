@@ -11,12 +11,14 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_LINK_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_LINK_IMPORT_ENTRY;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.applied;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.elementsOf;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.inside;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.string;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.wrote;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.stringOf;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.writtenIn;
 import static org.jooq.impl.DSL.excluded;
@@ -32,7 +34,9 @@ import static org.jooq.impl.DSL.val;
  * <p>The smallest site, and the only one whose subject is the document as a whole: a schema block
  * declares nothing that a coordinate could name, so what is written here is about the corpus and not
  * about an element of it. One directive reaches the site with anything to decode, federation's
- * {@code @link}, and it gets two relations because its import list is a list.
+ * {@code @link}, and it gets two relations because its import list is a list. The other is the one
+ * directive that asks the supergraph to carry a custom directive, {@code @composeDirective}, whose single
+ * argument is its whole payload.
  *
  * <p>{@code @link} also carries the one argument shape no other site meets. Federation lets an
  * import be written as a bare string or as an object binding it to a local name, and both spellings
@@ -56,6 +60,7 @@ final class GraphitronSchemaEntries {
         var links = applied(applications, "link");
         links(dsl, graph, touchedAt, links);
         linkImports(dsl, graph, touchedAt, links);
+        composeDirectives(dsl, graph, touchedAt, applications);
         GraphitronAstEntries.sweep(dsl, graph, source, touchedAt, TABLES_TO_SWEEP);
     }
 
@@ -65,7 +70,8 @@ final class GraphitronSchemaEntries {
      * and did not list would keep its stale rows silently.
      */
     private static final List<Table<?>> TABLES_TO_SWEEP =
-        List.of(GRAPHITRON_AST_LINK_IMPORT_ENTRY, GRAPHITRON_AST_LINK_ENTRY);
+        List.of(GRAPHITRON_AST_LINK_IMPORT_ENTRY, GRAPHITRON_AST_LINK_ENTRY,
+            GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY);
 
     /**
      * A row for every application and not only for those that wrote a URL, because the import list
@@ -109,6 +115,41 @@ final class GraphitronSchemaEntries {
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.NAME, excluded(t.NAME))
                 .set(t.ALIAS, excluded(t.ALIAS)));
+    }
+
+    /**
+     * The two spellings federation gives the directive: the plain name where the schema's
+     * {@code @link} imports it, and the namespaced one where it does not. One fact, so one relation.
+     */
+    private static final List<String> COMPOSE_DIRECTIVE_SPELLINGS =
+        List.of("composeDirective", "federation__composeDirective");
+
+    /**
+     * A row for each application that wrote its name as a string, and none for one that did not:
+     * the argument is required, so an application without it asks for nothing a row could hold, and
+     * the applied-directive row already says it was applied.
+     */
+    private static void composeDirectives(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                          List<GraphQLAstEntries.Nested<Directive>> applications) {
+        var t = GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY;
+        var composed = new ArrayList<Directive>();
+        for (var spelling : COMPOSE_DIRECTIVE_SPELLINGS) {
+            composed.addAll(wrote(applied(applications, spelling), "name"));
+        }
+        var rows = composed.stream().collect(Rows.toRowList(
+            application -> val(graph, t.GRAPH_NAME),
+            application -> GraphQLAstEntries.sourceName(application),
+            application -> GraphQLAstEntries.sourceLine(application),
+            application -> GraphQLAstEntries.sourceColumn(application),
+            application -> val(touchedAt, t.TOUCHED_AT),
+            application -> val(string(application, "name"), t.DIRECTIVE_NAME)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                    t.TOUCHED_AT, t.DIRECTIVE_NAME)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.DIRECTIVE_NAME, excluded(t.DIRECTIVE_NAME)));
     }
 
     /** One import, whichever of the two spellings the author reached for. */

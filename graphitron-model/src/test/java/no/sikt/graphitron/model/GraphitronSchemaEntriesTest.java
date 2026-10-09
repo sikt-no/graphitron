@@ -22,6 +22,7 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_LINK_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_LINK_IMPORT_ENTRY;
 import static no.sikt.graphitron.model.test.ElementOrder.writtenAt;
@@ -157,6 +158,84 @@ class GraphitronSchemaEntriesTest {
                 .as("the object naming nothing writes no row, and the name after it is still at 1")
                 .extracting(row -> row.value1(), row -> row.value2())
                 .containsExactly(tuple(1, "@key"));
+        });
+    }
+
+    /**
+     * Federation spells the directive two ways, the plain name where the schema's {@code @link}
+     * imports it and the namespaced one where it does not, and the question asked of the relation
+     * is only which directives the graph composes. So both land in one relation, and a graph
+     * composing through either answers the same.
+     */
+    @Test
+    @DisplayName("both spellings of @composeDirective land in one relation")
+    void bothComposeDirectiveSpellingsLandInOneRelation(@TempDir Path tmp) {
+        write(tmp, "schema.graphqls", FEDERATION + """
+            extend schema
+              @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key", "@composeDirective"])
+              @composeDirective(name: "@nodeType")
+            extend schema @federation__composeDirective(name: "@other")
+            """);
+
+        ThreadConfinedStore.run(dsl -> {
+            read(dsl, tmp);
+            var t = GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY;
+
+            assertThat(dsl.select(t.DIRECTIVE_NAME).from(t).orderBy(t.SOURCE_LINE).fetch(t.DIRECTIVE_NAME))
+                .as("the plain spelling and the namespaced one, each as written, at its own position")
+                .containsExactly("@nodeType", "@other");
+        });
+    }
+
+    /**
+     * The argument is required, so an application without a string name asks the supergraph for
+     * nothing a row could hold. The applied-directive row already says it was applied; a row here
+     * would hold its key and nothing else.
+     */
+    @Test
+    @DisplayName("an @composeDirective that names no string writes no row")
+    void aComposeDirectiveNamingNothingWritesNoRow(@TempDir Path tmp) {
+        write(tmp, "schema.graphqls", FEDERATION + """
+            extend schema
+              @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@composeDirective"])
+              @composeDirective(name: 7)
+              @composeDirective
+            """);
+
+        ThreadConfinedStore.run(dsl -> {
+            read(dsl, tmp);
+
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY))
+                .as("a name that is not a string, and no name at all").isZero();
+        });
+    }
+
+    /**
+     * Removing the application removes the row, which is the sweep working on the new relation: the
+     * writer's list of what it sweeps is written out rather than found by prefix, so a relation it
+     * gained and did not list would keep its stale rows silently.
+     */
+    @Test
+    @DisplayName("an @composeDirective the author removed is swept")
+    void aRemovedComposeDirectiveIsSwept(@TempDir Path tmp) {
+        write(tmp, "schema.graphqls", FEDERATION + """
+            extend schema
+              @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@composeDirective"])
+              @composeDirective(name: "@nodeType")
+            """);
+
+        ThreadConfinedStore.run(dsl -> {
+            read(dsl, tmp);
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY)).isOne();
+
+            write(tmp, "schema.graphqls", FEDERATION + """
+                extend schema
+                  @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@composeDirective"])
+                """);
+            read(dsl, tmp);
+
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY))
+                .as("the second reading no longer finds it").isZero();
         });
     }
 

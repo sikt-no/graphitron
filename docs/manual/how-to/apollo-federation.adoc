@@ -93,6 +93,32 @@ This is the one place where federation-relevant state lives outside the SDL itse
 
 A layout with one tagged input per feature is where generated types meet fields that disagree on their tags: two `@asConnection` fields in differently tagged files share one generated `PageInfo`. How a shared generated type's tags are chosen, and the build warning that flags it, are described under federation directives in xref:../reference/directives/asConnection.adoc[`@asConnection`].
 
+[#publish-typeids]
+== Publish typeIds to the supergraph
+
+A node subgraph that resolves `Query.node(id)` has to know which type an ID belongs to. Compose the directive Graphitron defines for it, in every subgraph that should publish its IDs:
+
+[source,graphql]
+----
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key", "@composeDirective"])
+  @composeDirective(name: "@nodeType")
+----
+
+Graphitron then defines `@nodeType` and puts `@nodeType(typeId: "...")` on every node type. The value is the ID Graphitron encodes into IDs for that type, which is the `typeId` you wrote on xref:../reference/directives/node.adoc[`@node`], else the one the table's generated class publishes, else the type name. Composition keeps the directive, so the supergraph holds the mapping from `typeId` to type name and the node subgraph decodes an ID without calling the owning subgraph.
+
+[source,graphql]
+----
+# _service { sdl }, with `type Customer implements Node @table(name: "customer") @node { ... }`
+directive @nodeType(typeId: String!) on OBJECT
+
+type Customer implements Node @key(fields: "id") @nodeType(typeId: "Customer") { ... }
+----
+
+Composing the directive is the only switch; there is no plugin setting, and a graph that does not compose it publishes what it always did. If your `@link` does not import `"@composeDirective"`, write the directive as `@federation__composeDirective(name: "@nodeType")` instead. Do not write `@nodeType` or its definition yourself; the build refuses both, since Graphitron owns the value.
+
+Keep `typeId` values unique across subgraphs. Composition checks neither that two types share a `typeId` nor that two subgraphs disagree about one, so pick the IDs from one scheme for the whole supergraph. Within one subgraph the build already refuses a duplicate.
+
 == Constraints
 
 * The build-time opt-in is the SDL `@link`. `Graphitron.buildSchema(...)` returns a federation-wrapped schema *iff* one of your schema files declares the `@link`; without it, no federation surface gets wired.

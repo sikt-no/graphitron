@@ -1,0 +1,61 @@
+# Composing is the only opt-in, and it needs no federation @link: the document declares the
+# directive the way a schema that does not link federation has to, and applies it.
+directive @composeDirective(name: String!) repeatable on SCHEMA
+
+extend schema @composeDirective(name: "@nodeType")
+
+type Film implements Node @table(name: "film") @node(typeId: "F") @classifiedType(as: NodeType) {
+  "The id the author pinned, which is the one @nodeType publishes."
+  id: ID! @nodeId
+}
+type FilmActor implements Node @table(name: "film_actor") @node @classifiedType(as: NodeType) {
+  "No id written: the id is the one the table's generated class states."
+  id: ID! @nodeId
+}
+type Customer implements Node @table(name: "customer") @node @classifiedType(as: NodeType) {
+  "No id written and none published: the type's own name answers."
+  id: ID! @nodeId
+}
+extend type Query {
+  film: Film
+  filmActor: FilmActor
+  customer: Customer
+}
+
+extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
+  type_name,    field_name, classifier,   tier
+  CorpusAnchor, name,       TABLE_COLUMN, INFERRED
+  Customer,     id,         NODE_ID,      AUTHORED
+  Film,         id,         NODE_ID,      AUTHORED
+  FilmActor,    id,         NODE_ID,      AUTHORED
+  """)
+
+extend schema @expectEquals(relation: "intent_authored_field_claim", rows: """
+  type_name, field_name, classifier, trigger, decoded
+  Customer,  id,         NODE_ID,    nodeId,  TRUE
+  Film,      id,         NODE_ID,    nodeId,  TRUE
+  FilmActor, id,         NODE_ID,    nodeId,  TRUE
+  """)
+
+extend schema @expectEquals(relation: "intent_bound_table", rows: """
+  type_name,    table_name
+  CorpusAnchor, category
+  Customer,     customer
+  Film,         film
+  FilmActor,    film_actor
+  """)
+
+extend schema @expectEquals(relation: "graphitron_synthesized_node_type_id", rows: """
+  type_name, type_id
+  Customer,  Customer
+  Film,      F
+  FilmActor, FilmActor
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name, field_name,   source,      result
+  Query,     corpusAnchor, AnchorTable, SingleRecord
+  Query,     customer,     AnchorTable, SingleRecord
+  Query,     film,         AnchorTable, SingleRecord
+  Query,     filmActor,    AnchorTable, SingleRecord
+  """)

@@ -89,6 +89,30 @@ class FederationBuildSmokeTest {
     }
 
     /**
+     * What a federated consumer actually serves: the runtime schema's {@code _service { sdl }}, not
+     * the file the generator wrote. The fixture composes {@code @nodeType}, so the served SDL must
+     * carry the definition and the application on each node type; this is the path through the
+     * generated {@code GraphitronSchema.build} and {@code Federation.transform} that the emitted file
+     * cannot show.
+     */
+    @Test
+    void serviceSdlPublishesNodeTypeIds() {
+        var result = Graphitron.newGraphQL().build().execute(
+            ExecutionInput.newExecutionInput().query("{ _service { sdl } }").build());
+        assertThat(result.getErrors()).isEmpty();
+        @SuppressWarnings("unchecked")
+        var sdl = (String) ((Map<String, Object>) ((Map<String, Object>) result.getData())
+            .get("_service")).get("sdl");
+
+        assertThat(sdl)
+            .as("the directive's definition, and the composition request that carries it")
+            .contains("directive @nodeType(typeId: String!) on OBJECT")
+            .containsPattern("@composeDirective\\(name\\s*:\\s*\"@nodeType\"\\)")
+            .as("an application on a node type, with the id the generator encodes")
+            .containsPattern("type Customer[^{]*@nodeType\\(typeId\\s*:\\s*\"Customer\"\\)");
+    }
+
+    /**
      * The {@code _Entity} union must list every type Graphitron classifies as a federation entity:
      * four {@code @node} types (Customer, Address, Film, and the compound-key FilmActor), the
      * single-column-key City (the service-child projection fixture), plus the two
@@ -143,13 +167,13 @@ class FederationBuildSmokeTest {
         // the assertion locks the presence and shape of both args, not their order.
         assertThat(sdl)
             .as("schema { ... } block must carry @link from the consumer SDL")
-            .containsPattern("schema\\s+@link\\s*\\(")
+            .containsPattern("schema\\s+[^{]*@link\\s*\\(")
             .as("@link url argument must point at FederationSpec v2.10")
             .containsPattern(
-                "schema\\s+@link[^{]*url\\s*:\\s*\""
+                "schema\\s+[^{]*@link[^{]*url\\s*:\\s*\""
                     + "https://specs\\.apollo\\.dev/federation/v2\\.10\"")
-            .as("@link import argument must list @key")
-            .containsPattern("schema\\s+@link[^{]*import\\s*:\\s*\\[\\s*\"@key\"\\s*\\]");
+            .as("@link import argument must list @key and @composeDirective")
+            .containsPattern("schema\\s+[^{]*@link[^{]*import\\s*:\\s*\\[\\s*\"@key\"\\s*,\\s*\"@composeDirective\"\\s*\\]");
     }
 
     /**

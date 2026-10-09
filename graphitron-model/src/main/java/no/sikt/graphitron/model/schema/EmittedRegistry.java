@@ -3,6 +3,7 @@ package no.sikt.graphitron.model.schema;
 import graphql.language.AstPrinter;
 import graphql.language.Argument;
 import graphql.language.Description;
+import graphql.language.DirectiveDefinition;
 import graphql.language.Directive;
 import graphql.language.FieldDefinition;
 import graphql.language.InputValueDefinition;
@@ -16,6 +17,9 @@ import graphql.language.TypeDefinition;
 import graphql.parser.Parser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.diagnostics.Rejection;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
+import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
 import no.sikt.graphitron.model.lint.LintRule;
 import no.sikt.graphitron.model.read.StoreHandle;
 
@@ -109,6 +113,16 @@ public final class EmittedRegistry {
     /** The origin of the applications a macro adds, which are the ones this patch applies. */
     private static final String MINTED = "MINTED";
     private static final String SHAREABLE_DIRECTIVE = "shareable";
+
+    /**
+     * The one definition of the directive that publishes a node type's wire id, written once and
+     * parsed where it is added: federation-jvm supplies {@code @key}'s definition and knows nothing
+     * of this one. It must not be declared in graphitron's own {@code directives.graphqls}, which
+     * {@code SchemaDirectiveRegistry} reads as the generator-only set and would strip it from the
+     * output.
+     */
+    private static final String NODE_TYPE_DIRECTIVE_SDL = "directive @nodeType(typeId: String!) on OBJECT";
+    private static final String NODE_TYPE_DIRECTIVE = "nodeType";
 
     private EmittedRegistry() {}
 
@@ -208,7 +222,10 @@ public final class EmittedRegistry {
             }
         }
         apply(patched, replacements);
+        var nodeTypes = mintedNodeTypes(store);
+        refuseAuthoredNodeType(patched, nodeTypes);
         applyMintedDirectives(patched, store);
+        defineNodeType(patched, nodeTypes);
         return new Emitted(patched, narrowings(store));
     }
 
@@ -602,6 +619,72 @@ public final class EmittedRegistry {
             patched.remove(replacement.old());
             patched.add(replacement.replacement());
         }
+    }
+
+    /**
+     * The node types the anchor mints {@code @nodeType} on, which is every node type of a graph that
+     * composes the directive and none of any other. The applications themselves are
+     * {@link #applyMintedDirectives}'s, rendered like any minted one; what this and the two methods
+     * below add is the directive's definition and the refusal of an author who wrote it.
+     */
+    private static List<String> mintedNodeTypes(StoreHandle store) {
+        var d = GRAPHITRON_DIRECTIVE_APPLICATION;
+        return store.dsl().select(d.COORDINATE).from(d)
+            .where(d.GRAPH_NAME.eq(store.graphName()))
+            .and(d.ORIGIN.eq(MINTED))
+            .and(d.DIRECTIVE_NAME.eq(NODE_TYPE_DIRECTIVE))
+            .orderBy(d.COORDINATE)
+            .fetch(d.COORDINATE);
+    }
+
+    /**
+     * Refuses a {@code @nodeType} the author wrote, a declaration of it or an application on a node
+     * type, in a graph that composes it. Graphitron owns the value, and two sources for one fact
+     * would disagree, so it is the author's error, raised before assembly turns it into a failure
+     * reported as a defect in the generator.
+     */
+    private static void refuseAuthoredNodeType(TypeDefinitionRegistry patched, List<String> nodeTypes) {
+        if (nodeTypes.isEmpty()) {
+            return;
+        }
+        var declared = patched.getDirectiveDefinition(NODE_TYPE_DIRECTIVE);
+        if (declared.isPresent()) {
+            throw authoredNodeType("directive @" + NODE_TYPE_DIRECTIVE + " is declared here, but"
+                + " graphitron declares it for a schema that composes it",
+                declared.get().getSourceLocation());
+        }
+        for (var coordinate : nodeTypes) {
+            if (!(patched.getTypeOrNull(coordinate) instanceof ObjectTypeDefinition object)) {
+                continue;
+            }
+            var sites = new ArrayList<ObjectTypeDefinition>();
+            sites.add(object);
+            sites.addAll(patched.objectTypeExtensions().getOrDefault(coordinate, List.of()));
+            for (var site : sites) {
+                var written = site.getDirectives(NODE_TYPE_DIRECTIVE);
+                if (!written.isEmpty()) {
+                    throw authoredNodeType("@" + NODE_TYPE_DIRECTIVE + " is written on type '"
+                        + coordinate + "', but graphitron applies it to every node type of a schema"
+                        + " that composes it, with the id it encodes into ids",
+                        written.get(0).getSourceLocation());
+                }
+            }
+        }
+    }
+
+    /** Adds the directive's definition once, when anything was minted that uses it. */
+    private static void defineNodeType(TypeDefinitionRegistry patched, List<String> nodeTypes) {
+        if (nodeTypes.isEmpty()) {
+            return;
+        }
+        patched.add(Parser.parse(NODE_TYPE_DIRECTIVE_SDL)
+            .getFirstDefinitionOfType(DirectiveDefinition.class).orElseThrow());
+    }
+
+    private static ValidationFailedException authoredNodeType(String message, SourceLocation location) {
+        return new ValidationFailedException(List.of(new ValidationError(null,
+            Rejection.invalidSchema(message + ". Remove it: composing @" + NODE_TYPE_DIRECTIVE
+                + " is the only opt-in."), location)));
     }
 
     // ---------------------------------------------------------------------------------------
