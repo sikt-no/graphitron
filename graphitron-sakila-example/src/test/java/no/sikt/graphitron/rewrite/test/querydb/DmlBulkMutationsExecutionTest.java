@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -41,6 +42,9 @@ class DmlBulkMutationsExecutionTest {
 
     static PostgreSQLContainer postgres;
     static DSLContext dsl;
+    static String dbUrl;
+    static String dbUser;
+    static String dbPassword;
     static GraphQL graphql;
     static final AtomicInteger QUERY_COUNT = new AtomicInteger();
 
@@ -48,15 +52,18 @@ class DmlBulkMutationsExecutionTest {
     static void startDatabase() throws Exception {
         var localUrl = System.getProperty("test.db.url");
         if (localUrl != null) {
-            var user = System.getProperty("test.db.username", "postgres");
-            var pass = System.getProperty("test.db.password", "postgres");
-            dsl = DSL.using(localUrl, user, pass);
+            dbUrl = localUrl;
+            dbUser = System.getProperty("test.db.username", "postgres");
+            dbPassword = System.getProperty("test.db.password", "postgres");
         } else {
             postgres = new PostgreSQLContainer("postgres:18-alpine")
                 .withInitScript("init.sql");
             postgres.start();
-            dsl = DSL.using(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+            dbUrl = postgres.getJdbcUrl();
+            dbUser = postgres.getUsername();
+            dbPassword = postgres.getPassword();
         }
+        dsl = DSL.using(dbUrl, dbUser, dbPassword);
 
         dsl.configuration().set(new org.jooq.impl.DefaultExecuteListenerProvider(
             new org.jooq.ExecuteListener() {
@@ -74,14 +81,21 @@ class DmlBulkMutationsExecutionTest {
     }
 
     private Map<String, Object> execute(String query) {
-        var result = run(query);
+        return execute(dsl, query);
+    }
+
+    private Map<String, Object> execute(DSLContext ctx, String query) {
+        var result = run(ctx, query);
         assertThat(result.getErrors()).isEmpty();
         return result.getData();
     }
 
-    private graphql.ExecutionResult executeRaw(String query) { return run(query); }
+    private graphql.ExecutionResult executeRaw(String query) { return run(dsl, query); }
 
-    private graphql.ExecutionResult run(String query) {        var input = Graphitron.newExecutionInput(dsl, "{}", "test-user").query(query).build();
+    private graphql.ExecutionResult executeRaw(DSLContext ctx, String query) { return run(ctx, query); }
+
+    private graphql.ExecutionResult run(DSLContext ctx, String query) {
+        var input = Graphitron.newExecutionInput(ctx, "{}", "test-user").query(query).build();
         return graphql.execute(input);
     }
 
@@ -853,22 +867,52 @@ class DmlBulkMutationsExecutionTest {
     // buildBulkLookupRowIn's block-lambda form (decode call lifted inside the stream
     // lambda body). These are the load-bearing emitter paths for this shape.
 
-    private void seedFilmActor(int actorId, int filmId) {
-        dsl.insertInto(DSL.table("film_actor"))
+    // These cases seed film_actor pairs that init.sql does not, and reader classes elsewhere in
+    // the module assert exact actor and film lists over the seeded table. On the local-db path
+    // every class shares one database, so a seed committed and later deleted is visible to a
+    // concurrent reader in between. Each case therefore runs seed, mutation and assertions inside
+    // one transaction that always rolls back: the rollback is the cleanup, and no other
+    // connection ever sees the rows.
+
+    /** Thrown at the end of {@link #inRolledBackTransaction} to make jOOQ roll back. */
+    private static final class RollbackSentinel extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        RollbackSentinel() { super(null, null, false, false); }
+    }
+
+    /**
+     * Runs {@code body} against a {@link DSLContext} bound to one transaction on the class's
+     * connection, then rolls the transaction back. Any exception or assertion failure from the
+     * body propagates as itself.
+     */
+    private void inRolledBackTransaction(Consumer<DSLContext> body) {
+        try {
+            dsl.transaction(cfg -> {
+                body.accept(DSL.using(cfg));
+                throw new RollbackSentinel();
+            });
+        } catch (RollbackSentinel rolledBack) {
+            // expected: every case ends here
+        }
+    }
+
+    private void seedFilmActor(DSLContext tx, int actorId, int filmId) {
+        tx.insertInto(DSL.table("film_actor"))
             .set(DSL.field("actor_id"), actorId)
             .set(DSL.field("film_id"), filmId)
             .execute();
+        assertThat(countFilmActor(tx, actorId, filmId)).isEqualTo(1);
+        try (var other = DSL.using(dbUrl, dbUser, dbPassword)) {
+            assertThat(countFilmActor(other, actorId, filmId))
+                .as("film_actor (%d, %d) seeded inside the transaction is visible to another connection",
+                    actorId, filmId)
+                .isZero();
+        }
     }
 
-    private void cleanupFilmActor(int actorId, int filmId) {
-        dsl.deleteFrom(DSL.table("film_actor"))
-            .where(DSL.field("actor_id", Integer.class).eq(actorId))
-            .and(DSL.field("film_id", Integer.class).eq(filmId))
-            .execute();
-    }
-
-    private int countFilmActor(int actorId, int filmId) {
-        return dsl.fetchCount(
+    private static int countFilmActor(DSLContext ctx, int actorId, int filmId) {
+        return ctx.fetchCount(
             DSL.selectOne().from(DSL.table("film_actor"))
                 .where(DSL.field("actor_id", Integer.class).eq(actorId))
                 .and(DSL.field("film_id", Integer.class).eq(filmId)));
@@ -880,20 +924,18 @@ class DmlBulkMutationsExecutionTest {
         // body decodes id once into a
         // Record2<Integer, Integer> in postInGuard, throws on type mismatch, then emits
         // `where(actor_id.eq(__lookupKey0.value1()).and(film_id.eq(__lookupKey0.value2())))`.
-        // Uses pair (1, 4), not in the init.sql film_actor seed, so cleanup is local.
-        seedFilmActor(1, 4);
-        String nodeId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 1, 4);
-        try {
-            Map<String, Object> data = execute("""
+        // Uses pair (1, 4), not in the init.sql film_actor seed.
+        inRolledBackTransaction(tx -> {
+            seedFilmActor(tx, 1, 4);
+            String nodeId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 1, 4);
+            Map<String, Object> data = execute(tx, """
                 mutation {
                     deleteFilmActorByNodeId(in: { id: "%s" })
                 }
                 """.formatted(nodeId));
             assertThat(data.get("deleteFilmActorByNodeId")).isNotNull();
-            assertThat(countFilmActor(1, 4)).isZero();
-        } finally {
-            cleanupFilmActor(1, 4);
-        }
+            assertThat(countFilmActor(tx, 1, 4)).isZero();
+        });
     }
 
     @Test
@@ -904,23 +946,20 @@ class DmlBulkMutationsExecutionTest {
         //   return DSL.row(DSL.val(__bulkKey0.value1(), ...), DSL.val(__bulkKey0.value2(), ...));
         // }).toList())`.
         // Uses pairs (2, 3) and (3, 4), neither in the init.sql seed.
-        seedFilmActor(2, 3);
-        seedFilmActor(3, 4);
-        String id1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 2, 3);
-        String id2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 3, 4);
-        try {
-            Map<String, Object> data = execute("""
+        inRolledBackTransaction(tx -> {
+            seedFilmActor(tx, 2, 3);
+            seedFilmActor(tx, 3, 4);
+            String id1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 2, 3);
+            String id2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 3, 4);
+            Map<String, Object> data = execute(tx, """
                 mutation {
                     deleteFilmActorsByNodeId(in: [{ id: "%s" }, { id: "%s" }])
                 }
                 """.formatted(id1, id2));
             assertThat((List<?>) data.get("deleteFilmActorsByNodeId")).hasSize(2);
-            assertThat(countFilmActor(2, 3)).isZero();
-            assertThat(countFilmActor(3, 4)).isZero();
-        } finally {
-            cleanupFilmActor(2, 3);
-            cleanupFilmActor(3, 4);
-        }
+            assertThat(countFilmActor(tx, 2, 3)).isZero();
+            assertThat(countFilmActor(tx, 3, 4)).isZero();
+        });
     }
 
     @Test
@@ -980,19 +1019,17 @@ class DmlBulkMutationsExecutionTest {
         // generated postInGuard surfaces as a GraphqlErrorException via the
         // try/catch wrapper. The seeded row is untouched.
         // Uses pair (3, 3), not in the init.sql seed.
-        seedFilmActor(3, 3);
-        String wrong = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
-        try {
-            graphql.ExecutionResult result = executeRaw("""
+        inRolledBackTransaction(tx -> {
+            seedFilmActor(tx, 3, 3);
+            String wrong = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
+            graphql.ExecutionResult result = executeRaw(tx, """
                 mutation {
                     deleteFilmActorByNodeId(in: { id: "%s" })
                 }
                 """.formatted(wrong));
             assertThat(result.getErrors()).isNotEmpty();
-            assertThat(countFilmActor(3, 3)).isEqualTo(1);
-        } finally {
-            cleanupFilmActor(3, 3);
-        }
+            assertThat(countFilmActor(tx, 3, 3)).isEqualTo(1);
+        });
     }
 
     // ===== multiRow DELETE broadcast =====
