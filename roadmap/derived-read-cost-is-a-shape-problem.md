@@ -765,11 +765,9 @@ result_delivery      -- DIRECT | WRAPPED | MANY, NULL with element_class
   keys `code_class`; where it does not, as for `java.lang.String` or a generated jOOQ class, the
   entry is NULL and the name is a name for the compiler to resolve. NULL then says the class was not
   gathered, which a join on names cannot say at all.
-* **A slot's parse is read by what replaces the accessor hop** `open`. No query reads the new
-  columns. Their reader was `intent_field_accessor_hop`, now retired. Its successor,
-  `graphitron_type_backing_rule`, still peels `slot_type` through `code_type_element`, because a
-  stated classpath leaves `element_class` empty; once it does not, the rule reads the column with no
-  peel, or the columns are unearned and go.
+* **A slot's parse is read by what replaces the accessor hop** `done`. `graphitron_type_backing_rule`
+  reads `element_class` off the slot, and off the producer's method and parameter, with no peel
+  through `code_type_element`; what blocked it was a stated classpath leaving the columns empty.
 * **`code_construction` keys on the class it is about** `done`. It states how a value of one class is
   made and was keyed by a type spelling, a class fact filed under a type key. It keys into
   `code_class` now and `code_write_slot` follows it, so a class the next reading does not find takes

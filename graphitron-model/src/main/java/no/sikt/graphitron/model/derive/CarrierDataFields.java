@@ -13,9 +13,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_CARRIER_DATA_FIELD_RULE
  * stays stated once, in SQL, in the catalog where {@link ViewReferences} can read what it reads;
  * what this class adds is who evaluates it and when.
  *
- * <p>Runs in the derivation stratum. The backing its rule reads, {@code graphitron_type_backing}, is
- * anchored by the graphitron gatherer before the stratum runs, so no step here writes what it
- * reads there.
+ * <p>Runs as a step of {@link DerivationStratum}. The backing its rule reads,
+ * {@code graphitron_type_backing}, is anchored by the graphitron gatherer before the derivations
+ * run, so no step there writes what it reads.
  */
 public final class CarrierDataFields {
 

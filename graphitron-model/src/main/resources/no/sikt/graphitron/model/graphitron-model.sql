@@ -10028,6 +10028,11 @@ CREATE TABLE graphitron_type_backing (
   touched_at   TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, class_name, declared_via),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  -- A backing is of a type the graph declares, so the database refuses one for a type that does
+  -- not exist; the sweep removes a backing a reading no longer finds, and this removes one whose
+  -- type went.
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type (graph_name, type_name)
+    ON DELETE CASCADE,
   CHECK (declared_via IN ('BOUND_TABLE', 'PRODUCER', 'ACCESSOR'))
 );
 COMMENT ON TABLE graphitron_type_backing IS 'A Java class stands for a graph''s type, and how the store knows: one row per type, class and population. For example a type carrying @table(name: "film") is backed by FilmRecord as BOUND_TABLE, a type a @service method returns a FilmDto for is backed by FilmDto as PRODUCER, and the type of a field read off FilmDto.getActors() by ActorDto as ACCESSOR.';
@@ -10044,7 +10049,7 @@ CREATE VIEW graphitron_type_backing_rule (graph_name, type_name, class_name, dec
 -- backs the field's type, and the class a parameter takes backs the type of the argument feeding it,
 -- the parameter's own name unless an argMapping entry redirects it. Objects and input objects only.
 WITH RECURSIVE seed (graph_name, type_name, class_name) AS (
-  SELECT s.graph_name, f.named_type, re.element_class
+  SELECT s.graph_name, f.named_type, m.result_element_class
     FROM graphitron_code_reference_site s
     JOIN graphitron_code_reference r
       ON r.graph_name = s.graph_name AND r.source_name = s.source_name
@@ -10057,11 +10062,10 @@ WITH RECURSIVE seed (graph_name, type_name, class_name) AS (
     JOIN graphql_type t
       ON t.graph_name = f.graph_name AND t.type_name = f.named_type
      AND t.kind IN ('OBJECT', 'INPUT_OBJECT')
-    JOIN code_type_element re
-      ON re.source_name = m.source_name AND re.type_name = m.result_type
    WHERE s.directive_name IN ('service', 'externalField')
+     AND m.result_element_class IS NOT NULL
   UNION
-  SELECT s.graph_name, a.named_type, pe.element_class
+  SELECT s.graph_name, a.named_type, mp.element_class
     FROM graphitron_code_reference_site s
     JOIN graphitron_code_reference r
       ON r.graph_name = s.graph_name AND r.source_name = s.source_name
@@ -10082,17 +10086,16 @@ WITH RECURSIVE seed (graph_name, type_name, class_name) AS (
     JOIN graphql_type t
       ON t.graph_name = a.graph_name AND t.type_name = a.named_type
      AND t.kind IN ('OBJECT', 'INPUT_OBJECT')
-    JOIN code_type_element pe
-      ON pe.source_name = mp.source_name AND pe.type_name = mp.parameter_type
    WHERE s.directive_name IN ('service', 'externalField')
      AND mp.parameter_name IS NOT NULL
+     AND mp.element_class IS NOT NULL
 ),
 -- Where reading a field off a class lands: the member the field names, its own name unless @field
 -- overrides it, read off the class for an output type and written into it for an input object, and
 -- the class that member delivers. A field a producer directive supplies is not read off its parent,
 -- so it is no edge, and only object and input object types are landed on.
 hop (graph_name, type_name, from_class, to_type, to_class) AS (
-  SELECT f.graph_name, f.type_name, sl.class_name, f.named_type, e.element_class
+  SELECT f.graph_name, f.type_name, sl.class_name, f.named_type, sl.element_class
     FROM graphql_field f
     JOIN graphql_type owner
       ON owner.graph_name = f.graph_name AND owner.type_name = f.type_name
@@ -10105,16 +10108,13 @@ hop (graph_name, type_name, from_class, to_type, to_class) AS (
       ON b.graph_name = f.graph_name AND b.type_name = f.type_name AND b.field_name = f.field_name
     JOIN code_read_slot sl
       ON sl.source_name = g.source_name AND sl.slot_name = COALESCE(b.name_ref, f.field_name)
-    JOIN code_type_element e
-      ON e.source_name = sl.source_name AND e.type_name = sl.slot_type
-   WHERE NOT EXISTS (SELECT 1 FROM graphitron_service_entry x
+   WHERE sl.element_class IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM graphitron_code_reference_site x
                       WHERE x.graph_name = f.graph_name AND x.type_name = f.type_name
-                        AND x.field_name = f.field_name)
-     AND NOT EXISTS (SELECT 1 FROM graphitron_external_field_entry x
-                      WHERE x.graph_name = f.graph_name AND x.type_name = f.type_name
-                        AND x.field_name = f.field_name)
+                        AND x.field_name = f.field_name
+                        AND x.directive_name IN ('service', 'externalField'))
   UNION ALL
-  SELECT f.graph_name, f.type_name, sl.class_name, f.named_type, e.element_class
+  SELECT f.graph_name, f.type_name, sl.class_name, f.named_type, sl.element_class
     FROM graphql_field f
     JOIN graphql_type owner
       ON owner.graph_name = f.graph_name AND owner.type_name = f.type_name
@@ -10127,8 +10127,7 @@ hop (graph_name, type_name, from_class, to_type, to_class) AS (
       ON b.graph_name = f.graph_name AND b.type_name = f.type_name AND b.field_name = f.field_name
     JOIN code_write_slot sl
       ON sl.source_name = g.source_name AND sl.slot_name = COALESCE(b.name_ref, f.field_name)
-    JOIN code_type_element e
-      ON e.source_name = sl.source_name AND e.type_name = sl.slot_type
+   WHERE sl.element_class IS NOT NULL
 ),
 -- The closure from the seeds over the hops. H2 has no CYCLE clause and its UNION does not discard
 -- a row an earlier step produced, so a cyclic type graph would recurse forever: the path of pairs
@@ -16469,7 +16468,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_field_source', 'expanded-field', 'graphitron',
    'Where a field''s source object arrives from and how many arrive: one row per output field the generator can serve.',
    'For example Query.film is ROOT, Film.language under a Film that arrives once is ONLY_CHILD, and the same field under a list of films is CHILD.',
-   'R333''s source fact for an output field, the half the store can state today: whether a source object arrives and how many. The shape it arrives in, a table row or a record, waits on the type-level source object leaving intent_. Total over the fields the generator can serve, so a field with no row is a field something explains: today SUBSCRIPTION_FIELD, the subscription root having no arm.'),
+   'The source fact for an output field, the half the store can state today: whether a source object arrives and how many. The shape it arrives in, a table row or a record, waits on the type-level source object leaving intent_. Total over the fields the generator can serve, so a field with no row is a field something explains: today SUBSCRIPTION_FIELD, the subscription root having no arm.'),
   ('graphitron_field_source_rule', 'expanded-field', 'graphitron',
    'One row the field-source rule computes, in the shape graphitron_field_source stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_field_source, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
@@ -16669,7 +16668,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_type_backing', 'type-backing', 'graphitron',
    'A Java class stands for a graph''s type, and how the store knows: one row per type, class and population.',
    'For example a type carrying @table(name: "film") is backed by FilmRecord as BOUND_TABLE, a type a @service method returns a FilmDto for is backed by FilmDto as PRODUCER, and the type of a field read off FilmDto.getActors() by ActorDto as ACCESSOR.',
-   'R333''s source object, the class a type''s objects are cast to, stated by the gatherer that owns the directives it is read from. Anchored after the classpath is read: a producer''s resolved method and a member''s delivered class are code_ facts, and a nested type''s class is the class its parent''s member delivers, so the closure follows the schema down from the producers. Three populations because readers ask three questions: which class at all, which a producer grounded rather than a hop reached, and which a table stands for. Each is its own arm and none is preferred; a type answered by two is two rows.'),
+   'The source object, the class a type''s objects are cast to, stated by the gatherer that owns the directives it is read from. Anchored after the classpath is read: a producer''s resolved method and a member''s delivered class are code_ facts, and a nested type''s class is the class its parent''s member delivers, so the closure follows the schema down from the producers. Three populations because readers ask three questions: which class at all, which a producer grounded rather than a hop reached, and which a table stands for. Each is its own arm and none is preferred; a type answered by two is two rows.'),
   ('graphitron_type_backing_rule', 'type-backing', 'graphitron',
    'One row the type-backing rule computes, in the shape graphitron_type_backing stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_type_backing, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
