@@ -1,10 +1,8 @@
 package no.sikt.graphitron.model.run;
 
-import no.sikt.graphitron.model.capture.graphitron.GraphitronFactCapture;
-import no.sikt.graphitron.model.derive.NameMatchedKeys;
 import no.sikt.graphitron.model.derive.StageProgress;
 import no.sikt.graphitron.model.capture.FactCapture;
-import no.sikt.graphitron.model.sink.FactSink;
+import no.sikt.graphitron.model.sink.Progress;
 import no.sikt.graphitron.model.capture.sdl.SdlFactCapture;
 import no.sikt.graphitron.model.capture.code.ClasspathSourceCapture;
 import no.sikt.graphitron.model.capture.code.CodeCapture;
@@ -58,16 +56,19 @@ public final class ModelCapture {
     /**
      * {@link #capture(DSLContext, GraphIdentity, SubjectConfig, List, JooqCatalog, LocalDateTime)}
      * reporting the derivations to {@code progress}, or to the log where it is null.
+     *
+     * <p>Each gatherer commits its own work, in transactions of its own choosing, and records how
+     * far it got through {@link Progress}.
      */
     @SuppressWarnings("deprecation")
     public static CapturedSchema capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
                                          List<ClasspathEntry> classpath, JooqCatalog jooq,
                                          LocalDateTime readAt, StageProgress progress) {
         writeGraph(dsl, graph, readAt);
+        Progress.started(dsl, graph.name(), Progress.CAPTURE);
         StoreEntries.write(dsl, graph.name(), config, readAt);
 
         JooqFactCapture.capture(dsl, graph.name(), jooq, readAt);
-        NameMatchedKeys.derive(dsl);
         var classes = ClasspathSourceCapture.capture(dsl, graph.name(), classpath,
             config.jooqPackage().orElse(null), readAt);
         CodeCapture.capture(dsl, classes, jooq == null ? null : jooq.codegenLoader(), readAt);
@@ -81,13 +82,10 @@ public final class ModelCapture {
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);
         // The post-synthesis schema, as soon as the anchor has resolved what the macros mint.
         var schemas = schemas(dsl, graph, assembled);
-        var decode = new FactSink(dsl, graph.name(), readAt);
-        GraphitronFactCapture.clear(dsl, graph.name());
-        SdlFactCapture.capture(decode, assembled.merged());
-        decode.flush();
+        SdlFactCapture.decode(dsl, graph.name(), assembled.merged(), readAt);
         GraphitronAssemblyCapture.capture(dsl, graph.name(), readAt);
-        // The store does not analyse itself, and ANALYZE commits: it runs outside the derivations,
-        // never between a step's delete and its inserts.
+        // The store does not analyse itself, and ANALYZE commits: it runs outside the
+        // derivations, never between a step's delete and its inserts.
         dsl.execute("ANALYZE");
         if (progress == null) {
             FactCapture.derive(dsl, graph, assembled.assembly());
@@ -95,6 +93,7 @@ public final class ModelCapture {
             FactCapture.derive(dsl, graph, assembled.assembly(), progress);
         }
         dsl.execute("ANALYZE");
+        Progress.completed(dsl, graph.name(), Progress.CAPTURE);
         return schemas;
     }
 

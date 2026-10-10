@@ -151,12 +151,14 @@ public final class GraphitronStore {
     }
 
     /**
-     * Fills {@code store} with what {@code graph}'s inputs say, in one transaction, for a caller
-     * whose whole business with the store is this.
+     * Fills {@code store} with what {@code graph}'s inputs say, for a caller whose whole business
+     * with the store is this.
      *
      * <p>What each gatherer reads, and why the two compiled-code inputs are separate, is
-     * {@link ModelCapture}'s. This adds the transaction and the instant: a run that fails partway
-     * leaves the store as it found it, and every relation dates the same reading.
+     * {@link ModelCapture}'s, and so is how the reading commits: gatherer by gatherer and step by
+     * step, so a run that stops partway leaves on disk how far it got, and
+     * {@code store_graph_progress} says which gatherer it got to. This adds the instant, so every
+     * relation dates the same reading.
      *
      * @return the two schemas the capture built, as {@link ModelCapture} hands them back
      */
@@ -164,8 +166,8 @@ public final class GraphitronStore {
                                          SubjectConfig config, List<ClasspathEntry> classpath,
                                          JooqCatalog jooq) {
         var readAt = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
-        return capture(graph.name(), () -> store.dsl().transactionResult(tx ->
-            ModelCapture.capture(tx.dsl(), graph, config, classpath, jooq, readAt)));
+        return capture(graph.name(), () ->
+            ModelCapture.capture(store.dsl(), graph, config, classpath, jooq, readAt));
     }
 
     /**

@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.capture.document;
 
+import no.sikt.graphitron.model.sink.Progress;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.read.SourceStamp;
 import no.sikt.graphitron.model.run.GraphIdentity;
@@ -173,6 +174,17 @@ public final class GraphQLSourceCapture {
      * apart by it.
      */
     public static CorpusReading capture(DSLContext dsl, GraphIdentity graph,
+                                        SubjectConfig config, LocalDateTime readAt) {
+        Progress.started(dsl, graph.name(), GATHERER);
+        var read = dsl.transactionResult(tx -> gather(tx.dsl(), graph, config, readAt));
+        Progress.completed(dsl, graph.name(), GATHERER);
+        return read;
+    }
+
+    /** This gatherer's row in {@code store_graph_progress}. */
+    private static final String GATHERER = "graphql-source";
+
+    private static CorpusReading gather(DSLContext dsl, GraphIdentity graph,
                                         SubjectConfig config, LocalDateTime readAt) {
         // Read before anything is written, the question being what this graph's rows were derived
         // from rather than what this reading is about to say they were.

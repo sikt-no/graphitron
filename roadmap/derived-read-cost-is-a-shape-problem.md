@@ -459,6 +459,11 @@ new one.
   fails only where it cannot capture.
   * A schema extending a built-in captures `done`, by "The specification is a document": an
     extension merges onto the specification's declaration instead of adding the type twice.
+* **A capture commits as it goes** `done`. Each gatherer commits its own work in
+  transactions of its own choosing, and `store_graph_progress` holds each one's last start,
+  completion and time spent, recorded around the run rather than inside its transactions, with a
+  row for the capture as a whole, so a hung or failed capture leaves on disk how far it got; the one outer
+  transaction never held, `ANALYZE` committing it mid-capture. Readers do not consult it yet.
 
 ### The classified model dissolves into the store
 

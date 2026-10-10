@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.capture.code;
 
+import no.sikt.graphitron.model.sink.Progress;
 import no.sikt.graphitron.model.classpath.ClassfileCensus;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.read.SourceStamp;
@@ -101,12 +102,24 @@ public final class ClasspathSourceCapture {
      */
     public static Reading capture(DSLContext dsl, String graph, List<ClasspathEntry> classpath,
                                   String skipPrefix, LocalDateTime readAt) {
+        Progress.started(dsl, graph, GATHERER);
+        var read = dsl.transactionResult(
+            tx -> gather(tx.dsl(), graph, classpath, skipPrefix, readAt));
+        Progress.completed(dsl, graph, GATHERER);
+        return read;
+    }
+
+    /** This gatherer's row in {@code store_graph_progress}. */
+    private static final String GATHERER = "classpath-source";
+
+    private static Reading gather(DSLContext dsl, String graph, List<ClasspathEntry> classpath,
+                                  String skipPrefix, LocalDateTime readAt) {
         var declared = declared(classpath);
         if (declared.isEmpty()) {
             // A run handed no classpath has nothing to say about one. Claiming nothing and
             // forgetting nothing is the whole of that: a reading that treated an empty classpath
             // as "every entry has left" would reclaim another reading's corpus.
-            return new Reading(new ClassfileCensus.Census(List.of(), List.of()), List.of());
+            return new Reading(new ClassfileCensus.Census(List.of(), List.of()), List.of(), graph);
         }
         // What this graph's rows of each entry were read from, before anything is written over it.
         var held = heldStamps(dsl, graph);
@@ -149,7 +162,7 @@ public final class ClasspathSourceCapture {
         // one it would keep. Every entry the configuration named counts as read, an entry left
         // alone being one this reading vouched for rather than one it lost.
         reclaim(dsl, claimed);
-        return new Reading(reading.census(), List.copyOf(sources));
+        return new Reading(reading.census(), List.copyOf(sources), graph);
     }
 
     /** The entries this run may read at all, which is every one it did not inherit. */
@@ -236,14 +249,17 @@ public final class ClasspathSourceCapture {
             }
         }
 
-        return new Reading(census, List.copyOf(sources));
+        return new Reading(census, List.copyOf(sources), null);
     }
 
     /**
      * What the reading produced: the census for the gatherers that walk the whole classpath, and
-     * the entries for the ones that need to know which they may write against.
+     * the entries for the ones that need to know which they may write against. The graph is the
+     * one the reading was claimed for, which what is written from it records its progress under;
+     * {@code null} from {@link #read}, which claims for none.
      */
-    public record Reading(ClassfileCensus.Census census, List<ClasspathSource> sources) {
+    public record Reading(ClassfileCensus.Census census, List<ClasspathSource> sources,
+                          String graph) {
 
         /** The entries this reading opened, which is the scope every gatherer's sweep takes. */
         public List<String> read() {

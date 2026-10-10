@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.capture.store;
 
+import no.sikt.graphitron.model.sink.Progress;
 import no.sikt.graphitron.model.config.SessionStateConfig;
 import no.sikt.graphitron.model.lint.LintConfig;
 import no.sikt.graphitron.model.run.OutputCoordinates;
@@ -81,6 +82,16 @@ public final class StoreEntries {
      * declared nothing at all still has rows to sweep and nothing left to say whose they were.
      */
     public static void write(DSLContext dsl, String graph, SubjectConfig config,
+                             LocalDateTime touchedAt) {
+        Progress.started(dsl, graph, GATHERER);
+        dsl.transaction(tx -> gather(tx.dsl(), graph, config, touchedAt));
+        Progress.completed(dsl, graph, GATHERER);
+    }
+
+    /** This gatherer's row in {@code store_graph_progress}. */
+    private static final String GATHERER = "store";
+
+    private static void gather(DSLContext dsl, String graph, SubjectConfig config,
                              LocalDateTime touchedAt) {
         config.recipe().ifPresent(recipe -> {
             schemaInputs(dsl, graph, recipe, touchedAt);

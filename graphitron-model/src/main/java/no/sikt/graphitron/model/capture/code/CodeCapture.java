@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.capture.code;
 
+import no.sikt.graphitron.model.sink.Progress;
 import no.sikt.graphitron.model.classpath.ClassfileCensus;
 import no.sikt.graphitron.model.classpath.ScalarConstantInput;
 import no.sikt.graphitron.model.config.ClasspathEntry;
@@ -133,6 +134,16 @@ public final class CodeCapture {
      *                null falls back to the thread's, which is what a caller with no catalog has
      */
     public static void capture(DSLContext dsl, ClasspathSourceCapture.Reading reading,
+                               ClassLoader loader, LocalDateTime touchedAt) {
+        Progress.started(dsl, reading.graph(), GATHERER);
+        dsl.transaction(tx -> gather(tx.dsl(), reading, loader, touchedAt));
+        Progress.completed(dsl, reading.graph(), GATHERER);
+    }
+
+    /** This gatherer's row in {@code store_graph_progress}, under the graph the reading was for. */
+    private static final String GATHERER = "code";
+
+    private static void gather(DSLContext dsl, ClasspathSourceCapture.Reading reading,
                                ClassLoader loader, LocalDateTime touchedAt) {
         var census = reading.census();
         if (census.entries().isEmpty()) {

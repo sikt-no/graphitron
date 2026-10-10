@@ -1,5 +1,8 @@
 package no.sikt.graphitron.model.capture.sdl;
 
+import no.sikt.graphitron.model.sink.Progress;
+import org.jooq.DSLContext;
+import java.time.LocalDateTime;
 import no.sikt.graphitron.model.schema.SiteRef;
 import graphql.language.AstPrinter;
 import graphql.language.Description;
@@ -155,6 +158,27 @@ public final class SdlFactCapture {
      */
     public static void capture(FactSink sink, TypeDefinitionRegistry registry) {
         new SdlFactCapture(sink, registry).run();
+    }
+
+    /** This gatherer's row in {@code store_graph_progress}. */
+    private static final String GATHERER = "sdl";
+
+    /**
+     * The decode of {@code graphName}'s merged corpus as a reading runs it, its progress recorded
+     * by {@link Progress}: one transaction rather than several because it
+     * clears the graph's decoded rows before it writes them again, so a commit between the two would
+     * leave a reader looking at none.
+     */
+    public static void decode(DSLContext dsl, String graphName, TypeDefinitionRegistry merged,
+                              LocalDateTime readAt) {
+        Progress.started(dsl, graphName, GATHERER);
+        dsl.transaction(tx -> {
+            var sink = new FactSink(tx.dsl(), graphName, readAt);
+            GraphitronFactCapture.clear(tx.dsl(), graphName);
+            capture(sink, merged);
+            sink.flush();
+        });
+        Progress.completed(dsl, graphName, GATHERER);
     }
 
     private void run() {

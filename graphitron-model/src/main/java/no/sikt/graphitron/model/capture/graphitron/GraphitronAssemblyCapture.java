@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.capture.graphitron;
 
+import no.sikt.graphitron.model.sink.Progress;
 import no.sikt.graphitron.model.derive.FieldChainApplications;
 import no.sikt.graphitron.model.derive.FieldChainLinkResolutions;
 import no.sikt.graphitron.model.derive.FieldEndpoints;
@@ -62,6 +63,15 @@ public final class GraphitronAssemblyCapture {
      * sweep tell this reading's rows from the last one's by it.
      */
     public static void capture(DSLContext dsl, String graph, LocalDateTime readAt) {
+        Progress.started(dsl, graph, GATHERER);
+        dsl.transaction(tx -> gather(tx.dsl(), graph, readAt));
+        Progress.completed(dsl, graph, GATHERER);
+    }
+
+    /** This gatherer's row in {@code store_graph_progress}. */
+    private static final String GATHERER = "graphitron";
+
+    private static void gather(DSLContext dsl, String graph, LocalDateTime readAt) {
         // First of the stages: it reads the transcription alone, and the written order of a field's
         // applications is what everything below that walks a chain wants.
         FieldChainApplications.derive(dsl, graph);

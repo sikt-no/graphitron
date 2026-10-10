@@ -15265,7 +15265,28 @@ INSERT INTO meta_gatherer VALUES
   ('store', 'no.sikt.graphitron.model.capture.store.StoreEntries'),
   ('java-source', 'no.sikt.graphitron.model.capture.java.JavaSourceFacts'),
   ('compile', 'no.sikt.graphitron.model.capture.compile.CompileFacts'),
-  ('derivation', 'no.sikt.graphitron.model.derive.DerivationStratum');
+  ('derivation', 'no.sikt.graphitron.model.derive.DerivationStratum'),
+  -- The capture itself, which runs the gatherers above in order and records how far it got.
+  ('capture', 'no.sikt.graphitron.model.run.ModelCapture');
+
+CREATE TABLE store_graph_progress (
+  graph_name     VARCHAR   NOT NULL,
+  gatherer_name  VARCHAR   NOT NULL,
+  last_started   TIMESTAMP NOT NULL,
+  last_completed TIMESTAMP,
+  time_spent_ms  BIGINT GENERATED ALWAYS AS (
+    CASE WHEN last_completed >= last_started
+         THEN DATEDIFF(MILLISECOND, last_started, last_completed) END),
+  PRIMARY KEY (graph_name, gatherer_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name) ON DELETE CASCADE,
+  FOREIGN KEY (gatherer_name) REFERENCES meta_gatherer (gatherer_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE store_graph_progress IS 'How far a capture of one graph got: one row per gatherer that reads it, and one for the capture as a whole. For example a capture that hung in the graphitron gatherer leaves its row started after it last completed, every gatherer before it completed with this reading''s instants, and the capture row incomplete.';
+COMMENT ON COLUMN store_graph_progress.graph_name IS 'the graph the capture read; with the gatherer, the key';
+COMMENT ON COLUMN store_graph_progress.gatherer_name IS 'the gatherer, or capture for the whole of it; keyed into meta_gatherer, so a row names a gatherer the schema declares';
+COMMENT ON COLUMN store_graph_progress.last_started IS 'when the gatherer last began reading this graph, by the wall clock; committed before it does anything, so a gatherer that never returns has already said it started';
+COMMENT ON COLUMN store_graph_progress.last_completed IS 'when the gatherer last finished reading this graph, by the wall clock, written once its work was committed; NULL until it first has, and earlier than last_started while it runs or after it stopped partway';
+COMMENT ON COLUMN store_graph_progress.time_spent_ms IS 'how long the last reading took, in milliseconds, where it finished; NULL while the gatherer runs or after it stopped partway, the completion then belonging to an earlier reading';
 
 CREATE TABLE meta_gatherer_corpus (
   gatherer_name VARCHAR NOT NULL,
@@ -15687,6 +15708,9 @@ INSERT INTO meta_grain VALUES
   ('configured-tag',
    'one @tag the configuration applies to one element, at its place among the element''s tags, in one graph',
    'graph_name, coordinate, ordinal', 'configuration'),
+  ('gatherer-progress',
+   'one gatherer''s last reading of one graph, or the whole capture''s',
+   'graph_name, gatherer_name', 'configuration'),
   ('inherited-directive',
    'one federation directive one minted type inherits from its carriers, in one graph',
    'graph_name, type_name, directive_name, ordinal', 'sdl'),
@@ -15828,6 +15852,10 @@ INSERT INTO graphitron_defect_type VALUES
    'A field on the subscription root is a subscription, and graphitron generates no subscription resolver yet.');
 
 INSERT INTO meta_relation VALUES
+  ('store_graph_progress', 'gatherer-progress', 'capture',
+   'How far a capture of one graph got: one row per gatherer that reads it, and one for the capture as a whole.',
+   'For example a capture that hung in the graphitron gatherer leaves its row started after it last completed, every gatherer before it completed with this reading''s instants, and the capture row incomplete.',
+   'A capture commits gatherer by gatherer, so the store says how far a reading got; this is where it says it, read by a person or a tool looking at a store rather than by the generator. Written by each gatherer around its own run, through the sink package''s Progress, and by ModelCapture for its own row. Reporting only, never a transaction boundary: the gatherer commits its work in whatever transactions suit it. The start is written before the gatherer touches anything, so one that never returns has already named itself, and the completion after the gatherer has returned, so a finished row means its work is committed; one that throws leaves its row unfinished. Wall-clock instants rather than the reading''s, which every gatherer shares; the reading''s instant stays on store_graph.last_captured and on every row it marks. No sweep: a row is the gatherer''s last reading and the next one overwrites it, and a graph or gatherer that goes takes its rows by cascade.'),
   ('graphql_schema_problem', 'graph-schema-problem', 'graphql-assembly',
    'Reading this graph''s documents and making a schema of them produced this problem: one of the refusals the toolchain this graph is built with raised, whichever of the four stages raised it.',
    'For example a file that will not parse is one row naming that file, a second file declaring a type an earlier file already declares is another, and a second federation @link is a third.',

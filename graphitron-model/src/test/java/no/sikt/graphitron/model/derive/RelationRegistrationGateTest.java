@@ -251,6 +251,10 @@ class RelationRegistrationGateTest {
             "graphql_source_input")) {
             registrations.put(relation, Arm.UNSHADOWED);
         }
+        // How far a capture got, which is the run's own record and no fact of any schema, so the
+        // walk has nothing to agree with. CaptureCommitsAsItGoesTest pins it, over a reading that
+        // finishes and one that stops partway.
+        registrations.put("store_graph_progress", Arm.UNSHADOWED);
         // The classfile census: what the compiled classes on the classpath declare, read with no
         // vocabulary from any schema: what an author may name at one directive, admitted by that
         // arm's own rule rather than by a census's. GraphitronSchema has no counterpart because the

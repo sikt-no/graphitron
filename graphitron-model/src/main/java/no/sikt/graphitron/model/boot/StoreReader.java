@@ -34,10 +34,13 @@ import java.util.function.Function;
  * transaction ends in a rollback: a reader has nothing to commit, so nothing it does can reach the
  * rows the writer owns.
  *
- * <p>A capture is itself one transaction, so the snapshot a read sees is always a whole round.
- * There is no half-written state to defend against and no freshness arm to switch on: the store
- * answers from the last committed capture, which for a save-cadence writer is the last saved
- * content.
+ * <p>A capture commits gatherer by gatherer and derivation step by step, so a read sees whatever
+ * the writer has committed so far: during a round, some relations from this reading beside others
+ * from the last. Mark and sweep keeps each relation whole on its own terms, a row still true never
+ * being deleted, but two relations can disagree until the round ends.
+ * {@code store_graph_progress} says when it has: a graph whose capture row completed after it last
+ * started is one whole reading, and one whose row is still behind is mid-round or was left there by
+ * a reading that stopped, the gatherer rows saying where.
  *
  * <p>Reads serialize. One connection cannot carry two transactions, and requests arriving
  * concurrently would otherwise corrupt each other's; serializing them is the honest cost of the

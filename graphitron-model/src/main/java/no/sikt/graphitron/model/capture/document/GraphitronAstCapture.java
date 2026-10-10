@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.capture.document;
 
+import no.sikt.graphitron.model.sink.Progress;
 import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.TableTypes;
 import graphql.schema.idl.TypeDefinitionRegistry;
@@ -49,6 +50,17 @@ public final class GraphitronAstCapture {
      * decode of an application the reading had just rewritten.
      */
     public static void capture(DSLContext dsl, GraphIdentity graph,
+                               List<GraphQLSourceCapture.SourceDocument> documents,
+                               LocalDateTime readAt) {
+        Progress.started(dsl, graph.name(), GATHERER);
+        dsl.transaction(tx -> gather(tx.dsl(), graph, documents, readAt));
+        Progress.completed(dsl, graph.name(), GATHERER);
+    }
+
+    /** This gatherer's row in {@code store_graph_progress}. */
+    private static final String GATHERER = "graphitron-ast";
+
+    private static void gather(DSLContext dsl, GraphIdentity graph,
                                List<GraphQLSourceCapture.SourceDocument> documents,
                                LocalDateTime readAt) {
         captureEntries(dsl, graph, documents, readAt);

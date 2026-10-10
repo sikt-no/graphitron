@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.capture.document;
 
+import no.sikt.graphitron.model.sink.Progress;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
@@ -119,6 +120,18 @@ public final class GraphQLAssemblyCapture {
      * the sweep tells this reading's rows from the last one's by it.
      */
     public static AssemblyReading capture(DSLContext dsl, GraphIdentity graph,
+                                          GraphQLSourceCapture.CorpusReading reading,
+                                          LocalDateTime readAt) {
+        Progress.started(dsl, graph.name(), GATHERER);
+        var read = dsl.transactionResult(tx -> gather(tx.dsl(), graph, reading, readAt));
+        Progress.completed(dsl, graph.name(), GATHERER);
+        return read;
+    }
+
+    /** This gatherer's row in {@code store_graph_progress}. */
+    private static final String GATHERER = "graphql-assembly";
+
+    private static AssemblyReading gather(DSLContext dsl, GraphIdentity graph,
                                           GraphQLSourceCapture.CorpusReading reading,
                                           LocalDateTime readAt) {
         var merged = merge(reading.documents());

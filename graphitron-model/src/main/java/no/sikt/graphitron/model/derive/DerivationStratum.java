@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.derive;
 
+import no.sikt.graphitron.model.sink.Progress;
 import graphql.schema.GraphQLSchema;
 import org.jooq.DSLContext;
 import org.jooq.exception.DataAccessException;
@@ -137,12 +138,17 @@ public final class DerivationStratum {
     public static void run(DSLContext dsl, String graphName, GraphQLSchema schema,
                            StageProgress progress) {
         List<Step> steps = steps(schema);
+        Progress.started(dsl, graphName, GATHERER);
         if (analysingCadenceApplies(dsl, steps)) {
             runAnalysing(dsl, graphName, steps, progress);
         } else {
             dsl.transaction(tx -> runInOne(tx.dsl(), graphName, steps, progress));
         }
+        Progress.completed(dsl, graphName, GATHERER);
     }
+
+    /** This gatherer's row in {@code store_graph_progress}. */
+    private static final String GATHERER = "derivation";
 
     /**
      * Whether no table the stratum writes holds a row, which is the store the analysing cadence is

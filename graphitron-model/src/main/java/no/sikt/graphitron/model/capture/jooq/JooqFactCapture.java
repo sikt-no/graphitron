@@ -1,5 +1,7 @@
 package no.sikt.graphitron.model.capture.jooq;
 
+import no.sikt.graphitron.model.sink.Progress;
+import no.sikt.graphitron.model.derive.NameMatchedKeys;
 import no.sikt.graphitron.model.sink.BindBatch;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import org.jooq.DSLContext;
@@ -61,8 +63,25 @@ public final class JooqFactCapture {
     /** The source kind a generated jOOQ package is registered under. */
     private static final String JOOQ_SCHEMA = "JOOQ_SCHEMA";
 
-    /** Makes the {@code sql_} rows of every source {@code jooq} describes be what it now says. */
+    /** This gatherer's row in {@code store_graph_progress}. */
+    private static final String GATHERER = "jooq";
+
+    /**
+     * Makes the {@code sql_} rows of every source {@code jooq} describes be what it now says, then
+     * the catalog's own closure over them, the keys a name alone matches; one transaction, its
+     * progress recorded by {@link Progress}.
+     */
     public static void capture(DSLContext dsl, String graphName, JooqCatalog jooq,
+                               LocalDateTime touchedAt) {
+        Progress.started(dsl, graphName, GATHERER);
+        dsl.transaction(tx -> {
+            gather(tx.dsl(), graphName, jooq, touchedAt);
+            NameMatchedKeys.derive(tx.dsl());
+        });
+        Progress.completed(dsl, graphName, GATHERER);
+    }
+
+    private static void gather(DSLContext dsl, String graphName, JooqCatalog jooq,
                                LocalDateTime touchedAt) {
         if (jooq == null) {
             return;
