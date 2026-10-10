@@ -94,13 +94,11 @@ class RelationRegistrationGateTest {
             "graphitron_pivot_entry", "graphitron_routine_entry", "graphitron_routine_column_mapping_pair_entry",
             "graphitron_multitable_reference_entry",
             "graphitron_undecoded_argument_entry",
-            // The three supertypes ride the arm of the sites that spell them. The spelled reference
-            // and the method reference are written in the same walk as the per-site row they sit
-            // beside, so a coordinate the walk claims contributes to both; the pair relation has no
-            // per-site row left to sit beside, having absorbed the eight, and the method reference
-            // has none at the source-row site for the same reason, both being written in that same
-            // walk regardless.
-            "graphitron_spelled_reference_entry", "graphitron_argmapping_entry",
+            // The two supertypes ride the arm of the sites that spell them. Both are written in the
+            // same walk as the per-site row they sit beside, so a coordinate the walk claims
+            // contributes to both; the method reference has no per-site row at the source-row site,
+            // and is written in that same walk regardless.
+            "graphitron_spelled_reference_entry",
             "graphitron_method_reference_entry",
             // Written beside the field row in the same walk, so the field coordinate's claim
             // covers it exactly as it covers the field's own attributes.

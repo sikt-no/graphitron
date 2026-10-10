@@ -16,12 +16,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * The reference a collapsed subtype gave up, checked where the engine can no longer check it.
  *
- * <p>Two relations in the {@code graphitron_} family hold a fact several kinds of site spell, and
- * both reached that shape by absorbing relations that carried nothing of their own.
- * {@code graphitron_argmapping_entry} absorbed eight, {@code graphitron_method_reference_entry} one. Each
- * absorbed relation had a foreign key into the directive that owned its rows, and no foreign key
- * can span the nine or eleven parents a discriminator column chooses between, so those edges are
- * not enforced by the schema any more. They are still true, because capture writes the shared row
+ * <p>{@code graphitron_method_reference_entry} holds a fact several kinds of site spell, and reached
+ * that shape by absorbing a relation that carried nothing of its own. The absorbed relation had a
+ * foreign key into the directive that owned its rows, and no foreign key can span the eleven parents
+ * a discriminator column chooses between, so that edge is not enforced by the schema any more. They are still true, because capture writes the shared row
  * inside the branch that has just written the owning directive's own row, and this is the test that
  * says so. Losing an enforced edge is the price of the collapse and the price is only worth paying
  * if somebody checks.
@@ -37,11 +35,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SupertypeSiteReferenceTest {
 
     /**
-     * One schema reaching every site both relations admit and that a schema can legally spell. Two
-     * of the eleven method-reference sites are absent by construction rather than by omission: the
-     * argument-site {@code @referenceFor} step has a coordinate the validator rejects, so no
-     * captured store has one, and {@code ENUM} is covered here while its pair counterpart does not
-     * exist, {@code @enum} taking no argMapping site of the pair kind.
+     * One schema reaching every site the relation admits and that a schema can legally spell. One
+     * of the eleven sites is absent by construction rather than by omission: the argument-site
+     * {@code @referenceFor} step has a coordinate the validator rejects, so no captured store has
+     * one.
      */
     private static final String FIXTURE = """
         type Film @table(name: "film") {
@@ -90,56 +87,8 @@ class SupertypeSiteReferenceTest {
         """;
 
     /**
-     * The entry's reach back to its owning directive, which now runs through the coordinate rather
-     * than through columns beside it. The entry keeps one spelling of where it sits and the
-     * coordinate relation decomposes it, so a site reference that used to be three column equalities
-     * is one join and then the parts. An argument-sited directive is matched on the argument the
-     * coordinate carries, not on one the entry repeats, which is the whole point of the change:
-     * there is no second copy left to disagree with the first.
-     */
-    private static final String AT_COORDINATE =
-        "c.graph_name = s.graph_name AND c.coordinate = s.coordinate"
-            + " AND d.graph_name = s.graph_name AND d.type_name = c.type_name"
-            + " AND d.field_name = c.field_name";
-
-    /**
-     * Each site of {@code graphitron_argmapping_entry} against the relation that owns its rows,
-     * as the predicate joining the shared row {@code s} to an owner {@code d}. The two condition
-     * sites share an owner, the owning type's kind being what splits them, so both point at the
-     * one relation; a step site's owner is the application rather than the step, which is the same
-     * choice the source position on these rows makes.
-     */
-    private static final Map<String, String> PAIR_OWNERS = new LinkedHashMap<>(Map.of(
-        "ROUTINE",
-        "graphitron_routine_entry d, graphql_element_field c WHERE " + AT_COORDINATE
-            + " AND d.ordinal = s.ordinal",
-        "SERVICE",
-        "graphitron_service_entry d, graphql_element_field c WHERE " + AT_COORDINATE,
-        "FIELD_CONDITION",
-        "graphitron_field_condition_entry d, graphql_element_field c WHERE " + AT_COORDINATE,
-        "INPUT_FIELD_CONDITION",
-        "graphitron_field_condition_entry d, graphql_element_field c WHERE " + AT_COORDINATE,
-        "ARGUMENT_CONDITION",
-        "graphitron_argument_condition_entry d, graphql_element_field c WHERE " + AT_COORDINATE
-            + " AND d.argument_name = c.argument_name",
-        "FIELD_REFERENCE_STEP",
-        "graphitron_field_reference_step_entry d, graphql_element_field c WHERE " + AT_COORDINATE
-            + " AND d.ordinal = s.ordinal AND d.position = s.step_position",
-        "ARGUMENT_REFERENCE_STEP",
-        "graphitron_argument_reference_step_entry d, graphql_element_field c WHERE " + AT_COORDINATE
-            + " AND d.argument_name = c.argument_name AND d.ordinal = s.ordinal"
-            + " AND d.position = s.step_position",
-        "REFERENCE_FOR_STEP",
-        "graphitron_reference_for_step_entry d, graphql_element_field c WHERE " + AT_COORDINATE
-            + " AND d.ordinal = s.ordinal AND d.position = s.step_position",
-        "ARGUMENT_REFERENCE_FOR_STEP",
-        "graphitron_argument_reference_for_step_entry d, graphql_element_field c WHERE " + AT_COORDINATE
-            + " AND d.argument_name = c.argument_name AND d.ordinal = s.ordinal"
-            + " AND d.position = s.step_position"));
-
-
-    /**
-     * The same, for {@code graphitron_method_reference_entry}. {@code SOURCE_ROW} is absent by design and
+     * Each site of {@code graphitron_method_reference_entry} against the relation that owns its rows,
+     * as the predicate joining the shared row {@code s} to an owner {@code d}. {@code SOURCE_ROW} is absent by design and
      * not by oversight: its subtype is the one that collapsed, so there is no owning relation left
      * to point at and nothing for an orphan scan to check. That site's correctness is the
      * population assertion's alone.
@@ -181,14 +130,6 @@ class SupertypeSiteReferenceTest {
             + " AND d.position = s.step_position"));
 
     @Test
-    @DisplayName("every argMapping pair resolves to the directive application that spelled it")
-    void everyPairReachesItsSite(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, FIXTURE)) {
-            assertNoOrphans(store.dsl(), "graphitron_argmapping_entry", PAIR_OWNERS);
-        }
-    }
-
-    @Test
     @DisplayName("every named method resolves to the directive application that named it")
     void everyMethodReferenceReachesItsSite(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, FIXTURE)) {
@@ -197,18 +138,14 @@ class SupertypeSiteReferenceTest {
     }
 
     /**
-     * The fixture reaches the sites the scans above are written for. Without this the gate could
+     * The fixture reaches the sites the scan above is written for. Without this the gate could
      * be switched off one site at a time by a fixture that stopped producing rows, and an orphan
      * scan finding nothing would report that as success.
      */
     @Test
-    @DisplayName("the fixture populates the sites both scans claim to cover")
+    @DisplayName("the fixture populates the sites the scan claims to cover")
     void theFixtureReachesTheSitesTheScansCover(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, FIXTURE)) {
-            assertThat(sites(store.dsl(), "graphitron_argmapping_entry"))
-                .as("argMapping pair sites this fixture reaches")
-                .contains("SERVICE", "FIELD_CONDITION", "INPUT_FIELD_CONDITION",
-                    "ARGUMENT_CONDITION", "FIELD_REFERENCE_STEP");
             assertThat(sites(store.dsl(), "graphitron_method_reference_entry"))
                 .as("method reference sites this fixture reaches")
                 .contains("SERVICE", "EXTERNAL_FIELD", "SOURCE_ROW", "FIELD_CONDITION",
@@ -217,40 +154,25 @@ class SupertypeSiteReferenceTest {
     }
 
     /**
-     * The two relations spell one site the same way. This is the invariant the method-reference
-     * supertype was shaped around and the one an orphan scan cannot see: those scans join on the
-     * decomposed columns, so a row whose {@code use_site} disagreed with them would resolve to its
-     * owner and still be wrong. What would break is the join
-     * {@code intent_argmapping_bound_parameter_type} now makes, which reaches a pair's method
-     * through {@code (site, use_site)} and nothing else, so a disagreement there is six arms of a
-     * reconstruction silently returning fewer rows than they used to.
-     *
-     * <p>Checked by rebuilding the spelling from the columns beside it rather than by comparing the
-     * two relations to each other, which would pass if both were wrong the same way.
+     * A row's {@code use_site} is the spelling its own decomposed columns imply. The orphan scan
+     * cannot see this: it joins on the decomposed columns, so a row whose {@code use_site} disagreed
+     * with them would resolve to its owner and still be wrong. Checked by rebuilding the spelling
+     * from the columns beside it.
      */
     @Test
-    @DisplayName("use_site is the spelling its own decomposed columns imply, in both relations")
+    @DisplayName("use_site is the spelling its own decomposed columns imply")
     void theUseSiteAgreesWithItsColumns(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, FIXTURE)) {
-            for (String relation : java.util.List.of(
-                    "graphitron_argmapping_entry", "graphitron_method_reference_entry")) {
-                // The entry keeps only the coordinate, so its use-site key is checked against
-                // that spelling instead of against three columns it no longer repeats. The two
-                // grammars differ by one character, the specification writing an argument with a
-                // trailing colon where this key does not, and that is the whole of the conversion.
-                String site = relation.equals("graphitron_argmapping_entry")
-                    ? "REPLACE(coordinate, ':)', ')')"
-                    : "type_name || COALESCE('.' || field_name, '')"
-                        + " || COALESCE('(' || argument_name || ')', '')";
-                var wrong = store.dsl().fetch(
-                    "SELECT site, use_site FROM " + relation
-                        + " WHERE use_site <> " + site
-                        + "   || COALESCE('#' || CAST(ordinal AS VARCHAR), '')"
-                        + "   || COALESCE('[' || CAST(step_position AS VARCHAR) || ']', '')");
-                assertThat(wrong)
-                    .as("%s rows whose use_site disagrees with its own columns", relation)
-                    .isEmpty();
-            }
+            var wrong = store.dsl().fetch(
+                "SELECT site, use_site FROM graphitron_method_reference_entry"
+                    + " WHERE use_site <> type_name || COALESCE('.' || field_name, '')"
+                    + "   || COALESCE('(' || argument_name || ')', '')"
+                    + "   || COALESCE('#' || CAST(ordinal AS VARCHAR), '')"
+                    + "   || COALESCE('[' || CAST(step_position AS VARCHAR) || ']', '')");
+            assertThat(wrong)
+                .as("graphitron_method_reference_entry rows whose use_site disagrees with its own"
+                    + " columns")
+                .isEmpty();
         }
     }
 

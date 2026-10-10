@@ -261,7 +261,7 @@ a derivation over either corpus alone, and `graphitron_` already does this again
       as written. `columnMapping` stays `@routine`'s own. The vocabulary still calls argMapping
       inert on `@externalField`, which its reading and the generator's rejection follow until
       changed.
-    * **The argMapping's readers are answered from the pair relation** `open`. Measured first: on
+    * **The argMapping's readers are answered from the pair relation** `done`. Measured first: on
       sakila and sis the family is cheap and the pair relation holds the rows the old entry holds,
       in `roadmap/audits/2026-10-09-argmapping-and-derivation-timings.md`; each step is timed on
       the sis store again.
@@ -277,7 +277,7 @@ a derivation over either corpus alone, and `graphitron_` already does this again
         graphitron-ast anchor writes it from `graphitron_argmapping_site_rule`, marked and swept.
         `graphql_directive_application` and its argument relation are declared to `graphql-ast`
         now, their writer.
-      * **Each reader is answered from them** `open`. The readers downstream of the old entry are
+      * **Each reader is answered from them** `done`. The readers downstream of the old entry are
         joined on its site literal, so the chain is rekeyed to the written mapping rather than
         flipped one view at a time, and a seeded test converts with the reader it pins. Each step
         is timed on the sis and sakila stores before and after.
@@ -299,7 +299,6 @@ a derivation over either corpus alone, and `graphitron_` already does this again
           `resolved-node-key-projection` and `argmapping-projection-defect`, and
           `NodeIdDecodeDefectTest`'s mapped case is `node-id-decode-mapped-parameter`; the oracle
           is `ArgmappingProjectionDefectsTest` and `ArgmappingProjectionRejectionPipelineTest`.
-          `ArgmappingEntryTest` goes with the old entry.
         * **`graphitron_type_backing_rule` reads the pair relation** `done`. The parameter branch
           redirects a `@service` parameter through the pair's `root_name`, keyed to the reference the
           mapping is a field of through `graphitron_argmapping_site`, `@service` only; a `@condition`
@@ -313,8 +312,11 @@ a derivation over either corpus alone, and `graphitron_` already does this again
           a field of `node-id-decode-mapped-parameter`. Open on the slot: a mapped `@service`
           naming two overloads reaches it as one untyped row where it drew one row per overload,
           which its comment still describes.
-      * **The old entry goes** `blocked`, on the readers. `graphitron_argmapping_entry` and the
-        walk's writer for it.
+      * **The old entry goes** `done`. `graphitron_argmapping_entry`, its indexes and the walk's
+        writer for it. The walk still reads each mapping for its quarantine alone, a mapping the
+        grammar rejects being reported from there. `ArgmappingEntryTest`, `argmapping-entry`, the
+        seeders and the pair half of `SupertypeSiteReferenceTest` go with it, the pair relation's
+        foreign key to the written value holding what that orphan scan held.
     * **The resolution** `open`, reopened on a legal schema. `graphitron_code_reference`: the one method a written reference
       names, keyed to it and to `code_method`, written by the graphitron-ast anchor; no match is no
       row. `graphitron_code_reference_site` states once what both it and the defects read: the
@@ -1123,7 +1125,10 @@ dissolved rather than replaced: `intent_field_demand_rule`, `intent_field_exempt
 `intent_resolved_type_demand`. The deprecated link and federation key decode, its readers having
 moved to the `ast_` entries and the directive anchor: `graphitron_link_entry`,
 `graphitron_federation_key_entry`, `graphitron_federation_key_field_entry`,
-`graphitron_federation_key_field_segment_entry` and `intent_federation_key`. The type-backing
+`graphitron_federation_key_field_segment_entry` and `intent_federation_key`. The walk's argMapping
+decode, its readers having moved to `graphitron_ast_argmapping_pair_entry` and
+`graphitron_argmapping_site`: `graphitron_argmapping_entry`, with the indexes
+`graphitron_argmapping_entry_site_ix` and `graphitron_argmapping_entry_use_ix`. The type-backing
 cluster, into `graphitron_type_backing`: `intent_type_backing_seed`, `intent_type_backing_class`,
 `intent_type_backing` and `intent_field_accessor_hop`, with the grain `type-backing-class` and the
 value `BACKING_CLOSURE` (now `PRODUCER` and `ACCESSOR`).
@@ -1142,7 +1147,10 @@ not go stale. Two index names followed: `graphitron_spelled_reference_name_ix`,
 `written_path`); `graphitron_argmapping_candidate.element_name` (now `name`), `type_name`,
 `field_name`; `intent_resolved_node_key_projection.trailing_segment_name` (now `trailing_name`);
 `code_construction.type_name` and `code_write_slot.type_name` (now `class_name`); the index
-`code_type_slot_name_ix` (now `code_read_slot_name_ix`).
+`code_type_slot_name_ix` (now `code_read_slot_name_ix`). `site` and `use_site` on
+`graphitron_argmapping_match`, `intent_argmapping_bound_parameter_type`,
+`intent_argmapping_key_column_candidate`, `intent_resolved_node_key_projection` and
+`intent_argmapping_projection_defect`, the mapping string's key and the site's parts in their place.
 Values `AUTHORED_EXPRESSION` and `TRAILING_SEGMENTS_BEYOND_ONE`.
 `graphitron_field_chain_link_resolution.reach` and its values `TAIL` and `HEAD` as a stored column
 (now the payload flags `reached_by_tail` and `reached_by_head`), and `reach` in the

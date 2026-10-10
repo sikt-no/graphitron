@@ -163,7 +163,7 @@ class RoutineSpentInputShadowTest {
     private static Map<String, String> storeLandings(DSLContext dsl, String graphName) {
         var m = GRAPHITRON_ARGMAPPING_MATCH;
         var out = new LinkedHashMap<String, String>();
-        dsl.select(m.COORDINATE, m.WRITTEN_PATH, m.BOUND_PATH)
+        dsl.select(m.COORDINATE, m.BOUND_TO, m.BOUND_PATH)
             .from(m)
             .where(m.GRAPH_NAME.eq(graphName)).and(m.DIRECTIVE_NAME.eq("routine"))
             .forEach(r -> out.put(r.value1() + "|" + r.value2(), r.value3()));

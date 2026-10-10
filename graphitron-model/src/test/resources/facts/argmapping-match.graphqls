@@ -89,7 +89,7 @@ extend type Query {
 }
 
 extend schema @expectEquals(relation: "graphitron_argmapping_match", rows: """
-  coordinate,              ordinal, position, written_path,                          bound_path,               bound_kind,  bound_type_name, bound_field_name, bound_argument_name, node_id_declared, node_type_ref
+  coordinate,              ordinal, position, bound_to,                              bound_path,               bound_kind,  bound_type_name, bound_field_name, bound_argument_name, node_id_declared, node_type_ref
   Mutation.bare,           0,       0,        inventoryId,                           inventoryId,              ARGUMENT,    Mutation,        bare,             inventoryId,         TRUE,             Inventory
   Mutation.untyped,        0,       0,        inventoryId,                           inventoryId,              ARGUMENT,    Mutation,        untyped,          inventoryId,         TRUE,
   Mutation.dotted,         0,       0,        input.inventoryId.inventory_id,        input.inventoryId,        INPUT_FIELD, RentFilmInput,   inventoryId,      ,                    TRUE,             Inventory

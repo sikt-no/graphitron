@@ -40,7 +40,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_BINDING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG_ENTRY;
@@ -232,14 +231,8 @@ public final class GraphitronFactCapture {
                     row.setName(name);
                     sink.add(row);
                 }
-                int pair = 0;
-                for (ParsedEntry entry : pairs(reference.argMapping(), directive, "condition")) {
-                    int at = pair++;
-                    String path = String.join(".", entry.segments());
-                    argMappingPair(inputField ? "INPUT_FIELD_CONDITION" : "FIELD_CONDITION",
-                        useSite(type, field, null, null, null), type, field, null, null, null,
-                        at, entry.key(), path, directive);
-                }
+                // Read for its quarantine alone; the pairs are the transcription's.
+                pairs(reference.argMapping(), directive, "condition");
             }
             case "reference" -> {
                 if (!sink.claim(GRAPHITRON_FIELD_REFERENCE_ENTRY, type, field, ordinal)) return;
@@ -269,14 +262,8 @@ public final class GraphitronFactCapture {
                     methodReference("FIELD_REFERENCE_STEP", useSite(type, field, null, ordinal, position), type, field, null,
                         ordinal, position,
                         step.className(), step.method(), directive);
-                    int pair = 0;
-                    for (ParsedEntry entry : pairs(step.argMapping(), directive, "path")) {
-                        int at = pair++;
-                        String path = String.join(".", entry.segments());
-                        argMappingPair("FIELD_REFERENCE_STEP",
-                            useSite(type, field, null, ordinal, position), type, field, null,
-                            ordinal, position, at, entry.key(), path, directive);
-                    }
+                    // Read for its quarantine alone; the pairs are the transcription's.
+                    pairs(step.argMapping(), directive, "path");
                     position++;
                 }
             }
@@ -311,14 +298,8 @@ public final class GraphitronFactCapture {
                     methodReference("REFERENCE_FOR_STEP", useSite(type, field, null, ordinal, position), type, field, null,
                         ordinal, position,
                         step.className(), step.method(), directive);
-                    int pair = 0;
-                    for (ParsedEntry entry : pairs(step.argMapping(), directive, "path")) {
-                        int at = pair++;
-                        String path = String.join(".", entry.segments());
-                        argMappingPair("REFERENCE_FOR_STEP",
-                            useSite(type, field, null, ordinal, position), type, field, null,
-                            ordinal, position, at, entry.key(), path, directive);
-                    }
+                    // Read for its quarantine alone; the pairs are the transcription's.
+                    pairs(step.argMapping(), directive, "path");
                     position++;
                 }
             }
@@ -332,34 +313,11 @@ public final class GraphitronFactCapture {
                 methodReference("SERVICE", useSite(type, field, null, null, null),
                     type, field, null, null, null,
                     reference.className(), reference.method(), directive);
-                // The @service argMapping is the sigil-admitting site. A sigil entry is an entry
-                // like any other, a parameter bound to a right-hand side at a position, so it is a
-                // row of the one entry relation rather than of a relation beside it; what the lift
-                // exists for is the shared selection parser, which lexes a $-prefixed value and
-                // rejects it. Positions come from the scan because the lift takes entries out of
-                // the middle, so the residual's own numbering is not the author's.
+                // Read for its quarantine alone; the pairs are the transcription's. A sigil is lifted
+                // first, the shared selection parser rejecting a $-prefixed value.
                 var scanned = ArgMappingSigil.scan(reference.argMapping(), ArgMappingSigil.Site.SERVICE);
-                String residual = reference.argMapping();
-                var sigilPositions = new java.util.LinkedHashMap<String, Integer>();
-                if (scanned instanceof ArgMappingSigil.ScanResult.Ok scanOk) {
-                    residual = scanOk.residual();
-                    sigilPositions.putAll(scanOk.sigilPositions());
-                    for (var sigilEntry : scanOk.sigilBindings().entrySet()) {
-                        int at = scanOk.sigilPositions().get(sigilEntry.getKey());
-                        argMappingPair("SERVICE", useSite(type, field, null, null, null),
-                            type, field, null, null, null, at,
-                            sigilEntry.getKey(), sigilEntry.getValue(), directive);
-                    }
-                }
-                var taken = java.util.Set.copyOf(sigilPositions.values());
-                int pair = 0;
-                for (ParsedEntry entry : pairs(residual, directive, "service")) {
-                    while (taken.contains(pair)) pair++;
-                    int at = pair++;
-                    String path = String.join(".", entry.segments());
-                    argMappingPair("SERVICE", useSite(type, field, null, null, null),
-                        type, field, null, null, null, at, entry.key(), path, directive);
-                }
+                pairs(scanned instanceof ArgMappingSigil.ScanResult.Ok scanOk
+                    ? scanOk.residual() : reference.argMapping(), directive, "service");
             }
             case "externalField" -> {
                 // The coordinate relation is the anchor's, as @service's is; the claim dedupes
@@ -405,25 +363,17 @@ public final class GraphitronFactCapture {
             case "routine" -> {
                 // Both relations are derived now, by GraphitronAnchor over the entry stratum: the
                 // application at its coordinate, and the columnMapping pairs the entry stratum
-                // decodes at the position the application was written at. The claim stays, being
-                // what decides which application the argMapping pairs below are attributed to where
-                // a field carries more than one, and the spelling stays for @table's reason, its
-                // relation being keyed by the value across the sites that write one.
+                // decodes at the position the application was written at. The claim stays, reading
+                // each application once, and the spelling stays for @table's reason, its relation
+                // being keyed by the value across the sites that write one.
                 if (!sink.claim(GRAPHITRON_ROUTINE_ENTRY, type, field, ordinal)) return;
                 String name = string(directive, "name");
                 if (name == null) return;
                 spelling(name);
-                int pair = 0;
-                for (ParsedEntry entry : pairs(string(directive, "argMapping"), directive,
-                        "argMapping")) {
-                    int at = pair++;
-                    String path = String.join(".", entry.segments());
-                    argMappingPair("ROUTINE", useSite(type, field, null, ordinal, null),
-                        type, field, null, ordinal, null, at, entry.key(), path, directive);
-                }
-                // Read for its quarantine alone: a columnMapping the grammar rejects is reported
-                // from here, the entry stratum stating what a definition admits and nothing about
-                // what it refused.
+                // Both mappings are read for their quarantine alone: one the grammar rejects is
+                // reported from here, the entry stratum stating what a definition admits and
+                // nothing about what it refused.
+                pairs(string(directive, "argMapping"), directive, "argMapping");
                 pairs(string(directive, "columnMapping"), directive, "columnMapping");
             }
             default -> { /* no decoded relation */ }
@@ -478,13 +428,8 @@ public final class GraphitronFactCapture {
                     row.setName(name);
                     sink.add(row);
                 }
-                int pair = 0;
-                for (ParsedEntry entry : pairs(reference.argMapping(), directive, "condition")) {
-                    int at = pair++;
-                    String path = String.join(".", entry.segments());
-                    argMappingPair("ARGUMENT_CONDITION", useSite(type, field, argument, null, null),
-                        type, field, argument, null, null, at, entry.key(), path, directive);
-                }
+                // Read for its quarantine alone; the pairs are the transcription's.
+                pairs(reference.argMapping(), directive, "condition");
             }
             case "reference" -> {
                 if (!sink.claim(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY, type, field, argument, ordinal)) return;
@@ -516,14 +461,8 @@ public final class GraphitronFactCapture {
                     methodReference("ARGUMENT_REFERENCE_STEP", useSite(type, field, argument, ordinal, position), type, field, argument,
                         ordinal, position,
                         step.className(), step.method(), directive);
-                    int pair = 0;
-                    for (ParsedEntry entry : pairs(step.argMapping(), directive, "path")) {
-                        int at = pair++;
-                        String path = String.join(".", entry.segments());
-                        argMappingPair("ARGUMENT_REFERENCE_STEP",
-                            useSite(type, field, argument, ordinal, position), type, field, argument,
-                            ordinal, position, at, entry.key(), path, directive);
-                    }
+                    // Read for its quarantine alone; the pairs are the transcription's.
+                    pairs(step.argMapping(), directive, "path");
                     position++;
                 }
             }
@@ -560,14 +499,8 @@ public final class GraphitronFactCapture {
                     methodReference("ARGUMENT_REFERENCE_FOR_STEP", useSite(type, field, argument, ordinal, position), type, field, argument,
                         ordinal, position,
                         step.className(), step.method(), directive);
-                    int pair = 0;
-                    for (ParsedEntry entry : pairs(step.argMapping(), directive, "path")) {
-                        int at = pair++;
-                        String path = String.join(".", entry.segments());
-                        argMappingPair("ARGUMENT_REFERENCE_FOR_STEP",
-                            useSite(type, field, argument, ordinal, position), type, field, argument,
-                            ordinal, position, at, entry.key(), path, directive);
-                    }
+                    // Read for its quarantine alone; the pairs are the transcription's.
+                    pairs(step.argMapping(), directive, "path");
                     position++;
                 }
             }
@@ -849,53 +782,13 @@ public final class GraphitronFactCapture {
     }
 
     /**
-     * One argMapping pair, written to the only relation that holds one. Every site states a pair
-     * identically, so there is nothing for a per-site relation to carry and none exists; the site
-     * is a column here instead. That leaves the reference from a pair back to the directive that
-     * spelled it unenforceable, a foreign key not being able to span the nine parents the
-     * discriminator chooses between, so this method is where the reference is kept true: the
-     * caller is inside the branch that just wrote the owning directive's own row.
-     *
-     * @param site the discriminator, one of the nine {@code GRAPHITRON_ARGMAPPING_ENTRY} admits
-     * @param useSite the site spelled in its own grammar, total by construction and the key
-     */
-    private void argMappingPair(String site, String useSite, String type, String field,
-                                String argument, Integer ordinal, Integer stepPosition,
-                                int position, String paramName, String argumentPath,
-                                Directive directive) {
-        var row = sink.dsl().newRecord(GRAPHITRON_ARGMAPPING_ENTRY);
-        row.setSite(site);
-        row.setUseSite(useSite);
-        row.setOrdinal(ordinal);
-        row.setStepPosition(stepPosition);
-        row.setPosition(position);
-        row.setParamName(paramName);
-        row.setWrittenPath(argumentPath);
-        // Where the directive sits, and the only spelling of that this relation keeps: a reader
-        // wanting the type, the field or the argument joins the coordinate relation, which is the
-        // same trade the candidate relation beside it makes. Never a container and never the
-        // path's own head, which is a spelling and not a place. Decided by whether the caller
-        // named an argument rather than by which site it is, three of the nine sitting on one and
-        // six on a field; asking the site instead is a second copy of that fact, and the first
-        // version of this writer got it wrong for two of the three. The split columns beside it
-        // are the engine's, computed from the written path, so nothing here decomposes anything.
-        row.setCoordinate(argument == null
-            ? SchemaCoordinateSyntax.ofField(type, field)
-            : SchemaCoordinateSyntax.ofArgument(type, field, argument));
-        position(directive, row::setSourceName, row::setSourceLine, row::setSourceColumn);
-        sink.add(row);
-    }
-
-    /**
      * One Java method a directive named, written to the only relation that holds one. The site is a
      * column rather than a relation, so what three intent views were assembling by hand, a union
      * over ten tables projecting the class and the method out of each, is a scan here.
      *
-     * <p>Keyed on the same site spelling {@link #argMappingPair} writes, which is what makes a
-     * pair and the method it binds into joinable on a key both already carry. A site whose class or
-     * method the author left unwritten draws no row: the columns are not nullable, and the readers
-     * this replaces all filtered those out before doing anything else, so an absent row states what
-     * their {@code IS NOT NULL} did.
+     * <p>A site whose class or method the author left unwritten draws no row: the columns are not
+     * nullable, and the readers this replaces all filtered those out before doing anything else, so
+     * an absent row states what their {@code IS NOT NULL} did.
      *
      * @param site the discriminator, one of the eleven {@code GRAPHITRON_METHOD_REFERENCE_ENTRY} admits
      */
@@ -995,7 +888,6 @@ public final class GraphitronFactCapture {
      * corpus never declared the directive.
      */
     private static final List<Table<?>> DECODED = List.of(
-        GRAPHITRON_ARGMAPPING_ENTRY,
         GRAPHITRON_ARGUMENT_BINDING_ENTRY,
         GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG_ENTRY,
         GRAPHITRON_ARGUMENT_CONDITION_ENTRY,

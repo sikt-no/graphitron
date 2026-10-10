@@ -106,7 +106,7 @@ class FactSchemaGateTest {
     /**
      * The slice the stage gate needs, which is a different slice: a table spelling for
      * {@code graphitron_spelled_table} to resolve against the catalog, a {@code @routine} application
-     * carrying an {@code argMapping} so {@code graphitron_argmapping_entry} has an arm that fires, and a
+     * carrying an {@code argMapping} so {@code graphitron_argmapping_site} has a row, and a
      * {@code @nodeId} argument whose decode actually walks a foreign key so the two decode targets
      * are non-empty. Separate from {@code FIXTURE} because the structural gates above want breadth
      * of declaration sites, and this one wants every stage-written table to be non-empty.
@@ -958,7 +958,7 @@ class FactSchemaGateTest {
      * A capture that populates the stage-written tables, which is a property of the fixture SDL and
      * the fixture catalog together. The catalog
      * is what {@code graphitron_spelled_table} resolves its table spellings against; the
-     * {@code @routine} application is what gives {@code graphitron_argmapping_entry} an arm that fires;
+     * {@code @routine} application is what gives {@code graphitron_argmapping_site} a row;
      * the {@code @node} type with an {@code @nodeId} argument naming it is what puts a row in
      * {@code graphitron_node_id_instruction}; the {@code updatedSince} argument, whose
      * {@code @field(name:)} spells a column of the table its field's return type binds, is what puts
