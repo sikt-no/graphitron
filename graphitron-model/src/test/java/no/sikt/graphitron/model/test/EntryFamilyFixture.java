@@ -58,9 +58,10 @@ import java.util.Locale;
  * element writing a row into three relations at one position is what the position column is for,
  * and a fixture whose elements each stated one thing would never exercise it.
  *
- * <p>One application is deliberately malformed. {@code Mutation.brokenMapping} carries an
- * {@code argMapping} the grammar rejects, because quarantining a value it cannot decode is one of
- * the things the decode does: a fixture that only ever hands it decodable values leaves
+ * <p>Two applications are deliberately malformed. {@code Mutation.brokenMapping} carries an
+ * {@code argMapping} the grammar rejects, which writes no pair. {@code Mutation.brokenColumnMapping}
+ * carries a {@code columnMapping} the grammar rejects, because quarantining a value it cannot decode
+ * is one of the things the decode does: a fixture that only ever hands it decodable values leaves
  * {@code graphitron_undecoded_argument_entry} empty and says nothing about the path that writes it.
  */
 public final class EntryFamilyFixture {
@@ -246,6 +247,8 @@ public final class EntryFamilyFixture {
             )
           brokenMapping(payload: ImportInput!): Boolean
             @service(service: {className: "no.example.FilmService", method: "broken", argMapping: "this is ] not [ a mapping"})
+          brokenColumnMapping: Boolean
+            @routine(name: "broken", columnMapping: "this is ] not [ a mapping")
         }
 
         input DeleteFilmInput {

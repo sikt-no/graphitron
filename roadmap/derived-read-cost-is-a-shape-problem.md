@@ -332,11 +332,14 @@ a derivation over either corpus alone, and `graphitron_` already does this again
           a field of `node-id-decode-mapped-parameter`. Open on the slot: a mapped `@service`
           naming two overloads reaches it as one untyped row where it drew one row per overload,
           which its comment still describes.
-      * **The old entry goes** `done`. `graphitron_argmapping_entry`, its indexes and the walk's
-        writer for it. The walk still reads each mapping for its quarantine alone, a mapping the
-        grammar rejects being reported from there. `ArgmappingEntryTest`, `argmapping-entry`, the
+      * **The old entry goes** `done`. `graphitron_argmapping_entry`, its indexes and its writer in
+        the registry decode, `GraphitronFactCapture`. `ArgmappingEntryTest`, `argmapping-entry`, the
         seeders and the pair half of `SupertypeSiteReferenceTest` go with it, the pair relation's
         foreign key to the written value holding what that orphan scan held.
+      * **The registry decode reads no argMapping** `done`. Its quarantine rows for a mapping the
+        grammar rejects had no reader, the build reporting one from `ArgBindingMap` and the editor
+        from its own parse, so the reads went; `graphitron_undecoded_argument_entry` keeps the
+        `columnMapping` it quarantines.
     * **The resolution** `open`, reopened on a legal schema. `graphitron_code_reference`: the one method a written reference
       names, keyed to it and to `code_method`, written by the graphitron-ast anchor; no match is no
       row. `graphitron_code_reference_site` states once what both it and the defects read: the
@@ -594,6 +597,12 @@ types and its formatter are already model-side, so what stands between here and 
   arms land ahead of the flip. The fact census lists the rules per fact. The eleven codes moved so
   far draw nothing on the sakila example; evidence in
   `roadmap/audits/2026-10-08-entry-defect-arms-on-sakila.md`.
+  * **A malformed argMapping is one store verdict** `open`. Three parsers judge one grammar:
+    `GraphQLSelectionParser` behind `ArgBindingMap`'s rejection, `ArgMappingSigil` around it at
+    capture, and the language server's own `ArgMapping` behind `judgeArgMapping`. The parse's
+    outcome is captured where the pair relation is, a parse being Java's and no view's to redo, and
+    one branch of the defect rule reports a mapping that does not parse and one a parameter named
+    twice, at the mapping string; the build's rejection and the editor's checks then read it.
   * **The `operation` rules** `blocked`, on the producers and their modifiers. 170 sites:
     `serviceCall` 52, DML 47, `condition` 28, lookup 16, `paginate` 12, `orderBy` 10, `select` 5. The
     verbs' rules move onto the producer hierarchy and the rest onto the modifiers keyed to it, the
@@ -1451,8 +1460,8 @@ moved to the `ast_` entries and the directive anchor: `graphitron_link_entry`,
 `graphitron_federation_key_entry`, `graphitron_federation_key_field_entry`,
 `graphitron_federation_key_field_segment_entry` and `intent_federation_key`. The record of the
 link the composition synthesised, its readers having moved to `graphitron_federation_link`:
-`graphql_assembly_synthesised_link` and its grain `graph-synthesised-link`. The walk's argMapping
-decode, its readers having moved to `graphitron_ast_argmapping_pair_entry` and
+`graphql_assembly_synthesised_link` and its grain `graph-synthesised-link`. The registry decode's
+argMapping relation, its readers having moved to `graphitron_ast_argmapping_pair_entry` and
 `graphitron_argmapping_site`: `graphitron_argmapping_entry`, with the indexes
 `graphitron_argmapping_entry_site_ix` and `graphitron_argmapping_entry_use_ix`. The type-backing
 cluster, into `graphitron_type_backing`: `intent_type_backing_seed`, `intent_type_backing_class`,

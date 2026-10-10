@@ -25,7 +25,6 @@ import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.TableTypes;
 import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import no.sikt.graphitron.model.schema.SiteRef;
-import no.sikt.graphitron.model.grammar.ArgMappingSigil;
 import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
 import no.sikt.graphitron.model.selection.GraphQLSelectionParseException;
 import no.sikt.graphitron.model.selection.GraphQLSelectionParser;
@@ -231,8 +230,6 @@ public final class GraphitronFactCapture {
                     row.setName(name);
                     sink.add(row);
                 }
-                // Read for its quarantine alone; the pairs are the transcription's.
-                pairs(reference.argMapping(), directive, "condition");
             }
             case "reference" -> {
                 if (!sink.claim(GRAPHITRON_FIELD_REFERENCE_ENTRY, type, field, ordinal)) return;
@@ -262,8 +259,6 @@ public final class GraphitronFactCapture {
                     methodReference("FIELD_REFERENCE_STEP", useSite(type, field, null, ordinal, position), type, field, null,
                         ordinal, position,
                         step.className(), step.method(), directive);
-                    // Read for its quarantine alone; the pairs are the transcription's.
-                    pairs(step.argMapping(), directive, "path");
                     position++;
                 }
             }
@@ -298,8 +293,6 @@ public final class GraphitronFactCapture {
                     methodReference("REFERENCE_FOR_STEP", useSite(type, field, null, ordinal, position), type, field, null,
                         ordinal, position,
                         step.className(), step.method(), directive);
-                    // Read for its quarantine alone; the pairs are the transcription's.
-                    pairs(step.argMapping(), directive, "path");
                     position++;
                 }
             }
@@ -313,11 +306,6 @@ public final class GraphitronFactCapture {
                 methodReference("SERVICE", useSite(type, field, null, null, null),
                     type, field, null, null, null,
                     reference.className(), reference.method(), directive);
-                // Read for its quarantine alone; the pairs are the transcription's. A sigil is lifted
-                // first, the shared selection parser rejecting a $-prefixed value.
-                var scanned = ArgMappingSigil.scan(reference.argMapping(), ArgMappingSigil.Site.SERVICE);
-                pairs(scanned instanceof ArgMappingSigil.ScanResult.Ok scanOk
-                    ? scanOk.residual() : reference.argMapping(), directive, "service");
             }
             case "externalField" -> {
                 // The coordinate relation is the anchor's, as @service's is; the claim dedupes
@@ -370,10 +358,9 @@ public final class GraphitronFactCapture {
                 String name = string(directive, "name");
                 if (name == null) return;
                 spelling(name);
-                // Both mappings are read for their quarantine alone: one the grammar rejects is
-                // reported from here, the entry stratum stating what a definition admits and
-                // nothing about what it refused.
-                pairs(string(directive, "argMapping"), directive, "argMapping");
+                // Read for its quarantine alone: a columnMapping the grammar rejects is reported
+                // from here, the entry stratum stating what a definition admits and nothing about
+                // what it refused.
                 pairs(string(directive, "columnMapping"), directive, "columnMapping");
             }
             default -> { /* no decoded relation */ }
@@ -428,8 +415,6 @@ public final class GraphitronFactCapture {
                     row.setName(name);
                     sink.add(row);
                 }
-                // Read for its quarantine alone; the pairs are the transcription's.
-                pairs(reference.argMapping(), directive, "condition");
             }
             case "reference" -> {
                 if (!sink.claim(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY, type, field, argument, ordinal)) return;
@@ -461,8 +446,6 @@ public final class GraphitronFactCapture {
                     methodReference("ARGUMENT_REFERENCE_STEP", useSite(type, field, argument, ordinal, position), type, field, argument,
                         ordinal, position,
                         step.className(), step.method(), directive);
-                    // Read for its quarantine alone; the pairs are the transcription's.
-                    pairs(step.argMapping(), directive, "path");
                     position++;
                 }
             }
@@ -499,8 +482,6 @@ public final class GraphitronFactCapture {
                     methodReference("ARGUMENT_REFERENCE_FOR_STEP", useSite(type, field, argument, ordinal, position), type, field, argument,
                         ordinal, position,
                         step.className(), step.method(), directive);
-                    // Read for its quarantine alone; the pairs are the transcription's.
-                    pairs(step.argMapping(), directive, "path");
                     position++;
                 }
             }
@@ -599,9 +580,8 @@ public final class GraphitronFactCapture {
     }
 
     /**
-     * Decodes an {@code argMapping}-shaped string through the one shared pair decoder. Position
-     * keys deliberately preserve an author's duplicate parameter, so the duplicate detection can
-     * see it; a value the grammar rejects quarantines whole and yields no pairs.
+     * Decodes a {@code columnMapping} string through the one shared pair decoder; a value the
+     * grammar rejects quarantines whole and yields no pairs.
      */
     private List<ParsedEntry> pairs(String raw, Directive directive, String argumentName) {
         if (raw == null || raw.isBlank()) {
