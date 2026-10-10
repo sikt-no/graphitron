@@ -54,7 +54,7 @@ public final class InputTypeGenerator {
      * rows; this method only renders content.
      *
      * <p>Rendered from {@code assembled}'s form of the type, so a field carries what the
-     * post-synthesis schema gives it, a configured {@code @tag} among them.
+     * post-synthesis schema gives it, a configured {@code @tag} or note among them.
      */
     public static TypeSpec generateFor(GraphitronType.InputType it, GraphQLSchema assembled) {
         return buildInputTypeSpec(

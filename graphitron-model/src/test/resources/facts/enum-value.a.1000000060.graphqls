@@ -1,0 +1,17 @@
+# The second reading drops a value. The element sweep takes it, and its part row with it.
+
+type Query { rated: Rating }
+
+enum Rating {
+  G
+}
+
+extend schema @assertContains(relation: "graphitron_enum_value", rows: """
+  type_name, value_name, coordinate, ordinal, description
+  Rating,    G,          Rating.G,   0,
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_enum_value", rows: """
+  coordinate
+  Rating.PG
+  """)

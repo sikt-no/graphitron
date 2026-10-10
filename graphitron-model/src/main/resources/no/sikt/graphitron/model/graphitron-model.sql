@@ -4520,10 +4520,10 @@ CREATE TABLE graphitron_element (
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   CHECK (element_kind IN ('NAMED_TYPE', 'FIELD', 'INPUT_FIELD', 'ENUM_VALUE', 'FIELD_ARGUMENT'))
 );
-COMMENT ON TABLE graphitron_element IS 'A schema element the generator emits exists in this graph, whether an author declared it or macro expansion minted it: the supertype of the three element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it. For example a QueryFilmsConnection no author wrote is the row QueryFilmsConnection here and no row at all in graphql_element, and the field carrying the macro is one row in each.';
+COMMENT ON TABLE graphitron_element IS 'A schema element the generator emits exists in this graph, whether an author declared it or macro expansion minted it: the supertype of the four element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it. For example a QueryFilmsConnection no author wrote is the row QueryFilmsConnection here and no row at all in graphql_element, and the field carrying the macro is one row in each.';
 COMMENT ON COLUMN graphitron_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_element.coordinate IS 'the coordinate itself, in the specification''s own grammar and spelled exactly as graphql_element spells it: Type for a named type, Type.field for a field or an input field of one, and Type.field(argument:) for an argument of a field. Total by construction, which is what lets one column stand for a coordinate of any kind where the decomposed keys beside it cannot';
-COMMENT ON COLUMN graphitron_element.element_kind IS 'which kind of schema element this row is, in the specification''s own vocabulary, and so which relation beside this one a reader joins to get the parts, FIELD and INPUT_FIELD sharing one. Five of the specification''s seven kinds, the two directive forms being the ones left out; an enum value has no part relation, nothing patching one, and is here so a directive application can be anchored at it';
+COMMENT ON COLUMN graphitron_element.element_kind IS 'which kind of schema element this row is, in the specification''s own vocabulary, and so which relation beside this one a reader joins to get the parts, FIELD and INPUT_FIELD sharing one. Five of the specification''s seven kinds, the two directive forms being the ones left out';
 COMMENT ON COLUMN graphitron_element.touched_at IS 'the reading that last wrote this row, which is what its sweep tells readings apart by: a row this reading did not rewrite is one the corpus stopped stating and goes. The other half of the lifecycle the walk''s clear used to stand in for, the cascade above being the first';
 
 CREATE TABLE graphitron_type (
@@ -4541,7 +4541,7 @@ COMMENT ON COLUMN graphitron_type.graph_name IS 'the owning graph''s partition, 
 COMMENT ON COLUMN graphitron_type.type_name IS 'the type''s name; with the graph, the grain, and one row per name however many declaration sites or minting sites contributed to it';
 COMMENT ON COLUMN graphitron_type.coordinate IS 'this row as graphitron_element spells it, which for a type is the type name beside it; the join down from the supertype, so a reader holding a coordinate reaches the parts here rather than splitting the spelling';
 COMMENT ON COLUMN graphitron_type.kind IS 'the type''s kind in graphql_type''s vocabulary, carried across rather than restated so a reader joins one column whichever arm supplied its row';
-COMMENT ON COLUMN graphitron_type.description IS 'the docstring, authored on an authored type and written by the macro on a minted one; display material, never a dimension';
+COMMENT ON COLUMN graphitron_type.description IS 'the docstring the generator emits: authored on an authored type, with its file''s configured note appended, which mints it, and written by the macro on a minted one; display material, never a dimension';
 
 CREATE TABLE graphitron_field (
   graph_name        VARCHAR NOT NULL,
@@ -4576,7 +4576,29 @@ COMMENT ON COLUMN graphitron_field.non_null IS 'whether the outermost wrapper is
 COMMENT ON COLUMN graphitron_field.is_list IS 'whether the expression is a list';
 COMMENT ON COLUMN graphitron_field.item_non_null IS 'whether a list''s item is non-null; NULL where the expression is not a list, which the CHECK holds';
 COMMENT ON COLUMN graphitron_field.default_value_sdl IS 'the default literal where the coordinate is an input field with one; display material, never a dimension';
-COMMENT ON COLUMN graphitron_field.description IS 'the docstring, authored or macro-written; display material, never a dimension';
+COMMENT ON COLUMN graphitron_field.description IS 'the docstring the generator emits: authored, with its file''s configured note appended, which mints it, or macro-written; display material, never a dimension';
+
+CREATE TABLE graphitron_enum_value (
+  graph_name  VARCHAR NOT NULL,
+  type_name   VARCHAR NOT NULL,
+  value_name  VARCHAR NOT NULL,
+  coordinate  VARCHAR NOT NULL,
+  ordinal     INT     NOT NULL,
+  description VARCHAR,
+  PRIMARY KEY (graph_name, type_name, value_name),
+  UNIQUE (graph_name, coordinate),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphitron_type (graph_name, type_name),
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphitron_element (graph_name, coordinate),
+  -- The coordinate is the key spelled out, as on graphitron_field.
+  CHECK (coordinate = type_name || '.' || value_name)
+);
+COMMENT ON TABLE graphitron_enum_value IS 'Every enum value the generator emits: one row per enum value coordinate. For example enum Rating { G PG } is the rows Rating.G and Rating.PG. Authored only, the macros minting no enum.';
+COMMENT ON COLUMN graphitron_enum_value.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_enum_value.type_name IS 'the enum the value belongs to, anchored by graphitron_type';
+COMMENT ON COLUMN graphitron_enum_value.value_name IS 'the value''s name within its enum; with the two columns above, the grain';
+COMMENT ON COLUMN graphitron_enum_value.coordinate IS 'this row as graphitron_element spells it, Type.VALUE';
+COMMENT ON COLUMN graphitron_enum_value.ordinal IS 'the value''s position in the effective enum, as graphql_enum_value numbers it';
+COMMENT ON COLUMN graphitron_enum_value.description IS 'the docstring the generator emits: authored, with its file''s configured note appended, which mints it; display material, never a dimension';
 
 CREATE TABLE graphitron_argument (
   graph_name        VARCHAR NOT NULL,
@@ -4614,7 +4636,7 @@ COMMENT ON COLUMN graphitron_argument.non_null IS 'whether the outermost wrapper
 COMMENT ON COLUMN graphitron_argument.is_list IS 'whether the expression is a list';
 COMMENT ON COLUMN graphitron_argument.item_non_null IS 'whether a list''s item is non-null; NULL where the expression is not a list, which the CHECK holds';
 COMMENT ON COLUMN graphitron_argument.default_value_sdl IS 'the default literal where the argument has one, authored or written by the macro; display material, never a dimension';
-COMMENT ON COLUMN graphitron_argument.description IS 'the docstring, authored or macro-written; display material, never a dimension';
+COMMENT ON COLUMN graphitron_argument.description IS 'the docstring the generator emits: authored, with its file''s configured note appended, which mints it, or macro-written; display material, never a dimension';
 
 CREATE TABLE graphitron_directive_application (
   graph_name     VARCHAR NOT NULL,
@@ -4812,15 +4834,24 @@ COMMENT ON COLUMN graphitron_element_authored.element_kind IS 'the kind, in the 
 -- one coordinate the two disagree: a rewritten carrier is an authored element and a minted field.
 -- Deriving either from the other would be right at five of the six and silently wrong at the sixth.
 
-CREATE VIEW graphitron_type_authored (graph_name, type_name, coordinate, kind, description) AS
-SELECT graph_name, type_name, type_name, kind, description
-  FROM graphql_type;
+CREATE VIEW graphitron_type_authored (graph_name, type_name, coordinate, kind, description,
+                                      note) AS
+SELECT t.graph_name, t.type_name, t.type_name, t.kind, t.description, s.description_note
+  FROM graphql_type t
+  -- A type takes the note of the file holding its base definition, the one its description is
+  -- read from; a scalar takes none.
+  LEFT JOIN graphql_type_declaration d
+    ON d.graph_name = t.graph_name AND d.type_name = t.type_name
+   AND d.merge_ordinal = 0 AND NOT d.is_extension AND d.kind <> 'SCALAR'
+  LEFT JOIN graphql_source_input s
+    ON s.graph_name = d.graph_name AND s.source_name = d.source_name;
 COMMENT ON VIEW graphitron_type_authored IS 'One of the two sets graphitron_type is the union of: a type an author declared, carried across whole. For example type Film { title: String } is the row Film here, with the kind and docstring the author wrote.';
 COMMENT ON COLUMN graphitron_type_authored.graph_name IS 'the owning graph''s partition, carried from the transcription';
 COMMENT ON COLUMN graphitron_type_authored.type_name IS 'the type''s name, as the author spelled it';
 COMMENT ON COLUMN graphitron_type_authored.coordinate IS 'the same name again, a named type''s coordinate being its name; spelled here so the join up to graphitron_element is a column rather than a concatenation a reader has to trust';
 COMMENT ON COLUMN graphitron_type_authored.kind IS 'the type''s kind in graphql_type''s vocabulary, carried rather than restated';
 COMMENT ON COLUMN graphitron_type_authored.description IS 'the docstring the author wrote, or nothing';
+COMMENT ON COLUMN graphitron_type_authored.note IS 'the note its file''s entry configures, which the anchor appends to the description, minting the one the generator emits; NULL where none is configured';
 
 CREATE VIEW graphitron_facet_binding
   (graph_name, type_name, field_name, ordinal, column_name, value_type_name, value_nullable,
@@ -5034,11 +5065,12 @@ COMMENT ON COLUMN graphitron_type_minted.description IS 'the docstring the macro
 
 CREATE VIEW graphitron_field_authored (graph_name, type_name, field_name, coordinate, ordinal,
                                        type_sdl, named_type, non_null, is_list, item_non_null,
-                                       default_value_sdl, description) AS
+                                       default_value_sdl, description, note) AS
 SELECT f.graph_name, f.type_name, f.field_name, f.type_name || '.' || f.field_name, f.ordinal,
        f.type_sdl, f.named_type, f.non_null, f.is_list, f.item_non_null,
-       f.default_value_sdl, f.description
+       f.default_value_sdl, f.description, s.description_note
   FROM graphql_field f
+  LEFT JOIN graphql_source_input s ON s.graph_name = f.graph_name AND s.source_name = f.source_name
  WHERE NOT EXISTS (SELECT 1 FROM graphitron_connection_carrier c
                     WHERE c.graph_name = f.graph_name AND c.type_name = f.type_name
                       AND c.field_name = f.field_name);
@@ -5047,6 +5079,7 @@ COMMENT ON COLUMN graphitron_field_authored.graph_name IS 'the owning graph''s p
 COMMENT ON COLUMN graphitron_field_authored.type_name IS 'the type the field is declared on';
 COMMENT ON COLUMN graphitron_field_authored.field_name IS 'the field''s own name';
 COMMENT ON COLUMN graphitron_field_authored.coordinate IS 'Type.field, the specification''s spelling, which is the join up to graphitron_element';
+COMMENT ON COLUMN graphitron_field_authored.note IS 'the note its file''s entry configures, which the anchor appends to the description, minting the one the generator emits; NULL where none is configured';
 COMMENT ON COLUMN graphitron_field_authored.ordinal IS 'where the author wrote it among the type''s fields, carried so the emitted schema keeps their order';
 COMMENT ON COLUMN graphitron_field_authored.type_sdl IS 'the type expression as written, wrappers included';
 COMMENT ON COLUMN graphitron_field_authored.named_type IS 'the name at the bottom of that expression';
@@ -5152,11 +5185,17 @@ SELECT DISTINCT m.graph_name, m.type_name, m.field_name, m.type_name || '.' || m
 ;
 CREATE VIEW graphitron_field_minted (graph_name, type_name, field_name, coordinate, ordinal,
                                      type_sdl, named_type, non_null, is_list, item_non_null,
-                                     default_value_sdl, description, rewrite) AS
+                                     default_value_sdl, description, rewrite, note) AS
 SELECT m.graph_name, m.type_name, m.field_name, m.coordinate, m.ordinal, m.type_sdl,
-       m.named_type, m.non_null, m.is_list, m.item_non_null, m.default_value_sdl, m.description,
-       m.rewrite
+       m.named_type, m.non_null, m.is_list, m.item_non_null, m.default_value_sdl,
+       m.description, m.rewrite, s.description_note
   FROM graphitron_field_minted_candidate m
+  -- A rewritten carrier keeps its author's docstring, and takes its file's note as the field it
+  -- rewrites does.
+  LEFT JOIN graphql_field f
+    ON m.rewrite AND f.graph_name = m.graph_name AND f.type_name = m.type_name
+   AND f.field_name = m.field_name
+  LEFT JOIN graphql_source_input s ON s.graph_name = f.graph_name AND s.source_name = f.source_name
  WHERE NOT EXISTS (SELECT 1 FROM graphitron_minted_conflict c
                     WHERE c.graph_name = m.graph_name AND c.coordinate = m.coordinate)
    AND (m.rewrite
@@ -5195,16 +5234,35 @@ COMMENT ON COLUMN graphitron_field_minted.item_non_null IS 'whether a list''s it
 COMMENT ON COLUMN graphitron_field_minted.default_value_sdl IS 'always nothing, and stated here rather than carried: no macro writes a default onto an output field and every field minted or rewritten today is one, so the nullness is a property of this population rather than a column any arm declined to hold';
 COMMENT ON COLUMN graphitron_field_minted.rewrite IS 'whether this row restates a field the author wrote rather than adding one. The rewritten carrier is the only arm that does, and it is what tells the element arm which coordinates are already anchored by the transcription';
 COMMENT ON COLUMN graphitron_field_minted.description IS 'the docstring the macro wrote; identical across the carriers that state one shared machinery field, which is what lets the distinct collapse them';
+COMMENT ON COLUMN graphitron_field_minted.note IS 'on a rewritten carrier, the note its file''s entry configures, which the anchor appends to the description, minting the one the generator emits; NULL where none is configured';
+
+CREATE VIEW graphitron_enum_value_authored (graph_name, type_name, value_name, coordinate,
+                                            ordinal, description, note) AS
+SELECT v.graph_name, v.type_name, v.value_name, v.type_name || '.' || v.value_name, v.ordinal,
+       v.description, s.description_note
+  FROM graphql_enum_value v
+  LEFT JOIN graphql_source_input s ON s.graph_name = v.graph_name AND s.source_name = v.source_name;
+COMMENT ON VIEW graphitron_enum_value_authored IS 'The one set graphitron_enum_value is filled from: an enum value an author declared, with the note its file configures. For example the G in enum Rating { G PG }.';
+COMMENT ON COLUMN graphitron_enum_value_authored.graph_name IS 'the owning graph''s partition, carried from the transcription';
+COMMENT ON COLUMN graphitron_enum_value_authored.type_name IS 'the enum, as the author spelled it';
+COMMENT ON COLUMN graphitron_enum_value_authored.value_name IS 'the value, as the author spelled it';
+COMMENT ON COLUMN graphitron_enum_value_authored.coordinate IS 'Type.VALUE, the join up to graphitron_element';
+COMMENT ON COLUMN graphitron_enum_value_authored.ordinal IS 'the value''s position, carried from graphql_enum_value';
+COMMENT ON COLUMN graphitron_enum_value_authored.description IS 'the docstring the author wrote, or nothing';
+COMMENT ON COLUMN graphitron_enum_value_authored.note IS 'the note its file''s entry configures, which the anchor appends to the description, minting the one the generator emits; NULL where none is configured';
 
 CREATE VIEW graphitron_argument_authored (graph_name, type_name, field_name, argument_name,
                                           coordinate, ordinal, type_sdl, named_type, non_null,
                                           is_list, item_non_null, default_value_sdl,
-                                          description) AS
-SELECT graph_name, type_name, field_name, argument_name,
-       type_name || '.' || field_name || '(' || argument_name || ':)', ordinal,
-       type_sdl, named_type, non_null, is_list, item_non_null, default_value_sdl, description
-  FROM graphql_argument;
+                                          description, note) AS
+SELECT a.graph_name, a.type_name, a.field_name, a.argument_name,
+       a.type_name || '.' || a.field_name || '(' || a.argument_name || ':)', a.ordinal,
+       a.type_sdl, a.named_type, a.non_null, a.is_list, a.item_non_null, a.default_value_sdl,
+       a.description, s.description_note
+  FROM graphql_argument a
+  LEFT JOIN graphql_source_input s ON s.graph_name = a.graph_name AND s.source_name = a.source_name;
 COMMENT ON VIEW graphitron_argument_authored IS 'One of the two sets graphitron_argument is the union of: an argument an author declared, carried across whole. For example the lang in title(lang: Lang = NB): String, default included.';
+COMMENT ON COLUMN graphitron_argument_authored.note IS 'the note its file''s entry configures, which the anchor appends to the description, minting the one the generator emits; NULL where none is configured';
 COMMENT ON COLUMN graphitron_argument_authored.graph_name IS 'the owning graph''s partition, carried from the transcription';
 COMMENT ON COLUMN graphitron_argument_authored.type_name IS 'the type the owning field is declared on';
 COMMENT ON COLUMN graphitron_argument_authored.field_name IS 'the field the argument belongs to';
@@ -15699,6 +15757,9 @@ INSERT INTO meta_grain VALUES
   ('expanded-argument',
    'one field-argument coordinate the generator works with in one graph',
    'graph_name, type_name, field_name, argument_name', 'sdl'),
+  ('expanded-enum-value',
+   'one enum value coordinate the generator emits in one graph',
+   'graph_name, type_name, value_name', 'sdl'),
   ('expanded-directive-application',
    'one directive application the generator emits at one coordinate in one graph, whether an author wrote it or macro expansion minted it',
    'graph_name, coordinate, directive_name, ordinal', 'sdl'),
@@ -16288,7 +16349,7 @@ INSERT INTO meta_relation VALUES
    'For example two carriers naming one connection through connectionName over different element types disagree about that connection''s own nodes field, which draws a row here and no row at all in graphitron_field.',
    'Two applications minting one coordinate the same way are the ordinary case and the whole reason the minted relations key by their source, shared machinery being stated whole by every carrier. Two that disagree are not, and neither of them may win. Picking one would put a shape in the emitted population that no application asked for and that nothing records, which is the class of silence this line of work exists to remove; refusing outright would be worse, because the schema is one an author can write and capture runs before assembly and for readers that never run it, so the store has to exist for the diagnostic to sit in. So the coordinate is withheld and this row is what says why, on intent_authored_claim_conflict''s terms, which is the same shape one increment earlier: a contested coordinate, neither claimant, and a relation naming it. What each application would have written is not copied here; the minted relations keep it, keyed by the coordinate that coined each, so the readings are a join away rather than a duplicate.'),
   ('graphitron_element', 'expanded-element', 'graphitron',
-   'A schema element the generator emits exists in this graph, whether an author declared it or macro expansion minted it: the supertype of the three element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it.',
+   'A schema element the generator emits exists in this graph, whether an author declared it or macro expansion minted it: the supertype of the four element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it.',
    'For example a QueryFilmsConnection no author wrote is the row QueryFilmsConnection here and no row at all in graphql_element, and the field carrying the macro is one row in each.',
    'A graphitron relation naming a coordinate has nowhere to key. graphql_element holds what the document declares, so a foreign key there excludes exactly the coordinates macro expansion minted, which is what a connection is made of; the relation that shipped as graphitron_field was written with that key and the build failed on a minted connection''s own field. The union views that answered for the expanded population could not stand in, a view being no key''s target. So this is that population written down, at the grain the specification already gives it, with the same spelling and the same kind vocabulary graphql_element uses so that a reader holding a coordinate from either family holds the same string. The three subtypes beside it carry the parts and the payload together, which is where this family parts company with the transcription: an element the expansion minted has no twin to join for its details, so an anchor that carried only a key would send every reader back through a union.'),
   ('graphitron_facet_binding', 'facet-binding', 'graphitron',
@@ -16432,6 +16493,14 @@ INSERT INTO meta_relation VALUES
    'One row the configured-tag rule computes, in the shape graphitron_configured_tag stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_configured_tag, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
    'The rule, kept in the catalog rather than in the step that runs it, on graphitron_type_backing_rule''s terms. Stored by EmittedAnchor before the directive anchor reads it, because H2 evaluates a view again for every row joined to it and the federation chain joins these three to each other: on a consumer schema configuring 7734 tags over 654 coinages the directive upsert did not finish, and with the three stored it reads in a fifth of a second.'),
+  ('graphitron_enum_value', 'expanded-enum-value', 'graphitron',
+   'Every enum value the generator emits: one row per enum value coordinate.',
+   'For example enum Rating { G PG } is the rows Rating.G and Rating.PG. Authored only, the macros minting no enum.',
+   'The fourth part relation under graphitron_element, so a reader holding an enum value''s coordinate reaches its type and name by a join rather than by splitting the spelling, and the description the generator emits for it is stated beside the other three kinds''.'),
+  ('graphitron_enum_value_authored', 'expanded-enum-value', 'graphitron',
+   'The one set graphitron_enum_value is filled from: an enum value an author declared, with the note its file configures.',
+   'For example the G in enum Rating { G PG }.',
+   'On graphitron_type_authored''s terms. One set rather than two, nothing minting an enum value.'),
   ('graphitron_carrier_directive', 'carrier-directive', 'graphitron',
    'The federation directives on the fields that coined a minted type: one row per @tag or @shareable a carrier carries, authored or configured.',
    'For example films: [Film!]! @asConnection @tag(name: "public") gives QueryFilmsConnection a row naming the public tag on Query.films.',

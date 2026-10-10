@@ -57,7 +57,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * says so, under a rule an exclude-based subgraph disables.
  *
  * <p>The schema classes a run writes carry what the published schema carries, configured tags
- * included: they are compiled and loaded, and the types they build are read.
+ * and notes included: they are compiled and loaded, and the types they build are read.
  */
 @PipelineTier
 class StoreEmittedFederationSchemaPipelineTest {
@@ -317,13 +317,15 @@ class StoreEmittedFederationSchemaPipelineTest {
     }
 
     @Test
-    @DisplayName("the schema classes carry the configured tags the published schema does")
+    @DisplayName("the schema classes carry the configured tags and notes the published schema does")
     void theSchemaClassesCarryTheConfiguredTags(@TempDir Path tmp) throws Exception {
-        var ctx = context(tmp,
-            input(tmp, "stable.graphqls", LINK + NODE + """
+        var stable = input(tmp, "stable.graphqls", LINK + NODE + """
                 enum Rating { G PG }
                 input FilmFilter { title: String }
-                """, "stable"),
+                """, "stable");
+        var note = "Stable since 2.0.";
+        var ctx = context(tmp,
+            new SchemaInput(stable.source(), stable.tag(), Optional.of(note)),
             input(tmp, "experimental.graphqls", """
                 extend type Query {
                   films(filter: FilmFilter, rating: Rating): [Film!]!
@@ -337,14 +339,18 @@ class StoreEmittedFederationSchemaPipelineTest {
                 .containsExactly("experimental");
             var film = (GraphQLObjectType) classes.type("FilmType");
             assertThat(tagNames(film.getFieldDefinition("title"))).containsExactly("stable");
+            assertThat(film.getFieldDefinition("title").getDescription()).isEqualTo(note);
+            assertThat(film.getDescription()).isEqualTo(note);
             assertThat(tagNames(film)).as("a type declaration is never tagged").isEmpty();
             var connection = (GraphQLObjectType) classes.type("QueryFilmsConnectionType");
             assertThat(tagNames(connection)).as("inherited from the carrier")
                 .containsExactly("experimental");
             var rating = (GraphQLEnumType) classes.type("RatingType");
             assertThat(tagNames(rating.getValue("G"))).containsExactly("stable");
+            assertThat(rating.getValue("G").getDescription()).isEqualTo(note);
             var filter = (GraphQLInputObjectType) classes.type("FilmFilterType");
             assertThat(tagNames(filter.getFieldDefinition("title"))).containsExactly("stable");
+            assertThat(filter.getFieldDefinition("title").getDescription()).isEqualTo(note);
         }
     }
 

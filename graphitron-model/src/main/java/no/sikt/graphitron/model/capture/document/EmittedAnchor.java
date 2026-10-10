@@ -16,6 +16,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_CARRIER_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CARRIER_DIRECTIVE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONFIGURED_TAG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONFIGURED_TAG_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENUM_VALUE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENUM_VALUE_AUTHORED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION_ARG_AUTHORED;
@@ -62,6 +64,7 @@ import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.val;
+import static org.jooq.impl.DSL.regexpReplaceAll;
 import static org.jooq.impl.DSL.when;
 
 /**
@@ -102,6 +105,7 @@ public final class EmittedAnchor {
         types(dsl, graphName);
         fields(dsl, graphName);
         arguments(dsl, graphName);
+        enumValues(dsl, graphName);
         sweep(dsl, graphName, touchedAt);
         // After the sweep, so the sets join only the coordinates this reading kept.
         federation(dsl, graphName, touchedAt);
@@ -197,10 +201,10 @@ public final class EmittedAnchor {
      * Drops the anchors this reading did not rewrite, which are the elements the corpus stopped
      * emitting.
      *
-     * <p>Children before the supertype, because the three subtypes key into it and a delete in the
+     * <p>Children before the supertype, because the four subtypes key into it and a delete in the
      * other order would be refused. They need no stamp of their own: a subtype row exists exactly
-     * when its supertype row does, so the supertype's is the whole of the question, and the three
-     * arms above rewrite every row they keep.
+     * when its supertype row does, so the supertype's is the whole of the question, and the upserts
+     * above rewrite every row they keep.
      *
      * <p>This is the lifecycle the walk's clear used to stand in for: an element this reading
      * stopped deriving goes here, and its directive applications go with it through their cascade.
@@ -217,6 +221,9 @@ public final class EmittedAnchor {
         dsl.deleteFrom(GRAPHITRON_ARGUMENT)
             .where(GRAPHITRON_ARGUMENT.GRAPH_NAME.eq(graphName))
             .and(GRAPHITRON_ARGUMENT.COORDINATE.in(stale)).execute();
+        dsl.deleteFrom(GRAPHITRON_ENUM_VALUE)
+            .where(GRAPHITRON_ENUM_VALUE.GRAPH_NAME.eq(graphName))
+            .and(GRAPHITRON_ENUM_VALUE.COORDINATE.in(stale)).execute();
         dsl.deleteFrom(GRAPHITRON_FIELD)
             .where(GRAPHITRON_FIELD.GRAPH_NAME.eq(graphName))
             .and(GRAPHITRON_FIELD.COORDINATE.in(stale)).execute();
@@ -411,7 +418,7 @@ public final class EmittedAnchor {
                 GRAPHITRON_TYPE.COORDINATE, GRAPHITRON_TYPE.KIND, GRAPHITRON_TYPE.DESCRIPTION)
             .select(dsl
                 .select(authored.GRAPH_NAME, authored.TYPE_NAME, authored.COORDINATE,
-                    authored.KIND, authored.DESCRIPTION)
+                    authored.KIND, mintedDescription(authored.DESCRIPTION, authored.NOTE))
                 .from(authored)
                 .where(authored.GRAPH_NAME.eq(graphName))
                 .unionAll(dsl
@@ -449,14 +456,14 @@ public final class EmittedAnchor {
                 .select(authored.GRAPH_NAME, authored.TYPE_NAME, authored.FIELD_NAME,
                     authored.COORDINATE, authored.ORDINAL, authored.TYPE_SDL, authored.NAMED_TYPE,
                     authored.NON_NULL, authored.IS_LIST, authored.ITEM_NON_NULL,
-                    authored.DEFAULT_VALUE_SDL, authored.DESCRIPTION)
+                    authored.DEFAULT_VALUE_SDL, mintedDescription(authored.DESCRIPTION, authored.NOTE))
                 .from(authored)
                 .where(authored.GRAPH_NAME.eq(graphName))
                 .unionAll(dsl
                     .select(minted.GRAPH_NAME, minted.TYPE_NAME, minted.FIELD_NAME,
                         minted.COORDINATE, minted.ORDINAL, minted.TYPE_SDL, minted.NAMED_TYPE,
                         minted.NON_NULL, minted.IS_LIST, minted.ITEM_NON_NULL,
-                        minted.DEFAULT_VALUE_SDL, minted.DESCRIPTION)
+                        minted.DEFAULT_VALUE_SDL, mintedDescription(minted.DESCRIPTION, minted.NOTE))
                     .from(minted)
                     .where(minted.GRAPH_NAME.eq(graphName))))
             // On the key, not onDuplicateKeyUpdate: with the UNIQUE coordinate beside the key jOOQ
@@ -477,6 +484,42 @@ public final class EmittedAnchor {
             .execute();
     }
 
+    /**
+     * The description the generator emits for an authored element: the author's, with the note its
+     * file configures appended after a blank line, or the note alone where the author wrote none,
+     * both with the whitespace around them stripped. Composed here rather than in the sets, which
+     * would have to build the blank line in a view, and H2 folds that into a literal no definition
+     * walk parses.
+     */
+    private static Field<String> mintedDescription(Field<String> description, Field<String> note) {
+        return when(note.isNull(), description)
+            .when(description.isNull().or(description.eq("")), stripped(note))
+            .otherwise(stripped(description).concat(val("\n\n")).concat(stripped(note)));
+    }
+
+    private static Field<String> stripped(Field<String> text) {
+        return regexpReplaceAll(text, "^\\s+|\\s+$", "");
+    }
+
+    /** The enum value grain, one authored set and nothing minted, on the type grain's terms. */
+    private static void enumValues(DSLContext dsl, String graphName) {
+        var authored = GRAPHITRON_ENUM_VALUE_AUTHORED;
+        var t = GRAPHITRON_ENUM_VALUE;
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.VALUE_NAME, t.COORDINATE, t.ORDINAL, t.DESCRIPTION)
+            .select(dsl
+                .select(authored.GRAPH_NAME, authored.TYPE_NAME, authored.VALUE_NAME,
+                    authored.COORDINATE, authored.ORDINAL, mintedDescription(authored.DESCRIPTION, authored.NOTE))
+                .from(authored)
+                .where(authored.GRAPH_NAME.eq(graphName)))
+            .onConflict(t.GRAPH_NAME, t.TYPE_NAME, t.VALUE_NAME)
+            .doUpdate()
+            .set(t.COORDINATE, excluded(t.COORDINATE))
+            .set(t.ORDINAL, excluded(t.ORDINAL))
+            .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
+            .execute();
+    }
+
     /** The argument grain, on the two above's terms and with the type grain's empty exclusion. */
     private static void arguments(DSLContext dsl, String graphName) {
         var authored = GRAPHITRON_ARGUMENT_AUTHORED;
@@ -493,7 +536,8 @@ public final class EmittedAnchor {
                 .select(authored.GRAPH_NAME, authored.TYPE_NAME, authored.FIELD_NAME,
                     authored.ARGUMENT_NAME, authored.COORDINATE, authored.ORDINAL,
                     authored.TYPE_SDL, authored.NAMED_TYPE, authored.NON_NULL, authored.IS_LIST,
-                    authored.ITEM_NON_NULL, authored.DEFAULT_VALUE_SDL, authored.DESCRIPTION)
+                    authored.ITEM_NON_NULL, authored.DEFAULT_VALUE_SDL,
+                    mintedDescription(authored.DESCRIPTION, authored.NOTE))
                 .from(authored)
                 .where(authored.GRAPH_NAME.eq(graphName))
                 .unionAll(dsl

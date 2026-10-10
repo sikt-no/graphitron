@@ -647,8 +647,9 @@ reads nothing off the classpath that capture has already read, and builds no sch
   ones, at any coordinate kind, and the written schema carries no configured tag.
   `ConfiguredTagTest` pins every kind the rule names on both schemas, and the federation pipeline
   test compiles the schema classes a run writes and reads the tags off the types they build.
-  * **Enum values are anchored** `done`. `graphitron_element` admits them, with no part relation
-    since nothing patches one, so the rule states their tags.
+  * **Enum values are anchored** `done`. `graphitron_element` admits them, so the rule states their
+    tags, and `graphitron_enum_value` is their part relation beside the other three, so a reader
+    reaches an enum value's type and name by a join rather than by taking its coordinate apart.
   * **The schema classes read the configured tags off the post-synthesis schema** `done`. The walk's
     synthesis inherits only authored tags now, so `CarriesObjectForm.formOf` reads the schema's
     type first, and the enum and input classes render the schema's forms rather than the walk's.
@@ -657,8 +658,16 @@ reads nothing off the classpath that capture has already read, and builds no sch
   * **The `@link` a configured tag needs reaches the emitted schema** `open`. `TagLinkSynthesiser`
     still adds it in the composition, and the walk's federation opt-in reads it there, so it moves
     with `federationLink`.
-  * **`DescriptionNoteApplier` follows** `open`. One producer, but configuration applied in the
-    composition all the same.
+  * **`DescriptionNoteApplier` follows** `done`. The original description is the document's, in
+    `graphql_`; the note is the document's configuration, in `graphql_source_input`; and the
+    description the generator emits is minted, the anchor appending each element's note to it in the
+    `graphitron_` part relations' own `description`, a type's from the file holding its base
+    definition. `ConfiguredNoteTest` pinned the applier's behaviour before it went, and checks the
+    part relations beside the emitted schema. An editor knows a description is minted from the
+    document's configuration, and can show the minted text as a hint.
+    * **The part relations are read by their columns** `done`. `EmittedRegistry` reads the type,
+      member and argument from the four part relations, where it took coordinates apart, and sets
+      an element's description from its part relation where the anchor minted one.
 * **Capture's added cost is measured** `open`. Capture now also derives `graphitron_configured_tag`
   and `graphitron_inherited_directive` and builds the post-synthesis schema, `graphitron:capture`
   alone included, and the dev loop's classpath-change and quiet-startup rounds now capture too. The
@@ -1144,7 +1153,8 @@ decode, its readers having moved to `graphitron_ast_argmapping_pair_entry` and
 cluster, into `graphitron_type_backing`: `intent_type_backing_seed`, `intent_type_backing_class`,
 `intent_type_backing` and `intent_field_accessor_hop`, with the grain `type-backing-class` and the
 value `BACKING_CLOSURE` (now `PRODUCER` and `ACCESSOR`).
-`graphitron_element` gained `ENUM_VALUE`, added rather than retired.
+`graphitron_element` gained `ENUM_VALUE`, and `graphitron_enum_value` is new, both added
+rather than retired.
 
 **Renamed, by rule rather than by list.** Every relation of the as-written half of `graphitron_`
 gained the `_entry` suffix. A sweep for a survivor is a search for a `graphitron_` name that is
@@ -1191,7 +1201,8 @@ census parameter on `CapturedStore`'s arms; `TestSchemaHelper.classpathCensus` (
 `genericParameter`, `component`, `scalarHolder`, `lifterHolder`, `withScalarConstants` and
 `withExternalFieldLifters`; the MCP fixture's `codeFixtureCensus` (now `codeFixtureClasspath`);
 `SeededStore.seedScalarConstant` and `seedExternalFieldMethod`. `TagApplier` and `TagApplierTest`, the configured tags being
-`graphitron_configured_tag`'s; `EmittedRegistry.applyMintedDirectives` (now `applyDirectives`). The specification's built-ins
+`graphitron_configured_tag`'s; `DescriptionNoteApplier` and `DescriptionNoteApplierTest`, the notes
+minting the part relations' descriptions; `EmittedRegistry.applyMintedDirectives` (now `applyUnwritten`). The specification's built-ins
 as constants beside the entries:
 `GraphQLAstCapture.SPECIFIED_SCALARS`, `SPECIFIED_DIRECTIVES` with its three column fields and
 `specifiedDirectivesUndeclared`, `SdlFactCapture.SPECIFIED_DIRECTIVES`, and the transcription's

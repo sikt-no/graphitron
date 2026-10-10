@@ -115,7 +115,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENUM_VALUE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
@@ -518,11 +518,10 @@ class FactCaptureAgreementTest {
             // The supertype against the three under it, on the transcription family's terms: a
             // foreign key refuses an anchor with no supertype row and nothing refuses a supertype
             // row no anchor claimed. The field arm derives its kind from the declaring type rather
-            // than asserting a literal, exactly as the transcription's own arm does. An enum value
-            // has no part relation, nothing minting one, so its arm is the transcription's.
+            // than asserting a literal, exactly as the transcription's own does.
             assertThat(dsl.select(GRAPHITRON_ELEMENT.COORDINATE, GRAPHITRON_ELEMENT.ELEMENT_KIND)
                 .from(GRAPHITRON_ELEMENT).fetch())
-                .as("the emitted element supertype against its three anchors and the enum values")
+                .as("the emitted element supertype against its four anchors")
                 .containsExactlyInAnyOrderElementsOf(
                     dsl.select(GRAPHITRON_TYPE.COORDINATE, val("NAMED_TYPE")).from(GRAPHITRON_TYPE)
                     .unionAll(dsl.select(GRAPHITRON_FIELD.COORDINATE,
@@ -534,9 +533,8 @@ class FactCaptureAgreementTest {
                         .and(GRAPHITRON_TYPE.TYPE_NAME.eq(GRAPHITRON_FIELD.TYPE_NAME)))
                     .unionAll(dsl.select(GRAPHITRON_ARGUMENT.COORDINATE, val("FIELD_ARGUMENT"))
                         .from(GRAPHITRON_ARGUMENT))
-                    .unionAll(dsl.select(GRAPHQL_ENUM_VALUE.TYPE_NAME.concat(".")
-                            .concat(GRAPHQL_ENUM_VALUE.VALUE_NAME), val("ENUM_VALUE"))
-                        .from(GRAPHQL_ENUM_VALUE))
+                    .unionAll(dsl.select(GRAPHITRON_ENUM_VALUE.COORDINATE, val("ENUM_VALUE"))
+                        .from(GRAPHITRON_ENUM_VALUE))
                     .fetch());
             assertThat(dsl.select(GRAPHITRON_ELEMENT.ELEMENT_KIND).from(GRAPHITRON_ELEMENT)
                 .fetchSet(GRAPHITRON_ELEMENT.ELEMENT_KIND))

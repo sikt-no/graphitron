@@ -106,3 +106,8 @@ graphitron_type_reach_rule graphql_type
 # producer and offered by no member, so the expanded population would add rows nothing can back.
 graphitron_type_backing_rule graphql_field
 graphitron_type_backing_rule graphql_type
+
+# Adjudicated and kept: a rewritten carrier takes the note of the file it was declared in. A
+# <schemaInput descriptionNote> reaches what its matched files declare, and the carrier is a field a
+# file declared before the expansion restated it.
+graphitron_field_minted graphql_field

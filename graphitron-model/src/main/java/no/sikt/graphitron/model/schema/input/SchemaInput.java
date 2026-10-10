@@ -18,9 +18,9 @@ import java.util.Optional;
  *
  * <p>A {@code tag} puts {@code @tag(name: "<tag>")} on every in-scope element
  * defined in the source, which {@code graphitron_configured_tag} states and the
- * emitted schema applies. A {@code descriptionNote}
- * causes {@link DescriptionNoteApplier} to append the note (with a blank-line
- * separator) to the description of every in-scope element. The two are
+ * emitted schema applies. A {@code descriptionNote} appends the note, after a
+ * blank line, to the description of every in-scope element, minting the description the
+ * part relations carry and the emitted schema applies. The two are
  * independent; either, both, or neither may be present on a given entry.
  */
 public record SchemaInput(

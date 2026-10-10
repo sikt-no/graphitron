@@ -327,6 +327,8 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_directive_application_arg_configured", Arm.DERIVED);
         registrations.put("graphitron_configured_tag", Arm.DERIVED);
         registrations.put("graphitron_configured_tag_rule", Arm.DERIVED);
+        registrations.put("graphitron_enum_value", Arm.DERIVED);
+        registrations.put("graphitron_enum_value_authored", Arm.DERIVED);
         registrations.put("graphitron_carrier_directive", Arm.DERIVED);
         registrations.put("graphitron_carrier_directive_rule", Arm.DERIVED);
         registrations.put("graphitron_inherited_directive", Arm.DERIVED);

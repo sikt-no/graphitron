@@ -38,9 +38,9 @@ public final class EnumTypeGenerator {
      * Membership (which enums get a class) lives on the relation's schema-shape rows; this
      * method only renders content.
      *
-     * <p>The directives come from {@code assembled}'s form of the enum, so a value carries what the
-     * post-synthesis schema gives it, a configured {@code @tag} among them, rather than what the
-     * walk read off the schema as written.
+     * <p>The descriptions and directives come from {@code assembled}'s form of the enum, so a value
+     * carries what the post-synthesis schema gives it, a configured {@code @tag} or note among them,
+     * rather than what the walk read off the schema as written.
      */
     public static TypeSpec generateFor(GraphitronType.EnumType et, GraphQLSchema assembled) {
         var schemaType = CarriesObjectForm.formOf(et, et.name(), assembled) instanceof GraphQLEnumType form
@@ -60,7 +60,9 @@ public final class EnumTypeGenerator {
         for (var value : et.values()) {
             var source = schemaType.getValue(value.sdlName());
             String helper = sink.addEnumValueDef(source == null ? value
-                : new EnumValueSpec(value.sdlName(), value.runtimeValue(), value.description(),
+                : new EnumValueSpec(value.sdlName(), value.runtimeValue(),
+                    source.getDescription() == null || source.getDescription().isEmpty()
+                        ? null : source.getDescription(),
                     value.deprecationReason(), source));
             body.addStatement("b.value($L())", helper);
         }

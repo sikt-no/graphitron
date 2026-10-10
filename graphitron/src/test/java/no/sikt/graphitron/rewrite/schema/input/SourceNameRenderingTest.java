@@ -1,6 +1,8 @@
 package no.sikt.graphitron.rewrite.schema.input;
 
-import no.sikt.graphitron.model.schema.SchemaLoader;
+import graphql.schema.GraphQLObjectType;
+import no.sikt.graphitron.model.schema.SchemaAssembly;
+import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,9 +15,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import no.sikt.graphitron.model.schema.input.DescriptionNoteApplier;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
-import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
 
@@ -24,16 +24,17 @@ import no.sikt.graphitron.model.schema.input.SchemaSource;
  * which a divergence shows up. {@link SchemaSource#sourceName()} is the string the loader hands the
  * parser and the string graphql-java hands back as {@code SourceLocation.getSourceName()}, so a
  * lookup keyed on it matches byte-for-byte with no renormalisation. A divergence of one character
- * costs no compile error and no parse failure; it silently stops description notes from being
- * applied, and silently unmatches capture's stamp lookup, which is what the configured tags read. An equality on the carrier would
- * catch none of that, which is why this case closes the loop from a minted file arm, through the
- * parser, to the applier that reads what came back.
+ * costs no compile error and no parse failure; it silently unmatches the join from a file's entry
+ * to the elements it declares, so the configured tags and notes stop being applied, and capture's
+ * stamp lookup with them. An equality on the carrier would catch none of that, which is why this
+ * case closes the loop from a minted file arm, through the parser and capture, to the schema that
+ * applies what the join found.
  */
 @PipelineTier
 class SourceNameRenderingTest {
 
     @Test
-    @DisplayName("a note configured on a minted file arm lands on the elements it declared")
+    @DisplayName("a tag and a note configured on a minted file arm land on the elements it declared")
     void attributionSurvivesTheParserRoundTripFromAMintedFileArm(@TempDir Path tmp) throws IOException {
         Path schemaDir = Files.createDirectories(tmp.resolve("nested/schema"));
         Files.writeString(schemaDir.resolve("catalog.graphqls"), """
@@ -54,18 +55,18 @@ class SourceNameRenderingTest {
             .toList();
         assertThat(inputs).hasSize(1);
 
-        var bySource = SchemaInputAttribution.build(inputs);
-        var registry = SchemaLoader.load(List.of((SchemaSource.File) inputs.getFirst().source()));
-        DescriptionNoteApplier.apply(registry, bySource);
-
-        var film = registry.getTypeOrNull("Film", graphql.language.ObjectTypeDefinition.class);
-        assertThat(film).isNotNull();
-        assertThat(film.getFieldDefinitions().getFirst().getDescription())
-            .as("the note applier resolved the source name graphql-java handed back; a rendering "
+        GraphQLObjectType film;
+        try (var store = CapturedStore.configured(tmp, inputs)) {
+            var emitted = ((SchemaAssembly.Assembled) store.schema().synthesised().orElseThrow())
+                .schema();
+            film = (GraphQLObjectType) emitted.getType("Film");
+        }
+        var title = film.getFieldDefinition("title");
+        assertThat(title.getDescription())
+            .as("the join resolved the source name graphql-java handed back; a rendering "
                 + "divergence of one character would leave this empty and fail nothing else")
-            .isNotNull();
-        assertThat(film.getFieldDefinitions().getFirst().getDescription().getContent())
-            .contains("Part of the catalog feature.");
+            .isEqualTo("Part of the catalog feature.");
+        assertThat(title.getAppliedDirectives("tag")).hasSize(1);
     }
 
     @Test

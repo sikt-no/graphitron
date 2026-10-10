@@ -1,0 +1,17 @@
+# The enum value part relation read in steps, over one file. The first reading anchors each value
+# of an authored enum at its coordinate, with its position and the docstring its author wrote.
+# Containment, the bundled directive vocabulary declaring enums of its own.
+
+type Query { rated: Rating }
+
+enum Rating {
+  G
+  "Parental guidance."
+  PG
+}
+
+extend schema @assertContains(relation: "graphitron_enum_value", rows: """
+  type_name, value_name, coordinate, ordinal, description
+  Rating,    G,          Rating.G,   0,
+  Rating,    PG,         Rating.PG,  1,       Parental guidance.
+  """)

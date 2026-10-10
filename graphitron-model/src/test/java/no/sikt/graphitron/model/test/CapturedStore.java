@@ -233,14 +233,27 @@ public final class CapturedStore implements AutoCloseable {
      */
     public static CapturedStore tagged(Path directory, String sdl, String tag) {
         Path file = write(directory, GRAPH, sdl);
-        var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
+        return configured(directory, List.of(
+            new SchemaInput(SchemaSource.file(file), Optional.of(tag), Optional.empty())));
+    }
+
+    /**
+     * Captures {@code inputs} as one recipe entry each, in order, with the tag and the note each
+     * configures: the shape a run whose files are configured differently has. The files are the
+     * caller's to write; {@link #file()} is the first.
+     */
+    public static CapturedStore configured(Path directory, List<SchemaInput> inputs) {
+        var sources = inputs.stream().map(input -> (SchemaSource.File) input.source()).toList();
+        var registry = SchemaLoader.load(sources);
         var store = ThreadConfinedStore.borrow();
         var corpus = SubjectConfig.of(new SchemaRecipe(directory.resolve("pom.xml"),
-            List.of(new SchemaRecipe.Binding(new SchemaRecipe.Entry.Literal(SchemaSource.file(file)),
-                Optional.of(tag), Optional.empty())),
+            inputs.stream()
+                .map(input -> new SchemaRecipe.Binding(new SchemaRecipe.Entry.Literal(input.source()),
+                    input.tag(), input.descriptionNote()))
+                .toList(),
             List.of("graphqls")));
         var schemas = capture(store.dsl(), graph(directory), corpus, null);
-        return new CapturedStore(store, GRAPH, directory, file, registry, schemas);
+        return new CapturedStore(store, GRAPH, directory, sources.getFirst().path(), registry, schemas);
     }
 
     /** {@link #ownStore(Path, String, String)} under the default graph. */
