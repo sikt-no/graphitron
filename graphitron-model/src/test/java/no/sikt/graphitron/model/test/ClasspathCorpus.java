@@ -32,9 +32,26 @@ public final class ClasspathCorpus {
      * consumer writes; the extended-scalars artifact is the code a consumer <em>names</em>, a
      * {@code @scalarType(scalar:)} reaching a library constant by its fully qualified name far more
      * often than one of their own. A corpus holding only the first could not state that case at all.
+     *
+     * <p>Beside them, what the service code is compiled against and the reading skips: the generated
+     * catalog and the jOOQ runtime, as transitive entries. A run's classpath carries both, and the
+     * ancestry a parameter's role is decided by is read from their classfiles.
      */
     public static List<ClasspathEntry> entries() {
-        return List.of(service(), scalars());
+        return List.of(service(), scalars(), catalog(), jooqRuntime());
+    }
+
+    /** The generated sakila catalog, which the reading skips and the ancestry reads. */
+    public static ClasspathEntry catalog() {
+        return new ClasspathEntry(rootOf(no.sikt.graphitron.rewrite.test.jooq.DefaultCatalog.class,
+            "the generated catalog"), ClasspathEntry.Origin.TRANSITIVE,
+            "no.sikt:graphitron-sakila-db", null);
+    }
+
+    /** The jOOQ runtime, where org.jooq.Table and its kin are declared. */
+    public static ClasspathEntry jooqRuntime() {
+        return new ClasspathEntry(rootOf(org.jooq.Table.class, "the jOOQ runtime"),
+            ClasspathEntry.Origin.TRANSITIVE, "org.jooq:jooq", null);
     }
 
     /**

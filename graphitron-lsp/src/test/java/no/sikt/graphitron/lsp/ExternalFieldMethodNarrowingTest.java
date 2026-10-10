@@ -57,7 +57,8 @@ class ExternalFieldMethodNarrowingTest {
 
     @BeforeAll
     static void capture() {
-        store = StoreFixture.held().ofClasspath(tmp, List.of(ClasspathCorpus.service()));
+        store = StoreFixture.held().ofClasspath(tmp, List.of(ClasspathCorpus.service(),
+            ClasspathCorpus.catalog(), ClasspathCorpus.jooqRuntime()));
     }
 
     @AfterAll

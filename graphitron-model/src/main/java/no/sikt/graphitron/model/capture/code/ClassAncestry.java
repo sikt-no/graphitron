@@ -16,12 +16,12 @@ import java.util.Set;
  * and not chains. That is enough while a chain stays inside the census and useless the moment it
  * leaves, which for a throwable is immediately: every one of them reaches {@code java.lang.Throwable}
  * through {@code java.lang}, and the JDK is no classpath entry. So the edges come from the census
- * where the census has them and from a loaded class where it does not, and the two are read the
- * same way.
+ * where the census has them and from the class's own header where it does not, read off the
+ * classfile by {@link ClassHeaders} and never by loading the class.
  *
- * <p>Loading is the fallback rather than the method. A census edge costs a map lookup and a load
- * costs a class, and the names that need loading are few and shared: a thousand library exceptions
- * reach {@code RuntimeException} through it, and it is loaded once.
+ * <p>The header is the fallback rather than the method. A census edge costs a map lookup and a
+ * header costs a read, and the names that need one are few and shared: a thousand library
+ * exceptions reach {@code RuntimeException} through it, and it is read once.
  */
 final class ClassAncestry {
 
@@ -29,18 +29,21 @@ final class ClassAncestry {
     private static final String EXTENDS = "EXTENDS";
 
     private final Map<String, List<ClassfileCensus.SupertypeAt>> census;
-    private final ClassLoader loader;
+    private final Map<String, String> kinds;
+    private final ClassHeaders headers;
 
     /** Memo over every name asked about, loaded ones included; null means the name did not resolve. */
     private final Map<String, List<ClassfileCensus.SupertypeAt>> resolved = new HashMap<>();
     private final Map<String, Boolean> throwable = new HashMap<>();
 
-    ClassAncestry(List<ClassfileCensus.ClassAt> classes, ClassLoader loader) {
+    ClassAncestry(List<ClassfileCensus.ClassAt> classes, ClassHeaders headers) {
         this.census = new HashMap<>();
+        this.kinds = new HashMap<>();
         for (ClassfileCensus.ClassAt at : classes) {
             this.census.putIfAbsent(at.className(), at.supertypes());
+            this.kinds.putIfAbsent(at.className(), at.kind());
         }
-        this.loader = loader == null ? Thread.currentThread().getContextClassLoader() : loader;
+        this.headers = headers;
     }
 
     /**
@@ -48,7 +51,7 @@ final class ClassAncestry {
      *
      * <p>The extends chain alone, because that is the rule: throwing is single inheritance and no
      * interface makes a class throwable. A chain that runs out, at a class extending nothing or at a
-     * name neither the census nor the loader answers for, is not a throwable. Both silences answer
+     * name neither the census nor a header answers for, is not a throwable. Both silences answer
      * the same way on purpose, admitting nothing being the only honest reading of a chain that
      * could not be followed.
      */
@@ -81,7 +84,7 @@ final class ClassAncestry {
      * <p>The interface arm of {@link #isThrowable}, and interfaces are why it reads the whole
      * closure where that one reads a chain: a jOOQ table reaches {@code org.jooq.Table} through
      * implements clauses, often several levels up a superclass chain it shares with nothing else.
-     * Best-effort on the same terms as the closure it reads, so a type the loader cannot resolve
+     * Best-effort on the same terms as the closure it reads, so a type no header resolves
      * answers no rather than guessing yes.
      */
     boolean isA(String className, String supertype) {
@@ -92,17 +95,17 @@ final class ClassAncestry {
      * Whether {@code className} is an enum, which decides how a value bound to a parameter of that
      * type is coerced.
      *
-     * <p>Asked of a loaded class rather than of the census, and that is what makes it answerable: a
-     * generated jOOQ enum lives in the package the reading excludes, so a census could answer for
-     * an author's own enums and not for the ones a column binds to. The loader reaches both. A name
-     * that does not resolve is not an enum, on {@link #isThrowable}'s terms.
+     * <p>The census answers for the classes it holds and the header for the rest, which is what
+     * makes it answerable: a generated jOOQ enum lives in the package the reading excludes, so a
+     * census alone could answer for an author's own enums and not for the ones a column binds to.
+     * A name that does not resolve is not an enum, on {@link #isThrowable}'s terms.
      */
     boolean isEnum(String className) {
-        try {
-            return Class.forName(className, false, loader).isEnum();
-        } catch (ClassNotFoundException | LinkageError e) {
-            return false;
+        String kind = kinds.get(className);
+        if (kind == null) {
+            kind = headers.of(className).map(ClassfileCensus.Header::kind).orElse(null);
         }
+        return "ENUM".equals(kind);
     }
 
     /**
@@ -162,37 +165,28 @@ final class ClassAncestry {
         if (resolved.containsKey(className)) {
             return resolved.get(className);
         }
-        List<ClassfileCensus.SupertypeAt> read = reflect(className);
+        List<ClassfileCensus.SupertypeAt> read = fromHeader(className);
         resolved.put(className, read);
         return read;
     }
 
     /**
-     * The edges a loaded class declares, spelled as the census spells them.
+     * The edges a class's header declares, spelled as the census spells them.
      *
      * <p>{@code java.lang.Object} is kept here where the census drops it, and the difference is the
      * two relations' subjects: the census states what a source declared, and a chain followed past
-     * the classpath states what a class is.
+     * the classpath states what a class is. An interface has no superclass, so it gets none.
      */
-    private List<ClassfileCensus.SupertypeAt> reflect(String className) {
-        Class<?> loaded;
-        try {
-            loaded = Class.forName(className, false, loader);
-        } catch (ClassNotFoundException | LinkageError e) {
-            return null;
-        }
-        // The clause is the declaring type's, exactly as the census reads it off the flags: an
-        // interface extends its super-interfaces. Stated here too because these edges and the
-        // census's are read through one accessor, and an edge that meant different things
-        // depending on which half produced it would be worse than either.
-        String clause = loaded.isInterface() ? EXTENDS : "IMPLEMENTS";
-        var edges = new ArrayList<ClassfileCensus.SupertypeAt>();
-        if (loaded.getSuperclass() != null) {
-            edges.add(new ClassfileCensus.SupertypeAt(loaded.getSuperclass().getName(), EXTENDS));
-        }
-        for (Class<?> face : loaded.getInterfaces()) {
-            edges.add(new ClassfileCensus.SupertypeAt(face.getName(), clause));
-        }
-        return List.copyOf(edges);
+    private List<ClassfileCensus.SupertypeAt> fromHeader(String className) {
+        return headers.of(className).map(header -> {
+            var edges = new ArrayList<>(header.supertypes());
+            boolean isInterface = "INTERFACE".equals(header.kind())
+                || "ANNOTATION".equals(header.kind());
+            boolean hasSuperclass = edges.stream().anyMatch(e -> EXTENDS.equals(e.declaredVia()));
+            if (!isInterface && !hasSuperclass && !"java.lang.Object".equals(className)) {
+                edges.add(0, new ClassfileCensus.SupertypeAt("java.lang.Object", EXTENDS));
+            }
+            return List.copyOf(edges);
+        }).orElse(null);
     }
 }

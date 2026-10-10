@@ -260,7 +260,18 @@ final class StoreFixture implements AutoCloseable {
      * that rule reads a class's declared form, so only a real classfile can say it.
      */
     static List<ClasspathEntry> testClasses() {
-        return List.of(new ClasspathEntry(testClassesRoot(), ClasspathEntry.Origin.PROJECT, null, null));
+        // The test classes are the project's own output; the rest of the JVM's classpath is what
+        // they were compiled against, transitive as a run delivers it, so ancestry can be read.
+        var root = testClassesRoot().toAbsolutePath().normalize();
+        var entries = new java.util.ArrayList<ClasspathEntry>();
+        entries.add(new ClasspathEntry(testClassesRoot(), ClasspathEntry.Origin.PROJECT, null, null));
+        for (String element : System.getProperty("java.class.path").split(java.io.File.pathSeparator)) {
+            var path = Path.of(element).toAbsolutePath().normalize();
+            if (!path.equals(root)) {
+                entries.add(new ClasspathEntry(path, ClasspathEntry.Origin.TRANSITIVE, null, null));
+            }
+        }
+        return List.copyOf(entries);
     }
 
     private static Path testClassesRoot() {

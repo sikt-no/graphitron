@@ -1197,11 +1197,14 @@ documents against the rest.
     and nothing hands capture a built catalog. Fixtures state the same two things a run does, a
     package and a loader, so `JooqCatalog` is no longer what a test starts from and is free to
     change. The sentinel package a goal tolerating none substitutes is no package.
-  * **Ancestry is read from class headers** `open`. `ClassAncestry` loads a class the reading
-    skipped to ask whether it is a `Table`, a `DSLContext`, an enum or a `Throwable`, a second
-    reading of the classpath through the JVM. The header, superclass, interfaces and flags, read
-    from the same entries and the platform answers the same questions without loading anything.
-    What still loads is a scalar constant's coercing, which only running its initialiser can say.
+  * **Ancestry is read from class headers** `done`. `ClassHeaders` reads the header of a class
+    the census does not hold, superclass, interfaces and flags, from the classpath's entries in
+    classpath order and then the platform's modules, so whether a type is a `Table`, a
+    `DSLContext`, an enum or a `Throwable` is answered without loading anything. The census
+    answers for its own classes, enums included, where the loader used to be asked. What still
+    loads is a scalar constant's coercing, which only running its initialiser can say. Fixtures
+    whose loader had been answering from the test JVM's classpath now carry what a run's
+    classpath carries: the generated catalog and the jOOQ runtime, as transitive entries.
 * **The jOOQ exclusion is pinned where services share its package** `open`. Services are commonly
   written in the module jOOQ generates into, so one directory holds both, and the exclusion is the
   package and every package under it. A service package beneath the generated one is dropped

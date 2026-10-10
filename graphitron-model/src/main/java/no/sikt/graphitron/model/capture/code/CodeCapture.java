@@ -128,8 +128,8 @@ public final class CodeCapture {
      * @param reading the classpath as the corpus reader read it, which is where the entries and
      *                their provenance are recorded; this gatherer writes its own family and none
      *                of that
-     * @param loader  the run's codegen classloader, for the one fact a classfile cannot answer;
-     *                null falls back to the thread's, which is what a caller with no catalog has
+     * @param loader  the loader over the run's classpath, for the one fact a classfile cannot
+     *                answer, a scalar constant's coercing; null falls back to the thread's
      */
     public static void capture(DSLContext dsl, ClasspathSourceCapture.Reading reading,
                                ClassLoader loader, LocalDateTime touchedAt) {
@@ -153,9 +153,13 @@ public final class CodeCapture {
         classes(dsl, census.classes(), touchedAt);
         scalarConstants(dsl, census.classes(), loader, touchedAt);
         var reactor = reactorClasses(census);
-        var ancestry = new ClassAncestry(census.classes(), loader);
-        throwables(dsl, census.classes(), ancestry, touchedAt);
-        methods(dsl, reactor, ancestry, touchedAt);
+        try (var headers = new ClassHeaders(reading.sources().stream()
+                .map(source -> java.nio.file.Path.of(source.sourceName()))
+                .toList())) {
+            var ancestry = new ClassAncestry(census.classes(), headers);
+            throwables(dsl, census.classes(), ancestry, touchedAt);
+            methods(dsl, reactor, ancestry, touchedAt);
+        }
         // Every entry read, not only the ones that declared something, so an entry that stopped
         // declaring a member loses its row.
         sweep(dsl, reading.read(), touchedAt);

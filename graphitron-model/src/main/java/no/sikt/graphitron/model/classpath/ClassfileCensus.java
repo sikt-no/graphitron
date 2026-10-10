@@ -261,6 +261,24 @@ public final class ClassfileCensus {
         }
     }
 
+    /** What a classfile's header says of its class: the name, the kind and the names written above it. */
+    public record Header(String className, String kind, List<SupertypeAt> supertypes) {}
+
+    /**
+     * The header of any classfile, public or not and in any package: what an ancestry question asks
+     * of a class this census leaves out. Empty where the bytes do not parse.
+     */
+    public static Optional<Header> header(byte[] bytes) {
+        ClassModel classfile;
+        try {
+            classfile = ClassFile.of().parse(bytes);
+        } catch (IllegalArgumentException e) {
+            return Optional.empty();
+        }
+        return Optional.of(new Header(classfile.thisClass().asInternalName().replace('/', '.'),
+            kindOf(classfile), supertypesOf(classfile)));
+    }
+
     /**
      * One classfile, or nothing where it is not a class this census carries: a name the reader
      * skips, a file that will not parse, a non-public class, or one under the excluded package.

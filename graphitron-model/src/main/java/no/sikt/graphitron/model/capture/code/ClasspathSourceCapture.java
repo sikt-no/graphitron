@@ -162,6 +162,13 @@ public final class ClasspathSourceCapture {
         // one it would keep. Every entry the configuration named counts as read, an entry left
         // alone being one this reading vouched for rather than one it lost.
         reclaim(dsl, claimed);
+        // In classpath order, which is the order a class name two entries declare resolves in.
+        var order = new java.util.HashMap<String, Integer>();
+        for (ClasspathEntry entry : classpath) {
+            order.putIfAbsent(entry.path().toString(), order.size());
+        }
+        sources.sort(java.util.Comparator.comparingInt(
+            source -> order.getOrDefault(source.sourceName(), Integer.MAX_VALUE)));
         return new Reading(reading.census(), List.copyOf(sources), graph);
     }
 

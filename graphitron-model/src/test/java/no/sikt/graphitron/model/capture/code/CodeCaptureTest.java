@@ -85,7 +85,12 @@ class CodeCaptureTest {
      */
     private static final List<ClasspathEntry> REACTOR_AND_JOOQ = List.of(
         ClasspathEntry.project(TEST_CLASSES),
-        new ClasspathEntry(jooqJar(), ClasspathEntry.Origin.DECLARED, "org.jooq:jooq"));
+        new ClasspathEntry(jooqJar(), ClasspathEntry.Origin.DECLARED, "org.jooq:jooq"),
+        // What the fixtures are compiled against and the reading skips, as a run's classpath
+        // carries it: a fixture parameter typed by one of this module's own enums is answered
+        // from that enum's classfile.
+        new ClasspathEntry(Path.of("target", "classes"), ClasspathEntry.Origin.TRANSITIVE,
+            "no.sikt:graphitron-model"));
 
     /**
      * The same jar as {@link #CLASSPATH} carries, reclassified as something a declared dependency
@@ -496,7 +501,7 @@ class CodeCaptureTest {
      * enum, and a position naming no class at all.
      *
      * <p>The enum is a nested one on purpose. The reading skips a nested class by name, so no row
-     * here describes it and only a loader can say it is an enum. That is the same reach a generated
+     * here describes it and only its classfile's header can say it is an enum. That is the same reach a generated
      * jOOQ enum needs, which is the population the view this replaced had to carry a second arm for
      * and still missed nested ones on.
      */
@@ -505,7 +510,7 @@ class CodeCaptureTest {
     void theExtractionIsTheDeclaredTypesAnswer() {
         withReactorCapture(dsl -> {
             assertThat(extractionsOn(dsl, "onAnEnum"))
-                .as("a nested enum no row describes, answered by loading it")
+                .as("a nested enum no row describes, answered by its header")
                 .containsExactly("DIRECT", "ENUM_VALUE_OF");
             assertThat(extractionsOn(dsl, "onAnEnumArray"))
                 .as("an array of that enum is not an enum; its component is a step down")

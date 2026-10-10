@@ -229,8 +229,22 @@ public final class TestSchemaHelper {
         try {
             var root = java.nio.file.Path.of(TestSchemaHelper.class.getProtectionDomain()
                 .getCodeSource().getLocation().toURI());
-            return java.util.List.of(new no.sikt.graphitron.model.config.ClasspathEntry(root,
+            // The test classes are the project's own output; everything else the JVM was handed is
+            // what they were compiled against, transitive as a run's classpath delivers it, so the
+            // reading skips it and the ancestry a parameter's role rests on can still be read.
+            var entries = new java.util.ArrayList<no.sikt.graphitron.model.config.ClasspathEntry>();
+            entries.add(new no.sikt.graphitron.model.config.ClasspathEntry(root,
                 no.sikt.graphitron.model.config.ClasspathEntry.Origin.PROJECT, null, null));
+            for (String element : System.getProperty("java.class.path")
+                    .split(java.io.File.pathSeparator)) {
+                var path = java.nio.file.Path.of(element).toAbsolutePath().normalize();
+                if (!path.equals(root.toAbsolutePath().normalize())) {
+                    entries.add(new no.sikt.graphitron.model.config.ClasspathEntry(path,
+                        no.sikt.graphitron.model.config.ClasspathEntry.Origin.TRANSITIVE, null,
+                        null));
+                }
+            }
+            return java.util.List.copyOf(entries);
         } catch (java.net.URISyntaxException e) {
             throw new IllegalStateException("the test classes are not on a file path", e);
         }
