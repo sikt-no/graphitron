@@ -502,6 +502,13 @@ and the emitters read, and it goes when nothing reads what it builds.
   * **A defect rests on a basis and sits at an AST entry** `done`. `basis` in place of `fault`, the
     twelve codes `GRAPHITRON`, and the position a foreign key into `graphql_ast_entry`, the element
     `graphitron_entry_defect_site`'s fixed hops away.
+  * **Every field has one fetcher** `open`. `graphitron_fetcher`: one row per output field of
+    `graphitron_field`, complete over them, the supertype the fetcher's facts reference. R333's
+    DataFetcher, one coordinate, one resolver, 1:1 and total, which joins `source` and `target` and
+    dispatches the operation set. The row carries the key and the facts stay their own relations,
+    so `graphitron_field_source`, the target and the operations reference it rather than each
+    keying the field afresh, and a field no fact explains is an absent subtype row a gate can
+    find. What `<Type>Fetchers.<field>` is emitted from.
   * **The producers are stated** `open`. A producer is a field where something is executed, and
     `graphitron_producer` holds those fields and no others: R333's `operation` is total over every
     coordinate, a bare column read being `Fetch`, so the producers are its verbs that execute and
