@@ -1,9 +1,10 @@
 package no.sikt.graphitron.rewrite.capture;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import graphql.schema.GraphQLSchema;
 import graphql.schema.idl.SchemaPrinter;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.schema.EmittedRegistry;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
@@ -120,7 +121,7 @@ class EmittedRegistryAgreementTest {
     @DisplayName("the store-derived schema and the incumbent agree on every corpus document but the recorded ones")
     void theProducersAgreeExceptWhereRecorded(@TempDir Path tmp) {
         var ctx = TestConfiguration.testContext();
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        var jooq = CatalogInput.of(ctx);
         var classpath = TestSchemaHelper.testClasspath();
         var printer = new SchemaPrinter(SchemaPrinter.Options.defaultOptions()
             .includeDirectives(true)

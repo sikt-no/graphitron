@@ -8,6 +8,7 @@ import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.test.CatalogInput;
 import no.sikt.graphitron.model.grammar.NodeDeclaration;
 import no.sikt.graphitron.model.compile.CompileDiagnostic;
 import no.sikt.graphitron.model.capture.compile.CompileFacts;
@@ -475,7 +476,7 @@ class FactCaptureAgreementTest {
     @Test
     @DisplayName("a federated schema the generator accepts records no problem and has a domain")
     void aFederatedSchemaReadsAsSound(@TempDir Path tmp) {
-        try (var store = CapturedStore.ofCatalog(tmp, FEDERATED_FIXTURE, catalog())) {
+        try (var store = CapturedStore.ofCatalog(tmp, FEDERATED_FIXTURE, CatalogInput.of(testContext()))) {
             assertThat(store.dsl()
                     .select(GRAPHQL_SCHEMA_PROBLEM.STAGE, GRAPHQL_SCHEMA_PROBLEM.MESSAGE)
                     .from(GRAPHQL_SCHEMA_PROBLEM)
@@ -498,8 +499,10 @@ class FactCaptureAgreementTest {
     void catalogCensusEqualsTheCatalog(@TempDir Path tmp) {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+
+        var input = new CatalogInput(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            capture(store, graph(tmp), jooq);
+            capture(store, graph(tmp), input);
 
             var expectedTables = new LinkedHashMap<String, String>();
             int expectedColumns = 0;
@@ -533,8 +536,10 @@ class FactCaptureAgreementTest {
     void tableTypesEqualTheCatalogs(@TempDir Path tmp) {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+
+        var input = new CatalogInput(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            capture(store, graph(tmp), jooq);
+            capture(store, graph(tmp), input);
 
             var expected = new LinkedHashMap<String, String>();
             for (var entry : jooq.allTableEntries()) {
@@ -580,8 +585,10 @@ class FactCaptureAgreementTest {
     void nodeMetadataVerdictEqualsTheProbes(@TempDir Path tmp) {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+
+        var input = new CatalogInput(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            capture(store, graph(tmp), jooq);
+            capture(store, graph(tmp), input);
 
             var metadata = store.dsl()
                 .select(SQL_NODE_METADATA.TABLE_SCHEMA, SQL_NODE_METADATA.TABLE_NAME,
@@ -659,8 +666,10 @@ class FactCaptureAgreementTest {
     void routineCensusEqualsTheCatalogsFunctions(@TempDir Path tmp) throws Exception {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+
+        var input = new CatalogInput(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            capture(store, graph(tmp), jooq);
+            capture(store, graph(tmp), input);
 
             var expectedRoutines = new LinkedHashMap<String, String>();
             var expectedParameters = new LinkedHashSet<String>();
@@ -737,8 +746,10 @@ class FactCaptureAgreementTest {
     void columnOrdinalsFollowTheTableDefinition(@TempDir Path tmp) {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+
+        var input = new CatalogInput(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            capture(store, graph(tmp), jooq);
+            capture(store, graph(tmp), input);
 
             var expected = new LinkedHashSet<String>();
             for (var entry : jooq.allTableEntries()) {
@@ -775,8 +786,10 @@ class FactCaptureAgreementTest {
     void columnBindingTypesEqualTheCatalogs(@TempDir Path tmp) {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+
+        var input = new CatalogInput(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            capture(store, graph(tmp), jooq);
+            capture(store, graph(tmp), input);
 
             var expected = new LinkedHashMap<String, String>();
             for (var entry : jooq.allTableEntries()) {
@@ -820,8 +833,10 @@ class FactCaptureAgreementTest {
     void generatedClassNamesAreCapturedAtTheirOwnGrain(@TempDir Path tmp) {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+
+        var input = new CatalogInput(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            capture(store, graph(tmp), jooq);
+            capture(store, graph(tmp), input);
 
             var expectedTables = new LinkedHashMap<String, String>();
             var expectedRecords = new LinkedHashMap<String, String>();
@@ -898,8 +913,10 @@ class FactCaptureAgreementTest {
     void perSchemaTablesClassesAreDistinct(@TempDir Path tmp) {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+
+        var input = new CatalogInput(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            capture(store, graph(tmp), jooq);
+            capture(store, graph(tmp), input);
 
             var byPackage = store.dsl()
                 .select(SQL_SCHEMA.SOURCE_NAME, SQL_SCHEMA.TABLES_CLASS_FQN)
@@ -927,8 +944,10 @@ class FactCaptureAgreementTest {
     void constraintJooqNamesEqualTheResolvedKeysConstants(@TempDir Path tmp) {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+
+        var input = new CatalogInput(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            capture(store, graph(tmp), jooq);
+            capture(store, graph(tmp), input);
 
             var expected = new LinkedHashMap<String, String>();
             for (var entry : jooq.allTableEntries()) {
@@ -973,8 +992,10 @@ class FactCaptureAgreementTest {
     void constraintCensusEqualsTheCatalog(@TempDir Path tmp) {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+
+        var input = new CatalogInput(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            capture(store, graph(tmp), jooq);
+            capture(store, graph(tmp), input);
 
             var expected = new LinkedHashSet<String>();
             for (var entry : jooq.allTableEntries()) {
@@ -1014,8 +1035,10 @@ class FactCaptureAgreementTest {
     void foreignKeyTargetsResolveThroughTheReferencedConstraint(@TempDir Path tmp) {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+
+        var input = new CatalogInput(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            capture(store, graph(tmp), jooq);
+            capture(store, graph(tmp), input);
 
             var expected = new LinkedHashSet<String>();
             for (var entry : jooq.allTableEntries()) {
@@ -1069,8 +1092,10 @@ class FactCaptureAgreementTest {
     void tableReferencesCountTheKeysConnectingEachPair(@TempDir Path tmp) {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+
+        var input = new CatalogInput(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            capture(store, graph(tmp), jooq);
+            capture(store, graph(tmp), input);
 
             var expected = new LinkedHashMap<String, Integer>();
             for (var entry : jooq.allTableEntries()) {
@@ -1116,8 +1141,10 @@ class FactCaptureAgreementTest {
     void primaryKeyRowsNamePrimaryKeyConstraints(@TempDir Path tmp) {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+
+        var input = new CatalogInput(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            capture(store, graph(tmp), jooq);
+            capture(store, graph(tmp), input);
             assertThat(store.dsl().fetchCount(SQL_PRIMARY_KEY))
                 .as("the catalog has primary keys, so this pins something")
                 .isPositive();
@@ -1153,12 +1180,12 @@ class FactCaptureAgreementTest {
      * <p>The roots are {@link #classpathOf}, the same answer the expectations are read from.
      */
     private static void capture(GraphitronModelStore store, GraphIdentity graph,
-                                JooqCatalog jooq) {
+                                CatalogInput jooq) {
         capture(store, graph, SubjectConfig.none(), classpathOf(testContext()), jooq);
     }
 
     /**
-     * {@link #capture(GraphitronModelStore, GraphIdentity, JooqCatalog)} with every input named.
+     * {@link #capture(GraphitronModelStore, GraphIdentity, CatalogInput)} with every input named.
      *
      * <p>Each is a fixture's own answer to what the run had, and an arm asserting that one graph's
      * reading does not reach another's needs to say so: a capture handed this build's classpath
@@ -1167,8 +1194,9 @@ class FactCaptureAgreementTest {
      */
     private static void capture(GraphitronModelStore store, GraphIdentity graph,
                                 SubjectConfig corpus, List<ClasspathEntry> classpath,
-                                JooqCatalog jooq) {
-        ModelCapture.capture(store.dsl(), graph, corpus, classpath, jooq,
+                                CatalogInput jooq) {
+        ModelCapture.capture(store.dsl(), graph, CapturedStore.withCatalog(corpus, jooq), classpath,
+            CapturedStore.loaderOf(jooq),
             java.time.LocalDateTime.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS));
     }
 

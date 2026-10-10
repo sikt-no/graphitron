@@ -33,7 +33,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 
 /**
  * A booted fact store with one or more SDL fixtures captured into it: the capture-level population,
@@ -172,27 +171,27 @@ public final class CapturedStore implements AutoCloseable {
     }
 
     /**
-     * {@link #ofCatalog(Path, String, JooqCatalog)} on a store of this fixture's own, for the same
+     * {@link #ofCatalog(Path, String, CatalogInput)} on a store of this fixture's own, for the same
      * reason {@link #ownStore} exists: the cases that reach for this install their own relations or
      * demote registered ones to views, and a clear cannot undo either.
      */
-    public static CapturedStore ownStoreOfCatalog(Path directory, String sdl, JooqCatalog jooq) {
+    public static CapturedStore ownStoreOfCatalog(Path directory, String sdl, CatalogInput jooq) {
         return ownStoreOfCatalog(directory, GRAPH, sdl, jooq);
     }
 
-    /** {@link #ofCatalog(Path, String, String, JooqCatalog)} on a store of its own. */
+    /** {@link #ofCatalog(Path, String, String, CatalogInput)} on a store of its own. */
     public static CapturedStore ownStoreOfCatalog(Path directory, String graphName, String sdl,
-                                                  JooqCatalog jooq) {
+                                                  CatalogInput jooq) {
         return ownStoreOfCatalogWith(directory, graphName, sdl, Objects.requireNonNull(jooq, "jooq"),
             List.of());
     }
 
     /**
-     * {@link #ofCatalog(Path, String, String, JooqCatalog, Path)} on a store of its own, for a
+     * {@link #ofCatalog(Path, String, String, CatalogInput, Path)} on a store of its own, for a
      * fixture that outlives the case that opened it and reads a relation the code family feeds.
      */
     public static CapturedStore ownStoreOfCatalog(Path directory, String graphName, String sdl,
-                                                  JooqCatalog jooq, Path classRoot) {
+                                                  CatalogInput jooq, Path classRoot) {
         return ownStoreOfCatalogWith(directory, graphName, sdl, Objects.requireNonNull(jooq, "jooq"),
             List.of(ownOutput(classRoot)));
     }
@@ -205,7 +204,7 @@ public final class CapturedStore implements AutoCloseable {
 
     /** {@link #ofCatalogWith} on a store of its own, the catalog being optional here. */
     public static CapturedStore ownStoreOfCatalogWith(Path directory, String graphName, String sdl,
-                                                      JooqCatalog jooq,
+                                                      CatalogInput jooq,
                                                       List<ClasspathEntry> classpath) {
         Path file = write(directory, graphName, sdl);
         var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
@@ -299,7 +298,7 @@ public final class CapturedStore implements AutoCloseable {
      * case whose two arms are the same two documents with and without one.
      */
     public static CapturedStore ofFiles(Path directory, String firstName, String firstSdl,
-                                        String secondName, String secondSdl, JooqCatalog jooq) {
+                                        String secondName, String secondSdl, CatalogInput jooq) {
         List<Path> files = List.of(write(directory, firstName, firstSdl),
             write(directory, secondName, secondSdl));
         var registry = SchemaLoader.load(files.stream().map(SchemaSource::file).toList());
@@ -318,12 +317,12 @@ public final class CapturedStore implements AutoCloseable {
      * store to derive from; what the derivation makes of them is the shadow tests' subject in the
      * generator's own module and not an axis a fixture arms.
      */
-    public static CapturedStore ofCatalog(Path directory, String sdl, JooqCatalog jooq) {
+    public static CapturedStore ofCatalog(Path directory, String sdl, CatalogInput jooq) {
         return ofCatalog(directory, GRAPH, sdl, jooq);
     }
 
-    /** {@link #ofCatalog(Path, String, JooqCatalog)} under a graph the caller names. */
-    public static CapturedStore ofCatalog(Path directory, String graphName, String sdl, JooqCatalog jooq) {
+    /** {@link #ofCatalog(Path, String, CatalogInput)} under a graph the caller names. */
+    public static CapturedStore ofCatalog(Path directory, String graphName, String sdl, CatalogInput jooq) {
         return ofCatalogWith(directory, graphName, sdl, jooq, List.of());
     }
 
@@ -332,19 +331,19 @@ public final class CapturedStore implements AutoCloseable {
      * assertions reach a relation the code family feeds: a condition hop routes off what
      * {@code @condition} may name, which is the code family's statement.
      */
-    public static CapturedStore ofCatalog(Path directory, String graphName, String sdl, JooqCatalog jooq,
+    public static CapturedStore ofCatalog(Path directory, String graphName, String sdl, CatalogInput jooq,
                                           Path classRoot) {
         return ofCatalogWith(directory, graphName, sdl, jooq, List.of(ownOutput(classRoot)));
     }
 
     /**
-     * {@link #ofCatalog(Path, String, String, JooqCatalog, Path)} over a classpath the caller
+     * {@link #ofCatalog(Path, String, String, CatalogInput, Path)} over a classpath the caller
      * describes. Entries rather than paths, because what an entry <em>is</em> decides what the
      * reading admits from it: the reactor-limited arms take the consumer's own code and not a
      * library's, and a path alone cannot say which it is.
      */
     public static CapturedStore ofCatalogWith(Path directory, String graphName, String sdl,
-                                              JooqCatalog jooq, List<ClasspathEntry> classpath) {
+                                              CatalogInput jooq, List<ClasspathEntry> classpath) {
         return openAndCapture(directory, graphName, sdl, Objects.requireNonNull(jooq, "jooq"),
             classpath);
     }
@@ -371,7 +370,7 @@ public final class CapturedStore implements AutoCloseable {
      * reading stages record one.
      */
     public static CapturedStore ofRefusedSchema(Path directory, String sdl, String refusedSdl,
-                                                JooqCatalog jooq) {
+                                                CatalogInput jooq) {
         Objects.requireNonNull(jooq, "jooq");
         return captureRefused(directory, List.of(write(directory, GRAPH, sdl),
             write(directory, GRAPH + "-refused", refusedSdl)), jooq);
@@ -389,7 +388,7 @@ public final class CapturedStore implements AutoCloseable {
      * their own rows: the reader writes what would not parse and the assembly writes what would not
      * compose, so the store a refusal leaves is the store a run leaves.
      */
-    private static CapturedStore captureRefused(Path directory, List<Path> files, JooqCatalog jooq) {
+    private static CapturedStore captureRefused(Path directory, List<Path> files, CatalogInput jooq) {
         var parse = SchemaLoader.parsePerSource(files.stream().map(SchemaSource::file).toList());
         if (parse.failures().isEmpty() && parse.registryErrors().isEmpty()) {
             throw new AssertionError("nothing objected to " + files.getLast().getFileName()
@@ -401,7 +400,7 @@ public final class CapturedStore implements AutoCloseable {
     }
 
     private static CapturedStore openAndCapture(Path directory, String graphName, String sdl,
-                                                JooqCatalog jooq, List<ClasspathEntry> classpath) {
+                                                CatalogInput jooq, List<ClasspathEntry> classpath) {
         Path file = write(directory, graphName, sdl);
         var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
         var store = ThreadConfinedStore.borrow();
@@ -434,7 +433,7 @@ public final class CapturedStore implements AutoCloseable {
     }
 
     /** {@link #andGraph(String, String)} against a generated jOOQ catalog. */
-    public CapturedStore andCatalogGraph(String otherGraph, String sdl, JooqCatalog jooq) {
+    public CapturedStore andCatalogGraph(String otherGraph, String sdl, CatalogInput jooq) {
         return andCatalogGraphWith(otherGraph, sdl, jooq, List.of());
     }
 
@@ -443,7 +442,7 @@ public final class CapturedStore implements AutoCloseable {
      * artifact is: the code a consumer writes and the code a consumer names are different jars and
      * both are read.
      */
-    public CapturedStore andCatalogGraphWith(String otherGraph, String sdl, JooqCatalog jooq,
+    public CapturedStore andCatalogGraphWith(String otherGraph, String sdl, CatalogInput jooq,
                                             List<ClasspathEntry> classpath) {
         captureAnother(otherGraph, sdl, Objects.requireNonNull(jooq, "jooq"), false, classpath);
         return this;
@@ -454,7 +453,7 @@ public final class CapturedStore implements AutoCloseable {
      * the classpath does not vary by graph, and the families read out of it carry no graph at all,
      * so the second graph's reading of it is the first graph's reading again.
      */
-    public CapturedStore andCatalogGraph(String otherGraph, String sdl, JooqCatalog jooq,
+    public CapturedStore andCatalogGraph(String otherGraph, String sdl, CatalogInput jooq,
                                          Path classRoot) {
         return andCatalogGraphWith(otherGraph, sdl, jooq, List.of(ownOutput(classRoot)));
     }
@@ -476,7 +475,7 @@ public final class CapturedStore implements AutoCloseable {
      */
     public Map<String, String> andCatalogGraphReadAt(String graph, Map<String, String> written,
                                                      java.util.Collection<String> files,
-                                                     Instant at, JooqCatalog jooq,
+                                                     Instant at, CatalogInput jooq,
                                                      List<ClasspathEntry> classpath) {
         for (var file : written.entrySet()) {
             Path path = write(directory, graph + "." + file.getKey(), file.getValue());
@@ -523,12 +522,12 @@ public final class CapturedStore implements AutoCloseable {
      * codegen somewhere else between two builds. The graph's source membership is rewritten whole, so
      * what its scope sees afterwards is the new catalog alone.
      */
-    public CapturedStore recaptureCatalog(String sdl, JooqCatalog jooq) {
+    public CapturedStore recaptureCatalog(String sdl, CatalogInput jooq) {
         captureAnother(graphName, sdl, Objects.requireNonNull(jooq, "jooq"), true, List.of());
         return this;
     }
 
-    private void captureAnother(String graph, String sdl, JooqCatalog jooq, boolean warm,
+    private void captureAnother(String graph, String sdl, CatalogInput jooq, boolean warm,
                                 List<ClasspathEntry> classpath) {
         Path other = write(directory, graph, sdl);
         captureFiles(store.dsl(), List.of(other), directory, graph, jooq, warm, classpath);
@@ -558,7 +557,7 @@ public final class CapturedStore implements AutoCloseable {
      * then invokes the generator, whose walk derives over what it finds there.
      */
     private static CapturedSchema captureFiles(DSLContext dsl, List<Path> files, Path directory,
-                                               String graphName, JooqCatalog jooq, boolean warm,
+                                               String graphName, CatalogInput jooq, boolean warm,
                                                List<ClasspathEntry> classpath) {
         return captureFiles(dsl, files, directory, graphName, jooq, warm, classpath,
             LocalDateTime.now());
@@ -566,7 +565,7 @@ public final class CapturedStore implements AutoCloseable {
 
     /** The same capture at an instant the caller states, which every row it marks then carries. */
     private static CapturedSchema captureFiles(DSLContext dsl, List<Path> files, Path directory,
-                                               String graphName, JooqCatalog jooq, boolean warm,
+                                               String graphName, CatalogInput jooq, boolean warm,
                                                List<ClasspathEntry> classpath, LocalDateTime readAt) {
         FactStores.countCapture();
         ModelCapture.writeGraph(dsl, new GraphIdentity(graphName, directory), readAt);
@@ -574,7 +573,7 @@ public final class CapturedStore implements AutoCloseable {
         // classpath families where there is a classpath, every document stratum, and runs the
         // derivations at its tail.
         return ModelCapture.capture(dsl, new GraphIdentity(graphName, directory),
-            corpusOf(files, directory), classpath, jooq, readAt);
+            withCatalog(corpusOf(files, directory), jooq), classpath, loaderOf(jooq), readAt);
     }
 
     /**
@@ -610,16 +609,31 @@ public final class CapturedStore implements AutoCloseable {
      * told apart calls {@link ModelCapture#capture} with instants of its own.
      */
     public static CapturedSchema capture(DSLContext dsl, GraphIdentity graph, SubjectConfig corpus,
-                                         JooqCatalog jooq) {
+                                         CatalogInput jooq) {
         return capture(dsl, graph, corpus, jooq, List.of());
     }
 
-    /** {@link #capture(DSLContext, GraphIdentity, SubjectConfig, JooqCatalog)} with a classpath. */
+    /** {@link #capture(DSLContext, GraphIdentity, SubjectConfig, CatalogInput)} with a classpath. */
     public static CapturedSchema capture(DSLContext dsl, GraphIdentity graph, SubjectConfig corpus,
-                                         JooqCatalog jooq, List<ClasspathEntry> classpath) {
+                                         CatalogInput jooq, List<ClasspathEntry> classpath) {
         FactStores.countCapture();
-        return ModelCapture.capture(dsl, graph, corpus, classpath, jooq,
+        return ModelCapture.capture(dsl, graph, withCatalog(corpus, jooq), classpath, loaderOf(jooq),
             LocalDateTime.now().truncatedTo(ChronoUnit.MICROS));
+    }
+
+    /** {@code corpus} configured with {@code catalog}'s package, as a run declaring it would be. */
+    public static SubjectConfig withCatalog(SubjectConfig corpus, CatalogInput catalog) {
+        if (catalog == null) {
+            return corpus;
+        }
+        return new SubjectConfig(corpus.recipe(), java.util.Optional.of(catalog.jooqPackage()),
+            corpus.supergraph(), corpus.output(), corpus.tenantColumn(), corpus.lint(),
+            corpus.sessionState());
+    }
+
+    /** The loader the capture runs code through: the catalog's, or the thread's where none is given. */
+    public static ClassLoader loaderOf(CatalogInput catalog) {
+        return catalog == null ? Thread.currentThread().getContextClassLoader() : catalog.loader();
     }
 
     /**

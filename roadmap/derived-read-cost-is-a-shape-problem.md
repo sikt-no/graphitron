@@ -653,6 +653,11 @@ and the emitters read, and it goes when nothing reads what it builds.
   * **Operation's modifiers are keyed to the producer** `blocked`, on the producers. `condition`,
     `paginate` and `orderBy` modify a `_select` or a `_lookup` rather than execute anything, which is
     how the generated code is organised too: one condition method and one ordering method per field.
+  * **A scalar constant says why it has no input type** `open`. `code_scalar_constant.input_type`
+    is what the walk's `@scalarType` check and the emitted scalar both read, and it folds four
+    silences into one NULL: the class does not load, the field is not a scalar, the initialiser
+    throws, or the coercing is erased. The walk's `CoercingErased` rejection needs the last told
+    apart, with how the coercing was declared, before `validate` can report it from the store.
   * **`source` and `target` are stated for every coordinate** `open`. The two total facts no relation
     states whole, and totality is what the defect model's gate checks.
     * **A field's source says how many objects arrive** `done`. `graphitron_type_arrival` folds each
@@ -1173,7 +1178,7 @@ documents against the rest.
 * **A claim references the dependency it resolves** `blocked`, on the node above.
   `store_graph_source` for a classpath entry keys the dependency row, `classpath-source` declares
   `store`, and the code family has the configuration as its one upstream.
-* **Code does not depend on jOOQ** `open`. The two families are parallel: each reads its own
+* **Code does not depend on jOOQ** `done`. The two families are parallel: each reads its own
   corpus under the configuration, and neither keys the other. The reading skips the generated jOOQ
   package, and that is right, the generated classes being the catalog's to describe and no part of
   the service layer. Two reads cross today, one child each.
@@ -1186,10 +1191,17 @@ documents against the rest.
     `jooq`, and a table added to the catalog binds on the next capture where it used to wait for
     the code entry to change. `code_method_parameter.role` keeps `TABLE_CONCRETE`, a fact about
     the signature alone.
-  * **The reading's loader comes from the classpath it read** `open`. `CodeCapture` and
-    `ClassAncestry` are handed `jooq.codegenLoader()`, to load scalar constants and to ask whether a
-    position is a `Table` or an enum. That is a loader and not a family, but reaching it through
-    the catalog makes the catalog look upstream of code when it is not.
+  * **The reading's loader comes from the classpath it read** `done`. Capture takes the
+    configuration, the classpath and the loader over it, and each gatherer reads its own corpus
+    from those: the jOOQ gatherer builds its catalog from the configured package and the loader,
+    and nothing hands capture a built catalog. Fixtures state the same two things a run does, a
+    package and a loader, so `JooqCatalog` is no longer what a test starts from and is free to
+    change. The sentinel package a goal tolerating none substitutes is no package.
+  * **Ancestry is read from class headers** `open`. `ClassAncestry` loads a class the reading
+    skipped to ask whether it is a `Table`, a `DSLContext`, an enum or a `Throwable`, a second
+    reading of the classpath through the JVM. The header, superclass, interfaces and flags, read
+    from the same entries and the platform answers the same questions without loading anything.
+    What still loads is a scalar constant's coercing, which only running its initialiser can say.
 * **The jOOQ exclusion is pinned where services share its package** `open`. Services are commonly
   written in the module jOOQ generates into, so one directory holds both, and the exclusion is the
   package and every package under it. A service package beneath the generated one is dropped

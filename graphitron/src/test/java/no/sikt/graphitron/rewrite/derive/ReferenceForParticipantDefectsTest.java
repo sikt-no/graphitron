@@ -1,8 +1,9 @@
 package no.sikt.graphitron.rewrite.derive;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.BeforeAll;
@@ -33,12 +34,12 @@ class ReferenceForParticipantDefectsTest {
 
     private static final String GRAPH = CapturedStore.GRAPH;
 
-    private static JooqCatalog jooq;
+    private static CatalogInput jooq;
 
     @BeforeAll
     static void scanTheCatalog() {
         var ctx = TestConfiguration.testContext();
-        jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        jooq = CatalogInput.of(ctx);
     }
 
     @TempDir

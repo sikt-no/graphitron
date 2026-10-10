@@ -1,7 +1,8 @@
 package no.sikt.graphitron.rewrite.derive;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.grammar.NodeDeclaration;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -121,7 +122,7 @@ class NodeTypeShadowTest {
     private static void withBothSpellings(Path tmp, String sdl,
                                           BiConsumer<Set<String>, Set<String>> body) {
         var ctx = testContext();
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        var jooq = CatalogInput.of(ctx);
         try (var store = CapturedStore.ofCatalog(tmp, sdl, jooq)) {
             body.accept(derivedNodeTypes(store), nodeTypesBy(TestSchemaHelper.nodeDeclaration(), sdl));
         }

@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.derive;
 
-import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.diagnostics.Rejection;
@@ -392,9 +393,9 @@ class ArgmappingProjectionDefectsTest {
         }
     }
 
-    private static JooqCatalog jooq() {
+    private static CatalogInput jooq() {
         var ctx = testContext();
-        return new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        return CatalogInput.of(ctx);
     }
 
     /** The violations' messages, the surface an author actually meets. */

@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.derive;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import graphql.language.BooleanValue;
 import graphql.language.DirectivesContainer;
 import graphql.schema.GraphQLFieldsContainer;
@@ -7,7 +9,6 @@ import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLTypeUtil;
 import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.model.test.CorpusDocuments;
 import no.sikt.graphitron.model.test.CorpusStore;
@@ -299,8 +300,8 @@ class InputOccurrenceShadowTest {
         return full.contains("interface Node") ? full : full + "\ninterface Node { id: ID! }\n";
     }
 
-    private static JooqCatalog jooq() {
+    private static CatalogInput jooq() {
         var ctx = testContext();
-        return new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        return CatalogInput.of(ctx);
     }
 }

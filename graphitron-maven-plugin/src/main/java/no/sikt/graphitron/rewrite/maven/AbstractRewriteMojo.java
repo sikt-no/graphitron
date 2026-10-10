@@ -1247,11 +1247,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
         return GraphitronStore.capture(store, new GraphIdentity(ctx.graphName(), ctx.basedir()),
             SubjectConfig.of(ctx),
             ctx.classpathRoots(),
-            // Off the declared parameter rather than the context's, which carries the sentinel a
-            // goal tolerating no packages substitutes. A catalog loaded from that name finds no
-            // class and warns, and a goal already saying it captures no database facts should not
-            // also complain that it could not find them.
-            jooqPackage == null ? null : new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()));
+            ctx.codegenLoader());
     }
 
     /**

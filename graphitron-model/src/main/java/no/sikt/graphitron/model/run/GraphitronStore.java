@@ -5,7 +5,6 @@ import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.boot.StoreUnavailableException;
 import no.sikt.graphitron.model.config.ClasspathEntry;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import org.jooq.exception.DataAccessException;
 
 import java.nio.file.Path;
@@ -68,11 +67,11 @@ public final class GraphitronStore {
      */
     public static CapturedGraph captured(RunContext ctx) {
         var graph = new GraphIdentity(ctx.graphName(), ctx.basedir());
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        var loader = ctx.codegenLoader();
         return ctx.storeDirectory() == null
-            ? capturedInMemory(graph, SubjectConfig.of(ctx), ctx.classpathRoots(), jooq)
+            ? capturedInMemory(graph, SubjectConfig.of(ctx), ctx.classpathRoots(), loader)
             : captured(ctx.storeDirectory(), graph, SubjectConfig.of(ctx), ctx.classpathRoots(),
-                jooq);
+                loader);
     }
 
     /**
@@ -121,16 +120,16 @@ public final class GraphitronStore {
      */
     public static CapturedGraph captured(Path directory, GraphIdentity graph,
                                          SubjectConfig config,
-                                         List<ClasspathEntry> classpath, JooqCatalog jooq) {
+                                         List<ClasspathEntry> classpath, ClassLoader loader) {
         if (directory == null) {
             // No home to name is a private store that dies with the run, which is what a caller
             // with nowhere to keep facts is asking for.
-            return capturedInMemory(graph, config, classpath, jooq);
+            return capturedInMemory(graph, config, classpath, loader);
         }
         var store = at(directory);
         try {
             refuseIfOwnedElsewhere(store, graph);
-            return new CapturedGraph(store, graph, capture(store, graph, config, classpath, jooq));
+            return new CapturedGraph(store, graph, capture(store, graph, config, classpath, loader));
         } catch (RuntimeException | Error failure) {
             store.close();
             throw failure;
@@ -140,10 +139,10 @@ public final class GraphitronStore {
     /** {@link #captured} into a store that lives as long as the caller, for a run with no home. */
     public static CapturedGraph capturedInMemory(GraphIdentity graph, SubjectConfig config,
                                                  List<ClasspathEntry> classpath,
-                                                 JooqCatalog jooq) {
+                                                 ClassLoader loader) {
         var store = inMemory();
         try {
-            return new CapturedGraph(store, graph, capture(store, graph, config, classpath, jooq));
+            return new CapturedGraph(store, graph, capture(store, graph, config, classpath, loader));
         } catch (RuntimeException | Error failure) {
             store.close();
             throw failure;
@@ -164,10 +163,10 @@ public final class GraphitronStore {
      */
     public static CapturedSchema capture(GraphitronModelStore store, GraphIdentity graph,
                                          SubjectConfig config, List<ClasspathEntry> classpath,
-                                         JooqCatalog jooq) {
+                                         ClassLoader loader) {
         var readAt = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
         return capture(graph.name(), () ->
-            ModelCapture.capture(store.dsl(), graph, config, classpath, jooq, readAt));
+            ModelCapture.capture(store.dsl(), graph, config, classpath, loader, readAt));
     }
 
     /**

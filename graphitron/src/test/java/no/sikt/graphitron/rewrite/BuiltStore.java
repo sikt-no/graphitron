@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.GraphitronStore;
@@ -133,7 +134,7 @@ public final class BuiltStore implements AutoCloseable {
             // property of what its code happens to call.
             var captured = GraphitronStore.captured(storeHome, new GraphIdentity(graphName, tmp),
                 SubjectConfig.of(ctx), ctx.classpathRoots(),
-                new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()));
+                ctx.codegenLoader());
             var output = pass == null ? null
                 : pass.apply(new GraphQLRewriteGenerator(ctx, captured));
             return new BuiltStore(captured.store(), graphName, schemaFile, storeHome, output);

@@ -1,12 +1,13 @@
 package no.sikt.graphitron.rewrite.classifieddsl;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.model.test.CorpusDocuments;
 import no.sikt.graphitron.model.run.GraphitronStore;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
 import no.sikt.graphitron.model.test.CorpusDocuments.Document;
@@ -148,7 +149,7 @@ final class OutcomeBlockRenderer {
         Files.createDirectories(directory);
         RunContext ctx = TestConfiguration.testContext();
         var store = CapturedStore.ofCatalog(directory, CorpusDocuments.prelude() + "\n" + document.sdl(),
-            new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()));
+            CatalogInput.of(ctx));
 
         Map<String, String> verdicts = new LinkedHashMap<>();
         store.dsl()

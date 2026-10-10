@@ -1,8 +1,9 @@
 package no.sikt.graphitron.rewrite.capture;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
@@ -109,7 +110,7 @@ class EnumBindingCaptureTest {
     @Test
     @DisplayName("a second capture over the same source restates the rows rather than colliding")
     void aSecondCaptureRestatesTheRows(@TempDir Path tmp) {
-        var jooq = new JooqCatalog(TestConfiguration.DEFAULT_JOOQ_PACKAGE);
+        var jooq = CatalogInput.of(TestConfiguration.DEFAULT_JOOQ_PACKAGE);
         try (var store = CapturedStore.ofCatalog(tmp, SDL, jooq)) {
             int before = store.dsl().fetchCount(SQL_ENUM_BINDING);
             assertThat(before).isPositive();
@@ -121,7 +122,7 @@ class EnumBindingCaptureTest {
 
     private static void withCatalog(Path tmp, Consumer<DSLContext> assertions) {
         try (var store = CapturedStore.ofCatalog(tmp, SDL,
-                new JooqCatalog(TestConfiguration.DEFAULT_JOOQ_PACKAGE))) {
+                CatalogInput.of(TestConfiguration.DEFAULT_JOOQ_PACKAGE))) {
             assertions.accept(store.dsl());
         }
     }

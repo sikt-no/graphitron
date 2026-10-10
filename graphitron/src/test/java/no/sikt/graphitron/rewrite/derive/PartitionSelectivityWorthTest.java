@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.derive;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.model.test.ScaledSchemaFixture;
 
 import no.sikt.graphitron.common.configuration.TestConfiguration;
@@ -8,7 +10,6 @@ import no.sikt.graphitron.model.boot.StoreAnswer;
 import no.sikt.graphitron.model.catalog.GraphPartition;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.StoreStatistics;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.BeforeAll;
@@ -148,7 +149,7 @@ class PartitionSelectivityWorthTest {
     @BeforeAll
     static void readEveryRegimeOnce() {
         var ctx = TestConfiguration.testContext();
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        var jooq = CatalogInput.of(ctx);
         try (var store = CapturedStore.ofCatalog(tmp.resolve("worth"),
                 ScaledSchemaFixture.scaledSdl(UNITS), jooq)) {
             DSLContext dsl = store.dsl();

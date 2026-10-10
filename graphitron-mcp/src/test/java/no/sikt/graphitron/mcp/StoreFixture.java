@@ -1,5 +1,7 @@
 package no.sikt.graphitron.mcp;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreReader;
@@ -8,7 +10,6 @@ import no.sikt.graphitron.model.test.RunawayRelation;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.FactWriters;
 import no.sikt.graphitron.model.test.ThreadConfinedStore;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.run.ModelCapture;
 import org.junit.jupiter.api.extension.AfterAllCallback;
 import org.junit.jupiter.api.extension.BeforeAllCallback;
@@ -31,7 +32,7 @@ import java.util.stream.Stream;
  *
  * <p>A local layer over {@link CapturedStore}, which is the reactor's capture level: every factory
  * here is one of that level's arms with this module's own vocabulary in front of it, a generated jOOQ
- * package instead of a {@link JooqCatalog} and this module's test classes instead of a classpath the
+ * package instead of a {@link CatalogInput} and this module's test classes instead of a classpath the
  * caller assembles. What stays local is what is local: the two generated packages, the placeholder
  * SDL, the fixture classes and their walked source root, and the reader a tool's several queries go through.
  *
@@ -126,7 +127,7 @@ public final class StoreFixture implements AutoCloseable, FixtureView {
     private static StoreFixture ofJooqPackage(Path directory, String sdl, String jooqPackage) {
         return new StoreFixture(jooqPackage == null
             ? CapturedStore.of(directory, sdl)
-            : CapturedStore.ofCatalog(directory, sdl, new JooqCatalog(jooqPackage)));
+            : CapturedStore.ofCatalog(directory, sdl, CatalogInput.of(jooqPackage)));
     }
 
     /** The one code-fixture source root a walk covers; see {@link #codeFixtureSources()}. */
@@ -163,7 +164,7 @@ public final class StoreFixture implements AutoCloseable, FixtureView {
      */
     public static StoreFixture ofSchema(Path directory, String sdl) {
         return new StoreFixture(CapturedStore.ofCatalogWith(directory, GRAPH, sdl,
-            new JooqCatalog(JOOQ_PACKAGE), codeFixtureClasspath()));
+            CatalogInput.of(JOOQ_PACKAGE), codeFixtureClasspath()));
     }
 
     /**
@@ -186,13 +187,13 @@ public final class StoreFixture implements AutoCloseable, FixtureView {
         /** {@link StoreFixture#ofCatalog(Path)} on a store of its own. */
         public StoreFixture ofCatalog(Path directory) {
             return new StoreFixture(CapturedStore.ownStoreOfCatalog(directory, PLACEHOLDER_SDL,
-                new JooqCatalog(JOOQ_PACKAGE)), true);
+                CatalogInput.of(JOOQ_PACKAGE)), true);
         }
 
         /** {@link StoreFixture#ofSchema(Path, String)} on a store of its own. */
         public StoreFixture ofSchema(Path directory, String sdl) {
             return new StoreFixture(CapturedStore.ownStoreOfCatalogWith(directory, GRAPH, sdl,
-                new JooqCatalog(JOOQ_PACKAGE), codeFixtureClasspath()), true);
+                CatalogInput.of(JOOQ_PACKAGE), codeFixtureClasspath()), true);
         }
 
         /** {@link StoreFixture#ofCodeFixtures(Path)} on a store of its own. */
@@ -230,7 +231,7 @@ public final class StoreFixture implements AutoCloseable, FixtureView {
      */
     public static StoreFixture ofRefusedSchema(Path directory, String sdl, String refusedSdl) {
         return new StoreFixture(CapturedStore.ofRefusedSchema(directory, sdl, refusedSdl,
-            new JooqCatalog(JOOQ_PACKAGE)));
+            CatalogInput.of(JOOQ_PACKAGE)));
     }
 
     /**
@@ -282,7 +283,7 @@ public final class StoreFixture implements AutoCloseable, FixtureView {
         if (jooqPackage == null) {
             captured.recapture(PLACEHOLDER_SDL);
         } else {
-            captured.recaptureCatalog(PLACEHOLDER_SDL, new JooqCatalog(jooqPackage));
+            captured.recaptureCatalog(PLACEHOLDER_SDL, CatalogInput.of(jooqPackage));
         }
         return this;
     }
@@ -292,7 +293,7 @@ public final class StoreFixture implements AutoCloseable, FixtureView {
         if (jooqPackage == null) {
             captured.andGraph(otherGraph, PLACEHOLDER_SDL);
         } else {
-            captured.andCatalogGraph(otherGraph, PLACEHOLDER_SDL, new JooqCatalog(jooqPackage));
+            captured.andCatalogGraph(otherGraph, PLACEHOLDER_SDL, CatalogInput.of(jooqPackage));
         }
         return this;
     }

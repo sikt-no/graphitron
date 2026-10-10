@@ -1,8 +1,9 @@
 package no.sikt.graphitron.rewrite.derive;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.model.test.CorpusDocuments;
 import no.sikt.graphitron.model.test.CorpusStore;
@@ -257,7 +258,7 @@ class ColumnMatchShadowTest {
 
     private void withCatalogStore(String sdl, java.util.function.Consumer<DSLContext> body) {
         var ctx = testContext();
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        var jooq = CatalogInput.of(ctx);
         try (var captured = CapturedStore.ofCatalog(tmp, sdl, jooq)) {
             body.accept(captured.dsl());
         }

@@ -4,7 +4,6 @@ import no.sikt.graphitron.model.Public;
 import no.sikt.graphitron.model.capture.document.GraphitronAnchor;
 import no.sikt.graphitron.model.capture.document.GraphitronAstEntries;
 import no.sikt.graphitron.model.capture.document.GraphQLAstEntries;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
 
@@ -271,7 +270,7 @@ public final class EntryFamilyFixture {
      * differential worth running: the schema names tables the catalog need not hold, so what the
      * arms are compared on is the decode's own output rather than a resolution.
      */
-    public static CapturedStore capture(Path directory, JooqCatalog jooq) {
+    public static CapturedStore capture(Path directory, CatalogInput jooq) {
         var captured = CapturedStore.ofFiles(directory, FIRST, CORE, SECOND, EXTENSION, jooq);
         perDocument(captured, directory);
         return captured;

@@ -1,7 +1,8 @@
 package no.sikt.graphitron.model.intent;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.model.config.ClasspathEntry;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.model.test.TestRunContext;
@@ -56,7 +57,7 @@ class FieldProducerMethodTest {
     @DisplayName("a reference resolves through its own graph's entry, not a sibling's")
     void siblingGraphsResolveThroughTheirOwnMembership() throws IOException {
         var ctx = TestRunContext.of();
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        var jooq = CatalogInput.of(ctx);
         var mine = ClasspathCorpus.entries();
         var theirs = List.of(new ClasspathEntry(copyOfTheServiceClass(),
             ClasspathEntry.Origin.REACTOR, "no.sikt:graphitron-sakila-service-copy", null));

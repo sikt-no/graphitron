@@ -1,10 +1,11 @@
 package no.sikt.graphitron.rewrite.capture;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import graphql.language.AstPrinter;
 import graphql.language.ObjectTypeDefinition;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.schema.EmittedRegistry;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
@@ -191,7 +192,7 @@ class NodeTypeIdDerivationTest {
     // ---------------------------------------------------------------------------------------
 
     private static CapturedStore captured(Path tmp, String sdl) {
-        return CapturedStore.ofCatalog(tmp, sdl, new JooqCatalog(TestConfiguration.DEFAULT_JOOQ_PACKAGE));
+        return CapturedStore.ofCatalog(tmp, sdl, CatalogInput.of(TestConfiguration.DEFAULT_JOOQ_PACKAGE));
     }
 
     /** The one author-facing message the emitted registry refuses with, in the author's terms. */

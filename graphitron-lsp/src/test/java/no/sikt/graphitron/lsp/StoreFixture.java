@@ -1,5 +1,7 @@
 package no.sikt.graphitron.lsp;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.StoreAccess;
 import no.sikt.graphitron.model.config.ClasspathEntry;
@@ -10,7 +12,6 @@ import no.sikt.graphitron.model.test.RunawayRelation;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.FactWriters;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
 import org.jooq.DSLContext;
@@ -35,7 +36,7 @@ import static no.sikt.graphitron.model.Tables.SQL_TABLE;
  *
  * <p>A local layer over {@link CapturedStore}, the reactor's capture level: every arm here is one of
  * that level's captures with this module's vocabulary in front of it, a generated jOOQ package
- * instead of a {@link JooqCatalog} and this module's test classes as a classpath entry. The writers
+ * instead of a {@link CatalogInput} and this module's test classes as a classpath entry. The writers
  * go through {@link FactWriters}. What stays local is what is local: the two generated packages, the
  * placeholder SDL, the backing-class fixtures, and the reads a provider makes.
  *
@@ -113,7 +114,7 @@ final class StoreFixture implements AutoCloseable {
                 : CapturedStore.ownStoreWith(directory, graphName, sdl, classpath);
         }
 
-        CapturedStore ofCatalog(Path directory, String graphName, String sdl, JooqCatalog jooq,
+        CapturedStore ofCatalog(Path directory, String graphName, String sdl, CatalogInput jooq,
                                 List<ClasspathEntry> classpath) {
             return this == CASE
                 ? CapturedStore.ofCatalogWith(directory, graphName, sdl, jooq, classpath)
@@ -227,7 +228,7 @@ final class StoreFixture implements AutoCloseable {
                                               List<ClasspathEntry> classpath,
                                               String jooqPackage) {
         return new StoreFixture(lifetime.ofCatalog(directory, graphName, sdl,
-            new JooqCatalog(jooqPackage), classpath), directory, lifetime);
+            CatalogInput.of(jooqPackage), classpath), directory, lifetime);
     }
 
     /**

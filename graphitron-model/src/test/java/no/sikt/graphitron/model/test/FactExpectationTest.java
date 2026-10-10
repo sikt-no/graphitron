@@ -1,6 +1,5 @@
 package no.sikt.graphitron.model.test;
 
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.test.CorpusExpectations.Block;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterAll;
@@ -116,7 +115,7 @@ class FactExpectationTest {
     @BeforeAll
     static void captureEveryDocument() {
         var ctx = TestRunContext.of();
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        var jooq = CatalogInput.of(ctx);
         var graphs = Graphs.of(CorpusDocuments.documents(FACTS));
         // The classpath corpus beside the catalog, so a document can state what a reading finds in
         // Java as well as what it finds in SDL. The model and the capture are one subject: a

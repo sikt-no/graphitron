@@ -1,8 +1,9 @@
 package no.sikt.graphitron.rewrite.derive;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
@@ -480,7 +481,7 @@ class CarrierDataFieldTest {
     private void withCapturedStore(String sdl, Consumer<DSLContext> body) {
         var ctx = testContext();
         try (var store = CapturedStore.ofCatalogWith(tmp, GRAPH, sdl,
-                new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()),
+                CatalogInput.of(ctx),
                 TestSchemaHelper.testClasspath())) {
             body.accept(store.dsl());
         }

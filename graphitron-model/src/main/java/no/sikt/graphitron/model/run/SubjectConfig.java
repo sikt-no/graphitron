@@ -68,7 +68,9 @@ public record SubjectConfig(Optional<SchemaRecipe> recipe, Optional<String> jooq
     public static SubjectConfig of(RunContext ctx) {
         return new SubjectConfig(
             Optional.ofNullable(ctx.schemaRecipe()),
-            Optional.ofNullable(ctx.jooqPackage()),
+            // The sentinel a goal tolerating no package substitutes is no package.
+            Optional.ofNullable(ctx.jooqPackage())
+                .filter(p -> !RunContext.NO_OUTPUT_PACKAGE.equals(p)),
             Optional.ofNullable(ctx.supergraph()),
             ctx.declaredOutputCoordinates(),
             Optional.ofNullable(ctx.tenantColumn()),

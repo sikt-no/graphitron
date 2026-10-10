@@ -186,7 +186,7 @@ public final class TestSchemaHelper {
             no.sikt.graphitron.model.derive.ResolvedKeyProjections.Projections projections) {
         var bundle = buildBundle(schemaText, ctx);
         try (var store = CapturedStore.ofCatalogWith(directory, CapturedStore.GRAPH, schemaText,
-                new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()),
+                no.sikt.graphitron.model.test.CatalogInput.of(ctx),
                 testClasspath())) {
             return no.sikt.graphitron.plan.EmitPlan.produce(bundle.model(), bundle.federationLink(),
                 bundle.usesOneOf(), ctx.outputPackage(), projections,

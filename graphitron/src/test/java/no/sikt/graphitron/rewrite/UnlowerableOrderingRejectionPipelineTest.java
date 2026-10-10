@@ -1,10 +1,11 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.model.run.GraphitronStore;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.model.test.CapturedStore;
@@ -238,8 +239,8 @@ class UnlowerableOrderingRejectionPipelineTest {
         }
     }
 
-    private static JooqCatalog jooq() {
+    private static CatalogInput jooq() {
         var ctx = testContext();
-        return new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        return CatalogInput.of(ctx);
     }
 }

@@ -6,6 +6,7 @@ import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.test.AgreementCorpus;
 import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.test.CatalogInput;
 import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.model.test.TestRunContext;
 import org.jooq.DSLContext;
@@ -39,7 +40,8 @@ class ModelCaptureMembershipTest {
         var jooq = new JooqCatalog(TestRunContext.JOOQ_PACKAGE);
         var classpath = ClasspathCorpus.entries();
         String bSdl = "type Query { ping: String }";
-        try (var store = CapturedStore.ofCatalogWith(tmp, "a", AgreementCorpus.SDL, jooq, classpath)) {
+        try (var store = CapturedStore.ofCatalogWith(tmp, "a", AgreementCorpus.SDL,
+                CatalogInput.of(TestRunContext.JOOQ_PACKAGE), classpath)) {
             var expectedA = new LinkedHashSet<>(sdlSourceNames(store.registry()));
             for (var entry : jooq.allTableEntries()) {
                 expectedA.add(entry.table().getSchema().getClass().getPackageName());

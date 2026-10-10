@@ -1,9 +1,10 @@
 package no.sikt.graphitron.rewrite.derive;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.render.CatalogRefs;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -148,7 +149,7 @@ class StoreNodeTablesTest {
     /**
      * Captures {@code sdl} against the real fixture catalog and reads the assembly back.
      * {@code CapturedStore}'s own factories are not used, and the reason is the subject: they build
-     * their context off a temp directory, so their {@code JooqCatalog} resolves no generated classes
+     * their context off a temp directory, so their {@code CatalogInput} resolves no generated classes
      * and the whole {@code sql_} family comes out empty. Everything asserted here is a catalog fact,
      * so this drives the pass itself over that handle's primitives plus a catalog built from the
      * test configuration, which is the arrangement the handle documents for a test whose axis
@@ -159,7 +160,7 @@ class StoreNodeTablesTest {
         CapturedStore.writeSource(tmp, sdl);
         try (var store = FactStores.inMemory()) {
             CapturedStore.capture(store.dsl(), CapturedStore.graph(tmp), CapturedStore.corpusOf(tmp),
-                new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()));
+                CatalogInput.of(ctx));
             return StoreNodeTables.read(store.dsl(), CapturedStore.GRAPH);
         }
     }

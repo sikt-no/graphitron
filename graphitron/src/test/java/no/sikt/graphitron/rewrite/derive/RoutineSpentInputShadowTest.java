@@ -1,7 +1,8 @@
 package no.sikt.graphitron.rewrite.derive;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.model.diagnostics.NodeIdDecodeCoordinate;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
@@ -243,8 +244,8 @@ class RoutineSpentInputShadowTest {
 
     // ===== Store plumbing =====
 
-    private static JooqCatalog jooq() {
+    private static CatalogInput jooq() {
         var ctx = testContext();
-        return new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        return CatalogInput.of(ctx);
     }
 }

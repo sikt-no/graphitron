@@ -1,7 +1,8 @@
 package no.sikt.graphitron.rewrite.derive;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
@@ -293,7 +294,7 @@ class NameMatchedKeyPairTest {
     private void withCaptured(String sdl, Consumer<DSLContext> body) {
         var ctx = testContext();
         try (var store = CapturedStore.ofCatalog(tmp, sdl,
-                new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()))) {
+                CatalogInput.of(ctx))) {
             body.accept(store.dsl());
         }
     }

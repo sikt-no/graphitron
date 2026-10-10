@@ -1,9 +1,10 @@
 package no.sikt.graphitron.rewrite.capture;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.run.GraphitronStore;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
@@ -151,7 +152,7 @@ class FederationKeyDerivationTest {
     @DisplayName("an inferred node gets a key; with no catalog captured, it does not")
     void nodeInferenceDecidesWhetherAnInferredNodeGetsAKey(@TempDir Path tmp) {
         try (var store = CapturedStore.ofCatalog(tmp.resolve("inferred"), INFERRED,
-                new JooqCatalog(TestConfiguration.DEFAULT_JOOQ_PACKAGE))) {
+                CatalogInput.of(TestConfiguration.DEFAULT_JOOQ_PACKAGE))) {
             assertThat(store.dsl().fetchCount(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY,
                 GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME.eq("Pairing")))
                 .as("film_actor publishes node metadata, so Pairing is a node without saying @node")

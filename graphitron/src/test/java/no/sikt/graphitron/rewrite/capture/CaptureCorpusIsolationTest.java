@@ -1,10 +1,11 @@
 package no.sikt.graphitron.rewrite.capture;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.Public;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.EntryFamilyFixture;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.jooq.Table;
@@ -170,8 +171,8 @@ class CaptureCorpusIsolationTest {
         return bareArm;
     }
 
-    private static JooqCatalog catalog() {
-        return new JooqCatalog(TestConfiguration.DEFAULT_JOOQ_PACKAGE);
+    private static CatalogInput catalog() {
+        return CatalogInput.of(TestConfiguration.DEFAULT_JOOQ_PACKAGE);
     }
 
     /** Captures the fixture under one arm and reads every in-scope relation's rows out. */

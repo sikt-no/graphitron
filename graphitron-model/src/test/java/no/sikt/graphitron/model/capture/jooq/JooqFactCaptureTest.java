@@ -111,12 +111,11 @@ class JooqFactCaptureTest {
     void capturingTwiceIsIdempotent() {
         try (var store = GraphitronStore.inMemory()) {
             SeededStore.seedGraph(store.dsl(), GRAPH);
-            var jooq = new JooqCatalog(JOOQ_PACKAGE);
-            JooqFactCapture.capture(store.dsl(), GRAPH, jooq, FIRST);
+            JooqFactCapture.capture(store.dsl(), GRAPH, JOOQ_PACKAGE, loader(), FIRST);
             int afterFirst = store.dsl().fetchCount(SQL_TABLE);
             int columnsAfterFirst = store.dsl().fetchCount(SQL_COLUMN);
 
-            JooqFactCapture.capture(store.dsl(), GRAPH, jooq, SECOND);
+            JooqFactCapture.capture(store.dsl(), GRAPH, JOOQ_PACKAGE, loader(), SECOND);
 
             assertThat(store.dsl().fetchCount(SQL_TABLE))
                 .as("the second reading replaces the first rather than adding to or emptying it")
@@ -168,8 +167,7 @@ class JooqFactCaptureTest {
     void aTableTheCatalogNoLongerHasIsSwept() {
         try (var store = GraphitronStore.inMemory()) {
             SeededStore.seedGraph(store.dsl(), GRAPH);
-            var jooq = new JooqCatalog(JOOQ_PACKAGE);
-            JooqFactCapture.capture(store.dsl(), GRAPH, jooq, FIRST);
+            JooqFactCapture.capture(store.dsl(), GRAPH, JOOQ_PACKAGE, loader(), FIRST);
             String source = store.dsl().select(SQL_TABLE.SOURCE_NAME).from(SQL_TABLE)
                 .limit(1).fetchOne(SQL_TABLE.SOURCE_NAME);
             String schema = store.dsl().select(SQL_TABLE.TABLE_SCHEMA).from(SQL_TABLE)
@@ -181,7 +179,7 @@ class JooqFactCaptureTest {
                     "gone.Dropped", "gone.DroppedRecord", FIRST.minusDays(1))
                 .execute();
 
-            JooqFactCapture.capture(store.dsl(), GRAPH, jooq, SECOND);
+            JooqFactCapture.capture(store.dsl(), GRAPH, JOOQ_PACKAGE, loader(), SECOND);
 
             assertThat(store.dsl().fetchCount(SQL_TABLE,
                     SQL_TABLE.TABLE_NAME.eq("dropped_by_the_dba")))
@@ -194,8 +192,13 @@ class JooqFactCaptureTest {
     private static void withCapture(LocalDateTime touchedAt, java.util.function.Consumer<DSLContext> body) {
         try (var store = GraphitronStore.inMemory()) {
             SeededStore.seedGraph(store.dsl(), GRAPH);
-            JooqFactCapture.capture(store.dsl(), GRAPH, new JooqCatalog(JOOQ_PACKAGE), touchedAt);
+            JooqFactCapture.capture(store.dsl(), GRAPH, JOOQ_PACKAGE, loader(), touchedAt);
             body.accept(store.dsl());
         }
+    }
+
+    /** The test's own classpath, which holds the generated catalog. */
+    private static ClassLoader loader() {
+        return Thread.currentThread().getContextClassLoader();
     }
 }

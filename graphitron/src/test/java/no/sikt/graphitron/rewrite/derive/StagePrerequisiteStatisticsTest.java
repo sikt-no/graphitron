@@ -1,10 +1,11 @@
 package no.sikt.graphitron.rewrite.derive;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.derive.DerivationStratum;
 import no.sikt.graphitron.model.derive.StageProgress;
 import no.sikt.graphitron.model.derive.ViewReferences;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.FactStores;
@@ -88,7 +89,7 @@ class StagePrerequisiteStatisticsTest {
     @BeforeAll
     static void observeBothCadences() {
         var ctx = TestConfiguration.testContext();
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        var jooq = CatalogInput.of(ctx);
         try (var store = CapturedStore.ownStoreOfCatalog(tmp.resolve("prerequisites"),
                 ScaledSchemaFixture.scaledSdl(UNITS), jooq)) {
             DSLContext dsl = store.dsl();
@@ -120,24 +121,24 @@ class StagePrerequisiteStatisticsTest {
     @BeforeAll
     static void observeTheCaptureItself() {
         var ctx = TestConfiguration.testContext();
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        var jooq = CatalogInput.of(ctx);
         Path directory = tmp.resolve("captured");
         try (var store = FactStores.inMemory()) {
             DSLContext dsl = store.dsl();
             CapturedStore.writeSource(directory, ScaledSchemaFixture.scaledSdl(UNITS));
             var graph = CapturedStore.graph(directory);
-            var config = CapturedStore.corpusOf(directory);
+            var config = CapturedStore.withCatalog(CapturedStore.corpusOf(directory), jooq);
             LocalDateTime readAt = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
 
             var prerequisites = prerequisiteTables(dsl);
             var cold = new UnanalysedPrerequisites(dsl, prerequisites);
-            ModelCapture.capture(dsl, graph, config, List.of(), jooq, readAt, cold);
+            ModelCapture.capture(dsl, graph, config, List.of(), jooq.loader(), readAt, cold);
             var coldPopulated = populated(dsl, prerequisites);
             dependentStagesUnderColdCapture = coldPopulated.keySet();
             unanalysedUnderColdCapture = retained(cold.observed(), coldPopulated);
 
             var warm = new UnanalysedPrerequisites(dsl, prerequisites);
-            ModelCapture.capture(dsl, graph, config, List.of(), jooq, readAt, warm);
+            ModelCapture.capture(dsl, graph, config, List.of(), jooq.loader(), readAt, warm);
             var warmPopulated = populated(dsl, prerequisites);
             dependentStagesUnderWarmCapture = warmPopulated.keySet();
             unanalysedUnderWarmCapture = retained(warm.observed(), warmPopulated);

@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.intent;
 
-import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.model.test.TestRunContext;
@@ -53,7 +54,7 @@ class SeparateFetchRuleTest {
     @DisplayName("an ambiguously bound child of a handed parent splits once, not once per table")
     void aRuleThatReachesACoordinateTwiceStillAnswersOnce() {
         var ctx = TestRunContext.of();
-        var jooq = new JooqCatalog(JOOQ_PACKAGE, ctx.codegenLoader());
+        var jooq = new CatalogInput(JOOQ_PACKAGE, ctx.codegenLoader());
         try (var captured = CapturedStore.ofCatalogWith(tmp, GRAPH, SDL, jooq,
                 ClasspathCorpus.entries())) {
             var t = GRAPHITRON_SPELLED_TABLE;

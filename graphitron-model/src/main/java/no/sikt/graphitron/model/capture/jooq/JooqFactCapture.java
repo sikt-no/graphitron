@@ -68,12 +68,19 @@ public final class JooqFactCapture {
     private static final String GATHERER = "jooq";
 
     /**
-     * Makes the {@code sql_} rows of every source {@code jooq} describes be what it now says, then
-     * the catalog's own closure over them, the keys a name alone matches; one transaction, its
-     * progress recorded by {@link Progress}.
+     * Makes the {@code sql_} rows of the catalog generated into {@code jooqPackage} be what it now
+     * says, then the catalog's own closure over them, the keys a name alone matches; one
+     * transaction, its progress recorded by {@link Progress}. The catalog is read through
+     * {@code loader}, jOOQ building its tables in static initialisers. No package is no catalog.
      */
-    public static void capture(DSLContext dsl, String graphName, JooqCatalog jooq,
-                               LocalDateTime touchedAt) {
+    public static void capture(DSLContext dsl, String graphName, String jooqPackage,
+                               ClassLoader loader, LocalDateTime touchedAt) {
+        capture(dsl, graphName, jooqPackage == null ? null : new JooqCatalog(jooqPackage, loader),
+            touchedAt);
+    }
+
+    private static void capture(DSLContext dsl, String graphName, JooqCatalog jooq,
+                                LocalDateTime touchedAt) {
         Progress.started(dsl, graphName, GATHERER);
         dsl.transaction(tx -> {
             gather(tx.dsl(), graphName, jooq, touchedAt);

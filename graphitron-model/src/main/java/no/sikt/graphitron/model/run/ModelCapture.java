@@ -19,7 +19,6 @@ import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.capture.jooq.JooqFactCapture;
 import no.sikt.graphitron.model.capture.store.StoreEntries;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import org.jooq.DSLContext;
 
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
@@ -30,8 +29,8 @@ import java.util.Optional;
 
 /**
  * The gatherers a run runs, against a store somebody else opened. Each reads its inputs from
- * {@code config}, except the classpath and the jOOQ catalog, which the build tool assembles and so
- * arrive as arguments.
+ * {@code config}, except the classpath, which the build tool assembles, and the loader over it, for
+ * the readings that have to run code: the jOOQ catalog and a scalar constant's coercing.
  */
 public final class ModelCapture {
 
@@ -48,13 +47,13 @@ public final class ModelCapture {
      *     one could not tell each other's rows apart
      */
     public static CapturedSchema capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
-                                         List<ClasspathEntry> classpath, JooqCatalog jooq,
+                                         List<ClasspathEntry> classpath, ClassLoader loader,
                                          LocalDateTime readAt) {
-        return capture(dsl, graph, config, classpath, jooq, readAt, null);
+        return capture(dsl, graph, config, classpath, loader, readAt, null);
     }
 
     /**
-     * {@link #capture(DSLContext, GraphIdentity, SubjectConfig, List, JooqCatalog, LocalDateTime)}
+     * {@link #capture(DSLContext, GraphIdentity, SubjectConfig, List, ClassLoader, LocalDateTime)}
      * reporting the derivations to {@code progress}, or to the log where it is null.
      *
      * <p>Each gatherer commits its own work, in transactions of its own choosing, and records how
@@ -62,16 +61,17 @@ public final class ModelCapture {
      */
     @SuppressWarnings("deprecation")
     public static CapturedSchema capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
-                                         List<ClasspathEntry> classpath, JooqCatalog jooq,
+                                         List<ClasspathEntry> classpath, ClassLoader loader,
                                          LocalDateTime readAt, StageProgress progress) {
         writeGraph(dsl, graph, readAt);
         Progress.started(dsl, graph.name(), Progress.CAPTURE);
         StoreEntries.write(dsl, graph.name(), config, readAt);
 
-        JooqFactCapture.capture(dsl, graph.name(), jooq, readAt);
+        JooqFactCapture.capture(dsl, graph.name(), config.jooqPackage().orElse(null), loader,
+            readAt);
         var classes = ClasspathSourceCapture.capture(dsl, graph.name(), classpath,
             config.jooqPackage().orElse(null), readAt);
-        CodeCapture.capture(dsl, classes, jooq == null ? null : jooq.codegenLoader(), readAt);
+        CodeCapture.capture(dsl, classes, loader, readAt);
 
         var reading = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
         var documents = reading.documents();

@@ -1,8 +1,9 @@
 package no.sikt.graphitron.plan;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.ExecuteContext;
@@ -157,7 +158,7 @@ class RoutineWriteProducerStatementCountTest {
     private CapturedStore capture(String sdl) {
         var ctx = no.sikt.graphitron.common.configuration.TestConfiguration.testContext();
         return CapturedStore.ofCatalogWith(tmp, CapturedStore.GRAPH, sdl,
-            new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()),
+            CatalogInput.of(ctx),
             TestSchemaHelper.testClasspath());
     }
 }

@@ -1,7 +1,8 @@
 package no.sikt.graphitron.model;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.model.config.ClasspathEntry;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.model.test.TestRunContext;
@@ -98,7 +99,7 @@ class TypeBackingPartitionTest {
     @BeforeAll
     static void captureFourGraphs() throws IOException {
         var ctx = TestRunContext.of();
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        var jooq = CatalogInput.of(ctx);
         var corpus = ClasspathCorpus.entries();
         var named = library("named", true);
         var nameless = library("nameless", false);

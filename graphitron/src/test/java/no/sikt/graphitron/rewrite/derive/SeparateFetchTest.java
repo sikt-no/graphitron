@@ -1,9 +1,10 @@
 package no.sikt.graphitron.rewrite.derive;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.facts.GatheredFacts;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.ClasspathCorpus;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.SchemaReachability;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -150,8 +151,8 @@ class SeparateFetchTest {
             (s, v) -> SchemaReachability.walk(s, nodes, v));
     }
 
-    private static JooqCatalog jooq() {
+    private static CatalogInput jooq() {
         var ctx = testContext();
-        return new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        return CatalogInput.of(ctx);
     }
 }

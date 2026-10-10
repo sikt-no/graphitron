@@ -1,9 +1,10 @@
 package no.sikt.graphitron.model.derive;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.model.test.TestRunContext;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -276,7 +277,7 @@ class StageAnswerAgreementTest {
 
     private void withCapturedStore(Fixture fixture, java.util.function.Consumer<DSLContext> body) {
         var ctx = TestRunContext.of();
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        var jooq = CatalogInput.of(ctx);
         String schema = switch (fixture) {
             case ARMS -> sdl();
             case NODE_ID -> no.sikt.graphitron.model.test.ScaledSchemaFixture.scaledSdl(2);

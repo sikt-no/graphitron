@@ -1,11 +1,12 @@
 package no.sikt.graphitron.rewrite.classifieddsl;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.model.test.CorpusExpectations;
 import no.sikt.graphitron.model.test.CorpusDocuments;
 import no.sikt.graphitron.model.catalog.StoreCatalog;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.SeededStore;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.test.CorpusExpectations.Block;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
@@ -116,7 +117,7 @@ class CorpusExpectationTest {
     @BeforeAll
     static void captureTheWholeCorpus() {
         var ctx = testContext();
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        var jooq = CatalogInput.of(ctx);
         var documents = CorpusDocuments.documents();
         // A store of its own rather than the thread's, and not the shared corpus: the class holds
         // the store and its context across every case, which a borrow would let the next case on

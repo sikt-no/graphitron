@@ -1,7 +1,8 @@
 package no.sikt.graphitron.rewrite.capture;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
@@ -100,7 +101,7 @@ class NodeMetadataCaptureTest {
     @Test
     @DisplayName("a second capture over the same source restates the rows rather than colliding")
     void aSecondCaptureRestatesTheRows(@TempDir Path tmp) {
-        var jooq = new JooqCatalog(DEFAULT_JOOQ_PACKAGE);
+        var jooq = CatalogInput.of(DEFAULT_JOOQ_PACKAGE);
         try (var store = CapturedStore.ofCatalog(tmp, SDL, jooq)) {
             int metadata = store.dsl().fetchCount(SQL_NODE_METADATA);
             int entries = store.dsl().fetchCount(SQL_NODE_KEY_COLUMN);
@@ -121,7 +122,7 @@ class NodeMetadataCaptureTest {
     }
 
     private static void withFixtureCatalog(Path tmp, java.util.function.Consumer<DSLContext> body) {
-        try (var store = CapturedStore.ofCatalog(tmp, SDL, new JooqCatalog(DEFAULT_JOOQ_PACKAGE))) {
+        try (var store = CapturedStore.ofCatalog(tmp, SDL, CatalogInput.of(DEFAULT_JOOQ_PACKAGE))) {
             body.accept(store.dsl());
         }
     }

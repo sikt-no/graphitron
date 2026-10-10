@@ -1,10 +1,11 @@
 package no.sikt.graphitron.rewrite.capture;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.FactStores;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -384,9 +385,9 @@ class FactSchemaGateTest {
     }
 
     /** The generated catalog the node-metadata gate above reads; a composite key lives in it. */
-    private static JooqCatalog fixtureCatalog() {
+    private static CatalogInput fixtureCatalog() {
         var ctx = TestConfiguration.testContext();
-        return new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        return CatalogInput.of(ctx);
     }
 
     @Test

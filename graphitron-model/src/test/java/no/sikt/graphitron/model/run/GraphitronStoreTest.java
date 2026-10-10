@@ -1,6 +1,5 @@
 package no.sikt.graphitron.model.run;
 
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -133,7 +132,7 @@ class GraphitronStoreTest {
 
         try (var store = GraphitronStore.inMemory()) {
             GraphitronStore.capture(store, new GraphIdentity("g", tmp), config, CLASSPATH,
-                new JooqCatalog(JOOQ_PACKAGE));
+                Thread.currentThread().getContextClassLoader());
 
             assertThat(store.dsl().fetchCount(GRAPHQL_AST_TYPE_DECLARATION_ENTRY,
                     GRAPHQL_AST_TYPE_DECLARATION_ENTRY.NAME.eq("Film")))

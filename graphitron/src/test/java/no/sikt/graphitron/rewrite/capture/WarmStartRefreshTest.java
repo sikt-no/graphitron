@@ -1,12 +1,13 @@
 package no.sikt.graphitron.rewrite.capture;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.model.run.GraphitronStore;
 import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.Public;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.derive.DerivationStratum;
 import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.grammar.NodeDeclaration;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
@@ -177,7 +178,7 @@ class WarmStartRefreshTest {
     @Test
     @DisplayName("a second capture of one graph leaves every relation's row count unchanged")
     void aSecondCaptureOfOneGraphDoublesNothing(@TempDir Path tmp) {
-        var jooq = new JooqCatalog(DEFAULT_JOOQ_PACKAGE, testContext().codegenLoader());
+        var jooq = new CatalogInput(DEFAULT_JOOQ_PACKAGE, testContext().codegenLoader());
         Path directory = tmp.resolve("graphitron-model");
 
         Map<String, Integer> once;
@@ -234,7 +235,7 @@ class WarmStartRefreshTest {
     @Test
     @DisplayName("a store stopped part-way through its first stratum is repaired by the next capture")
     void aStoppedFirstStratumIsRepairedByTheNextCapture(@TempDir Path tmp) {
-        var jooq = new JooqCatalog(DEFAULT_JOOQ_PACKAGE, testContext().codegenLoader());
+        var jooq = new CatalogInput(DEFAULT_JOOQ_PACKAGE, testContext().codegenLoader());
         Path directory = tmp.resolve("graphitron-model");
 
         try (var store = GraphitronModelStore.openAt(directory)) {
@@ -613,15 +614,17 @@ class WarmStartRefreshTest {
     @Test
     @DisplayName("a warm refresh over a multi-package jOOQ catalog completes")
     void aWarmRefreshOverAMultiPackageCatalogCompletes(@TempDir Path tmp) {
-        var jooq = new JooqCatalog(DEFAULT_JOOQ_PACKAGE,
+        var jooq = new CatalogInput(DEFAULT_JOOQ_PACKAGE,
             testContext().codegenLoader());
         try (var store = GraphitronModelStore.open()) {
             CapturedStore.writeSource(tmp, SDL);
-            ModelCapture.capture(store.dsl(), graph(tmp), CapturedStore.corpusOf(tmp),
-                List.of(), jooq, now());
+            ModelCapture.capture(store.dsl(), graph(tmp),
+                CapturedStore.withCatalog(CapturedStore.corpusOf(tmp), jooq), List.of(),
+                CapturedStore.loaderOf(jooq), now());
 
             assertThatCode(() -> ModelCapture.capture(store.dsl(), graph(tmp),
-                CapturedStore.corpusOf(tmp), List.of(), jooq, now()))
+                CapturedStore.withCatalog(CapturedStore.corpusOf(tmp), jooq), List.of(),
+                CapturedStore.loaderOf(jooq), now()))
                 .as("a warm refresh over a catalog whose foreign keys cross package partitions")
                 .doesNotThrowAnyException();
 
@@ -681,10 +684,11 @@ class WarmStartRefreshTest {
      * the schema is. {@code CapturedStore.corpusOf} exists for exactly this and its own comment
      * names the silence.
      */
-    private static void captureBound(DSLContext dsl, Path scratch, JooqCatalog jooq) {
+    private static void captureBound(DSLContext dsl, Path scratch, CatalogInput jooq) {
         CapturedStore.writeSource(scratch, TABLE_BOUND_SDL);
-        ModelCapture.capture(dsl, graph(scratch), CapturedStore.corpusOf(scratch), List.of(), jooq,
-            now());
+        ModelCapture.capture(dsl, graph(scratch),
+            CapturedStore.withCatalog(CapturedStore.corpusOf(scratch), jooq), List.of(),
+            CapturedStore.loaderOf(jooq), now());
     }
 
     /**

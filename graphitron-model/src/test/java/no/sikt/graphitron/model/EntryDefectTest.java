@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model;
 
-import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.TestRunContext;
 import org.jooq.DSLContext;
@@ -482,7 +483,7 @@ class EntryDefectTest {
     private static void withCatalogStore(Path directory, String sdl, Consumer<DSLContext> body) {
         var ctx = TestRunContext.of();
         try (var store = CapturedStore.ownStoreOfCatalog(directory, sdl,
-                new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()))) {
+                CatalogInput.of(ctx))) {
             body.accept(store.dsl());
         }
     }

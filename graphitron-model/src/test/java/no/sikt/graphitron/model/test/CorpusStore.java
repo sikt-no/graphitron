@@ -3,7 +3,6 @@ package no.sikt.graphitron.model.test;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.boot.StoreAnswer;
 import no.sikt.graphitron.model.boot.StoreReader;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import org.jooq.DSLContext;
 
 import java.io.IOException;
@@ -201,7 +200,7 @@ public final class CorpusStore {
 
     private static CapturedStore capture(Path classRoot) {
         var ctx = TestRunContext.of();
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        var jooq = CatalogInput.of(ctx);
         List<ClasspathEntry> classpath = classRoot == null ? List.of()
             : List.of(new ClasspathEntry(classRoot, ClasspathEntry.Origin.PROJECT, null, null));
         Path directory = directory();

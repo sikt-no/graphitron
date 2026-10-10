@@ -1,9 +1,10 @@
 package no.sikt.graphitron.rewrite.derive;
 
+import no.sikt.graphitron.model.test.CatalogInput;
+
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -53,12 +54,12 @@ class NodeIdDecodeDefectsTest {
      * The catalog, loaded once for the class. The classpath is the module's own test classes rather
      * than the reactor's main ones, that being where the stub these fixtures name lives.
      */
-    private static JooqCatalog jooq;
+    private static CatalogInput jooq;
 
     @BeforeAll
     static void loadTheCatalog() {
         var ctx = TestConfiguration.testContext();
-        jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        jooq = CatalogInput.of(ctx);
     }
 
     @TempDir
