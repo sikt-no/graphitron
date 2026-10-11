@@ -4,7 +4,7 @@
 # one Java reader were each writing that union out by hand before it existed.
 
 # The two condition sites are told apart by the owning type's kind, not by the relation they live
-# in: both are rows of graphitron_field_condition_entry, and site is what splits them.
+# in: both are written on a field coordinate, and site is what splits them.
 type Film @table(name: "film") {
   title: String
 }

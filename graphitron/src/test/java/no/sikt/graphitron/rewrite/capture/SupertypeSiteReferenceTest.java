@@ -101,15 +101,17 @@ class SupertypeSiteReferenceTest {
         "graphitron_external_field_entry d WHERE d.graph_name = s.graph_name"
             + " AND d.type_name = s.type_name AND d.field_name = s.field_name",
         "FIELD_CONDITION",
-        "graphitron_field_condition_entry d WHERE d.graph_name = s.graph_name"
-            + " AND d.type_name = s.type_name AND d.field_name = s.field_name",
+        "graphql_directive_application d WHERE d.graph_name = s.graph_name"
+            + " AND d.directive_name = 'condition'"
+            + " AND d.coordinate = s.type_name || '.' || s.field_name",
         "INPUT_FIELD_CONDITION",
-        "graphitron_field_condition_entry d WHERE d.graph_name = s.graph_name"
-            + " AND d.type_name = s.type_name AND d.field_name = s.field_name",
+        "graphql_directive_application d WHERE d.graph_name = s.graph_name"
+            + " AND d.directive_name = 'condition'"
+            + " AND d.coordinate = s.type_name || '.' || s.field_name",
         "ARGUMENT_CONDITION",
-        "graphitron_argument_condition_entry d WHERE d.graph_name = s.graph_name"
-            + " AND d.type_name = s.type_name AND d.field_name = s.field_name"
-            + " AND d.argument_name = s.argument_name",
+        "graphql_directive_application d WHERE d.graph_name = s.graph_name"
+            + " AND d.directive_name = 'condition'"
+            + " AND d.coordinate = s.type_name || '.' || s.field_name || '(' || s.argument_name || ':)'",
         "FIELD_REFERENCE_STEP",
         "graphitron_field_reference_step_entry d WHERE d.graph_name = s.graph_name"
             + " AND d.type_name = s.type_name AND d.field_name = s.field_name"

@@ -80,8 +80,6 @@ class RelationRegistrationGateTest {
             "graphql_directive_application", "graphql_directive_application_arg",
             "graphitron_table_entry", "graphitron_field_binding_entry",
             "graphitron_argument_binding_entry", "graphitron_scalar_type_entry",
-            "graphitron_field_condition_entry", "graphitron_field_condition_context_arg_entry",
-            "graphitron_argument_condition_entry", "graphitron_argument_condition_context_arg_entry",
             "graphitron_field_reference_entry", "graphitron_field_reference_step_entry",
             "graphitron_argument_reference_entry", "graphitron_argument_reference_step_entry",
             "graphitron_reference_for_entry", "graphitron_reference_for_step_entry",

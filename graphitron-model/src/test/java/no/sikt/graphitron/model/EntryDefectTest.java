@@ -18,9 +18,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_SITE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.test.CapturedStore.withCapturedStore;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
-import static no.sikt.graphitron.model.test.SeededStore.seedArgumentCondition;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
-import static no.sikt.graphitron.model.test.SeededStore.seedFieldCondition;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldReference;
 import static no.sikt.graphitron.model.test.SeededStore.seedOrderBy;
 import static no.sikt.graphitron.model.test.SeededStore.seedRootOperation;
@@ -71,36 +69,10 @@ class EntryDefectTest {
             seedField(dsl, GRAPH, "Query", "film");
             seedRoutine(dsl, GRAPH, "Query", "film", 0, "film_fn", 5);
             seedFieldReference(dsl, GRAPH, "Query", "film", 0);
-            seedFieldCondition(dsl, GRAPH, "Query", "film", null, null, null, 2);
             seedArgument(dsl, GRAPH, "Query", "film", "id", "ID");
-            seedArgumentCondition(dsl, GRAPH, "Query", "film", "id", null, null, null, 3);
             seedOrderBy(dsl, GRAPH, "Query", "film", "id", 4);
 
             assertThat(defects(dsl)).isEmpty();
-        });
-    }
-
-    /**
-     * The read-surface rule, stated at all three of the sites that can carry it. A write takes no
-     * read surface, and the {@code detail} is which surface was written: one column, because what
-     * a consumer needs beyond it is a join from the entry.
-     */
-    @Test
-    @DisplayName("each read-surface site on a write answers at its own position with its own detail")
-    void everyReadSurfaceSiteOnAWriteAnswersForItself() {
-        withSeededStore(GRAPH, dsl -> {
-            seedRootOperation(dsl, GRAPH, "MUTATION", "Mutation");
-            seedField(dsl, GRAPH, "Mutation", "insertFilm");
-            seedRoutine(dsl, GRAPH, "Mutation", "insertFilm", 0, "film_fn", 1);
-            seedFieldCondition(dsl, GRAPH, "Mutation", "insertFilm", null, null, null, 2);
-            seedArgument(dsl, GRAPH, "Mutation", "insertFilm", "id", "ID");
-            seedArgumentCondition(dsl, GRAPH, "Mutation", "insertFilm", "id", null, null, null, 3);
-            seedOrderBy(dsl, GRAPH, "Mutation", "insertFilm", "id", 4);
-
-            assertThat(defects(dsl)).containsExactly(
-                "2:3 READ_SURFACE_ON_WRITE condition",
-                "3:3 READ_SURFACE_ON_WRITE condition",
-                "4:3 READ_SURFACE_ON_WRITE orderBy");
         });
     }
 
@@ -177,7 +149,8 @@ class EntryDefectTest {
             seedField(dsl, GRAPH, "Mutation", "insertFilm");
             seedRoutine(dsl, GRAPH, "Mutation", "insertFilm", 0, "first_fn", 1);
             seedRoutine(dsl, GRAPH, "Mutation", "insertFilm", 1, "second_fn", 5);
-            seedFieldCondition(dsl, GRAPH, "Mutation", "insertFilm", null, null, null, 3);
+            seedArgument(dsl, GRAPH, "Mutation", "insertFilm", "id", "ID");
+            seedOrderBy(dsl, GRAPH, "Mutation", "insertFilm", "id", 3);
 
             assertThat(defects(dsl)).as("the fixture reaches two codes, so the anti-join is not vacuous")
                 .hasSize(2);

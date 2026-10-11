@@ -17,10 +17,11 @@ import java.util.Optional;
 import java.util.stream.Stream;
 
 import static java.util.Comparator.comparing;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE_SITE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
@@ -103,6 +104,9 @@ final class SchemaQueries {
      * deliberately not a third arm on that view; see {@link #methods}.
      */
     private static final String CONDITION = "CONDITION";
+
+    /** The directive a {@code @condition} reference is written under, as the reference site names it. */
+    private static final String CONDITION_DIRECTIVE = "condition";
 
     // ---- the answer ----
 
@@ -885,12 +889,17 @@ final class SchemaQueries {
                 arity(CODE_METHOD.SOURCE_NAME, CODE_METHOD.CLASS_NAME, CODE_METHOD.METHOD_NAME,
                     CODE_METHOD.DESCRIPTOR),
                 inline(CONDITION), conditionCandidates(store))
-                .from(GRAPHITRON_FIELD_CONDITION_ENTRY)
+                .from(GRAPHITRON_CODE_REFERENCE_SITE)
+                // The field coordinates alone: a condition on an argument is the argument's.
+                .join(GRAPHQL_FIELD_ELEMENT)
+                .on(GRAPHQL_FIELD_ELEMENT.GRAPH_NAME.eq(GRAPHITRON_CODE_REFERENCE_SITE.GRAPH_NAME)
+                    .and(GRAPHQL_FIELD_ELEMENT.COORDINATE.eq(GRAPHITRON_CODE_REFERENCE_SITE.COORDINATE)))
                 .join(CODE_METHOD)
-                .on(CODE_METHOD.CLASS_NAME.eq(GRAPHITRON_FIELD_CONDITION_ENTRY.CLASS_NAME)
-                    .and(CODE_METHOD.METHOD_NAME.eq(GRAPHITRON_FIELD_CONDITION_ENTRY.METHOD)))
-                .where(ofField(GRAPHITRON_FIELD_CONDITION_ENTRY.GRAPH_NAME,
-                    GRAPHITRON_FIELD_CONDITION_ENTRY.TYPE_NAME, GRAPHITRON_FIELD_CONDITION_ENTRY.FIELD_NAME)
+                .on(CODE_METHOD.CLASS_NAME.eq(GRAPHITRON_CODE_REFERENCE_SITE.CLASS_NAME)
+                    .and(CODE_METHOD.METHOD_NAME.eq(GRAPHITRON_CODE_REFERENCE_SITE.METHOD_NAME)))
+                .where(GRAPHITRON_CODE_REFERENCE_SITE.DIRECTIVE_NAME.eq(CONDITION_DIRECTIVE)
+                    .and(ofField(GRAPHQL_FIELD_ELEMENT.GRAPH_NAME, GRAPHQL_FIELD_ELEMENT.TYPE_NAME,
+                        GRAPHQL_FIELD_ELEMENT.FIELD_NAME))
                     .and(store.reads(CODE_METHOD.SOURCE_NAME))))
             .convertFrom(r -> r.map(Records.mapping(MethodBinding::new)));
     }
@@ -907,8 +916,8 @@ final class SchemaQueries {
         var match = CODE_METHOD.as("condition_match");
         return field(selectCount()
             .from(match)
-            .where(match.CLASS_NAME.eq(GRAPHITRON_FIELD_CONDITION_ENTRY.CLASS_NAME)
-                .and(match.METHOD_NAME.eq(GRAPHITRON_FIELD_CONDITION_ENTRY.METHOD))
+            .where(match.CLASS_NAME.eq(GRAPHITRON_CODE_REFERENCE_SITE.CLASS_NAME)
+                .and(match.METHOD_NAME.eq(GRAPHITRON_CODE_REFERENCE_SITE.METHOD_NAME))
                 .and(store.reads(match.SOURCE_NAME))));
     }
 

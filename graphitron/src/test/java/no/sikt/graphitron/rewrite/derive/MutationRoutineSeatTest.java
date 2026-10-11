@@ -144,9 +144,8 @@ class MutationRoutineSeatTest {
 
     /**
      * The same refusal at the argument site. A {@code @condition} on an argument of the write field
-     * is the same read surface as one on the field, and the verdict is asked of
-     * {@link no.sikt.graphitron.model.Tables#GRAPHITRON_ARGUMENT_CONDITION_ENTRY} rather than of the
-     * directive application, so a reading pointed at the field-site relation would miss it.
+     * is the same read surface as one on the field, and the verdict is asked of the application at
+     * the argument's coordinate, so a reading pointed at the field's coordinate would miss it.
      */
     @Test
     void aConditionOnAWriteArgumentIsAReadSurfaceToo() {

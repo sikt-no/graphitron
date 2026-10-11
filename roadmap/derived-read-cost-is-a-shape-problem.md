@@ -445,6 +445,15 @@ entry is written by the capture phase alone. Counted in `roadmap/audits/2026-09-
     `graphitron_link_entry` and the three `graphitron_federation_key_` entries lost their last
     reader and went, with the decode arms that wrote them and `intent_federation_key`, whose
     readers read `graphitron_directive_application` instead.
+  * **The condition entries are gone** `done`. `graphitron_field_condition_entry`,
+    `graphitron_argument_condition_entry` and the two context-argument entries hanging off them,
+    which the registry decode wrote and nothing read but rules asking whether a `@condition` sits at
+    a coordinate. Those read `graphql_directive_application` there, and the MCP server's condition
+    bindings read the written reference off `graphitron_code_reference_site`, still matching the
+    census so an ambiguous one reports every candidate. Old and new agree on sakila and sis and time
+    level. The seeded read-surface case is `read-surface-on-write`.
+  * **The reference-step entries are gone** `open`, after the condition entries. Four relations,
+    thirteen rules and five Java readers, which want the path recombined.
 * **The untwinned ones get an ast entry first** `open`, and are the longer half.
 * **The supertype roster becomes shrink-only** `open`. It already records the duplication and only
   ever gains rows, so making it a ratchet turns the record into the gate rather than adding one.
@@ -1463,7 +1472,10 @@ link the composition synthesised, its readers having moved to `graphitron_federa
 `graphql_assembly_synthesised_link` and its grain `graph-synthesised-link`. The registry decode's
 argMapping relation, its readers having moved to `graphitron_ast_argmapping_pair_entry` and
 `graphitron_argmapping_site`: `graphitron_argmapping_entry`, with the indexes
-`graphitron_argmapping_entry_site_ix` and `graphitron_argmapping_entry_use_ix`. The type-backing
+`graphitron_argmapping_entry_site_ix` and `graphitron_argmapping_entry_use_ix`. The registry
+decode's condition relations, their readers having moved to `graphql_directive_application` and the
+`graphitron_ast_` twins: `graphitron_field_condition_entry`, `graphitron_argument_condition_entry`,
+`graphitron_field_condition_context_arg_entry` and `graphitron_argument_condition_context_arg_entry`. The type-backing
 cluster, into `graphitron_type_backing`: `intent_type_backing_seed`, `intent_type_backing_class`,
 `intent_type_backing` and `intent_field_accessor_hop`, with the grain `type-backing-class` and the
 value `BACKING_CLOSURE` (now `PRODUCER` and `ACCESSOR`).

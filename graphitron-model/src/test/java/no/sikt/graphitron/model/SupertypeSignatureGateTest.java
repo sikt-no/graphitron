@@ -265,14 +265,11 @@ class SupertypeSignatureGateTest {
         // resolved member of each pair goes with it, and the row comes off this roster. Until then
         // the roster is the ledger of what that commit has to delete, which is why the pairs are
         // spelled out here rather than exempted by a rule over the name.
-        Set.of("graphitron_argument_condition_context_arg_entry",
-               "graphitron_ast_field_condition_context_arg_entry",
+        Set.of("graphitron_ast_field_condition_context_arg_entry",
                "graphitron_ast_input_value_condition_context_arg_entry",
                "graphitron_ast_service_context_arg_entry",
-               "graphitron_field_condition_context_arg_entry",
                "graphql_ast_directive_application_entry"),
-        Set.of("graphitron_argument_condition_entry", "graphitron_ast_field_condition_entry",
-               "graphitron_ast_input_value_condition_entry", "graphitron_field_condition_entry"),
+        Set.of("graphitron_ast_field_condition_entry", "graphitron_ast_input_value_condition_entry"),
         // Nine, and they arrived by being stamped: an @enum application records a class, a method
         // and an argMapping, which is what a service and an external field record too, at either
         // stratum. Four of them are the condition arm of a path element, one per directive per
@@ -398,11 +395,6 @@ class SupertypeSignatureGateTest {
         // body in every detection component that asks this question.
         "intent_poly_member|graphql_implements_interface,graphql_union_member",
         "graphitron_condition_method_route|graphitron_argument_reference_step_entry,graphitron_field_reference_step_entry",
-        // Older than its row. The read-surface arms have always unioned the two condition sites;
-        // the code-reference arm beside them names class_name, which is the payload column that
-        // confirms a union here. The written code reference is the supertype it reaches for, and
-        // the row goes when the condition copies do.
-        "graphitron_entry_defect_rule|graphitron_argument_condition_entry,graphitron_field_condition_entry",
         "intent_field_producer_reference|graphitron_external_field_entry,graphitron_service_entry",
         // The carriers' tags, authored or configured: the union graphitron_directive_application_arg
         // makes for every coordinate, made here for carriers alone, and stored for the reason the

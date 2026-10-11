@@ -3536,101 +3536,6 @@ COMMENT ON COLUMN graphitron_scalar_type_entry.scalar_ref_class_part IS 'the cla
 COMMENT ON COLUMN graphitron_scalar_type_entry.scalar_ref_field_part IS 'the field half beside it, on the same split and null in the same case; the pair is stored rather than computed so a reader joining the census probes its key instead of comparing against a concatenation';
 COMMENT ON COLUMN graphitron_scalar_type_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a coordinate that still stands; a coordinate the author removed takes its rows with it through the cascade on the reference below, so the two together are what makes this relation total without a pass emptying it first';
 
-CREATE TABLE graphitron_field_condition_entry (
-  graph_name    VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  class_name    VARCHAR,
-  method        VARCHAR,
-  argmapping   VARCHAR,
-  override      BOOLEAN,
-  PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_field_condition_entry IS '@condition on a field or input field (shared coordinate; the parent kind decides which SDL site this was). Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_field_condition_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
-COMMENT ON COLUMN graphitron_field_condition_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_field_condition_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_field_condition_entry.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_field_condition_entry.source_name IS 'the SDL file the row was captured from';
-COMMENT ON COLUMN graphitron_field_condition_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_field_condition_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_field_condition_entry.class_name IS 'ExternalCodeReference.className as written';
-COMMENT ON COLUMN graphitron_field_condition_entry.method IS 'ExternalCodeReference.method as written';
-COMMENT ON COLUMN graphitron_field_condition_entry.argmapping IS 'ExternalCodeReference.argMapping as written; the pair child below is its decode, the type_sdl-plus-decode pattern';
-COMMENT ON COLUMN graphitron_field_condition_entry.override IS 'as written; NULL when omitted (the FALSE default is derivable)';
-
-CREATE TABLE graphitron_field_condition_context_arg_entry (
-  graph_name VARCHAR NOT NULL,
-  type_name  VARCHAR NOT NULL,
-  field_name VARCHAR NOT NULL,
-  position   INT     NOT NULL,
-  name       VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, position),
-  FOREIGN KEY (graph_name, type_name, field_name)
-    REFERENCES graphitron_field_condition_entry (graph_name, type_name, field_name)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_field_condition_context_arg_entry IS 'An ordered context argument of a field-site @condition. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_field_condition_context_arg_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
-COMMENT ON COLUMN graphitron_field_condition_context_arg_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_field_condition_context_arg_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_field_condition_context_arg_entry.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_field_condition_context_arg_entry.position IS '0-based position in the contextArguments list';
-COMMENT ON COLUMN graphitron_field_condition_context_arg_entry.name IS 'the context argument name as written';
-
-CREATE TABLE graphitron_argument_condition_entry (
-  graph_name    VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  argument_name VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  class_name    VARCHAR,
-  method        VARCHAR,
-  argmapping   VARCHAR,
-  override      BOOLEAN,
-  PRIMARY KEY (graph_name, type_name, field_name, argument_name),
-  FOREIGN KEY (graph_name, type_name, field_name, argument_name)
-    REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_argument_condition_entry IS '@condition on an argument: the same decode over the three-part coordinate. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
-COMMENT ON COLUMN graphitron_argument_condition_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_argument_condition_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_argument_condition_entry.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_argument_condition_entry.argument_name IS 'the argument name within the owning field';
-COMMENT ON COLUMN graphitron_argument_condition_entry.source_name IS 'the SDL file the row was captured from';
-COMMENT ON COLUMN graphitron_argument_condition_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_argument_condition_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_argument_condition_entry.class_name IS 'the fully-qualified Java class name as written';
-COMMENT ON COLUMN graphitron_argument_condition_entry.method IS 'the Java method name as written';
-COMMENT ON COLUMN graphitron_argument_condition_entry.argmapping IS 'the argMapping string as written; the pair child is its decode';
-COMMENT ON COLUMN graphitron_argument_condition_entry.override IS 'as written; NULL when omitted (the FALSE default is derivable)';
-
-CREATE TABLE graphitron_argument_condition_context_arg_entry (
-  graph_name    VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  argument_name VARCHAR NOT NULL,
-  position      INT     NOT NULL,
-  name          VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, argument_name, position),
-  FOREIGN KEY (graph_name, type_name, field_name, argument_name)
-    REFERENCES graphitron_argument_condition_entry (graph_name, type_name, field_name, argument_name)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_argument_condition_context_arg_entry IS 'An ordered context argument of an argument-site @condition. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
-COMMENT ON COLUMN graphitron_argument_condition_context_arg_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_argument_condition_context_arg_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_argument_condition_context_arg_entry.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_argument_condition_context_arg_entry.argument_name IS 'the argument name within the owning field';
-COMMENT ON COLUMN graphitron_argument_condition_context_arg_entry.position IS '0-based position within the owning list';
-COMMENT ON COLUMN graphitron_argument_condition_context_arg_entry.name IS 'the context argument name as written';
-
 CREATE TABLE graphitron_field_chain_application (
   graph_name     VARCHAR NOT NULL,
   type_name      VARCHAR NOT NULL,
@@ -9434,19 +9339,15 @@ SELECT h.graph_name, h.source_name, h.source_line, h.source_column,
     ON ce.graph_name = cf.graph_name AND ce.type_name = cf.named_type
 UNION ALL
 -- A read surface written on a write. Three sites state one, and each row sits at its own.
-SELECT fc.graph_name, fc.source_name, fc.source_line, fc.source_column,
+-- On the field or on one of its arguments, each at its own application.
+SELECT dc.graph_name, dc.source_name, dc.source_line, dc.source_column,
        'READ_SURFACE_ON_WRITE', 'condition'
-  FROM graphitron_field_condition_entry fc
+  FROM graphql_directive_application dc
+  JOIN graphql_element_field ef
+    ON ef.graph_name = dc.graph_name AND ef.coordinate = dc.coordinate
   JOIN head h
-    ON h.graph_name = fc.graph_name AND h.type_name = fc.type_name AND h.field_name = fc.field_name
- WHERE fc.source_name IS NOT NULL
-UNION ALL
-SELECT ac.graph_name, ac.source_name, ac.source_line, ac.source_column,
-       'READ_SURFACE_ON_WRITE', 'condition'
-  FROM graphitron_argument_condition_entry ac
-  JOIN head h
-    ON h.graph_name = ac.graph_name AND h.type_name = ac.type_name AND h.field_name = ac.field_name
- WHERE ac.source_name IS NOT NULL
+    ON h.graph_name = ef.graph_name AND h.type_name = ef.type_name AND h.field_name = ef.field_name
+ WHERE dc.directive_name = 'condition' AND dc.source_name IS NOT NULL
 UNION ALL
 SELECT ob.graph_name, ob.source_name, ob.source_line, ob.source_column,
        'READ_SURFACE_ON_WRITE', 'orderBy'
@@ -10443,7 +10344,11 @@ SELECT p.graph_name, d.type_name, d.field_name, p.family, d.element_kind, d.data
                                     WHERE x.graph_name = g.graph_name
                                       AND x.type_name = g.type_name
                                       AND x.field_name = g.field_name)
-                        OR EXISTS (SELECT 1 FROM graphitron_field_condition_entry x
+                        OR EXISTS (SELECT 1 FROM graphql_field_element x
+                                     JOIN graphql_directive_application xd
+                                       ON xd.graph_name = x.graph_name
+                                      AND xd.coordinate = x.coordinate
+                                      AND xd.directive_name = 'condition'
                                     WHERE x.graph_name = g.graph_name
                                       AND x.type_name = g.type_name
                                       AND x.field_name = g.field_name)
@@ -10929,10 +10834,16 @@ SELECT s.graph_name, s.type_name, s.field_name, s.ordinal, s.seat,
                               OR (fr.source_line = s.source_line
                                   AND fr.source_column < s.source_column)))
            THEN 'CHAIN_HEAD_NOT_ROUTINE'
-         WHEN EXISTS (SELECT 1 FROM graphitron_field_condition_entry fc
+         WHEN EXISTS (SELECT 1 FROM graphql_field_element fc
+                        JOIN graphql_directive_application dc
+                          ON dc.graph_name = fc.graph_name AND dc.coordinate = fc.coordinate
+                         AND dc.directive_name = 'condition'
                        WHERE fc.graph_name = s.graph_name AND fc.type_name = s.type_name
                          AND fc.field_name = s.field_name)
-           OR EXISTS (SELECT 1 FROM graphitron_argument_condition_entry ac
+           OR EXISTS (SELECT 1 FROM graphql_argument_element ac
+                        JOIN graphql_directive_application dc
+                          ON dc.graph_name = ac.graph_name AND dc.coordinate = ac.coordinate
+                         AND dc.directive_name = 'condition'
                        WHERE ac.graph_name = s.graph_name AND ac.type_name = s.type_name
                          AND ac.field_name = s.field_name)
            OR EXISTS (SELECT 1 FROM graphitron_order_by_entry ob

@@ -41,8 +41,6 @@ import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD_PARAMETER_TABLE;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_BINDING_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_LOOKUP_KEY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_NODE_ID_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_ENTRY;
@@ -52,8 +50,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_LOOKUP_KEY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NODE_ID_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_ENTRY;
@@ -346,23 +342,6 @@ public final class SeededStore {
                    type_name, field_name, NULL, NULL, NULL,
                    class_name, method, source_name, source_line, source_column
               FROM graphitron_external_field_entry
-             WHERE class_name IS NOT NULL AND method IS NOT NULL
-            UNION ALL
-            SELECT c.graph_name,
-                   CASE WHEN t.kind = 'INPUT_OBJECT' THEN 'INPUT_FIELD_CONDITION'
-                        ELSE 'FIELD_CONDITION' END,
-                   c.type_name || '.' || c.field_name,
-                   c.type_name, c.field_name, NULL, NULL, NULL,
-                   c.class_name, c.method, c.source_name, c.source_line, c.source_column
-              FROM graphitron_field_condition_entry c
-              JOIN graphql_type t ON t.graph_name = c.graph_name AND t.type_name = c.type_name
-             WHERE c.class_name IS NOT NULL AND c.method IS NOT NULL
-            UNION ALL
-            SELECT graph_name, 'ARGUMENT_CONDITION',
-                   type_name || '.' || field_name || '(' || argument_name || ')',
-                   type_name, field_name, argument_name, NULL, NULL,
-                   class_name, method, source_name, source_line, source_column
-              FROM graphitron_argument_condition_entry
              WHERE class_name IS NOT NULL AND method IS NOT NULL
             UNION ALL
             SELECT s.graph_name, 'FIELD_REFERENCE_STEP',
@@ -1167,110 +1146,6 @@ public final class SeededStore {
             .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.KEY_REF_NAME_PART, QualifiedNameGrammar.namePart(keyRef))
             .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.CLASS_NAME, className)
             .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.METHOD, method)
-            .execute();
-    }
-
-    /**
-     * A {@code @condition} application on a field or an input field, stated by its cascade flag
-     * alone. The reference is left unnamed, which a relation reading only the flag does not miss;
-     * a case whose subject is the reference states it with the other overload.
-     *
-     * @param override as the author wrote it, so {@code null} is the omitted spelling and a
-     *                 relation treating it as the {@code false} it defaults to has to say so
-     */
-    public static void seedFieldCondition(DSLContext dsl, String graphName, String typeName,
-                                          String fieldName, Boolean override) {
-        seedFieldCondition(dsl, graphName, typeName, fieldName, null, null, override);
-    }
-
-    /** The same application with the reference the author wrote, on {@link #seedService}'s terms. */
-    public static void seedFieldCondition(DSLContext dsl, String graphName, String typeName,
-                                          String fieldName, String className, String method,
-                                          Boolean override) {
-        seedFieldCondition(dsl, graphName, typeName, fieldName, className, method, override, 2);
-    }
-
-    /** The same application at a line the case names, for a relation that reads the position. */
-    public static void seedFieldCondition(DSLContext dsl, String graphName, String typeName,
-                                          String fieldName, String className, String method,
-                                          Boolean override, int sourceLine) {
-        dsl.insertInto(GRAPHITRON_FIELD_CONDITION_ENTRY)
-            .set(GRAPHITRON_FIELD_CONDITION_ENTRY.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_FIELD_CONDITION_ENTRY.TYPE_NAME, typeName)
-            .set(GRAPHITRON_FIELD_CONDITION_ENTRY.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_FIELD_CONDITION_ENTRY.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_FIELD_CONDITION_ENTRY.SOURCE_LINE, sourceLine)
-            .set(GRAPHITRON_FIELD_CONDITION_ENTRY.SOURCE_COLUMN, 3)
-            .set(GRAPHITRON_FIELD_CONDITION_ENTRY.CLASS_NAME, className)
-            .set(GRAPHITRON_FIELD_CONDITION_ENTRY.METHOD, method)
-            .set(GRAPHITRON_FIELD_CONDITION_ENTRY.OVERRIDE, override)
-            .execute();
-    }
-
-    /**
-     * The same directive at the argument site, which is its own relation with its own key rather
-     * than a column on the field row. A relation reading both answers with the site it matched, so
-     * a case about that reading seeds the two separately and they stay distinguishable.
-     */
-    public static void seedArgumentCondition(DSLContext dsl, String graphName, String typeName,
-                                             String fieldName, String argumentName, Boolean override) {
-        seedArgumentCondition(dsl, graphName, typeName, fieldName, argumentName, null, null, override);
-    }
-
-    /** The argument-site application with the reference the author wrote. */
-    public static void seedArgumentCondition(DSLContext dsl, String graphName, String typeName,
-                                             String fieldName, String argumentName, String className,
-                                             String method, Boolean override) {
-        seedArgumentCondition(dsl, graphName, typeName, fieldName, argumentName, className, method,
-            override, 2);
-    }
-
-    /** The same application at a line the case names, for a relation that reads the position. */
-    public static void seedArgumentCondition(DSLContext dsl, String graphName, String typeName,
-                                             String fieldName, String argumentName, String className,
-                                             String method, Boolean override, int sourceLine) {
-        dsl.insertInto(GRAPHITRON_ARGUMENT_CONDITION_ENTRY)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.TYPE_NAME, typeName)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.ARGUMENT_NAME, argumentName)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.SOURCE_LINE, sourceLine)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.SOURCE_COLUMN, 3)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.CLASS_NAME, className)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.METHOD, method)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.OVERRIDE, override)
-            .execute();
-    }
-
-    /**
-     * One {@code contextArguments} entry on a field-site or input-field-site {@code @condition}, at
-     * the position the author wrote it. The position is the directive list's own and carries no
-     * ranking: the live rule reads the list as a set keyed by name, so a case whose subject is that
-     * reading seeds one name at two positions and expects one answer.
-     */
-    public static void seedFieldConditionContextArg(DSLContext dsl, String graphName, String typeName,
-                                                    String fieldName, int position, String name) {
-        dsl.insertInto(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG_ENTRY)
-            .set(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG_ENTRY.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG_ENTRY.TYPE_NAME, typeName)
-            .set(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG_ENTRY.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG_ENTRY.POSITION, position)
-            .set(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG_ENTRY.NAME, name)
-            .execute();
-    }
-
-    /** The same entry at the argument site, whose own relation keys the argument in. */
-    public static void seedArgumentConditionContextArg(DSLContext dsl, String graphName, String typeName,
-                                                      String fieldName, String argumentName,
-                                                      int position, String name) {
-        dsl.insertInto(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG_ENTRY)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG_ENTRY.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG_ENTRY.TYPE_NAME, typeName)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG_ENTRY.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG_ENTRY.ARGUMENT_NAME, argumentName)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG_ENTRY.POSITION, position)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG_ENTRY.NAME, name)
             .execute();
     }
 

@@ -40,8 +40,6 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_BINDING_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_LOOKUP_KEY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_NODE_ID_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_ENTRY;
@@ -50,8 +48,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_HANDLER_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_LOOKUP_KEY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NAVIGATION;
@@ -205,31 +201,11 @@ public final class GraphitronFactCapture {
                                boolean inputField) {
         switch (directive.getName()) {
             case "condition" -> {
-                if (!sink.claim(GRAPHITRON_FIELD_CONDITION_ENTRY, type, field)) return;
+                String site = inputField ? "INPUT_FIELD_CONDITION" : "FIELD_CONDITION";
+                if (!sink.claim(GRAPHITRON_METHOD_REFERENCE_ENTRY, site, type, field)) return;
                 var reference = codeReference(directive, "condition");
-                var record = sink.dsl().newRecord(GRAPHITRON_FIELD_CONDITION_ENTRY);
-                record.setTypeName(type);
-                record.setFieldName(field);
-                position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
-                record.setClassName(reference.className());
-                record.setMethod(reference.method());
-                record.setArgmapping(reference.argMapping());
-                record.setOverride(bool(directive, "override"));
-                sink.add(record);
-                methodReference(inputField ? "INPUT_FIELD_CONDITION" : "FIELD_CONDITION",
-                    useSite(type, field, null, null, null), type, field, null, null, null,
-                    reference.className(), reference.method(), directive);
-                int position = 0;
-                for (Value<?> context : list(directive, "contextArguments")) {
-                    String name = stringOf(context, directive, "contextArguments");
-                    if (name == null) continue;
-                    var row = sink.dsl().newRecord(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG_ENTRY);
-                    row.setTypeName(type);
-                    row.setFieldName(field);
-                    row.setPosition(position++);
-                    row.setName(name);
-                    sink.add(row);
-                }
+                methodReference(site, useSite(type, field, null, null, null), type, field, null, null,
+                    null, reference.className(), reference.method(), directive);
             }
             case "reference" -> {
                 if (!sink.claim(GRAPHITRON_FIELD_REFERENCE_ENTRY, type, field, ordinal)) return;
@@ -388,33 +364,12 @@ public final class GraphitronFactCapture {
                 sink.add(record);
             }
             case "condition" -> {
-                if (!sink.claim(GRAPHITRON_ARGUMENT_CONDITION_ENTRY, type, field, argument)) return;
+                if (!sink.claim(GRAPHITRON_METHOD_REFERENCE_ENTRY, "ARGUMENT_CONDITION", type, field,
+                        argument)) return;
                 var reference = codeReference(directive, "condition");
-                var record = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_CONDITION_ENTRY);
-                record.setTypeName(type);
-                record.setFieldName(field);
-                record.setArgumentName(argument);
-                position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
-                record.setClassName(reference.className());
-                record.setMethod(reference.method());
-                record.setArgmapping(reference.argMapping());
-                record.setOverride(bool(directive, "override"));
-                sink.add(record);
                 methodReference("ARGUMENT_CONDITION", useSite(type, field, argument, null, null),
                     type, field, argument, null, null,
                     reference.className(), reference.method(), directive);
-                int position = 0;
-                for (Value<?> context : list(directive, "contextArguments")) {
-                    String name = stringOf(context, directive, "contextArguments");
-                    if (name == null) continue;
-                    var row = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG_ENTRY);
-                    row.setTypeName(type);
-                    row.setFieldName(field);
-                    row.setArgumentName(argument);
-                    row.setPosition(position++);
-                    row.setName(name);
-                    sink.add(row);
-                }
             }
             case "reference" -> {
                 if (!sink.claim(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY, type, field, argument, ordinal)) return;
@@ -631,18 +586,6 @@ public final class GraphitronFactCapture {
         }
         if (value instanceof IntValue number) {
             return number.getValue().intValue();
-        }
-        undecoded(directive, name, value);
-        return null;
-    }
-
-    private Boolean bool(Directive directive, String name) {
-        Value<?> value = argument(directive, name);
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof BooleanValue flag) {
-            return flag.isValue();
         }
         undecoded(directive, name, value);
         return null;
@@ -869,8 +812,6 @@ public final class GraphitronFactCapture {
      */
     private static final List<Table<?>> DECODED = List.of(
         GRAPHITRON_ARGUMENT_BINDING_ENTRY,
-        GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG_ENTRY,
-        GRAPHITRON_ARGUMENT_CONDITION_ENTRY,
         GRAPHITRON_ARGUMENT_LOOKUP_KEY_ENTRY,
         GRAPHITRON_ARGUMENT_NODE_ID_ENTRY,
         GRAPHITRON_ARGUMENT_REFERENCE_ENTRY,
@@ -879,8 +820,6 @@ public final class GraphitronFactCapture {
         GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY,
         GRAPHITRON_ERROR_ENTRY,
         GRAPHITRON_ERROR_HANDLER_ENTRY,
-        GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG_ENTRY,
-        GRAPHITRON_FIELD_CONDITION_ENTRY,
         GRAPHITRON_FIELD_LOOKUP_KEY_ENTRY,
         GRAPHITRON_FIELD_NODE_ID_ENTRY,
         GRAPHITRON_FIELD_REFERENCE_ENTRY,

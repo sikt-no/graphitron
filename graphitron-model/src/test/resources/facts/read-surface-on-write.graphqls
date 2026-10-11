@@ -1,0 +1,35 @@
+# A write takes no read surface, so each site that carries one on a write is its own defect, at its
+# own position, with which surface was written as its detail: a @condition on the field, one on an
+# argument, and an @orderBy. The same arrangement on a query root heads no write and answers nothing.
+
+type Film @table(name: "film") {
+  title: String
+}
+
+input FilmOrder {
+  title: String
+}
+
+type Mutation {
+  insertFilm(id: ID @condition(condition: {className: "example.Ref", method: "m"}), order: FilmOrder @orderBy): Film
+    @routine(name: "film_fn")
+    @condition(condition: {className: "example.Ref", method: "m"})
+}
+
+extend type Query {
+  film(id: ID @condition(condition: {className: "example.Ref", method: "m"}), order: FilmOrder @orderBy): Film
+    @routine(name: "film_fn")
+    @condition(condition: {className: "example.Ref", method: "m"})
+}
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,                  coordinate,               detail
+  READ_SURFACE_ON_WRITE, Mutation.insertFilm,      condition
+  READ_SURFACE_ON_WRITE, Mutation.insertFilm(id:), condition
+  READ_SURFACE_ON_WRITE, Mutation.insertFilm(order:), orderBy
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,                  type_name, field_name
+  READ_SURFACE_ON_WRITE, Query,     film
+  """)
