@@ -9,7 +9,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_DECODE;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_DECODE_SLOT;
 import static no.sikt.graphitron.model.test.SeededStore.OccurrenceStep;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
@@ -38,17 +37,8 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What receives a decoded node id: {@code intent_node_id_decode} for the destination, and
- * {@code intent_node_id_decode_slot} for the fork that decides whether there is a destination here
- * at all.
- *
- * <p>The two relations are pinned together, because one is defined as the population the other does
- * not claim. A case that asserted only the destination would pass just as well if the slot relation
- * saw nothing, and a decode routed to a table predicate when its value goes to a Java parameter is
- * exactly the bug that shape would hide. So every case about the fork states both sides: which parameter
- * the value descends into, or that none does, and the destination that follows. The cases whose
- * subject is which slot destination answers state the destination alone, the fork already being
- * settled by the section above them.
+ * What receives a decoded node id: {@code intent_node_id_decode_slot}, the fork that decides
+ * whether a Java parameter receives the value, and which one.
  *
  * <p>The slot cases are keyed at the root of the use site rather than at the coordinate the author
  * annotated, and that is the claim most worth pinning: an input field two steps inside an argument
@@ -78,8 +68,6 @@ class NodeIdDecodeDestinationTest {
             seedArgumentNodeId(dsl, GRAPH, "Query", "films", "ids", "Film");
 
             assertThat(slots(dsl)).isEmpty();
-            assertThat(destinations(dsl))
-                .containsExactly("Query.films(ids) Film OWN_TABLE_COLUMNS 1");
         });
     }
 
@@ -100,8 +88,6 @@ class NodeIdDecodeDestinationTest {
                 "film_category_film_id_fkey", "film_category_category_id_fkey");
 
             assertThat(slots(dsl)).isEmpty();
-            assertThat(destinations(dsl))
-                .containsExactly("Query.films(inCategory) Category TARGET_TABLE_COLUMNS 1");
         });
     }
 
@@ -119,8 +105,6 @@ class NodeIdDecodeDestinationTest {
             seedArgumentNodeId(dsl, GRAPH, "Query", "notes", "ofPairing", "FilmCategory");
 
             assertThat(slots(dsl)).isEmpty();
-            assertThat(destinations(dsl))
-                .containsExactly("Query.notes(ofPairing) FilmCategory OWN_TABLE_COLUMNS 2");
         });
     }
 
@@ -142,8 +126,6 @@ class NodeIdDecodeDestinationTest {
             seedArgumentPath(dsl, "Query", "films", "ofPair", "film_actor_film_id_fkey");
 
             assertThat(slots(dsl)).isEmpty();
-            assertThat(destinations(dsl))
-                .containsExactly("Query.films(ofPair) FilmActor TARGET_TABLE_COLUMNS 2");
         });
     }
 
@@ -167,8 +149,6 @@ class NodeIdDecodeDestinationTest {
             assertThat(slots(dsl)).containsExactly(
                 "Query.films(ids) NAMED_PARAMETER ids java.lang.String"
                     + " root Query.films(ids) candidates 1");
-            assertThat(destinations(dsl))
-                .containsExactly("Query.films(ids) Film SINGLE_KEY_COLUMN 1");
         });
     }
 
@@ -196,48 +176,10 @@ class NodeIdDecodeDestinationTest {
             assertThat(slots(dsl)).containsExactly(
                 "Query.films(ids) NAMED_PARAMETER ids (untyped)"
                     + " root Query.films(ids) candidates 1");
-            assertThat(destinations(dsl))
-                .containsExactly("Query.films(ids) Film SINGLE_KEY_COLUMN 1");
         });
     }
 
     // ===== Which slot destination, and where neither answers =====
-
-    /**
-     * A parameter typed as the generated record of the node type's own table receives the whole
-     * decoded tuple, whatever the key's arity. Stated at arity two because that is where the record
-     * destination is doing something the single-column one cannot: two values into one row type.
-     */
-    @Test
-    void aRecordOfTheNodeTypesOwnTableTakesTheWholeTuple() {
-        withCatalog(dsl -> {
-            seedNodeType(dsl, "FilmCategory", "film_category");
-            seedField(dsl, GRAPH, "Query", "pairings", "FilmCategory", true);
-            seedArgumentNodeId(dsl, GRAPH, "Query", "pairings", "ids", "FilmCategory");
-            seedProducer(dsl, "Query", "pairings", "ids", recordClass("film_category"));
-
-            assertThat(destinations(dsl))
-                .containsExactly("Query.pairings(ids) FilmCategory JOOQ_RECORD 2");
-        });
-    }
-
-    /**
-     * At arity one both slot destinations could read the row, so the precedence is pinned: a record
-     * is a record. Read the other way round a single-column key reaching its own table's record would
-     * bind one column value into a row type, which is the reading this ordering exists to prevent.
-     */
-    @Test
-    void aRecordWinsOverTheSingleColumnAtArityOne() {
-        withCatalog(dsl -> {
-            seedNodeType(dsl, "Film", "film");
-            seedField(dsl, GRAPH, "Query", "films", "Film", true);
-            seedArgumentNodeId(dsl, GRAPH, "Query", "films", "ids", "Film");
-            seedProducer(dsl, "Query", "films", "ids", recordClass("film"));
-
-            assertThat(destinations(dsl))
-                .containsExactly("Query.films(ids) Film JOOQ_RECORD 1");
-        });
-    }
 
     /**
      * A record of some other table is not this node type's tuple, and it is deliberately no
@@ -256,63 +198,6 @@ class NodeIdDecodeDestinationTest {
             assertThat(slots(dsl)).containsExactly(
                 "Query.films(ids) NAMED_PARAMETER ids " + recordClass("actor")
                     + " root Query.films(ids) candidates 1");
-            assertThat(destinations(dsl)).isEmpty();
-        });
-    }
-
-    /**
-     * Both types known and disagreeing is no destination, which is what makes the gate a gate. The
-     * refusal naming both types is the defect view's, and its population is exactly this absence.
-     */
-    @Test
-    void aTypeDisagreementAtASingleColumnIsNoDestination() {
-        withCatalog(dsl -> {
-            seedNodeType(dsl, "Film", "film");
-            seedField(dsl, GRAPH, "Query", "films", "Film", true);
-            seedArgumentNodeId(dsl, GRAPH, "Query", "films", "ids", "Film");
-            seedProducer(dsl, "Query", "films", "ids", "java.lang.Long");
-
-            assertThat(destinations(dsl)).isEmpty();
-        });
-    }
-
-    /**
-     * A pinned key column the table does not have is no destination, where an untypeable parameter
-     * stands aside and leaves one. The two used to agree: a pin resolved whether or not the table
-     * had the column, so the only thing missing was the type and the decode went ahead on the arity.
-     * A pin the catalog cannot answer now resolves to no key column at all, so there is no arity to
-     * carry it and nothing to emit against a column that is not there.
-     */
-    @Test
-    void aKeyColumnTheCatalogCannotTypeIsNoDestination() {
-        withCatalog(dsl -> {
-            seedNodeType(dsl, "Film", "film");
-            seedNodeKeyColumnRef(dsl, GRAPH, "Film", 0, "not_a_column");
-            seedField(dsl, GRAPH, "Query", "films", "Film", true);
-            seedArgumentNodeId(dsl, GRAPH, "Query", "films", "ids", "Film");
-            seedProducer(dsl, "Query", "films", "ids", "java.lang.Long");
-
-            assertThat(destinations(dsl))
-                .as("the pin resolved to nothing, so there is no key to decode into")
-                .isEmpty();
-        });
-    }
-
-    /**
-     * A composite key into a slot that is not a record is no destination. The count is what refuses
-     * it and the defect view quotes that count, so the case states the absence at the arity rather
-     * than at a type: the parameter's own type agrees with the first key column's here, and it is
-     * still not somewhere two values fit.
-     */
-    @Test
-    void aCompositeKeyIntoASingleValuedSlotIsNoDestination() {
-        withCatalog(dsl -> {
-            seedNodeType(dsl, "FilmCategory", "film_category");
-            seedField(dsl, GRAPH, "Query", "pairings", "FilmCategory", true);
-            seedArgumentNodeId(dsl, GRAPH, "Query", "pairings", "ids", "FilmCategory");
-            seedProducer(dsl, "Query", "pairings", "ids", "java.lang.String");
-
-            assertThat(destinations(dsl)).isEmpty();
         });
     }
 
@@ -335,7 +220,6 @@ class NodeIdDecodeDestinationTest {
                 Map.of("", "java.lang.String"));
 
             assertThat(slots(dsl)).hasSize(2);
-            assertThat(destinations(dsl)).isEmpty();
         });
     }
 
@@ -372,7 +256,6 @@ class NodeIdDecodeDestinationTest {
             assertThat(slots(dsl)).containsExactly(
                 "Query.films(where)/filmId NAMED_PARAMETER where no.example.Bean"
                     + " root Query.films(where) candidates 1");
-            assertThat(destinations(dsl)).isEmpty();
         });
     }
 
@@ -394,8 +277,6 @@ class NodeIdDecodeDestinationTest {
                 new OccurrenceStep("Filter", "filmId", "ID"));
 
             assertThat(slots(dsl)).isEmpty();
-            assertThat(destinations(dsl))
-                .containsExactly("Query.films(where)/filmId Film OWN_TABLE_COLUMNS 1");
         });
     }
 
@@ -493,25 +374,6 @@ class NodeIdDecodeDestinationTest {
                 INTENT_NODE_ID_DECODE_SLOT.PARAM_NAME)
             .fetch()
             .map(NodeIdDecodeDestinationTest::renderSlot);
-    }
-
-    private static List<String> destinations(DSLContext dsl) {
-        derive(dsl);
-        return dsl.select(INTENT_NODE_ID_DECODE.USE_SITE, INTENT_NODE_ID_DECODE.NODE_TYPE_NAME,
-            INTENT_NODE_ID_DECODE.DESTINATION, INTENT_NODE_ID_DECODE.ARITY)
-            .from(INTENT_NODE_ID_DECODE)
-            .where(INTENT_NODE_ID_DECODE.GRAPH_NAME.eq(GRAPH))
-            .orderBy(INTENT_NODE_ID_DECODE.USE_SITE, INTENT_NODE_ID_DECODE.NODE_TYPE_NAME)
-            .fetch()
-            .map(NodeIdDecodeDestinationTest::renderDestination);
-    }
-
-    /** Use site, node type, destination, and the key arity the destination was decided against. */
-    private static String renderDestination(Record row) {
-        return row.get(INTENT_NODE_ID_DECODE.USE_SITE) + " "
-            + row.get(INTENT_NODE_ID_DECODE.NODE_TYPE_NAME) + " "
-            + row.get(INTENT_NODE_ID_DECODE.DESTINATION) + " "
-            + row.get(INTENT_NODE_ID_DECODE.ARITY);
     }
 
     /**

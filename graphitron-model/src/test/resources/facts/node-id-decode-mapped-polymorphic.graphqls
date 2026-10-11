@@ -18,12 +18,6 @@ extend type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantsByMapping", argMapping: "keys: occupant"})
 }
 
-extend schema @expectEquals(relation: "intent_node_id_decode", rows: """
-  use_site,                  node_type_name, destination,        arity
-  Query.occupants(occupant), Customer,       POLYMORPHIC_RECORD, 1
-  Query.occupants(occupant), Staff,          POLYMORPHIC_RECORD, 1
-  """)
-
 extend schema @assertAbsent(relation: "intent_node_id_polymorphic_decode_defect", rows: """
   use_site
   Query.occupants(occupant)

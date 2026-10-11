@@ -22,8 +22,7 @@ import static org.jooq.impl.DSL.selectOne;
 /**
  * The {@code @nodeId} decode rules at a producer parameter, projected from the store: an argument
  * carrying a decoding {@code @nodeId} whose value a producer method's parameter of that name
- * receives either has its decode carried out, with a row in {@code intent_node_id_decode}, or is one
- * of the three refusals below. The reduction lives in {@code intent_node_id_decode_defect}, which
+ * receives either has its decode carried out or is one of the three refusals below. The reduction lives in {@code intent_node_id_decode_defect}, which
  * picks between them on the slot's shape and then the node key's arity in one pass; what remains
  * here is the decode of that view's closed three-verdict vocabulary into {@link Rejection} arms and
  * the prose they carry.

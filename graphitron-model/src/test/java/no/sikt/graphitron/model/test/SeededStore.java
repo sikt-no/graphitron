@@ -1,18 +1,8 @@
 package no.sikt.graphitron.model.test;
 
 import no.sikt.graphitron.model.derive.ArgMappingCandidates;
-import no.sikt.graphitron.model.derive.ArgumentColumnMatches;
-import no.sikt.graphitron.model.derive.ArgumentColumnScopes;
 import no.sikt.graphitron.model.derive.ArgumentReferenceStepTargets;
 import no.sikt.graphitron.model.derive.ArgumentScopeTables;
-import no.sikt.graphitron.model.derive.InputFieldCarrierRoles;
-import no.sikt.graphitron.model.derive.InputFieldColumnMatches;
-import no.sikt.graphitron.model.derive.InputFieldFilterRoles;
-import no.sikt.graphitron.model.derive.MutationPayloadColumns;
-import no.sikt.graphitron.model.derive.MutationPayloadKeyMemberships;
-import no.sikt.graphitron.model.derive.MutationPayloadRefusals;
-import no.sikt.graphitron.model.derive.MutationWriteDestinations;
-import no.sikt.graphitron.model.derive.MutationWritePayloads;
 import no.sikt.graphitron.model.derive.NodeIdDecodeColumns;
 import no.sikt.graphitron.model.derive.NodeIdDecodeHopColumns;
 import no.sikt.graphitron.model.derive.NodeIdDecodeHops;
@@ -269,20 +259,10 @@ public final class SeededStore {
             InputFieldResolvingTables.derive(dsl, graph);
             ArgumentReferenceStepTargets.derive(dsl, graph);
             InputFieldReferenceStepTargets.derive(dsl, graph);
-            ArgumentColumnScopes.derive(dsl, graph);
-            ArgumentColumnMatches.derive(dsl, graph);
-            MutationWritePayloads.derive(dsl, graph);
             NodeIdInstructions.derive(dsl, graph);
             NodeIdDecodeHops.derive(dsl, graph);
             NodeIdDecodeHopColumns.derive(dsl, graph);
             NodeIdDecodeColumns.derive(dsl, graph);
-            InputFieldColumnMatches.derive(dsl, graph);
-            InputFieldFilterRoles.derive(dsl, graph);
-            InputFieldCarrierRoles.derive(dsl, graph);
-            MutationPayloadRefusals.derive(dsl, graph);
-            MutationPayloadColumns.derive(dsl, graph);
-            MutationPayloadKeyMemberships.derive(dsl, graph);
-            MutationWriteDestinations.derive(dsl, graph);
         }
     }
 

@@ -121,12 +121,6 @@ class StageOrderGateTest {
             InputFieldReferenceStepTargets::statements,
             Set.of("graphitron_input_field_reference_step_target_keyed",
                 "graphitron_input_field_reference_step_target_keyless")),
-        new Step("ArgumentColumnScopes", "graphitron_argument_column_scope_rule",
-            Set.of("graphitron_argument_column_scope")),
-        new Step("ArgumentColumnMatches", "graphitron_argument_column_match_rule",
-            Set.of("graphitron_argument_column_match")),
-        new Step("MutationWritePayloads", "graphitron_mutation_write_payload_rule",
-            Set.of("graphitron_mutation_write_payload")),
         new Step("NodeIdInstructions", "graphitron_node_id_instruction_rule",
             Set.of("graphitron_node_id_instruction")),
         new Step("NodeIdDecodeHops", "graphitron_node_id_decode_hop_rule",
@@ -135,20 +129,6 @@ class StageOrderGateTest {
             Set.of("graphitron_node_id_decode_hop_column")),
         new Step("NodeIdDecodeColumns", "graphitron_node_id_decode_column_rule",
             Set.of("graphitron_node_id_decode_column")),
-        new Step("InputFieldColumnMatches", "graphitron_input_field_column_match_rule",
-            Set.of("graphitron_input_field_column_match")),
-        new Step("InputFieldFilterRoles", "graphitron_input_field_filter_role_rule",
-            Set.of("graphitron_input_field_filter_role")),
-        new Step("InputFieldCarrierRoles", "graphitron_input_field_carrier_role_rule",
-            Set.of("graphitron_input_field_carrier_role")),
-        new Step("MutationPayloadRefusals", "graphitron_mutation_payload_refusal_rule",
-            Set.of("graphitron_mutation_payload_refusal")),
-        new Step("MutationPayloadColumns", "graphitron_mutation_payload_column_rule",
-            Set.of("graphitron_mutation_payload_column")),
-        new Step("MutationPayloadKeyMemberships", "graphitron_mutation_payload_key_membership_rule",
-            Set.of("graphitron_mutation_payload_key_membership")),
-        new Step("MutationWriteDestinations", "graphitron_mutation_write_destination_rule",
-            Set.of("graphitron_mutation_write_destination")),
         new Step("UnlowerableOrderingRejectionRows", null,
             Set.of("intent_field_unlowerable_ordering_rejection")),
         new Step("EntryDefects", "graphitron_entry_defect_rule",
@@ -221,12 +201,12 @@ class StageOrderGateTest {
     }
 
     /**
-     * The gate firing, shown rather than argued. The real stratum with its deepest stage moved to
-     * the front: the write destination's rule reads the payload column and the key membership, both
-     * stage-written, so ahead of both it would read the previous capture's rows, and the check above
-     * names it. A real ordering rather than a fixture, so the case keeps meaning something as stages
-     * are added: it fails the day the write destination stops reading anything a stage writes, which
-     * is a change to the rule this gate would want a reader to notice.
+     * The gate firing, shown rather than argued. The real {@code DerivationStratum}, with a deep
+     * stage moved to the front: the node-id decode column's rule reads the decode hop columns,
+     * which a stage writes, so ahead of it it would read the previous capture's rows, and the check
+     * above names it. A real ordering rather than a fixture, so the case keeps meaning something as
+     * stages are added: it fails the day the decode column stops reading anything a stage writes,
+     * which is a change to the rule this gate would want a reader to notice.
      */
     @Test
     @DisplayName("a stage placed ahead of the step that writes what it reads is caught")
@@ -234,7 +214,7 @@ class StageOrderGateTest {
         withStore(dsl -> {
             var steps = new ArrayList<>(resolved(dsl));
             var deepest = steps.stream()
-                .filter(step -> step.writes().contains("graphitron_mutation_write_destination"))
+                .filter(step -> step.writes().contains("graphitron_node_id_decode_column"))
                 .findFirst().orElseThrow();
             steps.remove(deepest);
             steps.addFirst(deepest);

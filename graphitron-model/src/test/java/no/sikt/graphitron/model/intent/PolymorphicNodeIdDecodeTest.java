@@ -8,14 +8,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_INPUT_FIELD_FILTER_ROLE;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_CONTAINER_MEMBER;
-import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_CANDIDATE_NODE_TYPE;
-import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_DECODE;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_DECODE_DEFECT;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_DECODE_ENDPOINT;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_DECODE_SLOT;
-import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_ENCODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ID_INSTRUCTION;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_POLYMORPHIC_DECODE_DEFECT;
 import static no.sikt.graphitron.model.Tables.INTENT_RECORD_SLOT_ASSIGNABLE;
@@ -121,11 +117,6 @@ class PolymorphicNodeIdDecodeTest {
                 .contains("Customer " + recordClass("customer") + " no.example.Occupant",
                     "Customer " + recordClass("customer") + " no.example.Identified",
                     "Staff " + recordClass("staff") + " no.example.Identified");
-            assertThat(destinations(dsl))
-                .as("and the destination follows, both members landing in the declared interface")
-                .containsExactly(
-                    "Query.occupants(occupant) Customer POLYMORPHIC_RECORD 1",
-                    "Query.occupants(occupant) Staff POLYMORPHIC_RECORD 1");
         });
     }
 
@@ -165,25 +156,6 @@ class PolymorphicNodeIdDecodeTest {
     }
 
     // ===== The resolution axis =====
-
-    /**
-     * One identity row for a node type and one row per admissible member for a container, which is
-     * what makes the destination a branch inside the existing slot arm rather than a second arm.
-     */
-    @Test
-    void theCandidateRelationAnswersForBothKinds() {
-        withCatalog(dsl -> {
-            seedUnion(dsl);
-            seedUnionMember(dsl, GRAPH, "AddressOccupant", "Rental", 3);
-            seedTableBinding(dsl, GRAPH, "Rental", "rental");
-
-            assertThat(candidates(dsl)).containsExactly(
-                "AddressOccupant -> Customer",
-                "AddressOccupant -> Staff",
-                "Customer -> Customer",
-                "Staff -> Staff");
-        });
-    }
 
     // ===== The instruction population =====
 
@@ -225,48 +197,10 @@ class PolymorphicNodeIdDecodeTest {
                 .as("the node-type arm answers first, so no instruction draws both rows")
                 .containsExactly(
                     "ARGUMENT Query.occupants(occupant) EXPLICIT_TYPE_NAME AddressOccupant NODE_TYPE");
-            assertThat(candidates(dsl))
-                .as("and the resolution axis follows, the member arm excluding such a container")
-                .contains("AddressOccupant -> AddressOccupant")
-                .doesNotContain("AddressOccupant -> Customer");
         });
     }
 
     // ===== The destination =====
-
-    /**
-     * One {@code POLYMORPHIC_RECORD} row per member, each with that member's own arity, where the
-     * store can see the slot's own type. The arity is the member's rather than the container's, which
-     * a container resolving no key of its own is what makes load-bearing.
-     */
-    @Test
-    void aSlotTypedAsARecordSupertypeDrawsOneRowPerMember() {
-        withCatalog(dsl -> {
-            seedUnion(dsl);
-            seedProducerSlot(dsl, "occupant", UPDATABLE);
-            seedArgumentNodeId(dsl, GRAPH, "Query", "occupants", "occupant", "AddressOccupant");
-
-            assertThat(destinations(dsl)).containsExactly(
-                "Query.occupants(occupant) Customer POLYMORPHIC_RECORD 1",
-                "Query.occupants(occupant) Staff POLYMORPHIC_RECORD 1");
-        });
-    }
-
-    /**
-     * The single-type destinations are unchanged by the join the polymorphic branch added: a node type
-     * at the same slot kind draws its own one row through the identity arm of the candidate relation.
-     */
-    @Test
-    void aNodeTypeAtTheSameSlotStillDrawsItsOneSingleTypeRow() {
-        withCatalog(dsl -> {
-            seedUnion(dsl);
-            seedProducerSlot(dsl, "occupant", recordClass("customer"));
-            seedArgumentNodeId(dsl, GRAPH, "Query", "occupants", "occupant", "Customer");
-
-            assertThat(destinations(dsl)).containsExactly(
-                "Query.occupants(occupant) Customer JOOQ_RECORD 1");
-        });
-    }
 
     /**
      * A container with one admissible member draws its one row and no verdict, which is the store's
@@ -285,12 +219,6 @@ class PolymorphicNodeIdDecodeTest {
             seedProducerSlot(dsl, "occupant", UPDATABLE);
             seedArgumentNodeId(dsl, GRAPH, "Query", "occupants", "occupant", "SoleOccupant");
 
-            assertThat(candidates(dsl))
-                .filteredOn(row -> row.startsWith("SoleOccupant "))
-                .as("the member arm yields the one member, beside the identity rows")
-                .containsExactly("SoleOccupant -> Customer");
-            assertThat(destinations(dsl)).containsExactly(
-                "Query.occupants(occupant) Customer POLYMORPHIC_RECORD 1");
             assertThat(polymorphicDefects(dsl))
                 .as("no verdict refuses a container for its member count")
                 .isEmpty();
@@ -309,7 +237,6 @@ class PolymorphicNodeIdDecodeTest {
             seedProducerSlot(dsl, "occupant", UPDATABLE);
             seedArgumentNodeId(dsl, GRAPH, "Query", "occupants", "occupant", "AddressOccupant");
 
-            assertThat(destinations(dsl)).isEmpty();
             assertThat(polymorphicDefects(dsl)).containsExactly(
                 "Query.occupants(occupant) AddressOccupant SLOT_NOT_SUPERTYPE_OF_MEMBER Staff");
         });
@@ -330,9 +257,6 @@ class PolymorphicNodeIdDecodeTest {
             seedProducerSlot(dsl, "occupant", Map.of("", "java.util.List", "0", UPDATABLE));
             seedArgumentNodeId(dsl, GRAPH, "Query", "occupants", "occupant", "AddressOccupant");
 
-            assertThat(destinations(dsl)).containsExactly(
-                "Query.occupants(occupant) Customer POLYMORPHIC_RECORD 1",
-                "Query.occupants(occupant) Staff POLYMORPHIC_RECORD 1");
             assertThat(polymorphicDefects(dsl)).isEmpty();
         });
     }
@@ -350,7 +274,6 @@ class PolymorphicNodeIdDecodeTest {
             seedProducerSlot(dsl, "occupant", Map.of("", "java.util.Set", "0", UPDATABLE));
             seedArgumentNodeId(dsl, GRAPH, "Query", "occupants", "occupant", "AddressOccupant");
 
-            assertThat(destinations(dsl)).isEmpty();
             assertThat(polymorphicDefects(dsl)).containsExactly(
                 "Query.occupants(occupant) AddressOccupant SLOT_SHAPE_MISMATCH -");
             assertThat(incumbentDefects(dsl)).isEmpty();
@@ -425,9 +348,6 @@ class PolymorphicNodeIdDecodeTest {
 
             assertThat(polymorphicDefects(dsl)).containsExactly(
                 "Query.occupants(occupant) AddressOccupant CONTAINER_NOT_AT_A_SLOT -");
-            assertThat(destinations(dsl))
-                .as("and no decode is carried out at the container's coordinate")
-                .noneMatch(row -> row.startsWith("Query.occupants(occupant)"));
         });
     }
 
@@ -463,7 +383,6 @@ class PolymorphicNodeIdDecodeTest {
 
             assertThat(polymorphicDefects(dsl)).containsExactly(
                 "Customer.occupantId AddressOccupant CONTAINER_NOT_AT_A_SLOT -");
-            assertThat(encodes(dsl)).isEmpty();
         });
     }
 
@@ -492,10 +411,6 @@ class PolymorphicNodeIdDecodeTest {
 
             assertThat(polymorphicDefects(dsl)).containsExactly(
                 "Query.occupants(filter)/occupantId AddressOccupant CONTAINER_NOT_AT_A_SLOT -");
-            assertThat(inputFieldFilterRoles(dsl))
-                .as("the container's field lands NONE and is dropped, while the node type beside it"
-                    + " still carries the role")
-                .containsExactly("OccupantFilter.customerId@customer NODE_ID");
         });
     }
 
@@ -649,16 +564,6 @@ class PolymorphicNodeIdDecodeTest {
                 + " " + (Boolean.TRUE.equals(r.get(m.IS_NODE_TYPE)) ? "node" : "-"));
     }
 
-    private static List<String> candidates(DSLContext dsl) {
-        derive(dsl);
-        var c = INTENT_NODE_ID_CANDIDATE_NODE_TYPE;
-        return dsl.select(c.RESOLVED_TYPE_NAME, c.NODE_TYPE_NAME)
-            .from(c).where(c.GRAPH_NAME.eq(GRAPH))
-            .orderBy(c.RESOLVED_TYPE_NAME, c.NODE_TYPE_NAME)
-            .fetch()
-            .map(r -> r.get(c.RESOLVED_TYPE_NAME) + " -> " + r.get(c.NODE_TYPE_NAME));
-    }
-
     private static List<String> instructions(DSLContext dsl) {
         derive(dsl);
         var i = GRAPHITRON_NODE_ID_INSTRUCTION;
@@ -677,17 +582,6 @@ class PolymorphicNodeIdDecodeTest {
             .orderBy(s.USE_SITE, s.PARAM_NAME)
             .fetch()
             .map(r -> r.get(s.USE_SITE) + " " + r.get(s.CANDIDATES));
-    }
-
-    private static List<String> destinations(DSLContext dsl) {
-        derive(dsl);
-        var d = INTENT_NODE_ID_DECODE;
-        return dsl.select(d.USE_SITE, d.NODE_TYPE_NAME, d.DESTINATION, d.ARITY)
-            .from(d).where(d.GRAPH_NAME.eq(GRAPH))
-            .orderBy(d.USE_SITE, d.NODE_TYPE_NAME)
-            .fetch()
-            .map(r -> r.get(d.USE_SITE) + " " + r.get(d.NODE_TYPE_NAME) + " "
-                + r.get(d.DESTINATION) + " " + r.get(d.ARITY));
     }
 
     private static List<String> polymorphicDefects(DSLContext dsl) {
@@ -725,28 +619,4 @@ class PolymorphicNodeIdDecodeTest {
             .map(r -> r.get(e.USE_SITE) + " " + r.get(e.NODE_TYPE_NAME));
     }
 
-    private static List<String> encodes(DSLContext dsl) {
-        derive(dsl);
-        var e = INTENT_NODE_ID_ENCODE;
-        return dsl.select(e.USE_SITE, e.NODE_TYPE_NAME).from(e).where(e.GRAPH_NAME.eq(GRAPH))
-            .orderBy(e.USE_SITE)
-            .fetch()
-            .map(r -> r.get(e.USE_SITE) + " " + r.get(e.NODE_TYPE_NAME));
-    }
-
-    /**
-     * The input-field rung's roles, read off the stage-written table every consumer spells. The
-     * {@code _rule} view is the rule; what a classifier sees is this table, so an arm that flipped
-     * to {@code NODE_ID} would be visible here.
-     */
-    private static List<String> inputFieldFilterRoles(DSLContext dsl) {
-        derive(dsl);
-        var r = GRAPHITRON_INPUT_FIELD_FILTER_ROLE;
-        return dsl.select(r.TYPE_NAME, r.FIELD_NAME, r.RESOLVING_TABLE, r.ROLE).from(r)
-            .where(r.GRAPH_NAME.eq(GRAPH))
-            .orderBy(r.TYPE_NAME, r.FIELD_NAME, r.RESOLVING_TABLE)
-            .fetch()
-            .map(x -> x.get(r.TYPE_NAME) + "." + x.get(r.FIELD_NAME) + "@"
-                + x.get(r.RESOLVING_TABLE) + " " + x.get(r.ROLE));
-    }
 }

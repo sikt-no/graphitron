@@ -29,12 +29,6 @@ extend schema @expectEquals(relation: "intent_node_id_decode_slot", rows: """
 
 # One destination however the parameter was reached: the name match stands aside where a pair
 # claims the parameter, so each slot above is its argument's only one. The refused one has none.
-extend schema @expectEquals(relation: "intent_node_id_decode", rows: """
-  use_site,        node_type_name, destination,       arity
-  Query.film(ids), Film,           SINGLE_KEY_COLUMN, 1
-  Query.redirected(id), Film,      OWN_TABLE_COLUMNS, 1
-  """)
-
 extend schema @expectEquals(relation: "intent_argmapping_projection_defect", rows: """
   coordinate,  directive_name, param_name, written_path, verdict,                  column_java_type,  param_java_type
   Query.films, service,        userId,     ids,          KEY_COLUMN_TYPE_MISMATCH, java.lang.Integer, java.lang.String

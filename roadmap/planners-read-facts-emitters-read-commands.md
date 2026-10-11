@@ -12,6 +12,8 @@ last-updated: 2026-09-25
 
 # Planners read facts, emitters read commands: dissolve the walk and the leaf zoo
 
+**Dated 2026-10-11:** `intent_table_key_candidate`, named below, has been retired by R876 with the mutation write family that was its only reader; nothing in production read either.
+
 The intended architecture is one sentence. Capture writes facts; planners read facts and produce
 commands; emitters render commands; validation is questions asked of the facts. Each tier reads
 only the tier below it, so a planner never reaches past the facts into anything that produced

@@ -12,6 +12,8 @@ last-updated: 2026-09-08
 
 # A registration's alternative is counted from the schema, so the last lever stops being the first one reached for
 
+**Dated 2026-10-11:** `intent_mutation_write_agreement`, on which the maximum figures below were measured, has been retired by R876 with the mutation write family, which had no production reader. The figures are the state when they were taken.
+
 The fact model has four levers for an expensive derived read, ordered on the fact-model page from
 the one that removes work to the one that adds it: capture writes the fact, an index on a stored
 column, a rewrite, and last a registration in `meta_materialize`. The order is doctrine and the

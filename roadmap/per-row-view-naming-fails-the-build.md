@@ -12,6 +12,8 @@ last-updated: 2026-09-09
 
 # A rule that evaluates an unregistered view once per driving row fails the build, whoever writes the next one
 
+**Dated 2026-10-11:** three relations in the tables below have been retired by R876: `intent_node_metadata_defect` (node metadata is a catalog fact now, `sql_node_metadata` or `sql_node_metadata_unreadable`), and `intent_node_id_decode` and `intent_node_id_candidate_node_type`, which had no production reader. The rows naming them are the state when this was measured.
+
 ## Goal
 
 A rule that makes the database ask an expensive question once per driving row, rather than once,

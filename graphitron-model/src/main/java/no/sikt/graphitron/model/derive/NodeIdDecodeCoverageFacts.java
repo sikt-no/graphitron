@@ -27,12 +27,10 @@ import static org.jooq.impl.DSL.selectOne;
  * is a detection; both are read for a rule whose other operand is the classification run's own
  * disposition ledger, and the rule is stated where the two meet.
  *
- * <p><b>Why the census and not {@code intent_node_id_decode}.</b> The obvious operand would be the
- * store's own model of which instructions have a decode, and it is the wrong one in both
- * directions. It over-claims: a cross-table {@code @nodeId} filter with no foreign key joining the
- * pair draws a decode row while the schema walk refuses the coordinate outright, so presence there
- * is not presence of an emitted decode. And it is the deepest derived read in the schema, which a
- * per-build rule has no business evaluating. What this reads instead is the flat, materialized
+ * <p><b>Why the census and not a model of the decodes.</b> The obvious operand would be the
+ * store's own model of which instructions have a decode, and it is the wrong one: presence there is
+ * not presence of an emitted decode, the schema walk refusing coordinates such a model admits, and
+ * it is a deep derived read a per-build rule has no business evaluating. What this reads instead is the flat, materialized
  * statement of what the author <em>wrote</em>, and the question of what the generator did about it
  * is answered by the run rather than by a second model of the run.
  *

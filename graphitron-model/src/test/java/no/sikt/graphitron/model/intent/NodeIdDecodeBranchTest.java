@@ -8,8 +8,6 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_INPUT_FIELD_CARRIER_ROLE;
-import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_DECODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ID_DECODE_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ID_DECODE_HOP_COLUMN;
 import static no.sikt.graphitron.model.test.SeededStore.OccurrenceStep;
@@ -90,53 +88,6 @@ class NodeIdDecodeBranchTest {
                 "klasserolle 1 rollekode -> rollekode",
                 "kullrolle 0 institusjonsnr_eier -> institusjonsnr_eier",
                 "kullrolle 1 rollekode -> rollekode");
-        });
-    }
-
-    /**
-     * Each branch is its own decode, and its arity is the node key's real width. The column the item
-     * is named for: arity counts the key-column child within the partition, so before the branch was
-     * a partitioning column this coordinate was described as having eighteen key columns where the
-     * node type has two, and one row stood for three branches rather than three rows for three.
-     */
-    @Test
-    void eachBranchIsItsOwnDecodeWithTheKeysRealArity() {
-        withPolymorphicCatalog(dsl -> {
-            derive(dsl);
-
-            var t = INTENT_NODE_ID_DECODE;
-            assertThat(dsl.select(t.ORIGIN_TABLE, t.DESTINATION, t.ARITY)
-                    .from(t)
-                    .where(t.GRAPH_NAME.eq(GRAPH))
-                    .orderBy(t.ORIGIN_TABLE)
-                    .fetch(r -> r.value1() + " " + r.value2() + " arity=" + r.value3()))
-                .containsExactly(
-                    "emnerolle OWN_TABLE_COLUMNS arity=2",
-                    "klasserolle OWN_TABLE_COLUMNS arity=2",
-                    "kullrolle OWN_TABLE_COLUMNS arity=2");
-        });
-    }
-
-    /**
-     * The carrier role answers per branch, which is the one reading downstream of here that a
-     * consumer can observe. Its rows were already keyed on the resolving table while the landing
-     * aggregate it read was not, so every branch of a slot received one verdict computed over all
-     * branches' rows together; here each branch lifts to a column of its own table and is told so.
-     */
-    @Test
-    void theCarrierRoleAnswersOncePerBranch() {
-        withChainedCatalog(dsl -> {
-            derive(dsl);
-
-            var t = GRAPHITRON_INPUT_FIELD_CARRIER_ROLE;
-            assertThat(dsl.select(t.RESOLVING_TABLE, t.CARRIER_ROLE)
-                    .from(t)
-                    .where(t.GRAPH_NAME.eq(GRAPH))
-                    .orderBy(t.RESOLVING_TABLE)
-                    .fetch(r -> r.value1() + " " + r.value2()))
-                .containsExactly(
-                    "emnerolle CROSS_TABLE_FK",
-                    "klasserolle CROSS_TABLE_FK");
         });
     }
 

@@ -12,6 +12,8 @@ last-updated: 2026-09-04
 
 # A dev round refreshes what the edit touched
 
+**Dated 2026-10-11:** two relations named below have been retired by R876: `intent_node_metadata_defect` (node metadata is a catalog fact now, `sql_node_metadata` or `sql_node_metadata_unreadable`) and `intent_mutation_matched_key`, which went with the mutation write family because nothing in production read it.
+
 ## Goal
 
 A `graphitron:dev` round costs work proportional to what the developer changed, on the store side as

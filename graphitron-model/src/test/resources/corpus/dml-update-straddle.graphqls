@@ -46,8 +46,3 @@ type Mutation {
   shelveCatalogueItem(in: ShelveCatalogueItemInput!): CatalogueItem
     @mutation(typeName: UPDATE)
 }
-
-extend schema @expectEquals(relation: "intent_mutation_write_refusal", rows: """
-  type_name, field_name,          input_field_name, cause
-  Mutation,  shelveCatalogueItem, shelfId,          NULLABLE_STRADDLING_REFERENCE
-  """)

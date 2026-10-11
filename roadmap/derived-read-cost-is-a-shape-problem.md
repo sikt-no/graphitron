@@ -1078,8 +1078,12 @@ resolved one.
   forms the crawler recorded, `intent_node_metadata_defect` and the filter `Nodes` and
   `NodeKeyColumns` applied over it are gone, the crawler and the walk reading one probe. Stated by
   `facts/node-metadata-unreadable.graphqls`, over a sakila table whose class publishes half the pair.
-* **The node is settled from the position-keyed entries, in one place** `open`, after the catalog
-  fact. `TableTypes`, `Nodes` and `NodeKeyColumns` read `graphitron_ast_table_entry`,
+* **The node is settled from the position-keyed entries, in one place** `blocked`, on "The
+  table-binding and node subject converts" in the seeding branch: 45 seeded classes build their
+  bindings and nodes through the coordinate copies this node retires, so moving the stages off them
+  leaves those classes with no binding and no node. Written once and rolled back; the work is the
+  claimed application, `graphql_directive_application` at ordinal zero on the type's coordinate,
+  which numbers repeats in the anchor's own merge order, with the decode joined by position. `TableTypes`, `Nodes` and `NodeKeyColumns` read `graphitron_ast_table_entry`,
   `graphitron_ast_node_entry` and `graphitron_ast_node_keycolumn_entry`, reaching the type through
   `graphitron_directive_application` and the pinned key's order through its value positions, and
   `NodeKeyColumns` moves into the anchor beside `Nodes`. The `NODE_*` rules of
@@ -1089,9 +1093,8 @@ resolved one.
   that changed is deleted first, taking that type's node and key columns with it; the rest are
   upserted on their keys and swept, and an unchanged binding keeps everything hanging off it.
 * **"Is a node" is the resolved node** `open`. The readers of `graphitron_node_type`,
-  `graphitron_input_field_filter_role_rule`, `graphitron_node_id_instruction_rule`,
-  `graphitron_synthesized_federation_key`, `intent_node_container_member` and
-  `intent_node_id_candidate_node_type`, read `graphitron_node`, and the view goes. A `@node` on a type
+  `graphitron_node_id_instruction_rule`, `graphitron_synthesized_federation_key` and
+  `intent_node_container_member`, read `graphitron_node`, and the view goes. A `@node` on a type
   without `@table` is the anti-join between the entry and the node, and is reported, not counted.
 * **The editor and the MCP read the resolved node** `open`. Completion of `typeName:`, the legality
   behind its squiggle, the hover and `SchemaQueries` read `graphitron_node` and
@@ -1245,7 +1248,7 @@ conversion frees one.
 * Deleting coverage cannot be silent `done`. `theDocumentsDeclareBlocks` fails if the folder stops
   resolving, a glob stops matching, or a block declares no rows, which was the one way this arc
   could have deleted its own coverage without saying so.
-* The count only falls `done`. `SeedingDissolutionGateTest` holds it at 83, because a seeded case
+* The count only falls `done`. `SeedingDissolutionGateTest` holds it at 46, because a seeded case
   is written by copying one and the file it copies never gets opened.
 * The count counts seeding `done`. A quarter of it did not: 26 of 109 callers wrote no fabricated
   row, 22 of them borrowing the fixture as a store factory and four naming it in prose. The only
@@ -1312,6 +1315,45 @@ conversion frees one.
   so a derivation that drops `graph_name` fails whichever document it leaks into.
   `PolymorphicNodeIdDecodeTest` waits on the branch above, because a document written now would pin
   the rule that branch replaces.
+* **The fixture catalog is one catalog over every schema** `open`. `graphitron-sakila-db` generates
+  four catalogs from one database: `public`, `nodeidfixture` and `idreffixture` each pinned to one
+  `<inputSchema>`, and the multischema fixture over `multischema_a` and `multischema_b`, which omits
+  it to get jOOQ's per-schema sub-package layout, the one consumers with several schemas have. The
+  split is history rather than design: the two node-id fixtures were catalogs of their own for small
+  tests, and the generator they needed now runs on `public` too. A fact document is captured against
+  `public` alone, so the shapes the other fixtures hold, metadata keyed off the primary key or one
+  table name in two schemas, are gaps to every document though the database has them.
+  * One codegen execution over all five schemas becomes the fixture catalog, and the documents, the
+    pipeline tests and the example are captured and generated against it. A bare `@table` naming
+    `event` or `note` is ambiguous everywhere then, as it is to a consumer with those schemas.
+  * A small single-schema fixture keeps the root-package layout covered, a few tables with a
+    foreign key, a composite key and node metadata, rather than `public` kept beside the combined
+    catalog.
+  * The readers of the `public` package move to its sub-package, about 157 files and four how-to
+    pages, and the seventeen tests that load one fixture package as a catalog of its own take the
+    combined catalog or the single-schema one.
+* **The table-binding and node subject converts** `open`, and frees "The node is settled from the
+  position-keyed entries". Its conversions wait on the fixture catalog above, the nodes subject's
+  cases wanting metadata keyed off the primary key and one table name in two schemas. Forty-five classes seed `@table` and `@node` through `seedTableBinding`,
+  `seedNode` and their siblings, which write the coordinate copies. Read for a production reader
+  first, on this branch's terms: fifteen of them had none, and four pinned a dead relation beside a
+  live one.
+  * **What nothing read goes** `done`. A cluster of seventeen relations with no production reader,
+    every chain ending at one: the mutation write family (`graphitron_mutation_write_payload`,
+    `_write_destination`, `_payload_column`, `_payload_refusal`, `_payload_key_membership`,
+    `intent_mutation_matched_key`, `intent_mutation_write_refusal`,
+    `intent_mutation_write_agreement`), the input-field column family
+    (`graphitron_input_field_column_match`, `_filter_role`, `_carrier_role`,
+    `intent_input_field_column_scope`), the argument column pair (`graphitron_argument_column_scope`,
+    `_column_match`) and three node-id views (`intent_node_id_decode`, `intent_node_id_encode`,
+    `intent_node_id_candidate_node_type`). With them their ten rule views, the two views only they
+    read (`intent_input_occurrence_descent_order`, `intent_table_key_candidate`), ten stages and
+    their `DerivationStratum` steps, four grains, nineteen test classes, the dead halves of four
+    more and two document blocks. Built again from the model, as the producers and the matched key,
+    when a reader asks.
+  * **The rest convert by subject** `open`. Twenty-six classes with a production reader: nodes
+    four, fields six, references four, claims three, arguments and input fields four, and five
+    node-id classes that wait with the node-id subject.
 * **There is no residue, and no partial conversion** `open`. A class converts whole or it has not
   converted, which is what the caller count measures and why it is the right count. A case that
   fabricates a state no capture reaches is not a case the fixture has to be kept for: it is either

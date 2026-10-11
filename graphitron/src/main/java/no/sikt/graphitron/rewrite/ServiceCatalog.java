@@ -1466,13 +1466,11 @@ class ServiceCatalog {
      * signature that receives the base64 and refuses the one that receives the key with a message
      * prescribing the decode the schema had already written, so an author had no signature left.
      *
-     * <p>Two destinations, and which one is the same question the fact model's
-     * {@code intent_node_id_decode} asks: a slot typed as the generated record of the node type's own
-     * table takes the whole decoded tuple, and every other slot takes one value. So a record slot
+     * <p>Two destinations: a slot typed as the generated record of the node type's own table takes
+     * the whole decoded tuple, and every other slot takes one value. So a record slot
      * gets {@link CallSiteExtraction.NodeIdDecodeRecord} and anything else gets
      * {@link CallSiteExtraction.ThrowOnMismatch}, whose helper projects a one-column key to that
-     * column's own value. The classifier and the relation agree by construction rather than by
-     * comment, both deciding it on the record class.
+     * column's own value.
      *
      * <p>Arity is deliberately not consulted. A composite key at a slot holding one value has
      * nowhere to put the second value, and the store refuses it by name; consulting the width here

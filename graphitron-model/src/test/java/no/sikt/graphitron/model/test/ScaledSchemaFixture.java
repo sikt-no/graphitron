@@ -6,12 +6,9 @@ import java.util.stream.IntStream;
  * An SDL fixture that scales with a unit count and populates the derivation stratum's tables in
  * proportion to schema size, for the cases that need a population rather than a boundary: the
  * stage oracle's @nodeId fixture, the partition-selectivity worth test, and the stratum's statistics
- * test. Two stage tables stay empty at every size, measured rather than assumed:
- * {@code graphitron_mutation_payload_key_membership} and {@code graphitron_mutation_payload_refusal},
- * their rules reading a {@code @mutation} payload surface this schema holds fixed. A case over this
- * fixture that needs a populated table should establish it per table rather than read the property
- * here as universal: a case over empty relations measures its instrument's floor and reports a
- * number.
+ * test. A case over this fixture that needs a populated table should establish it per table rather
+ * than read the property here as universal: a case over empty relations measures its instrument's
+ * floor and reports a number.
  *
  * <p>Shared rather than copied because what this schema populates is a fact re-established every
  * time a rule changes shape, and a second copy would be the one that quietly stopped populating

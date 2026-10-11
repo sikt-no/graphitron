@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_DECODE;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_DECODE_DEFECT;
 import static no.sikt.graphitron.model.test.SeededStore.OccurrenceStep;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
@@ -84,7 +83,6 @@ class NodeIdDecodeDefectTest {
             assertThat(verdicts(dsl)).containsExactly(
                 "Query.pairings(ids) FilmCategory KEY_ARITY_EXCEEDS_SLOT arity 2"
                     + " column (none) (none) slot java.lang.String");
-            assertThat(destinations(dsl)).isEmpty();
         });
     }
 
@@ -103,7 +101,6 @@ class NodeIdDecodeDefectTest {
             assertThat(verdicts(dsl)).containsExactly(
                 "Query.films(ids) Film KEY_COLUMN_TYPE_DISAGREEMENT arity 1"
                     + " column film_id java.lang.String slot java.lang.Long");
-            assertThat(destinations(dsl)).isEmpty();
         });
     }
 
@@ -119,8 +116,6 @@ class NodeIdDecodeDefectTest {
             seedProducer(dsl, "Query", "films", "ids", "java.lang.String");
 
             assertThat(rows(dsl)).isEmpty();
-            assertThat(destinations(dsl))
-                .containsExactly("Query.films(ids) Film SINGLE_KEY_COLUMN 1");
         });
     }
 
@@ -139,8 +134,6 @@ class NodeIdDecodeDefectTest {
             seedProducer(dsl, "Query", "pairings", "ids", recordClass("film_category"));
 
             assertThat(rows(dsl)).isEmpty();
-            assertThat(destinations(dsl))
-                .containsExactly("Query.pairings(ids) FilmCategory JOOQ_RECORD 2");
         });
     }
 
@@ -153,8 +146,6 @@ class NodeIdDecodeDefectTest {
             seedArgumentNodeId(dsl, GRAPH, "Query", "films", "ids", "Film");
 
             assertThat(rows(dsl)).isEmpty();
-            assertThat(destinations(dsl))
-                .containsExactly("Query.films(ids) Film OWN_TABLE_COLUMNS 1");
         });
     }
 
@@ -182,9 +173,6 @@ class NodeIdDecodeDefectTest {
             assertThat(rows(dsl))
                 .as("the stand-aside, which is what this case is for")
                 .isEmpty();
-            assertThat(destinations(dsl))
-                .as("and no destination either, the pin having resolved to no key column")
-                .isEmpty();
         });
     }
 
@@ -198,8 +186,6 @@ class NodeIdDecodeDefectTest {
             seedUntypedProducer(dsl, "Query", "films", "ids");
 
             assertThat(rows(dsl)).isEmpty();
-            assertThat(destinations(dsl))
-                .containsExactly("Query.films(ids) Film SINGLE_KEY_COLUMN 1");
         });
     }
 
@@ -221,7 +207,6 @@ class NodeIdDecodeDefectTest {
             assertThat(verdicts(dsl)).containsExactly(
                 "Query.pairings(ids) FilmCategory KEY_ARITY_EXCEEDS_SLOT arity 2"
                     + " column (none) (none) slot (none)");
-            assertThat(destinations(dsl)).isEmpty();
         });
     }
 
@@ -244,8 +229,6 @@ class NodeIdDecodeDefectTest {
                 recordClass("film_category"));
 
             assertThat(rows(dsl)).isEmpty();
-            assertThat(destinations(dsl))
-                .containsExactly("Query.pairings(ids) FilmCategory JOOQ_RECORD 2");
         });
     }
 
@@ -260,8 +243,6 @@ class NodeIdDecodeDefectTest {
             seedListProducer(dsl, "Query", "films", "ids", "java.util.List", "java.lang.String");
 
             assertThat(rows(dsl)).isEmpty();
-            assertThat(destinations(dsl))
-                .containsExactly("Query.films(ids) Film SINGLE_KEY_COLUMN 1");
         });
     }
 
@@ -281,7 +262,6 @@ class NodeIdDecodeDefectTest {
             assertThat(shapes(dsl)).containsExactly(
                 "Query.films(ids) KEY_COLUMN_TYPE_DISAGREEMENT LIST slot java.util.List"
                     + " landing java.lang.Long depth 1");
-            assertThat(destinations(dsl)).isEmpty();
         });
     }
 
@@ -299,7 +279,6 @@ class NodeIdDecodeDefectTest {
             assertThat(shapes(dsl)).containsExactly(
                 "Query.pairings(ids) KEY_ARITY_EXCEEDS_SLOT LIST slot java.util.List"
                     + " landing java.lang.String depth 1");
-            assertThat(destinations(dsl)).isEmpty();
         });
     }
 
@@ -321,7 +300,6 @@ class NodeIdDecodeDefectTest {
             assertThat(shapes(dsl)).containsExactly(
                 "Query.pairings(ids) SLOT_SHAPE_MISMATCH MISMATCH slot java.util.Set"
                     + " landing java.util.Set depth 1");
-            assertThat(destinations(dsl)).isEmpty();
         });
     }
 
@@ -342,7 +320,6 @@ class NodeIdDecodeDefectTest {
             assertThat(shapes(dsl)).containsExactly(
                 "Query.pairings(id) SLOT_SHAPE_MISMATCH MISMATCH slot java.util.List"
                     + " landing java.util.List depth 0");
-            assertThat(destinations(dsl)).isEmpty();
         });
     }
 
@@ -367,7 +344,6 @@ class NodeIdDecodeDefectTest {
                 Map.of("", "java.lang.String"));
 
             assertThat(rows(dsl)).isEmpty();
-            assertThat(destinations(dsl)).isEmpty();
         });
     }
 
@@ -392,7 +368,6 @@ class NodeIdDecodeDefectTest {
             seedProducer(dsl, "Query", "notes", "in", "no.example.PairingFilter");
 
             assertThat(rows(dsl)).isEmpty();
-            assertThat(destinations(dsl)).isEmpty();
         });
     }
 
@@ -533,16 +508,4 @@ class NodeIdDecodeDefectTest {
         return value == null ? "(none)" : value.toString();
     }
 
-    /** The destination the decode resolved, read beside every verdict. */
-    private static List<String> destinations(DSLContext dsl) {
-        derive(dsl);
-        var d = INTENT_NODE_ID_DECODE;
-        return dsl.select(d.USE_SITE, d.NODE_TYPE_NAME, d.DESTINATION, d.ARITY)
-            .from(d)
-            .where(d.GRAPH_NAME.eq(GRAPH))
-            .orderBy(d.USE_SITE, d.NODE_TYPE_NAME)
-            .fetch()
-            .map(row -> row.get(d.USE_SITE) + " " + row.get(d.NODE_TYPE_NAME) + " "
-                + row.get(d.DESTINATION) + " " + row.get(d.ARITY));
-    }
 }

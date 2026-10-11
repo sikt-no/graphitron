@@ -18,7 +18,6 @@
 # exclusion. That the union is taken is still pinned where the rows are, in the capture agreement's
 # emitted-element-family arm, rather than in any definition text.
 
-graphitron_argument_column_match_rule graphql_type
 intent_authored_claim_conflict graphql_field
 intent_authored_field_claim graphql_field
 intent_authored_field_claim graphql_type
@@ -33,16 +32,7 @@ graphitron_facet_binding graphql_field
 graphitron_facet_binding graphql_type
 intent_field_separate_fetch graphql_field
 intent_field_separate_fetch graphql_type
-graphitron_input_field_column_match_rule graphql_field
-graphitron_input_field_column_match_rule graphql_type
-graphitron_input_field_filter_role_rule graphql_field
-graphitron_input_field_filter_role_rule graphql_type
-intent_input_occurrence_descent_order graphql_field
-graphitron_mutation_payload_column_rule graphql_field
-graphitron_mutation_payload_key_membership_rule graphql_field
-graphitron_mutation_payload_refusal_rule graphql_field
 intent_mutation_routine_seat graphql_field
-graphitron_mutation_write_payload_rule graphql_type
 graphitron_node_id_instruction_rule graphql_field
 graphitron_node_id_instruction_rule graphql_type
 intent_routine_return_binding graphql_type

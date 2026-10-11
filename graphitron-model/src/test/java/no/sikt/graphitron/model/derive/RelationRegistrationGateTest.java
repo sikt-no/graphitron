@@ -346,7 +346,6 @@ class RelationRegistrationGateTest {
         registrations.put("sql_name_matched_key_column", Arm.DERIVED);
         registrations.put("sql_table_reference", Arm.DERIVED);
         registrations.put("graphitron_condition_method_route", Arm.DERIVED);
-        registrations.put("intent_table_key_candidate", Arm.DERIVED);
         registrations.put("graphitron_node_type", Arm.DERIVED);
         registrations.put("graphitron_synthesized_federation_key", Arm.DERIVED);
         registrations.put("graphitron_synthesized_node_type_id", Arm.DERIVED);
@@ -377,18 +376,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_input_field_resolving_table", Arm.DERIVED);
         registrations.put("graphitron_input_field_resolving_table_rule", Arm.DERIVED);
         registrations.put("graphitron_input_field_reference_step_target", Arm.DERIVED);
-        registrations.put("intent_input_field_column_scope", Arm.DERIVED);
-        registrations.put("graphitron_input_field_column_match", Arm.DERIVED);
-        registrations.put("graphitron_input_field_column_match_rule", Arm.DERIVED);
-        registrations.put("graphitron_input_field_filter_role", Arm.DERIVED);
-        registrations.put("graphitron_input_field_carrier_role", Arm.DERIVED);
         registrations.put("graphitron_field_scope_table_rule", Arm.DERIVED);
-        registrations.put("graphitron_mutation_write_payload", Arm.DERIVED);
-        registrations.put("graphitron_mutation_write_payload_rule", Arm.DERIVED);
-        registrations.put("graphitron_mutation_payload_refusal", Arm.DERIVED);
-        registrations.put("graphitron_mutation_payload_refusal_rule", Arm.DERIVED);
-        registrations.put("graphitron_mutation_payload_column", Arm.DERIVED);
-        registrations.put("graphitron_mutation_payload_column_rule", Arm.DERIVED);
         registrations.put("sql_constraint_hop", Arm.DERIVED);
         registrations.put("graphql_ast_element_declaration", Arm.DERIVED);
         registrations.put("graphql_ast_element_declaration_rule", Arm.DERIVED);
@@ -400,13 +388,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_field_chain_link_resolution_open", Arm.DERIVED);
         registrations.put("graphitron_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_field_table_link_rule", Arm.DERIVED);
-        registrations.put("intent_mutation_matched_key", Arm.DERIVED);
-        registrations.put("graphitron_mutation_payload_key_membership", Arm.DERIVED);
-        registrations.put("graphitron_mutation_payload_key_membership_rule", Arm.DERIVED);
-        registrations.put("intent_mutation_write_refusal", Arm.DERIVED);
-        registrations.put("graphitron_mutation_write_destination", Arm.DERIVED);
-        registrations.put("graphitron_mutation_write_destination_rule", Arm.DERIVED);
-        registrations.put("intent_mutation_write_agreement", Arm.DERIVED);
         registrations.put("graphitron_node_id_instruction", Arm.DERIVED);
         registrations.put("intent_node_id_decode_endpoint", Arm.DERIVED);
         registrations.put("graphitron_node_id_decode_hop", Arm.DERIVED);
@@ -415,19 +396,15 @@ class RelationRegistrationGateTest {
         registrations.put("intent_node_id_decode_slot", Arm.DERIVED);
         registrations.put("intent_record_slot_assignable", Arm.DERIVED);
         registrations.put("intent_node_container_member", Arm.DERIVED);
-        registrations.put("intent_node_id_candidate_node_type", Arm.DERIVED);
         registrations.put("intent_node_id_polymorphic_decode_defect", Arm.DERIVED);
-        registrations.put("intent_node_id_decode", Arm.DERIVED);
         registrations.put("intent_node_id_decode_defect", Arm.DERIVED);
         registrations.put("intent_node_id_decode_landing_defect", Arm.DERIVED);
         registrations.put("intent_reference_for_application", Arm.DERIVED);
         registrations.put("intent_foreign_key_column_pair", Arm.DERIVED);
-        registrations.put("intent_node_id_encode", Arm.DERIVED);
         registrations.put("graphitron_argument_scope_table_rule", Arm.DERIVED);
         registrations.put("graphitron_node_id_decode_hop_rule", Arm.DERIVED);
         registrations.put("graphitron_node_id_decode_hop_column_rule", Arm.DERIVED);
         registrations.put("graphitron_node_id_decode_column_rule", Arm.DERIVED);
-        registrations.put("graphitron_input_field_carrier_role_rule", Arm.DERIVED);
         registrations.put("graphitron_field_column_scope_rule", Arm.DERIVED);
         registrations.put("graphitron_node_id_instruction_rule", Arm.DERIVED);
         registrations.put("graphitron_argmapping_match", Arm.DERIVED);
@@ -452,11 +429,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_type_arrival_rule", Arm.DERIVED);
         registrations.put("graphitron_field_source", Arm.DERIVED);
         registrations.put("graphitron_field_source_rule", Arm.DERIVED);
-        registrations.put("graphitron_argument_column_scope", Arm.DERIVED);
-        registrations.put("graphitron_argument_column_scope_rule", Arm.DERIVED);
-        registrations.put("graphitron_argument_column_match", Arm.DERIVED);
-        registrations.put("graphitron_argument_column_match_rule", Arm.DERIVED);
-        registrations.put("graphitron_input_field_filter_role_rule", Arm.DERIVED);
         registrations.put("graphitron_facet_binding", Arm.DERIVED);
         registrations.put("graphitron_connection_facet", Arm.DERIVED);
         registrations.put("graphitron_connection_carrier", Arm.DERIVED);
@@ -479,7 +451,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_argmapping_candidate", Arm.DERIVED);
         registrations.put("intent_input_occurrence_path", Arm.DERIVED);
         registrations.put("intent_input_occurrence_path_step", Arm.DERIVED);
-        registrations.put("intent_input_occurrence_descent_order", Arm.DERIVED);
         registrations.put("intent_authored_claim_conflict", Arm.DERIVED);
         // The defect collapse. UNSHADOWED because the model it would be compared against
         // states no defect population at all: the walk threw, and a thrown error is not a

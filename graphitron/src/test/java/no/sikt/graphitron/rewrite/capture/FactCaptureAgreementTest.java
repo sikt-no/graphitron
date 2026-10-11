@@ -232,10 +232,6 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       ({@code graphitron_node_id_decode_hop_column}) that the lift walks over), one case per shape
  *       the lift either carries or drops, the absent local column being the claim rather than the
  *       present one;
- *       {@code no.sikt.graphitron.model.intent.NodeIdEncodeTest} binds
- *       {@code intent_node_id_encode}, where an encoding field's tuple comes from, one case per
- *       source and one per condition that routes a field to the read family, plus the arity
- *       precondition that applies to one source and not the other;
  *       {@code no.sikt.graphitron.rewrite.derive.ChainTerminusTest} binds
  *       {@code intent_field_chain_terminus}, where a {@code @routine} chain lands and what kind of
  *       table that is, and with it the hop view's name-matched arm, which only a chain departing a
