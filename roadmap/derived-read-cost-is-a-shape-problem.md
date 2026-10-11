@@ -676,8 +676,9 @@ types and its formatter are already model-side, so what stands between here and 
 
 Capture builds both schemas: the schema as written, and the emitted schema the minted rows make of
 it. `generate` renders the emitted schema as SDL and as the schema classes and wiring, and the
-datafetchers and the rest from the store. The walk reads the emitted schema too, and mints nothing
-of its own: every type and application graphitron adds is the store's.
+datafetchers and the rest from the store. The emitted schema is what is published, decided in
+capture, so an emitter prints or renders it and asks nothing else. The walk is not refitted to read
+it: the walk keeps the input it has and goes when nothing reads what it builds.
 
 It is a function onto the output directory rather than a pipeline: after a run the directory is
 fixed by the store, the emitted schema and the run's configuration, a file whose content
@@ -725,10 +726,26 @@ reads nothing off the classpath that capture has already read, and builds no sch
     * **`EmittedRegistry` renders the anchors and states no rule** `done`. It patches the anchored
       elements and applies the minted applications, and the narrowing it reports reads the rule's
       output.
-* **The schema classes and the SDL read only the emitted schema** `open`.
-  `SchemaSdlEmitter` asks the walk which support types to drop. The schema classes take their forms
-  from the emitted schema, `CarriesObjectForm.formOf` reading it before a variant's own form, so the
-  walk's own forms render nothing; the variants still carry them.
+* **The schema classes and the SDL read only the emitted schema** `open`. The schema classes take
+  their forms from the emitted schema, `CarriesObjectForm.formOf` reading it before a variant's own
+  form, so the walk's own forms render nothing; the variants still carry them.
+  * **The emitted schema holds only what is published** `open`. `SchemaSdlEmitter` filters two
+    things out of it as it prints: the directive support types the walk did not keep, read off the
+    walk's types, and graphitron's own directives, by `SchemaDirectiveRegistry.isSurvivor`. Both are
+    decisions about what is published, so `EmittedRegistry` makes them and the printer filters
+    nothing. The support-type rule is structural and needs no classification: a support type is
+    published only in the published tier, `SortDirection` today, and only where an element of a
+    type outside the support set references it; a strictly internal one never is.
+    * **The editor's node metadata reads the store** `open`, first: `CatalogBuilder` reads `@node`
+      off the emitted schema, the one reader of a graphitron directive there, and the store holds
+      the node facts it wants.
+  * **The print form follows the schema's own link** `open`. `SchemaSdlEmitter` prints the
+    federation service form on the walk's `federationLink`; the emitted schema carries the
+    federation `@link` itself, the configured one included while the composition synthesises it,
+    so the form is read off the schema it prints.
+  * **The schema class registers what the emitted schema and the store state** `open`.
+    `GraphitronSchemaClassGenerator` takes the roots, whether there are nodes, the scalars, the error
+    types and the federation entities from the walk's types.
 * **The datafetchers and the rest are generated from the store** `open`. `EmitPlan` reads the store
   already; the per-type generators still take the walk's model. What they read is a few queries,
   each at the grain the generated code is organised by, found by cataloguing the sakila example's
@@ -774,20 +791,16 @@ reads nothing off the classpath that capture has already read, and builds no sch
 
     The producer-method views, `intent_field_producer_method` and its neighbours, are the reference
     branch's to retire, through `graphitron_code_reference`, which the service producer joins to.
-* **The walk reads the emitted schema** `open`. It is handed what capture derived from the store,
-  every minted type and application in it, where it is handed the written composition and mints a
-  second time on top: `KeyNodeSynthesiser` keys the node types and `ConnectionPromoter`'s directive
-  arm expands the carriers, two mints the store already makes. A probe comes first, switching the
-  input and reading what fails.
-  * **The emitted schema carries the configured link** `open`, and the definitions it imports, for a
-    `CONFIGURED` row of `graphitron_federation_link`; whether a run is federated is then whether the
-    schema it is handed is linked, rather than what the composition injected.
-  * **The parser's refusals and the injected names come from `CapturedSchema`** `open`. The walk
-    reads both off `AttributedRegistry`, a registry of its own built from the written composition.
-* **The generator builds no schema** `blocked`, on the walk reading the emitted schema.
-  `KeyNodeSynthesiser`, `ConnectionPromoter`'s directive arm and what is left of
-  `AttributedRegistry` go, and R289, which corrects `KeyNodeSynthesiser`'s javadoc, dissolves with
-  it.
+* **The generator builds no schema** `blocked`, on the two nodes above: the walk goes when nothing
+  reads what it builds, and `KeyNodeSynthesiser`, `ConnectionPromoter`'s expansion and what is left of
+  `AttributedRegistry` go with it. R289, which corrects `KeyNodeSynthesiser`'s javadoc, dissolves
+  with them. Handing the walk the emitted schema instead was probed and set aside: the walk infers
+  from its own expansion in more places than it names. A hop-less `@routine` read binds its return
+  type to the routine's result, and `RecordBindingResolver` binds an accessor's record to a field's
+  return type, both reading a carrier's return type, which is the connection in the emitted schema
+  and the element in the written one; and the `@asFacet` check reads the walk's own directive-driven
+  connection rows, which the emitted schema leaves it none of. Fixing those would fit the walk to an
+  input it is about to lose.
 * **Its inputs are values** `open`. A `StoreHandle`, the `CapturedSchema` and the run's
   configuration; not `CapturedGraph`, which owns the store and its lifetime, so the constructor that
   takes one goes.
@@ -806,9 +819,12 @@ reads nothing off the classpath that capture has already read, and builds no sch
     type first, and the enum and input classes render the schema's forms rather than the walk's.
 * **The configuration's rewrites leave the composition** `open`, so the written schema is what was
   written.
-  * **`TagLinkSynthesiser` leaves the composition** `blocked`, on the emitted schema carrying the
-    configured link and the walk reading it. The written schema needs no `@tag` declaration now; the
-    walk's federation opt-in is the one reader left.
+  * **`TagLinkSynthesiser` leaves the composition** `blocked`, on the generator building no schema.
+    The written schema needs no `@tag` declaration now; the walk's federation opt-in is the one reader
+    left, and the emitted schema carries the link today only because it starts from the composition.
+    When it goes, `EmittedRegistry` applies the link and the definitions it imports for a
+    `CONFIGURED` row of `graphitron_federation_link`, so the emitted schema keeps saying it is
+    federated.
     * **The opt-in is one relation** `done`. `graphitron_federation_link` states whether a graph is
       federated and how, an authored federation `@link` or a configured tag where none is written,
       and `graphitron_federation_link_import` what the link imports, both anchored and marked and
