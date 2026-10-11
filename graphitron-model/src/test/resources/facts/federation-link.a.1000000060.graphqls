@@ -1,0 +1,16 @@
+# The second reading keeps the link and imports @key alone. The import that stands is written again
+# under this reading's mark, and the one the author dropped is swept while its link stands.
+
+type Query { film: String }
+
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+
+extend schema @expectEquals(relation: "graphitron_federation_link", rows: """
+  origin,   version, touched_at
+  AUTHORED, v2.10,   1000000060
+  """)
+
+extend schema @expectEquals(relation: "graphitron_federation_link_import", rows: """
+  ordinal, name, alias, touched_at
+  0,       @key,      , 1000000060
+  """)

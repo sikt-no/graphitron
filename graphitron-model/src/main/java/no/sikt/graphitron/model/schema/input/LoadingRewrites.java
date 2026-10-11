@@ -51,13 +51,9 @@ public final class LoadingRewrites {
          * @param injectedNames   the names of the definitions the federation {@code @link} injected,
          *                        in the order it injected them, empty where there is no federation
          *                        {@code @link}
-         * @param synthesisedLink whether that {@code @link} is the one {@link TagLinkSynthesiser}
-         *                        added because a tag is configured and the author wrote none; the
-         *                        tag arm of the federation opt-in, which the store records because
-         *                        no document states it
          */
-        record Applied(TypeDefinitionRegistry registry, Set<String> injectedNames,
-                       boolean synthesisedLink) implements Outcome {
+        record Applied(TypeDefinitionRegistry registry, Set<String> injectedNames)
+            implements Outcome {
             public Applied {
                 Objects.requireNonNull(registry, "registry");
                 injectedNames = Collections.unmodifiableSet(new LinkedHashSet<>(injectedNames));
@@ -194,8 +190,7 @@ public final class LoadingRewrites {
         if (!(injected instanceof Outcome.Applied applied)) {
             return injected;
         }
-        return new Outcome.Applied(registry, applied.injectedNames(),
-            tagLink instanceof TagLinkSynthesiser.Result.Synthesised);
+        return new Outcome.Applied(registry, applied.injectedNames());
     }
 
     private static String firstClaimedTwice(List<SchemaInput> inputs) {

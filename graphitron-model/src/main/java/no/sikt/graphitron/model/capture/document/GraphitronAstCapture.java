@@ -126,6 +126,8 @@ public final class GraphitronAstCapture {
         // written and corpora captured before this one, and the mint below reads the second.
         TableTypes.derive(dsl, graph.name());
         Nodes.derive(dsl, graph.name());
+        // Whether the graph opts in to federation, which the key mint below reads.
+        FederationLinks.write(dsl, graph.name(), readAt);
         // Then what the applications just anchored mint. Second by our choice rather than by
         // necessity of the entries: at the entry grain an @asConnection and an @asFacet are
         // siblings, each decoded from its own position and reading nothing of the other. It is

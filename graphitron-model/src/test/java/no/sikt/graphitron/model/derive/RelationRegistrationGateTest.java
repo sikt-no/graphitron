@@ -230,6 +230,7 @@ class RelationRegistrationGateTest {
             // directive it decodes asks for another directive by name, which GraphitronSchema has no
             // word for, and the same test pins both spellings of it.
             "graphitron_ast_link_entry", "graphitron_ast_link_import_entry",
+            "graphitron_ast_federation_link_entry",
             "graphitron_ast_compose_directive_entry",
             // What went wrong making a schema out of the documents, as the build's toolchain
             // stated it, at whichever reading stage said so. GraphitronSchema is only ever
@@ -239,11 +240,6 @@ class RelationRegistrationGateTest {
             // oracle arm left here to agree with. GraphQLSchemaProblemsTest pins it, over a corpus
             // that provokes each stage in turn.
             "graphql_schema_problem",
-            // Whether the composition gained the federation @link a configured tag synthesises.
-            // GraphitronSchema is built from the composed registry and holds the link it added
-            // with no word on who wrote it, so there is nothing to agree with.
-            // FederationKeyDerivationTest pins it, over a corpus tagged and linked each way.
-            "graphql_assembly_synthesised_link",
             // What each file's recipe entry configures for it. GraphitronSchema is built from the
             // registry the configuration already rewrote and keeps no word on which file a tag came
             // from, so there is nothing to agree with. StoreEmittedFederationSchemaPipelineTest pins
@@ -295,6 +291,10 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_code_reference_site", Arm.DERIVED);
         registrations.put("graphitron_argmapping_site", Arm.DERIVED);
         registrations.put("graphitron_argmapping_site_rule", Arm.DERIVED);
+        registrations.put("graphitron_federation_link", Arm.DERIVED);
+        registrations.put("graphitron_federation_link_rule", Arm.DERIVED);
+        registrations.put("graphitron_federation_link_import", Arm.DERIVED);
+        registrations.put("graphitron_federation_link_import_rule", Arm.DERIVED);
         registrations.put("graphitron_entry_defect_site", Arm.DERIVED);
         registrations.put("graphitron_code_reference", Arm.DERIVED);
         registrations.put("graphitron_field_chain_link", Arm.DERIVED);

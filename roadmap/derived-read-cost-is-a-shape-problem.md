@@ -658,6 +658,22 @@ reads nothing off the classpath that capture has already read, and builds no sch
   * **The `@link` a configured tag needs reaches the emitted schema** `open`. `TagLinkSynthesiser`
     still adds it in the composition, and the walk's federation opt-in reads it there, so it moves
     with `federationLink`.
+    * **The opt-in is one relation** `done`. `graphitron_federation_link` states whether a graph is
+      federated and how, an authored federation `@link` or a configured tag where none is written,
+      and `graphitron_federation_link_import` what the link imports, both anchored and marked and
+      swept. The key mint reads it in place of the link entries and
+      `graphql_assembly_synthesised_link`, which goes with its writer, nothing else reading it.
+      * **The federation link is decoded at capture** `done`. `graphitron_ast_federation_link_entry`
+        states which `@link` applications name the federation specification and the version, where
+        `FederationSpec` is a constant, so no view filters urls with a literal and the test pinning
+        that literal to the constant dissolves.
+    * **A configured tag the authored link does not import is a detection** `open`, over the
+      relation, where it is a refusal of the composition today.
+    * **`TagLinkSynthesiser` leaves the composition** `open`: the written schema needs no `@tag`
+      declaration now, and the emitted schema applies the configured link and the definitions it
+      imports.
+    * **`federationLink` is read from the store** `open`, by the generator and by the walk's key
+      synthesis, so a tag-only graph stays federated once the composition stops saying so.
   * **`DescriptionNoteApplier` follows** `done`. The original description is the document's, in
     `graphql_`; the note is the document's configuration, in `graphql_source_input`; and the
     description the generator emits is minted, the anchor appending each element's note to it in the
@@ -1146,14 +1162,17 @@ dissolved rather than replaced: `intent_field_demand_rule`, `intent_field_exempt
 `intent_resolved_type_demand`. The deprecated link and federation key decode, its readers having
 moved to the `ast_` entries and the directive anchor: `graphitron_link_entry`,
 `graphitron_federation_key_entry`, `graphitron_federation_key_field_entry`,
-`graphitron_federation_key_field_segment_entry` and `intent_federation_key`. The walk's argMapping
+`graphitron_federation_key_field_segment_entry` and `intent_federation_key`. The record of the
+link the composition synthesised, its readers having moved to `graphitron_federation_link`:
+`graphql_assembly_synthesised_link` and its grain `graph-synthesised-link`. The walk's argMapping
 decode, its readers having moved to `graphitron_ast_argmapping_pair_entry` and
 `graphitron_argmapping_site`: `graphitron_argmapping_entry`, with the indexes
 `graphitron_argmapping_entry_site_ix` and `graphitron_argmapping_entry_use_ix`. The type-backing
 cluster, into `graphitron_type_backing`: `intent_type_backing_seed`, `intent_type_backing_class`,
 `intent_type_backing` and `intent_field_accessor_hop`, with the grain `type-backing-class` and the
 value `BACKING_CLOSURE` (now `PRODUCER` and `ACCESSOR`).
-`graphitron_element` gained `ENUM_VALUE`, and `graphitron_enum_value` is new, both added
+`graphitron_element` gained `ENUM_VALUE`, and `graphitron_enum_value`, `graphitron_federation_link`,
+`graphitron_federation_link_import` and `graphitron_ast_federation_link_entry` are new, all added
 rather than retired.
 
 **Renamed, by rule rather than by list.** Every relation of the as-written half of `graphitron_`
@@ -1202,7 +1221,8 @@ census parameter on `CapturedStore`'s arms; `TestSchemaHelper.classpathCensus` (
 `withExternalFieldLifters`; the MCP fixture's `codeFixtureCensus` (now `codeFixtureClasspath`);
 `SeededStore.seedScalarConstant` and `seedExternalFieldMethod`. `TagApplier` and `TagApplierTest`, the configured tags being
 `graphitron_configured_tag`'s; `DescriptionNoteApplier` and `DescriptionNoteApplierTest`, the notes
-minting the part relations' descriptions; `EmittedRegistry.applyMintedDirectives` (now `applyUnwritten`). The specification's built-ins
+minting the part relations' descriptions; `LoadingRewrites.Outcome.Applied.synthesisedLink` and
+`GraphQLAssemblyCapture.writeSynthesisedLink`; `EmittedRegistry.applyMintedDirectives` (now `applyUnwritten`). The specification's built-ins
 as constants beside the entries:
 `GraphQLAstCapture.SPECIFIED_SCALARS`, `SPECIFIED_DIRECTIVES` with its three column fields and
 `specifiedDirectivesUndeclared`, `SdlFactCapture.SPECIFIED_DIRECTIVES`, and the transcription's

@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.capture.document;
 
 import graphql.language.Directive;
 import graphql.language.Node;
+import no.sikt.graphitron.model.schema.federation.FederationSpec;
 import no.sikt.graphitron.model.sink.BindBatch;
 import org.jooq.DSLContext;
 import org.jooq.Rows;
@@ -12,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FEDERATION_LINK_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_LINK_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_LINK_IMPORT_ENTRY;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.applied;
@@ -59,6 +61,7 @@ final class GraphitronSchemaEntries {
                       List<GraphQLAstEntries.Nested<Directive>> applications, LocalDateTime touchedAt) {
         var links = applied(applications, "link");
         links(dsl, graph, touchedAt, links);
+        federationLinks(dsl, graph, touchedAt, links);
         linkImports(dsl, graph, touchedAt, links);
         composeDirectives(dsl, graph, touchedAt, applications);
         GraphitronAstEntries.sweep(dsl, graph, source, touchedAt, TABLES_TO_SWEEP);
@@ -70,7 +73,8 @@ final class GraphitronSchemaEntries {
      * and did not list would keep its stale rows silently.
      */
     private static final List<Table<?>> TABLES_TO_SWEEP =
-        List.of(GRAPHITRON_AST_LINK_IMPORT_ENTRY, GRAPHITRON_AST_LINK_ENTRY,
+        List.of(GRAPHITRON_AST_LINK_IMPORT_ENTRY, GRAPHITRON_AST_FEDERATION_LINK_ENTRY,
+            GRAPHITRON_AST_LINK_ENTRY,
             GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY);
 
     /**
@@ -94,6 +98,35 @@ final class GraphitronSchemaEntries {
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.URL, excluded(t.URL)));
+    }
+
+    /**
+     * A row for each application whose url names the federation specification, carrying the version
+     * the url names after the specification's prefix. Decoded here, where the prefix is a constant,
+     * so no reader filters urls.
+     */
+    private static void federationLinks(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                        List<Directive> applications) {
+        var t = GRAPHITRON_AST_FEDERATION_LINK_ENTRY;
+        var federation = applications.stream()
+            .filter(application -> string(application, "url") instanceof String url
+                && url.startsWith(FederationSpec.SPEC_PREFIX))
+            .toList();
+        var rows = federation.stream().collect(Rows.toRowList(
+            application -> val(graph, t.GRAPH_NAME),
+            application -> GraphQLAstEntries.sourceName(application),
+            application -> GraphQLAstEntries.sourceLine(application),
+            application -> GraphQLAstEntries.sourceColumn(application),
+            application -> val(touchedAt, t.TOUCHED_AT),
+            application -> val(string(application, "url").substring(FederationSpec.SPEC_PREFIX.length()),
+                t.VERSION)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                    t.TOUCHED_AT, t.VERSION)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.VERSION, excluded(t.VERSION)));
     }
 
     private static void linkImports(DSLContext dsl, String graph, LocalDateTime touchedAt,

@@ -327,6 +327,10 @@ class SupertypeSignatureGateTest {
         Set.of("graphitron_ast_enum_value_binding_entry", "graphitron_ast_field_binding_entry",
                "graphitron_ast_input_value_binding_entry"),
         Set.of("graphitron_ast_pivot_entry", "graphitron_pivot_entry"),
+        // A link's imports as written and the federated graph's imports, the second derived from the
+        // first for the one link that opts the graph in, plus the configured link's @tag. Decided:
+        // the entry is per application, and the anchor per graph.
+        Set.of("graphitron_ast_link_import_entry", "graphitron_federation_link_import"),
         // The enum-value site's two sorting pairs, on the terms every pair above is on: an
         // as-written relation beside the resolved one it will be derived into, both coming off this
         // roster together on the day that derivation lands.

@@ -20,7 +20,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ASSEMBLY_SYNTHESISED_LINK;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_LINK;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FEDERATION_KEY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
@@ -266,21 +266,27 @@ class FederationKeyDerivationTest {
 
         try (var store = GraphitronStore.captured(
                 context(tmp.resolve("tagged"), unlinked, "stable")).store()) {
-            assertThat(store.dsl().fetchCount(GRAPHQL_ASSEMBLY_SYNTHESISED_LINK)).isOne();
+            assertThat(originOf(store.dsl())).containsExactly("CONFIGURED");
             assertThat(synthesizedKeysOf(store.dsl())).containsExactly("Film");
         }
         try (var store = GraphitronStore.captured(
                 context(tmp.resolve("untagged"), unlinked, null)).store()) {
-            assertThat(store.dsl().fetchCount(GRAPHQL_ASSEMBLY_SYNTHESISED_LINK)).isZero();
+            assertThat(originOf(store.dsl())).isEmpty();
             assertThat(synthesizedKeysOf(store.dsl())).isEmpty();
         }
         try (var store = GraphitronStore.captured(
                 context(tmp.resolve("linked"), linkedWithTag, "stable")).store()) {
-            assertThat(store.dsl().fetchCount(GRAPHQL_ASSEMBLY_SYNTHESISED_LINK))
-                .as("the author wrote the link, so the composition synthesised none")
-                .isZero();
+            assertThat(originOf(store.dsl()))
+                .as("the author wrote the link, so the configuration adds none")
+                .containsExactly("AUTHORED");
             assertThat(synthesizedKeysOf(store.dsl())).containsExactly("Film");
         }
+    }
+
+    /** How the graph opts in to federation, if it does. */
+    private static List<String> originOf(DSLContext dsl) {
+        return dsl.select(GRAPHITRON_FEDERATION_LINK.ORIGIN).from(GRAPHITRON_FEDERATION_LINK)
+            .fetch(GRAPHITRON_FEDERATION_LINK.ORIGIN);
     }
 
     /** A run over one schema file, carrying {@code tag} where it is not null. */

@@ -569,16 +569,6 @@ COMMENT ON COLUMN graphql_schema_problem.source_name IS 'the file the problem is
 COMMENT ON COLUMN graphql_schema_problem.source_line IS 'line of the site the problem points at, 1-based, or null where the stage reported none';
 COMMENT ON COLUMN graphql_schema_problem.source_column IS 'column of that site, null exactly when the line is; graphql-java locates at the enclosing declaration rather than the offending element, so this is where to start reading and not where the fault is';
 
-CREATE TABLE graphql_assembly_synthesised_link (
-  graph_name VARCHAR   NOT NULL,
-  touched_at TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
-);
-COMMENT ON TABLE graphql_assembly_synthesised_link IS 'One graph whose composed schema carries the federation @link that <schemaInput tag> synthesised, which its author did not write. For example a graph whose only federation opt-in is a tagged schema input, with no @link in any document, has one row.';
-COMMENT ON COLUMN graphql_assembly_synthesised_link.graph_name IS 'the graph whose composition gained the link, anchored by store_graph; the whole key, presence being the fact and a graph whose author wrote its own @link, or configured no tag, having no row';
-COMMENT ON COLUMN graphql_assembly_synthesised_link.touched_at IS 'when the reading that composed the graph ran; the reading finishes by deleting this graph''s row where it carries an older instant, so a graph that stops configuring a tag, or starts writing its own @link, loses it. A composition that refused writes no row, the assembly then judging the corpus as written';
-
 CREATE TABLE graphql_ast_entry (
   graph_name    VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL,
@@ -3184,6 +3174,27 @@ COMMENT ON COLUMN graphitron_ast_link_entry.source_line IS 'source line of the a
 COMMENT ON COLUMN graphitron_ast_link_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_schema_directive_entry and neither carries what the other holds';
 COMMENT ON COLUMN graphitron_ast_link_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
 COMMENT ON COLUMN graphitron_ast_link_entry.url IS 'the url argument decoded to the string the author wrote, or NULL where they wrote none or wrote something that is not a string. Nothing here reads the specification it names, and no version is parsed out of it';
+
+CREATE TABLE graphitron_ast_federation_link_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  version       VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_ast_link_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_federation_link_entry IS 'A @link application whose url names the federation specification, and the version it names. For example a schema extension applying @link with federation v2.10 as its url gives one row carrying v2.10, and a @link to any other specification gives none.';
+COMMENT ON COLUMN graphitron_ast_federation_link_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_federation_link_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_federation_link_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_federation_link_entry.source_column IS 'source column of the same. The four key columns are the link entry''s, so this row decodes exactly one application graphitron_ast_link_entry holds';
+COMMENT ON COLUMN graphitron_ast_federation_link_entry.touched_at IS 'when the reading that produced this row ran, swept with the schema site''s other entries';
+COMMENT ON COLUMN graphitron_ast_federation_link_entry.version IS 'what the url names after the federation specification''s prefix, as written, for example v2.10. Not parsed further, nothing reading a version yet';
 
 CREATE TABLE graphitron_ast_link_import_entry (
   graph_name    VARCHAR NOT NULL,
@@ -7811,15 +7822,104 @@ COMMENT ON COLUMN graphitron_defect_type.statement IS 'the rule, as one author-f
 
 
 
+CREATE TABLE graphitron_federation_link (
+  graph_name    VARCHAR   NOT NULL,
+  origin        VARCHAR   NOT NULL,
+  version       VARCHAR,
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  touched_at    TIMESTAMP NOT NULL,
+  -- A graph opts in to federation once, however it came to.
+  PRIMARY KEY (graph_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  -- The authored link, so the opt-in cannot outlive the application that states it.
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_ast_federation_link_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  CHECK (origin IN ('AUTHORED', 'CONFIGURED')),
+  -- An authored link is the application it names and its version; a configured one has neither,
+  -- the version being the generator's to name.
+  CHECK ((origin = 'AUTHORED') = (source_name IS NOT NULL)),
+  CHECK ((origin = 'AUTHORED') = (version IS NOT NULL))
+);
+COMMENT ON TABLE graphitron_federation_link IS 'A graph opts in to Apollo Federation, and how: one row per federated graph. For example a schema extension applying @link with a federation url is one AUTHORED row naming that application, and a graph whose only opt-in is a <schemaInput tag> is one CONFIGURED row naming none.';
+COMMENT ON COLUMN graphitron_federation_link.graph_name IS 'the owning graph''s partition and the whole key: a graph is federated or it is not';
+COMMENT ON COLUMN graphitron_federation_link.origin IS 'AUTHORED where a document applies a federation @link, CONFIGURED where none does and a <schemaInput tag> asks for the @link that declares @tag';
+COMMENT ON COLUMN graphitron_federation_link.version IS 'the federation version the authored link names; NULL on a configured link, whose version is the generator''s own';
+COMMENT ON COLUMN graphitron_federation_link.source_name IS 'the file holding the authored application; NULL on a configured link, which no document states';
+COMMENT ON COLUMN graphitron_federation_link.source_line IS 'source line of the authored application''s at sign';
+COMMENT ON COLUMN graphitron_federation_link.source_column IS 'source column of the same';
+COMMENT ON COLUMN graphitron_federation_link.touched_at IS 'the reading that last wrote this row; a row this reading did not write is an opt-in the corpus or the configuration dropped, and goes';
+
+CREATE TABLE graphitron_federation_link_import (
+  graph_name VARCHAR   NOT NULL,
+  ordinal    INT       NOT NULL,
+  name       VARCHAR   NOT NULL,
+  alias      VARCHAR,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, ordinal),
+  FOREIGN KEY (graph_name) REFERENCES graphitron_federation_link (graph_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_federation_link_import IS 'One name a graph''s federation link imports, in the order it is written: one row per import. For example import: ["@key", {name: "@shareable", as: "@federatedShareable"}] gives two rows, and a configured link one row importing @tag.';
+COMMENT ON COLUMN graphitron_federation_link_import.graph_name IS 'the federated graph, anchored by graphitron_federation_link';
+COMMENT ON COLUMN graphitron_federation_link_import.ordinal IS 'the import''s index in the list as written, from 0';
+COMMENT ON COLUMN graphitron_federation_link_import.name IS 'the name imported, a directive''s with its at sign';
+COMMENT ON COLUMN graphitron_federation_link_import.alias IS 'the local name an authored import binds it to, NULL where it keeps its own';
+COMMENT ON COLUMN graphitron_federation_link_import.touched_at IS 'the reading that last wrote this row, on graphitron_federation_link''s terms';
+
+CREATE VIEW graphitron_federation_link_rule
+  (graph_name, origin, version, source_name, source_line, source_column) AS
+WITH authored (graph_name, version, source_name, source_line, source_column, rank) AS (
+  SELECT graph_name, version, source_name, source_line, source_column,
+         ROW_NUMBER() OVER (PARTITION BY graph_name
+                            ORDER BY source_name, source_line, source_column)
+    FROM graphitron_ast_federation_link_entry)
+SELECT graph_name, 'AUTHORED', version, source_name, source_line, source_column
+  FROM authored
+ WHERE rank = 1
+UNION ALL
+SELECT g.graph_name, 'CONFIGURED', CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS INT), CAST(NULL AS INT)
+  FROM (SELECT DISTINCT graph_name FROM graphql_source_input WHERE tag IS NOT NULL) g
+ WHERE NOT EXISTS (SELECT 1 FROM authored a WHERE a.graph_name = g.graph_name);
+COMMENT ON VIEW graphitron_federation_link_rule IS 'The rule graphitron_federation_link stores: one row per graph that opts in to federation, the way it opts in. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_federation_link, which is the name every reader spells.';
+COMMENT ON COLUMN graphitron_federation_link_rule.graph_name IS 'the graph opting in';
+COMMENT ON COLUMN graphitron_federation_link_rule.origin IS 'AUTHORED or CONFIGURED, on graphitron_federation_link''s terms';
+COMMENT ON COLUMN graphitron_federation_link_rule.version IS 'the authored version, NULL on a configured link';
+COMMENT ON COLUMN graphitron_federation_link_rule.source_name IS 'the authored application''s file, NULL on a configured link';
+COMMENT ON COLUMN graphitron_federation_link_rule.source_line IS 'the authored application''s line';
+COMMENT ON COLUMN graphitron_federation_link_rule.source_column IS 'the authored application''s column';
+
+CREATE VIEW graphitron_federation_link_import_rule (graph_name, ordinal, name, alias) AS
+SELECT l.graph_name, v.position, i.name, i.alias
+  FROM graphitron_federation_link l
+  JOIN graphql_ast_applied_argument_entry a
+    ON a.graph_name = l.graph_name AND a.source_name = l.source_name
+   AND a.parent_line = l.source_line AND a.parent_column = l.source_column
+   AND a.name = 'import'
+  JOIN graphql_ast_value_entry v
+    ON v.graph_name = a.graph_name AND v.source_name = a.source_name
+   AND v.holder_line = a.source_line AND v.holder_column = a.source_column
+  JOIN graphitron_ast_link_import_entry i
+    ON i.graph_name = v.graph_name AND i.source_name = v.source_name
+   AND i.source_line = v.source_line AND i.source_column = v.source_column
+ WHERE l.origin = 'AUTHORED'
+UNION ALL
+SELECT graph_name, 0, '@tag', CAST(NULL AS VARCHAR)
+  FROM graphitron_federation_link
+ WHERE origin = 'CONFIGURED';
+COMMENT ON VIEW graphitron_federation_link_import_rule IS 'The rule graphitron_federation_link_import stores: one row per name a graph''s federation link imports. For example an authored link''s imports come across in the order written, and a configured link imports @tag alone.';
+COMMENT ON COLUMN graphitron_federation_link_import_rule.graph_name IS 'the federated graph';
+COMMENT ON COLUMN graphitron_federation_link_import_rule.ordinal IS 'the import''s index in the written list, 0 on a configured link''s one import';
+COMMENT ON COLUMN graphitron_federation_link_import_rule.name IS 'the name imported';
+COMMENT ON COLUMN graphitron_federation_link_import_rule.alias IS 'the authored alias, or NULL';
+
 CREATE VIEW graphitron_synthesized_federation_key
   (graph_name, type_name, fields_sdl, resolvable) AS
 SELECT n.graph_name, n.type_name, 'id', TRUE
   FROM graphitron_node_type n
- WHERE (EXISTS (SELECT 1 FROM graphitron_ast_link_entry l
-                 WHERE l.graph_name = n.graph_name
-                   AND l.url LIKE 'https://specs.apollo.dev/federation/%')
-        OR EXISTS (SELECT 1 FROM graphql_assembly_synthesised_link a
-                    WHERE a.graph_name = n.graph_name))
+ WHERE EXISTS (SELECT 1 FROM graphitron_federation_link l WHERE l.graph_name = n.graph_name)
    -- An authored key states the id contract when it selects one path and that path is id. The
    -- decode is reached through the application the corpus honours, at the at sign both share.
    AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
@@ -15190,7 +15290,7 @@ COMMENT ON COLUMN diagnostic.message IS 'the row''s rendered message, whichever 
 
 CREATE VIEW meta_family (prefix, title, ordinal, introduction, definition) AS VALUES
   ('store_', 'The store''s own record', 0, 'Every run of the generator leaves a record of itself here: which module it captured, which files it read, what configuration it held in hand, and where it wrote. The rows answer bookkeeping questions rather than schema questions: what was this store built from, and which graph do these facts belong to. When two runs disagree, this family is where you look up what each of them actually saw.', 'The store''s own record: what it read, what it was built from, and which graphs it holds. Its rows are never a reading of the consumer''s schema, database or classpath, which is what the transcription families are named for; the graph recipe rows are configuration the run held in hand, which is what keeps them in this family rather than making them a family of their own.'),
-  ('graphql_', 'Generic SDL transcription', 1, 'A complete transcription of the GraphQL schema documents, as any SDL reader would see them. Every type, field, argument and directive application lands here exactly as written, with no judgment about what any of it means. The judgment it does hold is the verdict of the toolchain this graph is built with on whether the documents parse and make a schema at all.', 'Generic GraphQL: a row any SDL reader could produce from the document without knowing graphitron exists, which is every declaration, every directive definition, and every directive application including graphitron''s own. The family is a total transcription, with no hole where graphitron''s namespace was: whether an application survives into the emitted schema is a namespace query over graphql_directive at emission time, not something capture decides by choosing a table, and a directive that is both re-emitted and decoded (federation''s @key) is simply a row in each family rather than a special case. The reader-neutrality test binds the transcription. Two residents are not transcriptions. One is a verdict rather than a declaration (graphql_schema_problem: what the toolchain concluded about whether the documents are a schema at all, at whichever of its four reading stages concluded it), which makes this the one family holding both a transcription and a judgement of the same artifact. The other is a fact about the composition (graphql_assembly_synthesised_link: that the loading rewrites added the federation @link a configured tag asks for), stated by the same toolchain for the same reason, the schema the build sees being the one it composes. The verdict is not reader-neutral and does not claim to be: it is that of the toolchain this graph is built with, graphql-java plus the federation link processor and the configured loading rewrites, because a reader-neutral verdict is one that reports a federation @link''s imports as undeclared directives the build never sees, and a verdict that disagrees with the build is wrong about this graph rather than neutral about it. It stays beside the transcription it judges, the alternative being a second family aliasing this one''s subject.'),
+  ('graphql_', 'Generic SDL transcription', 1, 'A complete transcription of the GraphQL schema documents, as any SDL reader would see them. Every type, field, argument and directive application lands here exactly as written, with no judgment about what any of it means. The judgment it does hold is the verdict of the toolchain this graph is built with on whether the documents parse and make a schema at all.', 'Generic GraphQL: a row any SDL reader could produce from the document without knowing graphitron exists, which is every declaration, every directive definition, and every directive application including graphitron''s own. The family is a total transcription, with no hole where graphitron''s namespace was: whether an application survives into the emitted schema is a namespace query over graphql_directive at emission time, not something capture decides by choosing a table, and a directive that is both re-emitted and decoded (federation''s @key) is simply a row in each family rather than a special case. The reader-neutrality test binds the transcription. One resident is not a transcription but a verdict rather than a declaration (graphql_schema_problem: what the toolchain concluded about whether the documents are a schema at all, at whichever of its four reading stages concluded it), which makes this the one family holding both a transcription and a judgement of the same artifact. The verdict is not reader-neutral and does not claim to be: it is that of the toolchain this graph is built with, graphql-java plus the federation link processor and the configured loading rewrites, because a reader-neutral verdict is one that reports a federation @link''s imports as undeclared directives the build never sees, and a verdict that disagrees with the build is wrong about this graph rather than neutral about it. It stays beside the transcription it judges, the alternative being a second family aliasing this one''s subject.'),
   ('graphitron_', 'The decoded graphitron reading', 2, 'What the generator understands the author to have asked for. Each row is the decoded reading of one directive application: the same information that stands in the schema documents, restated in the generator''s own vocabulary so later questions can be asked with plain joins instead of re-parsing strings. Decoding is tolerant: a value that does not fit the declared shape is quarantined rather than lost.', 'What graphitron makes of the SDL document: the decoded directives, and the provenance of the rows macro expansion mints. A row here is a decode of a captured application rather than a conclusion drawn about the schema: it says what a directive application spelled, in graphitron''s vocabulary instead of the document''s. That makes it a derivation whose producer runs at capture cadence, not a second transcription.'),
   ('sql_', 'The consumer database catalog', 3, 'What the consumer''s database declares, read through the generated jOOQ model: schemas, tables, columns, keys, constraints, indexes and callables. These rows are the ground that written table and column references are checked against. A few rows also transcribe what the generated model states about itself, because that model ships as one unit with the catalog it was generated from.', 'What the consumer''s database declares, read through jOOQ''s generated model, plus what that generated model states about the catalog it was generated from. Not jooq_: naming a family for its reader is what this name replaces, because jOOQ defines neither table nor column nor foreign key. The second clause is the narrower residency the generated-model facts earn, sql_table.class_fqn and the node-identity metadata a generated table class publishes: the corpus is one generated package, refreshed as one unit by one walk, and a prefix boundary drawn through the middle of that unit would buy a tidier charter at the price of a family that no longer matches a refresh.'),
   ('java_', 'The consumer''s Java sources', 4, 'Where things are written in the consumer''s own Java sources: the position and documentation comment of each class, method and field declaration, from a plain parse of the source files. It exists so tools can point at a line in a file the author owns. It reads the sources rather than the compiled output deliberately, because the two answer different questions and may legitimately disagree.', 'What the consumer''s .java sources declare, read by an unattributed parse: where each class, method and field is written, and what its doc comment says. Its own family beside code_ rather than columns on it, because the two are separate populations on separate cadences that may legitimately disagree: a source parse yields arity where a classfile yields a descriptor, and the reading excludes the generated jOOQ package this family has to answer for. Named for the language whose declarations it transcribes, and distinct from javac_, which holds what the compiler concluded about generated sources rather than what a parse read from authored ones.'),
@@ -15501,9 +15601,6 @@ INSERT INTO meta_grain VALUES
   ('synthesized-node-type-id',
    'one node type whose wire type id the emitted schema publishes, in one graph',
    'graph_name, type_name', 'sdl'),
-  ('graph-synthesised-link',
-   'one graph whose composed schema gained a link its author did not write',
-   'graph_name', 'sdl'),
   ('reachable-input-type',
    'one input type some field argument reaches, in one graph',
    'graph_name, type_name', 'sdl'),
@@ -15766,6 +15863,12 @@ INSERT INTO meta_grain VALUES
   ('graph-source-input',
    'one schema file one graph reads, with what its recipe entry configures for it',
    'graph_name, source_name', 'configuration'),
+  ('federation-link',
+   'one graph that opts in to Apollo Federation, with how it does',
+   'graph_name', 'sdl'),
+  ('federation-link-import',
+   'one name one graph''s federation link imports',
+   'graph_name, ordinal', 'sdl'),
   ('expanded-directive-application-argument',
    'one argument of one directive application the generator emits, in one graph',
    'graph_name, coordinate, directive_name, ordinal, directive_argument_name', 'sdl'),
@@ -15930,10 +16033,6 @@ INSERT INTO meta_relation VALUES
    'Reading this graph''s documents and making a schema of them produced this problem: one of the refusals the toolchain this graph is built with raised, whichever of the four stages raised it.',
    'For example a file that will not parse is one row naming that file, a second file declaring a type an earlier file already declares is another, and a second federation @link is a third.',
    'The toolchain decides this and the store records it rather than deciding again: graphql-java, and at REWRITE the loading rewrites the generator composes the corpus with, so a directive the build accepts is never reported undeclared here. Making a schema of the documents checks whether they work together, around thirty checks deep, from references resolving and interface contracts to directive locations and the schema''s own shape. Re-deriving it from the entries would be a second implementation of a validation the toolchain already runs, and the two would disagree once the library moved. One relation for every stage: parsing, combining, composing and building a schema are not four questions a reader has, and the stage is a column so one who does care can ask. A file that will not parse contributes no entries, which is why the site columns are here: this is the only relation that can say the file was read. They are nullable because the later stages point at a declaration where they can and nowhere where they cannot. Absence is success: a graph whose documents made a schema has no rows here, so asking whether the corpus is sound is a count. Keyed at the graph, the stage and the order raised within it, not at a site, a problem need not report one. The stage is in the key so each stage numbers its own and each stage''s writer stands alone; an ordinal dense across every stage let only one writer hold them, which constrains the gatherers rather than describing the corpus.'),
-  ('graphql_assembly_synthesised_link', 'graph-synthesised-link', 'graphql-assembly',
-   'One graph whose composed schema carries the federation @link that <schemaInput tag> synthesised, which its author did not write.',
-   'For example a graph whose only federation opt-in is a tagged schema input, with no @link in any document, has one row.',
-   'The tag arm of federation''s opt-in, which no document states. A federation @link reaches the schema the generator builds two ways, written by the author or synthesised by the loading rewrites where a tag is configured and none was written, and the generator federates on either. The decode reads the corpus as written, so graphitron_ast_link_entry holds only the first, and without this relation a graph federated through a tag alone would get no synthesised @key from the store. Recorded from the composition rather than derived from the recipe rows because the two differ: a tagged pattern that matched no file is a recipe row and tags nothing, and the rule is TagLinkSynthesiser''s, run once by the assembly over the inputs the generator hands it, so restating it in SQL over configuration would be a second implementation with nothing holding the two together. A configuration-varying row on a graph-keyed surface is admissible for the reason the assembly''s problem rows are: it states a property of the schema the graph publishes, which is what the cross-graph surface''s SDL-derived rule protects. Presence is the fact, keyed by the graph alone.'),
   ('graphql_ast_type_declaration_entry', 'sdl-declaration-site', 'graphql-ast',
    'A type declaration as one document wrote it: this position in this file declares or extends a named type of this kind and this name.',
    'For example type Film { title: String } is one row saying OBJECT, and extend type Film { rating: Rating } is another saying OBJECT and an extension.',
@@ -16271,6 +16370,10 @@ INSERT INTO meta_relation VALUES
    'What a federation @link application says: the specification the schema opts in to, as written.',
    'For example a schema extension applying @link with federation v2.10 as its url argument gives one row carrying that string.',
    'A decode of one directive application, keyed by the application''s own position, which is also what tells two applications apart: the directive repeats and no ordinal is assigned here, numbering the applications being the anchors'' work over rows that carry the position the numbering sorts by. The URL is kept as the string the author typed and nothing is read out of it, the specification it names and the version in its last segment both being questions for a reader that knows what federation versions mean. A row is written for every application rather than only for those that wrote a URL, because the import list is the child relation and its elements need the parent to hang off.'),
+  ('graphitron_ast_federation_link_entry', 'sdl-declaration-site', 'graphitron-ast',
+   'A @link application whose url names the federation specification, and the version it names.',
+   'For example a schema extension applying @link with federation v2.10 as its url gives one row carrying v2.10, and a @link to any other specification gives none.',
+   'The decode of what the url means, made where the specification''s prefix is a constant, so a reader asking whether a graph is federated joins a row rather than filtering urls with a literal of its own. A child of the link entry at the same key, the url being any specification''s and this the one the generator acts on.'),
   ('graphitron_ast_link_import_entry', 'sdl-written-value', 'graphitron-ast',
    'One import element of a @link application, at its position in the list, as written.',
    'For example import: ["@key", {name: "@shareable", as: "@federatedShareable"}] gives two rows, the second carrying an alias.',
@@ -16371,7 +16474,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_synthesized_federation_key', 'synthesized-federation-key', 'graphitron',
    'Federation''s node-entity rule as a relation: which node types get a @key(fields: "id") nobody wrote, federation needing the entity declaration visible in the emitted SDL and a node carrying a globally-unique id by definition.',
    'For example a federation-linked graph whose Film is a node and declares no id key of its own gets one row.',
-   'Moved out of the intent_ family by the arc that owns macro expansion. That family has no owning gatherer and is being retired, and what this derives from is graphitron''s own vocabulary decoded, so this is where the fact belongs and the graphitron gatherer, which runs the expansion, is who answers for it. A derivation and not a capture: the rule reads the SDL claim rows and the node metadata a generated class publishes, so its inputs span two corpora and its output is computable from captured facts. Three conditions, all the live rule''s. The graph is federation-linked, by either arm of the generator''s opt-in: an authored federation @link, read from the decode rather than the verbatim twin so no reader compensates for AST quoting, or the one <schemaInput tag> synthesised, which no document states and graphql_assembly_synthesised_link records. The type is a node. And no authored key already states the id contract, meaning no @key whose decode is exactly the single path id. A malformed fields: argument decodes to no field rows and so does not count as the id key, which sends the misuse to its detection instead of suppressing synthesis on a parse failure. The application it states is anchored by graphitron_directive_application, whose minted set reads this; read from the ast_ decode and the anchored application, so every input is settled when the anchor runs.'),
+   'Moved out of the intent_ family by the arc that owns macro expansion. That family has no owning gatherer and is being retired, and what this derives from is graphitron''s own vocabulary decoded, so this is where the fact belongs and the graphitron gatherer, which runs the expansion, is who answers for it. A derivation and not a capture: the rule reads the SDL claim rows and the node metadata a generated class publishes, so its inputs span two corpora and its output is computable from captured facts. Three conditions, all the live rule''s. The graph is federation-linked, which graphitron_federation_link states for both arms of the opt-in, the authored @link and the one a <schemaInput tag> asks for. The type is a node. And no authored key already states the id contract, meaning no @key whose decode is exactly the single path id. A malformed fields: argument decodes to no field rows and so does not count as the id key, which sends the misuse to its detection instead of suppressing synthesis on a parse failure. The application it states is anchored by graphitron_directive_application, whose minted set reads this; read from the ast_ decode and the anchored application, so every input is settled when the anchor runs.'),
   ('graphitron_synthesized_node_type_id', 'synthesized-node-type-id', 'graphitron',
    'Which node types publish their wire type id in the emitted schema as @nodeType, because the graph composes that directive.',
    'For example a graph whose schema applies @composeDirective(name: "@nodeType") gets one row per node type, Film''s carrying the id its @node declares, its class publishes, or its own name.',
@@ -16501,6 +16604,22 @@ INSERT INTO meta_relation VALUES
    'The one set graphitron_enum_value is filled from: an enum value an author declared, with the note its file configures.',
    'For example the G in enum Rating { G PG }.',
    'On graphitron_type_authored''s terms. One set rather than two, nothing minting an enum value.'),
+  ('graphitron_federation_link', 'federation-link', 'graphitron',
+   'A graph opts in to Apollo Federation, and how: one row per federated graph.',
+   'For example a schema extension applying @link with a federation url is one AUTHORED row naming that application, and a graph whose only opt-in is a <schemaInput tag> is one CONFIGURED row naming none.',
+   'The one place the opt-in is stated. It came to a reader two ways, an authored link read from the decode and a link the composition synthesised for a configured tag, which the assembly recorded as a fact about the composition rather than about the corpus. Here both are a rule over what capture read: the authored link graphitron_ast_federation_link_entry decodes, the first by position where several do, and the configured one where none does and an input carries a tag.'),
+  ('graphitron_federation_link_import', 'federation-link-import', 'graphitron',
+   'One name a graph''s federation link imports, in the order it is written: one row per import.',
+   'For example import: ["@key", {name: "@shareable", as: "@federatedShareable"}] gives two rows, and a configured link one row importing @tag.',
+   'What a link brings into scope, which is what decides whether a name the schema uses is declared. An authored link''s imports come from its decode; a configured link imports @tag and nothing else, that being the one name it exists to declare.'),
+  ('graphitron_federation_link_rule', 'federation-link', 'graphitron',
+   'The rule graphitron_federation_link stores: one row per graph that opts in to federation, the way it opts in.',
+   'For example the graphitron anchor inserts this view''s rows for one graph into graphitron_federation_link, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the anchor step that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_federation_link_import_rule', 'federation-link-import', 'graphitron',
+   'The rule graphitron_federation_link_import stores: one row per name a graph''s federation link imports.',
+   'For example an authored link''s imports come across in the order written, and a configured link imports @tag alone.',
+   'The rule, on graphitron_federation_link_rule''s terms. It reads the stored opt-in, which the writer fills first, rather than its rule, so no view is evaluated inside another. The order is the list''s as written, reached from the import through the value it is and the argument holding it to the application.'),
   ('graphitron_carrier_directive', 'carrier-directive', 'graphitron',
    'The federation directives on the fields that coined a minted type: one row per @tag or @shareable a carrier carries, authored or configured.',
    'For example films: [Film!]! @asConnection @tag(name: "public") gives QueryFilmsConnection a row naming the public tag on Query.films.',

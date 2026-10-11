@@ -17,6 +17,7 @@ import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.LoadingRewrites;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
+import no.sikt.graphitron.model.schema.input.TagLinkSynthesiser;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.DisplayName;
@@ -34,7 +35,7 @@ import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ASSEMBLY_SYNTHESISED_LINK;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_LINK;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -395,8 +396,9 @@ class StoreEmittedFederationSchemaPipelineTest {
         for (var ctx : fixtures) {
             boolean stored;
             try (var store = GraphitronStore.captured(ctx).store()) {
-                stored = store.dsl().fetchExists(GRAPHQL_ASSEMBLY_SYNTHESISED_LINK,
-                    GRAPHQL_ASSEMBLY_SYNTHESISED_LINK.GRAPH_NAME.eq(ctx.graphName()));
+                stored = store.dsl().fetchExists(GRAPHITRON_FEDERATION_LINK,
+                    GRAPHITRON_FEDERATION_LINK.GRAPH_NAME.eq(ctx.graphName())
+                        .and(GRAPHITRON_FEDERATION_LINK.ORIGIN.eq("CONFIGURED")));
             }
             assertThat(stored).as("%s", ctx.basedir().getFileName())
                 .isEqualTo(generatorSynthesises(ctx));
@@ -426,7 +428,11 @@ class StoreEmittedFederationSchemaPipelineTest {
             .map(input -> (SchemaSource.File) input.source()).toList();
         var registry = SchemaLoader.parsePerSource(sources).registry();
         return LoadingRewrites.apply(registry, ctx.schemaInputs())
-            instanceof LoadingRewrites.Outcome.Applied applied && applied.synthesisedLink();
+            instanceof LoadingRewrites.Outcome.Applied applied
+            && applied.registry().getSchemaExtensionDefinitions().stream()
+                .anyMatch(extension -> extension.getSourceLocation() != null
+                    && TagLinkSynthesiser.SYNTHESISED_SOURCE_NAME.equals(
+                        extension.getSourceLocation().getSourceName()));
     }
 
     /** Runs the generator over a store captured from {@code ctx} and parses the schema it wrote. */
