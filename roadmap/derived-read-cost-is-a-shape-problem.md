@@ -736,9 +736,12 @@ reads nothing off the classpath that capture has already read, and builds no sch
     nothing. The support-type rule is structural and needs no classification: a support type is
     published only in the published tier, `SortDirection` today, and only where an element of a
     type outside the support set references it; a strictly internal one never is.
-    * **The editor's node metadata reads the store** `open`, first: `CatalogBuilder` reads `@node`
-      off the emitted schema, the one reader of a graphitron directive there, and the store holds
-      the node facts it wants.
+    * **`CompletionData` dissolves** `open`, first: `CatalogBuilder` reads `@node` off the emitted
+      schema, the one reader of a graphitron directive there, for a catalog nothing reads. The
+      editor reads the store, and the dev loop only logs the catalog's counts. With it go
+      `CatalogBuilder`, the generator's classpath census, read only to build the catalog, and
+      `ClasspathCensus` and `ClasspathScanner` with it; capture reads the classpath into the `code_`
+      family on its own. R1008, a flaky report from that census, dissolves with it.
   * **The print form follows the schema's own link** `open`. `SchemaSdlEmitter` prints the
     federation service form on the walk's `federationLink`; the emitted schema carries the
     federation `@link` itself, the configured one included while the composition synthesises it,
@@ -861,9 +864,9 @@ reads nothing off the classpath that capture has already read, and builds no sch
   and `graphitron_inherited_directive` and builds the emitted schema, `graphitron:capture`
   alone included, and the dev loop's classpath-change and quiet-startup rounds now capture too. The
   builds stayed green and in their usual time; the relations themselves are untimed.
-* **The jOOQ catalog and the classpath census are read from the store** `open`. Capture has read
-  both, and the generator loading the catalog by reflection and scanning the census is the same
-  second read the documents had.
+* **The jOOQ catalog is read from the store** `open`. Capture has read it, and the generator loading
+  it by reflection is the same second read the documents had. The generator's classpath census goes
+  with `CompletionData`, which was all it fed.
 * **One entry point** `blocked`, on "Validate is a query over the store" and on the dev loop reading
   what it needs from the store. The four projections over one body collapse into the one function.
 * **`graphitron` does no orchestration** `open`. Opening a store and capturing are the generate
