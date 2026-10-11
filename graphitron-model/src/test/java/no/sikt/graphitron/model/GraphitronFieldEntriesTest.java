@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Locale;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_CONDITION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_NODE_ID_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_CONDITION_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_KEY_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_TABLE_STEP_ENTRY;
@@ -97,6 +98,53 @@ class GraphitronFieldEntriesTest {
                 .extracting(r -> r.value1(), r -> r.value2(), r -> r.value3(), r -> r.value4(),
                     r -> r.value5())
                 .containsExactly(tuple("condition", "Film.summary", "no.example.C", "visible", null));
+        });
+    }
+
+    /**
+     * Every {@code @nodeId} application is a row, a bare one included. The row is what says the
+     * directive was there and the null is what says the author left the type to be inferred, so
+     * neither is read off the other.
+     */
+    @Test
+    @DisplayName("a bare @nodeId is a row naming no type, beside a named one")
+    void aBareNodeIdIsARowNamingNoType(@TempDir Path tmp) {
+        write(tmp, "film.graphqls", """
+            type Film {
+              id: ID! @nodeId
+              languageId: ID @nodeId(typeName: "Language")
+            }
+            """);
+
+        ThreadConfinedStore.run(dsl -> {
+            read(dsl, tmp);
+            var decode = GRAPHITRON_AST_FIELD_NODE_ID_ENTRY;
+            var applied = GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
+            var declared = GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
+            var element = GRAPHQL_AST_ELEMENT_ENTRY;
+
+            assertThat(dsl.select(element.COORDINATE, decode.NODE_TYPE_REF)
+                    .from(decode)
+                    .join(applied)
+                    .on(decode.GRAPH_NAME.eq(applied.GRAPH_NAME))
+                    .and(decode.SOURCE_NAME.eq(applied.SOURCE_NAME))
+                    .and(decode.SOURCE_LINE.eq(applied.SOURCE_LINE))
+                    .and(decode.SOURCE_COLUMN.eq(applied.SOURCE_COLUMN))
+                    .join(declared)
+                    .on(applied.GRAPH_NAME.eq(declared.GRAPH_NAME))
+                    .and(applied.SOURCE_NAME.eq(declared.SOURCE_NAME))
+                    .and(applied.PARENT_LINE.eq(declared.SOURCE_LINE))
+                    .and(applied.PARENT_COLUMN.eq(declared.SOURCE_COLUMN))
+                    .join(element)
+                    .on(element.GRAPH_NAME.eq(declared.GRAPH_NAME))
+                    .and(element.SOURCE_NAME.eq(declared.SOURCE_NAME))
+                    .and(element.SOURCE_LINE.eq(declared.SOURCE_LINE))
+                    .and(element.SOURCE_COLUMN.eq(declared.SOURCE_COLUMN))
+                    .orderBy(element.COORDINATE)
+                    .fetch())
+                .as("one row per application, the bare one naming no type")
+                .extracting(r -> r.value1(), r -> r.value2())
+                .containsExactly(tuple("Film.id", null), tuple("Film.languageId", "Language"));
         });
     }
 

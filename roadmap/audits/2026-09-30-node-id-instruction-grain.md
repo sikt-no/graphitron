@@ -1,6 +1,6 @@
 # What converting the node-id instruction found
 
-Evidence behind the graph branch "A node id's candidates are modelled from what was written".
+Evidence behind the graph branch "A node id is a target type, read as its ID".
 Filed as an audit for the reason the earlier ones state: the item's file dies at Done and the
 evidence has to survive it.
 
@@ -100,3 +100,11 @@ Two consequences recorded for the corpus. The bare argument over a table two nod
 the type's candidate, where today it declines; the shared-table document asserted the old rule. And
 `@node` on an interface is not supported, so an interface's bare `@nodeId` has one candidate per
 member; allowing it would give one, the interface's, and is a possible future addition.
+
+The discussion went one step further. A `@nodeId` converts a type to an ID: a field has a target
+type, `@reference` says how to reach it, and `@nodeId` says the ID is wanted rather than the target.
+So the route to a node id is the ordinary chain to its target type, and the node-id family's own
+endpoint, hops and decode columns are a second model of a route beside the chain. Key forwarding,
+reading the target's key from the earliest table along the chain that carries it, is general to
+chains; today it exists twice, as the `lifted` CTE in `graphitron_node_id_decode_column_rule` and as
+`NodeIdLeafResolver.landKeyColumns` in the generator, and nothing reads either.

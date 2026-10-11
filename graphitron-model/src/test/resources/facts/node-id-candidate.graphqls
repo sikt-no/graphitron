@@ -1,0 +1,67 @@
+# The node types a bare @nodeId may be the ID of, read by type. On the id a type declares for Node
+# that is the type declaring it, on an argument the type the field returns, or each node member of an
+# interface or a union return. Only a node is a candidate, so a declaring type, a return type or a
+# member that is not one draws nothing, and the rows that are absent below are as much the example as
+# the rows that are there.
+
+type Film implements Node @table(name: "film") @node {
+  id: ID! @nodeId
+  title: String
+}
+
+# A node whose id is not declared for Node, which binds it to nothing.
+type Language @table(name: "language") @node {
+  id: ID! @nodeId
+}
+
+type Actor implements Node @table(name: "actor") @node {
+  id: ID! @nodeId
+}
+
+# Bound to a table but not a node, so neither its own field nor a member's place in Titled draws a row.
+type Store implements Titled @table(name: "store") {
+  storeId: ID! @nodeId
+  title: String
+}
+
+type Film2 implements Node & Titled @table(name: "film") @node {
+  id: ID! @nodeId
+  title: String
+}
+
+interface Node { id: ID! }
+
+interface Titled { title: String }
+
+union Credit = Film | Actor
+
+extend type Query {
+  film(id: ID! @nodeId): Film
+  credit(id: ID! @nodeId): Credit
+  titled(id: ID! @nodeId): Titled
+  store(id: ID! @nodeId): Store
+  # A written name is a forced choice, so the candidates play no part and none are drawn.
+  named(id: ID! @nodeId(typeName: "Film")): Credit
+  # A table-bound return answers before a path does, so @reference changes nothing here.
+  referenced(id: ID! @nodeId @reference(path: [{table: "film"}])): Credit
+}
+
+type Inventory implements Node @table(name: "inventory") @node {
+  id: ID! @nodeId
+  # Only Node.id binds to the type declaring it, so this field draws nothing though its type is a node.
+  filmId: ID! @nodeId @reference(path: [{table: "film"}])
+}
+
+extend schema @expectEquals(relation: "graphitron_node_id_candidate", rows: """
+  coordinate,         node_type_name
+  Film.id,            Film
+  Actor.id,           Actor
+  Film2.id,           Film2
+  Query.film(id:),    Film
+  Query.credit(id:),  Film
+  Query.credit(id:),  Actor
+  Query.titled(id:),  Film2
+  Query.referenced(id:), Film
+  Query.referenced(id:), Actor
+  Inventory.id,       Inventory
+  """)

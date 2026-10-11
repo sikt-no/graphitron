@@ -89,7 +89,7 @@ final class GraphitronInputValueEntries {
         referenceForTableSteps(dsl, graph, touchedAt, tabled(referenceForSteps));
         referenceForConditionSteps(dsl, graph, touchedAt, conditioned(referenceForSteps));
 
-        nodeIds(dsl, graph, touchedAt, wrote(applied(applications, "nodeId"), "typeName"));
+        nodeIds(dsl, graph, touchedAt, applied(applications, "nodeId"));
         deprecations(dsl, graph, touchedAt, applied(applications, "deprecated"));
         GraphitronAstEntries.sweep(dsl, graph, source, touchedAt, TABLES_TO_SWEEP);
     }

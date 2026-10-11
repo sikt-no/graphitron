@@ -2585,7 +2585,7 @@ CREATE TABLE graphitron_ast_field_node_id_entry (
   source_line   INT     NOT NULL,
   source_column INT     NOT NULL,
   touched_at    TIMESTAMP NOT NULL,
-  node_type_ref VARCHAR NOT NULL,
+  node_type_ref VARCHAR,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
@@ -3028,7 +3028,7 @@ CREATE TABLE graphitron_ast_input_value_node_id_entry (
   source_line   INT     NOT NULL,
   source_column INT     NOT NULL,
   touched_at    TIMESTAMP NOT NULL,
-  node_type_ref VARCHAR NOT NULL,
+  node_type_ref VARCHAR,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
@@ -3041,7 +3041,7 @@ COMMENT ON COLUMN graphitron_ast_input_value_node_id_entry.source_name IS 'the f
 COMMENT ON COLUMN graphitron_ast_input_value_node_id_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_ast_input_value_node_id_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_input_value_directive_entry and neither carries what the other holds';
 COMMENT ON COLUMN graphitron_ast_input_value_node_id_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
-COMMENT ON COLUMN graphitron_ast_input_value_node_id_entry.node_type_ref IS 'the typeName argument as written, naming the type the identifier belongs to. A bare @nodeId writes no row: the author is asking for the deduction, which sends the anchor to a different join entirely, and the absence of a row here is what says so';
+COMMENT ON COLUMN graphitron_ast_input_value_node_id_entry.node_type_ref IS 'the typeName argument as written, naming the type the identifier belongs to, or NULL on a bare @nodeId. The row is what says the directive was applied and the NULL is what says the author left the type to be inferred, which is a resolution over other relations and none of this one''s';
 
 CREATE TABLE graphitron_ast_input_value_deprecated_entry (
   graph_name    VARCHAR NOT NULL,
@@ -5960,6 +5960,21 @@ COMMENT ON COLUMN graphitron_node_keycolumn.column_name_upper IS 'the case fold 
 COMMENT ON COLUMN graphitron_node_keycolumn.table_source_name IS 'the catalog source declaring the table this column belongs to. Carried, with the schema and table beside it, so the row can reference both the type''s binding and the column itself: without them the relation could name a column of some other table and nothing would say so';
 COMMENT ON COLUMN graphitron_node_keycolumn.table_schema IS 'the bound table''s schema, half of the reference that ties this column to the type''s own binding rather than to any table having such a column';
 COMMENT ON COLUMN graphitron_node_keycolumn.table_name IS 'the bound table, cascading with the catalog that declares it: a recrawled source takes its columns and these rows with it, which is the same lifetime rule graphitron_tabletype carries';
+
+CREATE TABLE graphitron_node_id_candidate (
+  graph_name     VARCHAR NOT NULL,
+  coordinate     VARCHAR NOT NULL,
+  node_type_name VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, node_type_name),
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate)
+    ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, node_type_name) REFERENCES graphitron_node (graph_name, type_name)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_node_id_candidate IS 'A node type a bare @nodeId at a coordinate may be the ID of: one row per coordinate and node type. For example id: ID! @nodeId on a Film node draws Film.id and Film, and a bare @nodeId on an argument of a field returning a union of Film and Actor draws a row for each.';
+COMMENT ON COLUMN graphitron_node_id_candidate.graph_name IS 'the owning graph''s partition, carried from the element and the node alike';
+COMMENT ON COLUMN graphitron_node_id_candidate.coordinate IS 'the schema coordinate the bare @nodeId was written on, a Node.id field or an argument. The application itself is the entry row at the position graphql_directive_application gives this coordinate, so the coordinate is all this relation repeats of it';
+COMMENT ON COLUMN graphitron_node_id_candidate.node_type_name IS 'a node type the ID may belong to. The foreign key into graphitron_node is the rule that only a node can be a candidate, so a declaring type, a return type or a member that is not a node is a row this relation cannot hold rather than one a reader filters out';
 
 CREATE TABLE graphitron_field_table (
   graph_name       VARCHAR NOT NULL,
@@ -15793,6 +15808,9 @@ INSERT INTO meta_grain VALUES
   ('node-type',
    'one graph type that is a node, in one graph',
    'graph_name, type_name', 'catalog'),
+  ('node-id-candidate',
+   'one node type a bare @nodeId at one coordinate may be the ID of, in one graph',
+   'graph_name, coordinate, node_type_name', 'sdl'),
   ('node-key-position',
    'one position of one node type''s key tuple, in one graph',
    'graph_name, type_name, position', 'catalog'),
@@ -16652,6 +16670,10 @@ INSERT INTO meta_relation VALUES
    'Which of a graph''s types are nodes, with the wire type id each answers to: one row per node type, from the authored population and the published one alike.',
    'For example a Customer carrying @node over @table draws a row, a type merely implementing Node over a table whose class publishes __NODE_TYPE_ID draws one beside it, and a @node on a type with no @table draws none.',
    'Nodehood as a resolved fact rather than a membership view over two arms, which is the difference between what an author wrote and what took effect. @node only takes effect on a type that also carries @table, so the table binding is the precondition on both arms and not a filter a reader remembers; a @node on an unbound type stays in the decode, and the anti-join between the two is where an author is told the directive did nothing. The type id rides along because it is total over this population and over no other: three tiers answer, the author''s declaration, the backing class''s published constant and the type''s own name, and the last always answers, so a reader encoding an id needs no fallback and the column needs no nullness. Which tier answered is a column because a diagnostic about two types colliding on one id has to say where each came from. The key columns are not here and that is deliberate: an author may declare the id and leave the columns to the catalog or the reverse, so the two axes resolve separately and a single declared-versus-inferred flag over the node would be wrong for half the schemas that have one. Written as a stage of the graphitron gatherer after the binding it stands on, both sources being in hand there: the catalog crawler has flushed and the @node decode is the gatherer''s own.'),
+  ('graphitron_node_id_candidate', 'node-id-candidate', 'graphitron',
+   'A node type a bare @nodeId at a coordinate may be the ID of: one row per coordinate and node type.',
+   'For example id: ID! @nodeId on a Film node draws Film.id and Film, and a bare @nodeId on an argument of a field returning a union of Film and Actor draws a row for each.',
+   'What the build infers where the author left the type out, apart from what they wrote, which is the entry and nothing else. A written typeName is a forced choice and draws no row here, since a candidate no reader consults is a claim with no use. Inferred by type and never by table: on the id a type declares for Node the type declaring it, any other output field binding to nothing, on an argument the field''s return type or each node member of an interface or union return, so a type over a table several nodes share answers for itself. A table-bound type is authoritative where one answers, so an argument takes its return type with or without @reference. The landing of a @reference path where no type answers, and the input field, whose candidates are the union over its uses, are arms still to come. Several candidates are a fact and not a defect; whether one site may take several is a question for the defects that read this. Written as a stage of the graphitron gatherer after graphitron_node, which it keys into, and cleared and rewritten per graph, the row carrying no provenance a mark could sweep by.'),
   ('graphitron_node_keycolumn', 'node-key-position', 'graphitron',
    'A node type''s key columns, in key order and resolved against the table it is bound to: one row per position, naming a column the catalog has.',
    'For example a Customer over the customer table draws its primary key columns, an author pinning keyColumns: ["email"] draws that column instead, and a pinned name the table does not have draws nothing at all.',

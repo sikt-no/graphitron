@@ -111,7 +111,7 @@ final class GraphitronFieldEntries {
         externalFields(dsl, graph, touchedAt, naming(applied(applications, "externalField"), "reference"));
         sourceRows(dsl, graph, touchedAt, wrote(applied(applications, "sourceRow"), "className"));
         connections(dsl, graph, touchedAt, applied(applications, "asConnection"));
-        nodeIds(dsl, graph, touchedAt, wrote(applied(applications, "nodeId"), "typeName"));
+        nodeIds(dsl, graph, touchedAt, applied(applications, "nodeId"));
         mutations(dsl, graph, touchedAt, token(applied(applications, "mutation"), "typeName"));
         pivots(dsl, graph, touchedAt, wrote(wrote(applied(applications, "pivot"), "on"), "value"));
 

@@ -276,9 +276,11 @@ class GraphitronInputValueEntriesTest {
             assertThat(dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_BINDING_ENTRY))
                 .as("@field without its required name decodes to nothing rather than to a null")
                 .isZero();
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_NODE_ID_ENTRY))
-                .as("and a bare @nodeId asks for the deduction, which is a row's absence")
-                .isZero();
+            assertThat(dsl.select(GRAPHITRON_AST_INPUT_VALUE_NODE_ID_ENTRY.NODE_TYPE_REF)
+                    .from(GRAPHITRON_AST_INPUT_VALUE_NODE_ID_ENTRY)
+                    .fetch(GRAPHITRON_AST_INPUT_VALUE_NODE_ID_ENTRY.NODE_TYPE_REF))
+                .as("while @nodeId has no required argument, so a bare one is a row naming no type")
+                .containsExactly((String) null);
         });
     }
 
