@@ -778,6 +778,15 @@ CREATE TABLE node_metadata_half (
     id integer PRIMARY KEY
 );
 
+-- Node metadata naming another table's column: NodeIdFixtureGenerator publishes a key-columns array
+-- holding film.film_id, a field of film, beside a film_id column of this table's own. The element is
+-- a column of film whatever it is named, so the catalog records an attempt that failed rather than
+-- resolving it to the local column a spelling would match.
+CREATE TABLE node_metadata_foreign (
+    id      integer PRIMARY KEY,
+    film_id integer
+);
+
 -- Single-key pair. `xlat_parent`'s node key is `pk_id`; `xlat_child.parent_alt_key` references the
 -- unrelated unique column `alt_key`. Seeds give parent P1 two children and P2 one, so filtering by
 -- a list of parent ids has an asymmetric expected result rather than "everything".

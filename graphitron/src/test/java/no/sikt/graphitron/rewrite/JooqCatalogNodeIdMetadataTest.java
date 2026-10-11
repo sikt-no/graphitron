@@ -186,7 +186,8 @@ class JooqCatalogNodeIdMetadataTest {
 
     private static JooqCatalog.NodeIdMetadataLookup state(
             JooqCatalog.StatedConstant typeId, JooqCatalog.StatedConstant keyColumns) {
-        return JooqCatalog.stateNodeMetadata("bar", typeId, keyColumns, RESOLVE_ID_COLUMNS);
+        return JooqCatalog.stateNodeMetadata("bar", typeId, keyColumns,
+            field -> RESOLVE_ID_COLUMNS.apply(field.getName()));
     }
 
     @Test
@@ -218,6 +219,30 @@ class JooqCatalogNodeIdMetadataTest {
             .isInstanceOf(JooqCatalog.NodeIdMetadataLookup.Malformed.class);
         assertThat(state(stated("Bar"), stated(new Field<?>[] { field("not_a_column_on_bar") })))
             .isInstanceOf(JooqCatalog.NodeIdMetadataLookup.Malformed.class);
+    }
+
+    // --- How capture resolves one element: as the column it is, never as a name it spells ---
+
+    private org.jooq.Table<?> table(String name) {
+        return catalog().findTable(name).asEntry().orElseThrow().table();
+    }
+
+    @Test
+    void anElementSpellingAColumnExactlyResolvesToIt() {
+        assertThat(JooqCatalog.columnOf(table("bar"), field("id_1")))
+            .map(ColumnEntry::sqlName).contains("id_1");
+    }
+
+    /** No fold: an element spelled in another case names no column, where the walk's lookup would. */
+    @Test
+    void anElementSpelledInAnotherCaseResolvesNothing() {
+        assertThat(JooqCatalog.columnOf(table("bar"), field("ID_1"))).isEmpty();
+    }
+
+    /** A field of another table is no column of this one, whatever it is named. */
+    @Test
+    void aFieldOfAnotherTableResolvesNothing() {
+        assertThat(JooqCatalog.columnOf(table("bar"), table("baz").field("id"))).isEmpty();
     }
 
     /** The fixture classes: one publishing the pair, one publishing neither. */

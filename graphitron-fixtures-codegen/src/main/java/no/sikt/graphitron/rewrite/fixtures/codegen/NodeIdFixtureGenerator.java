@@ -103,7 +103,11 @@ public class NodeIdFixtureGenerator extends JavaGenerator {
         Map.entry("reordered_pk_parent", new Metadata("ReorderedPkParent", List.of("PK_A", "PK_B", "PK_C"))),
         // Half the pair: a type id and no key-columns array, which the catalog records as an
         // attempt at node metadata that failed. A null key list emits no __NODE_KEY_COLUMNS.
-        Map.entry("node_metadata_half", new Metadata("NodeMetadataHalf", null))
+        Map.entry("node_metadata_half", new Metadata("NodeMetadataHalf", null)),
+        // Another table's column in the array: an element holding a period is emitted as written,
+        // so this one is film's own field rather than this table's film_id.
+        Map.entry("node_metadata_foreign", new Metadata("NodeMetadataForeign",
+            List.of("no.sikt.graphitron.rewrite.test.jooq.tables.Film.FILM.FILM_ID")))
     );
 
     @Override
@@ -122,7 +126,8 @@ public class NodeIdFixtureGenerator extends JavaGenerator {
         StringBuilder keys = new StringBuilder("public static final org.jooq.Field<?>[] __NODE_KEY_COLUMNS = { ");
         for (int i = 0; i < meta.keyColumnFields().size(); i++) {
             if (i > 0) keys.append(", ");
-            keys.append(singleton).append('.').append(meta.keyColumnFields().get(i));
+            var key = meta.keyColumnFields().get(i);
+            keys.append(key.contains(".") ? key : singleton + "." + key);
         }
         keys.append(" };");
         out.println(keys.toString());

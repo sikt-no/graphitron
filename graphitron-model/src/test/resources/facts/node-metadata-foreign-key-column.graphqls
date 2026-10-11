@@ -1,0 +1,33 @@
+# A key-columns array naming another table's column. node_metadata_foreign's class publishes
+# film.film_id, a field of film, and the table has a film_id column of its own. The element is film's
+# column whatever it is named, so it resolves to no column of this table and the catalog records an
+# attempt that failed, where matching it by the name it spells would have taken the local film_id.
+# The node over it falls back as any node over unusable metadata does.
+
+interface Node { id: ID! }
+
+type Foreign implements Node @table(name: "node_metadata_foreign") @node { id: ID! }
+
+extend type Query {
+  foreigners: [Foreign!]!
+}
+
+extend schema @expectEquals(relation: "sql_node_metadata_unreadable", rows: """
+  table_schema, table_name
+  public,       node_metadata_foreign
+  """)
+
+extend schema @expectEquals(relation: "graphitron_node", rows: """
+  type_name, type_id, type_id_origin
+  Foreign,   Foreign, TYPE_NAME
+  """)
+
+extend schema @expectEquals(relation: "graphitron_node_keycolumn", rows: """
+  type_name, position, column_name, column_origin
+  Foreign,   0,        id,          CATALOG_PRIMARY_KEY
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
+  code,                     type_name, field_name, detail
+  NODE_METADATA_UNREADABLE, Foreign,   ,           node_metadata_foreign
+  """)

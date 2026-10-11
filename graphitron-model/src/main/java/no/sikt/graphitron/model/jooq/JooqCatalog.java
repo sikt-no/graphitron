@@ -1010,7 +1010,8 @@ public class JooqCatalog {
      *       {@code @node(typeId:)} in SDL for the same table).</li>
      *   <li>{@code public static final Field<?>[] __NODE_KEY_COLUMNS}: the underlying
      *       {@link org.jooq.Field} references in positional order. Each is resolved to a
-     *       {@link ColumnRef} via the table's column set; any unresolved entry fails the probe.</li>
+     *       {@link ColumnRef} by {@link #columnOf}, as the table's own column; any entry that is
+     *       no column of the table fails the probe.</li>
      * </ul>
      *
      * <p>Returns {@link Optional#empty()} when the catalog is unavailable, the table cannot be
@@ -1062,8 +1063,8 @@ public class JooqCatalog {
                 // nodeMetadataOf records it as an attempt that failed.
                 return new NodeIdMetadataLookup.Absent();
             }
-            return validateLookup(tableSqlName, typeId.value(), keyColumns.value(),
-                name -> findColumn(te.table(), name));
+            return validateFields(tableSqlName, typeId.value(), keyColumns.value(),
+                field -> columnOf(te.table(), field));
         }).orElseGet(NodeIdMetadataLookup.Absent::new);
     }
 
@@ -1107,12 +1108,46 @@ public class JooqCatalog {
      * Declaring one without the other is an attempt that failed, as is a pair that fails
      * {@link #validateNodeIdMetadata}'s checks, and both are {@link NodeIdMetadataLookup.Malformed}:
      * the store records that the attempt was made and not why it failed.
+     *
+     * <p>Each array element is resolved by {@link #columnOf}, as the column it is rather than as
+     * a name it spells.
      */
     public NodeIdMetadataLookup nodeMetadataOf(Table<?> table) {
         Class<?> tableClass = table.getClass();
         return stateNodeMetadata(table.getName(),
             statedConstant(tableClass, NODE_TYPE_ID), statedConstant(tableClass, NODE_KEY_COLUMNS),
-            name -> findColumn(table, name));
+            field -> columnOf(table, field));
+    }
+
+    /**
+     * The column of {@code table} that a field reference held in the generated catalog is: a
+     * {@code __NODE_KEY_COLUMNS} element, or the field an index sorts by. Both are the table's own
+     * field instances, so the reference is matched by identity against the table's public fields; a
+     * generated class holding another instance of its own column falls back to the one field whose
+     * SQL name is the reference's exactly. A field of another table is no column of this one,
+     * whatever it is named, and neither is a name the table does not have. Nothing is folded and
+     * nothing is picked: the reference already is the column, and this only finds which.
+     */
+    public static Optional<ColumnEntry> columnOf(Table<?> table, org.jooq.Field<?> field) {
+        if (field instanceof org.jooq.TableField<?, ?> tableField && tableField.getTable() != null
+                && !tableField.getTable().getQualifiedName().equals(table.getQualifiedName())) {
+            return Optional.empty();
+        }
+        var columns = Arrays.stream(table.getClass().getFields())
+            .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
+            .filter(f -> !java.lang.reflect.Modifier.isStatic(f.getModifiers()))
+            .map(f -> Map.entry(f.getName(), (org.jooq.Field<?>) instanceFieldValue(f, table)))
+            .toList();
+        var match = columns.stream().filter(c -> c.getValue() == field).toList();
+        if (match.isEmpty()) {
+            match = columns.stream().filter(c -> c.getValue().getName().equals(field.getName())).toList();
+        }
+        if (match.size() != 1) {
+            return Optional.empty();
+        }
+        var c = match.getFirst();
+        return Optional.of(new ColumnEntry(c.getKey(), c.getValue().getType().getName(),
+            c.getValue().getName(), c.getValue().getDataType().nullable()));
     }
 
     /**
@@ -1123,14 +1158,14 @@ public class JooqCatalog {
             String tableSqlName,
             StatedConstant typeId,
             StatedConstant keyColumns,
-            java.util.function.Function<String, Optional<ColumnEntry>> columnLookup) {
+            java.util.function.Function<org.jooq.Field<?>, Optional<ColumnEntry>> keyColumn) {
         if (!typeId.declared() && !keyColumns.declared()) {
             return new NodeIdMetadataLookup.Absent();
         }
         if (!typeId.declared() || !keyColumns.declared()) {
             return malformed(tableSqlName, "only one of __NODE_TYPE_ID and __NODE_KEY_COLUMNS is declared");
         }
-        return validateLookup(tableSqlName, typeId.value(), keyColumns.value(), columnLookup);
+        return validateFields(tableSqlName, typeId.value(), keyColumns.value(), keyColumn);
     }
 
     /**
@@ -1149,11 +1184,21 @@ public class JooqCatalog {
             : Optional.empty();
     }
 
+    /** The validator over synthetic values, resolving each element by the name it spells. */
     private static NodeIdMetadataLookup validateLookup(
             String tableSqlName,
             Object typeIdRaw,
             Object keyColumnsRaw,
             java.util.function.Function<String, Optional<ColumnEntry>> columnLookup) {
+        return validateFields(tableSqlName, typeIdRaw, keyColumnsRaw,
+            field -> columnLookup.apply(field.getName()));
+    }
+
+    private static NodeIdMetadataLookup validateFields(
+            String tableSqlName,
+            Object typeIdRaw,
+            Object keyColumnsRaw,
+            java.util.function.Function<org.jooq.Field<?>, Optional<ColumnEntry>> keyColumn) {
         if (!(typeIdRaw instanceof String typeId) || typeId.isEmpty()) {
             return malformed(tableSqlName,
                 "__NODE_TYPE_ID must be a non-empty String (got: " + typeIdRaw + ")");
@@ -1168,7 +1213,7 @@ public class JooqCatalog {
             if (f == null) {
                 return malformed(tableSqlName, "__NODE_KEY_COLUMNS[" + i + "] is null");
             }
-            Optional<ColumnEntry> col = columnLookup.apply(f.getName());
+            Optional<ColumnEntry> col = keyColumn.apply(f);
             if (col.isEmpty()) {
                 return malformed(tableSqlName,
                     "__NODE_KEY_COLUMNS[" + i + "] references column '" + f.getName()
@@ -1274,16 +1319,16 @@ public class JooqCatalog {
 
     /**
      * Every index on a table as a resolved-immutable (name, SQL-column-names) pair, in index
-     * declaration order with columns in index-field order. Each index column is resolved through
-     * {@link #findColumn(Table, String)} so the SQL name is canonical, falling back to the raw
-     * sort-field name when (degenerately) unresolvable.
+     * declaration order with columns in index-field order. Each index column is the field the sort
+     * wraps, resolved by {@link #columnOf} as the table's own column, falling back to the raw
+     * sort-field name when (degenerately) it is no column of the table.
      */
     public java.util.List<IndexFacts> indexFactsOf(Table<?> table) {
         return table.getIndexes().stream()
             .map(idx -> new IndexFacts(
                 idx.getName(),
                 idx.getFields().stream()
-                    .map(sf -> findColumn(table, sf.getName()).map(ColumnEntry::sqlName).orElse(sf.getName()))
+                    .map(sf -> columnOf(table, sf.$field()).map(ColumnEntry::sqlName).orElse(sf.getName()))
                     .toList()))
             .toList();
     }

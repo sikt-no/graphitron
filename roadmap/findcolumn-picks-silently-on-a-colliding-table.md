@@ -12,6 +12,8 @@ last-updated: 2026-08-19
 
 # findColumn picks silently where two columns answer one spelled name
 
+**Dated 2026-10-11:** R724 is discarded, delivered by R876. The node-identity metadata probe no longer reaches `findColumn` at all: `__NODE_KEY_COLUMNS` holds the table's own field instances, and `JooqCatalog.columnOf` resolves each by identity, falling back to an exact SQL name, so that site leaves this item's list rather than standing as its worked example. `indexFactsOf` resolves index columns the same way, so capture no longer calls `findColumn`. The walk's index and key readers, named below, still turn a jOOQ field into its name and look the name up again, and could take the same exact resolution; `findColumn` is deleted when its last walk caller goes.
+
 `JooqCatalog.findColumn(Table, String)` resolves a spelled column name against a table by matching
 the generated Java name case-insensitively, then the SQL name case-insensitively, each with
 `findFirst` over `Class.getFields()`. On a table whose column spellings collide case-insensitively,

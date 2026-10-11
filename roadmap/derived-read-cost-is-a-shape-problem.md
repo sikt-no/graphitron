@@ -1083,6 +1083,16 @@ resolved one.
   forms the crawler recorded, `intent_node_metadata_defect` and the filter `Nodes` and
   `NodeKeyColumns` applied over it are gone, the crawler and the walk reading one probe. Stated by
   `facts/node-metadata-unreadable.graphqls`, over a sakila table whose class publishes half the pair.
+* **A key column is the column it is, not the name it spells** `done`. `__NODE_KEY_COLUMNS` holds
+  the table's own field instances, and so does each index's sort, so capture resolves a key column
+  and an index column by identity against the table's fields, falling back to the one field spelled
+  exactly the same, through `JooqCatalog.columnOf`; the walk's node metadata probe reads it too. A
+  field of another table, whatever it is named, makes the node metadata an attempt that failed.
+  Capture no longer reaches `JooqCatalog.findColumn`, case-insensitive and taking the first match,
+  and the silent pick R724 described goes with it; `findColumn` is deleted when its last walk caller
+  goes. Stated by
+  `facts/node-metadata-foreign-key-column.graphqls`, over a sakila table whose array names
+  `film.film_id` beside a `film_id` of its own.
 * **The node is settled from the position-keyed entries, in one place** `blocked`, on "The
   table-binding and node subject converts" in the seeding branch: 45 seeded classes build their
   bindings and nodes through the coordinate copies this node retires, so moving the stages off them
