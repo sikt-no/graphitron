@@ -96,7 +96,7 @@ are gone.
   build-time gate and not a runtime one: nothing that runs reads `meta_relation`, and what the gate
   buys is that a new relation cannot arrive without an owner.
 
-### A fact is keyed by what it is, not by where it was written `done`
+### A fact is keyed by what it is, not by where it was written
 
 * Directive applications collapse onto the coordinate `done`. Ten relations became two; the five
   sites keyed one fact five ways because each carried its own decomposed key and none carried the
@@ -114,6 +114,11 @@ are gone.
   * A fact document states an absence and a reading at a stated instant `done`. A redeclaration
     that wins is a row that must not be there, and what a later reading kept is a row still carrying
     an earlier reading's mark.
+* **An application is identified by where its `@` was written** `open`. The ordinal is a second
+  numbering that the SDL decode and the anchor compute apart and must agree on; keyed by position,
+  the anchor is a projection, and the enclosing-declaration walk and the position index on
+  `graphql_type_declaration` lose their only reader;
+  `roadmap/audits/2026-10-11-directive-application-anchor.md`.
 
 ### The classpath family affords what its readers ask `done`
 
