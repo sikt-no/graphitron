@@ -79,11 +79,11 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_MOUNT;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_UNMOUNT;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SUPERGRAPH;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_TENANT_COLUMN;
-import static no.sikt.graphitron.model.Tables.INTENT_NODE_METADATA_DEFECT;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_METADATA;
+import static no.sikt.graphitron.model.Tables.SQL_NODE_METADATA_UNREADABLE;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
@@ -1048,10 +1048,10 @@ class FactCaptureAgreementTest {
      * hand-kept rather than structural, the metadata map being keyed on the bare table name across
      * every codegen execution, which is the sort of property a gate should not rest on.
      *
-     * <p>The store legitimately says more than the probe in one place, and the assertion states it
-     * rather than papering over it: a class declaring only one of the two constants is a row here
-     * with the other half's absent form, where the probe folds it into the same silence a class
-     * declaring neither gets.
+     * <p>The store says more than the probe in one place, and the assertion states it rather than
+     * papering over it: a class declaring only one of the two constants is an attempt that failed,
+     * a row of {@code sql_node_metadata_unreadable}, where the probe folds it into the same silence a
+     * class declaring neither gets.
      */
     @Test
     @DisplayName("the stored node metadata's verdict equals the reflection probe's, per table")
@@ -1063,19 +1063,15 @@ class FactCaptureAgreementTest {
 
             var metadata = store.dsl()
                 .select(SQL_NODE_METADATA.TABLE_SCHEMA, SQL_NODE_METADATA.TABLE_NAME,
-                    SQL_NODE_METADATA.TYPE_ID_FORM, SQL_NODE_METADATA.TYPE_ID,
-                    SQL_NODE_METADATA.KEY_COLUMNS_FORM)
+                    SQL_NODE_METADATA.TYPE_ID)
                 .from(SQL_NODE_METADATA)
                 .fetch()
-                .intoMap(r -> r.value1() + "." + r.value2());
-            var defectCounts = store.dsl()
-                .select(INTENT_NODE_METADATA_DEFECT.TABLE_SCHEMA,
-                    INTENT_NODE_METADATA_DEFECT.TABLE_NAME, org.jooq.impl.DSL.count())
-                .from(INTENT_NODE_METADATA_DEFECT)
-                .groupBy(INTENT_NODE_METADATA_DEFECT.TABLE_SCHEMA,
-                    INTENT_NODE_METADATA_DEFECT.TABLE_NAME)
-                .fetch()
                 .intoMap(r -> r.value1() + "." + r.value2(), r -> r.value3());
+            var unreadable = store.dsl()
+                .select(SQL_NODE_METADATA_UNREADABLE.TABLE_SCHEMA
+                    .concat(".").concat(SQL_NODE_METADATA_UNREADABLE.TABLE_NAME))
+                .from(SQL_NODE_METADATA_UNREADABLE)
+                .fetchSet(0, String.class);
             var entryNames = new LinkedHashMap<String, List<String>>();
             store.dsl()
                 .select(SQL_NODE_KEY_COLUMN.TABLE_SCHEMA, SQL_NODE_KEY_COLUMN.TABLE_NAME,
@@ -1087,28 +1083,26 @@ class FactCaptureAgreementTest {
                     .add(r.value3()));
 
             var storeVerdicts = new LinkedHashMap<String, String>();
-            var probeVerdicts = new LinkedHashMap<String, String>();
             for (String qualified : store.dsl()
                     .select(SQL_TABLE.TABLE_SCHEMA.concat(".").concat(SQL_TABLE.TABLE_NAME))
                     .from(SQL_TABLE).fetch(0, String.class)) {
-                var row = metadata.get(qualified);
-                String stored;
-                if (row == null
-                    || "ABSENT".equals(row.get(SQL_NODE_METADATA.TYPE_ID_FORM))
-                    || "ABSENT".equals(row.get(SQL_NODE_METADATA.KEY_COLUMNS_FORM))) {
-                    stored = "ABSENT";
-                } else if (defectCounts.getOrDefault(qualified, 0) > 0) {
-                    stored = "MALFORMED";
-                } else {
-                    stored = "PRESENT";
-                }
+                String stored = metadata.containsKey(qualified) ? "PRESENT"
+                    : unreadable.contains(qualified) ? "MALFORMED" : "ABSENT";
                 storeVerdicts.put(qualified, stored);
 
                 var present = jooq.nodeIdMetadata(qualified);
-                probeVerdicts.put(qualified, present.isPresent() ? "PRESENT"
-                    : jooq.nodeIdMetadataDiagnostic(qualified).isPresent() ? "MALFORMED" : "ABSENT");
+                String probed = present.isPresent() ? "PRESENT"
+                    : jooq.nodeIdMetadataDiagnostic(qualified).isPresent() ? "MALFORMED" : "ABSENT";
+                if (probed.equals("ABSENT")) {
+                    assertThat(stored)
+                        .as("a table the probe reads as publishing nothing, " + qualified
+                            + ", is absent in the store or an attempt at half the pair")
+                        .isIn("ABSENT", "MALFORMED");
+                } else {
+                    assertThat(stored).as("the store's verdict on " + qualified).isEqualTo(probed);
+                }
                 if (present.isPresent()) {
-                    assertThat(row.get(SQL_NODE_METADATA.TYPE_ID))
+                    assertThat(metadata.get(qualified))
                         .as("stored type id of " + qualified)
                         .isEqualTo(present.get().typeId());
                     assertThat(entryNames.getOrDefault(qualified, List.of()))
@@ -1119,9 +1113,9 @@ class FactCaptureAgreementTest {
             }
 
             assertThat(storeVerdicts.values())
-                .as("the fixture catalog declares both metadata-bearing and stock tables")
-                .contains("PRESENT", "ABSENT");
-            assertThat(storeVerdicts).isEqualTo(probeVerdicts);
+                .as("the fixture catalog declares metadata-bearing, stock and half-declared tables")
+                .contains("PRESENT", "ABSENT", "MALFORMED");
+            assertThat(storeVerdicts).containsEntry("public.node_metadata_half", "MALFORMED");
         }
     }
 

@@ -1,0 +1,33 @@
+# Node metadata a generated class declares and graphitron cannot use. node_metadata_half's class
+# publishes __NODE_TYPE_ID and no __NODE_KEY_COLUMNS, so the catalog records the attempt and no
+# metadata. A node over it then answers to its own name and is keyed by the table's primary key,
+# which is why the attempt is worth a warning at the type's @table: the ids it encodes are not the
+# ones the class meant. The warning says the attempt failed, not how.
+
+interface Node { id: ID! }
+
+type Half implements Node @table(name: "node_metadata_half") @node { id: ID! }
+
+extend type Query {
+  halves: [Half!]!
+}
+
+extend schema @expectEquals(relation: "sql_node_metadata_unreadable", rows: """
+  table_schema, table_name
+  public,       node_metadata_half
+  """)
+
+extend schema @expectEquals(relation: "graphitron_node", rows: """
+  type_name, type_id, type_id_origin
+  Half,      Half,    TYPE_NAME
+  """)
+
+extend schema @expectEquals(relation: "graphitron_node_keycolumn", rows: """
+  type_name, position, column_name, column_origin
+  Half,      0,        id,          CATALOG_PRIMARY_KEY
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
+  code,                     type_name, field_name, detail
+  NODE_METADATA_UNREADABLE, Half,      ,           node_metadata_half
+  """)

@@ -12,6 +12,8 @@ last-updated: 2026-09-03
 
 # The stated key-column match spends its ambiguity silently; make it state its arity
 
+**Dated 2026-10-11: the relation this item is about has been retired, by R876.** `intent_node_metadata_defect` is gone, and with it the `KEY_COLUMN_UNRESOLVED` arm and its four `UPPER` calls. `sql_node_metadata` now holds only node metadata the catalog can use, and `sql_node_key_column.column_name` is the resolved SQL name, with a foreign key into `sql_column`. The resolution itself moved into the crawler, through `JooqCatalog.findColumn`, which still matches case-insensitively and takes the first column that answers, so the silent pick this item describes now happens there, in Java, rather than in a view. Whether this item re-points at that probe or is discarded is for its owner to settle; the plan below is unchanged.
+
 One view in the fact schema still folds case per row. `intent_node_metadata_defect`, in its
 `KEY_COLUMN_UNRESOLVED` arm, matches `sql_column.jooq_name` and `sql_column.column_name` against
 `sql_node_key_column.column_name` under `UPPER` on both sides, four per-row calls. The match is

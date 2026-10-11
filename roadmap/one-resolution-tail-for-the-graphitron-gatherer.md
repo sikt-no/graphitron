@@ -12,6 +12,8 @@ last-updated: 2026-09-21
 
 # The graphitron gatherer has one resolution tail: the five producers and the stages under them join the assembly list, and FactCapture is not a second tail
 
+**Dated 2026-10-11:** `intent_node_metadata_defect`, named below, has been retired by R876. Node metadata is a catalog fact now, a usable row of `sql_node_metadata` or a failed attempt in `sql_node_metadata_unreadable`, and nothing in the graphitron gatherer reads a defect view for it.
+
 ## Goal
 
 The graphitron gatherer's resolution work is one ordered list. `ClassificationDomainCapture`,

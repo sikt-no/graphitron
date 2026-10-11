@@ -5830,51 +5830,55 @@ CREATE TABLE sql_node_metadata (
   source_name       VARCHAR NOT NULL,
   table_schema      VARCHAR NOT NULL,
   table_name        VARCHAR NOT NULL,
-  type_id_form      VARCHAR NOT NULL,
-  type_id           VARCHAR,
-  type_id_class     VARCHAR,
-  key_columns_form  VARCHAR NOT NULL,
-  key_columns_class VARCHAR,
+  type_id           VARCHAR NOT NULL,
   touched_at        TIMESTAMP,
   PRIMARY KEY (source_name, table_schema, table_name),
   FOREIGN KEY (source_name, table_schema, table_name)
     REFERENCES sql_table (source_name, table_schema, table_name),
-  CHECK (type_id_form IN ('STRING', 'NULL', 'OTHER', 'ABSENT')),
-  CHECK (key_columns_form IN ('FIELD_ARRAY', 'NULL', 'OTHER', 'ABSENT')),
-  CHECK ((type_id IS NOT NULL) = (type_id_form = 'STRING')),
-  CHECK ((type_id_class IS NOT NULL) = (type_id_form = 'OTHER')),
-  CHECK ((key_columns_class IS NOT NULL) = (key_columns_form = 'OTHER')),
-  CHECK (NOT (type_id_form = 'ABSENT' AND key_columns_form = 'ABSENT'))
+  CHECK (type_id <> '')
 );
-COMMENT ON TABLE sql_node_metadata IS 'One table''s node-identity metadata, as the generated jOOQ class states it. For example a film table class stating a type id of film and a key-columns array of one entry, against a table class stating neither, which has no row here at all.';
+COMMENT ON TABLE sql_node_metadata IS 'One table whose generated jOOQ class publishes node-identity metadata graphitron can use. For example a film table class stating a type id of film and a key-columns array naming film_id, against a table class stating neither, which has no row here at all.';
 COMMENT ON COLUMN sql_node_metadata.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_node_metadata.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_node_metadata.table_name IS 'SQL table name. With the two columns above this is sql_table''s full key: the metadata is a property of the table rather than of the class, which is why the key is the table''s and not a class name';
-COMMENT ON COLUMN sql_node_metadata.type_id_form IS 'what the type-id constant stated, in a closed taxonomy the reading side''s own discrimination fixes: STRING when it held a String, NULL when it held null, OTHER when it held anything else, ABSENT when the class declares no such constant. The empty string is STRING like any other, its emptiness being a judgement the derivation makes rather than a shape capture recognises';
-COMMENT ON COLUMN sql_node_metadata.type_id IS 'the stated value, exactly when type_id_form is STRING, empty string included; NULL otherwise, which the form column tells apart from a stated null';
-COMMENT ON COLUMN sql_node_metadata.type_id_class IS 'the stated value''s runtime class, fully qualified, exactly when type_id_form is OTHER; NULL otherwise. The class name and deliberately not a rendering of the value: an arbitrary object''s toString may carry an identity hash, and a column that varied between two reads of one classpath would fail the warm-and-cold agreement sweep this relation sits under';
-COMMENT ON COLUMN sql_node_metadata.key_columns_form IS 'what the key-columns constant stated, on the same terms as type_id_form: FIELD_ARRAY when it held an array of jOOQ fields, NULL when it held null, OTHER when it held anything else, ABSENT when the class declares no such constant. Child rows exist exactly under FIELD_ARRAY, so an empty array is that form with no children rather than a flag of its own';
-COMMENT ON COLUMN sql_node_metadata.key_columns_class IS 'the stated value''s runtime class, fully qualified, exactly when key_columns_form is OTHER; NULL otherwise, on the same determinism ground as type_id_class';
-COMMENT ON COLUMN sql_node_metadata.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
+COMMENT ON COLUMN sql_node_metadata.type_id IS 'the type id the class states, a non-empty string';
+COMMENT ON COLUMN sql_node_metadata.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and the metadata a class no longer publishes';
 
 CREATE TABLE sql_node_key_column (
   source_name  VARCHAR NOT NULL,
   table_schema VARCHAR NOT NULL,
   table_name   VARCHAR NOT NULL,
   position     INT     NOT NULL,
-  column_name  VARCHAR,
+  column_name  VARCHAR NOT NULL,
   touched_at   TIMESTAMP,
   PRIMARY KEY (source_name, table_schema, table_name, position),
   FOREIGN KEY (source_name, table_schema, table_name)
-    REFERENCES sql_node_metadata (source_name, table_schema, table_name)
+    REFERENCES sql_node_metadata (source_name, table_schema, table_name),
+  FOREIGN KEY (source_name, table_schema, table_name, column_name)
+    REFERENCES sql_column (source_name, table_schema, table_name, column_name)
 );
-COMMENT ON TABLE sql_node_key_column IS 'One position in one table''s stated node key-columns array, naming what the entry states. For example position 0 of a film table class''s array, naming film_id.';
+COMMENT ON TABLE sql_node_key_column IS 'One position in the key-columns array of a table whose node metadata graphitron can use, naming the column it resolves to. For example position 0 of a film table class''s array, naming film_id.';
 COMMENT ON COLUMN sql_node_key_column.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_node_key_column.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_node_key_column.table_name IS 'SQL table name';
-COMMENT ON COLUMN sql_node_key_column.position IS '0-based index in the stated array, recorded rather than reconstructed: the encoded identity depends on the declared order, so a reader that recovered the order from the table''s columns or from a key would encode different ids than the ones already issued. Dense from zero within a parent, and present only under a FIELD_ARRAY parent, both gated';
-COMMENT ON COLUMN sql_node_key_column.column_name IS 'the name the entry states, as jOOQ reports it for the field; NULL exactly when the array entry itself is null, which is a stated fact about the entry rather than an absence of one. Resolution against the table''s own columns is the derivation''s business, and it matches the reading side: case-insensitively, against the generated Java name or the SQL name';
-COMMENT ON COLUMN sql_node_key_column.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
+COMMENT ON COLUMN sql_node_key_column.position IS '0-based index in the stated array, recorded rather than reconstructed: the encoded identity depends on the declared order, so a reader that recovered the order from the table''s columns or from a key would encode ids that disagree with the ones already issued';
+COMMENT ON COLUMN sql_node_key_column.column_name IS 'the table''s column the entry names, by its SQL name';
+COMMENT ON COLUMN sql_node_key_column.touched_at IS 'when the reading that produced this row ran, swept with sql_node_metadata';
+
+CREATE TABLE sql_node_metadata_unreadable (
+  source_name  VARCHAR NOT NULL,
+  table_schema VARCHAR NOT NULL,
+  table_name   VARCHAR NOT NULL,
+  touched_at   TIMESTAMP,
+  PRIMARY KEY (source_name, table_schema, table_name),
+  FOREIGN KEY (source_name, table_schema, table_name)
+    REFERENCES sql_table (source_name, table_schema, table_name)
+);
+COMMENT ON TABLE sql_node_metadata_unreadable IS 'One table whose generated class declares node-identity metadata graphitron cannot use. For example a table class stating __NODE_TYPE_ID and no __NODE_KEY_COLUMNS, or a key-columns array naming a column the table does not have.';
+COMMENT ON COLUMN sql_node_metadata_unreadable.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_node_metadata_unreadable.table_schema IS 'SQL schema the table lives in';
+COMMENT ON COLUMN sql_node_metadata_unreadable.table_name IS 'SQL table name; with the two columns above, sql_table''s key';
+COMMENT ON COLUMN sql_node_metadata_unreadable.touched_at IS 'when the reading that produced this row ran, swept with the catalog''s other rows';
 
 CREATE TABLE graphitron_tabletype (
   graph_name        VARCHAR NOT NULL,
@@ -7768,56 +7772,6 @@ COMMENT ON COLUMN intent_table_key_candidate.constraint_name IS 'the surviving c
 COMMENT ON COLUMN intent_table_key_candidate.primary_key IS 'whether this candidate is the table''s primary key. Not the rank: a table may declare a primary key and unique keys alike, and the rank already says which comes first, so this says which kind of identity a consumer ended up with when it reports one';
 COMMENT ON COLUMN intent_table_key_candidate.candidate_rank IS 'where this candidate sits among the survivors, counting from zero, in the order a consumer considers them: the primary key first where there is one, then the unique keys in the generated model''s enumeration. A consumer taking the first candidate its columns cover reads this ascending and stops';
 
-CREATE VIEW intent_node_metadata_defect
-  (source_name, table_schema, table_name, defect, position) AS
-SELECT source_name, table_schema, table_name, 'TYPE_ID_NOT_DECLARED', CAST(NULL AS INT)
-  FROM sql_node_metadata WHERE type_id_form = 'ABSENT'
- UNION ALL
-SELECT source_name, table_schema, table_name, 'TYPE_ID_NULL', CAST(NULL AS INT)
-  FROM sql_node_metadata WHERE type_id_form = 'NULL'
- UNION ALL
-SELECT source_name, table_schema, table_name, 'TYPE_ID_WRONG_TYPE', CAST(NULL AS INT)
-  FROM sql_node_metadata WHERE type_id_form = 'OTHER'
- UNION ALL
-SELECT source_name, table_schema, table_name, 'TYPE_ID_EMPTY', CAST(NULL AS INT)
-  FROM sql_node_metadata WHERE type_id_form = 'STRING' AND type_id = ''
- UNION ALL
-SELECT source_name, table_schema, table_name, 'KEY_COLUMNS_NOT_DECLARED', CAST(NULL AS INT)
-  FROM sql_node_metadata WHERE key_columns_form = 'ABSENT'
- UNION ALL
-SELECT source_name, table_schema, table_name, 'KEY_COLUMNS_NULL', CAST(NULL AS INT)
-  FROM sql_node_metadata WHERE key_columns_form = 'NULL'
- UNION ALL
-SELECT source_name, table_schema, table_name, 'KEY_COLUMNS_WRONG_TYPE', CAST(NULL AS INT)
-  FROM sql_node_metadata WHERE key_columns_form = 'OTHER'
- UNION ALL
-SELECT m.source_name, m.table_schema, m.table_name, 'KEY_COLUMNS_EMPTY', CAST(NULL AS INT)
-  FROM sql_node_metadata m
- WHERE m.key_columns_form = 'FIELD_ARRAY'
-   AND NOT EXISTS (SELECT 1 FROM sql_node_key_column k
-                    WHERE k.source_name = m.source_name AND k.table_schema = m.table_schema
-                      AND k.table_name = m.table_name)
- UNION ALL
-SELECT k.source_name, k.table_schema, k.table_name, 'KEY_COLUMN_ENTRY_NULL', k.position
-  FROM sql_node_key_column k
- WHERE k.column_name IS NULL
- UNION ALL
-SELECT k.source_name, k.table_schema, k.table_name, 'KEY_COLUMN_UNRESOLVED', k.position
-  FROM sql_node_key_column k
- WHERE k.column_name IS NOT NULL
-   AND NOT EXISTS (SELECT 1 FROM sql_column c
-                    WHERE c.source_name = k.source_name AND c.table_schema = k.table_schema
-                      AND c.table_name = k.table_name
-                      AND (UPPER(c.jooq_name) = UPPER(k.column_name)
-                           OR UPPER(c.column_name) = UPPER(k.column_name)));
-COMMENT ON VIEW intent_node_metadata_defect IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. What is wrong with the node-identity metadata a generated table class stated: one row per defect, over the sql_node_metadata rows and their entries alone. The rows it reads are transcription because a walk read them; this is not, because no walk read the verdict that metadata is malformed. Graphitron''s rule produces it, and every join is inside the jOOQ corpus, which is what makes it a derivation over one corpus rather than a validation smuggled into a crawler. Well-formed metadata is a sql_node_metadata row with no defect rows, and the conjunction is the whole test: no defect rows alone is also what a table publishing nothing at all has, that table having no metadata row to be well-formed. Every defect a table exhibits gets a row, with no first-failing short-circuit, so no evaluation order becomes normative; a reader wanting one message reduces by an ordering it owns. There is no reason-text column, deliberately: the closed defect vocabulary plus the witness columns already stored are the fact base, and message prose belongs with the consumer that composes it. Keyed on the catalog''s own key with no graph partition, as sql_name_matched_key_column is: the question is about a table, and a graph reaches it the way it reaches any source-keyed fact.';
-COMMENT ON COLUMN intent_node_metadata_defect.source_name IS 'the table''s catalog partition, the first column of the sql_node_metadata key this row is about';
-COMMENT ON COLUMN intent_node_metadata_defect.table_schema IS 'the table''s SQL schema';
-COMMENT ON COLUMN intent_node_metadata_defect.table_name IS 'the table''s SQL name; with the two columns above, the metadata row this defect is about';
-COMMENT ON COLUMN intent_node_metadata_defect.defect IS 'which defect, in a closed vocabulary of ten: TYPE_ID_NOT_DECLARED, TYPE_ID_NULL, TYPE_ID_WRONG_TYPE and TYPE_ID_EMPTY on the type-id constant; KEY_COLUMNS_NOT_DECLARED, KEY_COLUMNS_NULL, KEY_COLUMNS_WRONG_TYPE and KEY_COLUMNS_EMPTY on the key-columns constant; KEY_COLUMN_ENTRY_NULL and KEY_COLUMN_UNRESOLVED on one entry of it. The vocabulary is finer than the reflection probe it will eventually replace, which reports one message per constant however that constant went wrong: the store distinguishes the states because it holds the forms separately, and collapsing them here to match the probe would discard a distinction the rows already carry';
-COMMENT ON COLUMN intent_node_metadata_defect.position IS 'the offending entry''s index in the stated array, on the two per-entry defects; NULL on the eight that are about a whole constant, which is the stated absent bucket rather than a missing value';
-
-
 CREATE TABLE graphitron_defect_type (
   code      VARCHAR NOT NULL,
   severity  VARCHAR NOT NULL,
@@ -9702,8 +9656,9 @@ SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
 UNION ALL
 -- A @node with nothing to build an id from. It pinned no columns, its bound table publishes no node
 -- metadata, and the table has no primary key, which are the three tiers NodeKeyColumns tries in
--- turn; with all three silent the node has no key. A table that publishes metadata is judged on
--- that metadata elsewhere, so this is the primary key's absence alone. The detail is the table.
+-- turn; with all three silent the node has no key. Metadata a class publishes and graphitron cannot
+-- use is no row of sql_node_metadata, so such a table is judged here as well as warned about by
+-- NODE_METADATA_UNREADABLE. The detail is the table.
 SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
        'NODE_WITHOUT_KEY', b.table_name
   FROM graphitron_node_entry n
@@ -9794,6 +9749,18 @@ SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
    AND EXISTS (SELECT 1 FROM graphitron_node o
                 WHERE o.graph_name = n.graph_name AND o.type_id = n.type_id
                   AND o.type_name <> n.type_name)
+UNION ALL
+-- A table whose class declares node metadata graphitron cannot use, so a type over it encodes its
+-- ids from the fallback tiers. Reported at each bound type's @table, on NODE_TYPE_ID_SHARED's terms,
+-- and saying that the attempt failed rather than how. The detail is the table.
+SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
+       'NODE_METADATA_UNREADABLE', b.table_name
+  FROM graphitron_tabletype b
+  JOIN graphitron_table_entry t ON t.graph_name = b.graph_name AND t.type_name = b.type_name
+  JOIN sql_node_metadata_unreadable u
+    ON u.source_name = b.table_source_name AND u.table_schema = b.table_schema
+   AND u.table_name = b.table_name
+ WHERE t.source_line IS NOT NULL
 UNION ALL
 -- Two types whose names differ only in case, among the types the generator writes a file for, which
 -- is every kind but a scalar and includes what a macro minted. On a filesystem that folds case the
@@ -16033,6 +16000,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A @scalarType names a class the classpath reading did not read: the name is misspelt, or the class sits in an entry the build does not hand the generator.'),
   ('SCALAR_TYPE_CONSTANT_NOT_FOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_SCALAR_TYPE_CONSTANT_NOT_FOUND',
    'A @scalarType names a class the reading read and a constant it does not declare as a public static GraphQLScalarType, so there is no scalar to bind.'),
+  ('NODE_METADATA_UNREADABLE', 'warning', 'GRAPHITRON', 'GRAPHITRON_NODE_METADATA_UNREADABLE',
+   'The table''s generated class declares node metadata graphitron cannot use, so a node over it encodes its ids from what the schema declares, or from the type''s name and the table''s primary key; fix the generator configuration that writes __NODE_TYPE_ID and __NODE_KEY_COLUMNS.'),
   ('NODE_TYPE_ID_SHARED', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_TYPE_ID_SHARED',
    'Two node types answer to one type id, so an id carrying it names either and Query.node cannot tell which to fetch; give one of them its own with @node(typeId:).'),
   ('TYPE_NAME_CASE_COLLISION', 'error', 'GRAPHITRON', 'GRAPHITRON_TYPE_NAME_CASE_COLLISION',
@@ -17039,13 +17008,17 @@ INSERT INTO meta_relation VALUES
    'For example position 0 of public.films_for_actor, a java.lang.Integer the generated method names pActorId.',
    'A parameter list is what @routine(argMapping:) is matched against, and it is ordered, so one position is one row. It describes one generated method rather than the routine in the abstract, jOOQ generating several call forms per routine, which is why sql_routine names the method these rows belong to. Neither the database''s own parameter names nor its SQL types are here: for a table-valued function jOOQ generates no Routine object, so neither survives into the generated model, and both were left out rather than shipped always-null.'),
   ('sql_node_metadata', 'database-table', 'jooq',
-   'One table''s node-identity metadata, as the generated jOOQ class states it.',
-   'For example a film table class stating a type id of film and a key-columns array of one entry, against a table class stating neither, which has no row here at all.',
-   'KjerneJooqGenerator emits two static constants on a table it treats as a node, and this transcribes them as stated rather than as validated: a row exists when the class declares either, and a class declaring only half the pair keeps the other half''s ABSENT form rather than the silence a reflection probe folds it into. Whether what the class stated is well-formed is intent_node_metadata_defect''s question, which is what keeps the crawler''s job transcription. Under sql_ because the constants ride on the generated package sql_table partitions on and refresh in the same clearing round.'),
+   'One table whose generated jOOQ class publishes node-identity metadata graphitron can use.',
+   'For example a film table class stating a type id of film and a key-columns array naming film_id, against a table class stating neither, which has no row here at all.',
+   'KjerneJooqGenerator emits two static constants on a table it treats as a node. A row is the pair being usable, a non-empty type id and a non-empty array of columns the table has, judged by the one probe the walk reads too, so whether a class published a node is binary and every reader takes it as found. A pair that is not usable is sql_node_metadata_unreadable''s row and none here: graphitron then falls back to its other tiers, and that relation is what says the attempt was noticed. Under sql_ because the constants ride on the generated package sql_table partitions on and refresh in the same reading.'),
   ('sql_node_key_column', 'node-key-column', 'jooq',
-   'One position in one table''s stated node key-columns array, naming what the entry states.',
+   'One position in the key-columns array of a table whose node metadata graphitron can use, naming the column it resolves to.',
    'For example position 0 of a film table class''s array, naming film_id.',
-   'The array is ordered and the encoded identity depends on that order, so a reader recovering the columns from the table''s own key would encode different ids than the ones already issued: the position is the fact and therefore the key. No foreign key to sql_column deliberately, the constant being free to spell a column the table does not have, which is exactly the state worth recording; whether an entry resolves is intent_node_metadata_defect''s question.'),
+   'The array is ordered and the encoded identity depends on that order, so a reader recovering the columns from the table''s own key would encode different ids than the ones already issued: the position is the fact and therefore the key. Every entry resolves, an entry that does not making the whole pair unusable, so the column is a foreign key into sql_column.'),
+  ('sql_node_metadata_unreadable', 'database-table', 'jooq',
+   'One table whose generated class declares node-identity metadata graphitron cannot use.',
+   'For example a table class stating __NODE_TYPE_ID and no __NODE_KEY_COLUMNS, or a key-columns array naming a column the table does not have.',
+   'That an attempt at node metadata was noticed and failed, and not why: the generator configuration that writes the constants is what to fix, and it is the consumer''s, so a vocabulary of the ways it can fail would describe the configuration rather than the schema. Recorded because the failure is not harmless, a type bound to the table encoding its ids from the fallback tiers instead, which is what the NODE_METADATA_UNREADABLE warning tells the author at the type''s @table.'),
   ('code_scalar_constant', 'scalar-type-field', 'code',
    'One constant an author may name in @scalarType(scalar:), and the Java type its scalar coerces to.',
    'For example a DATE_TIME field coercing to java.time.OffsetDateTime.',

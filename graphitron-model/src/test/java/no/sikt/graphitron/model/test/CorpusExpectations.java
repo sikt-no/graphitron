@@ -389,7 +389,7 @@ public final class CorpusExpectations {
             if (mode == Mode.EQUALS) {
                 dsl.select(producedFields)
                     .from(produced)
-                    .where(DSL.field(id("produced", GRAPH_COLUMN), String.class).in(graphs))
+                    .where(ofGraphs(partitioned, graphs))
                     .andNotExists(dsl.selectOne().from(expected)
                         .where(match(producedFields, expectedFields)))
                     .fetch()
@@ -399,11 +399,21 @@ public final class CorpusExpectations {
         } else if (mode == Mode.EQUALS) {
             dsl.select(producedFields)
                 .from(produced)
-                .where(DSL.field(id("produced", GRAPH_COLUMN), String.class).in(graphs))
+                .where(ofGraphs(partitioned, graphs))
                 .fetch()
                 .forEach(row -> divergences.add(divergence(relation, row, Divergence.Side.NOT_DECLARED)));
         }
         return divergences;
+    }
+
+    /**
+     * The produced rows an expectation of equality ranges over: the documents' own graphs, or for a
+     * relation carrying no graph the whole store, which is what every document stating one shares.
+     */
+    private static org.jooq.Condition ofGraphs(boolean partitioned, Set<String> graphs) {
+        return partitioned
+            ? DSL.field(id("produced", GRAPH_COLUMN), String.class).in(graphs)
+            : DSL.noCondition();
     }
 
     /**

@@ -29,6 +29,7 @@ import static no.sikt.graphitron.model.Tables.SQL_INDEX;
 import static no.sikt.graphitron.model.Tables.SQL_INDEX_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_METADATA;
+import static no.sikt.graphitron.model.Tables.SQL_NODE_METADATA_UNREADABLE;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_ROUTINE;
@@ -104,8 +105,10 @@ public final class JooqFactCapture {
         tableReferences(dsl, sourceNames(tables), touchedAt);
         indexes(dsl, jooq, tables, touchedAt);
         indexColumns(dsl, jooq, tables, touchedAt);
-        nodeMetadata(dsl, jooq, tables, touchedAt);
-        nodeKeyColumns(dsl, jooq, tables, touchedAt);
+        List<NodeMetadataAt> nodeMetadata = nodeMetadataOf(jooq, tables);
+        nodeMetadata(dsl, nodeMetadata, touchedAt);
+        nodeKeyColumns(dsl, nodeMetadata, touchedAt);
+        nodeMetadataUnreadable(dsl, nodeMetadata, touchedAt);
         routines(dsl, jooq, tables, touchedAt);
         routineParameters(dsl, jooq, tables, touchedAt);
         recordSupertypes(dsl, tables);
@@ -125,6 +128,9 @@ public final class JooqFactCapture {
 
     /** A value at its place in a parent's ordered list. */
     private record PositionAt<P>(P parent, int position, String value) {}
+
+    /** One table whose class declares node metadata, with what the catalog made of it. */
+    private record NodeMetadataAt(TableAt table, JooqCatalog.NodeIdMetadataLookup lookup) {}
 
     // ------------------------------------------------------------------------- the sql_ relations
 
@@ -467,16 +473,28 @@ public final class JooqFactCapture {
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 
-    private static void nodeMetadata(DSLContext dsl, JooqCatalog jooq, List<TableAt> tables,
+    /** Read once per table, since the reading is reflection and a failed attempt logs. */
+    private static List<NodeMetadataAt> nodeMetadataOf(JooqCatalog jooq, List<TableAt> tables) {
+        List<NodeMetadataAt> found = new ArrayList<>();
+        for (TableAt at : tables) {
+            var lookup = jooq.nodeMetadataOf(at.table());
+            if (!(lookup instanceof JooqCatalog.NodeIdMetadataLookup.Absent)) {
+                found.add(new NodeMetadataAt(at, lookup));
+            }
+        }
+        return found;
+    }
+
+    private static void nodeMetadata(DSLContext dsl, List<NodeMetadataAt> nodeMetadata,
                                      LocalDateTime touchedAt) {
         var t = SQL_NODE_METADATA;
         List<TableAt> owners = new ArrayList<>();
-        List<JooqCatalog.NodeMetadataFacts> found = new ArrayList<>();
-        for (TableAt at : tables) {
-            jooq.nodeMetadataFactsOf(at.table()).ifPresent(facts -> {
-                owners.add(at);
-                found.add(facts);
-            });
+        List<JooqCatalog.NodeIdMetadata> found = new ArrayList<>();
+        for (NodeMetadataAt at : nodeMetadata) {
+            if (at.lookup() instanceof JooqCatalog.NodeIdMetadataLookup.Present p) {
+                owners.add(at.table());
+                found.add(p.metadata());
+            }
         }
         if (found.isEmpty()) {
             return;
@@ -486,35 +504,27 @@ public final class JooqFactCapture {
             i -> val(owners.get(i).source(), t.SOURCE_NAME),
             i -> val(owners.get(i).schema(), t.TABLE_SCHEMA),
             i -> val(owners.get(i).name(), t.TABLE_NAME),
-            i -> val(found.get(i).typeIdForm().name(), t.TYPE_ID_FORM),
             i -> val(found.get(i).typeId(), t.TYPE_ID),
-            i -> val(found.get(i).typeIdClass(), t.TYPE_ID_CLASS),
-            i -> val(found.get(i).keyColumnsForm().name(), t.KEY_COLUMNS_FORM),
-            i -> val(found.get(i).keyColumnsClass(), t.KEY_COLUMNS_CLASS),
             i -> val(touchedAt, t.TOUCHED_AT)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.TYPE_ID_FORM, t.TYPE_ID,
-                    t.TYPE_ID_CLASS, t.KEY_COLUMNS_FORM, t.KEY_COLUMNS_CLASS, t.TOUCHED_AT)
+            dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.TYPE_ID, t.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
-                .set(t.TYPE_ID_FORM, excluded(t.TYPE_ID_FORM))
                 .set(t.TYPE_ID, excluded(t.TYPE_ID))
-                .set(t.TYPE_ID_CLASS, excluded(t.TYPE_ID_CLASS))
-                .set(t.KEY_COLUMNS_FORM, excluded(t.KEY_COLUMNS_FORM))
-                .set(t.KEY_COLUMNS_CLASS, excluded(t.KEY_COLUMNS_CLASS))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 
-    private static void nodeKeyColumns(DSLContext dsl, JooqCatalog jooq, List<TableAt> tables,
+    private static void nodeKeyColumns(DSLContext dsl, List<NodeMetadataAt> nodeMetadata,
                                        LocalDateTime touchedAt) {
         var t = SQL_NODE_KEY_COLUMN;
         List<PositionAt<TableAt>> named = new ArrayList<>();
-        for (TableAt at : tables) {
-            jooq.nodeMetadataFactsOf(at.table()).ifPresent(facts -> {
-                for (int i = 0; i < facts.keyColumnNames().size(); i++) {
-                    named.add(new PositionAt<>(at, i, facts.keyColumnNames().get(i)));
+        for (NodeMetadataAt at : nodeMetadata) {
+            if (at.lookup() instanceof JooqCatalog.NodeIdMetadataLookup.Present p) {
+                var keys = p.metadata().keyColumns();
+                for (int i = 0; i < keys.size(); i++) {
+                    named.add(new PositionAt<>(at.table(), i, keys.get(i).sqlName()));
                 }
-            });
+            }
         }
         if (named.isEmpty()) {
             return;
@@ -532,6 +542,30 @@ public final class JooqFactCapture {
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.COLUMN_NAME, excluded(t.COLUMN_NAME))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+    }
+
+    private static void nodeMetadataUnreadable(DSLContext dsl, List<NodeMetadataAt> nodeMetadata,
+                                               LocalDateTime touchedAt) {
+        var t = SQL_NODE_METADATA_UNREADABLE;
+        List<TableAt> attempted = new ArrayList<>();
+        for (NodeMetadataAt at : nodeMetadata) {
+            if (at.lookup() instanceof JooqCatalog.NodeIdMetadataLookup.Malformed) {
+                attempted.add(at.table());
+            }
+        }
+        if (attempted.isEmpty()) {
+            return;
+        }
+        var rows = attempted.stream().collect(Rows.toRowList(
+            at -> val(at.source(), t.SOURCE_NAME),
+            at -> val(at.schema(), t.TABLE_SCHEMA),
+            at -> val(at.name(), t.TABLE_NAME),
+            at -> val(touchedAt, t.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 
@@ -756,7 +790,7 @@ public final class JooqFactCapture {
         SQL_SCHEMA, SQL_TABLE, SQL_COLUMN, SQL_CONSTRAINT, SQL_CONSTRAINT_COLUMN, SQL_PRIMARY_KEY,
         SQL_REFERENTIAL_CONSTRAINT, SQL_TABLE_REFERENCE, SQL_INDEX, SQL_INDEX_COLUMN,
         SQL_NODE_METADATA,
-        SQL_NODE_KEY_COLUMN, SQL_ROUTINE, SQL_ROUTINE_PARAMETER, SQL_ENUM_BINDING);
+        SQL_NODE_KEY_COLUMN, SQL_NODE_METADATA_UNREADABLE, SQL_ROUTINE, SQL_ROUTINE_PARAMETER, SQL_ENUM_BINDING);
 
     /**
      * Deletes the rows of the sources this reading walked that it did not touch, which are the

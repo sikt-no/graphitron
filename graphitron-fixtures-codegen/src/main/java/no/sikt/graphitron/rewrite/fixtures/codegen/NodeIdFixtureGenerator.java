@@ -100,7 +100,10 @@ public class NodeIdFixtureGenerator extends JavaGenerator {
         // positional bind between decoded keys and liftedSourceColumns stays correct.
         // Test surface: NodeIdPipelineTest.InputFieldFkTargetNodeIdCase
         // .FK_TARGET_REORDERED_KEY_PERMUTATION_DIRECT_FK.
-        Map.entry("reordered_pk_parent", new Metadata("ReorderedPkParent", List.of("PK_A", "PK_B", "PK_C")))
+        Map.entry("reordered_pk_parent", new Metadata("ReorderedPkParent", List.of("PK_A", "PK_B", "PK_C"))),
+        // Half the pair: a type id and no key-columns array, which the catalog records as an
+        // attempt at node metadata that failed. A null key list emits no __NODE_KEY_COLUMNS.
+        Map.entry("node_metadata_half", new Metadata("NodeMetadataHalf", null))
     );
 
     @Override
@@ -113,6 +116,9 @@ public class NodeIdFixtureGenerator extends JavaGenerator {
         String singleton = table.getOutputName().toUpperCase(Locale.ROOT);
         out.println();
         out.println("public static final String __NODE_TYPE_ID = \"%s\";", meta.typeId());
+        if (meta.keyColumnFields() == null) {
+            return;
+        }
         StringBuilder keys = new StringBuilder("public static final org.jooq.Field<?>[] __NODE_KEY_COLUMNS = { ");
         for (int i = 0; i < meta.keyColumnFields().size(); i++) {
             if (i > 0) keys.append(", ");

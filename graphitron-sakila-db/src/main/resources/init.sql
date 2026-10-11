@@ -770,6 +770,14 @@ INSERT INTO split_filter_parent (parent_id, target_id, include) VALUES
 -- publishing __NODE_TYPE_ID / __NODE_KEY_COLUMNS (that map is keyed on the bare table name across
 -- every codegen execution, so these names must not collide with a `nodeidfixture` table's).
 --
+-- Node metadata a class declares and graphitron cannot use: NodeIdFixtureGenerator publishes
+-- __NODE_TYPE_ID on this table and no __NODE_KEY_COLUMNS, so the catalog records the attempt as
+-- sql_node_metadata_unreadable rather than as metadata, and a type bound to it is warned at its
+-- @table. Nothing else reads it.
+CREATE TABLE node_metadata_half (
+    id integer PRIMARY KEY
+);
+
 -- Single-key pair. `xlat_parent`'s node key is `pk_id`; `xlat_child.parent_alt_key` references the
 -- unrelated unique column `alt_key`. Seeds give parent P1 two children and P2 one, so filtering by
 -- a list of parent ids has an asymmetric expected result rather than "everything".

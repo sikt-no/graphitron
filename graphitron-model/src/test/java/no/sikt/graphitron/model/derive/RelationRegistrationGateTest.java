@@ -110,7 +110,8 @@ class RelationRegistrationGateTest {
             "sql_constraint", "sql_constraint_column",
             "sql_primary_key", "sql_referential_constraint", "sql_index",
             "sql_index_column", "sql_routine", "sql_routine_parameter",
-            "sql_node_metadata", "sql_node_key_column", "sql_table_record_supertype",
+            "sql_node_metadata", "sql_node_key_column", "sql_node_metadata_unreadable",
+            "sql_table_record_supertype",
             "store_source", "store_stamp",
             "store_graph", "store_graph_schema_input", "store_graph_schema_extension",
             "store_graph_supergraph", "store_graph_output", "store_graph_tenant_column",
@@ -346,7 +347,6 @@ class RelationRegistrationGateTest {
         registrations.put("sql_table_reference", Arm.DERIVED);
         registrations.put("graphitron_condition_method_route", Arm.DERIVED);
         registrations.put("intent_table_key_candidate", Arm.DERIVED);
-        registrations.put("intent_node_metadata_defect", Arm.DERIVED);
         registrations.put("graphitron_node_type", Arm.DERIVED);
         registrations.put("graphitron_synthesized_federation_key", Arm.DERIVED);
         registrations.put("graphitron_synthesized_node_type_id", Arm.DERIVED);

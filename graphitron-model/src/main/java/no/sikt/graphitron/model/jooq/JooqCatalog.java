@@ -1058,8 +1058,8 @@ public class JooqCatalog {
             StatedConstant typeId = statedConstant(tableClass, NODE_TYPE_ID);
             StatedConstant keyColumns = statedConstant(tableClass, NODE_KEY_COLUMNS);
             if (!typeId.declared() || !keyColumns.declared()) {
-                // A class declaring only half the pair reads as absent here, as it always has.
-                // nodeMetadataFactsOf keeps the two halves apart for the store.
+                // A class declaring only half the pair reads as absent here, as it always has;
+                // nodeMetadataOf records it as an attempt that failed.
                 return new NodeIdMetadataLookup.Absent();
             }
             return validateLookup(tableSqlName, typeId.value(), keyColumns.value(),
@@ -1085,8 +1085,8 @@ public class JooqCatalog {
     /**
      * Reads one public static constant off a table class. The single definition of "declares the
      * constant", shared by the validating probe behind {@link #nodeIdMetadata(String)} and the
-     * as-stated reduction behind {@link #nodeMetadataFactsOf(Table)}, so the two can never disagree
-     * about whether a class published anything.
+     * capture's reading behind {@link #nodeMetadataOf(Table)}, so the two can never disagree about
+     * whether a class published anything.
      */
     private static StatedConstant statedConstant(Class<?> tableClass, String fieldName) {
         try {
@@ -1099,68 +1099,38 @@ public class JooqCatalog {
     }
 
     /**
-     * The node-identity metadata a table class states, reduced to values and judged about nothing:
-     * the capture-facing sibling of the validating probe above, beside {@link #columnFactsOf},
-     * {@link #foreignKeyFactsOf}, {@link #indexFactsOf} and {@link #routineCallFactsOf}.
+     * Whether a generated table class publishes node metadata graphitron can use: the capture-facing
+     * reading of the two constants, beside {@link #columnFactsOf}, {@link #foreignKeyFactsOf},
+     * {@link #indexFactsOf} and {@link #routineCallFactsOf}.
      *
-     * <p>Empty exactly when the class declares neither constant, which is the population that earns
-     * no row at all. A class declaring only one of the two is present here with the other reduced to
-     * its absent form, where the validating probe folds that state into silence: whether metadata is
-     * admissible is a question asked of the rows afterwards, not one the crawler answers.
-     *
-     * <p>Reflection and raw-{@link Object} interpretation stay at this one site. Capture receives
-     * already-reduced values, so nothing that could only be read on the codegen classpath crosses
-     * into a relation.
+     * <p>{@link NodeIdMetadataLookup.Absent} exactly when the class declares neither constant.
+     * Declaring one without the other is an attempt that failed, as is a pair that fails
+     * {@link #validateNodeIdMetadata}'s checks, and both are {@link NodeIdMetadataLookup.Malformed}:
+     * the store records that the attempt was made and not why it failed.
      */
-    public Optional<NodeMetadataFacts> nodeMetadataFactsOf(Table<?> table) {
+    public NodeIdMetadataLookup nodeMetadataOf(Table<?> table) {
         Class<?> tableClass = table.getClass();
-        StatedConstant typeId = statedConstant(tableClass, NODE_TYPE_ID);
-        StatedConstant keyColumns = statedConstant(tableClass, NODE_KEY_COLUMNS);
-        return typeId.declared() || keyColumns.declared()
-            ? Optional.of(reduceNodeMetadata(typeId, keyColumns))
-            : Optional.empty();
+        return stateNodeMetadata(table.getName(),
+            statedConstant(tableClass, NODE_TYPE_ID), statedConstant(tableClass, NODE_KEY_COLUMNS),
+            name -> findColumn(table, name));
     }
 
     /**
-     * The reduction half, factored so tests can exercise each form by passing synthetic stated
-     * values without having to swap {@code static final} fields on a real table class, exactly as
-     * {@link #validateNodeIdMetadata} is factored out of the validating path.
+     * The decision behind {@link #nodeMetadataOf}, factored so tests can reach each outcome with
+     * synthetic stated values instead of a generated class broken one way per case.
      */
-    public static NodeMetadataFacts reduceNodeMetadata(StatedConstant typeId, StatedConstant keyColumns) {
-        TypeIdForm typeIdForm;
-        String typeIdValue = null;
-        String typeIdClass = null;
-        if (!typeId.declared()) {
-            typeIdForm = TypeIdForm.ABSENT;
-        } else if (typeId.value() == null) {
-            typeIdForm = TypeIdForm.NULL;
-        } else if (typeId.value() instanceof String value) {
-            typeIdForm = TypeIdForm.STRING;
-            typeIdValue = value;
-        } else {
-            typeIdForm = TypeIdForm.OTHER;
-            typeIdClass = typeId.value().getClass().getName();
+    public static NodeIdMetadataLookup stateNodeMetadata(
+            String tableSqlName,
+            StatedConstant typeId,
+            StatedConstant keyColumns,
+            java.util.function.Function<String, Optional<ColumnEntry>> columnLookup) {
+        if (!typeId.declared() && !keyColumns.declared()) {
+            return new NodeIdMetadataLookup.Absent();
         }
-
-        KeyColumnsForm keyColumnsForm;
-        String keyColumnsClass = null;
-        var entryNames = new ArrayList<String>();
-        if (!keyColumns.declared()) {
-            keyColumnsForm = KeyColumnsForm.ABSENT;
-        } else if (keyColumns.value() == null) {
-            keyColumnsForm = KeyColumnsForm.NULL;
-        } else if (keyColumns.value() instanceof org.jooq.Field<?>[] fields) {
-            keyColumnsForm = KeyColumnsForm.FIELD_ARRAY;
-            for (org.jooq.Field<?> field : fields) {
-                entryNames.add(field == null ? null : field.getName());
-            }
-        } else {
-            keyColumnsForm = KeyColumnsForm.OTHER;
-            keyColumnsClass = keyColumns.value().getClass().getName();
+        if (!typeId.declared() || !keyColumns.declared()) {
+            return malformed(tableSqlName, "only one of __NODE_TYPE_ID and __NODE_KEY_COLUMNS is declared");
         }
-
-        return new NodeMetadataFacts(typeIdForm, typeIdValue, typeIdClass,
-            keyColumnsForm, keyColumnsClass, java.util.Collections.unmodifiableList(entryNames));
+        return validateLookup(tableSqlName, typeId.value(), keyColumns.value(), columnLookup);
     }
 
     /**
@@ -1371,32 +1341,6 @@ public class JooqCatalog {
     public record IndexFacts(String name, java.util.List<String> columns) {
         public IndexFacts { columns = java.util.List.copyOf(columns); }
     }
-
-    /**
-     * The node-identity metadata a generated table class states, as stated. See
-     * {@link #nodeMetadataFactsOf}.
-     *
-     * <p>Each constant contributes a form arm plus whatever the arm makes available:
-     * {@code typeId} carries the value on {@link TypeIdForm#STRING} and is null otherwise,
-     * {@code typeIdClass} and {@code keyColumnsClass} carry the value's runtime class on their
-     * constant's {@code OTHER} arm and are null otherwise, and {@code keyColumnNames} holds the
-     * array's entry names in declared order on {@link KeyColumnsForm#FIELD_ARRAY} and is empty
-     * otherwise. A null entry survives as a null element, that being a stated fact about the entry
-     * rather than a value to discard, which is why the list is not a {@code List.copyOf}.
-     *
-     * <p>Nothing here is a judgement: an empty type id, an empty array and a name belonging to no
-     * column of the table all reduce as stated, and what is wrong with them is a question asked of
-     * the rows afterwards.
-     */
-    public record NodeMetadataFacts(TypeIdForm typeIdForm, String typeId, String typeIdClass,
-                                    KeyColumnsForm keyColumnsForm, String keyColumnsClass,
-                                    java.util.List<String> keyColumnNames) {}
-
-    /** What the type-id constant stated, whose names are the stored form values. */
-    public enum TypeIdForm { STRING, NULL, OTHER, ABSENT }
-
-    /** What the key-columns constant stated, whose names are the stored form values. */
-    public enum KeyColumnsForm { FIELD_ARRAY, NULL, OTHER, ABSENT }
 
     /**
      * A foreign key reduced to resolved-immutable facts: SQL constraint name, schema-qualified

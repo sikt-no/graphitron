@@ -242,6 +242,10 @@ class SupertypeSignatureGateTest {
         Set.of("graphitron_argument_reference_for_step_entry", "graphitron_argument_reference_step_entry",
                "graphitron_field_reference_step_entry", "graphitron_reference_for_step_entry"),
         Set.of("sql_constraint_column", "sql_index_column", "sql_node_key_column"),
+        // A node's type id as the author wrote it and as the generated class publishes it. Two
+        // corpora stating one kind of value, and graphitron_node is where the two are resolved, by
+        // precedence, so a supertype over them would be that resolution stated a second time.
+        Set.of("graphitron_ast_node_entry", "sql_node_metadata"),
         Set.of("graphitron_argument_binding_entry", "graphitron_field_binding_entry"),
         Set.of("graphitron_element", "graphql_element"),
         // A coordinate at the entry position beside the six anchors keyed by the names that spell

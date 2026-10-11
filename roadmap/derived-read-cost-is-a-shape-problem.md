@@ -599,8 +599,9 @@ types and its formatter are already model-side, so what stands between here and 
     * **Two nodes sharing a type id is a defect** `done`. `NODE_TYPE_ID_SHARED`, at each type's
       `@table`, off `graphitron_node`'s resolved id; stated by `facts/node-type-id.graphqls`.
     * **A pinned key disagreeing with the published one is a defect** `blocked`, on node metadata
-      well-formedness being a catalog fact. Only `intent_node_metadata_defect` states it, and a
-      `graphitron_` arm reading `intent_` is the crossing this branch removes.
+      being a catalog fact, in "A node is settled with the decode that states it". Only
+      `intent_node_metadata_defect` states it today, and a `graphitron_` rule reading `intent_` is
+      the crossing this branch removes.
   * **The `tableExpr` rules** `open`. 24 sites.
   * **The `sourceObject` rules** `open`. 23 sites.
     * **A `@table` naming no table, or one two schemas declare, is a defect** `done`.
@@ -835,14 +836,8 @@ reads nothing off the classpath that capture has already read, and builds no sch
     the stale applications are swept.
   * **Minted conflicts are marked and swept** `open`. Nothing keys into
     `graphitron_minted_conflict`, so this is the discipline rather than a hazard.
-  * **Nodes are marked and swept** `open`. `graphitron_node`'s type id and its origin are payload, so
-    an upsert on the type is enough.
-  * **Table types are marked and swept** `open`, and need one step more. The bound table is what
-    `graphitron_node_keycolumn`'s foreign key names, so a binding that changed is deleted first,
-    taking that type's node and key columns with it, and the rest are upserted and swept; an
-    unchanged binding keeps its row and everything hanging off it.
-  * **Node key columns are marked and swept** `open`, just after the anchor in
-    `GraphitronAssemblyCapture`, so the node chain is one lifecycle end to end.
+  * **Table types, nodes and node key columns are marked and swept** `open`, in "A node is settled
+    with the decode that states it", which takes the three together.
 
 ### A capture reads only what changed
 
@@ -1056,6 +1051,55 @@ Reading a jar is safe for a release and dangerous for a snapshot, and Maven sett
   migration regenerating jOOQ moves the stamp and every service class is read again though none
   changed. The stamp covers the class files the reading takes, or the file-grain skip in the capture
   branch makes the directory's stamp matter less; either removes the false invalidation.
+
+### A node is settled with the decode that states it
+
+Which types are nodes, the id each answers to and the key it is encoded from are settled in the
+`graphitron-ast` anchor, but from the wrong inputs and not all in one place. `Nodes` reads
+`graphitron_node_entry` and `NodeKeyColumns` reads `graphitron_node_keycolumn_entry`, coordinate
+copies of `@node` beside the position-keyed `graphitron_ast_node_entry` and
+`graphitron_ast_node_keycolumn_entry` that nothing reads, and `TableTypes` reads the coordinate copy
+of `@table`. Both read `intent_node_metadata_defect`, a view over the catalog alone, so a
+`graphitron_` stage depends on `intent_`. `NodeKeyColumns` runs a gatherer later than the nodes it
+keys into. All three clear and refill, emptying what hangs off them by cascade each reading. And
+`graphitron_node_type` unions the authored entry with the resolved node, which its five readers
+take as "is a node" whichever they meant. The editor reads the authored copy where it means the
+resolved fact, so a type that is a node through catalog metadata alone gets no completion, a
+squiggle on a `typeName:` the build accepts, and a hover showing the authored id rather than the
+resolved one.
+
+* **Node metadata is a catalog fact, and an attempt that fails is a warning** `done`. The jOOQ
+  gatherer records a class's node metadata only where `__NODE_TYPE_ID` and `__NODE_KEY_COLUMNS` are
+  a well-formed pair: a non-empty string and a non-empty array of columns the table has. Anything
+  else publishes nothing, and graphitron falls back to its other tiers as it does today. A class
+  declaring either field without the pair being usable is a row of `sql_node_metadata_unreadable`,
+  reported as one warning, `NODE_METADATA_UNREADABLE`, at the `@table` of each type bound to it:
+  that it was noticed and failed, not why, the fallback changing the ids the type encodes. The ten
+  forms the crawler recorded, `intent_node_metadata_defect` and the filter `Nodes` and
+  `NodeKeyColumns` applied over it are gone, the crawler and the walk reading one probe. Stated by
+  `facts/node-metadata-unreadable.graphqls`, over a sakila table whose class publishes half the pair.
+* **The node is settled from the position-keyed entries, in one place** `open`, after the catalog
+  fact. `TableTypes`, `Nodes` and `NodeKeyColumns` read `graphitron_ast_table_entry`,
+  `graphitron_ast_node_entry` and `graphitron_ast_node_keycolumn_entry`, reaching the type through
+  `graphitron_directive_application` and the pinned key's order through its value positions, and
+  `NodeKeyColumns` moves into the anchor beside `Nodes`. The `NODE_*` rules of
+  `graphitron_entry_defect_rule` read the same entries at the `@node`. `graphitron_table_entry`
+  keeps its other readers, which are "The twinned ones flip and subtract".
+* **Table types, nodes and node key columns are marked and swept** `open`, after the move. A binding
+  that changed is deleted first, taking that type's node and key columns with it; the rest are
+  upserted on their keys and swept, and an unchanged binding keeps everything hanging off it.
+* **"Is a node" is the resolved node** `open`. The readers of `graphitron_node_type`,
+  `graphitron_input_field_filter_role_rule`, `graphitron_node_id_instruction_rule`,
+  `graphitron_synthesized_federation_key`, `intent_node_container_member` and
+  `intent_node_id_candidate_node_type`, read `graphitron_node`, and the view goes. A `@node` on a type
+  without `@table` is the anti-join between the entry and the node, and is reported, not counted.
+* **The editor and the MCP read the resolved node** `open`. Completion of `typeName:`, the legality
+  behind its squiggle, the hover and `SchemaQueries` read `graphitron_node` and
+  `graphitron_node_keycolumn`, so a node through catalog metadata alone is completed, accepted and
+  shown with the id and key it encodes.
+* **The coordinate copies go** `blocked`, on the nodes above. `graphitron_node_entry`,
+  `graphitron_node_keycolumn_entry`, their writer in `GraphitronAnchor`, and the agreement and
+  seeding uses of them.
 
 ### A node id is a target type, read as its ID
 

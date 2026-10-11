@@ -16,7 +16,7 @@ import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedImplements;
 import static no.sikt.graphitron.model.test.SeededStore.seedNode;
 import static no.sikt.graphitron.model.test.SeededStore.seedNodeKeyColumn;
-import static no.sikt.graphitron.model.test.SeededStore.seedNodeMetadata;
+import static no.sikt.graphitron.model.test.SeededStore.seedNodeMetadataUnreadable;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedStatedNodeMetadata;
 import static no.sikt.graphitron.model.test.SeededStore.seedTable;
@@ -128,31 +128,15 @@ class NodeTypeTest {
     }
 
     /**
-     * Metadata stating a column the table does not have is malformed, so the inference declines
-     * rather than calling the type a node whose key columns resolve against nothing. The
-     * well-formedness question is not asked here: it is the defect relation's, and reading it is
-     * what keeps the two spellings of this conjunction agreeing.
+     * Node metadata the catalog could not use publishes nothing, so the inference declines rather
+     * than calling the type a node over metadata nobody can read.
      */
     @Test
-    void malformedMetadataDoesNotInferNodehood() {
+    void unreadableMetadataDoesNotInferNodehood() {
         withInventoryCatalog(dsl -> {
             seedTableBinding(dsl, GRAPH, "Inventory", "inventory");
             seedImplements(dsl, GRAPH, "Inventory", "Node");
-            seedStatedNodeMetadata(dsl, PKG, PUBLIC, "inventory", "Inventory");
-            seedNodeKeyColumn(dsl, PKG, PUBLIC, "inventory", 0, "no_such_column");
-
-            assertThat(nodes(dsl)).isEmpty();
-        });
-    }
-
-    /** A class declaring the key-columns constant as null is a defect too, on the same terms. */
-    @Test
-    void metadataDeclaringHalfThePairDoesNotInferNodehood() {
-        withInventoryCatalog(dsl -> {
-            seedTableBinding(dsl, GRAPH, "Inventory", "inventory");
-            seedImplements(dsl, GRAPH, "Inventory", "Node");
-            seedNodeMetadata(dsl, PKG, PUBLIC, "inventory", "STRING", "Inventory", null,
-                "ABSENT", null);
+            seedNodeMetadataUnreadable(dsl, PKG, PUBLIC, "inventory");
 
             assertThat(nodes(dsl)).isEmpty();
         });

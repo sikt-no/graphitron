@@ -10,7 +10,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
-import static no.sikt.graphitron.model.Tables.INTENT_NODE_METADATA_DEFECT;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_KEY_COLUMN;
@@ -95,15 +94,12 @@ public final class NodeKeyColumns {
     }
 
     /**
-     * The generated class's tier, for a node whose {@code @node} pinned nothing. Well-formedness is
-     * the conjunction {@code intent_node_metadata_defect} states, a metadata row with no defect
-     * rows against it, rather than the anti-join alone: a table publishing nothing has no defects
-     * either and answers nothing here.
+     * The generated class's tier, for a node whose {@code @node} pinned nothing. A metadata row is
+     * metadata the catalog found usable, so its presence is the whole test.
      */
     private static void published(DSLContext dsl, String graphName) {
         var k = SQL_NODE_KEY_COLUMN;
         var m = SQL_NODE_METADATA;
-        var d = INTENT_NODE_METADATA_DEFECT;
         var b = GRAPHITRON_TABLETYPE;
         var c = SQL_COLUMN;
         var n = GRAPHITRON_NODE;
@@ -128,10 +124,7 @@ public final class NodeKeyColumns {
                 .where(n.GRAPH_NAME.eq(graphName))
                 .and(resolvesUniquely(b, k.COLUMN_NAME))
                 .and(everyPublishedPositionResolves(b))
-                .and(pinnedNothing(n.GRAPH_NAME, n.TYPE_NAME))
-                .and(notExists(selectOne().from(d)
-                    .where(d.SOURCE_NAME.eq(m.SOURCE_NAME), d.TABLE_SCHEMA.eq(m.TABLE_SCHEMA),
-                        d.TABLE_NAME.eq(m.TABLE_NAME)))))
+                .and(pinnedNothing(n.GRAPH_NAME, n.TYPE_NAME)))
             .execute();
     }
 
@@ -206,17 +199,15 @@ public final class NodeKeyColumns {
      * True where every position the bound table's class publishes resolves to exactly one of its
      * columns, which is what keeps this tier from shipping a key tuple with a hole.
      *
-     * <p>The defect relation almost covers this and stops one case short. It calls an entry
-     * unresolved when no column answers to it, and a table whose class names a column it does not
-     * have is excluded before this tier is reached; it says nothing about an entry two columns
-     * answer to, which is not a malformed constant but is not a resolution either. Without this the
-     * ambiguous position alone would go missing and the rest of the tuple would ship, which decodes
-     * values into the wrong positions and says nothing about it.
+     * <p>The catalog records only metadata it could use, each entry already the table's column, so
+     * this holds wherever a metadata row exists. It is kept as the tier's all-or-nothing statement
+     * over the same fold the author's tier uses: a position that went missing would ship the rest
+     * of the tuple, which decodes values into the wrong positions and says nothing about it.
      *
      * <p>Failing here declines the whole tier and lets the primary key answer, where the author's
      * tier writes nothing at all in the same situation. The asymmetry is the point: a pinned key is
      * a contract someone asked for, and a generated constant that cannot be resolved is the same
-     * kind of problem as one that is malformed, which already falls through.
+     * kind of problem as one that is malformed, which the catalog does not record at all.
      */
     private static Condition everyPublishedPositionResolves(GraphitronTabletype b) {
         var k = SQL_NODE_KEY_COLUMN.as("published_probe");

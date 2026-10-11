@@ -14,6 +14,7 @@ import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedNode;
 import static no.sikt.graphitron.model.test.SeededStore.seedImplements;
 import static no.sikt.graphitron.model.test.SeededStore.seedNodeKeyColumn;
+import static no.sikt.graphitron.model.test.SeededStore.seedNodeMetadataUnreadable;
 import static no.sikt.graphitron.model.test.SeededStore.seedNodeKeyColumnRef;
 import static no.sikt.graphitron.model.test.SeededStore.seedPrimaryKey;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
@@ -242,43 +243,15 @@ class ResolvedNodeKeyColumnTest {
 
     // ===== Where the relation stops =====
 
-    /**
-     * Malformed metadata is passed over rather than projected. The tier reads well-formed rows,
-     * which is a metadata row with no defect rows and not the anti-join alone, so an entry naming a
-     * column the table does not have falls through to the next tier instead of resolving to a name
-     * the decode would then read off nothing.
-     */
+    /** Node metadata the catalog could not use is passed over, so the next tier answers. */
     @Test
-    void metadataStatingAnUnresolvableColumnFallsThroughRatherThanProjectingIt() {
+    void unreadableMetadataFallsThroughRatherThanProjectingIt() {
         withNodeOverInventory(dsl -> {
-            seedStatedNodeMetadata(dsl, PKG, PUBLIC, "inventory", "Inventory");
-            seedNodeKeyColumn(dsl, PKG, PUBLIC, "inventory", 0, "no_such_column");
+            seedNodeMetadataUnreadable(dsl, PKG, PUBLIC, "inventory");
             seedPrimaryKey(dsl, PKG, PUBLIC, "inventory", "inventory_pkey", "inventory_id");
 
             assertThat(tierOf(dsl, "Inventory")).isEqualTo("CATALOG_PRIMARY_KEY");
             assertThat(keyColumns(dsl, "Inventory")).containsExactly("inventory_id");
-        });
-    }
-
-    /**
-     * A stated name matching under either spelling resolves, which is the predicate the defect rule
-     * decides well-formedness by. Sharing it is the point: a tier that resolved entries by the SQL
-     * name alone would disagree with the arm that already called the row well-formed. What lands is
-     * the catalog's own name, the stated spelling having been resolved rather than forwarded.
-     */
-    @Test
-    void aMetadataEntrySpelledTheGeneratedWayIsWellFormed() {
-        withNodeOverInventory(dsl -> {
-            seedImplements(dsl, GRAPH, "Inventory", "Node");
-            seedStatedNodeMetadata(dsl, PKG, PUBLIC, "inventory", "Inventory");
-            seedNodeKeyColumn(dsl, PKG, PUBLIC, "inventory", 0, "inventoryId");
-            seedPrimaryKey(dsl, PKG, PUBLIC, "inventory", "inventory_pkey", "store_id");
-
-            assertThat(tierOf(dsl, "Inventory")).isEqualTo("JOOQ_METADATA");
-            assertThat(keyColumns(dsl, "Inventory"))
-                .as("the stated spelling is the generated one and the row carries the SQL name it"
-                    + " resolved to, as the pinned tier's own case states for its side")
-                .containsExactly("inventory_id");
         });
     }
 

@@ -15,6 +15,7 @@ import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedImplements;
 import static no.sikt.graphitron.model.test.SeededStore.seedNode;
 import static no.sikt.graphitron.model.test.SeededStore.seedNodeKeyColumn;
+import static no.sikt.graphitron.model.test.SeededStore.seedNodeMetadataUnreadable;
 import static no.sikt.graphitron.model.test.SeededStore.seedNodeWithTypeId;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedStatedNodeMetadata;
@@ -160,17 +161,15 @@ class NodesTest {
     }
 
     /**
-     * Metadata naming a column the table does not have is malformed, and a malformed constant is
-     * not an answer. The tier declines rather than the type falling out, so the pick drops to the
-     * type's own name and the node stays a node.
+     * Node metadata the catalog could not use is no answer. The tier declines rather than the type
+     * falling out, so the pick drops to the type's own name and the node stays a node.
      */
     @Test
-    void malformedMetadataYieldsNoIdAndTheNameAnswersInstead() {
+    void unreadableMetadataYieldsNoIdAndTheNameAnswersInstead() {
         withInventoryCatalog(dsl -> {
             seedTableBinding(dsl, GRAPH, "Inventory", "inventory");
             seedNode(dsl, GRAPH, "Inventory");
-            seedStatedNodeMetadata(dsl, PKG, PUBLIC, "inventory", "195");
-            seedNodeKeyColumn(dsl, PKG, PUBLIC, "inventory", 0, "no_such_column");
+            seedNodeMetadataUnreadable(dsl, PKG, PUBLIC, "inventory");
 
             assertThat(ids(dsl)).containsExactly(tuple("Inventory", "TYPE_NAME"));
         });

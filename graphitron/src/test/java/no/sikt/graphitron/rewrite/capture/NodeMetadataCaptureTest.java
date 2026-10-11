@@ -56,11 +56,7 @@ class NodeMetadataCaptureTest {
                 .where(SQL_NODE_METADATA.TABLE_NAME.eq("bar"))
                 .fetchOne();
             assertThat(row).isNotNull();
-            assertThat(row.getTypeIdForm()).isEqualTo("STRING");
             assertThat(row.getTypeId()).isEqualTo("Bar");
-            assertThat(row.getTypeIdClass()).isNull();
-            assertThat(row.getKeyColumnsForm()).isEqualTo("FIELD_ARRAY");
-            assertThat(row.getKeyColumnsClass()).isNull();
             assertThat(entriesOf(dsl, "bar")).containsExactly("id_1", "id_2");
         });
     }

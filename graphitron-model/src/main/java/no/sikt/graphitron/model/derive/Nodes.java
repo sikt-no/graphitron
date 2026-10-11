@@ -7,13 +7,11 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
-import static no.sikt.graphitron.model.Tables.INTENT_NODE_METADATA_DEFECT;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_METADATA;
 import static org.jooq.impl.DSL.denseRank;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.name;
-import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.partitionBy;
 import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.val;
@@ -24,7 +22,7 @@ import static org.jooq.impl.DSL.val;
  *
  * <p>Two sources and one precondition. A type is a node because it carries {@code @node}, or
  * because it implements the Relay {@code Node} interface over a table whose generated class
- * publishes the node metadata and carries no defect in it. Either way it must be table bound
+ * publishes node metadata the catalog could use. Either way it must be table bound
  * first: {@code @node} only takes effect on a type that also carries {@code @table}, so both arms
  * read {@code graphitron_tabletype} and a {@code @node} on an unbound type stays in
  * {@code graphitron_node_entry} and does not reach here. Which types those are is the anti-join between
@@ -57,7 +55,6 @@ public final class Nodes {
         var tt = GRAPHITRON_TABLETYPE;
         var n = GRAPHITRON_NODE_ENTRY;
         var m = SQL_NODE_METADATA;
-        var d = INTENT_NODE_METADATA_DEFECT;
         var i = GRAPHQL_POLY_MEMBER;
 
         // A node is a table-bound type that either says so or is published as one.
@@ -72,10 +69,7 @@ public final class Nodes {
             .where(tt.GRAPH_NAME.eq(graphName))
             .and(exists(selectOne().from(i)
                 .where(i.GRAPH_NAME.eq(tt.GRAPH_NAME), i.MEMBER_TYPE_NAME.eq(tt.TYPE_NAME),
-                    i.CONTAINER_NAME.eq("Node"), i.CONTAINER_KIND.eq("INTERFACE"))))
-            .and(notExists(selectOne().from(d)
-                .where(d.SOURCE_NAME.eq(m.SOURCE_NAME), d.TABLE_SCHEMA.eq(m.TABLE_SCHEMA),
-                    d.TABLE_NAME.eq(m.TABLE_NAME))));
+                    i.CONTAINER_NAME.eq("Node"), i.CONTAINER_KIND.eq("INTERFACE"))));
         Table<?> nodes = declared.union(published).asTable("nodes");
         var g = nodes.field(tt.GRAPH_NAME);
         var t = nodes.field(tt.TYPE_NAME);
@@ -91,10 +85,7 @@ public final class Nodes {
                 .join(tt).on(tt.GRAPH_NAME.eq(g), tt.TYPE_NAME.eq(t))
                 .join(m).on(m.SOURCE_NAME.eq(tt.TABLE_SOURCE_NAME),
                     m.TABLE_SCHEMA.eq(tt.TABLE_SCHEMA), m.TABLE_NAME.eq(tt.TABLE_NAME))
-                .where(m.TYPE_ID.isNotNull())
-                .and(notExists(selectOne().from(d)
-                    .where(d.SOURCE_NAME.eq(m.SOURCE_NAME), d.TABLE_SCHEMA.eq(m.TABLE_SCHEMA),
-                        d.TABLE_NAME.eq(m.TABLE_NAME)))))
+                .where(m.TYPE_ID.isNotNull()))
             .unionAll(dsl.select(g, t, t, val("TYPE_NAME"), val(2)).from(nodes))
             .asTable("arms");
 

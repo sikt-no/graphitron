@@ -14,6 +14,7 @@ import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedNode;
 import static no.sikt.graphitron.model.test.SeededStore.seedNodeKeyColumn;
+import static no.sikt.graphitron.model.test.SeededStore.seedNodeMetadataUnreadable;
 import static no.sikt.graphitron.model.test.SeededStore.seedNodeKeyColumnRef;
 import static no.sikt.graphitron.model.test.SeededStore.seedPrimaryKey;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
@@ -85,7 +86,7 @@ class NodeKeyColumnTest {
         withNodeOverInventory(dsl -> {
             seedPrimaryKey(dsl, PKG, PUBLIC, "inventory", "inventory_pkey", "inventory_id");
             seedStatedNodeMetadata(dsl, PKG, PUBLIC, "inventory", "Inventory");
-            seedNodeKeyColumn(dsl, PKG, PUBLIC, "inventory", 0, "FILM_ID");
+            seedNodeKeyColumn(dsl, PKG, PUBLIC, "inventory", 0, "film_id");
 
             assertThat(keys(dsl))
                 .as("the constant shouts and the catalog does not, so the row carries the catalog's")
@@ -93,16 +94,12 @@ class NodeKeyColumnTest {
         });
     }
 
-    /**
-     * The defect case. A published name the table does not have is malformed metadata, and a
-     * malformed constant is not an answer, so this tier declines and the primary key answers.
-     */
+    /** Node metadata the catalog could not use is no answer, so this tier declines and the primary key answers. */
     @Test
-    void malformedPublishedMetadataFallsThroughToThePrimaryKey() {
+    void unreadablePublishedMetadataFallsThroughToThePrimaryKey() {
         withNodeOverInventory(dsl -> {
             seedPrimaryKey(dsl, PKG, PUBLIC, "inventory", "inventory_pkey", "inventory_id");
-            seedStatedNodeMetadata(dsl, PKG, PUBLIC, "inventory", "Inventory");
-            seedNodeKeyColumn(dsl, PKG, PUBLIC, "inventory", 0, "no_such_column");
+            seedNodeMetadataUnreadable(dsl, PKG, PUBLIC, "inventory");
 
             assertThat(keys(dsl)).containsExactly(tuple("inventory_id", "CATALOG_PRIMARY_KEY"));
         });
@@ -190,29 +187,6 @@ class NodeKeyColumnTest {
             assertThat(keys(dsl))
                 .as("filmId is film_id's generated name and filmid's own, so it names neither")
                 .isEmpty();
-        });
-    }
-
-    /**
-     * A published entry two columns answer to. Not a malformed constant, so the defect relation
-     * says nothing and this tier is reached; not a resolution either, so the tier declines whole
-     * rather than dropping the one position and shipping the rest, which would be a key tuple with
-     * a hole. The primary key answers, as it does for metadata that is malformed.
-     */
-    @Test
-    void anAmbiguousPublishedEntryDeclinesTheWholeTierRatherThanLeavingAHole() {
-        withInventoryCatalog(dsl -> {
-            seedColumn(dsl, PKG, PUBLIC, "inventory", "filmid", 3, "somethingElse");
-            seedNode(dsl, GRAPH, "Inventory");
-            seedTableBinding(dsl, GRAPH, "Inventory", "inventory");
-            seedPrimaryKey(dsl, PKG, PUBLIC, "inventory", "inventory_pkey", "inventory_id");
-            seedStatedNodeMetadata(dsl, PKG, PUBLIC, "inventory", "Inventory");
-            seedNodeKeyColumn(dsl, PKG, PUBLIC, "inventory", 0, "store_id");
-            seedNodeKeyColumn(dsl, PKG, PUBLIC, "inventory", 1, "filmId");
-
-            assertThat(keys(dsl))
-                .as("store_id resolves and filmId does not, and half a key is not half an answer")
-                .containsExactly(tuple("inventory_id", "CATALOG_PRIMARY_KEY"));
         });
     }
 
