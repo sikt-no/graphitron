@@ -203,6 +203,13 @@ this one, and the read-time relations neither of them has displaced yet.
   input field alike, and the input-value step entries gain their first reader. The routine reading is
   the exception, reading `graphitron_field_routine` per target, and whether its resolution can be
   stated at the entry grain with the target check moving into the walk is the first question.
+* **Both walks are anchored** `blocked`, on the departure, under "`source` and `target` are stated
+  for every coordinate", and on readings stated at the entry grain above. The forward reach per field
+  from the departure, the backward reach per target from `graphitron_field_table`, the chain where
+  the two meet, and the arrival of a chain that has only a forward walk, which is what a scalar
+  `@reference` reads and what a bare `@nodeId` with `@reference` takes its type from. A producer
+  with neither a departure nor a target has nothing to run, which is the defect
+  `CHAIN_WITHOUT_TARGET` narrows to.
 * **The chain is stated at the argument and input-field grains** `open`. `@reference` is written at
   three coordinates and only the field grain has a chain relation.
 * **One resolution of an authored element stands, not two** `blocked`, on the two grains above.
@@ -490,6 +497,45 @@ and the emitters read, and it goes when nothing reads what it builds.
   * **A defect rests on a basis and sits at an AST entry** `done`. `basis` in place of `fault`, the
     twelve codes `GRAPHITRON`, and the position a foreign key into `graphql_ast_entry`, the element
     `graphitron_entry_defect_site`'s fixed hops away.
+  * **The producers are stated** `open`. A producer is a field where something is executed, and
+    `graphitron_producer` holds those fields and no others: R333's `operation` is total over every
+    coordinate, a bare column read being `Fetch`, so the producers are its verbs that execute and
+    not the fact itself; how the two meet is refined as the work goes. Keyed by field, with its kind
+    and `mutates`, true on a field of the mutation root type. A root field, a `@service`, a
+    `@splitQuery` and a connection are producers; a `@routine` below a root that is not split, an
+    `@externalField` and every projected field are not. A producer that reads and lands on a
+    table-bound type leaves its window open, and every field below it that is not a producer is
+    projected into its statement; a write closes it, the lock it takes being returned before anything
+    more is read, and so does a `_service`. The hierarchy is by what executes and how it identifies
+    its rows:
+    * `_query`, SQL graphitron generates against tables:
+      * `_select`, the rows a condition matches, consuming its source object's keys where it has one;
+        keyset paging and one select per participant of a polymorphic type are properties of it;
+      * `_lookup`, the rows for an ordered list of keys, one position per key and null for a miss:
+        `@lookupKey`, `node`, `nodes`, `_entities`, and the re-read after a write over the keys it
+        returned;
+      * `_insert`, values only, no row identified, returning the keys the database made;
+      * the identifying write, with `matches`, `ONE` or `MANY` as `multiRow` was written, `ONE` by
+        default: one row per input, or a filter per input that may match several. `_update` carries
+        a predicate and values, `_delete` a predicate alone and returns keys of rows that are gone.
+        How a `MANY` update tells its filter from its values is out of scope; the model only records
+        the intention, and behaviour does not change;
+    * `_routine`, SQL generated around a database routine, keyed to the application that made it
+      one;
+    * `_service`, a Java method, keyed to its application.
+
+    Upsert is retired and stays out. What makes a field a producer is read from what was written,
+    the decoded entries and, for the bare `@splitQuery`, `graphitron_directive_application`; the
+    deprecated coordinate-keyed `graphitron_split_query_entry`, `graphitron_service_entry` and
+    `graphitron_routine_entry` are not read. Marked and swept from the start.
+  * **The matched key is stated** `open`, with the identifying writes.
+    `graphitron_producer_matched_key`, one row per `ONE` write and key its input columns cover, keyed
+    to the producer and to `sql_constraint`. An input covering two keys is two rows, and choosing one
+    is a rule over the relation. A `ONE` write with no row is the defect the build reports today; a
+    `MANY` write and an insert have none by construction.
+  * **Operation's modifiers are keyed to the producer** `blocked`, on the producers. `condition`,
+    `paginate` and `orderBy` modify a `_select` or a `_lookup` rather than execute anything, which is
+    how the generated code is organised too: one condition method and one ordering method per field.
   * **`source` and `target` are stated for every coordinate** `open`. The two total facts no relation
     states whole, and totality is what the defect model's gate checks.
     * **A field's source says how many objects arrive** `done`. `graphitron_type_arrival` folds each
@@ -513,6 +559,13 @@ and the emitters read, and it goes when nothing reads what it builds.
         reports, as a code at the type's declaration.
     * **The source's shape and the target's shape** `blocked`, on the node above. A record is a
       class-backed type, and a column read differs from a field read by the source's shape.
+    * **The departure is stated** `open`, after the producers. The consume phase: which keys a
+      producer reads from its parent's source object and which table they match, one row per field
+      and table with the rule that answered: the source type's table; the keys a write returned; or,
+      below a type `graphitron_type_backing` backs with a class, a `TableRecord` member, members
+      matching the primary key of the first link's table, or `@sourceRow`, which is a forced choice.
+      A root field has none. The `from_` columns of `graphitron_field_table` are the first rule
+      stated per target.
 * **`validate` reads only the store** `open`, as "Validate is a query over the store". Second to
   last, a verdict being a narrower read than an emission.
 * **`generate` and `dev` read only the store** `blocked`, on the node above. The last step: the
@@ -529,8 +582,11 @@ types and its formatter are already model-side, so what stands between here and 
   arms land ahead of the flip. The fact census lists the rules per fact. The eleven codes moved so
   far draw nothing on the sakila example; evidence in
   `roadmap/audits/2026-10-08-entry-defect-arms-on-sakila.md`.
-  * **The `operation` rules** `open`. 170 sites: `serviceCall` 52, DML 47, `condition` 28, lookup 16,
-    `paginate` 12, `orderBy` 10, `select` 5.
+  * **The `operation` rules** `blocked`, on the producers and their modifiers. 170 sites:
+    `serviceCall` 52, DML 47, `condition` 28, lookup 16, `paginate` 12, `orderBy` 10, `select` 5. The
+    verbs' rules move onto the producer hierarchy and the rest onto the modifiers keyed to it, the
+    relation being stated before the rules over it rather than the rules written over the decoded
+    entries and moved again.
     * **A list with no ordering source is a defect** `open`. Three anti-joins, no `@defaultOrder`,
       no `@orderBy` and no primary key on the target table; the population, which list fields
       generate SQL, is a generator classification the store does not state yet.
@@ -643,7 +699,50 @@ reads nothing off the classpath that capture has already read, and builds no sch
   from the emitted schema, `CarriesObjectForm.formOf` reading it before a variant's own form, so the
   walk's own forms render nothing; the variants still carry them.
 * **The datafetchers and the rest are generated from the store** `open`. `EmitPlan` reads the store
-  already; the per-type generators still take the walk's model.
+  already; the per-type generators still take the walk's model. What they read is a few queries,
+  each at the grain the generated code is organised by, found by cataloguing the sakila example's
+  977 generated files: a table-bound type's projection is one method reused wherever the type is
+  reached, `Film.$project` at 94 call sites with nothing in its signature naming the usage; a
+  field's datafetcher is one method per field, and how a type is reached is written once per field
+  that reaches it; and nearly every statement is one shape, a type's projection selected for a list
+  of keys joined as `VALUES(idx, key)` and scattered back by `idx`.
+  * **The type grain: a table-bound type's projection.** One row per type and field that is not a
+    producer, saying how the field projects: a column; a node id from key columns; a scalar or an
+    object reached through the chain, correlated, and a multiset for a list; a `@lookupKey` list; an
+    inline routine; a pivot; an external field; or a nested type without a table of its own,
+    projected against its owner's table. Such a type is still one class named for it, its
+    `$project` overloaded once per table it is projected against, so the grain stays the type and a
+    row names the table as well; for a table-bound type that table is its own. Beside them, the key
+    columns each producer field below the type needs, which is the producer's departure read from
+    the parent's side.
+  * **The field grain: a field's datafetcher.** Whether it executes or reads. A reading field names
+    the column, the computed value or the property it reads. A producer names its kind, whether it
+    mutates, the type it lands on and the cardinality, its departure, and the conditions, ordering
+    and paging its arguments give.
+  * **The keyed selection: a type's projection for a list of keys.** The one shape behind
+    `@splitQuery`, `@lookupKey`, `node` and `nodes`, the re-read after a service or a write, a
+    payload's data field and the second stage of a polymorphic query. What differs is the key
+    source: the parent row's columns, the arguments, decoded node ids, the records a service
+    returned, the keys a write returned, a payload's carried record through an accessor or
+    `@sourceRow`, or the first stage's keys; which is the departure.
+  * **How a field projects is stated** `blocked`, on the producers, a projection field being any
+    field that is not one.
+  * **Flip: the generator reads the three queries** `blocked`, on the producers, the departure, how a
+    field projects, and key forwarding in the node-id branch, whose readers the catalogue found: a
+    `@nodeId` through a foreign key reads the key column without a join, a batched single object
+    forwards the parent's foreign key, and a path of several hops forwards the first hop's. A nested
+    type without a table becomes one class with an overload per owning table, where the generator
+    emits one class per owner today: `CustomerOccupantLocation` and `StoreOccupantLocation` are one
+    body for `OccupantLocation`.
+  * **Subtract** `blocked`, on the flip. Each relation the new ones replace goes once its readers
+    read the replacement:
+    * `intent_field_separate_fetch`, replaced by `graphitron_producer`, read by the editor's
+      `ClaimFacts` and `InlayFacts`;
+    * the `from_` columns of `graphitron_field_table`, replaced by the departure, read by the chain;
+    * whatever the generator's own classification stops being asked.
+
+    The producer-method views, `intent_field_producer_method` and its neighbours, are the reference
+    branch's to retire, through `graphitron_code_reference`, which the service producer joins to.
 * **The walk reads the emitted schema** `open`. It is handed what capture derived from the store,
   every minted type and application in it, where it is handed the written composition and mints a
   second time on top: `KeyNodeSynthesiser` keys the node types and `ConnectionPromoter`'s directive
@@ -1010,11 +1109,12 @@ fields one target, the interface's.
   Every shape the manual refuses is a defect row rather than an absence, and a nested input field
   under an interface or union field is one of them today. Capture records such a schema and
   validation refuses it; it never fails capture, which is what the reproduction in the audit did.
-* **A bare node id with `@reference` takes the type its path lands on** `blocked`, on the chain
-  reaching the target type. Where no table-bound type answers, which is an output field carrying
-  `@reference` or an argument on a field whose return binds no table, the candidate is the one node
-  type over the table the path lands on, a path landing on a table and not a type. The landing is
-  read off the chain rather than resolved here, which would be a second model of a route beside it.
+* **A bare node id with `@reference` takes the type its path lands on** `blocked`, on both walks
+  being anchored, in the chain branch. Where no table-bound type answers, which is an output field
+  carrying `@reference` or an argument on a field whose return binds no table, the candidate is the
+  one node type over the table the path lands on, a path landing on a table and not a type. The
+  landing is read off the chain rather than resolved here, which would be a second model of a route
+  beside it.
   Where a type does answer, a written name or a bound return, the target is authoritative and the
   chain is checked against it: landing elsewhere is a route defect, not a different target.
 * **A node id under an interface or a union, everywhere** `open`, not first. An argument or an input
@@ -1036,11 +1136,12 @@ fields one target, the interface's.
   node explores.
 * **An input field's use site** `open`. A use is a definition joined to its consumer, and the model
   holds it today only as an `intent_` view, so it is modelled here rather than read.
-* **The chain reaches the target type** `blocked`, on the entry-grain readings and the argument and
-  input-field grains in the chain branch. A `@nodeId` field's target in `graphitron_field_table` is
-  its node type rather than its `ID` return, which is the field's real target once `@nodeId` has
-  made it an ID, so the chain walks it, keeps its losing readings and reports its route defects like
-  any field's. A multitable bare `@nodeId` is one chain per candidate, to that member's own type.
+* **The chain reaches the target type** `blocked`, on both walks being anchored and the argument and
+  input-field grains in the chain branch. A `@nodeId` field returns `ID`, so its chain is the
+  forward walk from its departure. Where its target type is written or bound, the arrival is checked
+  against it, keeps its losing readings and reports its route defects like any field's; where it is
+  bare, the arrival is what the candidate is read from. A multitable bare `@nodeId` is one chain per
+  candidate, to that member's own type.
 * **Key forwarding over the chain** `blocked`, on the chain reaching the target. One row per key
   column of the target and position along the winning chain where a departure column already
   carries it, so encoding reads the key from the earliest table that has it and decoding compares
