@@ -528,10 +528,17 @@ CREATE TABLE graphql_type_declaration (
   FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name) ON DELETE CASCADE,
   CHECK (kind IN ('OBJECT', 'INTERFACE', 'UNION', 'ENUM', 'INPUT_OBJECT', 'SCALAR'))
 );
+-- The position without the type name, which is what GraphQLAstCapture.directiveApplications
+-- holds when it reads the declaration an application was written inside. The type name leads the
+-- primary key, so without this every such lookup scans every declaration of the graph. An index
+-- and not a unique key, though no two declarations start at one place: the position is not yet
+-- this relation's identity, and stating it changes what the writer's upsert matches.
+CREATE INDEX graphql_type_declaration_position_ix
+  ON graphql_type_declaration (graph_name, source_name, source_line, source_column);
 COMMENT ON TABLE graphql_type_declaration IS 'A declaration site of a type: the base definition or one extension. All five extension kinds are live today, so a type''s effective shape may be assembled from several files; this relation records who contributed what and indexes the incremental-refresh unit ("which types does this file touch"). The built-in scalars are declared in the bundled specification.graphqls, which sorts after every file, so an author''s declaration of one is the base and an authored extension merges after it.';
 COMMENT ON COLUMN graphql_type_declaration.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_type_declaration.type_name IS 'the type this site declares or extends';
-COMMENT ON COLUMN graphql_type_declaration.source_name IS 'the site''s file; a site is a syntactic occurrence, so its location is its identity';
+COMMENT ON COLUMN graphql_type_declaration.source_name IS 'the site''s file; a site is a syntactic occurrence, so its location is its identity, though the key leads with the type name';
 COMMENT ON COLUMN graphql_type_declaration.source_line IS 'line of the site, 1-based';
 COMMENT ON COLUMN graphql_type_declaration.source_column IS 'in the key because a line does not identify a site: two extensions of one type can share a line in minified SDL';
 COMMENT ON COLUMN graphql_type_declaration.merge_ordinal IS 'capture-assigned position in merge order: the base definition, then extensions in document order; on a base-less chain the first extension holds 0. Dense per type (a gate), and the order behind every element ordinal';
@@ -1715,9 +1722,9 @@ CREATE TABLE graphql_directive_application (
   coordinate     VARCHAR NOT NULL,
   directive_name VARCHAR NOT NULL,
   ordinal        INT     NOT NULL,
-  source_name    VARCHAR,
-  source_line    INT,
-  source_column  INT,
+  source_name    VARCHAR NOT NULL,
+  source_line    INT     NOT NULL,
+  source_column  INT     NOT NULL,
   touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate, directive_name, ordinal),
   FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate)
@@ -1728,15 +1735,14 @@ COMMENT ON COLUMN graphql_directive_application.graph_name IS 'the owning graph'
 COMMENT ON COLUMN graphql_directive_application.coordinate IS 'the schema coordinate the application was written on, in the specification''s grammar: a type is its own name, a field or an enum value or an input field is the parent''s name and a dot, an argument goes one deeper, and the schema block is $schema. A reference into graphql_element, which is a table and not a union so this foreign key can name it, and the whole reason five relations are one: the coordinate is what every site has and the decomposed key is what none of them shares';
 COMMENT ON COLUMN graphql_directive_application.directive_name IS 'the applied directive name, without the leading @';
 COMMENT ON COLUMN graphql_directive_application.ordinal IS 'the repeat, numbered from zero within one coordinate and one directive name, in the order the declarations carrying them merge. A directive is not repeatable unless its definition says so, so on almost every application this is zero and the column exists for the ones that are';
-COMMENT ON COLUMN graphql_directive_application.source_name IS 'the file the application was written in, the first of the three columns naming its position. Nullable because a synthesised application has no position to name, an injector building a directive with no source location being a writer this relation admits rather than refuses';
+COMMENT ON COLUMN graphql_directive_application.source_name IS 'the file the application was written in, the first of the three columns naming the position of its at sign. NOT NULL because this relation''s one writer reads the entries, and every entry was written somewhere';
 COMMENT ON COLUMN graphql_directive_application.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_directive_application.source_column IS 'source column, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_directive_application.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total. The sweep is what collects an application an author deleted from a coordinate that still stands; a coordinate the author deleted takes its applications with it through the cascade above';
 -- The position of the at sign, which is what GraphQLAstCapture.directiveApplicationArguments joins
 -- an argument entry to its application by. The position is no prefix of the key, so without this
 -- every entry scans every application. touched_at stays out: it is a residual on the rows the
--- seek finds, not a dimension of it. The columns are nullable for a synthesised application,
--- which an index admits.
+-- seek finds, not a dimension of it.
 CREATE INDEX graphql_directive_application_position_ix
   ON graphql_directive_application (graph_name, source_name, source_line, source_column);
 
@@ -4662,9 +4668,9 @@ CREATE TABLE graphitron_directive_application (
   FOREIGN KEY (graph_name, coordinate) REFERENCES graphitron_element (graph_name, coordinate)
     ON DELETE CASCADE,
   CHECK (origin IN ('AUTHORED', 'CONFIGURED', 'MINTED')),
-  -- One direction only: an application nobody wrote has no position. An authored one usually has,
-  -- but graphql_directive_application admits a positionless writer, and capture must not refuse it.
-  CHECK (origin = 'AUTHORED' OR source_name IS NULL)
+  -- Both ways: an application nobody wrote has no position, and an authored one is read from
+  -- graphql_directive_application, where every application has one.
+  CHECK ((origin = 'AUTHORED') = (source_name IS NOT NULL))
 );
 COMMENT ON TABLE graphitron_directive_application IS 'Every directive application the generator emits, the author''s and the ones macro expansion minted, at the coordinate it is applied to: one row per application. For example the @key(fields: "id") federation synthesises for a node type sits here beside the @table its author wrote on it, at the same grain and answering the same questions.';
 COMMENT ON COLUMN graphitron_directive_application.graph_name IS 'the owning graph''s partition, carried from whichever set supplied the row';
