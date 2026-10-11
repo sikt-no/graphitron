@@ -24,13 +24,11 @@ import static no.sikt.graphitron.model.Tables.JAVA_CLASS_DECLARATION;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Exercises the dev goal's {@code .class}-watcher → catalog-rebuilder →
- * workspace-swap chain end-to-end (minus the rewrite-generator step,
- * which {@code CatalogBuilderTest} covers in isolation). Validates that
- * a single {@code .class} write triggers the suffix-filtered watcher
+ * Exercises the dev goal's {@code .class}-watcher → round → workspace chain end-to-end, minus the
+ * generator pass. Validates that a single {@code .class} write triggers the suffix-filtered watcher
  * and that the resulting round reaches the {@link Workspace}.
  */
-class CatalogRefreshTest {
+class ClasspathChangeRoundTest {
 
     private static final long DEBOUNCE_MS = 100;
 

@@ -32,12 +32,11 @@ import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
  *
  * <ul>
  *   <li><b>Agreement.</b> On a clean schema the pass's reporting half equals {@code buildOutput()}'s
- *       component by component (catalog, report errors, warnings) and its emitted half names the
+ *       component by component (report errors, warnings) and its emitted half names the
  *       same units {@code generate()} emits. This is the gate that fails if the merge drops a
  *       product or computes one differently on the two paths.</li>
  *   <li><b>The rejected round.</b> A validation error is a value on the report rather than a throw,
- *       the catalog and the diagnostics lists are produced anyway (so the editor can autocomplete
- *       its way out of the typo), and nothing is emitted at all.</li>
+ *       the diagnostics lists are produced anyway, and nothing is emitted at all.</li>
  *   <li><b>The invariant.</b> A generation is present exactly when the report carries no errors,
  *       asserted on both fixtures so a future arm returning a generation beside errors fails
  *       here.</li>
@@ -81,7 +80,7 @@ class DevPassProjectionPipelineTest {
     /**
      * A schema the validator rejects, over a type that otherwise classifies: the {@code @reference}
      * names no foreign key in the catalog, so {@code Film.languageName} is unclassified. Everything
-     * else about the document is fine, which is what makes the catalog worth producing.
+     * else about the document is fine, which is what makes its diagnostics worth producing.
      */
     private static final String REJECTED = """
         type Film @table(name: "film") {
@@ -98,9 +97,6 @@ class DevPassProjectionPipelineTest {
             var reported = new GraphQLRewriteGenerator(ctx, store).buildOutput();
             var pass = new GraphQLRewriteGenerator(ctx, store).runPass();
 
-            assertThat(pass.output().catalog())
-                .as("the completion catalog the pass projects is the one buildOutput() projects")
-                .isEqualTo(reported.catalog());
             assertThat(pass.output().report().errors())
                 .as("no errors on either path, which is what makes the fixture the clean one")
                 .isEqualTo(reported.report().errors());
@@ -149,15 +145,6 @@ class DevPassProjectionPipelineTest {
             assertThat(pass.generation())
                 .as("a rejected schema emits nothing, so there is no generation to compile")
                 .isEmpty();
-
-            // The editor still gets a catalog: a half-edited buffer should be able to autocomplete its
-            // way out of the error that stopped the build.
-            assertThat(pass.output().catalog().tables())
-                .as("the rejected round still projects the jOOQ tables the editor completes from")
-                .isNotEmpty();
-            assertThat(pass.output().catalog().types())
-                .as("and the scalars beside them")
-                .isNotEmpty();
 
             // Nothing half-emitted: the rejection skips the plan, the renderers, the writer and the
             // orphan sweep as one, rather than running some of them.

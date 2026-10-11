@@ -1,12 +1,18 @@
 package no.sikt.graphitron.rewrite.catalog;
 
-import no.sikt.graphitron.model.classpath.CompletionData;
+import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.model.jooq.TableRef;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * What the walk bound a {@link no.sikt.graphitron.rewrite.model.GraphitronType} to, in the shape
- * the backing-class transcription writes into the store's walk shadow. Produced by
- * {@link CatalogBuilder#projectTypesByName}, which the language server read through the snapshot
- * until every surface asking it moved to the store.
+ * the backing-class transcription writes into the store's walk shadow, projected by
+ * {@link #byTypeName}. The language server read it through a snapshot until every surface asking it
+ * moved to the store; only the backing differential reads it now, comparing the walk's answer with
+ * the store's.
  *
  * <p>Five permits, one per distinguishable downstream behaviour. Each names what backs the type and
  * nothing more: what a backing then offers a member name is a fact about a class or a table, read
@@ -39,9 +45,7 @@ public sealed interface TypeBackingShape
     /**
      * Type backed by a jOOQ {@code Record<?>} subclass. Sealed over whether
      * the classifier carries a {@link no.sikt.graphitron.model.jooq.TableRef}
-     * for the record: {@link WithTable} routes column-set lookup through
-     * {@link CompletionData#getTable}; {@link Standalone} declines (no
-     * actionable column metadata available).
+     * for the record: {@link WithTable} names the table, {@link Standalone} has none.
      */
     sealed interface JooqRecordBacking extends TypeBackingShape
         permits JooqRecordBacking.WithTable, JooqRecordBacking.Standalone {
@@ -65,8 +69,7 @@ public sealed interface TypeBackingShape
 
     /**
      * Type bound to a jOOQ table: {@code @table}-bearing objects and interfaces,
-     * {@code @node} types, and table-backed input objects. Column lookup goes
-     * through {@link CompletionData#getTable} keyed by {@code tableName}.
+     * {@code @node} types, and table-backed input objects, named by the jOOQ table.
      */
     record TableBacking(String tableName) implements TypeBackingShape {}
 
@@ -106,5 +109,59 @@ public sealed interface TypeBackingShape
          * available yet).
          */
         record UnclassifiedInterface() implements NoBacking {}
+    }
+
+    /**
+     * Each type of the walk's schema projected into its shape. The dispatch is exhaustive on the
+     * {@code GraphitronType} sealed permits, so a new variant is a compile error here.
+     */
+    static Map<String, TypeBackingShape> byTypeName(GraphitronSchema schema) {
+        var out = new LinkedHashMap<String, TypeBackingShape>();
+        for (var entry : schema.types().entrySet()) {
+            out.put(entry.getKey(), projectType(entry.getValue()));
+        }
+        return Map.copyOf(out);
+    }
+
+    private static TypeBackingShape projectType(GraphitronType type) {
+        return switch (type) {
+            case GraphitronType.JavaRecordType t -> new TypeBackingShape.RecordBacking(t.fqClassName());
+            case GraphitronType.JavaRecordInputType t -> new TypeBackingShape.RecordBacking(t.fqClassName());
+            case GraphitronType.PojoResultType.Backed t -> new TypeBackingShape.PojoBacking(t.fqClassName());
+            case GraphitronType.PojoInputType t -> t.fqClassName() == null
+                ? new TypeBackingShape.NoBacking.UnbackedResult()
+                : new TypeBackingShape.PojoBacking(t.fqClassName());
+            case GraphitronType.JooqRecordType t -> new TypeBackingShape.JooqRecordBacking.Standalone(t.fqClassName());
+            case GraphitronType.JooqRecordInputType t -> new TypeBackingShape.JooqRecordBacking.Standalone(t.fqClassName());
+            case GraphitronType.JooqTableRecordType t -> jooqRecordWithTable(t.fqClassName(), t.table());
+            case GraphitronType.JooqTableRecordInputType t -> jooqRecordWithTable(t.fqClassName(), t.table());
+            case GraphitronType.TableType t -> new TypeBackingShape.TableBacking(tableNameOf(t.table()));
+            case GraphitronType.NodeType t -> new TypeBackingShape.TableBacking(tableNameOf(t.table()));
+            case GraphitronType.TableInterfaceType t -> new TypeBackingShape.TableBacking(tableNameOf(t.table()));
+            case GraphitronType.RootType ignored -> new TypeBackingShape.NoBacking.Root();
+            case GraphitronType.InterfaceType ignored -> new TypeBackingShape.NoBacking.UnclassifiedInterface();
+            case GraphitronType.UnionType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
+            case GraphitronType.ErrorType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
+            case GraphitronType.EnumType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
+            case GraphitronType.ScalarType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
+            case GraphitronType.ConnectionType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
+            case GraphitronType.EdgeType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
+            case GraphitronType.PageInfoType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
+            case GraphitronType.FacetsType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
+            case GraphitronType.FacetValueType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
+            case GraphitronType.NestingType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
+            case GraphitronType.UnclassifiedType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
+        };
+    }
+
+    private static String tableNameOf(TableRef ref) {
+        return ref == null ? null : ref.tableName();
+    }
+
+    private static TypeBackingShape jooqRecordWithTable(String fqClassName, TableRef table) {
+        String tableName = tableNameOf(table);
+        return tableName == null
+            ? new TypeBackingShape.JooqRecordBacking.Standalone(fqClassName)
+            : new TypeBackingShape.JooqRecordBacking.WithTable(fqClassName, tableName);
     }
 }

@@ -44,9 +44,7 @@ import java.util.Set;
  *                       hover. Populated from every reactor project's
  *                       {@code MavenProject.getCompileSourceRoots()}
  *                       when the mojo runs inside Maven; empty for unit-tier callers and
- *                       for any goal that builds a catalog without a real project, in
- *                       which case source positions stay
- *                       {@link no.sikt.graphitron.model.classpath.CompletionData.SourceLocation#UNKNOWN}.
+ *                       for any goal run without a real project.
  * @param tenantColumn   name of the database column that carries the tenant id in a
  *                       database-per-tenant deployment, matched against catalog columns the way
  *                       column lookups already match (Java name first, then SQL name, both

@@ -18,8 +18,6 @@ import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.test.AgreementCorpus;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
-import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
-import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ConnectionSynthesis;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -1610,10 +1608,6 @@ class FactCaptureAgreementTest {
     }
 
     /** One type reference as a comparable line; the root path renders as {@code @=}. */
-    private static String render(String owner, CompletionData.TypeRef ref) {
-        return render(owner, ref.path(), ref.referencedClass(), ref.variance());
-    }
-
     private static String render(String owner, String path, String referencedClass, String variance) {
         return owner + " @" + path + "= " + variance + " " + referencedClass;
     }
@@ -1650,13 +1644,11 @@ class FactCaptureAgreementTest {
     @DisplayName("the class census is partitioned by the classpath entry it came from")
     void classCensusIsPartitionedBySource(@TempDir Path tmp) {
         var ctx = testContext();
-        List<CompletionData.ExternalReference> extensions = CatalogBuilder.buildExternalReferences(ctx);
         try (var store = GraphitronModelStore.open()) {
             captureClasspath(store, ctx, graph(tmp), SubjectConfig.none());
 
-            var expected = new LinkedHashSet<>(extensions.stream()
-                .map(CompletionData.ExternalReference::sourceName).toList());
-            assertThat(expected).as("the scan read something, so this pins something").isNotEmpty();
+            var expected = new LinkedHashSet<>(declaredEntries(ctx));
+            assertThat(expected).as("the classpath names an entry, so this pins something").isNotEmpty();
 
             var captured = new LinkedHashSet<>(store.dsl()
                 .select(STORE_SOURCE.SOURCE_NAME)
@@ -1671,7 +1663,7 @@ class FactCaptureAgreementTest {
                 .where(STORE_SOURCE.SOURCE_KIND.eq("JAR"))
                 .and(STORE_SOURCE.STAMP.isNull())
                 .fetch(STORE_SOURCE.SOURCE_NAME);
-            assertThat(unstamped).as("a jar the scan read is a jar it can hash").isEmpty();
+            assertThat(unstamped).as("a jar the capture read is a jar it can hash").isEmpty();
 
             var unstampedDirectories = store.dsl().fetchCount(STORE_SOURCE,
                 STORE_SOURCE.SOURCE_KIND.eq("DIRECTORY").and(STORE_SOURCE.STAMP.isNull()));
@@ -1751,7 +1743,7 @@ class FactCaptureAgreementTest {
     /**
      * The membership relation's equality anchor: the run's read-set reduced two ways, once by
      * capture's own notes and once by re-enumerating the run's inputs here (the SDL registry's
-     * source census, the catalog's schema packages, the scan's entry names). Two graphs in one
+     * source census, the catalog's schema packages, the classpath's declared entries). Two graphs in one
      * store, one catalog-bearing and one SDL-only, so "this graph's sources" is distinguishable
      * from "sources anyone read": the SDL-only graph must not inherit the sibling's catalog
      * membership, and capturing it must leave the sibling's rows standing.
@@ -1761,21 +1753,18 @@ class FactCaptureAgreementTest {
     void graphSourceMembershipEqualsTheRunsReadSet(@TempDir Path tmp) throws java.io.IOException {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        List<CompletionData.ExternalReference> extensions = CatalogBuilder.buildExternalReferences(ctx);
         Path aDir = java.nio.file.Files.createDirectories(tmp.resolve("a"));
         Path bDir = java.nio.file.Files.createDirectories(tmp.resolve("b"));
         try (var store = GraphitronModelStore.open()) {
             var aRegistry = CapturedStore.registryOf(aDir, AgreementCorpus.SDL);
             capture(store, new GraphIdentity("a", aDir), CapturedStore.corpusOf(aDir),
-                CatalogBuilder.censusRoots(ctx), jooq);
+                classpathOf(ctx), jooq);
 
             var expectedA = new LinkedHashSet<>(sdlSourceNames(aRegistry));
             for (var entry : jooq.allTableEntries()) {
                 expectedA.add(entry.table().getSchema().getClass().getPackageName());
             }
-            for (var reference : extensions) {
-                expectedA.add(reference.sourceName() == null ? "" : reference.sourceName());
-            }
+            expectedA.addAll(declaredEntries(ctx));
             assertThat(membership(store, "a")).isEqualTo(expectedA);
 
             var bRegistry = CapturedStore.registryOf(bDir, "type Query { ping: String }");
@@ -1795,27 +1784,41 @@ class FactCaptureAgreementTest {
      *
      * <p>The code_ family is the classpath gatherer's, and the classpath gatherer runs in
      * ModelCapture, so a fixture wanting those rows runs that pass rather than expecting the walk
-     * to have written them. The roots are the ones the census beside it was read from, two
-     * different answers to what the classpath is being the one way to make the comparison
-     * meaningless.
+     * to have written them. The roots are {@link #classpathOf}, the same answer the expectations
+     * are read from.
      *
      * <p>The corpus is the caller's, and matters: the pass reads the SDL corpus too, and one handed
      * a narrower corpus than the walk was handed would drop the membership the walk had recorded.
      */
     private static void captureClasspath(GraphitronModelStore store, RunContext ctx,
                                          GraphIdentity graph, SubjectConfig config) {
-        capture(store, graph, config, CatalogBuilder.censusRoots(ctx), null);
+        capture(store, graph, config, classpathOf(ctx), null);
+    }
+
+    /** The classpath a fixture captures, the module's own output where the context names none. */
+    private static List<ClasspathEntry> classpathOf(RunContext ctx) {
+        return ctx.classpathRoots().isEmpty()
+            ? List.of(ClasspathEntry.project(ctx.basedir().resolve("target/classes")))
+            : ctx.classpathRoots();
+    }
+
+    /** The entries a capture of {@link #classpathOf} reads, which is every one it did not inherit. */
+    private static List<String> declaredEntries(RunContext ctx) {
+        return classpathOf(ctx).stream()
+            .filter(entry -> entry.origin() != ClasspathEntry.Origin.TRANSITIVE)
+            .filter(entry -> java.nio.file.Files.exists(entry.path()))
+            .map(entry -> entry.path().toString())
+            .toList();
     }
 
     /**
      * One capture of {@code graph}, by the pass that owns it.
      *
-     * <p>The roots are the ones the census beside it was read from, two answers to what the
-     * classpath is being the one way to make a comparison of the two meaningless.
+     * <p>The roots are {@link #classpathOf}, the same answer the expectations are read from.
      */
     private static void capture(GraphitronModelStore store, GraphIdentity graph,
                                 JooqCatalog jooq) {
-        capture(store, graph, SubjectConfig.none(), CatalogBuilder.censusRoots(testContext()), jooq);
+        capture(store, graph, SubjectConfig.none(), classpathOf(testContext()), jooq);
     }
 
     /**

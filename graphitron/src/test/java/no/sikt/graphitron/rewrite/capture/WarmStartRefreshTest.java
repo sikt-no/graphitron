@@ -8,7 +8,6 @@ import no.sikt.graphitron.model.derive.DerivationStratum;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.grammar.NodeDeclaration;
-import no.sikt.graphitron.model.classpath.ClasspathCensus;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.schema.SdlVerdicts;
@@ -298,7 +297,7 @@ class WarmStartRefreshTest {
      * round, and the second is the half a later reader compares against its own watch coverage to
      * decide whether it may skip re-reading at all.
      *
-     * <p>Asserted as an equality against the census's own instant rather than as "not null",
+     * <p>Asserted as an equality against the round's own instant rather than as "not null",
      * because the failure this guards is a value that is present and late. A {@code read_at} taken
      * where the row is written would date the source after the load that read it, swallowing every
      * change that landed in between and reading as current for a partition that is not.
@@ -310,13 +309,13 @@ class WarmStartRefreshTest {
         Path directory = tmp.resolve("graphitron-model");
         var classpath =
             List.of(new ClasspathEntry(jar, ClasspathEntry.Origin.DECLARED, "com.example:library"));
-        var reading = new ClasspathCensus().read(classpath, DEFAULT_JOOQ_PACKAGE);
+        var readAt = java.time.LocalDateTime.now().minusMinutes(1).withNano(0);
 
         try (var store = GraphitronModelStore.openAt(directory)) {
-            // The pass that owns the classpath, on the instant the census began reading: what it
+            // The pass that owns the classpath, on an instant the round began before it: what it
             // records about an entry is what these assertions are about.
             ModelCapture.capture(store.dsl(), graph(tmp), SubjectConfig.none(), classpath, null,
-                reading.readAt());
+                readAt);
         }
 
         try (var store = GraphitronModelStore.openAt(directory)) {
@@ -325,13 +324,13 @@ class WarmStartRefreshTest {
                 .from(STORE_SOURCE)
                 .where(STORE_SOURCE.SOURCE_NAME.eq(jar.toString()))
                 .fetchOne();
-            assertThat(dated).as("the jar the census read has a source row").isNotNull();
+            assertThat(dated).as("the jar the reading opened has a source row").isNotNull();
             assertThat(dated.value2())
                 .as("stamped, which is the half that says what the bytes were")
-                .isEqualTo(reading.stamps().get(jar.toString()));
+                .isNotNull();
             assertThat(dated.value3())
-                .as("and dated with the census's own instant, taken before it opened the entry")
-                .isEqualTo(reading.readAt());
+                .as("and dated with the round's own instant, not the moment the row was written")
+                .isEqualTo(readAt);
         }
     }
 

@@ -12,11 +12,8 @@ import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.rewrite.ValidationReport;
-import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
-import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -41,10 +38,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * containing one SDL type per {@link TypeBackingShape} arm, classified
  * through the real
  * {@link GraphitronSchemaBuilder}, with real backing classes
- * ({@link R157FilmRecord}, {@link R157FilmPojo}) discoverable on the test
- * classpath through {@link no.sikt.graphitron.model.classpath.ClasspathScanner}.
+ * ({@link R157FilmRecord}, {@link R157FilmPojo}) on the test classpath.
  *
- * <p>Drives {@link CatalogBuilder#projectTypesByName} for real over that classifier's output,
+ * <p>Drives {@link TypeBackingShape#byTypeName} for real over that classifier's output,
  * then exercises {@link FieldCompletions}, {@link Diagnostics}, and {@link Hovers} against a
  * store captured from the same scan. This is the test most likely to catch silent classifier
  * widening: if a future change to the classifier produced a {@code PojoResultType.Backed} where
@@ -149,28 +145,19 @@ class R157PipelineTest {
         String sdl,
         TypeDefinitionRegistry registry,
         no.sikt.graphitron.rewrite.GraphitronSchema schema,
-        CompletionData catalog,
         java.util.Map<String, TypeBackingShape> backing
     ) {}
 
     /**
      * Loads {@code directives.graphqls} + the {@code Node} interface, parses
-     * the combined registry, runs the real classifier, runs the real catalog
-     * builder over the LSP module's {@code target/test-classes}, and projects
-     * the walk's backing resolution.
+     * the combined registry, runs the real classifier over the LSP module's
+     * {@code target/test-classes}, and projects the walk's backing resolution.
      */
     private static Artefacts build(String schemaText) {
         var registry = parse(prelude(schemaText) + schemaText);
         var ctx = testContextWithTestClasses();
         var schema = GraphitronSchemaBuilder.build(registry, ctx);
-        var jooq = new JooqCatalog(JOOQ_PACKAGE);
-        // GraphitronSchemaBuilder.buildBundle would have given us the assembled
-        // GraphQLSchema; rebuilding it here keeps the test focused on what the
-        // walk bound each type to rather than on the assembled-schema construction.
-        var bundle = GraphitronSchemaBuilder.buildBundle(registry, ctx);
-        var catalog = CatalogBuilder.build(jooq, bundle.assembled(), ctx);
-        return new Artefacts(schemaText, registry, schema, catalog,
-            CatalogBuilder.projectTypesByName(schema));
+        return new Artefacts(schemaText, registry, schema, TypeBackingShape.byTypeName(schema));
     }
 
     private static String prelude(String schemaText) {
@@ -199,10 +186,8 @@ class R157PipelineTest {
     }
 
     /**
-     * Test context with the LSP module's {@code target/test-classes} root
-     * exposed to {@link CatalogBuilder#build}'s classpath scan, so the
-     * fixtures ({@link R157FilmRecord}, {@link R157FilmPojo}) surface in
-     * {@link CompletionData#externalReferences()}.
+     * Test context with the LSP module's {@code target/test-classes} root on its classpath, so the
+     * fixtures ({@link R157FilmRecord}, {@link R157FilmPojo}) are classes the walk can bind.
      */
     private static RunContext testContextWithTestClasses() {
         Path testClasses = testClassesRoot();

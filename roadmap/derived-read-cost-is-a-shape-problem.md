@@ -736,12 +736,13 @@ reads nothing off the classpath that capture has already read, and builds no sch
     nothing. The support-type rule is structural and needs no classification: a support type is
     published only in the published tier, `SortDirection` today, and only where an element of a
     type outside the support set references it; a strictly internal one never is.
-    * **`CompletionData` dissolves** `open`, first: `CatalogBuilder` reads `@node` off the emitted
-      schema, the one reader of a graphitron directive there, for a catalog nothing reads. The
-      editor reads the store, and the dev loop only logs the catalog's counts. With it go
-      `CatalogBuilder`, the generator's classpath census, read only to build the catalog, and
-      `ClasspathCensus` and `ClasspathScanner` with it; capture reads the classpath into the `code_`
-      family on its own. R1008, a flaky report from that census, dissolves with it.
+    * **`CompletionData` dissolves** `done`. `CatalogBuilder` read `@node` off the emitted schema,
+      the one reader of a graphitron directive there, for a catalog nothing read: the editor reads
+      the store, and the dev loop only logged the catalog's counts. With it went `CatalogBuilder`,
+      the generator's classpath census, read only to build the catalog, and `ClasspathCensus` and
+      `ClasspathScanner` with it; capture reads the classpath into the `code_` family on its own.
+      R1008, a flaky report from that census, dissolved with it. The backing projection the shadow
+      tests read survives as `TypeBackingShape.byTypeName`.
   * **The print form follows the schema's own link** `open`. `SchemaSdlEmitter` prints the
     federation service form on the walk's `federationLink`; the emitted schema carries the
     federation `@link` itself, the configured one included while the composition synthesises it,
@@ -1436,6 +1437,45 @@ conversion frees one.
   remainder: the fixture goes. The subtractive commit is what makes this branch done, and until it
   lands the root is not done either.
 
+### The agreement test dissolves, each case to the corpus it pins
+
+`FactCaptureAgreementTest` was the shadow period's honesty check, capture beside a walk nobody read
+the store for. Its registration gate already left for `graphitron-model`. What stays is four kinds
+of case in one file: nine that compare the store against the walk, and the rest pinning capture
+against its own corpus, filed here because the walk's fixtures were.
+
+* **The walk's comparisons go** `open`. Nine cases take `GraphitronSchemaBuilder.build` or
+  `AttributedRegistry` as the expected value: the type census, federation keys, connection
+  provenance, source kind against the arrival fold, directive-driven carriers, scalar payloads,
+  ordered child rows, code references and enum literals. Deleted with no accounting, on R740's
+  terms: a difference from the walk is a walk bug or an unmoved consumer, never a debt. They are
+  also readers of the walk, so "the generator builds no schema" loses nine. First check: no
+  expansion fact is pinned by one of them alone, the emitted-family case covering the union.
+* **The catalog cases move to the jOOQ capture's test** `open`. Thirteen cases pin `sql_` against
+  jOOQ's own API: tables and columns, kinds, ordinals, Java types, `Keys` constants, constraints,
+  foreign-key pairing, node metadata, routines. That is capture's specification, and
+  `JooqFactCaptureTest` in `graphitron-model` already reaches both sakila catalogs; overlap
+  dedupes there.
+* **The source and membership cases move to their gatherers' tests** `open`. The stamp, the
+  partitions by classpath entry and by schema package, schema-file sources and per-graph
+  membership. The per-coordinate directive application counts against the SDL go to the
+  `graphql_` capture's tests on the same terms.
+* **The configuration cases move beside the configuration gatherer** `open`. The recipe
+  round-trips and the configuration family against the run's resolved configuration.
+* **The emitted family's union moves beside `EmittedRegistry`** `open`, with the federated
+  schema that records no problem.
+* **The oracle writers' lifecycle cases stay with their writers** `open`. The javac partition and
+  the loaded diagnostics are the generator's writes, so they stay in `graphitron`, in a test named
+  for what it pins.
+* **A registration says what pins a relation, not what it shadows** `open`. About sixty `graphql_`
+  and `graphitron_` relations are registered as the store containing `GraphitronSchema`, a claim
+  with nothing behind it once the comparisons go. The arms become what an anchor stands on:
+  corpus, derivation, oracle writer. A relation the rename leaves with no anchor is a finding,
+  not a silent loss. This is R740's gate half.
+* **The fact model cites what pins it** `blocked`, on the registration. `fact-model.adoc` names the
+  class six times, and already credits it with `everyRelationIsRegistered`, which moved.
+* **`FactCaptureAgreementTest` is gone** `blocked`, on all above.
+
 ## Tests
 
 The obligation this section carried is discharged and not by being measured. It asked the Done gate
@@ -1549,7 +1589,13 @@ census parameter on `CapturedStore`'s arms; `TestSchemaHelper.classpathCensus` (
 `SeededStore.seedScalarConstant` and `seedExternalFieldMethod`. `TagApplier` and `TagApplierTest`, the configured tags being
 `graphitron_configured_tag`'s; `DescriptionNoteApplier` and `DescriptionNoteApplierTest`, the notes
 minting the part relations' descriptions; `LoadingRewrites.Outcome.Applied.synthesisedLink` and
-`GraphQLAssemblyCapture.writeSynthesisedLink`; `EmittedRegistry.applyMintedDirectives` (now `applyUnwritten`). The specification's built-ins
+`GraphQLAssemblyCapture.writeSynthesisedLink`; `EmittedRegistry.applyMintedDirectives` (now `applyUnwritten`).
+`CompletionData`, `CatalogBuilder` (`projectTypesByName` now `TypeBackingShape.byTypeName`),
+`ClasspathCensus`, `ClasspathScanner`, `GraphQLRewriteGenerator.BuildOutput.catalog`,
+`DevMojo.rebuildCatalog` (now `onClasspathChange`) and `sessionCensus`, and the tests
+`CatalogBuilderTest`, `CatalogBuilderSourceTest`, `ClasspathCensusTest`, `ClasspathScannerTest`,
+`JarResidentClassCensusTest` and the plugin's `FixtureCatalogTest`; `CatalogRefreshTest` is now
+`ClasspathChangeRoundTest`. The specification's built-ins
 as constants beside the entries:
 `GraphQLAstCapture.SPECIFIED_SCALARS`, `SPECIFIED_DIRECTIVES` with its three column fields and
 `specifiedDirectivesUndeclared`, `SdlFactCapture.SPECIFIED_DIRECTIVES`, and the transcription's

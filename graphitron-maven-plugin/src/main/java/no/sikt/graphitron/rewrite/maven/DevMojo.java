@@ -2,14 +2,12 @@ package no.sikt.graphitron.rewrite.maven;
 
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.run.GraphIdentity;
-import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.lsp.state.StoreAccess;
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.diagnostics.SchemaParseException;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
-import no.sikt.graphitron.model.classpath.ClasspathCensus;
 import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreConsole;
 import no.sikt.graphitron.model.boot.StoreReader;
@@ -82,11 +80,11 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       bypassing the filesystem watcher's latency on platforms where it
  *       polls.</li>
  *   <li>Watches every reactor project's {@code target/classes} for
- *       {@code .class} changes and rebuilds the in-process catalog
- *       atomically. Both jOOQ output (tables / columns / FKs) and
+ *       {@code .class} changes, republishing the round's diagnostics and
+ *       recompiling the generated tree. Both jOOQ output (tables / columns / FKs) and
  *       consumer service / condition / record classes — whether declared
  *       in the schema module or a sibling reactor module — flow through
- *       the same rebuild trigger.</li>
+ *       the same trigger.</li>
  *   <li>Watches every reactor project's compile source roots for
  *       {@code .java} changes and refreshes the store's {@code java_} family
  *       on that source cadence, decoupled from the {@code .class} rebuild.
@@ -349,13 +347,6 @@ public class DevMojo extends AbstractRewriteMojo {
     // than through a database of the pass's own that H2 happened to alias onto the same file.
     // Closed ahead of the store in cleanup(); closing it gives back nothing, the port never owning
     // a store it was lent, unless a refusal demoted it to one of its own.
-    // The session's classpath census, held across rounds so a round re-reads only the entries whose
-    // bytes moved. A .graphqls save cannot change a classfile, so those rounds re-read nothing;
-    // a one-file recompile re-reads that file. Held here for the same reason sessionCapture is:
-    // only the session knows its process outlives the round. Carries no loaded class, so it is
-    // safe across the codegen loader that every round rebuilds and closes. Package-private so
-    // DevMojoTest can hand a round a census of its own and read what it reported back.
-    ClasspathCensus sessionCensus = new ClasspathCensus();
     // The language server's own reader over sessionStore, minted once the store opens and closed
     // ahead of it in cleanup(). Null for the bare mojos that never start a session.
     StoreAccess lspStore;
@@ -422,14 +413,13 @@ public class DevMojo extends AbstractRewriteMojo {
         // the listener and refuses to keep it up when it cannot be confined. Do not read this line as
         // covering the requirement and drop that check.
         System.setProperty("h2.bindAddress", LOOPBACK_HOST);
-        // Initial codegen and LSP catalog build both reflect on consumer classes, so they share
-        // one URLClassLoader scope. Watchers that follow only resolve paths (no reflection); they
+        // Initial codegen reflects on consumer classes, so it runs in one URLClassLoader scope. Watchers that follow only resolve paths (no reflection); they
         // capture the ctx returned here, whose loader is *closed* by the time setup proceeds.
         //
         // LOAD-BEARING: code added below that uses `initialCtx` must read only path-shaped fields
         // (`schemaInputs`, `basedir`, `classpathRoots`). Calling `initialCtx.codegenLoader()` here
         // returns a closed URLClassLoader and would surface as a confusing ClassNotFoundException
-        // on the next reflection attempt. Each file-change callback (regenerate / rebuildCatalog)
+        // on the next reflection attempt. Each file-change callback (regenerate / onClasspathChange)
         // opens its own scope and is the right place to reach for a live loader.
         // The session store handle, opened before the first pass runs so that pass captures into it
         // rather than into a store of its own. openAt falls back to a private in-memory store on
@@ -567,8 +557,7 @@ public class DevMojo extends AbstractRewriteMojo {
         // source root is not walked: the two counts should track each other.
         getLog().info("graphitron:dev: scanning " + initialCtx.classpathRoots().size()
             + " reactor classpath root(s), " + initialCtx.compileSourceRoots().size()
-            + " source root(s); " + initial.catalog().externalReferences().size()
-            + " external reference(s) indexed");
+            + " source root(s)");
         // Self-explain the single-module-reactor case the sibling walk-up could not
         // widen: when graphitron:dev runs from inside a sub-module and no ancestor pom lists
         // it (so no siblings were resolved), only this module's target/classes is scanned.
@@ -594,7 +583,7 @@ public class DevMojo extends AbstractRewriteMojo {
         }
         // Build the warm compiler and compile the whole generated tree before the watchers start, so
         // the exclusive dir holds a complete runnable image the MCP query tools can execute against
-        // from the first edit. Must precede the classpath watcher: its rebuildCatalog callback drives
+        // from the first edit. Must precede the classpath watcher: its onClasspathChange callback drives
         // the consumer-change recompile off this same driver.
         maybeStartIncrementalCompiler();
         Set<Path> schemaRoots = startSchemaWatcher(initialCtx, workspace);
@@ -910,7 +899,7 @@ public class DevMojo extends AbstractRewriteMojo {
             // than its events, which is the safe side of the grain law.
             registerCorpus(CLASSPATH_CORPUS, roots, rootFold(roots));
             this.classpathWatcher = new SchemaWatcher(
-                roots, classpathDebounce, () -> rebuildCatalog(workspace), ".class",
+                roots, classpathDebounce, () -> onClasspathChange(workspace), ".class",
                 watched(CLASSPATH_CORPUS));
         } catch (IOException e) {
             cleanup();
@@ -923,13 +912,13 @@ public class DevMojo extends AbstractRewriteMojo {
     }
 
     /**
-     * Starts the {@code .java} source-root watcher. Walks the same
-     * compile source roots the catalog build uses, but on the source cadence:
+     * Starts the {@code .java} source-root watcher. Walks the compile source roots on the source
+     * cadence:
      * a hand-edited service / condition source moves its declaration rows in the
      * store's {@code java_} family without waiting for a {@code .class} rebuild. The
      * walk is parse-only (no reflection, no classpath resolution), so it runs
      * straight off the captured {@code ctx}'s path fields without a codegen
-     * scope, unlike the regenerate / rebuildCatalog triggers.
+     * scope, unlike the regenerate / onClasspathChange triggers.
      */
     private void startSourceWatcher(RunContext ctx) throws MojoExecutionException {
         Set<Path> roots = resolveSourceRoots(ctx);
@@ -1052,8 +1041,8 @@ public class DevMojo extends AbstractRewriteMojo {
         workspace.markAllForRecalculation();
     }
 
-    private void rebuildCatalog(Workspace workspace) {
-        getLog().info("graphitron:dev: classpath change detected; rebuilding catalog");
+    private void onClasspathChange(Workspace workspace) {
+        getLog().info("graphitron:dev: classpath change detected; re-running the round");
         announce(CLASSPATH_CORPUS);
         try {
             withCodegenScope(ctx -> {
@@ -1061,9 +1050,6 @@ public class DevMojo extends AbstractRewriteMojo {
                     var output = capturedGenerator(ctx).buildOutput();
                     writeReportFacts(output.walkErrors(), output.warnings());
                     workspace.markAllForRecalculation();
-                    var catalog = output.catalog();
-                    getLog().info("graphitron:dev: catalog refreshed (" + catalog.tables().size()
-                        + " tables, " + catalog.types().size() + " scalars)");
                     // A consumer .class changed: a generated unit that compiles against it may now be
                     // stale. The compile graph carries only generated→generated edges (no
                     // generated→consumer edge to walk), so invalidate conservatively by recompiling the
@@ -1073,36 +1059,34 @@ public class DevMojo extends AbstractRewriteMojo {
                         reportCompile(outcome, "recompile (consumer classpath change)");
                     }
                 } catch (RuntimeException e) {
-                    // Bad schema mid-edit: keep the previous catalog so completions do not
-                    // silently disappear, and republish diagnostics, the refused read having
-                    // written its own verdict. The next save will re-trigger.
-                    getLog().warn("graphitron:dev: catalog rebuild failed; keeping previous: "
-                        + e.getMessage());
+                    // Bad schema mid-edit: republish diagnostics, the refused read having written
+                    // its own verdict. The next save will re-trigger.
+                    getLog().warn("graphitron:dev: classpath round failed: " + e.getMessage());
                     workspace.markAllForRecalculation();
                 }
             });
         } catch (MojoExecutionException e) {
-            getLog().error("graphitron:dev: catalog rebuild failed (context)", e);
+            getLog().error("graphitron:dev: classpath round failed (context)", e);
         }
     }
 
     /**
-     * Initial catalog for a startup that emits nothing: the {@code -Dgraphitron.dev.skipInitial}
+     * The initial diagnostics for a startup that emits nothing: the {@code -Dgraphitron.dev.skipInitial}
      * arm, where there is no pass to read the editor's products off. A generating startup takes
      * {@link InitialOutput#of} over its own pass instead.
      *
-     * <p>A schema parse or classification failure is surfaced as a warning and an empty catalog that
-     * did not classify: the LSP must still come up so the developer can fix the schema, and the
+     * <p>A schema parse or classification failure is surfaced as a warning and an output that did not
+     * classify: the LSP must still come up so the developer can fix the schema, and the
      * schema watcher will re-build on the next save.
      */
     private InitialOutput buildOutputQuietly(RunContext ctx) {
         try {
             var output = capturedGenerator(ctx).buildOutput();
-            return new InitialOutput(output.catalog(), true, output.walkErrors(), output.warnings());
+            return new InitialOutput(true, output.walkErrors(), output.warnings());
         } catch (RuntimeException e) {
-            getLog().warn("graphitron:dev: initial catalog build failed; "
-                + "starting with empty catalog: " + e.getMessage());
-            return new InitialOutput(CompletionData.empty(), false, List.of(), List.of());
+            getLog().warn("graphitron:dev: initial build failed; starting without diagnostics: "
+                + e.getMessage());
+            return new InitialOutput(false, List.of(), List.of());
         }
     }
 
@@ -1115,21 +1099,21 @@ public class DevMojo extends AbstractRewriteMojo {
      * would read as a clean schema. The assembled report does not ride along, the language server
      * reading a build's own findings from the store those lists are written to.
      */
-    private record InitialOutput(CompletionData catalog, boolean classified,
+    private record InitialOutput(boolean classified,
                                  List<no.sikt.graphitron.model.diagnostics.ValidationError> walkErrors,
                                  List<no.sikt.graphitron.model.diagnostics.BuildWarning> warnings) {
 
         /**
          * The same carrier read off a generating startup's own pass, so the initial run's products
          * come from the round that emitted rather than from a second read of the same files. A
-         * round with no output failed before classifying and starts the session with an empty
-         * catalog, exactly as {@link DevMojo#buildOutputQuietly} does on the {@code skipInitial}
+         * round with no output failed before classifying and starts the session without
+         * diagnostics, exactly as {@link DevMojo#buildOutputQuietly} does on the {@code skipInitial}
          * path.
          */
         static InitialOutput of(PassRound round) {
             return round.output() == null
-                ? new InitialOutput(CompletionData.empty(), false, List.of(), List.of())
-                : new InitialOutput(round.output().catalog(), true,
+                ? new InitialOutput(false, List.of(), List.of())
+                : new InitialOutput(true,
                     round.output().walkErrors(), round.output().warnings());
         }
     }
@@ -1154,8 +1138,7 @@ public class DevMojo extends AbstractRewriteMojo {
      * and whether sources were emitted, which is what decides a recompile.
      *
      * <p>A validation-rejected round is a third case rather than a failure with no products: it
-     * carries an output (catalog and diagnostics, so the editor can autocomplete its way out of the
-     * error) and did not emit.
+     * carries an output (its diagnostics) and did not emit.
      */
     record PassRound(GraphQLRewriteGenerator.BuildOutput output, boolean generated) {}
 
@@ -1184,23 +1167,16 @@ public class DevMojo extends AbstractRewriteMojo {
     }
 
     /**
-     * Captures the graph and returns a generator over that capture, reading the classpath through
-     * the session's census so the round pays for what changed. Every construction site goes through
-     * this, or a round would quietly get a census of its own and re-parse the whole classpath.
+     * Captures the graph and returns a generator over that capture. Every construction site goes
+     * through this.
      *
      * <p>The capture comes first because the generator reads no document itself, and because a
      * round the pass refuses still owes its facts, for the reason {@link #captureModel} carries.
      */
     private GraphQLRewriteGenerator capturedGenerator(RunContext ctx) {
         var schema = captureModel(ctx, storeFor(ctx));
-        // Registered here rather than at session start-up because this is the one place every
-        // cadence passes through. The census then says its own cost from inside the pass, so the
-        // schema cadence, the classpath cadence and the quiet start-up build all report without
-        // three call sites having to remember to ask; the classpath cadence is the one that
-        // re-reads, so it is the one a missed site would have silenced.
-        sessionCensus.reportTo(round -> getLog().info("graphitron:dev: " + round.report()));
         return new GraphQLRewriteGenerator(ctx,
-            new StoreHandle(storeFor(ctx).dsl(), ctx.graphName()), schema, sessionCensus);
+            new StoreHandle(storeFor(ctx).dsl(), ctx.graphName()), schema);
     }
 
     PassRound runGeneratorPass(RunContext ctx, String label) {
@@ -1209,7 +1185,7 @@ public class DevMojo extends AbstractRewriteMojo {
         this.lastGeneration = null;
         try {
             // One capture and one pass: the emitted tree, the compile graph the incremental driver
-            // reads, and the editor-facing catalog and diagnostics.
+            // reads, and the editor-facing diagnostics.
             var pass = capturedGenerator(ctx).runPass();
             this.lastGeneration = pass.generation().orElse(null);
             var errors = pass.output().report().errors();
@@ -1474,8 +1450,7 @@ public class DevMojo extends AbstractRewriteMojo {
     private static Set<Path> resolveSourceRoots(RunContext ctx) {
         // Watch every reactor project's compile source roots (hand-written plus
         // generated-sources) so service / condition / record sources in sibling
-        // modules also refresh goto-definition positions. Same roots the catalog
-        // build walks; here on the source cadence.
+        // modules also refresh goto-definition positions, on the source cadence.
         var roots = new LinkedHashSet<Path>();
         for (Path root : ctx.compileSourceRoots()) {
             if (java.nio.file.Files.isDirectory(root)) {

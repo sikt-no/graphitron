@@ -28,8 +28,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * a type reachable through any field edge disappears into the closure. This comparison is at the
  * membership grain, where a disagreement about one type is a difference of one row.
  *
- * <p><b>When this may go.</b> When the four walk consumers ({@code SchemaReachability},
- * {@code ArrivalIndex}, {@code KeyNodeSynthesiser}, {@code CatalogBuilder}) read the store instead of
+ * <p><b>When this may go.</b> When the three walk consumers ({@code SchemaReachability},
+ * {@code ArrivalIndex}, {@code KeyNodeSynthesiser}) read the store instead of
  * the predicate. There is then one spelling and nothing to bind, and the Java one retires with this
  * test.
  */

@@ -14,9 +14,6 @@ import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.rewrite.compile.CompileDependencyGraph;
 import no.sikt.graphitron.rewrite.compile.PlanCompileGraph;
-import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
-import no.sikt.graphitron.model.classpath.ClasspathCensus;
-import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.model.derive.StoreDetections;
 import no.sikt.graphitron.model.derive.ClassifiedRun;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
@@ -95,8 +92,8 @@ import no.sikt.graphitron.model.schema.AttributedRegistry;
  *
  * <p><b>One body, four projections.</b> {@link #runPipeline} is the whole pipeline and the only
  * place its stages are named: synthesise over the schema capture assembled, classify, load the
- * jOOQ catalog, scan the classpath census, lint and validate, and (conditionally) project the
- * completion catalog, emit the sources and project the compile graph. Each public entry point is a
+ * jOOQ catalog, lint and validate, and (conditionally) emit the sources and project the compile
+ * graph. Each public entry point is a
  * {@link Projection} of that one call: {@link #generate()}, {@link #validate()},
  * {@link #buildOutput()} and {@link #runPass()}. A pass calls exactly one of them.
  *
@@ -124,14 +121,6 @@ public class GraphQLRewriteGenerator {
     private final CapturedSchema schemas;
 
     /**
-     * The classpath census, which this generator reads and never writes. A one-shot goal gets a
-     * fresh one and pays a full scan, as it always did; a session hands the same one to every
-     * round, and the round re-reads only the entries whose bytes moved. Holding it here rather
-     * than deriving it per pass is what lets the caller decide which of those it is.
-     */
-    private final ClasspathCensus census;
-
-    /**
      * A generator over a store somebody else opened and filled.
      *
      * <p>It captures nothing, and the store is handed in rather than reached for so that this is
@@ -145,19 +134,9 @@ public class GraphQLRewriteGenerator {
      * disagree about is only how recently they looked.
      */
     public GraphQLRewriteGenerator(RunContext ctx, StoreHandle store, CapturedSchema schemas) {
-        this(ctx, store, schemas, new ClasspathCensus());
-    }
-
-    /**
-     * {@link #GraphQLRewriteGenerator(RunContext, StoreHandle, CapturedSchema)} over a census the
-     * caller holds.
-     */
-    public GraphQLRewriteGenerator(RunContext ctx, StoreHandle store, CapturedSchema schemas,
-                                   ClasspathCensus census) {
         this.ctx = ctx;
         this.store = Objects.requireNonNull(store, "store");
         this.schemas = Objects.requireNonNull(schemas, "schemas");
-        this.census = Objects.requireNonNull(census, "census");
     }
 
     /** A generator over a graph somebody captured, its store and its schema together. */
@@ -206,9 +185,8 @@ public class GraphQLRewriteGenerator {
     }
 
     /**
-     * One dev pass's two halves: the editor-facing {@link BuildOutput} (completion catalog plus the
-     * diagnostics the store's stratum is written from) and the {@link IncrementalGeneration} the
-     * compile driver reads.
+     * One dev pass's two halves: the editor-facing {@link BuildOutput} (the diagnostics the store's
+     * stratum is written from) and the {@link IncrementalGeneration} the compile driver reads.
      *
      * <p>The generation is present exactly when {@code output().report().errors()} is empty: a
      * rejected schema emits nothing and reports everything.
@@ -287,34 +265,30 @@ public class GraphQLRewriteGenerator {
     }
 
     /**
-     * The editor-facing products with nothing emitted: the {@link CompletionData} catalog (jOOQ +
-     * classpath references + scalars) over the same census the capture wrote its classpath families
-     * from, and the {@link ValidationReport} carrying every {@link ValidationError} and
-     * {@link BuildWarning} the validator produces on the classified model. Same parse throughout;
+     * The editor-facing products with nothing emitted: the {@link ValidationReport} carrying every
+     * {@link ValidationError} and {@link BuildWarning} the validator produces on the classified
+     * model. Same parse throughout;
      * the dev goal writes the report's two pre-fuse lists to the store's diagnostics stratum, which
      * is where the language server reads them.
      *
      * <p>Two callers, both of which want the report without a tree: a consumer {@code .class}
-     * change (a catalog question, not a generation one) and a dev startup that was told to emit
+     * change (a question for the diagnostics, not the generation) and a dev startup that was told to emit
      * nothing. A round that does emit takes {@link #runPass()} instead, which returns this same
      * output beside the generation; asking for both by calling both is what captured the graph
      * twice.
      *
-     * <p>The validator runs but never throws on its output: a half-edited
-     * buffer with validation errors should still expose tables and scalars
-     * so the editor can autocomplete its way out of the typo. The build-time
-     * pipeline ({@link #validate()}, {@link #generate()}) is the surface
-     * that fails the build on validator errors; this method packages them
-     * for the LSP instead.
+     * <p>The validator runs but never throws on its output. The build-time pipeline
+     * ({@link #validate()}, {@link #generate()}) is the surface that fails the build on validator
+     * errors; this method packages them for the LSP instead, from the projection {@link #validate()}
+     * reads.
      */
     public BuildOutput buildOutput() {
-        return runPipeline(Projection.BUILD_OUTPUT).output();
+        return runPipeline(Projection.VALIDATE).output();
     }
 
     /**
-     * Splits a pass's reporting half along the two lifecycle steps it spans: classification
-     * produces the {@link CompletionData} catalog over the census the capture also wrote from; the
-     * validator pass over the same classified model produces {@link ValidationReport}. Returned by
+     * A pass's reporting half: the {@link ValidationReport} the validator produces over the
+     * classified model. Returned by
      * {@link #buildOutput()} on its own and by {@link #runPass()} beside the generation, both from
      * the one body, so the two cannot disagree about a round.
      *
@@ -325,7 +299,7 @@ public class GraphQLRewriteGenerator {
      * input), and {@code warnings} is the suppression-filtered list the report was assembled
      * from (so stored lint rows are post-suppression survivors, never resurrected findings).
      */
-    public record BuildOutput(CompletionData catalog, ValidationReport report,
+    public record BuildOutput(ValidationReport report,
                               List<ValidationError> walkErrors, List<BuildWarning> warnings) {}
 
     /**
@@ -411,40 +385,37 @@ public class GraphQLRewriteGenerator {
      * public entry points, stated here rather than spelled at each call so the difference between
      * the projections is one table a reader can hold at once. Everything not switched on here runs
      * on every pass, because every pass needs it: one read, one assembly, one classification, one
-     * jOOQ load, one census, and the verdict.
+     * jOOQ load, and the verdict.
      *
      * @param emit        run the plan, the renderers, the writer, the orphan sweep and the SDL resource
      * @param compileGraph project the {@link CompileDependencyGraph} the dev compile driver reads
-     * @param catalog     project the {@link CompletionData} completion catalog
      */
-    private record Projection(boolean emit, boolean compileGraph, boolean catalog) {
+    private record Projection(boolean emit, boolean compileGraph) {
         /** {@code GenerateMojo}: the emitted tree and nothing the dev loop or the editor wants. */
-        static final Projection GENERATE = new Projection(true, false, false);
+        static final Projection GENERATE = new Projection(true, false);
 
-        /** {@code ValidateMojo}: the verdict alone, no output of any kind. */
-        static final Projection VALIDATE = new Projection(false, false, false);
-
-        /** The editor-facing products with no emission: catalog and diagnostics. */
-        static final Projection BUILD_OUTPUT = new Projection(false, false, true);
+        /**
+         * {@code ValidateMojo} and the editor's diagnostics: the verdict, no output of any kind. The
+         * mojo throws on it, {@link #buildOutput()} reports it.
+         */
+        static final Projection VALIDATE = new Projection(false, false);
 
         /** The dev loop's pass: both halves at once, which is the whole point of it. */
-        static final Projection PASS = new Projection(true, true, true);
+        static final Projection PASS = new Projection(true, true);
     }
 
     /**
      * What one pass computed, before an entry point decides what to do with it. The generation is
      * null exactly when this pass did not emit: either the projection asked for no emission, or the
-     * validator rejected the schema and there was nothing to emit. The catalog is null when the
-     * projection asked for no catalog, so only the two projections that asked for one may call
-     * {@link #output()}.
+     * validator rejected the schema and there was nothing to emit.
      */
-    private record PassProducts(CompletionData catalog, List<ValidationError> walkErrors,
+    private record PassProducts(List<ValidationError> walkErrors,
                                 List<ValidationError> errors, List<BuildWarning> warnings,
                                 IncrementalGeneration generation) {
 
         /** The editor-facing projection of these products, fusing the report the LSP reads. */
         BuildOutput output() {
-            return new BuildOutput(catalog, ValidationReport.from(errors, warnings),
+            return new BuildOutput(ValidationReport.from(errors, warnings),
                 walkErrors, warnings);
         }
     }
@@ -483,11 +454,7 @@ public class GraphQLRewriteGenerator {
      * result; see the class javadoc for why there is one body rather than one per entry point.
      */
     private PassProducts runPipeline(Projection projection) {
-        // The two whole-classpath reads, each paid once per pass.
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        var reading = CatalogBuilder.readExternalReferences(ctx, this.census);
-        var census = reading.references();
-        LOGGER.debug("{}", reading.round().report());
 
         var attributed = AttributedRegistry.of(schemas.written(), jooq);
         var bundle = GraphitronSchemaBuilder.buildBundle(attributed, acceptedSchema(attributed), ctx);
@@ -495,9 +462,6 @@ public class GraphQLRewriteGenerator {
         boolean federationLink = bundle.federationLink();
         var assembled = emittedSchema();
 
-        var catalog = projection.catalog()
-            ? CatalogBuilder.build(jooq, assembled, ctx, census)
-            : null;
         String outputPackage = ctx.outputPackage();
 
         // The store's detections feed the verdict, and the plan is produced only for a schema the
@@ -508,7 +472,7 @@ public class GraphQLRewriteGenerator {
 
         var warnings = captured.warnings();
         if (captured.plan() == null) {
-            return new PassProducts(catalog, captured.walkErrors(), captured.errors(), warnings, null);
+            return new PassProducts(captured.walkErrors(), captured.errors(), warnings, null);
         }
         var plan = captured.plan();
 
@@ -609,7 +573,7 @@ public class GraphQLRewriteGenerator {
         CompileDependencyGraph graph = projection.compileGraph()
             ? PlanCompileGraph.fromPlan(plan, schema)
             : null;
-        return new PassProducts(catalog, captured.walkErrors(), captured.errors(), warnings,
+        return new PassProducts(captured.walkErrors(), captured.errors(), warnings,
             new IncrementalGeneration(result, graph));
     }
 

@@ -20,7 +20,7 @@ import java.util.function.Function;
  * one type rather than ten positional signatures.
  *
  * <p>{@link #store} is what the projections were replaced by, and it is now the whole of what a
- * provider reads: the {@code CompletionData} arm, the source index and the schema snapshot are all
+ * provider reads: the classpath catalog, the source index and the schema snapshot are all
  * gone, the second because the Javadoc it carried is a join in the store now and the third because
  * the last arm asking a classifier decision, whether a site admits the {@code $source} sigil, reads
  * a relation for it. Empty means this session has no facts for this document, for any of three

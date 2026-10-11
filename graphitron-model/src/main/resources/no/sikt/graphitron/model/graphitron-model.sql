@@ -259,8 +259,7 @@ CREATE TABLE store_source (
 -- terms, which holds its own mtime beside its stamp. A reader can then see why a file counted as
 -- changed, and the comparison is two columns rather than a digest nobody can take apart. For build
 -- output that is also the cheap answer: reading every file to decide whether to read every file
--- answers the question by doing the work, and ClasspathCensus already reuses a file on exactly this
--- pair.
+-- answers the question by doing the work.
 CREATE TABLE store_class_file (
   source_name VARCHAR NOT NULL,
   file_path   VARCHAR NOT NULL,

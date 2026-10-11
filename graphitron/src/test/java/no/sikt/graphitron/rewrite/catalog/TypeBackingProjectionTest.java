@@ -14,7 +14,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@link CatalogBuilder#projectTypesByName} makes of each classified type, over hand-crafted
+ * What {@link TypeBackingShape#byTypeName} makes of each classified type, over hand-crafted
  * {@link GraphitronSchema} fixtures. The snapshot carried this map to the language server until
  * every surface reading it asked the store instead; what the walk bound each type to is still
  * transcribed into the store as the shadow the backing derivation differs against, so the
@@ -30,7 +30,7 @@ class TypeBackingProjectionTest {
         var schema = schemaOf("Film", new GraphitronType.TableType("Film", SourceLocation.EMPTY,
             new TableRef("film", "FILM", null, null, null, List.of(), List.of())));
 
-        var backing = CatalogBuilder.projectTypesByName(schema);
+        var backing = TypeBackingShape.byTypeName(schema);
 
         assertThat(backing.get("Film"))
             .isInstanceOfSatisfying(TypeBackingShape.TableBacking.class,
@@ -47,7 +47,7 @@ class TypeBackingProjectionTest {
             new TableRef("film", "FILM", null, null, null, List.of(), List.of()),
             List.of()));
 
-        var backing = CatalogBuilder.projectTypesByName(schema);
+        var backing = TypeBackingShape.byTypeName(schema);
 
         assertThat(backing.get("Movie"))
             .isInstanceOfSatisfying(TypeBackingShape.TableBacking.class,
@@ -65,7 +65,7 @@ class TypeBackingProjectionTest {
         var schema = schemaOf("FilmCard",
             new GraphitronType.JavaRecordType("FilmCard", SourceLocation.EMPTY, "com.example.FilmCard"));
 
-        var backing = CatalogBuilder.projectTypesByName(schema);
+        var backing = TypeBackingShape.byTypeName(schema);
 
         assertThat(backing.get("FilmCard"))
             .isEqualTo(new TypeBackingShape.RecordBacking("com.example.FilmCard"));
@@ -81,7 +81,7 @@ class TypeBackingProjectionTest {
         var schema = schemaOf("FilmDto",
             new GraphitronType.PojoResultType.Backed("FilmDto", SourceLocation.EMPTY, "com.example.FilmDto"));
 
-        var backing = CatalogBuilder.projectTypesByName(schema);
+        var backing = TypeBackingShape.byTypeName(schema);
 
         assertThat(backing.get("FilmDto"))
             .isEqualTo(new TypeBackingShape.PojoBacking("com.example.FilmDto"));
@@ -94,7 +94,7 @@ class TypeBackingProjectionTest {
                 "no.sikt.example.tables.records.FilmRecord",
                 new TableRef("film", "FILM", null, null, null, List.of(), List.of())));
 
-        var backing = CatalogBuilder.projectTypesByName(schema);
+        var backing = TypeBackingShape.byTypeName(schema);
 
         assertThat(backing.get("FilmRecord"))
             .isInstanceOfSatisfying(TypeBackingShape.JooqRecordBacking.WithTable.class, j -> {
@@ -109,7 +109,7 @@ class TypeBackingProjectionTest {
             new GraphitronType.JooqRecordType("CustomRecord", SourceLocation.EMPTY,
                 "no.sikt.example.records.CustomRecord"));
 
-        var backing = CatalogBuilder.projectTypesByName(schema);
+        var backing = TypeBackingShape.byTypeName(schema);
 
         assertThat(backing.get("CustomRecord"))
             .isInstanceOfSatisfying(TypeBackingShape.JooqRecordBacking.Standalone.class,
@@ -120,7 +120,7 @@ class TypeBackingProjectionTest {
     void rootTypeProjectsToNoBackingRootCategoryError() {
         var schema = schemaOf("Query", new GraphitronType.RootType("Query", SourceLocation.EMPTY));
 
-        var backing = CatalogBuilder.projectTypesByName(schema);
+        var backing = TypeBackingShape.byTypeName(schema);
 
         assertThat(backing.get("Query"))
             .isInstanceOf(TypeBackingShape.NoBacking.Root.class);
@@ -131,7 +131,7 @@ class TypeBackingProjectionTest {
         var schema = schemaOf("Shape",
             new GraphitronType.InterfaceType("Shape", SourceLocation.EMPTY, List.of()));
 
-        var backing = CatalogBuilder.projectTypesByName(schema);
+        var backing = TypeBackingShape.byTypeName(schema);
 
         assertThat(backing.get("Shape"))
             .isInstanceOf(TypeBackingShape.NoBacking.UnclassifiedInterface.class);

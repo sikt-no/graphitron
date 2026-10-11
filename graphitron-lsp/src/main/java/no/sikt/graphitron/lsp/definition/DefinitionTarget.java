@@ -8,7 +8,7 @@ import org.eclipse.lsp4j.Location;
  * class or method, a generated table class or column, or the declaration an SDL
  * name binds to) against the fact store's java-source family.
  *
- * <p>Replaces the former {@code CompletionData.SourceLocation.UNKNOWN}
+ * <p>Replaces a former unknown-location
  * sentinel, which collapsed distinct outcomes behind one empty value
  * (uri {@code ""}, line {@code 0}): source genuinely absent, source present
  * but not indexed, and overload-ambiguous. The sentinel made the recoverable

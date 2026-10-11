@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite.derive;
 
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 
 import java.util.LinkedHashMap;
@@ -27,13 +26,13 @@ public record TypeBackingClasses(Map<String, String> byTypeName) {
 
     /**
      * The walked model's backing resolution, reduced to the class each type was bound to. Reads
-     * {@link CatalogBuilder#projectTypesByName} rather than switching over the classified types a
+     * {@link TypeBackingShape#byTypeName} rather than switching over the classified types a
      * second time, so this and the LSP-facing projection cannot come to differ about what the walk
      * decided.
      */
     public static TypeBackingClasses of(GraphitronSchema schema) {
         var bound = new LinkedHashMap<String, String>();
-        CatalogBuilder.projectTypesByName(schema).forEach((typeName, shape) -> {
+        TypeBackingShape.byTypeName(schema).forEach((typeName, shape) -> {
             String className = classNameOf(shape);
             if (className != null) {
                 bound.put(typeName, className);

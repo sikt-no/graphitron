@@ -8,9 +8,9 @@ import java.util.Objects;
  * One compile-classpath entry, carrying the decision the producer made about it. The plugin
  * classifies the classpath once ({@code AbstractRewriteMojo.resolveCompileClasspath()} in the
  * Maven plugin) and every consumer projects what it needs from the same list: the codegen loader,
- * javac and the execution loader project every entry's {@link #path()}, while the class census
- * ({@link no.sikt.graphitron.model.classpath.ClasspathScanner}) skips {@link Origin#TRANSITIVE}
- * entries. Keeping the decision on the element, rather than producing two sibling path lists,
+ * javac and the execution loader project every entry's {@link #path()}, while the classpath
+ * capture ({@link no.sikt.graphitron.model.capture.code.ClasspathSourceCapture}) skips
+ * {@link Origin#TRANSITIVE} entries. Keeping the decision on the element, rather than producing two sibling path lists,
  * makes census &sube; loader a derivation over one list instead of a promise about two.
  *
  * @param path       the entry on disk: a {@code target/classes} directory or a resolved jar

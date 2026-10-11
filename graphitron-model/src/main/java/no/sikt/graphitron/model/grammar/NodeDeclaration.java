@@ -23,8 +23,8 @@ import static no.sikt.graphitron.model.grammar.DirectiveArgs.argString;
  * by coincidence. Inference splits the two, and each of those consumers is a place an inferred node
  * and an explicit one would otherwise behave differently: reachability seeding
  * ({@code SchemaReachability}), arrival folding ({@code ArrivalIndex}), federation entity membership
- * ({@link no.sikt.graphitron.model.schema.federation.KeyNodeSynthesiser}), and the LSP node view
- * ({@code CatalogBuilder}). They all call this instead.
+ * ({@link no.sikt.graphitron.model.schema.federation.KeyNodeSynthesiser}). They all call this
+ * instead.
  *
  * <p>The predicate deliberately sits <em>above</em> classification rather than reading the
  * classified registry: two of its consumers run before any type is classified. Reachability

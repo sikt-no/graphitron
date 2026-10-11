@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
 import graphql.schema.GraphQLObjectType;
-import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.model.Arrival;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.ChildField;
@@ -21,7 +20,6 @@ import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.grammar.NodeDeclaration;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
@@ -305,36 +303,6 @@ class NodeInferencePipelineTest {
         assertThat(foo.getDirectives())
             .extracting(graphql.language.Directive::getName)
             .contains("key");
-    }
-
-    @Test
-    void theLspSeesAnInferredNodeAsANodeWithNoAuthorSuppliedValues() {
-        // Presence in the node view is the predicate the @nodeId(typeName:) arms read, so it has to
-        // follow nodehood. The values stay author-supplied by design, so both axes read null here.
-        var bundle = bundle("""
-            type Foo implements Node @table(name: "bar") { id: ID! }
-            type Query { foo: Foo }
-            """);
-        var data = CatalogBuilder.build(
-            new JooqCatalog(FIXTURE_JOOQ_PACKAGE), bundle.assembled(), FIXTURE_CTX);
-
-        assertThat(data.nodeMetadata()).containsKey("Foo");
-        assertThat(data.nodeMetadata().get("Foo").typeId()).isNull();
-        assertThat(data.nodeMetadata().get("Foo").keyColumns()).isNull();
-    }
-
-    @Test
-    void theLspStillOmitsATableTypeOverANodeBearingTable() {
-        var bundle = bundle("""
-            type SharedNode implements Node @table(name: "shared_node") { id: ID! @nodeId }
-            type SharedNodeProjection @table(name: "shared_node") { label: String }
-            type Query { shared: SharedNode projection: SharedNodeProjection }
-            """);
-        var data = CatalogBuilder.build(
-            new JooqCatalog(FIXTURE_JOOQ_PACKAGE), bundle.assembled(), FIXTURE_CTX);
-
-        assertThat(data.nodeMetadata()).containsKey("SharedNode");
-        assertThat(data.nodeMetadata()).doesNotContainKey("SharedNodeProjection");
     }
 
     // ===== The shadowed `id` column =====

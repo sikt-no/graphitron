@@ -2,8 +2,6 @@ package no.sikt.graphitron.rewrite.maven;
 
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
-import no.sikt.graphitron.model.classpath.ClasspathScanner;
-import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.rewrite.maven.watch.WatchErrorFormatter;
 import no.sikt.graphitron.model.diagnostics.Rejection;
 import org.apache.maven.execution.DefaultMavenExecutionRequest;
@@ -301,11 +299,6 @@ class AbstractRewriteMojoTest {
                     no.sikt.graphitron.model.config.ClasspathEntry.Origin.PROJECT, null),
                 org.assertj.core.groups.Tuple.tuple(serviceClasses.toAbsolutePath().normalize(),
                     no.sikt.graphitron.model.config.ClasspathEntry.Origin.SIBLING, "service-module"));
-        // ...so the sibling's @condition class lands as an external reference: the
-        // catalog scan the LSP runs over exactly these roots now sees it.
-        var refs = ClasspathScanner.scan(ctx.classpathRoots(), "no.sikt.example.jooq");
-        assertThat(refs).extracting(CompletionData.ExternalReference::className)
-            .contains("no.sikt.example.service.CategoryConditions");
         // Source side (load-bearing for scan/walk parity): the sibling's source root is
         // walked too, so goto-definition / hover on its declarations resolves rather
         // than silently no-jumping. Without this assertion the test would pass with
@@ -342,8 +335,8 @@ class AbstractRewriteMojoTest {
         return session;
     }
 
-    /** Synthesises a minimal public top-level {@code .class} under {@code classes}, the same
-     *  byte-level fixture {@code ClasspathScannerTest} uses (no javac, no real types). */
+    /** Synthesises a minimal public top-level {@code .class} under {@code classes}, byte-level
+     *  (no javac, no real types). */
     private static void writePublicClass(Path classes, String fqn) throws IOException {
         byte[] bytes = ClassFile.of().build(ClassDesc.of(fqn), cb -> cb.withFlags(ClassFile.ACC_PUBLIC));
         Path target = classes.resolve(fqn.replace('.', '/') + ".class");

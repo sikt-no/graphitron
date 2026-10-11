@@ -162,7 +162,7 @@ class ArchitectureDocSymbolGuardTest {
         exempt.put("StoreClientBoundaryTest", "module: graphitron-lsp and graphitron-mcp");
         exempt.put("BuiltStoreFixture", "module: graphitron-maven-plugin");
         exempt.put("FieldClassification.Conflicted", "module: the LSP/MCP classification projection");
-        exempt.put("CatalogRefreshTest", "module: graphitron-maven-plugin");
+        exempt.put("ClasspathChangeRoundTest", "module: graphitron-maven-plugin");
         exempt.put("DevMojo", "module: graphitron-maven-plugin");
         exempt.put("DevMojoTest", "module: graphitron-maven-plugin");
         exempt.put("ValidateMojo", "module: graphitron-maven-plugin");

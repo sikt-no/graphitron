@@ -118,8 +118,8 @@ CREATE TABLE film (
 -- the rest do not, so both arms of "has a comment" are reachable at both grains without a second
 -- table. Do not tidy these into completeness; the absences are the fixture.
 COMMENT ON TABLE film IS 'One film in the rental catalogue.';
--- Commented so CatalogBuilderSourceTest can tell a database comment from the Javadoc it proves the
--- build does not lift. An empty description cannot distinguish the two.
+-- Commented so a reader of the column's description can tell a database comment from the Javadoc
+-- jOOQ generates beside it. An empty description cannot distinguish the two.
 COMMENT ON COLUMN film.film_id IS 'Surrogate key, stable across catalogue imports.';
 -- Carries an apostrophe: the character a naive pipeline breaks on, and one a real consumer's
 -- catalog certainly holds.

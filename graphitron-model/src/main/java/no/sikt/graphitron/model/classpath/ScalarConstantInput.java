@@ -17,7 +17,7 @@ import java.lang.reflect.Type;
  * constant's declared type is {@code GraphQLScalarType} whatever it coerces to, so a classfile
  * parse sees the same descriptor for every scalar on the classpath; which {@code Coercing}
  * implementation the constant holds is decided by the class initialiser, so the value has to be
- * read from a loaded class. This is why {@link ClasspathScanner}, which stays parse-only, records
+ * read from a loaded class. This is why {@link ClassfileCensus}, which stays parse-only, records
  * that a constant exists and leaves what it coerces to here.
  */
 public final class ScalarConstantInput {

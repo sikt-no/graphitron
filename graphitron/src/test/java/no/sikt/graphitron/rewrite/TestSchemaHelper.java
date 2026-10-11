@@ -8,8 +8,6 @@ import no.sikt.graphitron.model.schema.SchemaLoader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import no.sikt.graphitron.model.classpath.ClasspathScanner;
-import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.grammar.NodeDeclaration;
 import no.sikt.graphitron.model.derive.ResolvedKeyProjections;

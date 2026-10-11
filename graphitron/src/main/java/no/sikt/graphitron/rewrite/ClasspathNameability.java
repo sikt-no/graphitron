@@ -11,7 +11,6 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.zip.ZipFile;
 import no.sikt.graphitron.model.config.ClasspathEntry;
-import no.sikt.graphitron.model.classpath.ClasspathScanner;
 import no.sikt.graphitron.model.config.RunContext;
 
 /**
@@ -138,7 +137,7 @@ public final class ClasspathNameability {
             }
             return false;
         }
-        if (!no.sikt.graphitron.model.classpath.ClasspathScanner.isJar(path)) {
+        if (!isJar(path)) {
             return false;
         }
         Set<String> index = jarIndexByPath.computeIfAbsent(path, ClasspathNameability::listClassResources);
@@ -206,5 +205,12 @@ public final class ClasspathNameability {
                 candidate = candidate.substring(0, lastDot) + '$' + candidate.substring(lastDot + 1);
             }
         }
+    }
+
+    /** A classpath entry that is a jar file present on disk. */
+    private static boolean isJar(Path entry) {
+        return entry.getFileName() != null
+            && entry.getFileName().toString().endsWith(".jar")
+            && Files.isRegularFile(entry);
     }
 }
