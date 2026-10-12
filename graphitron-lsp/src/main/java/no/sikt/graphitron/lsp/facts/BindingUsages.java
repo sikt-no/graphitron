@@ -3,22 +3,29 @@ package no.sikt.graphitron.lsp.facts;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.eclipse.lsp4j.Location;
 import org.jooq.Condition;
+import org.jooq.Field;
 import org.jooq.Record3;
 import org.jooq.Result;
+import org.jooq.Select;
+import org.jooq.Table;
 import org.jooq.TableField;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_METHOD_REFERENCE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_FOR_KEY_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_FOR_TABLE_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_KEY_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_TABLE_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_REFERENCE_FOR_KEY_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_REFERENCE_FOR_TABLE_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_REFERENCE_KEY_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_REFERENCE_TABLE_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_VALUE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
@@ -233,68 +240,65 @@ public final class BindingUsages {
     }
 
     /**
-     * The {@code @reference} path hops naming this table or key, across the three step families,
-     * each positioned by the reference row it belongs to. A hop is a use of the name even though
-     * the store positions the whole path rather than the hop, so the site is the path's.
+     * The {@code @reference} and {@code @referenceFor} path steps naming this table or key, at every
+     * site a path is written, each located at the application holding it. A step is a use of the
+     * name even though the site reported is the application's.
      */
     private static Result<Record3<String, Integer, Integer>> hopSites(
         StoreHandle store, Spelled spelled
     ) {
-        String graph = store.graphName();
-        return store.dsl()
-            .select(GRAPHITRON_FIELD_REFERENCE_ENTRY.SOURCE_NAME, GRAPHITRON_FIELD_REFERENCE_ENTRY.SOURCE_LINE,
-                GRAPHITRON_FIELD_REFERENCE_ENTRY.SOURCE_COLUMN)
-            .from(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY)
-            .join(GRAPHITRON_FIELD_REFERENCE_ENTRY)
-            .on(GRAPHITRON_FIELD_REFERENCE_ENTRY.GRAPH_NAME.eq(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.GRAPH_NAME))
-            .and(GRAPHITRON_FIELD_REFERENCE_ENTRY.TYPE_NAME.eq(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.TYPE_NAME))
-            .and(GRAPHITRON_FIELD_REFERENCE_ENTRY.FIELD_NAME.eq(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.FIELD_NAME))
-            .and(GRAPHITRON_FIELD_REFERENCE_ENTRY.ORDINAL.eq(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.ORDINAL))
-            .where(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.GRAPH_NAME.eq(graph))
-            .and(spelled.isKey()
-                ? hopNames(spelled, GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.KEY_REF_NAME_PART_UPPER,
-                    GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.KEY_REF_NAMESPACE_PART_UPPER)
-                : hopNames(spelled, GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.TABLE_REF_NAME_PART_UPPER,
-                    GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.TABLE_REF_NAMESPACE_PART_UPPER))
-            .unionAll(store.dsl()
-                .select(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.SOURCE_NAME,
-                    GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.SOURCE_LINE,
-                    GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.SOURCE_COLUMN)
-                .from(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY)
-                .join(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY)
-                .on(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.GRAPH_NAME
-                    .eq(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.GRAPH_NAME))
-                .and(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.TYPE_NAME
-                    .eq(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.TYPE_NAME))
-                .and(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.FIELD_NAME
-                    .eq(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.FIELD_NAME))
-                .and(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.ARGUMENT_NAME
-                    .eq(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.ARGUMENT_NAME))
-                .and(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.ORDINAL
-                    .eq(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.ORDINAL))
-                .where(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.GRAPH_NAME.eq(graph))
-                .and(spelled.isKey()
-                    ? hopNames(spelled, GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.KEY_REF_NAME_PART_UPPER,
-                        GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.KEY_REF_NAMESPACE_PART_UPPER)
-                    : hopNames(spelled, GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.TABLE_REF_NAME_PART_UPPER,
-                        GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.TABLE_REF_NAMESPACE_PART_UPPER)))
-            .unionAll(store.dsl()
-                .select(GRAPHITRON_REFERENCE_FOR_ENTRY.SOURCE_NAME, GRAPHITRON_REFERENCE_FOR_ENTRY.SOURCE_LINE,
-                    GRAPHITRON_REFERENCE_FOR_ENTRY.SOURCE_COLUMN)
-                .from(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY)
-                .join(GRAPHITRON_REFERENCE_FOR_ENTRY)
-                .on(GRAPHITRON_REFERENCE_FOR_ENTRY.GRAPH_NAME.eq(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.GRAPH_NAME))
-                .and(GRAPHITRON_REFERENCE_FOR_ENTRY.TYPE_NAME.eq(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.TYPE_NAME))
-                .and(GRAPHITRON_REFERENCE_FOR_ENTRY.FIELD_NAME.eq(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.FIELD_NAME))
-                .and(GRAPHITRON_REFERENCE_FOR_ENTRY.ORDINAL.eq(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.ORDINAL))
-                .where(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.GRAPH_NAME.eq(graph))
-                .and(spelled.isKey()
-                    ? hopNames(spelled, GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.KEY_REF_NAME_PART_UPPER,
-                        GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.KEY_REF_NAMESPACE_PART_UPPER)
-                    : hopNames(spelled, GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.TABLE_REF_NAME_PART_UPPER,
-                        GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.TABLE_REF_NAMESPACE_PART_UPPER)))
-            .fetch();
+        var v = GRAPHQL_AST_VALUE_ENTRY;
+        var holder = GRAPHQL_AST_ENTRY;
+        Select<Record3<String, Integer, Integer>> sites = null;
+        for (var step : spelled.isKey() ? KEY_STEPS : TABLE_STEPS) {
+            var select = store.dsl()
+                .select(v.SOURCE_NAME, holder.PARENT_LINE, holder.PARENT_COLUMN)
+                .from(step.table())
+                .join(v).on(v.GRAPH_NAME.eq(step.graphName()), v.SOURCE_NAME.eq(step.sourceName()),
+                    v.SOURCE_LINE.eq(step.sourceLine()), v.SOURCE_COLUMN.eq(step.sourceColumn()))
+                // The argument holding the path, whose parent is the application.
+                .join(holder).on(holder.GRAPH_NAME.eq(v.GRAPH_NAME),
+                    holder.SOURCE_NAME.eq(v.SOURCE_NAME), holder.SOURCE_LINE.eq(v.HOLDER_LINE),
+                    holder.SOURCE_COLUMN.eq(v.HOLDER_COLUMN))
+                .where(v.GRAPH_NAME.eq(store.graphName()))
+                .and(hopNames(spelled, step.nameUpper(), step.namespaceUpper()));
+            sites = sites == null ? select : sites.unionAll(select);
+        }
+        return sites.fetch();
     }
+
+    /** One step twin's key and the two halves of the name it spells. */
+    private record StepTwin(Table<?> table, Field<String> graphName, Field<String> sourceName,
+                            Field<Integer> sourceLine, Field<Integer> sourceColumn,
+                            Field<String> nameUpper, Field<String> namespaceUpper) {
+
+        static StepTwin of(Table<?> table, String spelled) {
+            return new StepTwin(table, column(table, "graph_name", String.class),
+                column(table, "source_name", String.class),
+                column(table, "source_line", Integer.class),
+                column(table, "source_column", Integer.class),
+                column(table, spelled + "_name_part_upper", String.class),
+                column(table, spelled + "_namespace_part_upper", String.class));
+        }
+
+        private static <T> Field<T> column(Table<?> table, String name, Class<T> type) {
+            return java.util.Objects.requireNonNull(
+                table.field(name.toUpperCase(Locale.ROOT), type),
+                () -> table.getName() + " has no column " + name);
+        }
+    }
+
+    private static final List<StepTwin> KEY_STEPS = List.of(
+        StepTwin.of(GRAPHITRON_AST_FIELD_REFERENCE_KEY_STEP_ENTRY, "key_ref"),
+        StepTwin.of(GRAPHITRON_AST_FIELD_REFERENCE_FOR_KEY_STEP_ENTRY, "key_ref"),
+        StepTwin.of(GRAPHITRON_AST_INPUT_VALUE_REFERENCE_KEY_STEP_ENTRY, "key_ref"),
+        StepTwin.of(GRAPHITRON_AST_INPUT_VALUE_REFERENCE_FOR_KEY_STEP_ENTRY, "key_ref"));
+
+    private static final List<StepTwin> TABLE_STEPS = List.of(
+        StepTwin.of(GRAPHITRON_AST_FIELD_REFERENCE_TABLE_STEP_ENTRY, "table_ref"),
+        StepTwin.of(GRAPHITRON_AST_FIELD_REFERENCE_FOR_TABLE_STEP_ENTRY, "table_ref"),
+        StepTwin.of(GRAPHITRON_AST_INPUT_VALUE_REFERENCE_TABLE_STEP_ENTRY, "table_ref"),
+        StepTwin.of(GRAPHITRON_AST_INPUT_VALUE_REFERENCE_FOR_TABLE_STEP_ENTRY, "table_ref"));
 
     /**
      * The hop-matching rule: the name matches case-insensitively, and a namespace the hop wrote must
@@ -302,7 +306,7 @@ public final class BindingUsages {
      * whatever the catalog offers, which is the latitude the generator itself takes.
      */
     private static Condition hopNames(
-        Spelled spelled, TableField<?, String> nameUpper, TableField<?, String> namespaceUpper
+        Spelled spelled, Field<String> nameUpper, Field<String> namespaceUpper
     ) {
         Condition match = nameUpper.in(spelled.names().stream()
             .filter(name -> name != null && !name.isEmpty())

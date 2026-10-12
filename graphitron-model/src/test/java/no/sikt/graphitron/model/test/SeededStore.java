@@ -61,7 +61,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_BY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PIVOT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPLIT_QUERY_ENTRY;
@@ -304,12 +303,6 @@ public final class SeededStore {
                 FROM graphitron_argument_reference_step_entry WHERE table_ref IS NOT NULL
               UNION
               SELECT graph_name, table_ref, table_ref_namespace_part, table_ref_name_part
-                FROM graphitron_reference_for_step_entry WHERE table_ref IS NOT NULL
-              UNION
-              SELECT graph_name, table_ref, table_ref_namespace_part, table_ref_name_part
-                FROM graphitron_argument_reference_for_step_entry WHERE table_ref IS NOT NULL
-              UNION
-              SELECT graph_name, table_ref, table_ref_namespace_part, table_ref_name_part
                 FROM graphitron_mutation_entry WHERE table_ref IS NOT NULL
               UNION
               SELECT graph_name, routine_ref, routine_ref_namespace_part, routine_ref_name_part
@@ -362,29 +355,6 @@ public final class SeededStore {
                    s.class_name, s.method, d.source_name, d.source_line, d.source_column
               FROM graphitron_argument_reference_step_entry s
               JOIN graphitron_argument_reference_entry d
-                ON d.graph_name = s.graph_name AND d.type_name = s.type_name
-               AND d.field_name = s.field_name AND d.argument_name = s.argument_name
-               AND d.ordinal = s.ordinal
-             WHERE s.class_name IS NOT NULL AND s.method IS NOT NULL
-            UNION ALL
-            SELECT s.graph_name, 'REFERENCE_FOR_STEP',
-                   s.type_name || '.' || s.field_name || '#' || CAST(s.ordinal AS VARCHAR)
-                     || '[' || CAST(s.position AS VARCHAR) || ']',
-                   s.type_name, s.field_name, NULL, s.ordinal, s.position,
-                   s.class_name, s.method, d.source_name, d.source_line, d.source_column
-              FROM graphitron_reference_for_step_entry s
-              JOIN graphitron_reference_for_entry d
-                ON d.graph_name = s.graph_name AND d.type_name = s.type_name
-               AND d.field_name = s.field_name AND d.ordinal = s.ordinal
-             WHERE s.class_name IS NOT NULL AND s.method IS NOT NULL
-            UNION ALL
-            SELECT s.graph_name, 'ARGUMENT_REFERENCE_FOR_STEP',
-                   s.type_name || '.' || s.field_name || '(' || s.argument_name || ')#'
-                     || CAST(s.ordinal AS VARCHAR) || '[' || CAST(s.position AS VARCHAR) || ']',
-                   s.type_name, s.field_name, s.argument_name, s.ordinal, s.position,
-                   s.class_name, s.method, d.source_name, d.source_line, d.source_column
-              FROM graphitron_argument_reference_for_step_entry s
-              JOIN graphitron_argument_reference_for_entry d
                 ON d.graph_name = s.graph_name AND d.type_name = s.type_name
                AND d.field_name = s.field_name AND d.argument_name = s.argument_name
                AND d.ordinal = s.ordinal

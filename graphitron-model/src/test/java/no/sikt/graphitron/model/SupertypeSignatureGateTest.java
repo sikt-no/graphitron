@@ -232,8 +232,7 @@ class SupertypeSignatureGateTest {
         Set.of("graphitron_carrier_directive", "graphitron_configured_tag",
                "graphitron_directive_application_arg", "graphitron_undecoded_argument_entry",
                "graphql_directive_application_arg"),
-        Set.of("graphitron_argument_reference_for_step_entry", "graphitron_argument_reference_step_entry",
-               "graphitron_field_reference_step_entry", "graphitron_reference_for_step_entry"),
+        Set.of("graphitron_argument_reference_step_entry", "graphitron_field_reference_step_entry"),
         Set.of("sql_constraint_column", "sql_index_column", "sql_node_key_column"),
         // A node's type id as the author wrote it and as the generated class publishes it. Two
         // corpora stating one kind of value, and graphitron_node is where the two are resolved, by

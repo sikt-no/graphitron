@@ -222,11 +222,15 @@ this one, and the read-time relations neither of them has displaced yet.
   `graphitron_field_chain_link_reading` from a decode its own comment calls deprecated; measured on a
   fixture reaching every arm the two agree exactly, so what is left is choosing which survives. The
   stored resolution is keyed in the hop's own arm shapes and adds the routine arm and the target
-  grain the hop lacks, which is a vote for retiring the hop.
+  grain the hop lacks, which is a vote for retiring the hop. A condition step's departure and
+  arrival tables then come from the chain link's reading alone, which states them per written
+  element off the method's signature, so `graphitron_condition_method_route`, keyed by the class and
+  method as spelled and read only by the two hops, dissolves with them. Two things move into the
+  reading first: the route keeps a step only where every overload's second parameter names one
+  table, and the method is the one `graphitron_code_reference` settled rather than a name match.
 * **The read-time chain relations are gone** `blocked`, on the node above. `intent_field_chain_start`,
   `_node` and `_terminus` retire as one and `graphitron_field_chain_application` falls out with them,
-  its only reader being `_node`; `graphitron_condition_method_route` is not among
-  them, having been rehomed rather than retired.
+  its only reader being `_node`.
 * **The assembly pass is inside the stage-order gate** `blocked`, on R969. `StageOrderGateTest` models
   the derivation stratum only, so the three chain stages run in a hand-kept order nothing checks.
 
@@ -452,8 +456,21 @@ entry is written by the capture phase alone. Counted in `roadmap/audits/2026-09-
     bindings read the written reference off `graphitron_code_reference_site`, still matching the
     census so an ambiguous one reports every candidate. Old and new agree on sakila and sis and time
     level. The seeded read-surface case is `read-surface-on-write`.
-  * **The reference-step entries are gone** `open`, after the condition entries. Four relations,
-    thirteen rules and five Java readers, which want the path recombined.
+  * **The reference-step entries are gone** `blocked`, on the steps below and on "One resolution
+    of an authored element stands". Four relations the registry decode writes, read for the path's
+    shape, for the name a step spells, and by the hops and the read-time chain.
+    * **The language server finds a spelled step through the step twins** `done`. Where a
+      `@reference` or `@referenceFor` step names a table or a key, read off the eight table and key
+      twins, field and input value alike, and located at the application holding the path, so an
+      argument's `@referenceFor` is found as well. `graphitron_reference_for_step_entry` and
+      `graphitron_argument_reference_for_step_entry` then had no reader and went; the registry
+      decode still writes their method references and spellings.
+    * **The field-site shape is read off the chain links** `open`. Whether a field has a path, how
+      many steps it has and where its last one is, for the node-id instruction, column-scope and
+      landing rules and `intent_field_column_table`, read off `graphitron_field_chain_link` and
+      `graphitron_field_chain_application`.
+    * **The argument-site shape follows the argument chain** `blocked`, on "The chain is stated at
+      the argument and input-field grains".
 * **The untwinned ones get an ast entry first** `open`, and are the longer half.
 * **The supertype roster becomes shrink-only** `open`. It already records the duplication and only
   ever gains rows, so making it a ratchet turns the record into the gate rather than adding one.
@@ -1569,7 +1586,9 @@ argMapping relation, its readers having moved to `graphitron_ast_argmapping_pair
 `graphitron_argmapping_entry_site_ix` and `graphitron_argmapping_entry_use_ix`. The registry
 decode's condition relations, their readers having moved to `graphql_directive_application` and the
 `graphitron_ast_` twins: `graphitron_field_condition_entry`, `graphitron_argument_condition_entry`,
-`graphitron_field_condition_context_arg_entry` and `graphitron_argument_condition_context_arg_entry`. The type-backing
+`graphitron_field_condition_context_arg_entry` and `graphitron_argument_condition_context_arg_entry`.
+The two `@referenceFor` step relations, their one reader having moved to the step twins:
+`graphitron_reference_for_step_entry` and `graphitron_argument_reference_for_step_entry`. The type-backing
 cluster, into `graphitron_type_backing`: `intent_type_backing_seed`, `intent_type_backing_class`,
 `intent_type_backing` and `intent_field_accessor_hop`, with the grain `type-backing-class` and the
 value `BACKING_CLOSURE` (now `PRODUCER` and `ACCESSOR`).

@@ -10,12 +10,10 @@ import java.util.List;
 import java.util.Map;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_BINDING_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_REFERENCE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP_ENTRY;
 import static org.jooq.impl.DSL.excluded;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
@@ -83,8 +81,6 @@ final class FactWrites {
         writers.put(GRAPHITRON_ARGUMENT_BINDING_ENTRY, FactWrites::graphitronArgumentBinding);
         writers.put(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY, FactWrites::graphitronFieldReferenceStep);
         writers.put(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY, FactWrites::graphitronArgumentReferenceStep);
-        writers.put(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY, FactWrites::graphitronReferenceForStep);
-        writers.put(GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP_ENTRY, FactWrites::graphitronArgumentReferenceForStep);
         writers.put(GRAPHITRON_MUTATION_ENTRY, FactWrites::graphitronMutation);
         writers.put(GRAPHITRON_ROUTINE_ENTRY, FactWrites::graphitronRoutine);
         writers.put(GRAPHQL_FIELD, FactWrites::graphqlField);
@@ -207,45 +203,6 @@ final class FactWrites {
         batch.execute();
     }
 
-    private static void graphitronArgumentReferenceForStep(DSLContext dsl, List<TableRecord<?>> rows) {
-        var t = GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP_ENTRY;
-        var batch = dsl.batch(dsl.insertInto(t)
-                .columns(t.GRAPH_NAME,
-                         t.TYPE_NAME,
-                         t.FIELD_NAME,
-                         t.ARGUMENT_NAME,
-                         t.ORDINAL,
-                         t.POSITION,
-                         t.TABLE_REF,
-                         t.TABLE_REF_NAMESPACE_PART,
-                         t.TABLE_REF_NAME_PART,
-                         t.KEY_REF,
-                         t.KEY_REF_NAMESPACE_PART,
-                         t.KEY_REF_NAME_PART,
-                         t.CLASS_NAME,
-                         t.METHOD,
-                         t.ARGMAPPING)
-                .values(markers(15)));
-        for (TableRecord<?> row : rows) {
-            batch = batch.bind(row.get(t.GRAPH_NAME),
-                               row.get(t.TYPE_NAME),
-                               row.get(t.FIELD_NAME),
-                               row.get(t.ARGUMENT_NAME),
-                               row.get(t.ORDINAL),
-                               row.get(t.POSITION),
-                               row.get(t.TABLE_REF),
-                               row.get(t.TABLE_REF_NAMESPACE_PART),
-                               row.get(t.TABLE_REF_NAME_PART),
-                               row.get(t.KEY_REF),
-                               row.get(t.KEY_REF_NAMESPACE_PART),
-                               row.get(t.KEY_REF_NAME_PART),
-                               row.get(t.CLASS_NAME),
-                               row.get(t.METHOD),
-                               row.get(t.ARGMAPPING));
-        }
-        batch.execute();
-    }
-
     private static void graphitronArgumentReferenceStep(DSLContext dsl, List<TableRecord<?>> rows) {
         var t = GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY;
         var batch = dsl.batch(dsl.insertInto(t)
@@ -270,43 +227,6 @@ final class FactWrites {
                                row.get(t.TYPE_NAME),
                                row.get(t.FIELD_NAME),
                                row.get(t.ARGUMENT_NAME),
-                               row.get(t.ORDINAL),
-                               row.get(t.POSITION),
-                               row.get(t.TABLE_REF),
-                               row.get(t.TABLE_REF_NAMESPACE_PART),
-                               row.get(t.TABLE_REF_NAME_PART),
-                               row.get(t.KEY_REF),
-                               row.get(t.KEY_REF_NAMESPACE_PART),
-                               row.get(t.KEY_REF_NAME_PART),
-                               row.get(t.CLASS_NAME),
-                               row.get(t.METHOD),
-                               row.get(t.ARGMAPPING));
-        }
-        batch.execute();
-    }
-
-    private static void graphitronReferenceForStep(DSLContext dsl, List<TableRecord<?>> rows) {
-        var t = GRAPHITRON_REFERENCE_FOR_STEP_ENTRY;
-        var batch = dsl.batch(dsl.insertInto(t)
-                .columns(t.GRAPH_NAME,
-                         t.TYPE_NAME,
-                         t.FIELD_NAME,
-                         t.ORDINAL,
-                         t.POSITION,
-                         t.TABLE_REF,
-                         t.TABLE_REF_NAMESPACE_PART,
-                         t.TABLE_REF_NAME_PART,
-                         t.KEY_REF,
-                         t.KEY_REF_NAMESPACE_PART,
-                         t.KEY_REF_NAME_PART,
-                         t.CLASS_NAME,
-                         t.METHOD,
-                         t.ARGMAPPING)
-                .values(markers(14)));
-        for (TableRecord<?> row : rows) {
-            batch = batch.bind(row.get(t.GRAPH_NAME),
-                               row.get(t.TYPE_NAME),
-                               row.get(t.FIELD_NAME),
                                row.get(t.ORDINAL),
                                row.get(t.POSITION),
                                row.get(t.TABLE_REF),

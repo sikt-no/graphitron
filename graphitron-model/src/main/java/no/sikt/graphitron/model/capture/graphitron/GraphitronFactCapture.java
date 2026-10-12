@@ -44,7 +44,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_LOOKUP_KEY_ENT
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_NODE_ID_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_HANDLER_ENTRY;
@@ -59,7 +58,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_MULTITABLE_REFERENCE_EN
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_BY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_REFERENCE_ENTRY;
@@ -253,19 +251,7 @@ public final class GraphitronFactCapture {
                 for (Value<?> element : list(directive, "path")) {
                     var step = referenceElement(element, directive);
                     if (step == null) continue;
-                    var row = sink.dsl().newRecord(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY);
-                    row.setTypeName(type);
-                    row.setFieldName(field);
-                    row.setOrdinal(ordinal);
-                    row.setPosition(position);
-                    spelledReference(step.table(), row::setTableRef,
-                        row::setTableRefNamespacePart, row::setTableRefNamePart);
-                    qualified(step.key(), row::setKeyRef,
-                        row::setKeyRefNamespacePart, row::setKeyRefNamePart);
-                    row.setClassName(step.className());
-                    row.setMethod(step.method());
-                    row.setArgmapping(step.argMapping());
-                    sink.add(row);
+                    spelling(step.table());
                     methodReference("REFERENCE_FOR_STEP", useSite(type, field, null, ordinal, position), type, field, null,
                         ordinal, position,
                         step.className(), step.method(), directive);
@@ -420,20 +406,7 @@ public final class GraphitronFactCapture {
                 for (Value<?> element : list(directive, "path")) {
                     var step = referenceElement(element, directive);
                     if (step == null) continue;
-                    var row = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP_ENTRY);
-                    row.setTypeName(type);
-                    row.setFieldName(field);
-                    row.setArgumentName(argument);
-                    row.setOrdinal(ordinal);
-                    row.setPosition(position);
-                    spelledReference(step.table(), row::setTableRef,
-                        row::setTableRefNamespacePart, row::setTableRefNamePart);
-                    qualified(step.key(), row::setKeyRef,
-                        row::setKeyRefNamespacePart, row::setKeyRefNamePart);
-                    row.setClassName(step.className());
-                    row.setMethod(step.method());
-                    row.setArgmapping(step.argMapping());
-                    sink.add(row);
+                    spelling(step.table());
                     methodReference("ARGUMENT_REFERENCE_FOR_STEP", useSite(type, field, argument, ordinal, position), type, field, argument,
                         ordinal, position,
                         step.className(), step.method(), directive);
@@ -816,7 +789,6 @@ public final class GraphitronFactCapture {
         GRAPHITRON_ARGUMENT_NODE_ID_ENTRY,
         GRAPHITRON_ARGUMENT_REFERENCE_ENTRY,
         GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY,
-        GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP_ENTRY,
         GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY,
         GRAPHITRON_ERROR_ENTRY,
         GRAPHITRON_ERROR_HANDLER_ENTRY,
@@ -828,7 +800,6 @@ public final class GraphitronFactCapture {
         GRAPHITRON_MULTITABLE_REFERENCE_ENTRY,
         GRAPHITRON_ORDER_BY_ENTRY,
         GRAPHITRON_REFERENCE_FOR_ENTRY,
-        GRAPHITRON_REFERENCE_FOR_STEP_ENTRY,
         GRAPHITRON_SPELLED_REFERENCE_ENTRY,
         GRAPHITRON_SPLIT_QUERY_ENTRY,
         GRAPHITRON_TENANT_FAN_OUT_ENTRY,

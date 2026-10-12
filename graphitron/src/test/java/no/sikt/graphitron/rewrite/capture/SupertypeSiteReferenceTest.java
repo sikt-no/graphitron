@@ -122,14 +122,13 @@ class SupertypeSiteReferenceTest {
             + " AND d.argument_name = s.argument_name AND d.ordinal = s.ordinal"
             + " AND d.position = s.step_position",
         "REFERENCE_FOR_STEP",
-        "graphitron_reference_for_step_entry d WHERE d.graph_name = s.graph_name"
-            + " AND d.type_name = s.type_name AND d.field_name = s.field_name"
-            + " AND d.ordinal = s.ordinal AND d.position = s.step_position",
+        "graphql_directive_application d WHERE d.graph_name = s.graph_name"
+            + " AND d.directive_name = 'referenceFor' AND d.ordinal = s.ordinal"
+            + " AND d.coordinate = s.type_name || '.' || s.field_name",
         "ARGUMENT_REFERENCE_FOR_STEP",
-        "graphitron_argument_reference_for_step_entry d WHERE d.graph_name = s.graph_name"
-            + " AND d.type_name = s.type_name AND d.field_name = s.field_name"
-            + " AND d.argument_name = s.argument_name AND d.ordinal = s.ordinal"
-            + " AND d.position = s.step_position"));
+        "graphql_directive_application d WHERE d.graph_name = s.graph_name"
+            + " AND d.directive_name = 'referenceFor' AND d.ordinal = s.ordinal"
+            + " AND d.coordinate = s.type_name || '.' || s.field_name || '(' || s.argument_name || ':)'"));
 
     @Test
     @DisplayName("every named method resolves to the directive application that named it")
