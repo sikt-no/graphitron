@@ -1,7 +1,7 @@
 ---
 id: R1018
 title: "A child field routes on its parent row tenant, not on an optional argument slot"
-status: Spec
+status: Ready
 bucket: bug
 priority: 6
 theme: runtime-connection
