@@ -1,7 +1,7 @@
 ---
 id: R1014
 title: "Custom-scalar default values reach the runtime schema as literals"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 1
 theme: codegen-correctness
@@ -55,7 +55,7 @@ Shipped at `dbc854c5`: `GraphQLValueEmitter.emitDefault(InputValueWithState, coo
 
 ## Tests
 
-The evidence is at the execution tier in `graphitron-sakila-example`, which builds `Graphitron.buildSchema` with the real `GraphQLBigDecimal`. Rework shipped at `50433fd9`.
+The evidence is at the execution tier in `graphitron-sakila-example`, which builds `Graphitron.buildSchema` with the real `GraphQLBigDecimal`. Rework shipped at `1a1d189b`.
 
 - Fixture. `RentalRateRangeDefaulted { fra: BigDecimal = 0  til: BigDecimal = 1 }` is a defaulted sibling of `RentalRateRange`, whose undefaulted `null` bounds the existing range test relies on. `FilmRentalRangeFilterDefaulted.rentalRateRange` carries it to `InputFieldConditionFixtures.rentalRateRange`. `Query.filmsByRentalRateRangeDefaulted(filter: ... = {rentalRateRange: {fra: 4, til: 5}})` gives the argument default bounds of its own. `directive @rateTolerance(min: BigDecimal = 0, steps: [BigDecimal] = [1, 2])` needs no application, because `DirectiveDefinitionEmitter` emits every author-declared definition. The fixture alone is the regression: before the fix, schema build fails, and every execution test in the module fails with it. That covers all three emit sites and the list default.
 - `GraphQLQueryTest.inputFieldCondition_customScalarDefaults_bindAsBigDecimalBounds` pins behaviour. `{ filmsByRentalRateRangeDefaulted { title } }` returns exactly `ACE GOLDFINGER` (4.99, from the argument default's `[4, 5]`). `{ filmsByRentalRateRangeDefaulted(filter: {rentalRateRange: {}}) { title } }` returns exactly `ACADEMY DINOSAUR` (0.99, from the input-field defaults' `[0, 1]`). Because the bounds differ, each query pins its own path.
@@ -102,4 +102,4 @@ The verification build (`mvn install -Plocal-db`) is green, and question 1 holds
 
 What satisfies this: items 1 and 2 delivered, the Tests section amended to match, and a green verification build. Note for the next build: the trunk sync that brought this item also brought `init.sql` changes, so a sandbox seeded before it fails `FactExpectationTest` on `node_metadata_*` / `recordless_note` until it is re-seeded per `.claude/web-environment.md`. That failure is unrelated to this item.
 
-**Rework response** (`50433fd9`). Item 1: `DefaultValueEmissionTest` is deleted, and `DirectiveDefinitionEmitterTest` has no default-value assertions left. Item 2: the list default rides on `@rateTolerance(steps:)`. Introspection now states that defaults arrive as authored literals. The argument default spells `[4, 5]`, so it answers differently from the field defaults. Item 3: Diagnosis, Implementation and Tests above are rewritten to match what shipped.
+**Rework response** (`1a1d189b`). Item 1: `DefaultValueEmissionTest` is deleted, and `DirectiveDefinitionEmitterTest` has no default-value assertions left. Item 2: the list default rides on `@rateTolerance(steps:)`. Introspection now states that defaults arrive as authored literals. The argument default spells `[4, 5]`, so it answers differently from the field defaults. Item 3: Diagnosis, Implementation and Tests above are rewritten to match what shipped.
