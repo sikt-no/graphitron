@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.config;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
@@ -30,8 +31,29 @@ import java.util.Objects;
  *                   re-deriving them. What a consumer saves is the read, a jar being verified by
  *                   content hash on every round of a session; what it must not do is treat an
  *                   absent stamp as a claim, since none is the answer for "ask the bytes"
+ * @param kind       what the entry is as the producer resolved it: a directory the build writes,
+ *                   or a jar that is a release or a snapshot
  */
-public record ClasspathEntry(Path path, Origin origin, String coordinate, String suppliedStamp) {
+public record ClasspathEntry(Path path, Origin origin, String coordinate, String suppliedStamp,
+                             Kind kind) {
+
+    /** What an entry is, which decides whether its bytes can change under its name. */
+    public enum Kind {
+        /** A directory the build writes, whose contents change whenever it compiles. */
+        DIRECTORY,
+        /** A jar released under its coordinate and version, which cannot change under them. */
+        RELEASE,
+        /** A jar that can be replaced under its coordinate and version. */
+        SNAPSHOT;
+
+        /**
+         * The kind where the producer resolved nothing: a directory is one, and a jar that
+         * nobody vouched for may still change.
+         */
+        public static Kind unresolved(Path path) {
+            return Files.isDirectory(path) ? DIRECTORY : SNAPSHOT;
+        }
+    }
 
     /** How an entry reached the compile classpath. */
     public enum Origin {
@@ -68,6 +90,12 @@ public record ClasspathEntry(Path path, Origin origin, String coordinate, String
     public ClasspathEntry {
         Objects.requireNonNull(path, "path");
         Objects.requireNonNull(origin, "origin");
+        Objects.requireNonNull(kind, "kind");
+    }
+
+    /** An entry whose producer did not resolve what kind it is; see {@link Kind#unresolved}. */
+    public ClasspathEntry(Path path, Origin origin, String coordinate, String suppliedStamp) {
+        this(path, origin, coordinate, suppliedStamp, Kind.unresolved(path));
     }
 
     /**

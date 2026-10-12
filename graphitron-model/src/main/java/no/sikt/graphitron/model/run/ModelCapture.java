@@ -65,7 +65,7 @@ public final class ModelCapture {
                                          LocalDateTime readAt, StageProgress progress) {
         writeGraph(dsl, graph, readAt);
         Progress.started(dsl, graph.name(), Progress.CAPTURE);
-        StoreEntries.write(dsl, graph.name(), config, readAt);
+        StoreEntries.write(dsl, graph.name(), config, classpath, readAt);
 
         JooqFactCapture.capture(dsl, graph.name(), config.jooqPackage().orElse(null), loader,
             readAt);

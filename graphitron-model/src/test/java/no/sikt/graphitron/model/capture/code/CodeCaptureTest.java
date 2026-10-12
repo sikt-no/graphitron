@@ -242,23 +242,6 @@ class CodeCaptureTest {
         });
     }
 
-    /** The entry a row hangs on keeps the classification its producer gave it. */
-    @Test
-    @DisplayName("the constants' own classpath entry is registered with its origin")
-    void theEntryIsRegisteredWithItsOrigin() {
-        withCapture(FIRST, dsl -> {
-            assertThat(dsl.select(STORE_SOURCE.ORIGIN, STORE_SOURCE.COORDINATE)
-                    .from(STORE_SOURCE)
-                    .where(STORE_SOURCE.SOURCE_NAME.eq(graphqlJavaJar().toString()))
-                    .fetchOne())
-                .as("a declared dependency, told from this module's own output by its origin")
-                .satisfies(row -> {
-                    assertThat(row.value1()).isEqualTo("DECLARED");
-                    assertThat(row.value2()).isEqualTo("com.graphql-java:graphql-java");
-                });
-        });
-    }
-
     /**
      * Every captured class is reachable from the entry it was read from, which is the partition a
      * refresh deletes and re-walks. A jar is stamped by content so an unchanged one is read once; a

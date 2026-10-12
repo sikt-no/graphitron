@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.capture.store;
 
+import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.sink.Progress;
 import no.sikt.graphitron.model.config.SessionStateConfig;
 import no.sikt.graphitron.model.lint.LintConfig;
@@ -13,9 +14,11 @@ import org.jooq.Rows;
 import org.jooq.Table;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.stream.IntStream;
 
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_DEPENDENCY;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_DISABLED_RULE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_EXCLUDED_TYPE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_OUTPUT;
@@ -29,7 +32,7 @@ import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
 
 /**
- * Writes what the run was configured with, as configured. Nine relations and eight methods, one per
+ * Writes what the run was configured with, as configured. Ten relations and nine methods, one per
  * parameter or per group of parameters that arrive together, so a method is changed alone; the
  * mount and the unmount share theirs because one sealed value carries both.
  *
@@ -77,14 +80,17 @@ public final class StoreEntries {
     /**
      * Makes {@code graph}'s configuration rows be exactly what {@code config} declares.
      *
-     * <p>The instant is the caller's, the nine relations having to agree on which reading is
+     * <p>The instant is the caller's, the ten relations having to agree on which reading is
      * current, and the graph is a parameter rather than read off the configuration: a run that
      * declared nothing at all still has rows to sweep and nothing left to say whose they were.
+     *
+     * @param classpath the compile classpath the build tool resolved for the run, which is
+     *                  configuration the build declares rather than a corpus this reads
      */
     public static void write(DSLContext dsl, String graph, SubjectConfig config,
-                             LocalDateTime touchedAt) {
+                             List<ClasspathEntry> classpath, LocalDateTime touchedAt) {
         Progress.started(dsl, graph, GATHERER);
-        dsl.transaction(tx -> gather(tx.dsl(), graph, config, touchedAt));
+        dsl.transaction(tx -> gather(tx.dsl(), graph, config, classpath, touchedAt));
         Progress.completed(dsl, graph, GATHERER);
     }
 
@@ -92,7 +98,7 @@ public final class StoreEntries {
     private static final String GATHERER = "store";
 
     private static void gather(DSLContext dsl, String graph, SubjectConfig config,
-                             LocalDateTime touchedAt) {
+                               List<ClasspathEntry> classpath, LocalDateTime touchedAt) {
         config.recipe().ifPresent(recipe -> {
             schemaInputs(dsl, graph, recipe, touchedAt);
             schemaExtensions(dsl, graph, recipe, touchedAt);
@@ -103,6 +109,7 @@ public final class StoreEntries {
         lintDisabledRules(dsl, graph, config.lint(), touchedAt);
         lintExcludedTypes(dsl, graph, config.lint(), touchedAt);
         sessionState(dsl, graph, config.sessionState(), touchedAt);
+        dependencies(dsl, graph, classpath, touchedAt);
         sweep(dsl, graph, touchedAt);
     }
 
@@ -117,7 +124,8 @@ public final class StoreEntries {
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
         STORE_GRAPH_SCHEMA_INPUT, STORE_GRAPH_SCHEMA_EXTENSION, STORE_GRAPH_SUPERGRAPH,
         STORE_GRAPH_OUTPUT, STORE_GRAPH_TENANT_COLUMN, STORE_GRAPH_LINT_DISABLED_RULE,
-        STORE_GRAPH_LINT_EXCLUDED_TYPE, STORE_GRAPH_SESSION_MOUNT, STORE_GRAPH_SESSION_UNMOUNT);
+        STORE_GRAPH_LINT_EXCLUDED_TYPE, STORE_GRAPH_SESSION_MOUNT, STORE_GRAPH_SESSION_UNMOUNT,
+        STORE_GRAPH_DEPENDENCY);
 
     /**
      * Deletes this graph's rows that this reading did not touch, which are the parameters the run
@@ -126,7 +134,7 @@ public final class StoreEntries {
      */
     private static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         // Table.field(Field) is a lookup by name returning the loop's own typed column, so one
-        // relation's two name them on all nine.
+        // relation's two name them on all ten.
         var named = STORE_GRAPH_SCHEMA_INPUT;
         for (Table<?> table : TABLES_TO_SWEEP.reversed()) {
             dsl.deleteFrom(table)
@@ -259,6 +267,33 @@ public final class StoreEntries {
             .set(t.COLUMN_NAME, excluded(t.COLUMN_NAME))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
+    }
+
+    /**
+     * The classpath's entries, as the producer resolved them. Keyed by the entry, so an entry a
+     * producer lists twice is one row, the first saying what it is.
+     */
+    private static void dependencies(DSLContext dsl, String graph, List<ClasspathEntry> classpath,
+                                     LocalDateTime touchedAt) {
+        var byName = new LinkedHashMap<String, ClasspathEntry>();
+        classpath.forEach(entry -> byName.putIfAbsent(entry.path().toString(), entry));
+        var t = STORE_GRAPH_DEPENDENCY;
+        var rows = byName.entrySet().stream().collect(Rows.toRowList(
+            e -> val(graph, t.GRAPH_NAME),
+            e -> val(e.getKey(), t.SOURCE_NAME),
+            e -> val(e.getValue().kind().name(), t.KIND),
+            e -> val(e.getValue().origin().name(), t.ORIGIN),
+            e -> val(e.getValue().coordinate(), t.COORDINATE),
+            e -> val(touchedAt, t.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.KIND, t.ORIGIN, t.COORDINATE,
+                    t.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(t.KIND, excluded(t.KIND))
+                .set(t.ORIGIN, excluded(t.ORIGIN))
+                .set(t.COORDINATE, excluded(t.COORDINATE))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 
     /**

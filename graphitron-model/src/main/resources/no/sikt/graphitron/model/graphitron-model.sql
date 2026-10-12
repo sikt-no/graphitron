@@ -231,20 +231,36 @@ COMMENT ON COLUMN store_graph_session_unmount.graph_name IS 'the configuring gra
 COMMENT ON COLUMN store_graph_session_unmount.unmount_method IS 'the unmounting method as authored, fqcn#method, from <unmount>';
 COMMENT ON COLUMN store_graph_session_unmount.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row with no instant being one no reading claims and no sweep reaches. Swept before the mount beside it, which is the foreign key deciding the order rather than a rule this family states twice';
 
+CREATE TABLE store_graph_dependency (
+  graph_name  VARCHAR NOT NULL,
+  source_name VARCHAR NOT NULL,
+  kind        VARCHAR NOT NULL,
+  origin      VARCHAR NOT NULL,
+  coordinate  VARCHAR,
+  touched_at  TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  CHECK (kind IN ('DIRECTORY', 'RELEASE', 'SNAPSHOT')),
+  CHECK (origin IN ('PROJECT', 'REACTOR', 'SIBLING', 'DECLARED', 'TRANSITIVE')),
+  CHECK (origin <> 'PROJECT' OR coordinate IS NULL)
+);
+COMMENT ON TABLE store_graph_dependency IS 'One entry of the compile classpath the build handed this graph''s run, with what the build resolved it as. For example the consumer''s own target/classes is a DIRECTORY of origin PROJECT, and jooq-3.20.11.jar a RELEASE the pom declares.';
+COMMENT ON COLUMN store_graph_dependency.graph_name IS 'the configuring graph''s partition, anchored by store_graph';
+COMMENT ON COLUMN store_graph_dependency.source_name IS 'the entry''s path, spelled as store_source.source_name spells the entry once it is read; with the graph, the key';
+COMMENT ON COLUMN store_graph_dependency.kind IS 'whether the entry''s bytes can change under its name: DIRECTORY for a class directory the build writes, RELEASE for a jar released under its coordinate and version, SNAPSHOT for a jar that can be replaced under them. A producer that resolved nothing has no release to vouch for, so a jar it hands over is a SNAPSHOT';
+COMMENT ON COLUMN store_graph_dependency.origin IS 'how this entry reached the compile classpath, as the build decided it: PROJECT for the module''s own build output, REACTOR for another module of the same build this module declares a dependency on, SIBLING for a reactor module''s output this module declares no dependency on, DECLARED for a coordinate the pom names that the build does not produce, TRANSITIVE for one a declared dependency dragged in. REACTOR and DECLARED are one fact apart and the distinction is the point of both: declaring a dependency is what makes naming it legitimate, which the two share, while being the build''s own code is what a reader scoping to the consumer wants, which only the first has. Collapsed, a reader could not tell a module of its own build from a third-party jar. The column a reader scopes by when it wants the reactor rather than the world, and the axis a ranking over classpath contents sorts on, a consumer''s own exception outranking a transport library''s; recorded rather than re-derived because nothing downstream of the plugin can recover it from a path';
+COMMENT ON COLUMN store_graph_dependency.coordinate IS 'the entry''s groupId:artifactId, or the module name for a reactor sibling found by convention; NULL for the project''s own output, which is what the origin beside it already says. Here for the same reason the refusals carry it: "declare a dependency on module X" needs a name no target/classes path supplies';
+COMMENT ON COLUMN store_graph_dependency.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the entries the build no longer declares, which an upsert cannot find because there is no incoming row to match';
+
 CREATE TABLE store_source (
   source_name VARCHAR NOT NULL,
   source_kind VARCHAR NOT NULL,
-  origin      VARCHAR,
-  coordinate  VARCHAR,
   stamp       VARCHAR,
   mtime       TIMESTAMP,
   last_seen   TIMESTAMP NOT NULL,
   read_at     TIMESTAMP,
   PRIMARY KEY (source_name),
-  CHECK (source_kind IN ('SCHEMA_FILE', 'DIRECTORY', 'JAR', 'JOOQ_SCHEMA')),
-  CHECK (origin IS NULL OR origin IN ('PROJECT', 'REACTOR', 'SIBLING', 'DECLARED',
-                                      'TRANSITIVE')),
-  CHECK (origin <> 'PROJECT' OR coordinate IS NULL)
+  CHECK (source_kind IN ('SCHEMA_FILE', 'DIRECTORY', 'JAR', 'JOOQ_SCHEMA'))
 );
 -- One class file under a classpath entry, which is the unit the reading opens and therefore the
 -- unit it can decline to open again. The entry above it is too coarse to invalidate on: in a
@@ -297,8 +313,6 @@ COMMENT ON COLUMN store_graph_source.read_at IS 'when this graph last transcribe
 COMMENT ON TABLE store_source IS 'A source the store read, store-global rather than graph-keyed: it can say what a file hashed to, never which graph read it. Every base relation is partitionable by the source that produced it: a refresh deletes exactly the rows one source wrote and re-walks it, so a relation unreachable from a source row is one the store can only ever discard wholesale.';
 COMMENT ON COLUMN store_source.source_name IS 'the schema file path, the classpath entry path, or the generated package a jOOQ schema lives in, as the reader spelled it';
 COMMENT ON COLUMN store_source.source_kind IS 'a closed taxonomy: a schema file, a directory root, a jar, or a generated jOOQ schema package. The last names jOOQ deliberately, unlike the sql_ family: a family is named for whose vocabulary its rows are written in and jOOQ owns none of SQL''s, but a source is named for what it is, and a generated package is jOOQ''s artefact';
-COMMENT ON COLUMN store_source.origin IS 'how this entry reached the compile classpath, which is the decision the build already took and used to drop: PROJECT for the module''s own build output, REACTOR for another module of the same build this module declares a dependency on, SIBLING for a reactor module''s output this module declares no dependency on, DECLARED for a coordinate the pom names that the build does not produce, TRANSITIVE for one a declared dependency dragged in. REACTOR and DECLARED are one fact apart and the distinction is the point of both: declaring a dependency is what makes naming it legitimate, which the two share, while being the build''s own code is what a reader scoping to the consumer wants, which only the first has. Collapsing them, as this column once did, leaves such a reader unable to tell a module of its own build from a third-party jar. Nullable, and on two populations rather than one: a schema file reaches the run by configuration and is on no classpath, and a classpath row the retiring walk wrote through ClasspathSources.upsert carries none either, that seam holding a path and a kind and never the decision. So absence is not-recorded and never not-classified, and a reader scoping to the reactor must not read a null as an answer. The column a reader scopes by when it wants the reactor rather than the world, and the axis a ranking over classpath contents sorts on, a consumer''s own exception outranking a transport library''s; recorded rather than re-derived because nothing downstream of the plugin can recover it from a path';
-COMMENT ON COLUMN store_source.coordinate IS 'the entry''s groupId:artifactId, or the module name for a reactor sibling found by convention; NULL for the project''s own output, which is what the origin beside it already says, and NULL on a schema file. Here for the same reason the refusals carry it: "declare a dependency on module X" needs a name no target/classes path supplies';
 COMMENT ON COLUMN store_source.stamp IS 'the source''s content identity, spelled <scheme>:<hex> by SourceStamp, so an unchanged source is read once and a currency check can re-hash a cold graph''s files without building its module. Two schemes: sha256: is a hash of bytes this store read, and sha1: is an identity the resolver already established for an artifact it downloaded, supplied by whoever resolved the classpath and never recomputed here, which is what lets a jar whose coordinate cannot be republished under new bytes go unhashed. The tag is load-bearing rather than decorative, comparison being string equality: two schemes never compare equal, so a source whose scheme changed reads as changed and is re-walked once. Schema files are stamped at capture time (one file re-read per schema file, priced against exactly that reader); NULL where nothing resolves to a regular file to hash: a directory root changes on every compile, the bundled directives.graphqls is a resource name, a programmatic caller may hand a bare name, and a jOOQ schema is a package spread across the classpath whose walk is cheap enough not to need one. Also NULL while the source''s rows are being written, and set only once they are all in, so a run that dies mid-load leaves a partition that is re-walked rather than one that claims to be complete';
 COMMENT ON COLUMN store_source.mtime IS 'the filesystem''s last-modified time for this source, read when the source was read. Not a currency signal and deliberately not one: stamp answers whether the bytes changed, and this column exists because a modification time answers a question a hash cannot, which of two sources was written later. That is what orders candidates when several documents declare one coordinate, so a report can say which declaration is the incumbent and which is the incursion rather than naming whichever the reader happened to walk first. Null where the source is not a regular file, a generated jOOQ package and a programmatic label having no modification time to read.';
 COMMENT ON COLUMN store_source.last_seen IS 'when a run last named this source in its input set; the age half of the age/currency distinction, and the bookkeeping a future eviction surface reads';
@@ -7175,7 +7189,7 @@ CREATE TABLE code_scalar_constant (
     REFERENCES code_class (source_name, class_name) ON DELETE CASCADE
 );
 COMMENT ON TABLE code_scalar_constant IS 'One constant an author may name in @scalarType(scalar:), and the Java type its scalar coerces to. For example a DATE_TIME field coercing to java.time.OffsetDateTime.';
-COMMENT ON COLUMN code_scalar_constant.source_name IS 'the classpath entry the owning class was read from, anchored by store_source; the key''s leading dimension, and what a reader joins through to scope by origin or by the graph''s own source set';
+COMMENT ON COLUMN code_scalar_constant.source_name IS 'the classpath entry the owning class was read from, anchored by store_source; the key''s leading dimension, and what a reader joins through to scope by the graph''s own source set, or by how the graph''s build reached the entry on store_graph_dependency';
 COMMENT ON COLUMN code_scalar_constant.class_name IS 'the owning class''s binary name, the left part of the reference an author writes';
 COMMENT ON COLUMN code_scalar_constant.field_name IS 'the constant''s own name, the right part of that reference; completing the key';
 COMMENT ON COLUMN code_scalar_constant.input_type IS 'the fully-qualified Java type a value of this constant''s scalar arrives as, the input parameter of the Coercing it holds, boxed where that is primitive. NULL where the constant does not resolve to one, which folds four cases this arm does not tell apart: the class does not load, the field is not a public static GraphQLScalarType, its initialiser throws, or the coercing declares no usable input. The one column here that a classfile cannot answer, read by loading the class instead, so absence is unresolved and never not-a-scalar';
@@ -7189,7 +7203,7 @@ CREATE TABLE code_throwable (
   FOREIGN KEY (source_name) REFERENCES store_source (source_name) ON DELETE CASCADE
 );
 COMMENT ON TABLE code_throwable IS 'One throwable on the classpath, which is what an author may name as an @error handler''s exception. For example org.jooq.exception.IntegrityConstraintViolationException, read from the jOOQ jar.';
-COMMENT ON COLUMN code_throwable.source_name IS 'the classpath entry the class was read from, anchored by store_source; the key''s leading dimension, and what a reader joins through to rank a candidate by origin or by coordinate';
+COMMENT ON COLUMN code_throwable.source_name IS 'the classpath entry the class was read from, anchored by store_source; the key''s leading dimension, and what a reader joins through to rank a candidate by origin or by coordinate, which store_graph_dependency holds per graph';
 COMMENT ON COLUMN code_throwable.class_name IS 'the throwable''s binary name, which is what an author writes; completing the key';
 COMMENT ON COLUMN code_throwable.touched_at IS 'when the reading that produced this row ran; the reading ends by deleting the rows of the entries it read that still carry an older instant, which are the throwables a recompiled entry no longer declares';
 
@@ -13676,6 +13690,9 @@ COMMENT ON COLUMN meta_gatherer_corpus.corpus_name IS 'the corpus read, a meta_c
 INSERT INTO meta_gatherer_corpus VALUES
   ('sdl', 'sdl'),
   ('classpath-source', 'classpath'),
+  -- Which entries to read is the classpath the build declared, handed to the reading with the rest
+  -- of the configuration.
+  ('classpath-source', 'configuration'),
   ('code', 'classpath'),
   ('graphql-source', 'sdl'),
   -- The reading expands the recipe to find the files, and what each matching entry configures for
@@ -13789,6 +13806,9 @@ COMMENT ON COLUMN meta_relation.example IS 'one example row stated concretely, a
 COMMENT ON COLUMN meta_relation.rationale IS 'why this relation exists, a paragraph at most by the CHECK beside it; measurements, rejected shapes and arguments with earlier authors belong in the architecture docs rather than here';
 
 INSERT INTO meta_grain VALUES
+  ('graph-dependency',
+   'one entry of the compile classpath one graph''s build declares, as the build resolved it',
+   'graph_name, source_name', 'configuration'),
   ('facet-binding',
    'one @asFacet application, at the input field it sits on, in one graph',
    'graph_name, type_name, field_name', 'sdl'),
@@ -14227,6 +14247,10 @@ INSERT INTO meta_relation VALUES
    'How far a capture of one graph got: one row per gatherer that reads it, and one for the capture as a whole.',
    'For example a capture that hung in the graphitron gatherer leaves its row started after it last completed, every gatherer before it completed with this reading''s instants, and the capture row incomplete.',
    'A capture commits gatherer by gatherer, so the store says how far a reading got; this is where it says it, read by a person or a tool looking at a store rather than by the generator. Written by each gatherer around its own run, through the sink package''s Progress, and by ModelCapture for its own row. Reporting only, never a transaction boundary: the gatherer commits its work in whatever transactions suit it. The start is written before the gatherer touches anything, so one that never returns has already named itself, and the completion after the gatherer has returned, so a finished row means its work is committed; one that throws leaves its row unfinished. Wall-clock instants rather than the reading''s, which every gatherer shares; the reading''s instant stays on store_graph.last_captured and on every row it marks. No sweep: a row is the gatherer''s last reading and the next one overwrites it, and a graph or gatherer that goes takes its rows by cascade.'),
+  ('store_graph_dependency', 'graph-dependency', 'store',
+   'One entry of the compile classpath the build handed this graph''s run, with what the build resolved it as.',
+   'For example the consumer''s own target/classes is a DIRECTORY of origin PROJECT, and jooq-3.20.11.jar a RELEASE the pom declares.',
+   'Configuration rather than a reading: what a module depends on is something its build declares, so the row is transcribed as the producer resolved it and nothing here is read off the entry. Per graph, because how an entry reached the classpath is a fact about one module''s build and not about the bytes: one jar is declared by one module and dragged in by another. Stored rather than held in the Java that wrote it because a graph''s claim on an entry can only reference a dependency that is a row, and that reference is what lets a dependency the build stops declaring release its claim by cascade.'),
   ('graphql_schema_problem', 'graph-schema-problem', 'graphql-assembly',
    'Reading this graph''s documents and making a schema of them produced this problem: one of the refusals the toolchain this graph is built with raised, whichever of the four stages raised it.',
    'For example a file that will not parse is one row naming that file, a second file declaring a type an earlier file already declares is another, and a second federation @link is a third.',

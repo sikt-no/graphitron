@@ -2,6 +2,7 @@ package no.sikt.graphitron.model;
 
 import no.sikt.graphitron.model.capture.config.StoredRecipe;
 import no.sikt.graphitron.model.capture.store.StoreEntries;
+import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.config.SessionStateConfig;
 import no.sikt.graphitron.model.lint.LintConfig;
 import no.sikt.graphitron.model.run.OutputCoordinates;
@@ -21,6 +22,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_DEPENDENCY;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_DISABLED_RULE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_EXCLUDED_TYPE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_OUTPUT;
@@ -56,7 +58,7 @@ class StoreEntriesTest {
     void transcribesTheWholeSubject() {
         withSeededStore(dsl -> {
             seedGraph(dsl, GRAPH);
-            StoreEntries.write(dsl, GRAPH, everything(), FIRST);
+            StoreEntries.write(dsl, GRAPH, everything(), classpath(), FIRST);
 
             assertThat(dsl.select(STORE_GRAPH_SCHEMA_INPUT.ORDINAL, STORE_GRAPH_SCHEMA_INPUT.KIND,
                     STORE_GRAPH_SCHEMA_INPUT.ENTRY_VALUE, STORE_GRAPH_SCHEMA_INPUT.TAG,
@@ -134,7 +136,7 @@ class StoreEntriesTest {
     void theRecipeSurvivesTheRoundTrip() {
         withSeededStore(dsl -> {
             seedGraph(dsl, GRAPH);
-            StoreEntries.write(dsl, GRAPH, SubjectConfig.of(recipe()), FIRST);
+            StoreEntries.write(dsl, GRAPH, SubjectConfig.of(recipe()), List.of(), FIRST);
 
             // The decode is the incumbent gatherer's and it reads what this writer wrote, so the
             // kind taxonomy is spelled in two places until the incumbent goes. This case is what
@@ -155,7 +157,7 @@ class StoreEntriesTest {
     void absenceIsAMissingRow() {
         withSeededStore(dsl -> {
             seedGraph(dsl, GRAPH);
-            StoreEntries.write(dsl, GRAPH, SubjectConfig.none(), FIRST);
+            StoreEntries.write(dsl, GRAPH, SubjectConfig.none(), List.of(), FIRST);
 
             assertThat(census(dsl, GRAPH).values())
                 .as("no row anywhere; a synthesised value here is a fact that can disagree with "
@@ -169,11 +171,11 @@ class StoreEntriesTest {
     void sweepsWhatTheRunNoLongerDeclares() {
         withSeededStore(dsl -> {
             seedGraph(dsl, GRAPH);
-            StoreEntries.write(dsl, GRAPH, everything(), FIRST);
+            StoreEntries.write(dsl, GRAPH, everything(), classpath(), FIRST);
 
-            // The same build file with three elements taken out: the tenant column, the unmount
-            // beside the mount, and one lint rule. Each is a different way of going away, and none
-            // of the three produces an incoming row for an upsert to land on.
+            // The same build file with four elements taken out: the tenant column, the unmount
+            // beside the mount, one lint rule and one dependency. Each is a different way of going
+            // away, and none of the four produces an incoming row for an upsert to land on.
             StoreEntries.write(dsl, GRAPH, new SubjectConfig(
                 Optional.of(recipe()), Optional.of("com.example.jooq"), Optional.of("catalogue"),
                 Optional.of(output()), Optional.empty(),
@@ -181,7 +183,7 @@ class StoreEntriesTest {
                 new SessionStateConfig.MethodHooks(
                     new SessionStateConfig.HookRef("com.example.Identity", "mount"),
                     Optional.empty())),
-                SECOND);
+                classpath().subList(0, 2), SECOND);
 
             assertThat(dsl.fetchCount(STORE_GRAPH_TENANT_COLUMN,
                 STORE_GRAPH_TENANT_COLUMN.GRAPH_NAME.eq(GRAPH)))
@@ -202,6 +204,33 @@ class StoreEntriesTest {
                 .fetch(0, String.class))
                 .as("a value-keyed row the reading did not touch, rather than one it overwrote")
                 .containsExactly("field-names-camel-case");
+            assertThat(dsl.select(STORE_GRAPH_DEPENDENCY.SOURCE_NAME)
+                .from(STORE_GRAPH_DEPENDENCY)
+                .where(STORE_GRAPH_DEPENDENCY.GRAPH_NAME.eq(GRAPH))
+                .fetch(0, String.class))
+                .as("a dependency the build stopped declaring")
+                .containsExactlyInAnyOrder("/build/target/classes", "/repo/jooq-3.20.11.jar");
+        });
+    }
+
+    @Test
+    @DisplayName("each classpath entry is a dependency row saying what the build resolved it as")
+    void transcribesTheClasspath() {
+        withSeededStore(dsl -> {
+            seedGraph(dsl, GRAPH);
+            StoreEntries.write(dsl, GRAPH, SubjectConfig.none(), classpath(), FIRST);
+
+            assertThat(dsl.select(STORE_GRAPH_DEPENDENCY.SOURCE_NAME, STORE_GRAPH_DEPENDENCY.KIND,
+                    STORE_GRAPH_DEPENDENCY.ORIGIN, STORE_GRAPH_DEPENDENCY.COORDINATE)
+                .from(STORE_GRAPH_DEPENDENCY)
+                .where(STORE_GRAPH_DEPENDENCY.GRAPH_NAME.eq(GRAPH))
+                .orderBy(STORE_GRAPH_DEPENDENCY.SOURCE_NAME)
+                .fetch(r -> List.of(r.value1(), r.value2(), r.value3(), String.valueOf(r.value4()))))
+                .containsExactly(
+                    List.of("/build/target/classes", "DIRECTORY", "PROJECT", "null"),
+                    List.of("/repo/jooq-3.20.11.jar", "RELEASE", "DECLARED", "org.jooq:jooq"),
+                    List.of("/repo/model-1.0-SNAPSHOT.jar", "SNAPSHOT", "REACTOR",
+                        "com.example:model"));
         });
     }
 
@@ -210,12 +239,12 @@ class StoreEntriesTest {
     void sweepsTheOrdinalsARecipeNoLongerReaches() {
         withSeededStore(dsl -> {
             seedGraph(dsl, GRAPH);
-            StoreEntries.write(dsl, GRAPH, everything(), FIRST);
+            StoreEntries.write(dsl, GRAPH, everything(), classpath(), FIRST);
 
             var shorter = new SchemaRecipe(Path.of("/build/pom.xml"),
                 List.of(SchemaRecipe.Binding.pattern("src/main/resources/**.graphqls")),
                 List.of(".graphqls"));
-            StoreEntries.write(dsl, GRAPH, SubjectConfig.of(shorter), SECOND);
+            StoreEntries.write(dsl, GRAPH, SubjectConfig.of(shorter), List.of(), SECOND);
 
             assertThat(dsl.select(STORE_GRAPH_SCHEMA_INPUT.ORDINAL)
                 .from(STORE_GRAPH_SCHEMA_INPUT)
@@ -237,14 +266,14 @@ class StoreEntriesTest {
     void writingTwiceRestampsRatherThanDuplicating() {
         withSeededStore(dsl -> {
             seedGraph(dsl, GRAPH);
-            StoreEntries.write(dsl, GRAPH, everything(), FIRST);
+            StoreEntries.write(dsl, GRAPH, everything(), classpath(), FIRST);
             var afterFirst = census(dsl, GRAPH);
 
             // A second reading of an unchanged configuration, which is where a sweep predicate
             // that is wrong on the second pass shows it: rows deleted, duplicated, or left
             // carrying the older instant. The first pass cannot fail that way, having nothing
             // to sweep.
-            StoreEntries.write(dsl, GRAPH, everything(), SECOND);
+            StoreEntries.write(dsl, GRAPH, everything(), classpath(), SECOND);
 
             assertThat(census(dsl, GRAPH))
                 .as("the same configuration transcribes to the same rows however often it is read")
@@ -261,11 +290,11 @@ class StoreEntriesTest {
         withSeededStore(dsl -> {
             seedGraph(dsl, GRAPH);
             seedGraph(dsl, SIBLING);
-            StoreEntries.write(dsl, SIBLING, everything(), FIRST);
+            StoreEntries.write(dsl, SIBLING, everything(), classpath(), FIRST);
 
             // A different graph, a different instant, and a subject declaring nothing: the sweep
             // predicate that ignores the partition would empty the sibling here.
-            StoreEntries.write(dsl, GRAPH, SubjectConfig.none(), SECOND);
+            StoreEntries.write(dsl, GRAPH, SubjectConfig.none(), List.of(), SECOND);
 
             assertThat(census(dsl, SIBLING).values())
                 .as("a shared store holds several modules, and a module's reading speaks for one")
@@ -299,6 +328,18 @@ class StoreEntriesTest {
             List.of(".graphqls", ".graphql"));
     }
 
+    /** One entry of each kind, the snapshot last so a sweep case can drop it by truncating. */
+    private static List<ClasspathEntry> classpath() {
+        return List.of(
+            new ClasspathEntry(Path.of("/build/target/classes"), ClasspathEntry.Origin.PROJECT,
+                null, null, ClasspathEntry.Kind.DIRECTORY),
+            new ClasspathEntry(Path.of("/repo/jooq-3.20.11.jar"), ClasspathEntry.Origin.DECLARED,
+                "org.jooq:jooq", null, ClasspathEntry.Kind.RELEASE),
+            new ClasspathEntry(Path.of("/repo/model-1.0-SNAPSHOT.jar"),
+                ClasspathEntry.Origin.REACTOR, "com.example:model", null,
+                ClasspathEntry.Kind.SNAPSHOT));
+    }
+
     private static OutputCoordinates output() {
         return new OutputCoordinates("com.example.generated", "com.example.jooq",
             Path.of("/build/generated"));
@@ -312,7 +353,8 @@ class StoreEntriesTest {
     private static final List<Table<?>> TRANSCRIBED = List.of(
         STORE_GRAPH_SCHEMA_INPUT, STORE_GRAPH_SCHEMA_EXTENSION, STORE_GRAPH_SUPERGRAPH,
         STORE_GRAPH_OUTPUT, STORE_GRAPH_TENANT_COLUMN, STORE_GRAPH_LINT_DISABLED_RULE,
-        STORE_GRAPH_LINT_EXCLUDED_TYPE, STORE_GRAPH_SESSION_MOUNT, STORE_GRAPH_SESSION_UNMOUNT);
+        STORE_GRAPH_LINT_EXCLUDED_TYPE, STORE_GRAPH_SESSION_MOUNT, STORE_GRAPH_SESSION_UNMOUNT,
+        STORE_GRAPH_DEPENDENCY);
 
     /** How many rows each relation holds for one graph. */
     private static Map<String, Integer> census(DSLContext dsl, String graph) {

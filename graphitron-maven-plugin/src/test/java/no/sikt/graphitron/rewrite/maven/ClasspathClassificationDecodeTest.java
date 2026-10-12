@@ -84,6 +84,34 @@ class ClasspathClassificationDecodeTest {
     }
 
     @Test
+    void aResolvedJarSaysWhetherItIsARelease(@TempDir Path tmp) throws IOException {
+        Path own = Files.createDirectories(tmp.resolve("own/target/classes")).toAbsolutePath().normalize();
+        Path releaseJar = touch(tmp.resolve("repo"), "release.jar");
+        Path snapshotJar = touch(tmp.resolve("repo"), "snapshot.jar");
+        Path unattributedJar = touch(tmp.resolve("lib"), "unattributed.jar");
+        var snapshot = new DefaultArtifact("com.example", "snapshot", "1.0-SNAPSHOT", "compile",
+            "jar", null, new DefaultArtifactHandler("jar"));
+        snapshot.setFile(snapshotJar.toFile());
+
+        var entries = AbstractRewriteMojo.classifyCompileClasspath(
+            List.of(own.toString(), releaseJar.toString(), snapshotJar.toString(),
+                unattributedJar.toString()),
+            own,
+            List.of(artifact("com.example", "release", releaseJar, null), snapshot),
+            List.of(declared("com.example", "release"), declared("com.example", "snapshot")),
+            Map.of());
+
+        assertThat(entries)
+            .extracting(ClasspathEntry::path, ClasspathEntry::kind)
+            .containsExactly(
+                tuple(own, ClasspathEntry.Kind.DIRECTORY),
+                tuple(releaseJar, ClasspathEntry.Kind.RELEASE),
+                tuple(snapshotJar, ClasspathEntry.Kind.SNAPSHOT),
+                // Nothing resolved it, so nothing vouches that it cannot change.
+                tuple(unattributedJar, ClasspathEntry.Kind.SNAPSHOT));
+    }
+
+    @Test
     void aDeclaredReactorModuleIsReactorRatherThanDeclared(@TempDir Path tmp) throws IOException {
         // Reactor-ness outranks directness, because it is the fact no consumer can recover: a
         // reader collecting the build's own code cannot otherwise tell this module from a jar.

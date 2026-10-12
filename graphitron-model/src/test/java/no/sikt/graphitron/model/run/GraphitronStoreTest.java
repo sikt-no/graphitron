@@ -18,6 +18,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DEFINITION_ENTRY
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_DEPENDENCY;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static no.sikt.graphitron.model.test.TestRunContext.JOOQ_PACKAGE;
@@ -141,11 +142,16 @@ class GraphitronStoreTest {
                 .as("the database the jOOQ package describes").isEqualTo(1);
             // The third input is a classpath whose classes name no scalar constant, so the arm
             // over it admits nothing and says so with an empty partition rather than with silence.
-            // What the call did read is the entry, which is registered and classified.
-            assertThat(store.dsl().select(STORE_SOURCE.ORIGIN).from(STORE_SOURCE)
-                    .where(STORE_SOURCE.SOURCE_NAME.eq(CLASSPATH.getFirst().path().toString()))
-                    .fetchOne(STORE_SOURCE.ORIGIN))
-                .as("and the classpath, read and registered under how it reached the run")
+            // What the call did read is the entry, and the configuration says how it reached the
+            // run.
+            assertThat(store.dsl().fetchCount(STORE_SOURCE,
+                    STORE_SOURCE.SOURCE_NAME.eq(CLASSPATH.getFirst().path().toString())))
+                .as("and the classpath, read and registered").isEqualTo(1);
+            assertThat(store.dsl().select(STORE_GRAPH_DEPENDENCY.ORIGIN).from(STORE_GRAPH_DEPENDENCY)
+                    .where(STORE_GRAPH_DEPENDENCY.GRAPH_NAME.eq("g"))
+                    .and(STORE_GRAPH_DEPENDENCY.SOURCE_NAME.eq(CLASSPATH.getFirst().path().toString()))
+                    .fetchOne(STORE_GRAPH_DEPENDENCY.ORIGIN))
+                .as("a dependency of the graph, under how it reached the run")
                 .isEqualTo("PROJECT");
             assertThat(store.dsl().fetchCount(CODE_SCALAR_CONSTANT,
                     CODE_SCALAR_CONSTANT.CLASS_NAME.like(JOOQ_PACKAGE + ".%")))

@@ -748,6 +748,12 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             return new ClasspathEntry(path, Origin.PROJECT, null, stamp);
         }
         Artifact artifact = artifactByPath.get(path);
+        // A jar resolved from a repository says whether its version can be replaced; anything else
+        // is what the path alone says it is.
+        ClasspathEntry.Kind kind =
+            artifact != null && Files.isRegularFile(path) && !artifact.isSnapshot()
+                ? ClasspathEntry.Kind.RELEASE
+                : ClasspathEntry.Kind.unresolved(path);
         boolean direct = artifact != null && isDirect(artifact, declaredKeys);
         String coordinate = artifact == null ? null
             : artifact.getGroupId() + ":" + artifact.getArtifactId();
@@ -767,14 +773,14 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             // arm answers, REACTOR for the ordinary declared case and SIBLING for the module an
             // author can name today and must declare before the build accepts it.
             return new ClasspathEntry(path, direct ? Origin.REACTOR : Origin.SIBLING,
-                reactorCoordinate, stamp);
+                reactorCoordinate, stamp, kind);
         }
         if (direct) {
-            return new ClasspathEntry(path, Origin.DECLARED, coordinate, stamp);
+            return new ClasspathEntry(path, Origin.DECLARED, coordinate, stamp, kind);
         }
         if (artifact != null) {
             return new ClasspathEntry(path, Origin.TRANSITIVE,
-                artifact.getGroupId() + ":" + artifact.getArtifactId(), stamp);
+                artifact.getGroupId() + ":" + artifact.getArtifactId(), stamp, kind);
         }
         return new ClasspathEntry(path, Origin.DECLARED, null, stamp);
     }

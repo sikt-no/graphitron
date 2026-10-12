@@ -113,7 +113,7 @@ class RelationRegistrationGateTest {
             "store_graph", "store_graph_schema_input", "store_graph_schema_extension",
             "store_graph_supergraph", "store_graph_output", "store_graph_tenant_column",
             "store_graph_lint_disabled_rule", "store_graph_lint_excluded_type",
-            "store_graph_session_mount", "store_graph_session_unmount",
+            "store_graph_session_mount", "store_graph_session_unmount", "store_graph_dependency",
             "store_graph_source",
             // The java_ family: the store's rows and the walker's declarations are one parse
             // reduced two ways, pinned in JavaSourceFactsTest beside the source-partitioned

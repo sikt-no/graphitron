@@ -287,19 +287,15 @@ public final class ClasspathSourceCapture {
         var rows = entries.stream().collect(Rows.toRowList(
             at -> val(at.source(), t.SOURCE_NAME),
             at -> val(at.kind(), t.SOURCE_KIND),
-            at -> val(at.origin(), t.ORIGIN),
-            at -> val(at.coordinate(), t.COORDINATE),
             at -> val(stampOf(at.source()), t.STAMP),
             at -> val(modifiedAt(at.source()), t.MTIME),
             at -> val(readAt, t.LAST_SEEN),
             at -> val(readAt, t.READ_AT)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.SOURCE_NAME, t.SOURCE_KIND, t.ORIGIN, t.COORDINATE, t.STAMP,
-                    t.MTIME, t.LAST_SEEN, t.READ_AT)
+            dsl.insertInto(t, t.SOURCE_NAME, t.SOURCE_KIND, t.STAMP, t.MTIME, t.LAST_SEEN,
+                    t.READ_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
-                .set(t.ORIGIN, excluded(t.ORIGIN))
-                .set(t.COORDINATE, excluded(t.COORDINATE))
                 .set(t.STAMP, excluded(t.STAMP))
                 .set(t.MTIME, excluded(t.MTIME))
                 .set(t.LAST_SEEN, excluded(t.LAST_SEEN))

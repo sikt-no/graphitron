@@ -1149,12 +1149,13 @@ string to parse, which is the decision of whoever moves them.
 
 A gatherer's anchor phase reads upstream gatherers only, and a row can only reference a row that is
 already there, so the order gatherers run in is part of the model: it is the order foreign keys can
-point in. Today the call order, the roster and the corpora disagree. `ModelCapture` runs the documents
-first, then the configuration, then the catalog, then the classpath. `code` declares `jooq` and not
-`store`. And the classpath reaches its reading as a method argument, so the configuration is
-transcribed beside the reading rather than read by it. The order the corpora stand in is the
-configuration, then the classpath and the catalog, then the documents, then what resolves the
-documents against the rest.
+point in. Today the call order, the roster and the corpora disagree. `ModelCapture` runs the
+documents first, then the configuration, then the catalog, then the classpath. And the classpath
+reading reads the configuration without the roster saying so. A crawler reads the configuration as a
+corpus handed to it, the way `graphql-source` reads the recipe, and carries no edge to the gatherer
+that transcribes it; what holds the order is the roster's corpus rows and the gate below. The order
+the corpora stand in is the configuration, then the classpath and the catalog, then the documents,
+then what resolves the documents against the rest.
 
 * **The configuration runs first** `done`. Every `store_graph_*` relation keys `store_graph` and
   nothing else, and no gatherer reads them before they are written, so it was a move in
@@ -1163,21 +1164,17 @@ documents against the rest.
   declare no upstream, and the first gatherer reading them after the corpora is `graphitron-ast`, so
   this move changed no row either. `ModelCapture` comments only what the code cannot say: the
   narration it carried did not keep the order right, and the gate below is what will.
-* **The classpath is configuration** `open`. What a module depends on is something its build
-  declares. A reactor dependency is a class directory the build writes. A repository dependency is
-  a jar, a release that cannot change under its coordinate and version or a snapshot that can. The
-  configuration gatherer transcribes one row per dependency per graph, stating which of the three it
-  is as the producer resolved it. The point is the row and not reading it back: the Java already
-  holds what it just wrote, but a graph's claim on an entry can only reference a dependency that is
-  a row, and that reference is what makes a dependency the build stops declaring release its claim
-  by cascade rather than by a hand-written delete. The producer already
-  knows more than the store keeps: `ClasspathEntry.suppliedStamp` carries a repository's identity
-  for a jar it resolved, which the session census trusts and the persisted reading ignores, hashing
-  every jar on every capture. This is also what the version node in the staleness branch below is
-  waiting for.
-* **A claim references the dependency it resolves** `blocked`, on the node above.
-  `store_graph_source` for a classpath entry keys the dependency row, `classpath-source` declares
-  `store`, and the code family has the configuration as its one upstream.
+* **The classpath is configuration** `done`. `store_graph_dependency` holds one row per entry of
+  the classpath the build handed a graph's run, written by the configuration gatherer with the
+  rest of the `store_graph_*` rows and swept with them. Each row says what the producer resolved
+  the entry as: a directory the build writes, a release jar, or a snapshot jar, the plugin telling
+  the two jars apart by the artifact's version and a producer that resolved nothing handing over
+  snapshots. Origin and coordinate moved there from `store_source`, being facts about one module's
+  build rather than about the bytes: one jar is declared by one module and dragged in by another.
+  `classpath-source` declares `configuration` as a corpus beside `classpath`, and the reading is
+  handed the classpath rather than reading these rows back, on `graphql-source`'s terms. A claim
+  does not reference the dependency: the reading already lets go of an entry the build stopped
+  declaring, so a cascade would replace a delete that works and buy nothing.
 * **Code does not depend on jOOQ** `done`. The two families are parallel: each reads its own
   corpus under the configuration, and neither keys the other. The reading skips the generated jOOQ
   package, and that is right, the generated classes being the catalog's to describe and no part of
@@ -1222,26 +1219,76 @@ documents against the rest.
   `pipeline-overview.adoc` § Capture transcribes says the gatherers run in the order their
   declared read edges require, which was false until the order moved and is held by nothing until
   the gate lands. The sentence names the order and the gate; the vocabulary around it is R983's.
-* **The pipeline overview describes a dependency's row** `blocked`, on a claim referencing its
-  dependency. The same section's `store_` bookkeeping sentence names the graph, its sources and
+* **The pipeline overview describes a dependency's row** `open`. The same section's `store_` bookkeeping sentence names the graph, its sources and
   their stamps, and gains the dependencies and what each kind lets a capture skip.
 
 ### The store knows whether an artifact can go stale
 
 Reading a jar is safe for a release and dangerous for a snapshot, and Maven settles which.
 
+* **How a sibling module reaches a run is decided** `done`. The Quarkus model, for every goal, so
+  there is one answer to learn. A workspace module resolves to its own output before the repository,
+  `target/classes` first, then its jar in `target/`, and the repository last; graphitron's goals do
+  not compile siblings, those being the IDE's or the build's to compile. The dev goal compiles its own
+  module before it starts, running the plan itself rather than forking a lifecycle, because a dev
+  tool needs to control what runs. Evidence:
+  `roadmap/audits/2026-10-12-how-a-sibling-module-reaches-a-run.md`.
+  * **A workspace module resolves to its own output, in place** `open`. A classpath element whose
+    artifact is a module of the workspace is replaced at its own position by the module's
+    `target/classes`, else its jar in `target/`, else left as the repository resolved it. The
+    workspace is the aggregator chain the sibling scan already walks, each module's coordinate read
+    from its pom with the parent's `groupId` inherited, so a declared module classifies `REACTOR`
+    under its coordinate and the scan stops naming modules by directory. An undeclared module stays
+    appended behind the classpath as `SIBLING`, which is what the build refuses by name.
+    * **The sibling scan's classification is pinned** `open`. Run from inside a module today, the
+      scan appends each sibling's `target/classes` behind an installed jar of the same module, the
+      jar classifying `DECLARED` and the directory `SIBLING`. A case states what that does now,
+      which class two entries carry is read from and whether the nameability rule refuses it, so the
+      node above changes a pinned behaviour rather than an unknown one.
+  * **The dev goal runs its module's plan through compile** `open`. Before the first round the goal
+    executes its own module's bound goals from `validate` through `process-classes`, the way
+    `quarkus:dev` does, skipping any the session already ran. A consumer binds `graphitron:generate`
+    there and the module's code cannot compile without it, so the plan includes it, and the dev
+    loop's first round starts from what that generation wrote rather than generating again.
+  * **The manual says where a sibling's classes come from** `open`, lands with the nodes above.
+    `dev-loop-internals.adoc` § Multi-module projects and the classpath paragraph of
+    `mojo-configuration.adoc` say every goal reads a sibling's output before the repository and
+    compiles no sibling, and that the dev goal compiles its own module first.
+* **A reactor entry is never a release** `open`. The plugin calls a resolved jar a release when the
+  artifact's version is not a snapshot, and a reactor module building at a release version, during
+  a release itself, is a jar the build rewrites every time. Release is trusted for a jar a
+  repository resolved and never for one the reactor produced.
 * An entry says what it is `done`. Both halves of the classpath corpus were handed to capture as this
   module's own output, which was false twice, and the lie was load-bearing: it removed the reactor
   limit the `@service` arm leans on.
 * The store records which repository answered `done`, by consequence.
-* **The version is carried** `blocked`, on the classpath being configuration. `store_source.coordinate`
+* **The version is carried** `blocked`, on a workspace module resolving in place. `store_graph_dependency.coordinate`
   is `groupId:artifactId` by design, for naming a module in a refusal, and stops one field short of
   the identity question. The version is a fact the build declares, so it arrives with the dependency
-  rather than as another column on the entry.
+  rather than as another column on the entry. That is also where the dependency stops being keyed
+  by the entry's path: a dependency is a coordinate and a version, the project's own output and an
+  unattributed path are sources no dependency provides, and one reactor module provides its output
+  directory, its packaged jar or its installed jar depending on how the run was invoked.
 * **Three kinds get three treatments** `open`, waits on the version. A release jar needs no content
   stamp, a snapshot jar does, and only a directory needs the stat walk; all three share one path
   today.
-* **A stale snapshot is detectable** `open`, waits on both above.
+* **A stale compiled input is said once, plainly** `open`. When what a run reads is older than
+  what it was built from, the schema is checked against old classes and every name added since
+  reads as an author error: on opptak, 98 of them against a correct schema (the audit above). The
+  developer sees one warning first, naming what is stale (a module or the catalog artifact), both
+  dates, and the fix as a command to copy, which under the decision above is compiling the module
+  rather than installing it. Once per stale input, in the console at startup, in the MCP `status`
+  and `diagnostics` answers and as an LSP diagnostic; the "could not be resolved" diagnostics it
+  explains point back to it, so 98 read as one cause; a warning that never blocks generation, a
+  false positive costing one line. Absorbed R987.
+  * **A workspace module with no output is a stale input** `open`, waits on in-place resolution. It
+    falls back to the repository, which is the stale read the old resolution made silently.
+  * **What stale compares is decided** `open`. A module's newest source against its newest output,
+    where the `java_file` stamps the source census already holds may answer without a new walk; a
+    snapshot the repository answered against the version the reactor would build; the catalog
+    against the migrations or DDL it was generated from, which means knowing where it came from. A
+    sound approximation is enough. Open with it: whether a rebuild while dev runs clears the warning
+    live.
 * **A directory's stamp covers what the reading reads** `open`. The stamp walks every file under the
   directory, the generated jOOQ files included, so where services share a module with the catalog a
   migration regenerating jOOQ moves the stamp and every service class is read again though none
@@ -1774,7 +1821,8 @@ neither suffixed nor one of the sixteen in the resolved half, which is cheaper t
 not go stale. Two index names followed: `graphitron_spelled_reference_name_ix`,
 `graphitron_method_reference_method_ix`.
 
-**Columns and values.** `graphitron_field_synthesis.authored_type_sdl`,
+**Columns and values.** `store_source.origin` and `store_source.coordinate` (now on
+`store_graph_dependency`), `graphitron_field_synthesis.authored_type_sdl`,
 `code_external_field_method.table_parameter_type`, `code_condition_method.is_static`,
 `graphitron_argmapping_match.segment_position`, `trailing_segments`, `written_path`,
 `trailing_name`; `graphitron_argmapping_entry.head_segment`, `head_kind`, `candidate_coordinate`,
