@@ -1,7 +1,7 @@
 ---
 id: R1020
 title: "A @condition parameter typed as a plain Java class is built or rejected, never cast from a Map"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 5
 theme: codegen-correctness
