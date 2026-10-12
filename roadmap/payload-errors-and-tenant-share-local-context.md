@@ -1,7 +1,7 @@
 ---
 id: R1016
 title: "A tenant-routed mutation payload carries both its tenant and its errors"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 6
 theme: runtime-connection
