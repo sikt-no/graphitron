@@ -1,7 +1,7 @@
 ---
 id: R1013
 title: "The plugin realm refusal names the declared entry without Maven dependency trail"
-status: Spec
+status: Ready
 bucket: bug
 priority: 1
 theme: tooling
