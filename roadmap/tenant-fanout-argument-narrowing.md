@@ -24,10 +24,10 @@ This is the fan-out cousin of R45's `ArgumentBound` (where a scalar tenant-colum
 
 ## Open questions for the Spec pass
 
-1. **Semantics of a requested tenant outside the factory set.** Silent skip (the authorization pre-filter posture: the client asked for something it may not see) vs client-visible error. Leaning silent skip for consistency with R46's mapped-but-unclaimed rule, but the client-facing surface deserves its own look.
+1. **Semantics of a requested tenant outside the factory set.** Silent skip (the authorization pre-filter posture: the client asked for something it may not see) vs client-visible error. Leaning silent skip for consistency with R46's mapped-but-unclaimed rule, but the client-facing surface deserves its own look. R1019 (optional tenant slots on a fanned field) settles this as silent skip for any argument that narrows a fan-out, so this item inherits that answer rather than choosing again.
 2. **Semantics of a requested tenant not hosted.** R46 makes factory-set-but-unhosted a request error (the consumer's statement that data could exist there); a *client*-requested unhosted tenant is a different actor making the claim.
 3. **Nullability and absence.** An omitted or null argument must mean "no narrowing" (the full R46 domain), never "empty domain".
-4. **Classification shape.** Whether the narrowing slot rides the existing `FanOut` singleton (gaining a carried argument reference and un-singletoning it) or forms a sibling arm; either way the exhaustive switches R46 mandates make the landing loud.
+4. **Classification shape.** Whether the narrowing slot rides the existing `FanOut` singleton (gaining a carried argument reference and un-singletoning it) or forms a sibling arm; either way the exhaustive switches R46 mandates make the landing loud. R1019 settles this: `FanOut` carries its narrowing slots (`FanOut(List<BoundSlot> narrowing)`), intersected with the request domain as sets, so this item adds a slot source rather than an arm.
 
 ## Siblings
 
