@@ -1,7 +1,7 @@
 ---
 id: R1014
 title: "Custom-scalar default values reach the runtime schema as literals"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 1
 theme: codegen-correctness
@@ -85,5 +85,16 @@ Every SDL default changes emitted shape (`defaultValueProgrammatic(100)` becomes
 - *Emit literal only when the coerced value is still an AST node.* Smaller diff, but the leak is nested (table above), so the check is a deep walk over lists and maps, and it leaves two emission shapes for one kind of thing. Rejected for the uniform rule.
 - *Teach `emit` an AST arm* (print-and-parse any `graphql.language.Value` it meets). Fixes the top-level case but nested AST nodes inside a `List.of(...)` / `Map.of(...)` programmatic value would need per-element literal-to-Java translation, which is the real scalar's job and not available at build time.
 - *Wire real scalars at build time* (load the `@scalarType` reference in `SchemaAssembly`) so coercion yields Java values. Couples assembly to the consumer classpath, which the fake-scalar wiring exists to avoid, and still needs a Java-literal emitter for arbitrary scalar output types (`BigDecimal`, `LocalDate`, consumer types).
+
+## Implementation notes
+
+Landed as specified, with two deviations the spec did not foresee:
+
+- *The synthesized connection `first` default is literal-state too.* Emission reads the schema `EmittedRegistry` derives from the store, which carries every default as SDL text (`defaultValueSdl`), so `first` reaches `emitDefault` as a literal and emits `defaultValueLiteral(Parser.parseValue("<n>"))`. `ConnectionPromoter.rewriteCarrierField`'s programmatic default lives only on the walk's rebuilt schema, which emission does not read. The programmatic arm of `emitDefault` stays (it keeps the switch total and is unit-tested); `DefaultValueEmissionTest.synthesisedConnectionFirst_emitsDefaultPageSizeAsLiteral` pins the shape that actually ships, in place of the planned "still programmatic" case.
+- *Directive-definition argument types now reference their custom scalar.* `AppliedDirectiveEmitter.emitInputType` typed every custom scalar as the `Scalars.GraphQLString` placeholder, so the `@rateTolerance(min: BigDecimal = 0)` fixture failed `Graphitron.buildSchema` with `Invalid default value IntValue{value=0} for type String` once the default became a literal. Before this item that definition only validated because its default was the string `"IntValue{value=0}"`, so the directive arm of the Goal was not reproducing the bug but masking a second one. `DirectiveDefinitionEmitter` now uses `AppliedDirectiveEmitter.emitDefinitionInputType`, which emits `typeRef("<scalar>")` for a custom scalar; applied directives keep the placeholder (their type slots are federation-transform metadata). `GraphitronSchemaBuilder.rejectUnregisteredScalarReferences` sweeps survivor directive definitions' custom-scalar arguments, the new reference site. Pinned by `DirectiveDefinitionEmitterTest.buildDefinition_emitsCustomScalarArgumentDefaultAsLiteral`.
+
+Also: `FixtureWarningsGateTest`'s pinned line for `filmsConnectionByRequiredIds` moved from 600 to 609 with the new fixture lines.
+
+Evidence for the Goal: `GraphQLQueryTest.inputFieldCondition_customScalarDefaults_bindAsBigDecimalBounds` (argument-default and input-field-default paths against the real `GraphQLBigDecimal`), and every execution test in `graphitron-sakila-example`, which builds the runtime schema carrying the three custom-scalar defaults.
 
 ## Reviewer findings
