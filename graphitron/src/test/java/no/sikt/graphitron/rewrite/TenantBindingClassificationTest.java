@@ -2396,4 +2396,162 @@ class TenantBindingClassificationTest {
 
         assertFanOutRejects(schema, "Film.categories", "sits under a tenant-bound ancestor");
     }
+
+    // ===== A field of a nesting type routes as it would on the enclosing @table type =====
+
+    /**
+     * {@code FilmStock} has no {@code @table}: it is reached through {@code Film.stock} and shares
+     * the film row. {@code %s} is the extra SDL on {@code FilmStock}'s fields, {@code %s} the
+     * remaining types.
+     */
+    private static final String FILM_STOCK = """
+        type Film @table(name: "film") {
+            title: String
+            stock: FilmStock
+        }
+        type FilmStock {
+            filmId: Int @field(name: "film_id")%s
+        }
+        type Inventory @table(name: "inventory") { inventoryId: Int }
+        type Query { films(filmId: Int @field(name: "film_id")): [Film!]! }
+        %s""";
+
+    private static GraphitronSchema filmStock(String stockFields, String extra) {
+        return build(FILM_STOCK.formatted(stockFields, extra));
+    }
+
+    @Test
+    void aNestedSplitQueryFieldUnderATenantScopedParentInherits() {
+        var schema = filmStock("""
+
+                inventories: [Inventory!]! @splitQuery @reference(path: [{key: "inventory_film_id_fkey"}])
+                conditioned: [Inventory!]! @splitQuery @reference(path: [{key: "inventory_film_id_fkey",
+                    condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "join"}}])
+                inventoriesConnection: [Inventory!]! @asConnection @splitQuery
+                    @reference(path: [{key: "inventory_film_id_fkey"}]) @defaultOrder(primaryKey: true)""", "");
+
+        assertInherited(schema, "FilmStock", "inventories");
+        assertInherited(schema, "FilmStock", "conditioned");
+        assertInherited(schema, "FilmStock", "inventoriesConnection");
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aNestedSplitQueryFieldDeclaredInAnExtensionInherits() {
+        var schema = filmStock("", """
+            extend type FilmStock {
+                inventories: [Inventory!]! @splitQuery @reference(path: [{key: "inventory_film_id_fkey"}])
+            }
+            """);
+
+        assertInherited(schema, "FilmStock", "inventories");
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aSplitQueryFieldTwoNestingLevelsDownInherits() {
+        var schema = filmStock("\n    detail: FilmStockDetail", """
+            type FilmStockDetail {
+                inventories: [Inventory!]! @splitQuery @reference(path: [{key: "inventory_film_id_fkey"}])
+            }
+            """);
+
+        assertInherited(schema, "FilmStockDetail", "inventories");
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aNestedChildCarryingTenantFanOutKeepsItsUnreachedMarkerRejection() {
+        var schema = filmStock("""
+
+                inventories: [Inventory!]! @tenantFanOut @splitQuery
+                    @reference(path: [{key: "inventory_film_id_fkey"}])""", "");
+
+        assertThat(schema.tenantBindingOf("FilmStock", "inventories")).isNull();
+        assertThat(schema.tenantBindings().rejections())
+            .anyMatch(e -> e.rejection() instanceof Rejection.InvalidSchema.DirectiveConflict conflict
+                && conflict.message().contains("'FilmStock.inventories'")
+                && conflict.message().contains("never reached the fan-out classification"));
+    }
+
+    /**
+     * {@code EndorsementAbout} has no {@code @table} and shares the global endorsement row, whose
+     * foreign key {@code endorsed_film} lands on the tenant column. {@code %s} is
+     * {@code EndorsementAbout}'s fields.
+     */
+    private static final String ENDORSEMENT_ABOUT = """
+        type FilmEndorsement @table(name: "film_endorsement") {
+            note: String
+            about: EndorsementAbout
+        }
+        type EndorsementAbout {
+            note: String%s
+        }
+        type Film @table(name: "film") {
+            title: String
+            inventories: [Inventory!]! @splitQuery
+        }
+        type Inventory @table(name: "inventory") { inventoryId: Int }
+        type Query { endorsements: [FilmEndorsement!]! }
+        """;
+
+    @Test
+    void aNestedSplitQueryFieldUnderAGlobalParentRoutesOnTheParentRow() {
+        var schema = build(ENDORSEMENT_ABOUT.formatted("\n    film: Film @splitQuery"));
+
+        assertThat(schema.tenantBindingOf("EndorsementAbout", "film"))
+            .isInstanceOfSatisfying(TenantBinding.ParentRowBound.class, parentRow -> {
+                assertThat(parentRow.parentTable().tableName()).isEqualToIgnoringCase("film_endorsement");
+                assertThat(parentRow.slot().sourceSide().sqlName()).isEqualToIgnoringCase("endorsed_film");
+            });
+        // The nested edge establishes context for its own subtree exactly as a flat one does.
+        assertInherited(schema, "Film", "inventories");
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aNestedSplitQueryFieldUnderAGlobalParentWithNoTenantKeyRejects() {
+        var schema = build(ENDORSEMENT_ABOUT.formatted("\n    film: Film @splitQuery @reference(path:"
+            + " [{condition: {className: \"no.sikt.graphitron.rewrite.TestConditionStub\","
+            + " method: \"join\"}}])"));
+
+        assertThat(schema.tenantBindingOf("EndorsementAbout", "film")).isNull();
+        assertRejects(schema, "EndorsementAbout.film", "no ancestor established a tenant context");
+    }
+
+    @Test
+    void aNestedInlineReferenceUnderAGlobalParentNamesSplitQueryInItsRejection() {
+        var schema = build(ENDORSEMENT_ABOUT.formatted("\n    film: Film"));
+
+        assertThat(schema.tenantBindingOf("EndorsementAbout", "film")).isNull();
+        assertRejects(schema, "EndorsementAbout.film", "Mark it @splitQuery");
+    }
+
+    @Test
+    void aNestingTypeSharedByTwoParentsReportsEachDistinctRejectionOnce() {
+        var schema = build("""
+            type FilmEndorsement @table(name: "film_endorsement") {
+                note: String
+                about: FilmMention
+            }
+            type FilmBookmark @table(name: "film_bookmark") {
+                about: FilmMention
+            }
+            type FilmMention {
+                film: Film
+            }
+            type Film @table(name: "film") { title: String }
+            type Query {
+                endorsements: [FilmEndorsement!]!
+                bookmarks: [FilmBookmark!]!
+            }
+            """);
+
+        assertThat(schema.tenantBindingOf("FilmMention", "film")).isNull();
+        assertThat(schema.tenantBindings().rejections())
+            .filteredOn(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding r
+                && r.coordinate().equals("FilmMention.film"))
+            .hasSize(1);
+        assertRejects(schema, "FilmMention.film", "Mark it @splitQuery");
+    }
 }

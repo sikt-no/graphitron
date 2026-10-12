@@ -85,22 +85,20 @@ final class TenantDslEmitter {
      * Resolves the {@code DSLContext} declaration for {@code field}, emitted as the fetcher
      * method whose {@code env} parameter is the field's own {@code DataFetchingEnvironment}.
      * Falls back to the single-tenant form whenever the emission context carries no classified
-     * schema, no tenant scopes are configured, or the coordinate has no binding (out-of-band
-     * emission); the fallback reads {@code getDslContext(env)}, which under owned multi-tenant
-     * acquisition is the fixed default source, never a routed tenant nor the request's default
-     * tenant.
+     * schema or no tenant scopes are configured; the fallback reads {@code getDslContext(env)},
+     * which under owned multi-tenant acquisition is the fixed default source, never a routed
+     * tenant nor the request's default tenant. Under configured scopes a coordinate with no
+     * binding is a generator bug ({@link #requireBinding}), never a fallback.
      */
     static Resolution resolve(TypeFetcherEmissionContext ctx, OutputField field, String outputPackage) {
-        var schema = ctx.graphitronSchema();
-        if (schema == null
-                || !(schema.tenantScopes() instanceof TenantScopes.Configured)
-                || ctx.parentTypeName() == null) {
+        return resolve(ctx, field.name(), outputPackage);
+    }
+
+    private static Resolution resolve(TypeFetcherEmissionContext ctx, String fieldName, String outputPackage) {
+        if (!routes(ctx)) {
             return singleTenant(ctx);
         }
-        TenantBinding binding = schema.tenantBindingOf(ctx.parentTypeName(), field.name());
-        if (binding == null) {
-            return singleTenant(ctx);
-        }
+        TenantBinding binding = requireBinding(ctx, fieldName);
         var tenantConnections = tenantConnectionsClass(outputPackage);
         return switch (binding) {
             case TenantBinding.Untenanted.GlobalRead ignored -> new Resolution(
@@ -115,7 +113,7 @@ final class TenantDslEmitter {
                 false);
             case TenantBinding.ArgumentBound bound -> argumentBound(ctx, bound, tenantConnections);
             case TenantBinding.FanOut ignored -> throw new IllegalStateException(
-                "Field '" + ctx.parentTypeName() + "." + field.name() + "' classified as tenant "
+                "Field '" + ctx.parentTypeName() + "." + fieldName + "' classified as tenant "
                     + "FanOut reached the generic DSL-declaration site; the fanned-fetcher emission "
                     + "owns this coordinate and acquires per tenant through scatter.");
             case TenantBinding.Inherited ignored -> inheritedRead(tenantConnections);
@@ -136,22 +134,15 @@ final class TenantDslEmitter {
     }
 
     /**
-     * {@link #resolve} for sites that carry only the field's name: the classified field is
-     * looked up on the schema by coordinate ({@code ctx.parentTypeName()} + name), so a
-     * multi-table polymorphic root whose participant filters bind the tenant column gets the
-     * full {@link TenantBinding.ArgumentBound} emission (slot reads, agreement fold, hand-down)
-     * without threading the carrier through every builder signature. Falls back to the
-     * single-tenant form when the coordinate resolves to no classified {@link OutputField}.
+     * {@link #resolve} for sites that carry only the field's name: the binding is read by
+     * coordinate ({@code ctx.parentTypeName()} + name), which is the whole input {@link #resolve}
+     * needs, so a multi-table polymorphic root whose participant filters bind the tenant column
+     * gets the full {@link TenantBinding.ArgumentBound} emission (slot reads, agreement fold,
+     * hand-down) without threading the carrier through every builder signature, and one lookup
+     * serves flat and nested coordinates alike.
      */
     static Resolution resolveByName(TypeFetcherEmissionContext ctx, String fieldName, String outputPackage) {
-        var schema = ctx.graphitronSchema();
-        if (schema == null || ctx.parentTypeName() == null) {
-            return singleTenant(ctx);
-        }
-        return schema.fields().get(graphql.schema.FieldCoordinates.coordinates(
-                ctx.parentTypeName(), fieldName)) instanceof OutputField field
-            ? resolve(ctx, field, outputPackage)
-            : singleTenant(ctx);
+        return resolve(ctx, fieldName, outputPackage);
     }
 
     /**
@@ -164,16 +155,10 @@ final class TenantDslEmitter {
      * can divine, go through {@link #serviceDslExpression} instead.
      */
     static CodeBlock dslExpression(TypeFetcherEmissionContext ctx, String fieldName, String outputPackage) {
-        var schema = ctx.graphitronSchema();
-        if (schema == null
-                || !(schema.tenantScopes() instanceof TenantScopes.Configured)
-                || ctx.parentTypeName() == null) {
+        if (!routes(ctx)) {
             return CodeBlock.of("$L.getDslContext(env)", ctx.graphitronContextCall());
         }
-        TenantBinding binding = schema.tenantBindingOf(ctx.parentTypeName(), fieldName);
-        if (binding == null) {
-            return CodeBlock.of("$L.getDslContext(env)", ctx.graphitronContextCall());
-        }
+        TenantBinding binding = requireBinding(ctx, fieldName);
         var tenantConnections = tenantConnectionsClass(outputPackage);
         return switch (binding) {
             case TenantBinding.Untenanted.GlobalRead ignored ->
@@ -232,16 +217,10 @@ final class TenantDslEmitter {
      * re-divines from the same {@code env}, so the two reads agree by construction.
      */
     static Resolution handDownOnly(TypeFetcherEmissionContext ctx, OutputField field, String outputPackage) {
-        var schema = ctx.graphitronSchema();
-        if (schema == null
-                || !(schema.tenantScopes() instanceof TenantScopes.Configured)
-                || ctx.parentTypeName() == null) {
+        if (!routes(ctx)) {
             return new Resolution(CodeBlock.of(""), false);
         }
-        TenantBinding binding = schema.tenantBindingOf(ctx.parentTypeName(), field.name());
-        if (binding == null) {
-            return new Resolution(CodeBlock.of(""), false);
-        }
+        TenantBinding binding = requireBinding(ctx, field.name());
         var none = new Resolution(CodeBlock.of(""), false);
         return switch (binding) {
             case TenantBinding.ArgumentBound bound -> new Resolution(
@@ -264,14 +243,8 @@ final class TenantDslEmitter {
      * the tenant the key extraction declares, so the extraction moves ahead of the name.
      */
     static TenantBinding.ParentRowBound parentRowBinding(TypeFetcherEmissionContext ctx, String fieldName) {
-        var schema = ctx.graphitronSchema();
-        if (schema == null
-                || !(schema.tenantScopes() instanceof TenantScopes.Configured)
-                || ctx.parentTypeName() == null) {
-            return null;
-        }
-        return schema.tenantBindingOf(ctx.parentTypeName(), fieldName)
-            instanceof TenantBinding.ParentRowBound parentRow ? parentRow : null;
+        return routes(ctx) && requireBinding(ctx, fieldName) instanceof TenantBinding.ParentRowBound parentRow
+            ? parentRow : null;
     }
 
     /**
@@ -306,8 +279,8 @@ final class TenantDslEmitter {
 
     /**
      * The DataLoader-name declaration for a batched field's registration site. Single-tenant
-     * builds keep the exact inline path join. Multi-tenant builds route the recipe through the
-     * generated carrier's single naming seam: {@link TenantBinding.Inherited} fields read the
+     * builds and schema-free contexts keep the exact inline path join. Multi-tenant builds route
+     * the recipe through the generated carrier's single naming seam: {@link TenantBinding.Inherited} fields read the
      * tenant-partitioned name (the handed-down tenant joins the path as an opaque segment, so
      * every loader batch is tenant-homogeneous and its captured environment routes the right
      * source), {@link TenantBinding.ParentRowBound} fields the same name over the tenant their
@@ -315,12 +288,7 @@ final class TenantDslEmitter {
      */
     static CodeBlock loaderNameDeclaration(TypeFetcherEmissionContext ctx, String fieldName,
                                            String localName, String outputPackage) {
-        var schema = ctx.graphitronSchema();
-        TenantBinding binding = schema != null
-                && schema.tenantScopes() instanceof TenantScopes.Configured
-                && ctx.parentTypeName() != null
-            ? schema.tenantBindingOf(ctx.parentTypeName(), fieldName)
-            : null;
+        TenantBinding binding = routes(ctx) ? requireBinding(ctx, fieldName) : null;
         if (binding == null) {
             return CodeBlock.builder()
                 .addStatement("$T $L = $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
@@ -361,6 +329,35 @@ final class TenantDslEmitter {
     static boolean isMultiTenant(TypeFetcherEmissionContext ctx) {
         var schema = ctx.graphitronSchema();
         return schema != null && schema.tenantScopes() instanceof TenantScopes.Configured;
+    }
+
+    /**
+     * Whether this site routes: a classified schema with configured tenant scopes, emitting a
+     * type's fields. Otherwise every entry point returns the single-tenant form, which keeps
+     * single-tenant output byte-identical and serves unit-tier callers that build the model only.
+     */
+    private static boolean routes(TypeFetcherEmissionContext ctx) {
+        return isMultiTenant(ctx) && ctx.parentTypeName() != null;
+    }
+
+    /**
+     * The coordinate's binding at a routing site. Every coordinate the fold assigns gets an arm or
+     * a rejection, the build fails on validator errors before any emission, and the fold visits
+     * every classified instance that gets emitted, nested ones included; so a coordinate with no
+     * binding here means the fold missed it. That is a generator bug, and failing on it is what
+     * keeps a missed coordinate from silently reading the fixed default source. The fix is to
+     * widen the fold to the site, never to restore a fallback here.
+     */
+    private static TenantBinding requireBinding(TypeFetcherEmissionContext ctx, String fieldName) {
+        TenantBinding binding = ctx.graphitronSchema().tenantBindingOf(ctx.parentTypeName(), fieldName);
+        if (binding == null) {
+            throw new IllegalStateException(
+                "Graphitron generator bug (tenant routing): field '" + ctx.parentTypeName() + "."
+                    + fieldName + "' reached a tenant-routed DSL site in a multi-tenant build, but"
+                    + " the tenant-binding fold assigned it no binding; the fold has missed this"
+                    + " coordinate.");
+        }
+        return binding;
     }
 
     /** The generated carrier's {@code ClassName}: {@code <outputPackage>.schema.TenantConnections}. */

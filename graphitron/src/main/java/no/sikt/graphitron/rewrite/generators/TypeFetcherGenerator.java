@@ -161,9 +161,12 @@ public class TypeFetcherGenerator {
                     .map(f -> (GraphitronField) f)
                     .sorted(Comparator.comparing(GraphitronField::name))
                     .toList();
+                // The schema, and the run's own carrier fact, so a nested field routes on the
+                // tenant binding the fold assigned it exactly as a field of the enclosing @table
+                // type does; in a single-tenant build both read as the single-tenant form.
                 result.add(generateTypeSpec(row.typeName(), wiring.returnType().table(), null, nestedFields,
-                    assembled, outputPackage, null, null,
-                    no.sikt.graphitron.plan.LauncherCommands.produceWithoutSchema(nestedFields, outputPackage),
+                    assembled, outputPackage, schema, null,
+                    nestingReachedLaunchers(nestedFields, outputPackage, launchers),
                     // The run's own relation rather than one derived from these fields: a
                     // nesting-reached type's children are never mutation roots, so every lookup
                     // against it comes back empty, which is exactly the behaviour this arm wants.
@@ -184,6 +187,20 @@ public class TypeFetcherGenerator {
                     schema.errorFieldReads(row.typeName())));
         }
         return result;
+    }
+
+    /**
+     * The launcher relation a nesting-reached type's class renders from. The run's relation
+     * leaves the type's fields out (its schema walk visits flat coordinates only), so the rows
+     * are minted from the fields themselves, while the carrier-routing fact is the run's own: the
+     * nested class's connection carriers and scatter helper then route exactly as a class of a
+     * {@code @table} type does in the same build.
+     */
+    static no.sikt.graphitron.plan.LauncherRelation nestingReachedLaunchers(
+            List<GraphitronField> nestedFields, String outputPackage,
+            no.sikt.graphitron.plan.LauncherRelation runLaunchers) {
+        return no.sikt.graphitron.plan.LauncherCommands.produceWithoutSchema(nestedFields, outputPackage,
+            runLaunchers.carrierDsl());
     }
 
     /**
@@ -428,7 +445,8 @@ public class TypeFetcherGenerator {
             String outputPackage) {
         return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage, null,
             null,
-            no.sikt.graphitron.plan.LauncherCommands.produceWithoutSchema(fields, outputPackage),
+            no.sikt.graphitron.plan.LauncherCommands.produceWithoutSchema(fields, outputPackage,
+                no.sikt.graphitron.command.CarrierDsl.ENV_ACQUIRED),
             // Empty, and that is the overload's shape rather than a gap: the routine-write relation
             // is read from the fact store, which a model-only caller has none of. A coordinate that
             // writes through @routine fails the dispatch's drift guard by name here, which is the
@@ -439,8 +457,8 @@ public class TypeFetcherGenerator {
 
     /**
      * Canonical form. {@code graphitronSchema} is the classified schema, threaded so the
-     * joined-table interface fetcher can read each participant's classified fields; {@code null}
-     * for unit-tier model-only and nested-type callers (which never emit a joined-table interface).
+     * joined-table interface fetcher can read each participant's classified fields and the
+     * tenant-routing emitter each field's binding; {@code null} for unit-tier model-only callers.
      * {@code commands} is the per-run method-command registry; the non-canonical overloads
      * default it to a per-call throwaway. {@code launchers} is the launcher relation the root
      * emission dispatches on and {@code routineWrites} the routine-write relation the two
@@ -1074,8 +1092,10 @@ public class TypeFetcherGenerator {
             || f instanceof ChildField.BatchedTableInterfaceField btif
                 && btif.returnType().wrapper() instanceof FieldWrapper.Connection);
         if (hasConnectionSplitField) {
+            // The run's carrier fact, the same one the rows method's scatter call site reads, so the
+            // helper's signature and its call agree on every class, nested ones included.
             builder.addMethod(SplitRowsMethodEmitter.buildScatterConnectionByIdxHelper(outputPackage,
-                TenantDslEmitter.isMultiTenant(ctx)));
+                launchers.carrierDsl() == no.sikt.graphitron.command.CarrierDsl.ROUTED));
         }
 
         // emptyScatter is needed whenever @lookupKey input can be empty at request time, which

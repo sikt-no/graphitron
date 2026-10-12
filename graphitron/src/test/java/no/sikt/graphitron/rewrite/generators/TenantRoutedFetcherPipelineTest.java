@@ -394,4 +394,106 @@ class TenantRoutedFetcherPipelineTest {
             .doesNotContain("TenantConnections")
             .doesNotContain("localContext");
     }
+
+    // ===== A nesting type's fields route on the binding the fold assigned them =====
+
+    private static final String FILM_STOCK = """
+        type Film @table(name: "film") {
+            title: String
+            stock: FilmStock
+        }
+        type FilmStock {
+            inventories: [Inventory!]! @splitQuery @reference(path: [{key: "inventory_film_id_fkey"}])
+            inventoriesConnection: [Inventory!]! @asConnection @splitQuery
+                @reference(path: [{key: "inventory_film_id_fkey"}]) @defaultOrder(primaryKey: true)
+        }
+        type Inventory @table(name: "inventory") { inventoryId: Int }
+        type Query {
+            films(filmId: Int @field(name: "film_id")): [Film!]!
+        }
+        """;
+
+    private static no.sikt.graphitron.plan.LauncherRelation nestedLaunchers(GraphitronSchema schema,
+                                                                             String nestingType) {
+        var run = no.sikt.graphitron.plan.LauncherCommands.produce(schema,
+            no.sikt.graphitron.plan.ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE),
+            DEFAULT_OUTPUT_PACKAGE);
+        java.util.List<no.sikt.graphitron.rewrite.model.GraphitronField> nested =
+            java.util.List.copyOf(schema.nestingReach().wiringFor(nestingType).nestedFields());
+        return TypeFetcherGenerator.nestingReachedLaunchers(nested, DEFAULT_OUTPUT_PACKAGE, run);
+    }
+
+    @Test
+    void aNestingTypesBatchedFieldsCarryTheirFoldedArm() {
+        var schema = multiTenant(FILM_STOCK);
+
+        for (var field : java.util.List.of("inventories", "inventoriesConnection")) {
+            assertThat(schema.tenantBindingOf("FilmStock", field)).as(field)
+                .isEqualTo(new no.sikt.graphitron.rewrite.model.TenantBinding.Inherited("FilmStock"));
+        }
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aNestingTypeUnderAGlobalParentCarriesTheParentRowArm() {
+        var schema = multiTenant("""
+            type FilmEndorsement @table(name: "film_endorsement") {
+                note: String
+                about: EndorsementAbout
+            }
+            type EndorsementAbout {
+                film: Film @splitQuery
+            }
+            type Film @table(name: "film") { title: String }
+            type Query { endorsements: [FilmEndorsement!]! }
+            """);
+
+        assertThat(schema.tenantBindingOf("EndorsementAbout", "film"))
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.TenantBinding.ParentRowBound.class);
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    /**
+     * The nested class reads the run's one carrier-routing fact, the same one the rows method's
+     * scatter call site reads, so the connection helper's signature and its call agree on a
+     * nesting type's class too, and its lazy {@code totalCount} runs on the routed source.
+     */
+    @Test
+    void aNestingTypesClassRoutesItsCarriersExactlyAsTheRunDoes() {
+        var routed = multiTenant(FILM_STOCK);
+        assertThat(nestedLaunchers(routed, "FilmStock").carrierDsl())
+            .isEqualTo(no.sikt.graphitron.command.CarrierDsl.ROUTED);
+        var scatter = TypeFetcherRenderTestSupport.generate(routed, DEFAULT_OUTPUT_PACKAGE).stream()
+            .filter(t -> "FilmStockFetchers".equals(t.name()))
+            .findFirst().orElseThrow()
+            .methodSpecs().stream()
+            .filter(m -> "scatterConnectionByIdx".equals(m.name()))
+            .findFirst().orElseThrow();
+        assertThat(scatter.parameters()).anyMatch(p -> "dsl".equals(p.name()));
+
+        var single = TestSchemaHelper.buildSchema(FILM_STOCK);
+        assertThat(nestedLaunchers(single, "FilmStock").carrierDsl())
+            .isEqualTo(no.sikt.graphitron.command.CarrierDsl.ENV_ACQUIRED);
+    }
+
+    /**
+     * Under configured scopes a routing site never falls back to the default source: a coordinate
+     * the fold assigned no binding is a generator bug, named, rather than a silent read on the
+     * fixed default source.
+     */
+    @Test
+    void aRoutingSiteForACoordinateTheFoldMissedFailsNamingIt() {
+        var schema = multiTenant(FILM_STOCK);
+        var ctx = new TypeFetcherEmissionContext(null, "FilmStock", schema);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> TenantDslEmitter.resolveByName(ctx, "unassigned", DEFAULT_OUTPUT_PACKAGE))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("'FilmStock.unassigned'")
+            .hasMessageContaining("assigned it no binding");
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> TenantDslEmitter.loaderNameDeclaration(ctx, "unassigned", "name", DEFAULT_OUTPUT_PACKAGE))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("'FilmStock.unassigned'");
+    }
 }

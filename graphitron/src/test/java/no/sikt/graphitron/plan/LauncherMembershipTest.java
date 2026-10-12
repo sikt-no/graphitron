@@ -198,7 +198,8 @@ class LauncherMembershipTest {
     void produceWithoutSchemaServesExactlyTheCoveredNonDmlCoordinates() {
         var schema = TestSchemaHelper.buildSchema(SDL);
         List<GraphitronField> fields = List.copyOf(schema.fields().values());
-        var relation = LauncherCommands.produceWithoutSchema(fields, DEFAULT_OUTPUT_PACKAGE);
+        var relation = LauncherCommands.produceWithoutSchema(fields, DEFAULT_OUTPUT_PACKAGE,
+            no.sikt.graphitron.command.CarrierDsl.ENV_ACQUIRED);
 
         var expected = fields.stream()
             .filter(f -> LauncherCommands.covers(schema, f))

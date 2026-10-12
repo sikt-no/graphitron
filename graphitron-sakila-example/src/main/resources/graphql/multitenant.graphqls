@@ -38,6 +38,17 @@ type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
         className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService", method: "servedBy"})
     servedByHolder: String @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.FilmRatingHolderService", method: "servedBy"})
+    # A nesting edge: FilmStock has no @table and shares the film row.
+    stock: FilmStock
+}
+
+# Inherited arm on a nesting type: its fields route exactly as Film's own would, reading from the
+# tenant the film was fetched under and partitioning each loader per tenant. The connection's lazy
+# totalCount runs on the same routed source.
+type FilmStock {
+    inventories: [Inventory!]! @splitQuery @reference(path: [{key: "inventory_film_id_fkey"}])
+    inventoriesConnection(first: Int, after: String): [Inventory!]! @asConnection @splitQuery
+        @reference(path: [{key: "inventory_film_id_fkey"}]) @defaultOrder(primaryKey: true)
 }
 
 type Inventory @table(name: "inventory") {

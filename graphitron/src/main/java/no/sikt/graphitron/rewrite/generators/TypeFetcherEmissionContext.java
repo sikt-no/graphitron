@@ -149,10 +149,12 @@ final class TypeFetcherEmissionContext {
 
     /**
      * The classified {@link no.sikt.graphitron.rewrite.GraphitronSchema} being generated, or
-     * {@code null} for schema-free callers (unit-tier model-only tests, nested-type emission).
-     * The joined-table interface fetcher reads each participant's classified fields off this
-     * to partition base-resident ({@code ColumnBackedReferenceField}) from detail-resident
-     * ({@code ColumnBackedField}) fields per "the emitter reads the field variant".
+     * {@code null} for schema-free callers (unit-tier model-only tests). The joined-table
+     * interface fetcher reads each participant's classified fields off this to partition
+     * base-resident ({@code ColumnBackedReferenceField}) from detail-resident
+     * ({@code ColumnBackedField}) fields per "the emitter reads the field variant", and the
+     * tenant-routing emitter reads every field's tenant binding off it, nested-type fields
+     * included.
      */
     no.sikt.graphitron.rewrite.GraphitronSchema graphitronSchema() {
         return graphitronSchema;

@@ -255,6 +255,58 @@ class TenantDivinedRoutingExecutionTest {
             .isZero();
     }
 
+    // ===== A nesting type's fields route as they would on the enclosing @table type =====
+
+    @Test
+    void nestedInheritedChild_routesItsBatchToTheDivinedTenant() {
+        var films = (List<Map<String, Object>>) data(
+            execute("{ films(filmId: 1) { stock { inventories { inventoryId } } } }"), "films");
+        assertThat(films).hasSize(1);
+        var stock = (Map<String, Object>) films.get(0).get("stock");
+        assertThat((List<?>) stock.get("inventories"))
+            .as("the nested batched child reads tenant 1's rows, not the default source's")
+            .hasSize(2);
+        assertThat(TENANT_2_OPENED.get())
+            .as("nothing in the operation touches the other tenant's database")
+            .isZero();
+    }
+
+    @Test
+    void nestedInheritedChild_neverSharesOneBatchBetweenTwoTenants() {
+        // Each endorsement's film comes from the tenant its row names, so the two films' nested
+        // inventories sit at one path under two tenants. A shared batch would run every key on
+        // one tenant's database and give both films the same answer.
+        var result = execute("{ endorsements(note: \"" + ENDORSEMENT_NOTE + "\")"
+            + " { film { title stock { inventories { inventoryId } } } } }");
+        var films = endorsedFilms(result);
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        assertThat(films).anySatisfy(f -> {
+            assertThat(f.get("title")).isEqualTo("Tenant One Film");
+            assertThat((List<?>) ((Map<String, Object>) f.get("stock")).get("inventories"))
+                .as("tenant 1's batch").hasSize(2);
+        });
+        assertThat(films).anySatisfy(f -> {
+            assertThat(f.get("title")).isEqualTo("Tenant Two Film");
+            assertThat((List<?>) ((Map<String, Object>) f.get("stock")).get("inventories"))
+                .as("tenant 2's batch: tenant 2 holds no inventory").isEmpty();
+        });
+    }
+
+    @Test
+    void nestedInheritedConnection_totalCountAggregatesOnTheDivinedTenantSource() {
+        var films = (List<Map<String, Object>>) data(execute("{ films(filmId: 1) { stock {"
+            + " inventoriesConnection(first: 10) { totalCount edges { node { inventoryId } } } } } }"),
+            "films");
+        var connection = (Map<String, Object>)
+            ((Map<String, Object>) films.get(0).get("stock")).get("inventoriesConnection");
+        assertThat((List<?>) connection.get("edges")).hasSize(2);
+        assertThat(connection.get("totalCount"))
+            .as("the lazy aggregate runs on the routed dsl, against tenant 1's rows rather than"
+                + " the default source's")
+            .isEqualTo(2);
+        assertThat(TENANT_2_OPENED.get()).isZero();
+    }
+
     // ===== @service: divined from the arguments, handed down to the returned rows =====
 
     private static Map<String, Object> rateFilms(String rows) {

@@ -351,7 +351,7 @@ public class GraphitronSchemaBuilder {
         // ledger the tenant fold reads, or a new predicate arm would divine nothing with no
         // failure anywhere. Ungated on tenancy, so every schema any build makes enforces it.
         var columnBindings = ctx.columnBindingLedger();
-        columnBindings.requireCovers(operationMembers);
+        columnBindings.requireCovers(operationMembers, dedupedFields);
         // The materialized delivery fact: the post-walk fold of the gathered delivery markers
         // with the shape facts, read through GraphitronSchema.deliveryOf; anchor-hood (the
         // launcher membership predicate) is its first view.

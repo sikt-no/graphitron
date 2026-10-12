@@ -92,7 +92,9 @@ public record TenantBindingIndex(
      * {@code <tenantColumn>} is configured. The direct-binding surface is read off the minted
      * {@link OperationMemberRelation} rows (the coordinate's condition, lookup and write
      * members), so the fold sees the coordinate's whole operation set rather than one summary
-     * arm's payload. A condition member's slots are read from {@code columnBindings}, the column
+     * arm's payload. A nesting type's fields, which that relation leaves out, are assigned too:
+     * each classified instance under a {@link ChildField.NestingField} reads its leaf-local
+     * members, so a field of a type without {@code @table} routes as it would on its parent. A condition member's slots are read from {@code columnBindings}, the column
      * each filter slot binds whatever an authored {@code @condition} does to its predicate.
      *
      * <p>{@code reachableTypes} is the classification walk's domain,
@@ -246,12 +248,15 @@ public record TenantBindingIndex(
      */
     private static final class Fold {
         private final GraphQLSchema sdl;
-        private final Map<FieldCoordinates, GraphitronField> fields;
         private final Map<String, EntityResolution> entitiesByType;
         private final Map<String, GraphitronType> types;
         private final TenantScopes.Configured scopes;
-        private final OperationMemberRelation operationMembers;
         private final ColumnBindingLedger columnBindings;
+        /**
+         * Every classified instance of every coordinate the fold assigns: the one per-field input
+         * every reader below takes. See {@link Site}.
+         */
+        private final Map<FieldCoordinates, List<Site>> sites;
 
         private final Set<String> roots = new HashSet<>();
         private final String mutationRootName;
@@ -300,7 +305,6 @@ public record TenantBindingIndex(
              ColumnBindingLedger columnBindings) {
             this.sdl = sdl;
             this.domain = domain;
-            this.fields = fields;
             this.entitiesByType = entitiesByType;
             this.types = types;
             this.scopes = scopes;
@@ -313,7 +317,6 @@ public record TenantBindingIndex(
                 throw new IllegalArgumentException(
                     "tenant-binding fold requires the walk-minted operation member relation");
             }
-            this.operationMembers = operationMembers;
             if (columnBindings == ColumnBindingLedger.EMPTY) {
                 // Same ground as the member relation: a hand-built schema that never ran the walk
                 // would otherwise read every condition path as binding nothing.
@@ -321,6 +324,7 @@ public record TenantBindingIndex(
                     "tenant-binding fold requires the walk-minted column-binding ledger");
             }
             this.columnBindings = columnBindings;
+            this.sites = sitesOf(fields, operationMembers);
             this.mutationRootName = sdl.getMutationType() == null ? null : sdl.getMutationType().getName();
             this.tenantMarked = tenantMarkedDefinitions(sdl);
             recordRoot(sdl.getQueryType());
@@ -333,22 +337,117 @@ public record TenantBindingIndex(
             if (root != null) roots.add(root.getName());
         }
 
+        /**
+         * One classified instance of a coordinate: the leaf and its operation members. A flat
+         * coordinate is one site, its members read off the minted {@link OperationMemberRelation}.
+         * A nesting type's field is classified inside each enclosing {@code @table} parent and
+         * lives only in {@link ChildField.NestingField#nestedFields()}, so it gets one site per
+         * classified instance, its members read through the leaf-local
+         * {@link no.sikt.graphitron.rewrite.model.OperationMembers#membersOf}, the same production
+         * the emit-side producers read for nested instances.
+         */
+        private record Site(FieldCoordinates coord, OutputField field, List<OperationMember> members,
+                            boolean nested) {}
+
+        /** One site's tenant verdict: an arm, or the rejections that stand in for one. */
+        private sealed interface Verdict {
+            record Arm(TenantBinding binding) implements Verdict {}
+
+            record Rejected(List<ValidationError> rejections) implements Verdict {
+                public Rejected {
+                    rejections = List.copyOf(rejections);
+                }
+            }
+
+            static Verdict rejected(ValidationError rejection) {
+                return new Rejected(List.of(rejection));
+            }
+        }
+
+        private static Map<FieldCoordinates, List<Site>> sitesOf(
+                Map<FieldCoordinates, GraphitronField> fields, OperationMemberRelation operationMembers) {
+            var sites = new LinkedHashMap<FieldCoordinates, List<Site>>();
+            for (var entry : fields.entrySet()) {
+                if (entry.getValue() instanceof OutputField out) {
+                    sites.computeIfAbsent(entry.getKey(), k -> new ArrayList<>()).add(
+                        new Site(entry.getKey(), out, operationMembers.membersOf(entry.getKey()), false));
+                }
+            }
+            for (var field : fields.values()) {
+                if (field instanceof ChildField.NestingField nesting) {
+                    addNestedSites(nesting, sites);
+                }
+            }
+            return sites;
+        }
+
+        private static void addNestedSites(ChildField.NestingField nesting,
+                                           Map<FieldCoordinates, List<Site>> sites) {
+            for (ChildField child : nesting.nestedFields()) {
+                var coord = FieldCoordinates.coordinates(child.parentTypeName(), child.name());
+                sites.computeIfAbsent(coord, k -> new ArrayList<>()).add(new Site(coord, child,
+                    no.sikt.graphitron.rewrite.model.OperationMembers.membersOf(child), true));
+                if (child instanceof ChildField.NestingField deeper) {
+                    addNestedSites(deeper, sites);
+                }
+            }
+        }
+
+        private List<Site> sitesAt(FieldCoordinates coord) {
+            return sites.getOrDefault(coord, List.of());
+        }
+
         TenantBindingIndex run() {
             classifyNodeDispatch();
             classifyEntityDispatch();
             // The ancestor facts read the dispatch facts just filled, and armOf reads them.
             foldAncestorContexts();
-            for (var entry : fields.entrySet()) {
-                if (!(entry.getValue() instanceof OutputField out)) continue;
-                FieldCoordinates coord = entry.getKey();
-                TenantBinding arm = armOf(coord, out);
+            for (var entry : sites.entrySet()) {
+                var arm = combine(entry.getValue().stream().map(this::armOf).toList());
                 if (arm != null) {
-                    byCoordinate.put(coord, arm);
+                    byCoordinate.put(entry.getKey(), arm);
                 }
             }
             sweepUnreachedMarkers();
             sweepTenantMarkers();
             return new TenantBindingIndex(byCoordinate, byEntityType, rejections);
+        }
+
+        /**
+         * Folds one coordinate's site verdicts into its arm, or {@code null}. Equal arms at every
+         * site record that arm. A rejected site records no arm and reports each distinct rejection
+         * once across sites; a distinct text from another site is kept, which is what preserves a
+         * hint only one parent's site produces. Sites yielding unequal arms record no arm and no
+         * text of their own: the one per-parent input, the parent-row slot, applies only to a
+         * batched field, and {@code GraphitronSchemaValidator} already rejects a batched field of a
+         * nesting type shared by several parents. On a schema it admits the case cannot arise, and
+         * should it ever, the missing arm fails the generation at the emitter's invariant rather
+         * than crashing the build of a schema the validator is about to reject.
+         */
+        private TenantBinding combine(List<Verdict> verdicts) {
+            TenantBinding arm = null;
+            boolean rejected = false;
+            boolean disagree = false;
+            for (Verdict verdict : verdicts) {
+                switch (verdict) {
+                    case Verdict.Rejected r -> {
+                        rejected = true;
+                        for (ValidationError error : r.rejections()) {
+                            if (!rejections.contains(error)) {
+                                rejections.add(error);
+                            }
+                        }
+                    }
+                    case Verdict.Arm a -> {
+                        if (arm == null) {
+                            arm = a.binding();
+                        } else if (!arm.equals(a.binding())) {
+                            disagree = true;
+                        }
+                    }
+                }
+            }
+            return rejected || disagree ? null : arm;
         }
 
         /**
@@ -383,8 +482,9 @@ public record TenantBindingIndex(
             // cross-scope reach), and the binding is what consumes a marked use; read it here so
             // the verdict does not depend on which rung the field stopped at.
             uses.stream().map(TenantMarkerUse::field).distinct()
-                .filter(c -> fields.get(c) instanceof ServiceField)
-                .forEach(c -> directBinding(c, operationMembers.membersOf(c)));
+                .flatMap(c -> sitesAt(c).stream())
+                .filter(site -> site.field() instanceof ServiceField)
+                .forEach(this::directBinding);
             for (TenantMarkerUse use : uses) {
                 if (consumedTenantMarkers.contains(use)) continue;
                 rejections.add(markerRejection(List.of(BuildContext.DIR_TENANT), use.definition(),
@@ -396,7 +496,7 @@ public record TenantBindingIndex(
 
         private String unconsumedTenantMarkerReason(TenantMarkerUse use) {
             FieldCoordinates coord = use.field();
-            var field = fields.get(coord);
+            var field = sitesAt(coord).stream().map(Site::field).findFirst().orElse(null);
             if (!(field instanceof ServiceField && field instanceof OutputField out)) {
                 GraphQLFieldDefinition def = fieldDefinition(coord);
                 if (roots.contains(coord.getTypeName()) && def != null
@@ -494,30 +594,36 @@ public record TenantBindingIndex(
 
         // ===== Per-field arm assignment =====
 
-        private TenantBinding armOf(FieldCoordinates coord, OutputField out) {
+        private Verdict armOf(Site site) {
+            FieldCoordinates coord = site.coord();
+            OutputField out = site.field();
             String coordinate = coord.getTypeName() + "." + coord.getFieldName();
             // A tenancy marker routes through its own ladder ahead of everything below, so a
             // marked field always gets a marker-specific verdict or rejection, never the generic
-            // cross-scope or noTenantBinding message.
+            // cross-scope or noTenantBinding message. The ladders serve flat sites only: a nesting
+            // type's field is deferred for both markers, so a nested site carrying one gets no arm
+            // and records no verdict, and the unreached-marker sweep rejects it.
             boolean fanMarked = fanMarked(coord);
             boolean globalMarked = globalMarked(coord);
+            if (site.nested() && (fanMarked || globalMarked)) {
+                return new Verdict.Rejected(List.of());
+            }
             if (fanMarked && globalMarked) {
                 recordMarkerVerdict(BuildContext.DIR_TENANT_FAN_OUT, coordinate);
                 recordMarkerVerdict(BuildContext.DIR_GLOBAL_DATA, coordinate);
-                rejections.add(markerRejection(
+                return Verdict.rejected(markerRejection(
                     List.of(BuildContext.DIR_GLOBAL_DATA, BuildContext.DIR_TENANT_FAN_OUT), coordinate,
                     "'" + coordinate + "' combines @globalData with @tenantFanOut: one says the"
                         + " field's data is global and runs on the default source, the other unions"
                         + " it across every tenant. Remove one of the directives."));
-                return null;
             }
             if (fanMarked) {
                 recordMarkerVerdict(BuildContext.DIR_TENANT_FAN_OUT, coordinate);
-                return fanOutArmOf(coord, out);
+                return fanOutArmOf(site);
             }
             if (globalMarked) {
                 recordMarkerVerdict(BuildContext.DIR_GLOBAL_DATA, coordinate);
-                return globalDataArmOf(coord, out);
+                return globalDataArmOf(site);
             }
             // Every table the field's own SQL touches, not just a Record-shaped return target:
             // multi-table polymorphic fields hit their participant tables and pivot fields their
@@ -528,7 +634,7 @@ public record TenantBindingIndex(
             if (anyTenant && anyGlobal) {
                 // One statement cannot span the per-tenant and default sources; a binding would
                 // not make this routable, so it rejects ahead of the ArgumentBound arm.
-                rejections.add(new ValidationError(
+                return Verdict.rejected(new ValidationError(
                     coordinate,
                     Rejection.noTenantBinding(
                         coordinate,
@@ -539,10 +645,9 @@ public record TenantBindingIndex(
                             + "); database-per-tenant cannot serve a cross-scope read on one"
                             + " connection."),
                     graphql.language.SourceLocation.EMPTY));
-                return null;
             }
-            var members = operationMembers.membersOf(coord);
-            var direct = directBinding(coord, members);
+            var members = site.members();
+            var direct = directBinding(site);
             // A root service handed a connection runs its own SQL on that connection, and that SQL
             // is opaque, so it needs a tenant whatever graphitron's own reach says. Not where the
             // reach holds a global table: graphitron re-reads that return on the same connection,
@@ -560,41 +665,39 @@ public record TenantBindingIndex(
                 if (!anyTenant) {
                     // Nothing in reach is tenant-scoped, so NoTenantBinding's "reaches table"
                     // opening would be false; the service arm carries the declines instead.
-                    rejections.add(new ValidationError(coordinate,
+                    return Verdict.rejected(new ValidationError(coordinate,
                         Rejection.unroutedServiceCall(coordinate, scopes.columnName(),
                             direct.declines(), direct.evidence()),
                         graphql.language.SourceLocation.EMPTY));
-                    return null;
                 }
                 String tenantTable = reach.stream().filter(this::tenantScoped).findFirst()
                     .orElseThrow().tableName();
-                for (String detail : direct.declines()) {
-                    rejections.add(new ValidationError(
+                return new Verdict.Rejected(direct.declines().stream()
+                    .map(detail -> new ValidationError(
                         coordinate,
                         Rejection.noTenantBinding(coordinate, tenantTable, detail),
-                        graphql.language.SourceLocation.EMPTY));
-                }
-                return null;
+                        graphql.language.SourceLocation.EMPTY))
+                    .toList());
             }
             if (direct.divines()) {
-                return new TenantBinding.ArgumentBound(direct.slots());
+                return new Verdict.Arm(new TenantBinding.ArgumentBound(direct.slots()));
             }
             if (hasKind(members, OperationMember.Kind.NODE_RESOLVE)) {
                 // Node dispatch spans types; the arm exists iff every tenant-scoped node
                 // type's key embeds the tenant column (rejections fired once in
                 // classifyNodeDispatch). No tenant-scoped node types at all means node
                 // dispatch reads only global tables, which is a global read.
-                return nodePositions.isEmpty()
+                return new Verdict.Arm(nodePositions.isEmpty()
                     ? TenantBinding.Untenanted.GlobalRead.INSTANCE
-                    : TenantBinding.NodeIdBound.INSTANCE;
+                    : TenantBinding.NodeIdBound.INSTANCE);
             }
             // Ahead of both Inherited checks: the parent row names the tenant that holds the
             // child row, so it decides even when an ancestor handed a tenant down. In a
             // database-per-tenant deployment an inherited tenant finds the child only when the
             // parent row names that same tenant.
-            var parentRow = parentRowBinding(coord);
+            var parentRow = parentRowBinding(site);
             if (parentRow != null) {
-                return parentRow;
+                return new Verdict.Arm(parentRow);
             }
             // A method call handed a connection-bound value (a DSLContext, or the $session handle
             // its connection's mount returned) runs on whichever connection it is handed, so which
@@ -605,22 +708,21 @@ public record TenantBindingIndex(
             // that global return table on the same connection, and a global service runs on the
             // default source, so the field keeps the Untenanted.DefaultSource leaf below.
             if (!anyGlobal && bindsConnection(out) && tenantContextOf(coord.getTypeName())) {
-                return new TenantBinding.Inherited(coord.getTypeName());
+                return new Verdict.Arm(new TenantBinding.Inherited(coord.getTypeName()));
             }
             if (!needsTenant) {
-                return untenantedLeaf(members);
+                return new Verdict.Arm(untenantedLeaf(members));
             }
             if (tenantContextOf(coord.getTypeName())) {
-                return new TenantBinding.Inherited(coord.getTypeName());
+                return new Verdict.Arm(new TenantBinding.Inherited(coord.getTypeName()));
             }
             if (connectionService) {
                 // The service fix, not the generic one: whatever the reach, what routes the call
                 // is a tenant in its arguments, or the author's statement that its data is global.
-                rejections.add(new ValidationError(coordinate,
+                return Verdict.rejected(new ValidationError(coordinate,
                     Rejection.unroutedServiceCall(coordinate, scopes.columnName(), List.of(),
                         direct.evidence()),
                     graphql.language.SourceLocation.EMPTY));
-                return null;
             }
             String detail = "no argument or input field maps to tenant column '"
                 + scopes.columnName() + "', and no ancestor established a tenant context.";
@@ -631,14 +733,13 @@ public record TenantBindingIndex(
                     + " parent's connection. Mark it @" + BuildContext.DIR_SPLIT_QUERY
                     + " to fetch each parent row's child from the tenant the row names.";
             }
-            rejections.add(new ValidationError(
+            return Verdict.rejected(new ValidationError(
                 coordinate,
                 Rejection.noTenantBinding(
                     coordinate,
                     reach.stream().filter(this::tenantScoped).findFirst().orElseThrow().tableName(),
                     detail),
                 graphql.language.SourceLocation.EMPTY));
-            return null;
         }
 
         // ===== The parent-row binding =====
@@ -681,19 +782,19 @@ public record TenantBindingIndex(
         }
 
         /**
-         * The {@link TenantBinding.ParentRowBound} arm for {@code coord}, or {@code null}: a
+         * The {@link TenantBinding.ParentRowBound} arm for {@code site}, or {@code null}: a
          * table-sourced {@link ChildField.BatchedTableField} (its own statement on its own
          * connection) carrying no tenancy marker and binding no tenant itself, whose correlation
          * {@link #parentRowTenantSlot} matches. Shared by {@link #armOf} and the two edge
          * predicates, so the arm and the context it establishes derive from one test.
          */
-        private TenantBinding.ParentRowBound parentRowBinding(FieldCoordinates coord) {
-            if (!(fields.get(coord) instanceof ChildField.BatchedTableField field)
+        private TenantBinding.ParentRowBound parentRowBinding(Site site) {
+            if (!(site.field() instanceof ChildField.BatchedTableField field)
                     || field.sourceShape() != SourceShape.Table
-                    || fanMarked(coord) || globalMarked(coord)) {
+                    || fanMarked(site.coord()) || globalMarked(site.coord())) {
                 return null;
             }
-            var direct = directBinding(coord, operationMembers.membersOf(coord));
+            var direct = directBinding(site);
             if (!direct.slots().isEmpty() || !direct.declines().isEmpty()) {
                 return null;
             }
@@ -739,7 +840,9 @@ public record TenantBindingIndex(
          * see. Computes reach itself, so a cross-scope field gets a rung's text rather than the
          * generic cross-scope rejection.
          */
-        private TenantBinding globalDataArmOf(FieldCoordinates coord, OutputField out) {
+        private Verdict globalDataArmOf(Site site) {
+            FieldCoordinates coord = site.coord();
+            OutputField out = site.field();
             String coordinate = coord.getTypeName() + "." + coord.getFieldName();
             String declares = "'" + coordinate + "' declares @globalData, but ";
             if (!roots.contains(coord.getTypeName())) {
@@ -769,7 +872,7 @@ public record TenantBindingIndex(
                     + " type '" + returned + "', which already runs on the default source; the"
                     + " structure decides this field, remove the directive.");
             }
-            var direct = directBinding(coord, operationMembers.membersOf(coord));
+            var direct = directBinding(site);
             if (direct.divines() || !direct.declines().isEmpty()) {
                 String named = direct.slots().isEmpty()
                     ? "tenant column '" + scopes.columnName() + "', through a shape that cannot"
@@ -787,12 +890,12 @@ public record TenantBindingIndex(
                     + "', or mark the scalar argument or input field that holds the tenant with"
                     + " @tenant, and remove the directive.");
             }
-            return TenantBinding.Untenanted.DefaultSource.INSTANCE;
+            return new Verdict.Arm(TenantBinding.Untenanted.DefaultSource.INSTANCE);
         }
 
-        private TenantBinding rejectGlobalData(String coordinate, String reason) {
-            rejections.add(markerRejection(List.of(BuildContext.DIR_GLOBAL_DATA), coordinate, reason));
-            return null;
+        private static Verdict rejectGlobalData(String coordinate, String reason) {
+            return Verdict.rejected(
+                markerRejection(List.of(BuildContext.DIR_GLOBAL_DATA), coordinate, reason));
         }
 
         // ===== The @tenantFanOut arm =====
@@ -816,7 +919,9 @@ public record TenantBindingIndex(
          * the reach-derived rungs because a plain service return's reach is structurally empty and
          * would misreport as "nothing to fan out over".
          */
-        private TenantBinding fanOutArmOf(FieldCoordinates coord, OutputField out) {
+        private Verdict fanOutArmOf(Site site) {
+            FieldCoordinates coord = site.coord();
+            OutputField out = site.field();
             String coordinate = coord.getTypeName() + "." + coord.getFieldName();
             if (coord.getTypeName().equals(mutationRootName)) {
                 return rejectFanOut(coordinate, List.of(BuildContext.DIR_TENANT_FAN_OUT),
@@ -838,8 +943,7 @@ public record TenantBindingIndex(
                         + " the field's SQL itself, and a database routine's SQL is not"
                         + " graphitron's to run per tenant. Remove one of the directives.");
             }
-            var members = operationMembers.membersOf(coord);
-            if (hasKind(members, OperationMember.Kind.LOOKUP)) {
+            if (hasKind(site.members(), OperationMember.Kind.LOOKUP)) {
                 return rejectFanOut(coordinate,
                     List.of(BuildContext.DIR_TENANT_FAN_OUT, BuildContext.DIR_LOOKUP_KEY),
                     "'" + coordinate + "' combines @tenantFanOut with @lookupKey: lookup enforces"
@@ -895,7 +999,7 @@ public record TenantBindingIndex(
                     "'" + coordinate + "' reaches no tenant-scoped table: its data is global,"
                         + " so there is nothing to fan out over.");
             }
-            var slots = directBinding(coord, members).slots();
+            var slots = directBinding(site).slots();
             if (!slots.isEmpty()) {
                 return rejectFanOut(coordinate, List.of(BuildContext.DIR_TENANT_FAN_OUT),
                     "'" + coordinate + "' already binds the tenant column through "
@@ -916,7 +1020,7 @@ public record TenantBindingIndex(
                         + " already divined and handed down on at least one reaching path, and"
                         + " fanning would contradict it.");
             }
-            return TenantBinding.FanOut.INSTANCE;
+            return new Verdict.Arm(TenantBinding.FanOut.INSTANCE);
         }
 
         /**
@@ -933,27 +1037,25 @@ public record TenantBindingIndex(
 
         /**
          * Whether the edge's own field divines a tenant: the direct-binding, routable
-         * node-dispatch and parent-row facts behind {@link #anyBoundAncestor}.
+         * node-dispatch and parent-row facts behind {@link #anyBoundAncestor}. True when any site
+         * of the edge divines, since the fact it feeds is an any-path rejection fact.
          */
         private boolean edgeDivinesTenant(FieldCoordinates edge) {
-            if (fields.get(edge) instanceof OutputField) {
-                var members = operationMembers.membersOf(edge);
-                if (directBinding(edge, members).divines()) {
-                    return true;
-                }
-                if (hasKind(members, OperationMember.Kind.NODE_RESOLVE)) {
-                    return nodeDispatchRoutable && !nodePositions.isEmpty();
-                }
-                if (parentRowBinding(edge) != null) {
-                    return true;
-                }
-            }
-            return false;
+            return sitesAt(edge).stream().anyMatch(this::siteDivinesTenant);
         }
 
-        private TenantBinding rejectFanOut(String coordinate, List<String> directives, String reason) {
-            rejections.add(markerRejection(directives, coordinate, reason));
-            return null;
+        private boolean siteDivinesTenant(Site site) {
+            if (directBinding(site).divines()) {
+                return true;
+            }
+            if (hasKind(site.members(), OperationMember.Kind.NODE_RESOLVE)) {
+                return nodeDispatchRoutable && !nodePositions.isEmpty();
+            }
+            return parentRowBinding(site) != null;
+        }
+
+        private static Verdict rejectFanOut(String coordinate, List<String> directives, String reason) {
+            return Verdict.rejected(markerRejection(directives, coordinate, reason));
         }
 
         /**
@@ -1149,12 +1251,12 @@ public record TenantBindingIndex(
          * argument typically binds on every polymorphic participant, and one slot per name
          * suffices for the agreement fold).
          */
-        private DirectBinding directBinding(FieldCoordinates coord, List<OperationMember> members) {
+        private DirectBinding directBinding(Site site) {
             var collector = new SlotCollector();
-            for (OperationMember member : members) {
+            for (OperationMember member : site.members()) {
                 switch (member) {
                     case OperationMember.Condition c ->
-                        collectFromColumnBindings(columnBindings.slotsAt(coord, c.table()), collector);
+                        collectFromColumnBindings(columnBindings.slotsAt(site.coord(), c.table()), collector);
                     case OperationMember.Lookup l -> collectFromLookup(l.lookupMapping(), collector);
                     case OperationMember.Write.Insert i -> collectFromTableInput(i.input(), collector);
                     case OperationMember.Write.Upsert u -> collectFromTableInput(u.input(), collector);
@@ -1162,7 +1264,7 @@ public record TenantBindingIndex(
                     // Dml.whereKeyColumns(), so a third WHERE-bearing write arm is covered on
                     // arrival rather than falling silently to the no-op default below.
                     case OperationMember.Write.Dml dml -> collectFromWhereKeys(dml, collector);
-                    case OperationMember.ServiceCall sc -> collectFromServiceCall(coord, sc, collector);
+                    case OperationMember.ServiceCall sc -> collectFromServiceCall(site, sc, collector);
                     default -> { }
                 }
             }
@@ -1336,19 +1438,18 @@ public record TenantBindingIndex(
          * reads the same answer, and the fields under such a service inherit no tenant that
          * nothing stamped.
          */
-        private void collectFromServiceCall(FieldCoordinates coord, OperationMember.ServiceCall member,
+        private void collectFromServiceCall(Site site, OperationMember.ServiceCall member,
                                             SlotCollector collector) {
             if (!(member.call() instanceof ServiceCallCarrier.StructuredCall structured)) {
                 return;
             }
-            if (fields.get(coord) instanceof OutputField out
-                    && reachedTables(out).stream().anyMatch(t -> !tenantScoped(t))) {
+            if (reachedTables(site.field()).stream().anyMatch(t -> !tenantScoped(t))) {
                 return;
             }
             // Constructor rounds carry no argument-sourced entry (the walker refuses one there).
             for (MappingEntry entry : structured.call().methodArgs()) {
                 if (entry instanceof MappingEntry.FromArg arg) {
-                    collectFromValueShape(arg.shape(), coord, collector);
+                    collectFromValueShape(arg.shape(), site.coord(), collector);
                 }
             }
         }
@@ -1888,21 +1989,22 @@ public record TenantBindingIndex(
                 // tenant through the loader-name seam, exactly as under an ArgumentBound root).
                 return true;
             }
-            if (fields.get(edge) instanceof OutputField) {
-                var members = operationMembers.membersOf(edge);
-                if (directBinding(edge, members).divines()) {
-                    return true;
-                }
-                if (hasKind(members, OperationMember.Kind.NODE_RESOLVE)) {
-                    return nodeDispatchRoutable;
-                }
-                // The parent row names the tenant per row, so the subtree below the edge is
-                // tenant-homogeneous per parent row and its children inherit.
-                if (parentRowBinding(edge) != null) {
-                    return true;
-                }
+            // Every site, since the fact it feeds is the every-path context fact: an edge one of
+            // whose instances hands nothing down leaves that path without a tenant.
+            var edgeSites = sitesAt(edge);
+            return !edgeSites.isEmpty() && edgeSites.stream().allMatch(this::siteEstablishesContext);
+        }
+
+        private boolean siteEstablishesContext(Site site) {
+            if (directBinding(site).divines()) {
+                return true;
             }
-            return false;
+            if (hasKind(site.members(), OperationMember.Kind.NODE_RESOLVE)) {
+                return nodeDispatchRoutable;
+            }
+            // The parent row names the tenant per row, so the subtree below the edge is
+            // tenant-homogeneous per parent row and its children inherit.
+            return parentRowBinding(site) != null;
         }
 
         /**

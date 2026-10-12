@@ -5,8 +5,11 @@ import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.model.jooq.TableRef;
 import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
+import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
+import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.OperationMember;
+import no.sikt.graphitron.rewrite.model.OperationMembers;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 
 import java.util.LinkedHashMap;
@@ -117,11 +120,13 @@ public final class ColumnBindingLedger {
     }
 
     /**
-     * Every emitted predicate has its slot: for every condition member of {@code members}, each
-     * {@link BodyParam} of its {@link GeneratedConditionFilter}s (unwrapping
-     * {@link BodyParam.RemoteColumnPredicate}) must have a slot in the row at the member's
-     * {@code (coordinate, table)} with the same name, the same columns and an equal extraction.
-     * The extraction is compared because it is half of what the tenant fold reads.
+     * Every emitted predicate has its slot: for every condition member of {@code members}, and of
+     * every nested instance under a {@link ChildField.NestingField} in {@code fields} (whose
+     * members are leaf-local, {@link OperationMembers#membersOf}), each {@link BodyParam} of its
+     * {@link GeneratedConditionFilter}s (unwrapping {@link BodyParam.RemoteColumnPredicate}) must
+     * have a slot in the row at the member's {@code (coordinate, table)} with the same name, the
+     * same columns and an equal extraction. The extraction is compared because it is half of what
+     * the tenant fold reads, and the fold reads nested instances as well as flat coordinates.
      *
      * <p>Containment in one direction only: a row may hold slots beyond the body params, which is
      * where the suppressed bindings live. The check reads body params to verify coverage; nothing
@@ -130,16 +135,35 @@ public final class ColumnBindingLedger {
      * @throws IllegalStateException naming the coordinate, table and slot of the first predicate
      *     with no matching slot
      */
-    public void requireCovers(OperationMemberRelation members) {
+    public void requireCovers(OperationMemberRelation members, Map<FieldCoordinates, GraphitronField> fields) {
         for (var entry : members.byCoordinate().entrySet()) {
-            for (OperationMember member : entry.getValue()) {
-                if (!(member instanceof OperationMember.Condition condition)) continue;
-                var row = slotsAt(entry.getKey(), condition.table());
-                for (WhereFilter filter : condition.filters()) {
-                    if (!(filter instanceof GeneratedConditionFilter gcf)) continue;
-                    for (BodyParam param : gcf.bodyParams()) {
-                        requireSlot(entry.getKey(), condition.table(), row, predicateOf(param));
-                    }
+            requireCovers(entry.getKey(), entry.getValue());
+        }
+        for (GraphitronField field : fields.values()) {
+            if (field instanceof ChildField.NestingField nesting) {
+                requireCoversNested(nesting);
+            }
+        }
+    }
+
+    private void requireCoversNested(ChildField.NestingField nesting) {
+        for (ChildField child : nesting.nestedFields()) {
+            requireCovers(FieldCoordinates.coordinates(child.parentTypeName(), child.name()),
+                OperationMembers.membersOf(child));
+            if (child instanceof ChildField.NestingField deeper) {
+                requireCoversNested(deeper);
+            }
+        }
+    }
+
+    private void requireCovers(FieldCoordinates coordinate, List<OperationMember> members) {
+        for (OperationMember member : members) {
+            if (!(member instanceof OperationMember.Condition condition)) continue;
+            var row = slotsAt(coordinate, condition.table());
+            for (WhereFilter filter : condition.filters()) {
+                if (!(filter instanceof GeneratedConditionFilter gcf)) continue;
+                for (BodyParam param : gcf.bodyParams()) {
+                    requireSlot(coordinate, condition.table(), row, predicateOf(param));
                 }
             }
         }

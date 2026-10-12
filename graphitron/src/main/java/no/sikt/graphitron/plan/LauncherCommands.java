@@ -463,10 +463,13 @@ public final class LauncherCommands {
 
     /**
      * Row production for a schema-free emission context (the unit-tier fetcher assemblies that
-     * build model records by hand and never construct a {@link GraphitronSchema}). Mirrors what
-     * {@link #produce} would mint given the fields' schema: no schema means no tenancy (the same
-     * fallback the DSL-declaration emitter takes), so no fan-out exclusion arises and the
-     * carrier fact is {@link CarrierDsl#ENV_ACQUIRED}; the WHERE ref derives from the field's
+     * build model records by hand and never construct a {@link GraphitronSchema}), and for a
+     * nesting-reached type's class, whose fields the schema walk of {@link #produce} never visits.
+     * Mirrors what {@link #produce} would mint given the fields' schema: no fan-out exclusion
+     * arises (a nesting type's fields are deferred for fan-out, and a schema-free assembly has
+     * no tenancy), and the carrier fact is the caller's {@code carrierDsl}:
+     * {@link CarrierDsl#ENV_ACQUIRED} for a schema-free assembly, the run's own fact for a
+     * nesting-reached type, so its carriers route exactly as the run's do; the WHERE ref derives from the field's
      * own filters through the same naming formula the condition producer mints (the schema-free
      * sibling of the relation copy; both ends read {@code GeneratedUnits}, so they cannot
      * disagree). Facetedness is a schema fact, so schema-free connection rows are facetless by
@@ -483,7 +486,7 @@ public final class LauncherCommands {
      * at the call site, so the row needs only leaf facts, and these leaves the assemblies build.
      */
     public static LauncherRelation produceWithoutSchema(List<? extends GraphitronField> fields,
-            String outputPackage) {
+            String outputPackage, CarrierDsl carrierDsl) {
         var units = new GeneratedUnits(outputPackage);
         var rows = new ArrayList<LauncherCommand>();
         // The schema view's stand-in for the alias-owner projection: a schema-free assembly's own
@@ -551,7 +554,7 @@ public final class LauncherCommands {
                     + " payload dispatch have drifted");
             });
         }
-        return new LauncherRelation(rows, CarrierDsl.ENV_ACQUIRED);
+        return new LauncherRelation(rows, carrierDsl);
     }
 
     /**

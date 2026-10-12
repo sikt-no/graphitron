@@ -56,7 +56,7 @@ class ColumnBindingLedgerTest {
         var filter = filterOf(FILM, eq("filmId", FILM_ID, DIRECT));
         ledger.record(FILMS, FILM, List.of(), List.of(filter));
 
-        assertThatThrownBy(() -> ledger.requireCovers(conditionOn(FILM, filter)))
+        assertThatThrownBy(() -> ledger.requireCovers(conditionOn(FILM, filter), Map.of()))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("Query.films")
             .hasMessageContaining("table 'film'")
@@ -69,7 +69,7 @@ class ColumnBindingLedgerTest {
         var filter = filterOf(FILM, eq("filmId", FILM_ID, DIRECT));
         ledger.record(FILMS, FILM_ACTOR, List.of(slot("filmId", List.of(FILM_ID), DIRECT)), List.of(filter));
 
-        assertThatThrownBy(() -> ledger.requireCovers(conditionOn(FILM, filter)))
+        assertThatThrownBy(() -> ledger.requireCovers(conditionOn(FILM, filter), Map.of()))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("Query.films")
             .hasMessageContaining("table 'film'")
@@ -82,7 +82,7 @@ class ColumnBindingLedgerTest {
         var filter = filterOf(FILM, eq("filmId", FILM_ID, new CallSiteExtraction.JooqConvert("FILM_ID")));
         ledger.record(FILMS, FILM, List.of(slot("filmId", List.of(FILM_ID), DIRECT)), List.of(filter));
 
-        assertThatThrownBy(() -> ledger.requireCovers(conditionOn(FILM, filter)))
+        assertThatThrownBy(() -> ledger.requireCovers(conditionOn(FILM, filter), Map.of()))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("Query.films")
             .hasMessageContaining("table 'film'")
@@ -99,7 +99,7 @@ class ColumnBindingLedgerTest {
             slot("filmId", List.of(FILM_ID), DIRECT),
             slot("title", List.of(TestFixtures.titleCol()), DIRECT)), List.of(filter));
 
-        assertThatCode(() -> ledger.requireCovers(conditionOn(FILM, filter))).doesNotThrowAnyException();
+        assertThatCode(() -> ledger.requireCovers(conditionOn(FILM, filter), Map.of())).doesNotThrowAnyException();
     }
 
     @Test
@@ -113,7 +113,7 @@ class ColumnBindingLedgerTest {
         var filter = filterOf(FILM, remote);
         ledger.record(FILMS, FILM, List.of(slot("actorFilm", tuple, DIRECT)), List.of(filter));
 
-        assertThatCode(() -> ledger.requireCovers(conditionOn(FILM, filter))).doesNotThrowAnyException();
+        assertThatCode(() -> ledger.requireCovers(conditionOn(FILM, filter), Map.of())).doesNotThrowAnyException();
     }
 
     @Test

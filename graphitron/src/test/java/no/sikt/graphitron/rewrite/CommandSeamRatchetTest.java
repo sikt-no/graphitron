@@ -97,9 +97,12 @@ class CommandSeamRatchetTest {
      * folded: the object generator's six-leaf {@code instanceof} chain over the form-carrying arms
      * (three of them naming a leaf this scan counts) became one read of
      * {@link no.sikt.graphitron.rewrite.model.CarriesObjectForm}, which the arms opt into, so the
-     * arm list is declared on the variants instead of restated at each consumer.
+     * arm list is declared on the variants instead of restated at each consumer. Lowered 69 to
+     * 68 when the tenant-routing emitter's by-name resolution stopped probing the flat field
+     * index for an {@code OutputField} and read the coordinate's tenant binding instead, the one
+     * lookup that serves nested coordinates too.
      */
-    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 69;
+    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 68;
 
     /**
      * {@code case} patterns in {@code generators/} naming a leaf of the seven hierarchies.
