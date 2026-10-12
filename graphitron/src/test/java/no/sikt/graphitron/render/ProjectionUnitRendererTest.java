@@ -74,7 +74,7 @@ class ProjectionUnitRendererTest {
         assertThat(m.parameters()).extracting(p -> p.type().toString())
             .containsExactly(
                 "java.util.Map<java.lang.String, java.util.List<graphql.schema.SelectedField>>",
-                DEFAULT_JOOQ_PACKAGE + ".tables.Film",
+                DEFAULT_JOOQ_PACKAGE + ".public_.tables.Film",
                 "graphql.schema.DataFetchingEnvironment");
     }
 
@@ -154,7 +154,7 @@ class ProjectionUnitRendererTest {
         var spec = render(row);
         assertThat(spec.name()).isEqualTo("FilmFilmDetails");
         assertThat(projectMethod(spec).parameters()).extracting(p -> p.type().toString())
-            .contains(DEFAULT_JOOQ_PACKAGE + ".tables.Film");
+            .contains(DEFAULT_JOOQ_PACKAGE + ".public_.tables.Film");
     }
 
     @Test

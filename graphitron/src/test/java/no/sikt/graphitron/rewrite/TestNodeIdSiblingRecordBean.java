@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmActorRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmActorRecord;
 
 /**
  * Fixture: a {@code @service} input bean with two jOOQ {@code FilmActorRecord} members, each backed

@@ -47,10 +47,10 @@ class NodeIdRecordInputBeanPipelineTest {
         """;
 
     private static final String RECORD_TYPE_FQN =
-        "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord";
+        "no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord";
 
     private static final String COMPOSITE_RECORD_TYPE_FQN =
-        "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmActorRecord";
+        "no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmActorRecord";
 
     @Test
     void recordMember_withNodeId_emitsDecodeHelperOnFetchersClass() {
@@ -142,7 +142,7 @@ class NodeIdRecordInputBeanPipelineTest {
             .as("the rejection names the declared record type, the node-table record, and the typeName,"
                 + " and points at both remedies — never a silent fall-through")
             .contains("FilmActorRecord")
-            .contains("test.jooq.tables.records.FilmRecord")
+            .contains("test.jooq.public_.tables.records.FilmRecord")
             .contains("@nodeId(typeName: \"Film\")");
     }
 

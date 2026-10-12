@@ -212,10 +212,10 @@ public final class FilmReviewService {
      * can reach each member's own accessors.
      */
     private static String describeOccupant(org.jooq.Record occupant) {
-        if (occupant instanceof no.sikt.graphitron.rewrite.test.jooq.tables.records.CustomerRecord c) {
+        if (occupant instanceof no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.CustomerRecord c) {
             return "Customer:" + c.getCustomerId();
         }
-        if (occupant instanceof no.sikt.graphitron.rewrite.test.jooq.tables.records.StaffRecord st) {
+        if (occupant instanceof no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.StaffRecord st) {
             return "Staff:" + st.getStaffId();
         }
         return "unexpected:" + occupant.getClass().getSimpleName();

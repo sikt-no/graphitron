@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.test.services;
 
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord;
 
 /**
  * Execution-tier fixture: a {@code @service} input bean whose two members are both

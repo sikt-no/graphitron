@@ -37,9 +37,9 @@ class ServiceCatalogTest {
     private static final String STUB_CLASS = "no.sikt.graphitron.rewrite.TestServiceStub";
 
     private static final ClassName FILM_RECORD = ClassName.get(
-        "no.sikt.graphitron.rewrite.test.jooq.tables.records", "FilmRecord");
+        "no.sikt.graphitron.rewrite.test.jooq.public_.tables.records", "FilmRecord");
     private static final ClassName LANGUAGE_RECORD = ClassName.get(
-        "no.sikt.graphitron.rewrite.test.jooq.tables.records", "LanguageRecord");
+        "no.sikt.graphitron.rewrite.test.jooq.public_.tables.records", "LanguageRecord");
     private static final ClassName JOOQ_RESULT = ClassName.get("org.jooq", "Result");
 
     private static ServiceCatalog newCatalog() {
@@ -210,7 +210,7 @@ class ServiceCatalogTest {
             .findFirst()
             .orElseThrow();
         assertThat(sourced.wrap()).isEqualTo(new SourceKey.Wrap.TableRecord(
-            ClassName.get(no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord.class)));
+            ClassName.get(no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord.class)));
         assertThat(sourced.columns()).isEqualTo(filmPk);
         assertThat(sourced.container()).isEqualTo(LoaderRegistration.Container.POSITIONAL_LIST);
     }
@@ -423,7 +423,7 @@ class ServiceCatalogTest {
             .findFirst()
             .orElseThrow();
         assertThat(sourced.wrap()).isEqualTo(new SourceKey.Wrap.TableRecord(
-            ClassName.get(no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmActorRecord.class)));
+            ClassName.get(no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmActorRecord.class)));
         assertThat(sourced.columns()).isEqualTo(filmActorPk);
         assertThat(sourced.container()).isEqualTo(LoaderRegistration.Container.MAPPED_SET);
     }
@@ -441,7 +441,7 @@ class ServiceCatalogTest {
             .findFirst()
             .orElseThrow();
         assertThat(sourced.wrap()).isEqualTo(new SourceKey.Wrap.TableRecord(
-            ClassName.get(no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord.class)));
+            ClassName.get(no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord.class)));
         assertThat(sourced.columns()).isEqualTo(filmPk);
         assertThat(sourced.container()).isEqualTo(LoaderRegistration.Container.MAPPED_SET);
     }

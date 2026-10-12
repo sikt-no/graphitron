@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.test.services;
 
-import no.sikt.graphitron.rewrite.test.jooq.tables.City;
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.CityRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.City;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.CityRecord;
 import org.jooq.DSLContext;
 import org.jooq.Row1;
 import org.jooq.impl.DSL;

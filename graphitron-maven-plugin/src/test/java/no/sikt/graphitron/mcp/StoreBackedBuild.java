@@ -30,9 +30,9 @@ import java.util.List;
 final class StoreBackedBuild implements AutoCloseable {
 
     /**
-     * The single-schema generated package every case captures from unless it says otherwise:
-     * {@code graphitron-sakila-db} generates it with {@code inputSchema=public} and nothing else, so
-     * every name in its census is unique.
+     * The fixture catalog every case captures from unless it says otherwise: {@code
+     * graphitron-sakila-db} generates every schema of its database into it, and a bare spelling
+     * resolves wherever one schema declares the name, which every {@code public} table does.
      */
     static final String JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
 

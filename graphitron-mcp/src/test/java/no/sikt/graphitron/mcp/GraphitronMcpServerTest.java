@@ -336,6 +336,9 @@ class GraphitronMcpServerTest {
     @RegisterExtension
     static final StoreFixture.Shared CATALOG = StoreFixture.held().sharedCatalog();
 
+    /** A limit above the fixture catalog's table count, so one page is the whole census. */
+    private static final Map<String, Object> WHOLE_CENSUS = Map.of("limit", 1000);
+
     /**
      * The wire fields are the shipped ones; what changed is where they come from and the order they
      * arrive in. Table order is the census's {@code (schema, name)} ordering rather than the
@@ -351,17 +354,18 @@ class GraphitronMcpServerTest {
     @Test
     void catalogTablesListsTheGraphsCensusOrderedBySchemaThenName() {
         var structured = structured(
-            GraphitronMcpServer.catalogTablesResult(CATALOG.handle(), Map.of()));
+            GraphitronMcpServer.catalogTablesResult(CATALOG.handle(), WHOLE_CENSUS));
 
         @SuppressWarnings("unchecked")
         var tables = (List<Map<String, Object>>) structured.get("tables");
         assertThat(tables).isNotEmpty();
-        assertThat(tables).extracting(t -> t.get("schema")).containsOnly("public");
+        assertThat(tables).extracting(t -> t.get("schema"))
+            .contains("public", "multischema_a", "multischema_b");
 
         var names = tables.stream().map(t -> (String) t.get("name")).toList();
-        assertThat(names)
+        assertThat(names).contains("actor", "film", "project_note");
+        assertThat(tables.stream().map(t -> t.get("schema") + "\u0000" + t.get("name")).toList())
             .as("the census, in the ordering the page is keyed by")
-            .contains("actor", "film", "project_note")
             .isSorted();
         assertThat(tables).filteredOn(t -> "film".equals(t.get("name")))
             .as("a table whose DDL declares a comment carries it")
@@ -376,7 +380,7 @@ class GraphitronMcpServerTest {
 
     @Test
     void catalogTablesFiltersBySchemaAndNameSubstring() {
-        // The schema filter is exact and case-insensitive; every test table lives in public.
+        // The schema filter is exact and case-insensitive.
         var bySchema = structured(GraphitronMcpServer.catalogTablesResult(
             CATALOG.handle(), Map.of("schema", "PUBLIC")));
         @SuppressWarnings("unchecked")
@@ -411,10 +415,10 @@ class GraphitronMcpServerTest {
      */
     @Test
     void catalogTablesPagesByKeysetAndVisitsEveryTableOnce() {
-        var unpaged = structured(GraphitronMcpServer.catalogTablesResult(CATALOG.handle(), Map.of()));
+        var unpaged = structured(GraphitronMcpServer.catalogTablesResult(CATALOG.handle(), WHOLE_CENSUS));
         @SuppressWarnings("unchecked")
         var all = (List<Map<String, Object>>) unpaged.get("tables");
-        var expected = all.stream().map(t -> (String) t.get("name")).toList();
+        var expected = all.stream().map(t -> t.get("schema") + "." + t.get("name")).toList();
         assertThat(unpaged).doesNotContainKey("nextCursor");
 
         var walked = new java.util.ArrayList<String>();
@@ -434,7 +438,7 @@ class GraphitronMcpServerTest {
             @SuppressWarnings("unchecked")
             var entries = (List<Map<String, Object>>) page.get("tables");
             assertThat(entries).hasSizeBetween(1, 2);
-            entries.forEach(e -> walked.add((String) e.get("name")));
+            entries.forEach(e -> walked.add(e.get("schema") + "." + e.get("name")));
             cursor = Optional.ofNullable((String) page.get("nextCursor"));
         } while (cursor.isPresent() && ++pages < expected.size());
 

@@ -43,9 +43,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class JooqRecordServiceParamPipelineTest {
 
     private static final String FILM_RECORD_FQN =
-        "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord";
+        "no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord";
     private static final String FILM_ACTOR_RECORD_FQN =
-        "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmActorRecord";
+        "no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmActorRecord";
 
     private static final String SINGLE_KEY_SDL = """
         type Film implements Node @table(name: "film") @node { id: ID! title: String }
@@ -346,7 +346,7 @@ class JooqRecordServiceParamPipelineTest {
     // ===== FK-reference @nodeId (cross-table) =====
 
     private static final String FILM_ENDORSEMENT_RECORD_FQN =
-        "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmEndorsementRecord";
+        "no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmEndorsementRecord";
 
     private static RunContext fixtureCtx(String jooqPackage) {
         return new RunContext(List.of(), Path.of(""), "JooqRecordServiceParamPipelineTest", Path.of(""),
@@ -542,7 +542,7 @@ class JooqRecordServiceParamPipelineTest {
             """;
         var jr = carrier(sdl, "replyEmail", false);
         assertThat(CatalogRefs.recordClass(jr.table()).toString())
-            .isEqualTo("no.sikt.graphitron.rewrite.test.jooq.tables.records.EmailRecord");
+            .isEqualTo("no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.EmailRecord");
         assertThat(jr.keyDecodes()).hasSize(1);
         var kd = jr.keyDecodes().get(0);
         assertThat(kd.leaf()).isEqualTo("inReplyTo");

@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
 
 /**
  * Instance-method service stub whose only public constructor takes a parameter that is neither a

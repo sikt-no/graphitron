@@ -60,7 +60,7 @@ public final class DummyFetcherFixtures {
      * constants) without the parent being a producer carrier, which is the shape whose
      * {@code ID} fields the carrier leaf would otherwise claim.
      */
-    public record FilmRecordHolder(no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord film) {}
+    public record FilmRecordHolder(no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord film) {}
 
     /** Class-backed producer shape for the @pivot mixed-source reach: slots as record components. */
     public record TranslatedTextsDto(String nn, String nb) {}

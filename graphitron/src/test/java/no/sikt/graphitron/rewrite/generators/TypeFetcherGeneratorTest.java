@@ -538,7 +538,7 @@ class TypeFetcherGeneratorTest {
             .extracting(p -> p.type().toString())
             .containsExactly(
                 "graphql.schema.DataFetchingEnvironment",
-                "no.sikt.graphitron.rewrite.test.jooq.tables.Film");
+                "no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film");
     }
 
     @Test
@@ -636,7 +636,7 @@ class TypeFetcherGeneratorTest {
             "filmsByService",
             ParameterizedTypeName.get(
                 ClassName.get("org.jooq", "Result"),
-                ClassName.get("no.sikt.graphitron.rewrite.test.jooq.tables.records", "FilmRecord")),
+                ClassName.get("no.sikt.graphitron.rewrite.test.jooq.public_.tables.records", "FilmRecord")),
             List.of(
                 new MethodRef.Param.Typed("dsl", "org.jooq.DSLContext", new ParamSource.DslContext()),
                 new MethodRef.Param.Typed("ids", "java.util.List<java.lang.Integer>",
@@ -819,7 +819,7 @@ class TypeFetcherGeneratorTest {
         // service class is the call target.
         var method = TestFixtures.staticServiceMethodRef(
             "com.example.Service", "createFilm",
-            ClassName.get("no.sikt.graphitron.rewrite.test.jooq.tables.records", "FilmRecord"),
+            ClassName.get("no.sikt.graphitron.rewrite.test.jooq.public_.tables.records", "FilmRecord"),
             List.of());
         var field = new MutationField.MutationServiceTableField("Mutation", "createFilm", null,
             TestFixtures.tableBoundFilmWithPk(single()), TestFixtures.stubServiceCall(method), Optional.empty());
@@ -844,7 +844,7 @@ class TypeFetcherGeneratorTest {
             "com.example.Service", "createFilms",
             ParameterizedTypeName.get(
                 ClassName.get("org.jooq", "Result"),
-                ClassName.get("no.sikt.graphitron.rewrite.test.jooq.tables.records", "FilmRecord")),
+                ClassName.get("no.sikt.graphitron.rewrite.test.jooq.public_.tables.records", "FilmRecord")),
             List.of());
         var field = new MutationField.MutationServiceTableField("Mutation", "createFilms", null,
             TestFixtures.tableBoundFilmWithPk(nonNullList()), TestFixtures.stubServiceCall(method), Optional.empty());
@@ -2092,14 +2092,14 @@ class TypeFetcherGeneratorTest {
             List.of(childInterfaceField("FilmActor", "related", true)), DEFAULT_OUTPUT_PACKAGE);
         assertThat(method(listSpec, "related").code().toString())
             .as("DSL.row(...) is the canonical helper's emit shape")
-            .contains("org.jooq.Row1<java.sql.Timestamp> key = org.jooq.impl.DSL.row(((org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.Tables.FILM_ACTOR.LAST_UPDATE))");
+            .contains("org.jooq.Row1<java.sql.Timestamp> key = org.jooq.impl.DSL.row(((org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.public_.Tables.FILM_ACTOR.LAST_UPDATE))");
 
         var connSpec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
             filmActorParentTableForBatched(), null,
             List.of(childInterfaceConnectionField("FilmActor", "relatedConnection", 5)), DEFAULT_OUTPUT_PACKAGE);
         assertThat(method(connSpec, "relatedConnection").code().toString())
             .as("Connection arm shares the canonical helper pattern; same key shape")
-            .contains("org.jooq.Row1<java.sql.Timestamp> key = org.jooq.impl.DSL.row(((org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.Tables.FILM_ACTOR.LAST_UPDATE))");
+            .contains("org.jooq.Row1<java.sql.Timestamp> key = org.jooq.impl.DSL.row(((org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.public_.Tables.FILM_ACTOR.LAST_UPDATE))");
     }
 
     private static ChildField.BatchedInterfaceField compositePkChildListField() {
@@ -2197,7 +2197,7 @@ class TypeFetcherGeneratorTest {
     private static String parentInputJoinOn(String branchAlias, String participantColumn) {
         String receiver = branchAlias + "." + participantColumn;
         return receiver + ".eq(parentInput.field(\"last_update\", "
-            + "no.sikt.graphitron.rewrite.test.jooq.Tables.FILM_ACTOR.LAST_UPDATE.getDataType())"
+            + "no.sikt.graphitron.rewrite.test.jooq.public_.Tables.FILM_ACTOR.LAST_UPDATE.getDataType())"
             + ".coerce(" + receiver + "))";
     }
 
@@ -2222,7 +2222,7 @@ class TypeFetcherGeneratorTest {
             .as("Parent PK extraction delegated to GeneratorUtils.buildRecordParentKeyExtraction "
                 + "(inline DSL.row over env.getSource() reads — no fk0/fk1 locals)")
             .contains("org.jooq.Row1<java.sql.Timestamp> key = org.jooq.impl.DSL.row("
-                + "((org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.Tables.FILM_ACTOR.LAST_UPDATE))");
+                + "((org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.public_.Tables.FILM_ACTOR.LAST_UPDATE))");
         assertThat(body)
             .as("Async tail: thenApply lifts ConnectionResult into DataFetcherResult, exceptionally "
                 + "routes through the no-channel disposition (surfaceClientErrorOrRedact, R415)")
@@ -2253,7 +2253,7 @@ class TypeFetcherGeneratorTest {
             .as("each parent row rebinds the RowN key cell at the owner column's Converter DataType (R413)")
             .contains("org.jooq.impl.DSL.row(org.jooq.impl.DSL.inline(i), "
                 + "org.jooq.impl.DSL.val(parentKeyCellValue(k.field1()), "
-                + "no.sikt.graphitron.rewrite.test.jooq.Tables.FILM_ACTOR.LAST_UPDATE.getDataType()))");
+                + "no.sikt.graphitron.rewrite.test.jooq.public_.Tables.FILM_ACTOR.LAST_UPDATE.getDataType()))");
     }
 
     @Test
@@ -2415,8 +2415,8 @@ class TypeFetcherGeneratorTest {
             .as("Composite parent-PK extraction emits an inline DSL.row over both columns "
                 + "(no fk0/fk1 locals — buildRecordParentKeyExtraction emits a single statement)")
             .contains("org.jooq.Row2<java.lang.Integer, java.lang.Integer> key = org.jooq.impl.DSL.row("
-                + "((org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.Tables.PROJECT.ORG_ID), "
-                + "((org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.Tables.PROJECT.PROJECT_ID))");
+                + "((org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.public_.Tables.PROJECT.ORG_ID), "
+                + "((org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.public_.Tables.PROJECT.PROJECT_ID))");
     }
 
     @Test
@@ -2436,9 +2436,9 @@ class TypeFetcherGeneratorTest {
             .as("DSL.row rebinds each composite key cell at the owner column's Converter DataType (R413)")
             .contains("org.jooq.impl.DSL.row(org.jooq.impl.DSL.inline(i), "
                 + "org.jooq.impl.DSL.val(parentKeyCellValue(k.field1()), "
-                + "no.sikt.graphitron.rewrite.test.jooq.Tables.PROJECT.ORG_ID.getDataType()), "
+                + "no.sikt.graphitron.rewrite.test.jooq.public_.Tables.PROJECT.ORG_ID.getDataType()), "
                 + "org.jooq.impl.DSL.val(parentKeyCellValue(k.field2()), "
-                + "no.sikt.graphitron.rewrite.test.jooq.Tables.PROJECT.PROJECT_ID.getDataType()))");
+                + "no.sikt.graphitron.rewrite.test.jooq.public_.Tables.PROJECT.PROJECT_ID.getDataType()))");
         assertThat(rows)
             .as("parentInput.as carries both parent PK column SQL names")
             .contains("org.jooq.impl.DSL.values(parentRows).as(\"parentInput\", \"idx\", \"org_id\", \"project_id\")");
@@ -2456,15 +2456,15 @@ class TypeFetcherGeneratorTest {
         assertThat(rows)
             .as("ProjectNote branch JOINs on (org_id AND project_id)")
             .contains("stage1_ProjectNote.ORG_ID.eq(parentInput.field(\"org_id\", "
-                + "no.sikt.graphitron.rewrite.test.jooq.Tables.PROJECT.ORG_ID.getDataType()))"
+                + "no.sikt.graphitron.rewrite.test.jooq.public_.Tables.PROJECT.ORG_ID.getDataType()))"
                 + ".and(stage1_ProjectNote.PROJECT_ID.eq(parentInput.field(\"project_id\", "
-                + "no.sikt.graphitron.rewrite.test.jooq.Tables.PROJECT.PROJECT_ID.getDataType())))");
+                + "no.sikt.graphitron.rewrite.test.jooq.public_.Tables.PROJECT.PROJECT_ID.getDataType())))");
         assertThat(rows)
             .as("ProjectEvent branch JOINs on (org_id AND project_id) — same AND-chain shape")
             .contains("stage1_ProjectEvent.ORG_ID.eq(parentInput.field(\"org_id\", "
-                + "no.sikt.graphitron.rewrite.test.jooq.Tables.PROJECT.ORG_ID.getDataType()))"
+                + "no.sikt.graphitron.rewrite.test.jooq.public_.Tables.PROJECT.ORG_ID.getDataType()))"
                 + ".and(stage1_ProjectEvent.PROJECT_ID.eq(parentInput.field(\"project_id\", "
-                + "no.sikt.graphitron.rewrite.test.jooq.Tables.PROJECT.PROJECT_ID.getDataType())))");
+                + "no.sikt.graphitron.rewrite.test.jooq.public_.Tables.PROJECT.PROJECT_ID.getDataType())))");
     }
 
     // ===== InputBean helper emission =====

@@ -59,7 +59,7 @@ class ClassifierAdvisoryFixPipelineTest {
     @Test
     void recordWithArguments_reportsWithoutFix() {
         var schema = TestSchemaHelper.buildSchema("""
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord"}) {
                 title: String
             }
             type Query {

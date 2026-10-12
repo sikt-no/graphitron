@@ -37,13 +37,13 @@ public final class DummyService {
     // JooqTableRecordInputType leaves without the removed @record-className idiom. =====
     public static String consumeDummyRecord(DummyRecord in) { return unused(); }
     public static String consumeTestRecordDto(TestRecordDto in) { return unused(); }
-    public static String consumeFilmRecord(no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord in) { return unused(); }
+    public static String consumeFilmRecord(no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord in) { return unused(); }
     public static String consumePlainJooqRecord(PlainJooqRecord in) { return unused(); }
 
     // A @service result whose reflected return is a jOOQ TableRecord, so the SDL type binds to a
     // JooqTableRecordType (a JooqRecordCarrier). Used to exercise the mixed-source shape-set rejection:
     // a jOOQ-record-carrier result reached also as a nesting projection is unsupported in v1.
-    public static no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord makeFilmRecordResult() { return unused(); }
+    public static no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord makeFilmRecordResult() { return unused(); }
 
     // ===== DummyFetcherFixtures.* (generic result-type emission tests) =====
     public static DummyFetcherFixtures.ContainerRecord makeContainerRecord() { return unused(); }

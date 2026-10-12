@@ -52,9 +52,9 @@ class DeclarationHoverOverlayParityTest {
     private static final String FIXTURE_RECORD = "no.sikt.graphitron.lsp.fixtures.R157FilmRecord";
     private static final String FIXTURE_POJO = "no.sikt.graphitron.lsp.fixtures.R157FilmPojo";
     private static final String FIXTURE_JOOQ_RECORD =
-        "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord";
+        "no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord";
     /** The generated convenience class a {@code @routine} field's call surface lives on. */
-    private static final String ROUTINES_CLASS = "no.sikt.graphitron.rewrite.test.jooq.Routines";
+    private static final String ROUTINES_CLASS = "no.sikt.graphitron.rewrite.test.jooq.public_.Routines";
 
     /**
      * One graph covering every arm both halves have: a type bound to a table, a type a producer grounds

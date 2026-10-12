@@ -1,8 +1,8 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmActorRecord;
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmActorRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord;
 import org.jooq.DSLContext;
 import org.jooq.Row1;
 

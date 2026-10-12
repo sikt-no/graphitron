@@ -35,7 +35,7 @@ class R96RecordBindingPipelineTest {
         var t = schema.type("FilmDetails");
         assertThat(t).isInstanceOf(GraphitronType.JooqTableRecordType.class);
         assertThat(((GraphitronType.JooqTableRecordType) t).fqClassName())
-            .isEqualTo("no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord");
+            .isEqualTo("no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord");
     }
 
     @Test

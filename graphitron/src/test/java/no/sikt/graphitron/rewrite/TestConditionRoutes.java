@@ -1,10 +1,10 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.test.jooq.enums.MpaaRating;
-import no.sikt.graphitron.rewrite.test.jooq.tables.Film;
-import no.sikt.graphitron.rewrite.test.jooq.tables.FilmActor;
-import no.sikt.graphitron.rewrite.test.jooq.tables.RentFilm;
-import no.sikt.graphitron.rewrite.test.jooq.tables.Rental;
+import no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.FilmActor;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.RentFilm;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Rental;
 import org.jooq.Condition;
 import org.jooq.Field;
 

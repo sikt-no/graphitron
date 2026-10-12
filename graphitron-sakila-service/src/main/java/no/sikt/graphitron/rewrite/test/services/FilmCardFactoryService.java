@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.test.services;
 
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
 
 /**
  * Orphaned compilation-tier fixture. It produced the {@code SingleFilmCardCarrier} /

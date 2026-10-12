@@ -107,7 +107,7 @@ public class NodeIdFixtureGenerator extends JavaGenerator {
         // Another table's column in the array: an element holding a period is emitted as written,
         // so this one is film's own field rather than this table's film_id.
         Map.entry("node_metadata_foreign", new Metadata("NodeMetadataForeign",
-            List.of("no.sikt.graphitron.rewrite.test.jooq.tables.Film.FILM.FILM_ID")))
+            List.of("no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film.FILM.FILM_ID")))
     );
 
     @Override

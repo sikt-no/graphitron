@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.test.services;
 
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
 
 /**
  * Two consumers of one decoded film id, which decide where it lands: {@link #modify} takes the

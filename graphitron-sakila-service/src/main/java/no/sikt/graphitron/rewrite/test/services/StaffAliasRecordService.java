@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.test.services;
 
-import no.sikt.graphitron.rewrite.test.jooq.Tables;
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.StaffRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.Tables;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.StaffRecord;
 
 /**
  * Execution-tier fixture: a jOOQ {@link StaffRecord} bound directly as a {@code @service} input

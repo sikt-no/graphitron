@@ -69,8 +69,8 @@ input ConditionedPickInput { filmId: Int }
 # Film is named by both populations with one class: two rows, one answer.
 extend schema @expectEquals(relation: "graphitron_type_backing", rows: """
   type_name,       class_name,                                                    declared_via
-  Film,            no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord, BOUND_TABLE
-  Film,            no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord, PRODUCER
+  Film,            no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, BOUND_TABLE
+  Film,            no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, PRODUCER
   Holder,          no.sikt.graphitron.rewrite.test.services.FilmBlurbHolder,      PRODUCER
   Blurb,           no.sikt.graphitron.rewrite.test.services.FilmBlurb,            ACCESSOR
   Retitled,        no.sikt.graphitron.rewrite.test.services.FilmBlurb,            ACCESSOR
@@ -79,7 +79,7 @@ extend schema @expectEquals(relation: "graphitron_type_backing", rows: """
   TitledBlurb,     java.lang.String,                                              ACCESSOR
   AssignInput,     no.sikt.graphitron.rewrite.test.services.FilmRecordAssignment, PRODUCER
   RedirectedInput, no.sikt.graphitron.rewrite.test.services.FilmRecordAssignment, PRODUCER
-  FilmInput,       no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord, ACCESSOR
+  FilmInput,       no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, ACCESSOR
   FirstPickInput,  no.sikt.graphitron.rewrite.test.services.FirstPick,            PRODUCER
   SecondPickInput, no.sikt.graphitron.rewrite.test.services.SecondPick,           PRODUCER
   ChosenPickInput, no.sikt.graphitron.rewrite.test.services.FirstPick,            PRODUCER

@@ -1087,7 +1087,7 @@ class FactCaptureAgreementTest {
                 .and(referencing.TABLE_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.TABLE_NAME))
                 .and(referencing.CONSTRAINT_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.CONSTRAINT_NAME))
                 .join(referenced)
-                .on(referenced.SOURCE_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.SOURCE_NAME))
+                .on(referenced.SOURCE_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_SOURCE_NAME))
                 .and(referenced.TABLE_SCHEMA.eq(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_SCHEMA))
                 .and(referenced.TABLE_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_TABLE))
                 .and(referenced.CONSTRAINT_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_CONSTRAINT_NAME))

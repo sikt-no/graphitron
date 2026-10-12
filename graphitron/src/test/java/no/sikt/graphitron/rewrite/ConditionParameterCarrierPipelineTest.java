@@ -155,7 +155,7 @@ class ConditionParameterCarrierPipelineTest {
         var rejection = ((UnclassifiedField) field).rejection();
         assertThat(rejection).isInstanceOf(WireCoercionError.ConditionJooqRecordCarrier.class);
         assertThat(((WireCoercionError.ConditionJooqRecordCarrier) rejection).declaredType())
-            .isEqualTo("no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord");
+            .isEqualTo("no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord");
     }
 
     @Test

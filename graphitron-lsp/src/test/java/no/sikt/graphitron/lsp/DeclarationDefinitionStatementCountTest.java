@@ -69,7 +69,7 @@ class DeclarationDefinitionStatementCountTest {
     private static StoreFixture store;
 
     private static final String FIXTURE_RECORD = "no.sikt.graphitron.lsp.fixtures.R157FilmRecord";
-    private static final String ROUTINES_FQN = "no.sikt.graphitron.rewrite.test.jooq.Routines";
+    private static final String ROUTINES_FQN = "no.sikt.graphitron.rewrite.test.jooq.public_.Routines";
 
     @BeforeAll
     static void capture() {

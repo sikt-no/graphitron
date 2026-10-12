@@ -82,7 +82,7 @@ class TenantScopeValidationTest {
 
     @Test
     void agreedTenantColumnValidatesClean() {
-        var ctx = TestConfiguration.testContext().withTenantColumn("k1");
+        var ctx = TestConfiguration.testContext().withTenantColumn("tenant_id");
         var schema = TestSchemaHelper.buildSchema(TRIVIAL_SDL, ctx);
 
         assertThat(new GraphitronSchemaValidator().validate(schema)).isEmpty();

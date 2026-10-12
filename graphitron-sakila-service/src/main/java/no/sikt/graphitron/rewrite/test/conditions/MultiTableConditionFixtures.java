@@ -85,7 +85,7 @@ public final class MultiTableConditionFixtures {
      * resolve the same column by name and give the typing up.
      */
     public static Condition occupantTypedNamePrefix(
-            no.sikt.graphitron.rewrite.test.jooq.tables.Customer customer, String firstName) {
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.Customer customer, String firstName) {
         if (firstName == null) {
             return DSL.noCondition();
         }
@@ -94,7 +94,7 @@ public final class MultiTableConditionFixtures {
 
     /** The {@code staff} branch of {@link #occupantTypedNamePrefix}, named for its own table. */
     public static Condition occupantTypedNamePrefix(
-            no.sikt.graphitron.rewrite.test.jooq.tables.Staff ansatt, String firstName) {
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.Staff ansatt, String firstName) {
         if (firstName == null) {
             return DSL.noCondition();
         }
@@ -110,7 +110,7 @@ public final class MultiTableConditionFixtures {
      * that by writing the fallback declaration.
      */
     public static Condition occupantMixedNamePrefix(
-            no.sikt.graphitron.rewrite.test.jooq.tables.Customer customer, String firstName) {
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.Customer customer, String firstName) {
         if (firstName == null) {
             return DSL.noCondition();
         }

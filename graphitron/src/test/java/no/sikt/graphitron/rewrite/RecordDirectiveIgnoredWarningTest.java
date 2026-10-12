@@ -28,7 +28,7 @@ class RecordDirectiveIgnoredWarningTest {
     @Test
     void matches_directiveClassNameEqualsReflectedClass_warnsRedundant() {
         var schema = TestSchemaHelper.buildSchema("""
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord"}) {
                 title: String
             }
             type Query {
@@ -46,7 +46,7 @@ class RecordDirectiveIgnoredWarningTest {
     @Test
     void disagrees_directiveClassNameDiffersFromReflectedClass_warnsDisagrees() {
         var schema = TestSchemaHelper.buildSchema("""
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord"}) {
                 title: String
             }
             type Query {
@@ -78,7 +78,7 @@ class RecordDirectiveIgnoredWarningTest {
             type Film implements Node @table(name: "film") @node { id: ID! }
             input FilmInput
                 @table(name: "film")
-                @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"})
+                @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord"})
             { filmId: ID! @nodeId(typeName: "Film") }
             type Query {
                 modifyFilm(in: FilmInput!): String
@@ -124,7 +124,7 @@ class RecordDirectiveIgnoredWarningTest {
         // check surfaces RecordBindingMultiProducer and the typed error supersedes the directive-ignored
         // warning at the same site.
         var schema = TestSchemaHelper.buildSchema("""
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord"}) {
                 title: String
             }
             type Query {

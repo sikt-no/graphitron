@@ -34,7 +34,7 @@ When the parent is a `JooqTableRecordType`, child `@table` fields traverse via x
 
 [source,graphql]
 ----
-# backed by no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord, reflected from its producing field's return type
+# backed by no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, reflected from its producing field's return type
 type FilmDetails {
     title:    String!     @field(name: "title")
     language: [Language!]! @reference(path: [{key: "film_language_id_fkey"}])

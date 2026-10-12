@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord;
 
 /**
  * A non-table wrapper a {@code @globalData} {@link TenantServiceStub} service returns: a scalar

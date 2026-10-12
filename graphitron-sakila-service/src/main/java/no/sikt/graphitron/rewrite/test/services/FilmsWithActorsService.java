@@ -1,8 +1,8 @@
 package no.sikt.graphitron.rewrite.test.services;
 
-import no.sikt.graphitron.rewrite.test.jooq.Tables;
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.ActorRecord;
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.Tables;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.ActorRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
 import org.jooq.DSLContext;
 
 import java.util.ArrayList;

@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite.test.querydb;
 
 import graphql.schema.GraphQLScalarType;
 import no.sikt.graphitron.generated.multischemamutation.Graphitron;
-import no.sikt.graphitron.rewrite.test.jooq.udt.records.SessionClaimsRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.udt.records.SessionClaimsRecord;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;

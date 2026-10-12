@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.test.services;
 
-import no.sikt.graphitron.rewrite.test.jooq.tables.Language;
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Language;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord;
 import org.jooq.DSLContext;
 
 import java.util.LinkedHashMap;

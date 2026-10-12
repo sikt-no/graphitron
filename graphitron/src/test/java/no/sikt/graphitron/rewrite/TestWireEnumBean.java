@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.test.jooq.enums.MpaaRating;
+import no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating;
 
 /**
  * Site-E fixture: a consumer input bean whose member is a jOOQ enum ({@link MpaaRating},

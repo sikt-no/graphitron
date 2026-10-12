@@ -289,7 +289,7 @@ class DmlBulkMutationsExecutionTest {
         String tB = randomMarker("R489-DUP-B");
         Integer idA = insertFilm(tA);
         Integer idB = insertFilm(tB);
-        var film = no.sikt.graphitron.rewrite.test.jooq.Tables.FILM;
+        var film = no.sikt.graphitron.rewrite.test.jooq.public_.Tables.FILM;
         try {
             org.jooq.Result<org.jooq.Record1<Integer>> keys = dsl.newResult(film.FILM_ID);
             keys.add(dsl.newRecord(film.FILM_ID).value1(idB));

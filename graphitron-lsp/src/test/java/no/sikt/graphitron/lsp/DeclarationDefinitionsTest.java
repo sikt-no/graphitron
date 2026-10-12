@@ -55,7 +55,7 @@ class DeclarationDefinitionsTest {
     private static final String STD_FQN = "java.time.LocalDate";
     private static final String SVC_FQN = "no.sikt.graphitron.rewrite.test.services.NamedMemberService";
     /** The generated convenience class a {@code @routine} field's call surface lives on. */
-    private static final String ROUTINES_FQN = "no.sikt.graphitron.rewrite.test.jooq.Routines";
+    private static final String ROUTINES_FQN = "no.sikt.graphitron.rewrite.test.jooq.public_.Routines";
 
     /**
      * The captured graph, which is what says what each buffer's type resolves against: one

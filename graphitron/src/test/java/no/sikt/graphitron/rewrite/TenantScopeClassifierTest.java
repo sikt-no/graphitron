@@ -14,8 +14,8 @@ import no.sikt.graphitron.model.jooq.JooqCatalog;
  * Catalog-tier coverage for {@link TenantScopeClassifier}: the two-way tenant-scope table
  * classification against a configured tenant column, run over the real fixture jOOQ catalog.
  *
- * <p>Fixture columns exercised: {@code k1} carries {@code Integer} on exactly
- * {@code paged_a} / {@code paged_b} (the agreement shape); {@code active} carries
+ * <p>Fixture columns exercised: {@code tenant_id} carries {@code Integer} on exactly
+ * {@code catalogue}, {@code catalogue_item} and {@code catalogue_shelf} (the agreement shape); {@code active} carries
  * {@code Boolean} on {@code staff} but {@code Integer} on {@code customer} (the disagreement
  * shape).
  */
@@ -33,20 +33,20 @@ class TenantScopeClassifierTest {
 
     @Test
     void classifiesCarryingTablesAsTenantScopedAndTheRestAsGlobal() {
-        var scopes = TenantScopeClassifier.classify(catalog, "k1");
+        var scopes = TenantScopeClassifier.classify(catalog, "tenant_id");
 
         var configured = assertConfigured(scopes);
-        assertThat(configured.columnName()).isEqualTo("k1");
+        assertThat(configured.columnName()).isEqualTo("tenant_id");
         assertThat(configured.conflicts()).isEmpty();
         assertThat(configured.tenantScopedTables())
-            .containsExactly("public.paged_a", "public.paged_b");
-        assertThat(configured.tenantScoped("public.paged_a")).isTrue();
+            .containsExactly("public.catalogue", "public.catalogue_item", "public.catalogue_shelf");
+        assertThat(configured.tenantScoped("public.catalogue")).isTrue();
         assertThat(configured.tenantScoped("public.film")).isFalse();
     }
 
     @Test
     void tenantTypeIsReadOffTheCatalogColumnType() {
-        var configured = assertConfigured(TenantScopeClassifier.classify(catalog, "k1"));
+        var configured = assertConfigured(TenantScopeClassifier.classify(catalog, "tenant_id"));
 
         assertThat(configured.tenantType()).isEqualTo(ClassName.get(Integer.class));
     }
@@ -55,10 +55,10 @@ class TenantScopeClassifierTest {
     void columnNameMatchingFollowsCatalogLookupSemantics() {
         // Java name first, then SQL name, both case-insensitive — the same semantics
         // JooqCatalog.findColumn applies to every directive-supplied column name.
-        var viaJavaName = assertConfigured(TenantScopeClassifier.classify(catalog, "K1"));
+        var viaJavaName = assertConfigured(TenantScopeClassifier.classify(catalog, "TENANT_ID"));
 
         assertThat(viaJavaName.tenantScopedTables())
-            .containsExactly("public.paged_a", "public.paged_b");
+            .containsExactly("public.catalogue", "public.catalogue_item", "public.catalogue_shelf");
     }
 
     @Test

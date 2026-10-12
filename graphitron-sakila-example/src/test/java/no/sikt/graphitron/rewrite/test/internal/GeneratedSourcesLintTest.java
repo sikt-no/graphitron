@@ -41,7 +41,7 @@ class GeneratedSourcesLintTest {
      *  class under this prefix inside an emitted fetcher body indicates an importer
      *  collision (two classes share a simple name) that the table-local
      *  {@code <entity>Table} rename is meant to prevent. */
-    private static final String JOOQ_TABLES_PACKAGE_PREFIX = "no.sikt.graphitron.rewrite.test.jooq.tables.";
+    private static final String JOOQ_TABLES_PACKAGE_PREFIX = "no.sikt.graphitron.rewrite.test.jooq.public_.tables.";
 
     @Test
     void emittedSourcesDoNotUseVar() throws IOException {

@@ -31,7 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class EnumBindingCaptureTest {
 
-    private static final String ENUM_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq.enums.";
+    private static final String ENUM_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq.public_.enums.";
 
     private static final String SDL = """
         type Query {

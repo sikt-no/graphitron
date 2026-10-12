@@ -63,9 +63,9 @@ public final class StoreFixture implements AutoCloseable, FixtureView {
     public static final String GRAPH = CapturedStore.GRAPH;
 
     /**
-     * The single-schema generated model: {@code graphitron-sakila-db} generates it with
-     * {@code inputSchema=public}, so every table name in its census is unique and a bare spelling
-     * resolves.
+     * The fixture catalog: {@code graphitron-sakila-db} generates every schema of its database into
+     * it, one sub-package per schema. A bare spelling resolves wherever one schema declares the name,
+     * which every {@code public} table does.
      */
     public static final String JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
 
@@ -95,7 +95,7 @@ public final class StoreFixture implements AutoCloseable, FixtureView {
         this.owned = owned;
     }
 
-    /** The catalog shape: the single-schema generated model captured under {@link #GRAPH}. */
+    /** The catalog shape: the fixture catalog, every schema, captured under {@link #GRAPH}. */
     public static StoreFixture ofCatalog(Path directory) {
         return ofCatalog(directory, PLACEHOLDER_SDL);
     }
@@ -153,8 +153,8 @@ public final class StoreFixture implements AutoCloseable, FixtureView {
     }
 
     /**
-     * The shape the {@code schema} tool's cases read: an SDL of the caller's over the single-schema
-     * generated model, with this module's test classes read as its classpath.
+     * The shape the {@code schema} tool's cases read: an SDL of the caller's over the fixture
+     * catalog, with this module's test classes read as its classpath.
      *
      * <p>All three inputs, because the tool's entry joins all three. The SDL is what declares the
      * coordinates, the catalog is what a {@code @table} binding and a column match resolve against, and

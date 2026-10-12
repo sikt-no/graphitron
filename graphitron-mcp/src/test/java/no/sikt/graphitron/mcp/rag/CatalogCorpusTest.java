@@ -94,17 +94,18 @@ class CatalogCorpusTest {
      */
     @Test
     void aGraphsCorpusExcludesAnotherGraphsCatalog(@TempDir Path tmp) {
-        try (var fixture = StoreFixture.ofCatalog(tmp)
-            .andGraph("sibling", StoreFixture.MULTISCHEMA_JOOQ_PACKAGE)) {
+        // The fixture catalog holds every schema the two-schema model does, so the graph over the
+        // two-schema model is the one whose corpus can show what it leaves out.
+        try (var fixture = StoreFixture.ofMultiSchemaCatalog(tmp)
+            .andGraph("sibling", StoreFixture.JOOQ_PACKAGE)) {
             var own = answered(CatalogCorpus.read(fixture.reader(), fixture.graphName()));
             assertThat(own).extracting(CorpusTable::id)
-                .contains("public.film")
-                .noneMatch(id -> id.startsWith("multischema_"));
+                .contains("multischema_a.event")
+                .noneMatch(id -> id.startsWith("public."));
 
             var sibling = answered(CatalogCorpus.read(fixture.reader(), "sibling"));
             assertThat(sibling).extracting(CorpusTable::id)
-                .contains("multischema_a.event")
-                .noneMatch(id -> id.startsWith("public."));
+                .contains("public.film", "multischema_a.event");
         }
     }
 

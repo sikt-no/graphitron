@@ -86,7 +86,7 @@ class TableFieldPipelineTest {
         assertThat(dollarFields.parameters()).extracting(p -> p.type().toString())
             .containsExactly(
                 "java.util.Map<java.lang.String, java.util.List<graphql.schema.SelectedField>>",
-                DEFAULT_JOOQ_PACKAGE + ".tables.Film",
+                DEFAULT_JOOQ_PACKAGE + ".public_.tables.Film",
                 "graphql.schema.DataFetchingEnvironment");
     }
 }

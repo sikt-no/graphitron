@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.test.services;
 
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.StorageBinRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.StorageBinRecord;
 
 /**
  * Execution-tier fixture: a jOOQ {@link StorageBinRecord} bound directly as a {@code @service}

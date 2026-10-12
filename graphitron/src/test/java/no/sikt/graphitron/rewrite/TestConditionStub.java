@@ -239,8 +239,8 @@ class TestConditionStub {
      * step derives the FilmActor → Actor FK.
      */
     public static Condition intermediate(
-            no.sikt.graphitron.rewrite.test.jooq.tables.Film src,
-            no.sikt.graphitron.rewrite.test.jooq.tables.FilmActor tgt) {
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film src,
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.FilmActor tgt) {
         throw new UnsupportedOperationException();
     }
 
@@ -251,8 +251,8 @@ class TestConditionStub {
      * with {@link #intermediate} to give filter paths a condition hop in either position.
      */
     public static Condition junctionToActor(
-            no.sikt.graphitron.rewrite.test.jooq.tables.FilmActor src,
-            no.sikt.graphitron.rewrite.test.jooq.tables.Actor tgt) {
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.FilmActor src,
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.Actor tgt) {
         throw new UnsupportedOperationException();
     }
 
@@ -265,8 +265,8 @@ class TestConditionStub {
      * target ({@code FilmActor}) is correct so only the source-side mismatch fires.
      */
     public static Condition intermediateWrongSource(
-            no.sikt.graphitron.rewrite.test.jooq.tables.Actor src,
-            no.sikt.graphitron.rewrite.test.jooq.tables.FilmActor tgt) {
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.Actor src,
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.FilmActor tgt) {
         throw new UnsupportedOperationException();
     }
 
@@ -280,8 +280,8 @@ class TestConditionStub {
      * fires.
      */
     public static Condition terminalWrongTarget(
-            no.sikt.graphitron.rewrite.test.jooq.tables.City src,
-            no.sikt.graphitron.rewrite.test.jooq.tables.Film tgt) {
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.City src,
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film tgt) {
         throw new UnsupportedOperationException();
     }
 
@@ -292,8 +292,8 @@ class TestConditionStub {
      * concrete-parameter check does not reject a correctly-typed signature.
      */
     public static Condition terminalCorrect(
-            no.sikt.graphitron.rewrite.test.jooq.tables.City src,
-            no.sikt.graphitron.rewrite.test.jooq.tables.Actor tgt) {
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.City src,
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.Actor tgt) {
         throw new UnsupportedOperationException();
     }
 
@@ -305,8 +305,8 @@ class TestConditionStub {
      * hand a {@code film}-typed alias to an {@code Actor}-typed slot.
      */
     public static Condition whereFilterWrongSource(
-            no.sikt.graphitron.rewrite.test.jooq.tables.Actor src,
-            no.sikt.graphitron.rewrite.test.jooq.tables.FilmActor tgt) {
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.Actor src,
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.FilmActor tgt) {
         throw new UnsupportedOperationException();
     }
 
@@ -319,13 +319,13 @@ class TestConditionStub {
      * each slot after its own table, and no reader may take one of those names for a binding target.
      */
     public static Condition occupantNameOverload(
-            no.sikt.graphitron.rewrite.test.jooq.tables.Customer customer, String firstName) {
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.Customer customer, String firstName) {
         throw new UnsupportedOperationException();
     }
 
     /** The {@code Staff} branch of {@link #occupantNameOverload}. */
     public static Condition occupantNameOverload(
-            no.sikt.graphitron.rewrite.test.jooq.tables.Staff ansatt, String firstName) {
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.Staff ansatt, String firstName) {
         throw new UnsupportedOperationException();
     }
 
@@ -335,13 +335,13 @@ class TestConditionStub {
      * with the parameter-position axis, at every {@code @condition} coordinate alike.
      */
     public static Condition occupantNameDisagreeing(
-            no.sikt.graphitron.rewrite.test.jooq.tables.Customer customer, String firstName) {
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.Customer customer, String firstName) {
         throw new UnsupportedOperationException();
     }
 
     /** The disagreeing sibling of {@link #occupantNameDisagreeing}: {@code firstName} is an Integer. */
     public static Condition occupantNameDisagreeing(
-            no.sikt.graphitron.rewrite.test.jooq.tables.Staff ansatt, Integer firstName) {
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.Staff ansatt, Integer firstName) {
         throw new UnsupportedOperationException();
     }
 
@@ -352,7 +352,7 @@ class TestConditionStub {
      * table slot's name as a claim used to leave {@code kriterier} unbound and reject structurally.
      */
     public static Condition tableSlotNamedLikeAnArgument(
-            no.sikt.graphitron.rewrite.test.jooq.tables.Film film,
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film film,
             java.util.Map<String, Object> kriterier) {
         throw new UnsupportedOperationException();
     }
@@ -364,15 +364,15 @@ class TestConditionStub {
      * {@code {table: "actor"}} step exactly as {@link #intermediate} does.
      */
     public static Condition agreeingIntermediate(
-            no.sikt.graphitron.rewrite.test.jooq.tables.Film src,
-            no.sikt.graphitron.rewrite.test.jooq.tables.FilmActor tgt) {
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film src,
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.FilmActor tgt) {
         throw new UnsupportedOperationException();
     }
 
     /** The {@code City}-departing declaration of {@link #agreeingIntermediate}. */
     public static Condition agreeingIntermediate(
-            no.sikt.graphitron.rewrite.test.jooq.tables.City src,
-            no.sikt.graphitron.rewrite.test.jooq.tables.FilmActor tgt) {
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.City src,
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.FilmActor tgt) {
         throw new UnsupportedOperationException();
     }
 
@@ -382,15 +382,15 @@ class TestConditionStub {
      * emits one joined table and there is no consumer call site to defer the choice to.
      */
     public static Condition disagreeingIntermediate(
-            no.sikt.graphitron.rewrite.test.jooq.tables.Film src,
-            no.sikt.graphitron.rewrite.test.jooq.tables.FilmActor tgt) {
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film src,
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.FilmActor tgt) {
         throw new UnsupportedOperationException();
     }
 
     /** The {@code Actor}-arriving declaration of {@link #disagreeingIntermediate}. */
     public static Condition disagreeingIntermediate(
-            no.sikt.graphitron.rewrite.test.jooq.tables.Film src,
-            no.sikt.graphitron.rewrite.test.jooq.tables.Actor tgt) {
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film src,
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.Actor tgt) {
         throw new UnsupportedOperationException();
     }
 }

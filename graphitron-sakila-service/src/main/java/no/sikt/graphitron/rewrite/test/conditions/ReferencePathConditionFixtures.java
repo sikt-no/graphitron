@@ -1,12 +1,12 @@
 package no.sikt.graphitron.rewrite.test.conditions;
 
-import no.sikt.graphitron.rewrite.test.jooq.tables.Actor;
-import no.sikt.graphitron.rewrite.test.jooq.tables.Address;
-import no.sikt.graphitron.rewrite.test.jooq.tables.Customer;
-import no.sikt.graphitron.rewrite.test.jooq.tables.Film;
-import no.sikt.graphitron.rewrite.test.jooq.tables.FilmActor;
-import no.sikt.graphitron.rewrite.test.jooq.tables.SplitFilterParent;
-import no.sikt.graphitron.rewrite.test.jooq.tables.SplitFilterTarget;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Actor;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Address;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Customer;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.FilmActor;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.SplitFilterParent;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.SplitFilterTarget;
 import org.jooq.Condition;
 import org.jooq.Table;
 import org.jooq.impl.DSL;

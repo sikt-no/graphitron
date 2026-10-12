@@ -1,10 +1,10 @@
 package no.sikt.graphitron.rewrite.test.conditions;
 
-import no.sikt.graphitron.rewrite.test.jooq.tables.Address;
-import no.sikt.graphitron.rewrite.test.jooq.tables.Customer;
-import no.sikt.graphitron.rewrite.test.jooq.tables.Film;
-import no.sikt.graphitron.rewrite.test.jooq.tables.Language;
-import no.sikt.graphitron.rewrite.test.jooq.tables.Project;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Address;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Customer;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Language;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Project;
 import org.jooq.Condition;
 import org.jooq.Table;
 import org.jooq.impl.DSL;

@@ -1,6 +1,6 @@
 package no.sikt.graphitron.codereferences.dummyreferences;
 
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
 
 /**
  * Test fixture record used by the @mutation classifier for a record-backed DML

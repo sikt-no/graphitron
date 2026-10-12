@@ -1409,12 +1409,15 @@ conversion frees one.
       prefixes a colliding class with its own package by design, for beans as for records, and
       `TestFixtures` makes names up for tests no catalog reaches; neither reads a layout, and the
       constant moves with the paths.
-  * One codegen execution over all five schemas becomes the fixture catalog, under the root package
-    `public` has now, and the documents, the pipeline tests and the example are captured and
-    generated against it. Its readers' paths move to the `public` sub-package, about 154 files and
-    four how-to pages; that is code compiled against generated classes as a consumer's is, not
-    layout logic. A bare `@table` naming `event` or `note` is ambiguous everywhere then, as it is to
-    a consumer with those schemas, and qualification answers it where a test needs it.
+  * **One codegen over every schema is the fixture catalog** `done`. Under the root package
+    `public` had, so the documents, the pipeline tests and the example are captured and generated
+    against every schema; its readers' paths moved to `public_`, code compiled against generated
+    classes as a consumer's is, not layout logic. A bare `@table` naming `event` or `note` is
+    ambiguous everywhere, as it is to a consumer with those schemas. The wider catalog found a test
+    joining a cross-schema foreign key's referenced constraint on the referencing side's source,
+    where the store states `referenced_source_name` for it; a tenant column borrowed from a
+    composite key that other schemas spell with another type, now `tenant_id`; and a census past
+    the MCP table page, which the listing tests now ask for whole.
   * The three other fixtures' readers then move onto it one fixture at a time, each execution going
     with its last reader; the root-package layout stays covered by the two node-id fixtures until
     the single-schema fixture replaces them. `NodeIdFixtureGenerator` keeps keying on bare table

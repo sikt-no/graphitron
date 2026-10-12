@@ -479,8 +479,8 @@
                                 indistinguishable to the resolver.
                             -->
                             <sessionState>
-                                <mount>no.sikt.graphitron.rewrite.test.jooq.Routines#sessionConnect</mount>
-                                <unmount>no.sikt.graphitron.rewrite.test.jooq.Routines#sessionDisconnect</unmount>
+                                <mount>no.sikt.graphitron.rewrite.test.jooq.public_.Routines#sessionConnect</mount>
+                                <unmount>no.sikt.graphitron.rewrite.test.jooq.public_.Routines#sessionDisconnect</unmount>
                             </sessionState>
                         </configuration>
                     </execution>

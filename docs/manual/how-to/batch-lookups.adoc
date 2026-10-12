@@ -128,7 +128,7 @@ A class-backed parent reachable from `@service` is implicitly DataLoader-batched
 
 [source,graphql]
 ----
-# backed by no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord, reflected from its producing field's return type
+# backed by no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, reflected from its producing field's return type
 type FilmDetails {
     actorsByLookup(actor_id: [Int!] @lookupKey): [Actor!]! @reference(path: [
         {key: "film_actor_film_id_fkey"},

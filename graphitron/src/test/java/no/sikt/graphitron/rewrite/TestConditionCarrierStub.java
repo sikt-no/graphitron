@@ -79,7 +79,7 @@ public final class TestConditionCarrierStub {
     }
 
     public static Condition carrierJooqRecord(Table<?> table,
-            no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord input) {
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord input) {
         throw new UnsupportedOperationException();
     }
 

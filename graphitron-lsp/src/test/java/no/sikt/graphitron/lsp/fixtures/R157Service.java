@@ -1,6 +1,6 @@
 package no.sikt.graphitron.lsp.fixtures;
 
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
 
 /**
  * Test producer for the classifier pipeline test, which is in graphitron-maven-plugin because

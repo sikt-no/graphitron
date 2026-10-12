@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.test.services;
 
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.AddressRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.AddressRecord;
 
 /**
  * A record-backed (Pojo) carrier holding the hub {@link AddressRecord}. Returned by

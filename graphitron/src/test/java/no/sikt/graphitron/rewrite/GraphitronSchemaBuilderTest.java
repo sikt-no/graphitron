@@ -1292,7 +1292,7 @@ class GraphitronSchemaBuilderTest {
 
         // Intermediate-hop condition step with concrete jOOQ table parameters —
         // BuildContext.resolveConditionJoinTarget reflects on the method's second parameter
-        // (no.sikt.graphitron.rewrite.test.jooq.tables.FilmActor) and resolves the target
+        // (no.sikt.graphitron.rewrite.test.jooq.public_.tables.FilmActor) and resolves the target
         // table via JooqCatalog.findTableByClass.
         CONDITION_INTERMEDIATE_REFLECTS_METHOD_PARAM(
             "intermediate-hop condition with concrete jOOQ table params → targetTable resolved by reflection",
@@ -2044,7 +2044,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(unc.reason())
                     .contains("parameter type 'Film'")
                     .contains("does not accept the parent table 'actor'")
-                    .contains("no.sikt.graphitron.rewrite.test.jooq.tables.Actor")
+                    .contains("no.sikt.graphitron.rewrite.test.jooq.public_.tables.Actor")
                     .contains("widen it to org.jooq.Table<?>");
             }),
 
@@ -2094,7 +2094,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(unc.reason())
                     .contains("parameter type 'Table<ActorRecord>'")
                     .contains("does not accept the parent table 'film'")
-                    .contains("no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord");
+                    .contains("no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord");
             });
 
         final String sdl;
@@ -4165,7 +4165,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var t = (JooqTableRecordInputType) schema.type("FilmInput");
-                assertThat(t.fqClassName()).isEqualTo("no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord");
+                assertThat(t.fqClassName()).isEqualTo("no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord");
                 assertThat(t.table()).isNotNull();
                 assertThat(t.table().tableName()).isEqualTo("film");
             }) {

@@ -1,10 +1,10 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.render.CatalogRefs;
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmActorRecord;
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmEndorsementRecord;
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmActorRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmEndorsementRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord;
 import org.jooq.DSLContext;
 import org.jooq.Result;
 
@@ -71,8 +71,8 @@ class TestServiceStub {
      * parent's record, for {@code $session} classification tests on a table-backed parent
      * (a child service without a Sources parameter is rejected).
      */
-    public static java.util.Map<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord, String> principalOfBatch(
-            java.util.Set<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord> films,
+    public static java.util.Map<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, String> principalOfBatch(
+            java.util.Set<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord> films,
             org.jooq.DSLContext dsl, String identity) {
         throw new UnsupportedOperationException();
     }
@@ -148,16 +148,16 @@ class TestServiceStub {
     public static Result<FilmRecord> getFilms() { throw new UnsupportedOperationException(); }
 
     /**
-     * Returns a {@link no.sikt.graphitron.rewrite.test.jooq.tables.records.ContentRecord}, used
+     * Returns a {@link no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.ContentRecord}, used
      * by {@code @service} on a single-table discriminated interface ({@code Content}) return, whose
      * shared {@code content} table's record class is {@code ContentRecord}.
      */
-    public static no.sikt.graphitron.rewrite.test.jooq.tables.records.ContentRecord getContent() {
+    public static no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.ContentRecord getContent() {
         throw new UnsupportedOperationException();
     }
 
     /** List form of {@link #getContent()} for a {@code [Content!]!} single-table interface return.*/
-    public static Result<no.sikt.graphitron.rewrite.test.jooq.tables.records.ContentRecord> getContents() {
+    public static Result<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.ContentRecord> getContents() {
         throw new UnsupportedOperationException();
     }
 
@@ -174,12 +174,12 @@ class TestServiceStub {
      * returned record's primary key, and this table has none. The signature itself is the
      * accepted root shape, so nothing but the missing key can be reported.
      */
-    public static Result<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmListRecord> getFilmLists() {
+    public static Result<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmListRecord> getFilmLists() {
         throw new UnsupportedOperationException();
     }
 
     /** Single-cardinality twin of {@link #getFilmLists()}, and the mutation arm's fixture. */
-    public static no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmListRecord getFilmList() {
+    public static no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmListRecord getFilmList() {
         throw new UnsupportedOperationException();
     }
 
@@ -189,7 +189,7 @@ class TestServiceStub {
      * needed. {@code List} rather than {@code Result} because a record-backed payload's expected
      * root list shape is {@code java.util.List<X>}.
      */
-    public static java.util.List<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmListRecord> getFilmListsAsList() {
+    public static java.util.List<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmListRecord> getFilmListsAsList() {
         throw new UnsupportedOperationException();
     }
 
@@ -612,7 +612,7 @@ class TestServiceStub {
      * declares scalar {@code LanguageRecord} instead of {@code List<LanguageRecord>}, so
      * classification rejects on the outer-shape mismatch (scalar vs {@code List<V>}).
      */
-    public static no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord childServiceRowKeyedWrongReturn(java.util.List<org.jooq.Row1<Integer>> keys) {
+    public static no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord childServiceRowKeyedWrongReturn(java.util.List<org.jooq.Row1<Integer>> keys) {
         throw new UnsupportedOperationException();
     }
 
@@ -644,7 +644,7 @@ class TestServiceStub {
      * {@code List<List<LanguageRecord>>}, the canonical accepted shape because
      * V = {@code CatalogRefs.recordClass(tb.table()) = LanguageRecord}.
      */
-    public static java.util.List<java.util.List<no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord>> childServiceRowKeyedSpecificRecordList(java.util.List<org.jooq.Row1<Integer>> keys) {
+    public static java.util.List<java.util.List<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord>> childServiceRowKeyedSpecificRecordList(java.util.List<org.jooq.Row1<Integer>> keys) {
         throw new UnsupportedOperationException();
     }
 
@@ -655,7 +655,7 @@ class TestServiceStub {
      * {@code TypeName.equals} against {@code List<List<LanguageRecord>>}. Pins the
      * diagnostic wording on the narrowed expected type.
      */
-    public static java.util.List<java.util.List<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord>> childServiceRowKeyedWrongRecordList(java.util.List<org.jooq.Row1<Integer>> keys) {
+    public static java.util.List<java.util.List<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord>> childServiceRowKeyedWrongRecordList(java.util.List<org.jooq.Row1<Integer>> keys) {
         throw new UnsupportedOperationException();
     }
 
@@ -909,7 +909,7 @@ class TestServiceStub {
      * {@code (mailbox_id, in_reply_to_no)}.
      */
     public static String modifyEmailRecord(
-            no.sikt.graphitron.rewrite.test.jooq.tables.records.EmailRecord in) {
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.EmailRecord in) {
         throw new UnsupportedOperationException();
     }
 
@@ -960,7 +960,7 @@ class TestServiceStub {
      * record-composite). Pointed at a composite-carrier payload whose data field's element binds to
      * {@link TestFilmWithActorsDto}, the producer-return-element mismatch must reject loudly.
      */
-    public static java.util.List<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord> createFilmsWrongComposite() {
+    public static java.util.List<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord> createFilmsWrongComposite() {
         throw new UnsupportedOperationException();
     }
 
@@ -969,11 +969,11 @@ class TestServiceStub {
      * helpers must reject the name as ambiguous rather than silently picking the first
      * declaration-order match.
      */
-    public static no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord getOverloaded() {
+    public static no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord getOverloaded() {
         throw new UnsupportedOperationException();
     }
 
-    public static no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord getOverloaded(String id) {
+    public static no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord getOverloaded(String id) {
         throw new UnsupportedOperationException();
     }
 

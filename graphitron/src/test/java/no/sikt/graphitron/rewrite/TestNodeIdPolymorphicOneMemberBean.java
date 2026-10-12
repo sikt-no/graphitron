@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.CustomerRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.CustomerRecord;
 
 /**
  * Fixture: the polymorphic member mistyped as <em>one</em> candidate's record. Refused rather than

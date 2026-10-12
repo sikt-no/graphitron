@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * lands on a single row column, on both materialization paths.
  *
  * <p>The {@code @service} jOOQ-record path uses the {@code agreeStorageBin} fixture: a
- * {@link no.sikt.graphitron.rewrite.test.jooq.tables.records.StorageBinRecord} {@code @service} param whose
+ * {@link no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.StorageBinRecord} {@code @service} param whose
  * input carries two writers on {@code bin_id} (the same-table identity {@code @nodeId(typeName:
  * "StorageBin")} decode and a plain {@code @field}). The generated {@code createStorageBinRecord} helper
  * calls {@code NodeIdEncoder.requireColumnAgreement} before loading.

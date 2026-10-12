@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.test.extensions;
 
-import no.sikt.graphitron.rewrite.test.jooq.tables.Film;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film;
 import org.jooq.Field;
 import org.jooq.Table;
 import org.jooq.impl.DSL;

@@ -48,7 +48,7 @@ class DiscriminatorColumnGuardPipelineTest {
         assertThat(column.columnClass())
             .as("the enum class is carried end to end rather than collapsed to a bare SQL name; "
                 + "it is what closes the value domain")
-            .isEqualTo("no.sikt.graphitron.rewrite.test.jooq.enums.MpaaRating");
+            .isEqualTo("no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating");
     }
 
     @Test

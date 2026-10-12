@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.InventoryRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.InventoryRecord;
 import org.jooq.Result;
 
 /**
@@ -101,7 +101,7 @@ public class PublicNodeIdServiceStub {
      * {@code typeName:} refuses: that is the single-type spelling.
      */
     public static Result<FilmRecord> getOccupantByCustomerRecord(
-            no.sikt.graphitron.rewrite.test.jooq.tables.records.CustomerRecord key) {
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.CustomerRecord key) {
         throw new UnsupportedOperationException();
     }
 

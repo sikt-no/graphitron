@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.test.extensions;
 
-import no.sikt.graphitron.rewrite.test.jooq.tables.Inventory;
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Inventory;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
 import no.sikt.graphitron.rewrite.test.services.FilmCardData;
 import org.jooq.Converter;
 import org.jooq.Field;

@@ -291,12 +291,13 @@ public final class TestFixtures {
     // ===== TableRef =====
 
     /**
-     * Stable synthetic root for test-only TableRef typed-class fields. Matches
-     * {@code TestConfiguration.DEFAULT_JOOQ_PACKAGE} so synthetic helpers built here line up
-     * with the FQNs tests already assert against (e.g. {@code <root>.tables.Film},
-     * {@code <root>.tables.records.FilmRecord}, {@code <root>.Tables}).
+     * Stable synthetic root for test-only TableRef typed-class fields: the {@code public} schema's
+     * package in the fixture catalog, {@code TestConfiguration.DEFAULT_JOOQ_PACKAGE} plus
+     * {@code .public_}, so synthetic helpers built here line up with the FQNs tests already assert
+     * against (e.g. {@code <root>.tables.Film}, {@code <root>.tables.records.FilmRecord},
+     * {@code <root>.Tables}).
      */
-    private static final String TEST_JOOQ_ROOT = "no.sikt.graphitron.rewrite.test.jooq";
+    private static final String TEST_JOOQ_ROOT = "no.sikt.graphitron.rewrite.test.jooq.public_";
 
     /**
      * Builds a {@link TableRef} with the typed-class fields synthesised from {@code TEST_JOOQ_ROOT}

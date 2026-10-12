@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.test.services;
 
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
-import no.sikt.graphitron.rewrite.test.jooq.udt.records.SessionHandleRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.udt.records.SessionHandleRecord;
 import org.jooq.DSLContext;
 
 import java.util.Map;

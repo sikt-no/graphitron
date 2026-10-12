@@ -1,8 +1,8 @@
 package no.sikt.graphitron.rewrite.test.services;
 
-import no.sikt.graphitron.rewrite.test.jooq.Routines;
-import no.sikt.graphitron.rewrite.test.jooq.udt.records.SessionClaimsRecord;
-import no.sikt.graphitron.rewrite.test.jooq.udt.records.SessionHandleRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.Routines;
+import no.sikt.graphitron.rewrite.test.jooq.public_.udt.records.SessionClaimsRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.udt.records.SessionHandleRecord;
 import org.jooq.Configuration;
 
 /**

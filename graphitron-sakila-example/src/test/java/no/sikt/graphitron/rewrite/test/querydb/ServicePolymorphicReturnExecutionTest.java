@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite.test.querydb;
 
 import graphql.GraphQL;
 import no.sikt.graphitron.generated.Graphitron;
-import no.sikt.graphitron.rewrite.test.jooq.Tables;
+import no.sikt.graphitron.rewrite.test.jooq.public_.Tables;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;

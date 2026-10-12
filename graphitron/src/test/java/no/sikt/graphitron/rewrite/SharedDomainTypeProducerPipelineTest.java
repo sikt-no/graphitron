@@ -237,7 +237,7 @@ class SharedDomainTypeProducerPipelineTest {
         assertThat(query.domainReturnType())
             .isEqualTo(new DomainReturnType.TableRecord(
                 no.sikt.graphitron.javapoet.ClassName.get(
-                    "no.sikt.graphitron.rewrite.test.jooq.tables.records", "FilmRecord")))
+                    "no.sikt.graphitron.rewrite.test.jooq.public_.tables.records", "FilmRecord")))
             .isEqualTo(mutation.domainReturnType());
         assertNoDisagreement(schema);
     }

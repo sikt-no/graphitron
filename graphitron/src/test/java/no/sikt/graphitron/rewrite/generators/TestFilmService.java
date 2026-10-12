@@ -1,10 +1,10 @@
 package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.render.CatalogRefs;
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.ArrayHolderRecord;
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmListRecord;
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.ArrayHolderRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmListRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord;
 import org.jooq.Record1;
 import org.jooq.Row1;
 import org.jooq.Row2;

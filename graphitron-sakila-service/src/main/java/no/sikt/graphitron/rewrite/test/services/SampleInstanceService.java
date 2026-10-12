@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.test.services;
 
-import no.sikt.graphitron.rewrite.test.jooq.Tables;
+import no.sikt.graphitron.rewrite.test.jooq.public_.Tables;
 import org.jooq.DSLContext;
 
 /**

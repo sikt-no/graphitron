@@ -372,7 +372,7 @@ class BatchedTableFieldPipelineTest {
             .extracting(p -> p.type().toString())
             .containsExactly(
                 "graphql.schema.DataFetchingEnvironment",
-                "no.sikt.graphitron.rewrite.test.jooq.tables.Actor");
+                "no.sikt.graphitron.rewrite.test.jooq.public_.tables.Actor");
     }
 
     // ===== BatchedTableField under NestingField =====

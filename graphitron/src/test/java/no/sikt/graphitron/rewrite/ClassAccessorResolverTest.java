@@ -269,7 +269,7 @@ class ClassAccessorResolverTest {
             DualRecord.class,                                                   // Java record
             DualPojo.class,                                                     // plain POJO
             RecordImplementingInterface.class,                                  // record implementing an interface
-            no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord.class // jOOQ Record subclass
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord.class // jOOQ Record subclass
         );
         for (Class<?> cls : matrix) {
             boolean recordFirst = ClassAccessorResolver.forBackingClass(cls) == CandidateOrder.RECORD_FIRST;

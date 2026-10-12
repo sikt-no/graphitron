@@ -16,7 +16,7 @@
     <properties>
         <maven.deploy.skip>true</maven.deploy.skip>
         <!-- Increment when init.sql changes to force jOOQ regeneration on incremental builds -->
-        <jooq.codegen.schema.version>2.33</jooq.codegen.schema.version>
+        <jooq.codegen.schema.version>2.34</jooq.codegen.schema.version>
         <db.url>jdbc:tc:postgresql:18:///rewrite_test?TC_TMPFS=/testtmpfs:rw&amp;TC_INITSCRIPT=file:${project.basedir}/src/main/resources/init.sql</db.url>
         <db.username>postgres</db.username>
         <db.password>postgres</db.password>
@@ -73,6 +73,10 @@
                 <artifactId>jooq-codegen-maven</artifactId>
                 <executions>
                     <execution>
+                        <!-- The fixture catalog: every schema init.sql creates, in one catalog.
+                             No <inputSchema>, so jOOQ writes each schema into a sub-package of
+                             the root (<root>.public_, <root>.nodeidfixture, ...), the layout a
+                             consumer with several schemas has. -->
                         <id>jooq-codegen</id>
                         <phase>generate-sources</phase>
                         <goals>
@@ -88,8 +92,7 @@
                             <generator>
                                 <name>no.sikt.graphitron.rewrite.fixtures.codegen.NodeIdFixtureGenerator</name>
                                 <database>
-                                    <inputSchema>public</inputSchema>
-                                    <includes>public.*</includes>
+                                    <includes>public\..*|nodeidfixture\..*|idreffixture\..*|multischema_a\..*|multischema_b\..*</includes>
                                     <schemaVersionProvider>${jooq.codegen.schema.version}</schemaVersionProvider>
                                     <includeIndexes>true</includeIndexes>
                                     <forcedTypes>

@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.test.services;
 
-import no.sikt.graphitron.rewrite.test.jooq.tables.Customer;
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.CustomerRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Customer;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.CustomerRecord;
 
 /**
  * Compilation / execution-tier fixtures: a jOOQ {@link CustomerRecord} bound directly as a

@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
-import no.sikt.graphitron.rewrite.test.jooq.udt.records.SessionClaimsRecord;
-import no.sikt.graphitron.rewrite.test.jooq.udt.records.SessionHandleRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.udt.records.SessionClaimsRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.udt.records.SessionHandleRecord;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
