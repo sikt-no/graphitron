@@ -274,21 +274,22 @@ class TenantDivinedRoutingExecutionTest {
     @Test
     void nestedInheritedChild_neverSharesOneBatchBetweenTwoTenants() {
         // Each endorsement's film comes from the tenant its row names, so the two films' nested
-        // inventories sit at one path under two tenants. A shared batch would run every key on
-        // one tenant's database and give both films the same answer.
+        // scenes sit at one path under two tenants. Each tenant's database holds only its own
+        // film's scenes (one for film 1, three for film 2), so a batch shared between the
+        // tenants, run on either database, would answer the other film with no scenes.
         var result = execute("{ endorsements(note: \"" + ENDORSEMENT_NOTE + "\")"
-            + " { film { title stock { inventories { inventoryId } } } } }");
+            + " { film { title stock { scenes { id } } } } }");
         var films = endorsedFilms(result);
         assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
         assertThat(films).anySatisfy(f -> {
             assertThat(f.get("title")).isEqualTo("Tenant One Film");
-            assertThat((List<?>) ((Map<String, Object>) f.get("stock")).get("inventories"))
-                .as("tenant 1's batch").hasSize(2);
+            assertThat((List<?>) ((Map<String, Object>) f.get("stock")).get("scenes"))
+                .as("tenant 1's batch").hasSize(1);
         });
         assertThat(films).anySatisfy(f -> {
             assertThat(f.get("title")).isEqualTo("Tenant Two Film");
-            assertThat((List<?>) ((Map<String, Object>) f.get("stock")).get("inventories"))
-                .as("tenant 2's batch: tenant 2 holds no inventory").isEmpty();
+            assertThat((List<?>) ((Map<String, Object>) f.get("stock")).get("scenes"))
+                .as("tenant 2's batch").hasSize(3);
         });
     }
 
