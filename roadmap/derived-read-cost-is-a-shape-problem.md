@@ -741,8 +741,13 @@ reads nothing off the classpath that capture has already read, and builds no sch
       the store, and the dev loop only logged the catalog's counts. With it went `CatalogBuilder`,
       the generator's classpath census, read only to build the catalog, and `ClasspathCensus` and
       `ClasspathScanner` with it; capture reads the classpath into the `code_` family on its own.
-      R1008, a flaky report from that census, dissolved with it. The backing projection the shadow
-      tests read survives as `TypeBackingShape.byTypeName`.
+      R1008, a flaky report from that census, dissolved with it.
+      * **`TypeBackingShape` dissolves** `done`. What survived of the catalog was the walk's view
+        of a type's backing, read off the classified model, in main sources with only tests calling
+        it; the store states the backing in `graphitron_type_backing`. The tests that pinned the
+        projection went with it. The backing comparison went too, every case it ran being one
+        `TypeBackingClassTest` already pins against the store, and the plugin's completion
+        pipeline asks the store which class backs a type.
   * **The print form follows the schema's own link** `open`. `SchemaSdlEmitter` prints the
     federation service form on the walk's `federationLink`; the emitted schema carries the
     federation `@link` itself, the configured one included while the composition synthesises it,
@@ -1590,11 +1595,13 @@ census parameter on `CapturedStore`'s arms; `TestSchemaHelper.classpathCensus` (
 `graphitron_configured_tag`'s; `DescriptionNoteApplier` and `DescriptionNoteApplierTest`, the notes
 minting the part relations' descriptions; `LoadingRewrites.Outcome.Applied.synthesisedLink` and
 `GraphQLAssemblyCapture.writeSynthesisedLink`; `EmittedRegistry.applyMintedDirectives` (now `applyUnwritten`).
-`CompletionData`, `CatalogBuilder` (`projectTypesByName` now `TypeBackingShape.byTypeName`),
+`CompletionData`, `CatalogBuilder` with `projectTypesByName`, `TypeBackingShape` and its
+`byTypeName`, the `rewrite.catalog` package,
 `ClasspathCensus`, `ClasspathScanner`, `GraphQLRewriteGenerator.BuildOutput.catalog`,
 `DevMojo.rebuildCatalog` (now `onClasspathChange`) and `sessionCensus`, and the tests
 `CatalogBuilderTest`, `CatalogBuilderSourceTest`, `ClasspathCensusTest`, `ClasspathScannerTest`,
-`JarResidentClassCensusTest` and the plugin's `FixtureCatalogTest`; `CatalogRefreshTest` is now
+`JarResidentClassCensusTest`, `TypeBackingProjectionTest`, `TypeBackingClasses`,
+`TypeBackingClassesTest`, `TypeBackingShadowTest` and the plugin's `FixtureCatalogTest`; `CatalogRefreshTest` is now
 `ClasspathChangeRoundTest`. The specification's built-ins
 as constants beside the entries:
 `GraphQLAstCapture.SPECIFIED_SCALARS`, `SPECIFIED_DIRECTIVES` with its three column fields and

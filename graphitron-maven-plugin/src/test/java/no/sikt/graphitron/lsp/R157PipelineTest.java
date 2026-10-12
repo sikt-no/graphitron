@@ -1,7 +1,5 @@
 package no.sikt.graphitron.lsp;
 
-import graphql.schema.idl.SchemaParser;
-import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.lsp.completions.FieldCompletions;
 import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
 import no.sikt.graphitron.lsp.fixtures.R157FilmPojo;
@@ -11,19 +9,13 @@ import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
-import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
-import no.sikt.graphitron.model.config.RunContext;
-import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.model.config.ClasspathEntry;
-import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
-import no.sikt.graphitron.rewrite.model.GraphitronType;
 import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import io.github.treesitter.jtreesitter.Parser;
 import io.github.treesitter.jtreesitter.Point;
 
-import java.io.InputStream;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -31,32 +23,24 @@ import java.nio.file.Paths;
 import java.util.List;
 import java.util.Optional;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Primary tier for @field member completion: a real {@code .graphqls}
- * containing one SDL type per {@link TypeBackingShape} arm, classified
- * through the real
- * {@link GraphitronSchemaBuilder}, with real backing classes
- * ({@link R157FilmRecord}, {@link R157FilmPojo}) on the test classpath.
- *
- * <p>Drives {@link TypeBackingShape#byTypeName} for real over that classifier's output,
- * then exercises {@link FieldCompletions}, {@link Diagnostics}, and {@link Hovers} against a
- * store captured from the same scan. This is the test most likely to catch silent classifier
- * widening: if a future change to the classifier produced a {@code PojoResultType.Backed} where
- * a {@link GraphitronType.JavaRecordType} was warranted, the {@code recordBacked...} assertion
- * below would fail.
+ * Primary tier for @field member completion over classes another module compiled: real backing
+ * classes ({@link R157FilmRecord}, {@link R157FilmPojo}) in the LSP module's test output, read by
+ * capture as a classpath entry of this one. Each case asks the store which class backs the type,
+ * then exercises {@link FieldCompletions}, {@link Diagnostics} and {@link Hovers} against the same
+ * store, so the backing and what it offers come off one reading.
  */
 class R157PipelineTest {
-
-    private static final String JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
 
     @TempDir
     static Path tmp;
 
     @Test
     void recordBackedTypeSurfacesComponentsThroughThePipeline() {
-        var artefacts = build("""
+        var sdl = """
             type FilmCard {
                 filmId: Int @field(name: "filmId")
                 title: String @field(name: "title")
@@ -64,15 +48,12 @@ class R157PipelineTest {
             type Query {
                 x: FilmCard @service(service: {className: "no.sikt.graphitron.lsp.fixtures.R157Service", method: "makeFilmRecord"})
             }
-            """);
+            """;
 
-        // The projection names the class; that its components are filmId and title is the store's
-        // answer, which the completion and diagnostic legs below read.
-        assertThat(artefacts.backing().get("FilmCard"))
-            .isEqualTo(new TypeBackingShape.RecordBacking(
-                "no.sikt.graphitron.lsp.fixtures.R157FilmRecord"));
+        assertThat(backingOf(sdl, "FilmCard"))
+            .containsExactly("no.sikt.graphitron.lsp.fixtures.R157FilmRecord");
 
-        var completions = completionsAt(artefacts,
+        var completions = completionsAt(sdl,
             "type FilmCard {\n"
                 + "    filmId: Int @field(name: \"\")\n"
                 + "    title: String @field(name: \"title\")\n"
@@ -80,7 +61,7 @@ class R157PipelineTest {
         assertThat(completions).extracting(CompletionItem::getLabel)
             .containsExactly("filmId", "title");
 
-        var diags = diagnosticsFor(artefacts,
+        var diags = diagnosticsFor(sdl,
             "type FilmCard {\n"
                 + "    filmId: Int @field(name: \"TYPO\")\n"
                 + "}\n");
@@ -90,7 +71,7 @@ class R157PipelineTest {
 
     @Test
     void pojoBackedTypeSurfacesBeanAccessorsThroughThePipeline() {
-        var artefacts = build("""
+        var sdl = """
             type FilmPojoView {
                 filmId: Int @field(name: "filmId")
                 title: String @field(name: "title")
@@ -98,14 +79,13 @@ class R157PipelineTest {
             type Query {
                 x: FilmPojoView @service(service: {className: "no.sikt.graphitron.lsp.fixtures.R157Service", method: "makeFilmPojo"})
             }
-            """);
+            """;
 
-        assertThat(artefacts.backing().get("FilmPojoView"))
-            .isEqualTo(new TypeBackingShape.PojoBacking(
-                "no.sikt.graphitron.lsp.fixtures.R157FilmPojo"));
+        assertThat(backingOf(sdl, "FilmPojoView"))
+            .containsExactly("no.sikt.graphitron.lsp.fixtures.R157FilmPojo");
         // The bean rule itself is the store's; that this class's accessors reach the author as member
         // names is what the completion leg of the record case pins, over the same census.
-        assertThat(completionsAt(artefacts,
+        assertThat(completionsAt(sdl,
             "type FilmPojoView {\n"
                 + "    filmId: Int @field(name: \"\")\n"
                 + "}\n", 1))
@@ -113,87 +93,18 @@ class R157PipelineTest {
             .contains("filmId", "title");
     }
 
-    @Test
-    void rootTypeProjectsToNoBackingRoot() {
-        var artefacts = build("""
-            type Query {
-                x: Int
-            }
-            """);
-        assertThat(artefacts.backing().get("Query"))
-            .isInstanceOf(TypeBackingShape.NoBacking.Root.class);
-    }
-
-    @Test
-    void plainInterfaceProjectsToNoBackingUnclassifiedInterface() {
-        var artefacts = build("""
-            interface Shape {
-                id: ID
-            }
-            type Box implements Shape {
-                id: ID
-            }
-            type Query { x: Shape }
-            """);
-        assertThat(artefacts.backing().get("Shape"))
-            .isInstanceOf(TypeBackingShape.NoBacking.UnclassifiedInterface.class);
-    }
-
     // ---- Pipeline helpers ----
 
-    private record Artefacts(
-        String sdl,
-        TypeDefinitionRegistry registry,
-        no.sikt.graphitron.rewrite.GraphitronSchema schema,
-        java.util.Map<String, TypeBackingShape> backing
-    ) {}
-
-    /**
-     * Loads {@code directives.graphqls} + the {@code Node} interface, parses
-     * the combined registry, runs the real classifier over the LSP module's
-     * {@code target/test-classes}, and projects the walk's backing resolution.
-     */
-    private static Artefacts build(String schemaText) {
-        var registry = parse(prelude(schemaText) + schemaText);
-        var ctx = testContextWithTestClasses();
-        var schema = GraphitronSchemaBuilder.build(registry, ctx);
-        return new Artefacts(schemaText, registry, schema, TypeBackingShape.byTypeName(schema));
-    }
-
-    private static String prelude(String schemaText) {
-        var sb = new StringBuilder();
-        sb.append(loadDirectives()).append('\n');
-        if (!schemaText.contains("interface Node")) {
-            sb.append("interface Node { id: ID! }\n");
+    /** The classes the store says back {@code typeName}, captured over this test's schema. */
+    private static List<String> backingOf(String sdl, String typeName) {
+        try (var store = storeOver(sdl)) {
+            var handle = store.handle();
+            var b = GRAPHITRON_TYPE_BACKING;
+            return handle.dsl().select(b.CLASS_NAME).from(b)
+                .where(b.GRAPH_NAME.eq(handle.graphName()))
+                .and(b.TYPE_NAME.eq(typeName))
+                .fetch(b.CLASS_NAME);
         }
-        return sb.toString();
-    }
-
-    private static String loadDirectives() {
-        try (InputStream is = R157PipelineTest.class.getResourceAsStream(
-            "/no/sikt/graphitron/model/schema/directives.graphqls")) {
-            if (is == null) {
-                throw new IllegalStateException("directives.graphqls not found on test classpath");
-            }
-            return new String(is.readAllBytes(), StandardCharsets.UTF_8);
-        } catch (java.io.IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private static TypeDefinitionRegistry parse(String sdl) {
-        return new SchemaParser().parse(sdl);
-    }
-
-    /**
-     * Test context with the LSP module's {@code target/test-classes} root on its classpath, so the
-     * fixtures ({@link R157FilmRecord}, {@link R157FilmPojo}) are classes the walk can bind.
-     */
-    private static RunContext testContextWithTestClasses() {
-        Path testClasses = testClassesRoot();
-        return new RunContext(
-            List.of(), Path.of(""), "R157PipelineTest", Path.of(""), "fake.output", JOOQ_PACKAGE, List.of(testClasses)
-        );
     }
 
     private static Path testClassesRoot() {
@@ -207,7 +118,7 @@ class R157PipelineTest {
 
     // ---- LSP-side drivers ----
 
-    private static List<CompletionItem> completionsAt(Artefacts artefacts, String source, int line) {
+    private static List<CompletionItem> completionsAt(String sdl, String source, int line) {
         Point cursor = new Point(line, source.split("\n")[line].indexOf("\"\"") + 1);
         var parser = new Parser();
         parser.setLanguage(GraphqlLanguage.get());
@@ -221,26 +132,21 @@ class R157PipelineTest {
         var context = no.sikt.graphitron.lsp.completions.CompletionContext.from(locOpt.get(), bytes);
         // Both halves of the arm come from the one root this test read: the store captured it,
         // and names the backing class and what it offers off the same rows.
-        try (var store = storeOver(artefacts)) {
+        try (var store = storeOver(sdl)) {
             return FieldCompletions.generate(vocab, store.handle(), context, directive, bytes);
         }
     }
 
-    private static List<org.eclipse.lsp4j.Diagnostic> diagnosticsFor(Artefacts artefacts, String source) {
+    private static List<org.eclipse.lsp4j.Diagnostic> diagnosticsFor(String sdl, String source) {
         var file = WorkspaceFileTestSupport.snapshot(source);
-        try (var store = storeOver(artefacts)) {
+        try (var store = storeOver(sdl)) {
             return Diagnostics.compute(BundledVocabulary.get(), "", file, Optional.of(store.handle()));
         }
     }
 
-    /**
-     * A store over the same schema and the same classes the projection was built from: capture
-     * reads the root this test's scan read, so the classifier, the projection and the store all
-     * answer about the same classfiles. The schema has to be the same one too, now that which class
-     * backs a type is the store's answer rather than the permit's.
-     */
-    private static StoreFixture storeOver(Artefacts artefacts) {
-        return StoreFixture.of(tmp, artefacts.sdl(), List.of(new ClasspathEntry(testClassesRoot(),
+    /** A store over this test's schema, with the LSP module's test output as a project entry. */
+    private static StoreFixture storeOver(String sdl) {
+        return StoreFixture.of(tmp, sdl, List.of(new ClasspathEntry(testClassesRoot(),
             ClasspathEntry.Origin.PROJECT, null, null)));
     }
 }

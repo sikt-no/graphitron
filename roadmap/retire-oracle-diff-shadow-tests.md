@@ -7,7 +7,7 @@ priority: 2
 theme: testing
 depends-on: []
 created: 2026-08-19
-last-updated: 2026-08-19
+last-updated: 2026-10-12
 ---
 
 # Retire the oracle-diff shadow tests, and stop the anchor gate from manufacturing them
@@ -31,6 +31,10 @@ is the other two oracle diffs and the anchor gate.
 All three should be deleted outright, with no accounting of what they were asserting. Converting their residues into fixtures first would keep the assumption that produced them: that the project owes the walk an explanation for every difference. It does not. Consumers come off the walk when a bug report or a feature request gives a reason to move one, and the requirement that motivated the move is the specification for the test written then. A difference between the walk and a derivation is therefore never a debt to record; it is either a walk bug the derivation already fixes, in which case reproducing it would be the defect, or an unmigrated consumer waiting for its own reason to move, in which case nothing is owed yet. The spec-side anchors already say what the relations should answer, and they keep saying it after the diffs are gone.
 
 ## The two that stay, renamed
+
+**2026-10-12: the backing comparison is delivered by R876.** `TypeBackingShadowTest` went with
+`TypeBackingShape`, the walk's projection it read, every case it ran being one
+`TypeBackingClassTest` pins against the store alone. `NodeTypeShadowTest` is what remains here.
 
 `NodeTypeShadowTest` (152 lines) compares `NodeDeclaration#isNodeType`, which four generator consumers call, against `intent_node_type`, which the store readers call. Both answers ship. `TypeBackingShadowTest` (226 lines) is the same situation and says so at its own line 34: the editor reads the derivation while `RecordBindingResolver` still binds record types for the leaf model, so a disagreement is a user seeing the editor and the emitted code contradict each other.
 

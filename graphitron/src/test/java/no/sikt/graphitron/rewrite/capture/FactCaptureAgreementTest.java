@@ -294,10 +294,7 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       {@code no.sikt.graphitron.rewrite.derive.TypeBackingClassTest} binds its reach to captured
  *       SDL over a stated census, its cases pinning how far the frontier goes, that a cycle
  *       terminates, the one condition that stops a hop, and each population it deliberately does
- *       not reach; with
- *       {@code no.sikt.graphitron.rewrite.derive.TypeBackingShadowTest} beside it running the
- *       differential against the classification walk's own answer on both axes, projected in that
- *       test's JVM, over public fixture classes both sides can see;
+ *       not reach;
  *       {@code no.sikt.graphitron.rewrite.capture.ClassificationDomainTest} states
  *       {@code intent_type_domain}'s membership as hand-written expectations over a real capture,
  *       whole sets where the schema is small enough to write one out, with the two node-seed

@@ -38,9 +38,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * which also carries the partition: a graph closes over its own classpath entries only.
  *
  * <p>Several cases assert that a coordinate produces no row. Those are the closure's own claim
- * rather than gaps in it: the boundary of what a class can back is where the closure stops, and the
- * two cases under the departure heading pin behaviour that differs from the reflective walk this
- * derivation replaces, written as pins because the adjudication belongs with the shadow.
+ * rather than gaps in it: the boundary of what a class can back is where the closure stops. The
+ * cases under the departure heading are where it answers differently from the reflective walk this
+ * derivation replaces, and they state the store's answer as the specification.
  */
 @PipelineTier
 class TypeBackingClassTest {
