@@ -88,6 +88,28 @@ public final class RootLauncherRenderer {
     public static MethodSpec render(LauncherCommand row, CarrierDsl carrierDsl,
             CodeBlock batchedDslDeclaration, CodeBlock serviceCall,
             ArgPathHelperRegistry argHelpers, ProjectedKeyHost keyHost) {
+        return render(row, carrierDsl, batchedDslDeclaration, serviceCall, CodeBlock.of(""),
+            argHelpers, keyHost);
+    }
+
+    /**
+     * The fan-out overload: {@code fanOutNarrowing} is the trailing argument list
+     * ({@code , <read>, <read>}) that hands the scatter carrier the values of the row's
+     * {@link TenantStrategy.Fanned#narrowing} slots, rendered by the shell because a decoded
+     * slot's read names a helper the emission context's decode registry declares. Empty for a
+     * plain fan-out and for every single-tenant row; a fanned row whose fragment disagrees with
+     * its slots is a generator bug.
+     */
+    public static MethodSpec render(LauncherCommand row, CarrierDsl carrierDsl,
+            CodeBlock batchedDslDeclaration, CodeBlock serviceCall, CodeBlock fanOutNarrowing,
+            ArgPathHelperRegistry argHelpers, ProjectedKeyHost keyHost) {
+        if (row.tenancy() instanceof TenantStrategy.Fanned fanned
+                && fanned.narrowing().isEmpty() != fanOutNarrowing.isEmpty()) {
+            throw new IllegalStateException("Graphitron generator bug (tenant fan-out): the launcher"
+                + " for '" + row.coordinate().getTypeName() + "." + row.coordinate().getFieldName()
+                + "' narrows on " + fanned.narrowing().size() + " slot(s), but the shell handed"
+                + " it the narrowing fragment '" + fanOutNarrowing + "'");
+        }
         var builder = MethodSpec.methodBuilder(row.unit().methodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(valueTypeOf(row));
@@ -137,7 +159,7 @@ public final class RootLauncherRenderer {
                         }
                     }
                     case TenantStrategy.Fanned fanned ->
-                        builder.addCode(fannedBody(anchor, row, fanned, tableLocal));
+                        builder.addCode(fannedBody(anchor, row, fanned, tableLocal, fanOutNarrowing));
                 }
             }
             case LaunchSource.RoutineChain chain ->
@@ -149,7 +171,8 @@ public final class RootLauncherRenderer {
                 builder.addCode(BatchedRowsFragments.discriminatedBody(row, chain,
                     batchedDslDeclaration, carrierDsl, argHelpers));
             case LaunchSource.Correlated.Projected chain ->
-                builder.addCode(BatchedRowsFragments.body(row, chain, batchedDslDeclaration, carrierDsl, argHelpers));
+                builder.addCode(BatchedRowsFragments.body(row, chain, batchedDslDeclaration,
+                    fanOutNarrowing, carrierDsl, argHelpers));
             case LaunchSource.PivotAggregate pivot ->
                 builder.addCode(BatchedRowsFragments.pivotBody(row, pivot, batchedDslDeclaration, argHelpers));
             case LaunchSource.ServiceCall sc ->
@@ -301,7 +324,7 @@ public final class RootLauncherRenderer {
      * state by construction; the entry point collapses the returned outcome list.
      */
     private static CodeBlock fannedBody(LaunchSource.AnchorTable anchor, LauncherCommand row,
-            TenantStrategy.Fanned fanned, String tableLocal) {
+            TenantStrategy.Fanned fanned, String tableLocal, CodeBlock fanOutNarrowing) {
         var list = (ResultShape.RecordList) row.result();
         var code = CodeBlock.builder();
         boolean ordered = list.ordering() != null;
@@ -313,8 +336,8 @@ public final class RootLauncherRenderer {
                 no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class)));
         code.addStatement("$T selectFields = $L", listOfField,
             ProjectionCall.fromEnvSelection(className(anchor.projection()), tableLocal));
-        code.add("return $T.fanOutRows(env, dsl -> $L);\n", className(fanned.carrier()),
-            selectChain(CodeBlock.of("selectFields"), tableLocal, true, ordered));
+        code.add("return $T.fanOutRows(env, dsl -> $L$L);\n", className(fanned.carrier()),
+            selectChain(CodeBlock.of("selectFields"), tableLocal, true, ordered), fanOutNarrowing);
         return code.build();
     }
 

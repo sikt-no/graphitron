@@ -812,7 +812,7 @@ public final class LauncherCommands {
     /**
      * The tenancy strategy, from the coordinate's tenancy binding: a fan-out coordinate runs
      * the composition once per domain tenant through the scatter carrier (whose ref rides the
-     * arm), everything else is single-tenant. This is the one home of the fan-out fact for the
+     * arm, beside the optional slots that narrow the domain), everything else is single-tenant. This is the one home of the fan-out fact for the
      * root family; the generator's dispatch and entry point read the arm, never the binding.
      */
     private static TenantStrategy tenancyOf(GraphitronSchema schema, QueryField.QueryTableField qtf,
@@ -822,8 +822,9 @@ public final class LauncherCommands {
 
     private static TenantStrategy tenancyOf(GraphitronSchema schema, String parentTypeName,
             String fieldName, GeneratedUnits units) {
-        return schema.tenantBindingOf(parentTypeName, fieldName) instanceof TenantBinding.FanOut
-            ? new TenantStrategy.Fanned(units.tenantConnections())
+        return schema.tenantBindingOf(parentTypeName, fieldName) instanceof TenantBinding.FanOut fanOut
+            ? new TenantStrategy.Fanned(units.tenantConnections(), fanOut.narrowing().stream()
+                .map(TenantBinding.BoundSlot::slotName).toList())
             : new TenantStrategy.Single();
     }
 

@@ -30,7 +30,7 @@ class TenantBindingClassificationTest {
         var schema = build("""
             type Film @table(name: "film") { title: String }
             type Query {
-                films(filmId: Int @field(name: "film_id")): [Film!]!
+                films(filmId: Int! @field(name: "film_id")): [Film!]!
             }
             """);
 
@@ -47,8 +47,8 @@ class TenantBindingClassificationTest {
         var schema = build("""
             type Film @table(name: "film") { title: String }
             type Query {
-                films(filmId: Int @field(name: "film_id"),
-                      altFilm: Int @field(name: "film_id")): [Film!]!
+                films(filmId: Int! @field(name: "film_id"),
+                      altFilm: Int! @field(name: "film_id")): [Film!]!
             }
             """);
 
@@ -56,6 +56,171 @@ class TenantBindingClassificationTest {
         assertThat(bound.bindings()).hasSize(2);
         assertThat(bound.primary().slotName()).isEqualTo("filmId");
         assertThat(bound.bindings().get(1).slotName()).isEqualTo("altFilm");
+    }
+
+    // ===== A slot the client may omit cannot route the field on its own =====
+
+    private static final String OPTIONAL_ONLY = "takes its tenant only from optional values";
+    private static final String FAN_OUT_HINT = "Mark the field @tenantFanOut";
+
+    private static void assertRejectsOptionalOnly(GraphitronSchema schema, String coordinate,
+                                                  String slots, boolean fanOutHint) {
+        var type = coordinate.split("\\.")[0];
+        var field = coordinate.split("\\.")[1];
+        assertThat(schema.tenantBindingOf(type, field)).isNull();
+        assertThat(schema.tenantBindings().rejections())
+            .filteredOn(e -> e.coordinate().equals(coordinate))
+            .singleElement()
+            .satisfies(e -> {
+                var detail = ((Rejection.AuthorError.NoTenantBinding) e.rejection()).detail();
+                assertThat(detail).contains("'" + coordinate + "' " + OPTIONAL_ONLY + " (" + slots + ")");
+                if (fanOutHint) {
+                    assertThat(detail).contains(FAN_OUT_HINT);
+                } else {
+                    assertThat(detail).doesNotContain(FAN_OUT_HINT).contains("Make one of them non-null.");
+                }
+            });
+    }
+
+    @Test
+    void aNullableTopLevelSlotRejectsNamingTheFanOutFixFirst() {
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type Query { filmsMaybe(filmId: Int @field(name: "film_id")): [Film!]! }
+            """);
+
+        assertRejectsOptionalOnly(schema, "Query.filmsMaybe", "filmId", true);
+        assertThat(schema.tenantBindings().rejections()).singleElement()
+            .satisfies(e -> assertThat(((Rejection.AuthorError.NoTenantBinding) e.rejection()).detail())
+                .endsWith("Mark the field @tenantFanOut to query every tenant the request may see when"
+                    + " none is given, or make one of them non-null."));
+    }
+
+    private static final String FILM_ACTOR_FILTER = """
+        type FilmActor implements Node @table(name: "film_actor")
+                @node(keyColumns: ["actor_id", "film_id"]) {
+            id: ID! @nodeId
+        }
+        input FilmActorFilter { id: %s @nodeId(typeName: "FilmActor") }
+        type Query { filmActors(filter: FilmActorFilter%s): [FilmActor!]! }
+        """;
+
+    @Test
+    void aNullableOuterInputOrANullableInnerFieldLeavesTheSlotOptional() {
+        assertRejectsOptionalOnly(build(FILM_ACTOR_FILTER.formatted("ID!", "")),
+            "Query.filmActors", "id", true);
+        assertRejectsOptionalOnly(build(FILM_ACTOR_FILTER.formatted("ID", "!")),
+            "Query.filmActors", "id", true);
+    }
+
+    @Test
+    void aNonNullPathAllTheWayDownIsRequiredAndRoutes() {
+        var schema = build(FILM_ACTOR_FILTER.formatted("ID!", "!"));
+
+        var bound = argumentBound(schema, "Query", "filmActors");
+        assertThat(bound.primary().required()).isTrue();
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void oneRequiredSlotRoutesAndCarriesTheOptionalOneBesideIt() {
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type Query {
+                films(filmId: Int! @field(name: "film_id"),
+                      altFilm: Int @field(name: "film_id")): [Film!]!
+            }
+            """);
+
+        var bound = argumentBound(schema, "Query", "films");
+        assertThat(bound.bindings())
+            .extracting(TenantBinding.BoundSlot::slotName, TenantBinding.BoundSlot::required)
+            .containsExactly(
+                org.assertj.core.groups.Tuple.tuple("filmId", true),
+                org.assertj.core.groups.Tuple.tuple("altFilm", false));
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aListSlotIsRequiredOnlyWhenItsElementsAreNonNullToo() {
+        var sdl = """
+            type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+                id: ID! @nodeId
+            }
+            type Query { filmsByNodeId(ids: %s @nodeId(typeName: "Film")): [Film!]! }
+            """;
+
+        assertRejectsOptionalOnly(build(sdl.formatted("[ID]!")), "Query.filmsByNodeId", "ids", true);
+        assertThat(argumentBound(build(sdl.formatted("[ID!]!")), "Query", "filmsByNodeId")
+            .primary().required()).isTrue();
+    }
+
+    @Test
+    void aContextArgumentSlotIsRequired() {
+        // The consumer supplies context arguments server-side; a missing one is a wiring bug, not
+        // a choice the client makes, so it guarantees the tenant like a non-null argument.
+        assertThat(TenantBindingIndex.slotRequired(null, "tenant",
+            TenantBinding.SlotRead.ContextArg.INSTANCE)).isTrue();
+    }
+
+    @Test
+    void theArmsRefuseASlotListThatBreaksTheirPresenceRule() {
+        var optional = new TenantBinding.BoundSlot("filmId", TenantBinding.SlotRead.TopLevelArg.INSTANCE,
+            TenantBinding.SlotProjection.Raw.INSTANCE, false);
+        var required = new TenantBinding.BoundSlot("filmId", TenantBinding.SlotRead.TopLevelArg.INSTANCE,
+            TenantBinding.SlotProjection.Raw.INSTANCE, true);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> new TenantBinding.ArgumentBound(List.of(optional)))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("at least one required slot");
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> new TenantBinding.FanOut(List.of(optional, required)))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("optional slots only");
+    }
+
+    @Test
+    void aMutationOrAConnectionWithOptionalOnlySlotsRejectsWithoutTheFanOutHint() {
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
+            input InventoryCreateInput {
+                filmId: Int @field(name: "film_id")
+                storeId: Int! @field(name: "store_id")
+            }
+            type Query {
+                filmsPage(filmId: Int @field(name: "film_id")): [Film!]! @asConnection
+                    @defaultOrder(primaryKey: true)
+            }
+            type Mutation {
+                createInventory(in: InventoryCreateInput!): Inventory @mutation(typeName: INSERT)
+            }
+            """);
+
+        assertRejectsOptionalOnly(schema, "Query.filmsPage", "filmId", false);
+        assertRejectsOptionalOnly(schema, "Mutation.createInventory", "filmId", false);
+    }
+
+    @Test
+    void aConnectionBoundServiceWithAnOptionalTenantMarkerRejectsAsAnUnroutedCall() {
+        // The payload is no @table, so the field reaches no tenant-scoped table: the
+        // noTenantBinding opening would be false, and the service rejection carries the detail.
+        var schema = build(SERVICE_TYPES + """
+            input RateByFilmIdInput { filmId: Int @tenant  rating: Int }
+            type Mutation { rateByFilmId(in: RateByFilmIdInput!): RateFilmsPayload %s }
+            """.formatted(service("rateByFilmId")));
+
+        assertThat(schema.tenantBindingOf("Mutation", "rateByFilmId")).isNull();
+        assertThat(schema.tenantBindings().rejections())
+            .filteredOn(e -> e.coordinate().equals("Mutation.rateByFilmId"))
+            .singleElement()
+            .satisfies(e -> {
+                var unrouted = (Rejection.AuthorError.UnroutedServiceCall) e.rejection();
+                assertThat(unrouted.declines()).singleElement().asString()
+                    .contains("'Mutation.rateByFilmId' " + OPTIONAL_ONLY + " (in.filmId)")
+                    .doesNotContain(FAN_OUT_HINT);
+            });
     }
 
     @Test
@@ -67,7 +232,7 @@ class TenantBindingClassificationTest {
             }
             type Inventory @table(name: "inventory") { inventoryId: Int }
             type Query {
-                films(filmId: Int @field(name: "film_id")): [Film!]!
+                films(filmId: Int! @field(name: "film_id")): [Film!]!
             }
             """);
 
@@ -90,7 +255,7 @@ class TenantBindingClassificationTest {
             film: Film%s
         }
         type Query {
-            films(filmId: Int @field(name: "film_id")): [Film!]!%s
+            films(filmId: Int! @field(name: "film_id")): [Film!]!%s
         }
         """;
 
@@ -140,7 +305,7 @@ class TenantBindingClassificationTest {
             type Inventory @table(name: "inventory") { inventoryId: Int }
             type Language @table(name: "language") { films: [Film] }
             type Query {
-                films(filmId: Int @field(name: "film_id")): [Film!]!
+                films(filmId: Int! @field(name: "film_id")): [Film!]!
             }
             """);
 
@@ -188,7 +353,7 @@ class TenantBindingClassificationTest {
             }
             type FilmActor @table(name: "film_actor") { actorId: Int film: Film }
             type FilmCategory @table(name: "film_category") { categoryId: Int }
-            type Query { films(filmId: Int @field(name: "film_id")): [Film!]! }
+            type Query { films(filmId: Int! @field(name: "film_id")): [Film!]! }
             """);
 
         assertFanOutRejects(schema, "Film.categories", "sits under a tenant-bound ancestor");
@@ -238,7 +403,7 @@ class TenantBindingClassificationTest {
             }
             type LanguageFilm @table(name: "film") { title: String }
             type Query {
-                films(filmId: Int @field(name: "film_id")): [Film!]!
+                films(filmId: Int! @field(name: "film_id")): [Film!]!
             }
             """);
 
@@ -278,7 +443,7 @@ class TenantBindingClassificationTest {
             }
             type LanguageFilm @table(name: "film") { title: String }
             type Query {
-                films(filmId: Int @field(name: "film_id")): [Film!]!
+                films(filmId: Int! @field(name: "film_id")): [Film!]!
             }
             """.formatted(languageKeys);
     }
@@ -303,7 +468,7 @@ class TenantBindingClassificationTest {
             }
             type Inventory @table(name: "inventory") { inventoryId: Int }
             type Query {
-                films(filmId: Int @field(name: "film_id")): [Film!]!
+                films(filmId: Int! @field(name: "film_id")): [Film!]!
             }
             """);
 
@@ -338,7 +503,7 @@ class TenantBindingClassificationTest {
             }
             type LanguageFilm @table(name: "film") { title: String }
             type Query {
-                films(filmId: Int @field(name: "film_id")): [Film!]!
+                films(filmId: Int! @field(name: "film_id")): [Film!]!
             }
             """);
 
@@ -362,7 +527,7 @@ class TenantBindingClassificationTest {
                 })
             }
             type Query {
-                films(filmId: Int @field(name: "film_id")): [Film!]!
+                films(filmId: Int! @field(name: "film_id")): [Film!]!
             }
             """);
 
@@ -464,7 +629,7 @@ class TenantBindingClassificationTest {
             type Inventory @table(name: "inventory") { filmId: Int @field(name: "film_id") }
             union Media = Film | Inventory
             type Query {
-                media(filmId: Int @field(name: "film_id")): [Media!]!
+                media(filmId: Int! @field(name: "film_id")): [Media!]!
             }
             """);
 
@@ -518,7 +683,7 @@ class TenantBindingClassificationTest {
                 store: Store @splitQuery
             }
             type Store @table(name: "store") { storeId: Int @field(name: "store_id") }
-            type Query { films(filmId: Int @field(name: "film_id")): [Film!]! }
+            type Query { films(filmId: Int! @field(name: "film_id")): [Film!]! }
             """);
 
         assertThat(schema.tenantBindingOf("Inventory", "store"))
@@ -781,7 +946,7 @@ class TenantBindingClassificationTest {
                 id: ID! @nodeId
             }
             type Query {
-                filmActorsByNodeId(ids: [ID!] @nodeId(typeName: "FilmActor")): [FilmActor!]!
+                filmActorsByNodeId(ids: [ID!]! @nodeId(typeName: "FilmActor")): [FilmActor!]!
             }
             """);
 
@@ -1113,7 +1278,7 @@ class TenantBindingClassificationTest {
         var schema = build("""
             type Film @table(name: "film") { title: String }
             type Query {
-                films(filmId: Int @field(name: "film_id"),
+                films(filmId: Int! @field(name: "film_id"),
                       title: String @field(name: "title")
                         @condition(condition: {className: "%s", method: "argConditionRenamed",
                             argMapping: "city: title"}, override: true)): [Film!]!
@@ -1133,7 +1298,7 @@ class TenantBindingClassificationTest {
         var schema = build("""
             type Film @table(name: "film") { title: String }
             type Query {
-                films(filmId: Int @field(name: "film_id")): [Film!]! %s
+                films(filmId: Int! @field(name: "film_id")): [Film!]! %s
             }
             """.formatted(FIELD_OVERRIDE));
 
@@ -1148,7 +1313,7 @@ class TenantBindingClassificationTest {
         var schema = build("""
             type Film @table(name: "film") { title: String }
             type Query {
-                films(filmId: Int @field(name: "film_id")
+                films(filmId: Int! @field(name: "film_id")
                     @condition(condition: {className: "%s", method: "filmIdArgCondition"}, override: true)): [Film!]!
             }
             """.formatted(STUB));
@@ -1164,7 +1329,7 @@ class TenantBindingClassificationTest {
         var schema = build("""
             type Film @table(name: "film") { title: String }
             type Query {
-                films(filmId: Int @field(name: "film_id")
+                films(filmId: Int! @field(name: "film_id")
                     @condition(condition: {className: "%s", method: "filmIdArgCondition"})): [Film!]!
             }
             """.formatted(STUB));
@@ -1179,9 +1344,9 @@ class TenantBindingClassificationTest {
     void filterInputFieldUnderFieldLevelOverrideIsBound() {
         var schema = build("""
             type Film @table(name: "film") { title: String }
-            input FilmFilter { filmId: Int @field(name: "film_id") }
+            input FilmFilter { filmId: Int! @field(name: "film_id") }
             type Query {
-                films(filter: FilmFilter): [Film!]! %s
+                films(filter: FilmFilter!): [Film!]! %s
             }
             """.formatted(FIELD_OVERRIDE));
 
@@ -1198,10 +1363,10 @@ class TenantBindingClassificationTest {
         var schema = build("""
             type Film @table(name: "film") { title: String }
             input FilmFilter {
-                filmId: ID @field(name: "film_id")
+                filmId: ID! @field(name: "film_id")
                     @condition(condition: {className: "%s", method: "inputColumnCondition"})
             }
-            type Query { films(filter: FilmFilter): [Film!]! }
+            type Query { films(filter: FilmFilter!): [Film!]! }
             """.formatted(STUB));
 
         var slot = onlySlot(schema, "films");
@@ -1217,10 +1382,10 @@ class TenantBindingClassificationTest {
         var schema = build("""
             type Film @table(name: "film") { title: String }
             input FilmFilter {
-                filmId: ID @field(name: "film_id")
+                filmId: ID! @field(name: "film_id")
                     @condition(condition: {className: "%s", method: "inputColumnCondition"}, override: true)
             }
-            type Query { films(filter: FilmFilter): [Film!]! }
+            type Query { films(filter: FilmFilter!): [Film!]! }
             """.formatted(STUB));
 
         var slot = onlySlot(schema, "films");
@@ -1279,8 +1444,8 @@ class TenantBindingClassificationTest {
                     @node(keyColumns: ["actor_id", "film_id"]) {
                 id: ID! @nodeId
             }
-            input FilmActorFilter { id: ID @nodeId(typeName: "FilmActor") }
-            type Query { filmActors(filter: FilmActorFilter): [FilmActor!]! }
+            input FilmActorFilter { id: ID! @nodeId(typeName: "FilmActor") }
+            type Query { filmActors(filter: FilmActorFilter!): [FilmActor!]! }
             """);
 
         var slot = onlySlot(schema, "filmActors");
@@ -1302,7 +1467,7 @@ class TenantBindingClassificationTest {
                 title: String
             }
             type Query {
-                filmsByNodeId(ids: [ID!] @nodeId(typeName: "Film")): [Film!]! %s
+                filmsByNodeId(ids: [ID!]! @nodeId(typeName: "Film")): [Film!]! %s
             }
             """.formatted(FIELD_OVERRIDE));
 
@@ -1674,7 +1839,7 @@ class TenantBindingClassificationTest {
                 %s
             }
             type Language @table(name: "language") { name: String }
-            type Query { films(filmId: Int @field(name: "film_id")): [Film!]! }
+            type Query { films(filmId: Int! @field(name: "film_id")): [Film!]! }
             """.formatted(childFields);
     }
 
@@ -1914,7 +2079,7 @@ class TenantBindingClassificationTest {
     void aMarkerOnAQueryFieldsArgumentRejectsNamingTheUseSite() {
         var schema = build("""
             type Film @table(name: "film") { title: String }
-            type Query { films(filmId: Int @field(name: "film_id") @tenant): [Film!]! }
+            type Query { films(filmId: Int! @field(name: "film_id") @tenant): [Film!]! }
             """);
 
         assertThat(schema.tenantBindingOf("Query", "films"))
@@ -2240,7 +2405,7 @@ class TenantBindingClassificationTest {
                 meta: FilmMeta
             }
             type FilmMeta { title: String @globalData }
-            type Query { films(filmId: Int @field(name: "film_id")): [Film!]! }
+            type Query { films(filmId: Int! @field(name: "film_id")): [Film!]! }
             """);
 
         assertThat(schema.tenantBindings().rejections())
@@ -2373,7 +2538,7 @@ class TenantBindingClassificationTest {
                 title: String
                 endorsements: [FilmEndorsement!]! @splitQuery
             }
-            type Query { films(filmId: Int @field(name: "film_id")): [Film!]! }
+            type Query { films(filmId: Int! @field(name: "film_id")): [Film!]! }
             """);
 
         assertThat(schema.tenantBindingOf("FilmEndorsement", "film"))
@@ -2413,7 +2578,7 @@ class TenantBindingClassificationTest {
             filmId: Int @field(name: "film_id")%s
         }
         type Inventory @table(name: "inventory") { inventoryId: Int }
-        type Query { films(filmId: Int @field(name: "film_id")): [Film!]! }
+        type Query { films(filmId: Int! @field(name: "film_id")): [Film!]! }
         %s""";
 
     private static GraphitronSchema filmStock(String stockFields, String extra) {
@@ -2571,7 +2736,7 @@ class TenantBindingClassificationTest {
                 byFilter(filter: FilmActorFilter): [FilmActor!]! @splitQuery
             }
             type Inventory @table(name: "inventory") { inventoryId: Int }
-            type Query { films(filmId: Int @field(name: "film_id")): [Film!]! }
+            type Query { films(filmId: Int! @field(name: "film_id")): [Film!]! }
             """);
 
         assertInherited(schema, "Film", "byFilter");
@@ -2614,7 +2779,7 @@ class TenantBindingClassificationTest {
                 @reference(path: [{key: "film_language_id_fkey"}])
         }
         type Query {
-            films(filmId: Int @field(name: "film_id")): [Film!]!%s
+            films(filmId: Int! @field(name: "film_id")): [Film!]!%s
         }
         """;
 
@@ -2627,13 +2792,28 @@ class TenantBindingClassificationTest {
     }
 
     @Test
-    void aGlobalParentAlsoReachedWithoutATenantLeavesTheArgumentRouting() {
-        var schema = build(LANGUAGE_FILMS.formatted("\n    languages: [Language!]!"));
+    void aGlobalParentAlsoReachedWithoutATenantLeavesARequiredArgumentRouting() {
+        var schema = build(LANGUAGE_FILMS.replace("films(filmId: Int @", "films(filmId: Int! @")
+            .formatted("\n    languages: [Language!]!"));
 
         assertThat(schema.tenantBindingOf("Language", "films"))
             .isInstanceOfSatisfying(TenantBinding.ArgumentBound.class,
                 bound -> assertThat(bound.primary().slotName()).isEqualTo("filmId"));
         assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void anOptionalSlotOnAChildWhoseParentSuppliesNoTenantRejects() {
+        // Nothing hands Language a tenant on the languages path, so only the argument could
+        // route Language.films, and a request may leave it out.
+        var schema = build(LANGUAGE_FILMS.formatted("\n    languages: [Language!]!"));
+
+        assertThat(schema.tenantBindingOf("Language", "films")).isNull();
+        assertRejects(schema, "Language.films",
+            "'Language.films' takes its tenant only from optional values (filmId)");
+        // The fan-out ladder would turn the marker away here (Language is also reached below the
+        // bound films root), so the rejection offers only the non-null fix.
+        assertRejects(schema, "Language.films", "Make one of them non-null.");
     }
 
     @Test

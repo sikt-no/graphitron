@@ -49,8 +49,15 @@ public sealed interface TenantBinding {
      * behind a context argument, and fusing the two would make the permit set their
      * cross-product. Both are resolved together at every minting site, so a site cannot read
      * one axis and drop the other.
+     *
+     * <p>{@code required} is whether the client cannot omit the slot: its read path is non-null
+     * all the way down, list element types included, since a nullable element can arrive as
+     * {@code null} and name no tenant. A context argument counts as required, because the
+     * consumer supplies it server-side. Only a required slot guarantees every request a tenant,
+     * which is what lets a field route on its arguments ({@link ArgumentBound}); optional slots
+     * alone can only narrow a fan-out ({@link FanOut}).
      */
-    record BoundSlot(String slotName, SlotRead read, SlotProjection projection) {
+    record BoundSlot(String slotName, SlotRead read, SlotProjection projection, boolean required) {
         public BoundSlot {
             java.util.Objects.requireNonNull(read, "read");
             java.util.Objects.requireNonNull(projection, "projection");
@@ -124,13 +131,19 @@ public sealed interface TenantBinding {
 
     /**
      * Argument / input-object fields whose column mappings resolve to tenant columns. Carries
-     * every co-binding; the first is the documented-precedence primary (argument declaration
-     * order), and the emitter guards at runtime that all divined values agree.
+     * every co-binding, optional ones included; the first is the documented-precedence primary
+     * (argument declaration order), and the emitter guards at runtime that all divined values
+     * agree. At least one binding is {@linkplain BoundSlot#required required}, so every request
+     * names a tenant: a field whose slots are all optional is not routable on its arguments.
      */
     record ArgumentBound(List<BoundSlot> bindings) implements TenantBinding {
         public ArgumentBound {
             if (bindings.isEmpty()) {
                 throw new IllegalArgumentException("ArgumentBound requires at least one bound slot");
+            }
+            if (bindings.stream().noneMatch(BoundSlot::required)) {
+                throw new IllegalArgumentException("ArgumentBound requires at least one required slot,"
+                    + " or a request omitting every slot names no tenant: " + bindings);
             }
             bindings = List.copyOf(bindings);
         }
@@ -223,13 +236,27 @@ public sealed interface TenantBinding {
 
     /**
      * The deliberate no-binding arm: the field carries {@code @tenantFanOut}, so its query runs
-     * once per tenant in the request's fan-out domain and the results union. The arm is the
-     * verdict alone; <em>what</em> it fans over is a request-level fact (the factory-supplied
-     * request tenant set intersected with the configured tenant map), so there is nothing for the
-     * model to carry. Children below a fanned field inherit each unioned row's tenant through
-     * per-element {@code localContext} stamping and classify {@link Inherited}.
+     * once per tenant in the request's fan-out domain and the results union. The domain is a
+     * request-level fact (the factory-supplied request tenant set intersected with the configured
+     * tenant map), narrowed by {@code narrowing}: the field's optional slots naming the tenant
+     * column. A slot whose runtime value names tenants restricts the domain to them; one the
+     * request leaves out restricts nothing, and an empty list is the plain fan-out. Narrowing never
+     * changes which rows the field answers, only how many tenants it asks, since a tenant's
+     * database holds only rows naming that tenant. Children below a fanned field inherit each
+     * unioned row's tenant through per-element {@code localContext} stamping and classify
+     * {@link Inherited}.
      */
-    record FanOut() implements TenantBinding {
-        public static final FanOut INSTANCE = new FanOut();
+    record FanOut(List<BoundSlot> narrowing) implements TenantBinding {
+        public FanOut {
+            if (narrowing.stream().anyMatch(BoundSlot::required)) {
+                throw new IllegalArgumentException("FanOut narrows on optional slots only: a required"
+                    + " slot names the tenant on every request, so the field would never fan out: "
+                    + narrowing);
+            }
+            narrowing = List.copyOf(narrowing);
+        }
+
+        /** The plain fan-out: nothing narrows the domain. */
+        public static final FanOut PLAIN = new FanOut(List.of());
     }
 }

@@ -593,7 +593,9 @@ public class TypeFetcherGenerator {
                             + " the producer's membership and this dispatch have drifted"));
                     builder.addMethod(buildQueryTableFetcher(ctx, qtf, launcherRow, outputPackage));
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
-                        .render(launcherRow, launchers.carrierDsl(), ctx.argPathHelpers(), ctx.projectedKeyHost()));
+                        .render(launcherRow, launchers.carrierDsl(), CodeBlock.of(""), CodeBlock.of(""),
+                            TenantDslEmitter.fanOutNarrowing(ctx, launcherRow, outputPackage),
+                            ctx.argPathHelpers(), ctx.projectedKeyHost()));
                     // The keyed-lookup row additionally owns a VALUES-building input-rows
                     // helper; the row's source arm is the fork, the same shape the batched
                     // rows renderer reads, so no leaf identity and no schema participate.
@@ -671,7 +673,9 @@ public class TypeFetcherGenerator {
                         ? TenantDslEmitter.resolve(ctx, btf, outputPackage).declaration()
                         : no.sikt.graphitron.javapoet.CodeBlock.of("");
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
-                        .render(batchedRow, launchers.carrierDsl(), dslDeclaration, ctx.argPathHelpers(), ctx.projectedKeyHost()));
+                        .render(batchedRow, launchers.carrierDsl(), dslDeclaration, CodeBlock.of(""),
+                            TenantDslEmitter.fanOutNarrowing(ctx, batchedRow, outputPackage),
+                            ctx.argPathHelpers(), ctx.projectedKeyHost()));
                     // The correlated-lookup row additionally owns the VALUES-building
                     // input-rows helper, named by the row's minted ref (one derivation with
                     // the body's call). The env-based variant reads args from

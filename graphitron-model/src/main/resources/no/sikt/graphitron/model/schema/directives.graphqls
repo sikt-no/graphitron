@@ -296,8 +296,10 @@ arguments. Multi-tenant builds only (`<tenantColumn>` must be configured). Suppo
 fields and on fields of `@table`-backed parents. Rejected at build time on mutation fields,
 non-list fields, `@asConnection` / `@lookupKey` / `@service` / `@routine` fields,
 interface- or union-typed fields, fields of class-, record-, or nesting-backed parents, fields
-whose data is not tenant-scoped, and fields whose tenant is already determined (a bound argument,
-or any ancestor that fixed the tenant, including another `@tenantFanOut`).
+whose data is not tenant-scoped, and fields whose tenant is already determined (a non-null bound
+argument, or any ancestor that fixed the tenant, including another `@tenantFanOut`). An optional
+argument bound to the tenant column narrows the fan-out: given, only the tenants its value names
+are queried; omitted, every tenant the request may see is.
 """
 directive @tenantFanOut on FIELD_DEFINITION
 

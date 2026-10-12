@@ -412,6 +412,36 @@ final class TenantDslEmitter {
     }
 
     /**
+     * The fanned launcher's trailing narrowing arguments, {@code , <read>, <read>}: one read per
+     * optional slot of the coordinate's {@link TenantBinding.FanOut}, rendered exactly as an
+     * {@link TenantBinding.ArgumentBound} acquisition renders its slots, so a decoded node id
+     * narrows through the same helper it would route through. Empty for a plain fan-out and for
+     * every single-tenant row, so the launcher's scatter call reads unchanged there. The row's
+     * {@link no.sikt.graphitron.command.TenantStrategy.Fanned#narrowing} names the same slots;
+     * a row and binding that disagree are a generator bug.
+     */
+    static CodeBlock fanOutNarrowing(TypeFetcherEmissionContext ctx,
+                                     no.sikt.graphitron.command.LauncherCommand row, String outputPackage) {
+        if (!(row.tenancy() instanceof no.sikt.graphitron.command.TenantStrategy.Fanned fanned)) {
+            return CodeBlock.of("");
+        }
+        String fieldName = row.coordinate().getFieldName();
+        if (!(requireBinding(ctx, fieldName) instanceof TenantBinding.FanOut fanOut)
+                || !fanOut.narrowing().stream().map(TenantBinding.BoundSlot::slotName).toList()
+                    .equals(fanned.narrowing())) {
+            throw new IllegalStateException("Graphitron generator bug (tenant fan-out): the launcher"
+                + " row for '" + ctx.parentTypeName() + "." + fieldName + "' narrows on "
+                + fanned.narrowing() + ", but the field's binding is "
+                + requireBinding(ctx, fieldName));
+        }
+        var arguments = CodeBlock.builder();
+        for (CodeBlock read : slotReads(ctx, fanOut.narrowing(), tenantConnectionsClass(outputPackage))) {
+            arguments.add(", $L", read);
+        }
+        return arguments.build();
+    }
+
+    /**
      * The {@code <T> _divinedTenant = TenantConnections.divinedTenant(<slot reads>);} statement,
      * declared with the catalog-read tenant key type (generated sources never use {@code var}).
      */
@@ -419,7 +449,7 @@ final class TenantDslEmitter {
                                                    TenantBinding.ArgumentBound bound, ClassName tenantConnections) {
         var scopes = (TenantScopes.Configured) ctx.graphitronSchema().tenantScopes();
         var keyType = scopes.tenantType().isPrimitive() ? scopes.tenantType().box() : scopes.tenantType();
-        var reads = slotReads(ctx, bound, tenantConnections);
+        var reads = slotReads(ctx, bound.bindings(), tenantConnections);
         var divined = CodeBlock.builder()
             .add("$T $L = $T.divinedTenant(", keyType, TENANT_KEY_LOCAL, tenantConnections);
         for (int i = 0; i < reads.size(); i++) {
@@ -438,9 +468,9 @@ final class TenantDslEmitter {
      * re-walks the operation carriers, so classification and emission cannot disagree.
      */
     private static List<CodeBlock> slotReads(TypeFetcherEmissionContext ctx,
-                                             TenantBinding.ArgumentBound bound, ClassName tenantConnections) {
+                                             List<TenantBinding.BoundSlot> slots, ClassName tenantConnections) {
         var reads = new ArrayList<CodeBlock>();
-        for (TenantBinding.BoundSlot slot : bound.bindings()) {
+        for (TenantBinding.BoundSlot slot : slots) {
             CodeBlock read = switch (slot.read()) {
                 case TenantBinding.SlotRead.TopLevelArg ignored ->
                     CodeBlock.of("env.<Object>getArgument($S)", slot.slotName());

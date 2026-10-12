@@ -117,6 +117,43 @@ class TenantFanOutFetcherPipelineTest {
             .doesNotContain("org.jooq.DSLContext dsl =");
     }
 
+    private static no.sikt.graphitron.command.TenantStrategy tenancyOf(GraphitronSchema schema,
+                                                                      String type, String field) {
+        var launchers = no.sikt.graphitron.plan.LauncherCommands.produce(schema,
+            no.sikt.graphitron.plan.ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE),
+            DEFAULT_OUTPUT_PACKAGE);
+        return launchers.rowFor(type, field).orElseThrow().tenancy();
+    }
+
+    @Test
+    void narrowedFanOutRowsCarryTheirOptionalSlots_rootAndBatchedForms() {
+        var schema = multiTenant("""
+            type Language @table(name: "language") {
+                name: String
+                films(filmId: Int @field(name: "film_id")): [Film]
+                    @reference(path: [{key: "film_language_id_fkey"}]) @tenantFanOut
+            }
+            type Film @table(name: "film") { title: String }
+            type Query {
+                languages: [Language!]!
+                filmsNarrowable(filmId: Int @field(name: "film_id")): [Film] @tenantFanOut
+                filmsEverywhere: [Film] @tenantFanOut
+            }
+            """);
+
+        assertThat(tenancyOf(schema, "Query", "filmsNarrowable"))
+            .isInstanceOfSatisfying(no.sikt.graphitron.command.TenantStrategy.Fanned.class,
+                fanned -> assertThat(fanned.narrowing()).containsExactly("filmId"));
+        assertThat(tenancyOf(schema, "Language", "films"))
+            .isInstanceOfSatisfying(no.sikt.graphitron.command.TenantStrategy.Fanned.class,
+                fanned -> assertThat(fanned.narrowing()).containsExactly("filmId"));
+        assertThat(tenancyOf(schema, "Query", "filmsEverywhere"))
+            .isInstanceOfSatisfying(no.sikt.graphitron.command.TenantStrategy.Fanned.class,
+                fanned -> assertThat(fanned.narrowing()).isEmpty());
+        // Every row renders: the shell hands each launcher the reads its slots name.
+        assertThat(TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE)).isNotEmpty();
+    }
+
     @Test
     void factoriesCarryTheRequestTenantSetInEveryMultiTenantBuild() {
         var fanned = multiTenant("""
@@ -129,7 +166,7 @@ class TenantFanOutFetcherPipelineTest {
         var routedOnly = multiTenant("""
             type Film @table(name: "film") { title: String }
             type Query {
-                films(filmId: Int @field(name: "film_id")): [Film!]!
+                films(filmId: Int! @field(name: "film_id")): [Film!]!
             }
             """);
 

@@ -32,6 +32,12 @@ Results keep each tenant's declared ordering (xref:defaultOrder.adoc[`@defaultOr
 
 == Build-time rejections
 
-`@tenantFanOut` is rejected at build time on: mutation fields, non-list fields, xref:asConnection.adoc[`@asConnection`] fields, xref:lookupKey.adoc[`@lookupKey`] fields, interface- or union-typed fields, fields whose data is not tenant-scoped, fields where the tenant is already determined (an argument bound to the tenant column, or any ancestor that fixed the tenant, including another `@tenantFanOut`), and xref:service.adoc[`@service`] / xref:routine.adoc[`@routine`] fields (fan-out generates the SQL itself). In this first iteration the marker is supported on root fields and on fields of `@table`-backed parents; fields of class-, record-, or nesting-backed parents are rejected. It also rejects in builds that configure no `<tenantColumn>`: with no tenants, there is nothing to fan out over.
+`@tenantFanOut` is rejected at build time on: mutation fields, non-list fields, xref:asConnection.adoc[`@asConnection`] fields, xref:lookupKey.adoc[`@lookupKey`] fields, interface- or union-typed fields, fields whose data is not tenant-scoped, fields where the tenant is already determined (a non-null argument bound to the tenant column, or any ancestor that fixed the tenant, including another `@tenantFanOut`), and xref:service.adoc[`@service`] / xref:routine.adoc[`@routine`] fields (fan-out generates the SQL itself). In this first iteration the marker is supported on root fields and on fields of `@table`-backed parents; fields of class-, record-, or nesting-backed parents are rejected. It also rejects in builds that configure no `<tenantColumn>`: with no tenants, there is nothing to fan out over.
+
+== Optional arguments narrow the fan-out
+
+A fanned field may take optional arguments that name the tenant, such as a nullable `filmId: Int @field(name: "film_id")` or a node id in a filter. When the request gives one, the field queries only the tenants its value names (several, for a list of ids); when it gives none, the field fans out as usual. Two such arguments narrow together: only tenants both name are queried. A tenant the request may not see is never queried, so a value naming one answers no rows from it, exactly as a filter on rows you cannot see would. A non-null argument naming the tenant is still rejected: the field would never fan out, so drop the directive.
+
+A list that holds a `null`, or a filter element that leaves the argument out, narrows nothing, because such an element can match rows in any tenant. A narrowed field fails like any fan-out when a tenant it queries fails: a `null` element and a path-bearing error under `[Resultat]`, a nulled field under `[Resultat!]`.
 
 xref:index.adoc[← Directives index]

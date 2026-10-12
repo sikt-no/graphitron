@@ -53,7 +53,7 @@ class TenantRoutedFetcherPipelineTest {
         var schema = multiTenant("""
             type Film @table(name: "film") { title: String }
             type Query {
-                films(filmId: Int @field(name: "film_id")): [Film!]!
+                films(filmId: Int! @field(name: "film_id")): [Film!]!
             }
             """);
 
@@ -70,8 +70,8 @@ class TenantRoutedFetcherPipelineTest {
         var schema = multiTenant("""
             type Film @table(name: "film") { title: String }
             type Query {
-                films(filmId: Int @field(name: "film_id"),
-                      altFilm: Int @field(name: "film_id")): [Film!]!
+                films(filmId: Int! @field(name: "film_id"),
+                      altFilm: Int! @field(name: "film_id")): [Film!]!
             }
             """);
 
@@ -182,7 +182,7 @@ class TenantRoutedFetcherPipelineTest {
             }
             type Inventory @table(name: "inventory") { inventoryId: Int }
             type Query {
-                films(filmId: Int @field(name: "film_id")): [Film!]!
+                films(filmId: Int! @field(name: "film_id")): [Film!]!
             }
             """);
 
@@ -249,7 +249,7 @@ class TenantRoutedFetcherPipelineTest {
                 id: ID! @nodeId
             }
             type Query {
-                filmActorsByNodeId(ids: [ID!] @nodeId(typeName: "FilmActor")): [FilmActor!]!
+                filmActorsByNodeId(ids: [ID!]! @nodeId(typeName: "FilmActor")): [FilmActor!]!
             }
             """);
 
@@ -287,7 +287,7 @@ class TenantRoutedFetcherPipelineTest {
             }
             type Inventory @table(name: "inventory") { inventoryId: Int }
             type Query {
-                films(filmId: Int @field(name: "film_id")): [Film!]!
+                films(filmId: Int! @field(name: "film_id")): [Film!]!
             }
             """);
 
@@ -318,7 +318,7 @@ class TenantRoutedFetcherPipelineTest {
                 contents: [Content!]! @reference(path: [{key: "content_film_id_fkey"}])
             }
             type Query {
-                films(filmId: Int @field(name: "film_id")): [Film!]!
+                films(filmId: Int! @field(name: "film_id")): [Film!]!
             }
             """);
 
@@ -352,7 +352,7 @@ class TenantRoutedFetcherPipelineTest {
             }
             type Inventory @table(name: "inventory") { inventoryId: Int }
             type Query {
-                films(filmId: Int @field(name: "film_id")): [Film!]!
+                films(filmId: Int! @field(name: "film_id")): [Film!]!
             }
             """, TestConfiguration.testContext());
 
@@ -432,7 +432,7 @@ class TenantRoutedFetcherPipelineTest {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             type Query {
-                films(filmId: Int @field(name: "film_id")): [Film!]!
+                films(filmId: Int! @field(name: "film_id")): [Film!]!
             }
             """, TestConfiguration.testContext());
 
@@ -465,7 +465,7 @@ class TenantRoutedFetcherPipelineTest {
         }
         input FilmSceneFilter { scene: ID @nodeId(typeName: "FilmScene") }
         type Query {
-            films(filmId: Int @field(name: "film_id")): [Film!]!
+            films(filmId: Int! @field(name: "film_id")): [Film!]!
         }
         """;
 

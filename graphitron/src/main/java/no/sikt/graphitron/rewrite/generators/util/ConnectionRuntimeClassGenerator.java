@@ -1385,6 +1385,8 @@ public final class ConnectionRuntimeClassGenerator {
             carrier.addMethod(scatterMethod(self, tenantKey))
                 .addMethod(scatterWorkerMethod(self, tenantKey))
                 .addMethod(fanOutDomain(self, tenantKey))
+                .addMethod(narrowedFanOutDomain(tenantKey))
+                .addMethod(namedTenants())
                 .addMethod(fanOutRows(self, tenantKey))
                 .addMethod(fanOutBatchRows(self, tenantKey))
                 .addMethod(collapseFanOut(self))
@@ -1393,6 +1395,7 @@ public final class ConnectionRuntimeClassGenerator {
                 .addMethod(dslGlobal)
                 .addMethod(staticDslGlobal(self))
                 .addMethod(divinedTenant(tenantKey))
+                .addMethod(tenantKeyOf(tenantKey))
                 .addMethod(divinedTenantAgree(clientException))
                 .addMethod(permits(self, tenantKey))
                 .addMethod(tenantSlot())
@@ -1450,6 +1453,76 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
+     * {@code static List<K> fanOutDomain(DataFetchingEnvironment env, Object[] narrowing)}: the
+     * fan-out domain narrowed by a fanned field's optional tenant slots, one runtime value per
+     * slot. A slot contributes the set of tenants its value names only when every value its read
+     * yields names one: a null anywhere (an absent argument, a null element, a filter element
+     * leaving the slot out) or an empty read contributes nothing, since an element that leaves the
+     * slot out may match rows in any tenant. The domain is the request's ({@link #fanOutDomain})
+     * intersected with every contributed set; a named tenant outside the request set is silently
+     * not queried, exactly as a hosted tenant outside it is not. Narrowing never changes which
+     * rows answer, only how many tenants are asked, because a tenant's database holds only rows
+     * naming that tenant.
+     */
+    private static MethodSpec narrowedFanOutDomain(TypeName tenantKey) {
+        var hashSet = ClassName.get("java.util", "HashSet");
+        return MethodSpec.methodBuilder("fanOutDomain")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(ParameterizedTypeName.get(LIST, tenantKey))
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addParameter(Object[].class, "narrowing")
+            .addStatement("$T<$T> domain = fanOutDomain(env)", LIST, tenantKey)
+            .beginControlFlow("for (Object slot : narrowing)")
+            .addStatement("$T<Object> named = new $T<>()", LIST, ARRAY_LIST)
+            .beginControlFlow("if (!namedTenants(slot, named) || named.isEmpty())")
+            .addComment("Left out, or holding an element that leaves it out: this slot constrains nothing.")
+            .addStatement("continue")
+            .endControlFlow()
+            .addStatement("$T<$T> keys = new $T<>()", SET, tenantKey, hashSet)
+            .beginControlFlow("for (Object value : named)")
+            .addStatement("keys.add(tenantKeyOf(value))")
+            .endControlFlow()
+            .addStatement("domain.retainAll(keys)")
+            .endControlFlow()
+            .addStatement("return domain")
+            .addJavadoc("The request's fan-out domain narrowed to the tenants a fanned field's optional\n"
+                + "tenant slots name. A slot whose value is absent, holds a null anywhere, or is empty\n"
+                + "narrows nothing; the rest intersect, so only tenants every given slot names are\n"
+                + "queried. A named tenant the request may not see is never queried.\n"
+                + "@param env the fanned field's {@code DataFetchingEnvironment}\n"
+                + "@param narrowing each optional slot's runtime value (a value, a collection, or {@code null})\n")
+            .build();
+    }
+
+    /**
+     * The flatten behind the narrowed domain: collects every leaf of {@code candidate} into
+     * {@code out}, flattening collections as {@code agreeOnTenant} does, and answers false as soon
+     * as a leaf is null.
+     */
+    private static MethodSpec namedTenants() {
+        var collection = ClassName.get("java.util", "Collection");
+        return MethodSpec.methodBuilder("namedTenants")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(boolean.class)
+            .addParameter(Object.class, "candidate")
+            .addParameter(ParameterizedTypeName.get(LIST, ClassName.get(Object.class)), "out")
+            .beginControlFlow("if (candidate == null)")
+            .addStatement("return false")
+            .endControlFlow()
+            .beginControlFlow("if (candidate instanceof $T<?> values)", collection)
+            .beginControlFlow("for (Object value : values)")
+            .beginControlFlow("if (!namedTenants(value, out))")
+            .addStatement("return false")
+            .endControlFlow()
+            .endControlFlow()
+            .addStatement("return true")
+            .endControlFlow()
+            .addStatement("out.add(candidate)")
+            .addStatement("return true")
+            .build();
+    }
+
+    /**
      * {@code static boolean permits(DataFetchingEnvironment env, K tenantKey)}: whether the
      * request tenant set admits {@code tenantKey}. The read side of the rule {@code entryFor}
      * enforces, for surfaces that answer a refused tenant as presentation rather than an error
@@ -1490,7 +1563,9 @@ public final class ConnectionRuntimeClassGenerator {
             .returns(ParameterizedTypeName.get(LIST, ClassName.get(Object.class)))
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
             .addParameter(ParameterizedTypeName.get(FUNCTION, DSL_CONTEXT, listOfR), "perTenant")
-            .addStatement("$T<$T<$T>> outcomes = of(env).scatter(fanOutDomain(env), perTenant)",
+            .addParameter(Object[].class, "narrowing")
+            .varargs()
+            .addStatement("$T<$T<$T>> outcomes = of(env).scatter(fanOutDomain(env, narrowing), perTenant)",
                 LIST, outcome, listOfR)
             .addStatement("$T<Object> elements = new $T<>()", LIST, ARRAY_LIST)
             .beginControlFlow("for ($T<$T> outcome : outcomes)", outcome, listOfR)
@@ -1513,7 +1588,8 @@ public final class ConnectionRuntimeClassGenerator {
                 + "in domain order: each row wrapped as a per-element {@code DataFetcherResult} whose\n"
                 + "{@code localContext} carries the row's tenant, each failed or timed-out tenant as one\n"
                 + "{@code FanOutFailure} marker appended after the successful rows. Feed the result to\n"
-                + "{@link #collapseFanOut}.\n")
+                + "{@link #collapseFanOut}. {@code narrowing} restricts the domain to the tenants the\n"
+                + "field's optional tenant slots name; none given is the request's whole domain.\n")
             .build();
     }
 
@@ -1538,7 +1614,9 @@ public final class ConnectionRuntimeClassGenerator {
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
             .addParameter(int.class, "keyCount")
             .addParameter(ParameterizedTypeName.get(FUNCTION, DSL_CONTEXT, listOfListOfR), "perTenant")
-            .addStatement("$T<$T<$T>> outcomes = of(env).scatter(fanOutDomain(env), perTenant)",
+            .addParameter(Object[].class, "narrowing")
+            .varargs()
+            .addStatement("$T<$T<$T>> outcomes = of(env).scatter(fanOutDomain(env, narrowing), perTenant)",
                 LIST, outcome, listOfListOfR)
             .addStatement("$T<$T> merged = new $T<>(keyCount)", LIST, listOfObject, ARRAY_LIST)
             .beginControlFlow("for (int i = 0; i < keyCount; i++)")
@@ -1567,7 +1645,8 @@ public final class ConnectionRuntimeClassGenerator {
                 + "statement per tenant per batch, per-key groups merged across tenants in domain order\n"
                 + "with per-element tenant stamping. A failed tenant contributes one shared marker to\n"
                 + "every parent's list; each parent's fetcher collapses against its own path.\n"
-                + "@param keyCount the parent batch size; {@code perTenant} must return one group per key\n")
+                + "@param keyCount the parent batch size; {@code perTenant} must return one group per key\n"
+                + "@param narrowing the field's optional tenant slot values, read off the batch's environment\n")
             .build();
     }
 
@@ -2217,7 +2296,7 @@ public final class ConnectionRuntimeClassGenerator {
      * request-level error before any SQL, as is a value of the wrong Java type.
      */
     private static MethodSpec divinedTenant(TypeName tenantKey) {
-        var b = MethodSpec.methodBuilder("divinedTenant")
+        return MethodSpec.methodBuilder("divinedTenant")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(tenantKey)
             .addParameter(Object[].class, "candidates")
@@ -2232,12 +2311,32 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("throw new $T($S)", NO_SUCH_ELEMENT,
                 "The tenant binding value is absent; cannot route the operation to a tenant database.")
             .endControlFlow()
+            .addStatement("return tenantKeyOf(key)")
+            .addJavadoc("Folds the runtime values of a field's tenant bindings into the one divined key:\n"
+                + "collections flatten, all non-null values must agree, and an absent or wrongly-typed\n"
+                + "value is a request-level error before any SQL. For a numeric tenant column a\n"
+                + "String candidate parses to the column type (decoded node-id segments arrive in\n"
+                + "wire form).\n"
+                + "@param candidates each bound slot's runtime value (a value, a collection of values, or {@code null})\n")
+            .build();
+    }
+
+    /**
+     * {@code private static K tenantKeyOf(Object value)}: one tenant value coerced to the tenant
+     * key type, shared by the routing fold and the fan-out narrowing so a value names the same
+     * tenant whichever reads it. Wire-form coercion for numeric tenant columns: decoded node-id
+     * segments and ID-typed arguments arrive as Strings, so they parse to the catalog type and
+     * per-row keys and typed keys agree in one map. Non-numeric parses fail loudly
+     * ({@code NumberFormatException}); any other type is a request-level error.
+     */
+    private static MethodSpec tenantKeyOf(TypeName tenantKey) {
+        var b = MethodSpec.methodBuilder("tenantKeyOf")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(tenantKey)
+            .addParameter(Object.class, "key")
             .beginControlFlow("if (key instanceof $T typed)", tenantKey)
             .addStatement("return typed")
             .endControlFlow();
-        // Wire-form coercion for numeric tenant columns: decoded node-id segments and ID-typed
-        // arguments arrive as Strings; parse them to the catalog type so per-row keys and typed
-        // keys agree in one map. Non-numeric parses fail loudly (NumberFormatException).
         if (tenantKey.equals(ClassName.get(Integer.class)) || tenantKey.equals(ClassName.get(Long.class))) {
             b.beginControlFlow("if (key instanceof String s)")
                 .addStatement("return $T.valueOf(s)", tenantKey)
@@ -2245,12 +2344,6 @@ public final class ConnectionRuntimeClassGenerator {
         }
         return b.addStatement("throw new $T($S + key + $S)", IllegalArgumentException.class,
                 "Divined tenant value '", "' does not have the tenant column's Java type.")
-            .addJavadoc("Folds the runtime values of a field's tenant bindings into the one divined key:\n"
-                + "collections flatten, all non-null values must agree, and an absent or wrongly-typed\n"
-                + "value is a request-level error before any SQL. For a numeric tenant column a\n"
-                + "String candidate parses to the column type (decoded node-id segments arrive in\n"
-                + "wire form).\n"
-                + "@param candidates each bound slot's runtime value (a value, a collection of values, or {@code null})\n")
             .build();
     }
 

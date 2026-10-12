@@ -45,7 +45,7 @@ class TenantFanOutClassificationTest {
             """);
 
         assertThat(schema.tenantBindingOf("Query", "films"))
-            .isEqualTo(TenantBinding.FanOut.INSTANCE);
+            .isEqualTo(TenantBinding.FanOut.PLAIN);
         assertThat(schema.tenantBindings().rejections()).isEmpty();
     }
 
@@ -63,7 +63,7 @@ class TenantFanOutClassificationTest {
             """);
 
         assertThat(schema.tenantBindingOf("Language", "films"))
-            .isEqualTo(TenantBinding.FanOut.INSTANCE);
+            .isEqualTo(TenantBinding.FanOut.PLAIN);
         assertThat(schema.tenantBindings().rejections()).isEmpty();
     }
 
@@ -82,11 +82,94 @@ class TenantFanOutClassificationTest {
             """);
 
         assertThat(schema.tenantBindingOf("Query", "films"))
-            .isEqualTo(TenantBinding.FanOut.INSTANCE);
+            .isEqualTo(TenantBinding.FanOut.PLAIN);
         var child = schema.tenantBindingOf("Film", "inventories");
         assertThat(child).isInstanceOf(TenantBinding.Inherited.class);
         assertThat(((TenantBinding.Inherited) child).parentTypeName()).isEqualTo("Film");
         assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    // ===== Optional tenant slots narrow the fan-out =====
+
+    @Test
+    void aNullableTenantSlotOnAMarkedFieldNarrowsTheFanOut() {
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type Query { filmsNarrowable(filmId: Int @field(name: "film_id")): [Film] @tenantFanOut }
+            """);
+
+        assertThat(schema.tenantBindingOf("Query", "filmsNarrowable"))
+            .isInstanceOfSatisfying(TenantBinding.FanOut.class, fanOut ->
+                assertThat(fanOut.narrowing())
+                    .extracting(TenantBinding.BoundSlot::slotName, TenantBinding.BoundSlot::read,
+                        TenantBinding.BoundSlot::required)
+                    .containsExactly(org.assertj.core.groups.Tuple.tuple(
+                        "filmId", TenantBinding.SlotRead.TopLevelArg.INSTANCE, false)));
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aNullableNestedTenantSlotNarrowsTheFanOutThroughItsInputPath() {
+        var schema = build("""
+            type FilmActor implements Node @table(name: "film_actor")
+                    @node(keyColumns: ["actor_id", "film_id"]) {
+                id: ID! @nodeId
+            }
+            input FilmActorFilter { id: ID @nodeId(typeName: "FilmActor") }
+            type Query { filmActors(filter: FilmActorFilter): [FilmActor] @tenantFanOut }
+            """);
+
+        assertThat(schema.tenantBindingOf("Query", "filmActors"))
+            .isInstanceOfSatisfying(TenantBinding.FanOut.class, fanOut ->
+                assertThat(fanOut.narrowing()).singleElement().satisfies(slot -> {
+                    assertThat(slot.read())
+                        .isEqualTo(new TenantBinding.SlotRead.NestedInput("filter", List.of("id")));
+                    assertThat(slot.projection())
+                        .isInstanceOf(TenantBinding.SlotProjection.DecodedKeySlot.class);
+                }));
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void belowAFannedFieldAnOptionalSlotNeitherFansAgainNorRoutes() {
+        // A marked child narrows nothing new: it sits below a fan-out and double-fans. An unmarked
+        // one inherits the row's tenant, its argument only filtering inside it.
+        var schema = build("""
+            type Film @table(name: "film") {
+                title: String
+                fanned(filmId: Int @field(name: "film_id")): [Inventory!]! @tenantFanOut
+                inventories(filmId: Int @field(name: "film_id")): [Inventory!]! @splitQuery
+            }
+            type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
+            type Query { films: [Film] @tenantFanOut }
+            """);
+
+        assertFanOutRejection(schema, "Film.fanned",
+            "double-fan an already fanned context", "tenantFanOut");
+        assertThat(schema.tenantBindingOf("Film", "inventories"))
+            .isEqualTo(new TenantBinding.Inherited("Film"));
+    }
+
+    @Test
+    void anUnmarkedOptionalOnlyParentRejectsAndHandsItsChildrenNoTenant() {
+        var schema = build("""
+            type Film @table(name: "film") {
+                title: String
+                inventories: [Inventory!]! @splitQuery
+            }
+            type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
+            type Query { films(filmId: Int @field(name: "film_id")): [Film!]! }
+            """);
+
+        assertThat(schema.tenantBindingOf("Query", "films")).isNull();
+        assertThat(schema.tenantBindingOf("Film", "inventories")).isNull();
+        assertThat(schema.tenantBindings().rejections())
+            .anyMatch(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding r
+                && r.coordinate().equals("Query.films")
+                && r.detail().contains("takes its tenant only from optional values (filmId)"))
+            .anyMatch(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding r
+                && r.coordinate().equals("Film.inventories")
+                && r.detail().contains("no ancestor established a tenant context"));
     }
 
     // ===== The rejection ladder =====
@@ -118,7 +201,7 @@ class TenantFanOutClassificationTest {
         var schema = build("""
             type Film @table(name: "film") { title: String }
             type Query {
-                films(filmId: Int @field(name: "film_id")): [Film!]!
+                films(filmId: Int! @field(name: "film_id")): [Film!]!
                 serviceFilms: [Film]
                     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilms"})
                     @tenantFanOut
@@ -162,7 +245,7 @@ class TenantFanOutClassificationTest {
                 ]) @tenantFanOut
             }
             type Query {
-                films(filmId: Int @field(name: "film_id")): [Film!]!
+                films(filmId: Int! @field(name: "film_id")): [Film!]!
             }
             """);
 
@@ -185,7 +268,7 @@ class TenantFanOutClassificationTest {
             }
             type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
             type Query {
-                films(filmId: Int @field(name: "film_id")): [Film!]!
+                films(filmId: Int! @field(name: "film_id")): [Film!]!
             }
             """);
 
@@ -224,7 +307,7 @@ class TenantFanOutClassificationTest {
             type Inventory @table(name: "inventory") { filmId: Int @field(name: "film_id") }
             union Media = Film | Inventory
             type Query {
-                media(filmId: Int @field(name: "film_id")): [Media!]!
+                media(filmId: Int! @field(name: "film_id")): [Media!]!
                 fannedMedia: [Media!]! @tenantFanOut
             }
             """);
@@ -280,7 +363,7 @@ class TenantFanOutClassificationTest {
         var schema = build("""
             type Film @table(name: "film") { title: String }
             type Query {
-                films(filmId: Int @field(name: "film_id")): [Film!]! @tenantFanOut
+                films(filmId: Int! @field(name: "film_id")): [Film!]! @tenantFanOut
             }
             """);
 
@@ -297,7 +380,7 @@ class TenantFanOutClassificationTest {
             }
             type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
             type Query {
-                films(filmId: Int @field(name: "film_id")): [Film!]!
+                films(filmId: Int! @field(name: "film_id")): [Film!]!
             }
             """);
 
@@ -317,7 +400,7 @@ class TenantFanOutClassificationTest {
             """);
 
         assertThat(schema.tenantBindingOf("Query", "films"))
-            .isEqualTo(TenantBinding.FanOut.INSTANCE);
+            .isEqualTo(TenantBinding.FanOut.PLAIN);
         assertFanOutRejection(schema, "Film.inventories",
             "double-fan an already fanned context", "tenantFanOut");
     }
@@ -387,7 +470,7 @@ class TenantFanOutClassificationTest {
             }
             type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
             type Query {
-                films(filmId: Int @field(name: "film_id")): [Film!]!
+                films(filmId: Int! @field(name: "film_id")): [Film!]!
                 allFilms: [Film!]!
             }
             """);

@@ -54,7 +54,8 @@ public final class BatchedRowsFragments {
      * the WHERE fold, and the cardinality's scatter tail. {@code dslDeclaration} is per-family
      * argument assembly handed in by the shell (the tenancy binding's declaration form is
      * classification-side emission); it is ignored under fanned tenancy, whose {@code dsl} is
-     * the scatter lambda's parameter.
+     * the scatter lambda's parameter. {@code fanOutNarrowing} is the shell's other tenancy
+     * fragment, the trailing narrowing arguments of the fanned scatter call, empty otherwise.
      *
      * <p>The list arm's ordering is the coordinate's own, applied to the whole batch, the same
      * shape {@link #discriminatedBody} renders one arm over. One global ORDER BY plus the
@@ -66,8 +67,8 @@ public final class BatchedRowsFragments {
      * {@code docs/manual/reference/directives/tenantFanOut.adoc} publishes.
      */
     static CodeBlock body(LauncherCommand row, LaunchSource.Correlated.Projected chain,
-            CodeBlock dslDeclaration, no.sikt.graphitron.command.CarrierDsl carrierDsl,
-            ArgPathHelperRegistry argHelpers) {
+            CodeBlock dslDeclaration, CodeBlock fanOutNarrowing,
+            no.sikt.graphitron.command.CarrierDsl carrierDsl, ArgPathHelperRegistry argHelpers) {
         var batched = (no.sikt.graphitron.command.Invocation.Batched) row.invocation();
         String fieldName = row.coordinate().getFieldName();
         var body = CodeBlock.builder();
@@ -151,12 +152,14 @@ public final class BatchedRowsFragments {
             // tenant through the scatter helper; per-key groups merge across tenants with
             // per-element tenant stamping, markers riding to the fetcher's collapse.
             var tenantConnections = ClassName.get(fanned.carrier().packageName(), fanned.carrier().simpleName());
+            // The narrowing values ride the rows method's env, the same one the statement's own
+            // filter values are read from, so the domain and the WHERE clause see one argument set.
             body.add("return $T.fanOutBatchRows(env, keys.size(), dsl -> {\n", tenantConnections);
             body.indent();
             body.add(sel.build());
             body.add("return scatterByIdx(flat, keys.size());\n");
             body.unindent();
-            body.add("});\n");
+            body.add("}$L);\n", fanOutNarrowing);
             return body.build();
         }
         body.add(sel.build());

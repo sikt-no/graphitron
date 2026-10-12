@@ -238,6 +238,71 @@ public record TenantBindingIndex(
     }
 
     /**
+     * Whether the client cannot omit a bound slot: its read path is non-null all the way down,
+     * the top-level argument for {@link TenantBinding.SlotRead.TopLevelArg} (read by the slot
+     * name) and the outer argument plus every input field on the path for
+     * {@link TenantBinding.SlotRead.NestedInput}. A list wrapper's element type counts too,
+     * since {@code [ID]!} can arrive as {@code [null]} and name no tenant. Nullability decides
+     * alone: a non-null list can still arrive empty. A context argument is supplied by the
+     * consumer server-side, so a missing one is a wiring bug, not a client choice.
+     */
+    static boolean slotRequired(GraphQLFieldDefinition definition, String slotName,
+                                TenantBinding.SlotRead read) {
+        return switch (read) {
+            case TenantBinding.SlotRead.ContextArg ignored -> true;
+            case TenantBinding.SlotRead.TopLevelArg ignored ->
+                nonNullAllTheWay(argumentType(definition, slotName));
+            case TenantBinding.SlotRead.NestedInput nested -> {
+                graphql.schema.GraphQLType type = argumentType(definition, nested.outerArgName());
+                if (!nonNullAllTheWay(type)) {
+                    yield false;
+                }
+                for (String segment : nested.path()) {
+                    if (!(GraphQLTypeUtil.unwrapAll(type) instanceof GraphQLInputObjectType input)
+                            || input.getField(segment) == null) {
+                        throw unresolvableSlot(definition, slotName, read);
+                    }
+                    type = input.getField(segment).getType();
+                    if (!nonNullAllTheWay(type)) {
+                        yield false;
+                    }
+                }
+                yield true;
+            }
+        };
+    }
+
+    private static graphql.schema.GraphQLType argumentType(GraphQLFieldDefinition definition,
+                                                          String argumentName) {
+        var argument = definition == null ? null : definition.getArgument(argumentName);
+        if (argument == null) {
+            throw unresolvableSlot(definition, argumentName,
+                TenantBinding.SlotRead.TopLevelArg.INSTANCE);
+        }
+        return argument.getType();
+    }
+
+    private static boolean nonNullAllTheWay(graphql.schema.GraphQLType type) {
+        graphql.schema.GraphQLType current = type;
+        while (current instanceof graphql.schema.GraphQLNonNull nonNull) {
+            current = nonNull.getWrappedType();
+            if (!(current instanceof graphql.schema.GraphQLList list)) {
+                return true;
+            }
+            current = list.getWrappedType();
+        }
+        return false;
+    }
+
+    private static IllegalStateException unresolvableSlot(GraphQLFieldDefinition definition,
+                                                          String slotName, TenantBinding.SlotRead read) {
+        return new IllegalStateException("Graphitron generator bug (tenant routing): the bound"
+            + " slot '" + slotName + "' read as " + read + " does not resolve against the"
+            + " arguments of field '" + (definition == null ? "?" : definition.getName())
+            + "', so its presence cannot be read off the schema.");
+    }
+
+    /**
      * The stateful fold over one schema: computes each field's direct binding from its own
      * carriers, then resolves the ancestor tenant context over the SDL's field edges, restricted
      * to the walk's domain. A type has a context when every path from a root reaches it through
@@ -685,32 +750,30 @@ public record TenantBindingIndex(
             if (needsTenant && tenantContextOf(coord.getTypeName())) {
                 return new Verdict.Arm(new TenantBinding.Inherited(coord.getTypeName()));
             }
-            if (needsTenant && !direct.declines().isEmpty()) {
+            switch (direct.reading()) {
                 // A declined shape names the tenant column but cannot route on it. Each decline
                 // carries its own detail rather than falling through to the generic
                 // "nothing names the tenant" text, which would send an author looking for a
                 // binding they already wrote. Only where the statement needs a tenant at all:
                 // a field whose own SQL stays on the default source has nothing to route, so
                 // the shape that could not route it is moot.
-                if (!anyTenant) {
-                    // Nothing in reach is tenant-scoped, so NoTenantBinding's "reaches table"
-                    // opening would be false; the service arm carries the declines instead.
-                    return Verdict.rejected(new ValidationError(coordinate,
-                        Rejection.unroutedServiceCall(coordinate, scopes.columnName(),
-                            direct.declines(), direct.evidence()),
-                        graphql.language.SourceLocation.EMPTY));
+                case Reading.Declined declined when needsTenant -> {
+                    return rejectUnrouted(coordinate, reach, anyTenant, declined.declines(),
+                        direct.evidence());
                 }
-                String tenantTable = reach.stream().filter(this::tenantScoped).findFirst()
-                    .orElseThrow().tableName();
-                return new Verdict.Rejected(direct.declines().stream()
-                    .map(detail -> new ValidationError(
-                        coordinate,
-                        Rejection.noTenantBinding(coordinate, tenantTable, detail),
-                        graphql.language.SourceLocation.EMPTY))
-                    .toList());
-            }
-            if (direct.divines()) {
-                return new Verdict.Arm(new TenantBinding.ArgumentBound(direct.slots()));
+                case Reading.Guaranteed guaranteed -> {
+                    return new Verdict.Arm(new TenantBinding.ArgumentBound(guaranteed.slots()));
+                }
+                // Every slot is optional, so a request may leave them all out and name no tenant:
+                // there is no correct routing for that request. Where nothing in the field's own
+                // SQL needs a tenant it falls through like an unbound field, and a tenant-scoped
+                // child below it then finds no context and rejects on its own.
+                case Reading.Conditional conditional when needsTenant -> {
+                    return rejectUnrouted(coordinate, reach, anyTenant,
+                        List.of(optionalOnlyDetail(site, coordinate, conditional.slots())),
+                        direct.evidence());
+                }
+                default -> { }
             }
             if (hasKind(members, OperationMember.Kind.NODE_RESOLVE)) {
                 // Node dispatch spans types; the arm exists iff every tenant-scoped node
@@ -748,6 +811,56 @@ public record TenantBindingIndex(
                     reach.stream().filter(this::tenantScoped).findFirst().orElseThrow().tableName(),
                     detail),
                 graphql.language.SourceLocation.EMPTY));
+        }
+
+        /**
+         * The rejection for a field whose arguments name the tenant column without routing it, one
+         * per detail. Picks the family by reach: {@link Rejection#noTenantBinding} names the first
+         * tenant-scoped table the field reaches, and where nothing in reach is tenant-scoped (a
+         * connection-bound root {@code @service}) that opening would be false, so the service arm
+         * carries the details instead.
+         */
+        private Verdict rejectUnrouted(String coordinate, List<TableRef> reach, boolean anyTenant,
+                                       List<String> details, List<String> evidence) {
+            if (!anyTenant) {
+                return Verdict.rejected(new ValidationError(coordinate,
+                    Rejection.unroutedServiceCall(coordinate, scopes.columnName(), details, evidence),
+                    graphql.language.SourceLocation.EMPTY));
+            }
+            String tenantTable = reach.stream().filter(this::tenantScoped).findFirst()
+                .orElseThrow().tableName();
+            return new Verdict.Rejected(details.stream()
+                .map(detail -> new ValidationError(
+                    coordinate,
+                    Rejection.noTenantBinding(coordinate, tenantTable, detail),
+                    graphql.language.SourceLocation.EMPTY))
+                .toList());
+        }
+
+        /**
+         * The detail for a field whose tenant slots are all optional. The fan-out fix leads where
+         * the field could carry the marker: with two optional slots, making one non-null breaks
+         * every client that sends only the other.
+         */
+        private String optionalOnlyDetail(Site site, String coordinate,
+                                          List<TenantBinding.BoundSlot> slots) {
+            String names = slots.stream().map(TenantBinding.BoundSlot::slotName).distinct()
+                .collect(java.util.stream.Collectors.joining(", "));
+            String fix = acceptsFanOut(site)
+                ? "Mark the field @" + BuildContext.DIR_TENANT_FAN_OUT + " to query every tenant the"
+                    + " request may see when none is given, or make one of them non-null."
+                : "Make one of them non-null.";
+            return "'" + coordinate + "' takes its tenant only from optional values (" + names
+                + "); a request that omits all of them names no tenant. " + fix;
+        }
+
+        /**
+         * Whether the {@code @tenantFanOut} ladder would accept the marker on this field, asked of
+         * the ladder itself rather than of a second list of its conditions. A nesting type's field
+         * is turned away from both marker ladders before either runs, so it never qualifies.
+         */
+        private boolean acceptsFanOut(Site site) {
+            return !site.nested() && fanOutArmOf(site) instanceof Verdict.Arm;
         }
 
         // ===== The parent-row binding =====
@@ -878,7 +991,7 @@ public record TenantBindingIndex(
                     + " structure decides this field, remove the directive.");
             }
             var direct = directBinding(site);
-            if (direct.divines() || !direct.declines().isEmpty()) {
+            if (!(direct.reading() instanceof Reading.Unbound)) {
                 String named = direct.slots().isEmpty()
                     ? "tenant column '" + scopes.columnName() + "', through a shape that cannot"
                         + " route the call"
@@ -922,7 +1035,12 @@ public record TenantBindingIndex(
          * either survives every rung and classifies {@link TenantBinding.FanOut}, or rejects with
          * a fan-out-specific message. The {@code @service} rung runs ahead of
          * the reach-derived rungs because a plain service return's reach is structurally empty and
-         * would misreport as "nothing to fan out over".
+         * would misreport as "nothing to fan out over". Optional tenant slots survive and become
+         * the arm's narrowing; a required one rejects, since the field would never fan.
+         *
+         * <p>Free of side effects (the marker verdict is recorded in {@link #armOf}), so the
+         * optional-slot rejection can ask it whether the marker would be accepted on an unmarked
+         * field.
          */
         private Verdict fanOutArmOf(Site site) {
             FieldCoordinates coord = site.coord();
@@ -1004,11 +1122,20 @@ public record TenantBindingIndex(
                     "'" + coordinate + "' reaches no tenant-scoped table: its data is global,"
                         + " so there is nothing to fan out over.");
             }
-            var slots = directBinding(site).slots();
-            if (!slots.isEmpty()) {
+            // A declined shape is judged on the slots beside it: it stays a row filter that neither
+            // routes nor narrows, which is safe because narrowing changes which tenants are asked,
+            // never which rows answer.
+            List<TenantBinding.BoundSlot> slots = switch (directBinding(site).reading()) {
+                case Reading.Unbound ignored -> List.of();
+                case Reading.Declined declined -> declined.slots();
+                case Reading.Guaranteed guaranteed -> guaranteed.slots();
+                case Reading.Conditional conditional -> conditional.slots();
+            };
+            var required = slots.stream().filter(TenantBinding.BoundSlot::required).toList();
+            if (!required.isEmpty()) {
                 return rejectFanOut(coordinate, List.of(BuildContext.DIR_TENANT_FAN_OUT),
-                    "'" + coordinate + "' already binds the tenant column through "
-                        + slots.stream().map(TenantBinding.BoundSlot::slotName).distinct()
+                    "'" + coordinate + "' already binds the tenant column through the non-null "
+                        + required.stream().map(TenantBinding.BoundSlot::slotName).distinct()
                             .collect(java.util.stream.Collectors.joining(", "))
                         + ": the tenant is already divined, and fanning would contradict it."
                         + " Remove the directive or the binding argument.");
@@ -1025,7 +1152,7 @@ public record TenantBindingIndex(
                         + " already divined and handed down on at least one reaching path, and"
                         + " fanning would contradict it.");
             }
-            return new Verdict.Arm(TenantBinding.FanOut.INSTANCE);
+            return new Verdict.Arm(new TenantBinding.FanOut(slots));
         }
 
         /**
@@ -1050,7 +1177,7 @@ public record TenantBindingIndex(
         }
 
         private boolean siteDivinesTenant(Site site) {
-            if (directBinding(site).divines()) {
+            if (directBinding(site).reading() instanceof Reading.Guaranteed) {
                 return true;
             }
             if (hasKind(site.members(), OperationMember.Kind.NODE_RESOLVE)) {
@@ -1173,7 +1300,7 @@ public record TenantBindingIndex(
          * <p>A decline is not an absent binding. The author did name the tenant; the shape just
          * has no single value to acquire a connection from, so it gets its own rejection text
          * rather than the generic "nothing maps to the tenant column". A coordinate carrying one
-         * also stops divining for its subtree, which is what {@link #divines()} states: it
+         * also stops divining for its subtree, which is what {@link #reading()} states: it
          * rejects, so nothing is handed down and a child inheriting from it would inherit a value
          * that is never computed.
          *
@@ -1188,10 +1315,40 @@ public record TenantBindingIndex(
 
             static final DirectBinding NONE = new DirectBinding(List.of(), List.of(), List.of());
 
-            /** Whether this coordinate establishes a tenant its subtree can inherit. */
-            boolean divines() {
-                return declines.isEmpty() && !slots.isEmpty();
+            /**
+             * The closed reading every consumer switches on, so none decides afresh what an
+             * optional-only binding means. Declines outrank slots; among slots, one the client
+             * cannot omit is what guarantees every request a tenant.
+             */
+            Reading reading() {
+                if (!declines.isEmpty()) {
+                    return new Reading.Declined(declines, slots);
+                }
+                if (slots.isEmpty()) {
+                    return Reading.Unbound.INSTANCE;
+                }
+                return slots.stream().anyMatch(TenantBinding.BoundSlot::required)
+                    ? new Reading.Guaranteed(slots)
+                    : new Reading.Conditional(slots);
             }
+        }
+
+        /** What one coordinate's direct binding says about its tenant; see {@link DirectBinding#reading()}. */
+        private sealed interface Reading {
+
+            /** No slots and no declines: the arguments say nothing about the tenant. */
+            record Unbound() implements Reading {
+                static final Unbound INSTANCE = new Unbound();
+            }
+
+            /** A shape names the tenant column but cannot route; the slots beside it are kept. */
+            record Declined(List<String> declines, List<TenantBinding.BoundSlot> slots) implements Reading {}
+
+            /** No declines and at least one required slot: every request names a tenant. */
+            record Guaranteed(List<TenantBinding.BoundSlot> slots) implements Reading {}
+
+            /** No declines, and every slot optional: a request may name no tenant at all. */
+            record Conditional(List<TenantBinding.BoundSlot> slots) implements Reading {}
         }
 
         /**
@@ -1206,18 +1363,28 @@ public record TenantBindingIndex(
             record Declined(String detail) implements SlotAccess {}
         }
 
-        /** Accumulates one coordinate's slots, declines and tenant evidence, deduping slots by name. */
+        /**
+         * Accumulates one coordinate's slots, declines and tenant evidence, deduping slots by name.
+         * Every mint site funnels through {@link #add}, which is where a slot's presence is read off
+         * the coordinate's own field definition, so no mint site decides it on its own.
+         */
         private static final class SlotCollector {
+            private final GraphQLFieldDefinition definition;
             private final List<TenantBinding.BoundSlot> slots = new ArrayList<>();
             private final List<String> declines = new ArrayList<>();
             private final List<String> evidence = new ArrayList<>();
             private final Set<String> seenNames = new HashSet<>();
 
+            SlotCollector(GraphQLFieldDefinition definition) {
+                this.definition = definition;
+            }
+
             void add(String slotName, SlotAccess access) {
                 switch (access) {
                     case SlotAccess.Resolved r -> {
                         if (seenNames.add(slotName)) {
-                            slots.add(new TenantBinding.BoundSlot(slotName, r.read(), r.projection()));
+                            slots.add(new TenantBinding.BoundSlot(slotName, r.read(), r.projection(),
+                                slotRequired(definition, slotName, r.read())));
                         }
                     }
                     case SlotAccess.Declined d -> decline(d.detail());
@@ -1257,7 +1424,7 @@ public record TenantBindingIndex(
          * suffices for the agreement fold).
          */
         private DirectBinding directBinding(Site site) {
-            var collector = new SlotCollector();
+            var collector = new SlotCollector(fieldDefinition(site.coord()));
             for (OperationMember member : site.members()) {
                 switch (member) {
                     case OperationMember.Condition c ->
@@ -2001,7 +2168,9 @@ public record TenantBindingIndex(
         }
 
         private boolean siteEstablishesContext(Site site) {
-            if (directBinding(site).divines()) {
+            // Only a guaranteed binding names a tenant on every request; an optional-only field
+            // either rejects or inherits a tenant an upstream edge already counted.
+            if (directBinding(site).reading() instanceof Reading.Guaranteed) {
                 return true;
             }
             if (hasKind(site.members(), OperationMember.Kind.NODE_RESOLVE)) {

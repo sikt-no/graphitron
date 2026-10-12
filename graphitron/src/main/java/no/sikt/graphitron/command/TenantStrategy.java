@@ -1,5 +1,6 @@
 package no.sikt.graphitron.command;
 
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -26,10 +27,17 @@ public sealed interface TenantStrategy {
      * the per-tenant lambda closes over those locals plus its own {@code dsl}, preserving the
      * scatter contract that workers read no shared graphql-java state; the entry point collapses
      * the outcome list through the same carrier.
+     *
+     * <p>{@link #narrowing} names the field's optional tenant slots, in binding order: the
+     * launcher reads each one's value on the dispatch thread and hands it to the carrier, which
+     * restricts the domain to the tenants the given values name. Empty for a plain fan-out, where
+     * the domain is the request's whole set. Names rather than the slots themselves, since how a
+     * slot is read is classification-side emission the shell renders from the binding.
      */
-    record Fanned(UnitRef carrier) implements TenantStrategy {
+    record Fanned(UnitRef carrier, List<String> narrowing) implements TenantStrategy {
         public Fanned {
             Objects.requireNonNull(carrier, "carrier");
+            narrowing = List.copyOf(narrowing);
         }
     }
 }

@@ -402,6 +402,105 @@ class TenantFanOutExecutionTest {
         return films.stream().map(f -> f.get("title")).toList();
     }
 
+    // ===== Optional tenant arguments narrow the fan-out domain =====
+
+    /**
+     * Runs {@code body} with one film per tenant whose film_id names the tenant holding it
+     * (film 1 in tenant 1, film 2 in tenant 2), the invariant narrowing rests on and the base
+     * seed deliberately does not keep. The tenant databases belong to this class and its methods
+     * run one at a time, so the rows are visible to nothing else and leave with the test.
+     */
+    private static void withTenantOwnedFilms(Runnable body) {
+        try (var t1 = DSL.using(tenantUrl("fanout_t1"), jdbcUser, jdbcPassword);
+             var t2 = DSL.using(tenantUrl("fanout_t2"), jdbcUser, jdbcPassword)) {
+            t1.execute("insert into film values (1, 'T1 Own', 903)");
+            t2.execute("insert into film values (2, 'T2 Own', 903)");
+            try {
+                body.run();
+            } finally {
+                t1.execute("delete from film where film_id = 1");
+                t2.execute("delete from film where film_id = 2");
+            }
+        }
+    }
+
+    private static List<Object> titles(ExecutionResult result, String field) {
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        Map<String, Object> data = result.getData();
+        return ((List<Map<String, Object>>) data.get(field)).stream().map(f -> f.get("title")).toList();
+    }
+
+    @Test
+    void narrowedFanOut_withTheArgumentOmitted_fansOutOverEveryDomainTenant() {
+        var result = execute("{ filmsNarrowable { title } }", List.of(1, 2));
+
+        assertThat(titles(result, "filmsNarrowable"))
+            .containsExactly("T1 Alpha", "T1 Beta", "T2 Gamma", "T2 Delta");
+        assertThat(TENANT_1_OPENED.get()).isPositive();
+        assertThat(TENANT_2_OPENED.get()).isPositive();
+    }
+
+    @Test
+    void narrowedFanOut_withTheArgumentGiven_queriesOnlyTheTenantItNames() {
+        withTenantOwnedFilms(() -> {
+            var result = execute("{ filmsNarrowable(filmId: 2) { title } }", List.of(1, 2));
+
+            assertThat(titles(result, "filmsNarrowable")).containsExactly("T2 Own");
+            assertThat(TENANT_1_OPENED.get())
+                .as("tenant 1 holds no row naming tenant 2, so it is never asked")
+                .isZero();
+            assertThat(TENANT_2_OPENED.get()).isPositive();
+        });
+    }
+
+    @Test
+    void narrowedFanOut_namingATenantOutsideTheRequestSet_answersNoRowsAndOpensNothing() {
+        withTenantOwnedFilms(() -> {
+            var result = execute("{ filmsNarrowable(filmId: 2) { title } }", List.of(1));
+
+            assertThat(titles(result, "filmsNarrowable")).isEmpty();
+            assertThat(TENANT_1_OPENED.get()).isZero();
+            assertThat(TENANT_2_OPENED.get()).isZero();
+        });
+    }
+
+    @Test
+    void narrowedFanOut_overAListOfNodeIds_queriesExactlyTheTenantsTheIdsName() {
+        var film1 = no.sikt.graphitron.generated.multitenant.util.NodeIdEncoder.encodeFilm(1);
+        var film2 = no.sikt.graphitron.generated.multitenant.util.NodeIdEncoder.encodeFilm(2);
+        withTenantOwnedFilms(() -> {
+            var both = execute("{ filmsNarrowableByIds(ids: [\"" + film1 + "\", \"" + film2
+                + "\"]) { title } }", List.of(1, 2));
+            assertThat(titles(both, "filmsNarrowableByIds")).containsExactly("T1 Own", "T2 Own");
+
+            reset();
+            var one = execute("{ filmsNarrowableByIds(ids: [\"" + film2 + "\"]) { title } }",
+                List.of(1, 2));
+            assertThat(titles(one, "filmsNarrowableByIds")).containsExactly("T2 Own");
+            assertThat(TENANT_1_OPENED.get())
+                .as("the decoded String segment coerces to the Integer key, so tenant 1 drops out")
+                .isZero();
+        });
+    }
+
+    @Test
+    void narrowedFanOut_withAnExplicitNullOrAnEmptyList_constrainsNothingAndFansTheWholeDomain() {
+        // Neither names a tenant, so neither narrows: every domain tenant is asked. (A null
+        // element inside the id list would narrow nothing too, but the field's own node-id filter
+        // refuses a null id before any statement runs, so this fixture cannot show it.)
+        var explicitNull = execute("{ filmsNarrowable(filmId: null) { title } }", List.of(1, 2));
+        assertThat(titles(explicitNull, "filmsNarrowable"))
+            .containsExactly("T1 Alpha", "T1 Beta", "T2 Gamma", "T2 Delta");
+        assertThat(TENANT_1_OPENED.get()).isPositive();
+        assertThat(TENANT_2_OPENED.get()).isPositive();
+
+        reset();
+        var emptyList = execute("{ filmsNarrowableByIds(ids: []) { title } }", List.of(1, 2));
+        assertThat(emptyList.getErrors()).as("errors: " + emptyList.getErrors()).isEmpty();
+        assertThat(TENANT_1_OPENED.get()).isPositive();
+        assertThat(TENANT_2_OPENED.get()).isPositive();
+    }
+
     static String tenantUrl(String db) {
         return jdbcUrl.replaceAll("/[^/?]+(\\?|$)", "/" + db + "$1");
     }

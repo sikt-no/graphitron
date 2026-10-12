@@ -149,7 +149,7 @@ type Query {
     # The read-side decoded-slot arm: a same-table composite @nodeId filter whose key embeds the
     # tenant column. The wire value is an encoded key rather than the tenant value, so the routed
     # acquisition decodes it and reads slot 1; every id in one call must decode to one tenant.
-    filmActorsByNodeId(ids: [ID!] @nodeId(typeName: "FilmActor")): [FilmActor!]!
+    filmActorsByNodeId(ids: [ID!]! @nodeId(typeName: "FilmActor")): [FilmActor!]!
     # The suppressed-predicate arm: the field-level override takes every argument's implicit
     # predicate over, so no predicate names film_id, yet the argument still binds the tenant
     # column and routes the statement. The only field here whose slot cannot come from a
@@ -164,6 +164,14 @@ type Query {
     filmsEverywhere: [Film] @tenantFanOut
     # The strict-elements variant: any tenant failure nulls the whole field via null-bubbling.
     filmsEverywhereStrict: [Film!] @tenantFanOut
+    # A narrowed fan-out: filmId names the tenant column but may be left out. Given, only the
+    # tenant it names is queried; omitted, the field fans out over the whole domain. Unmarked,
+    # the optional argument would be a build error, since a request omitting it names no tenant.
+    filmsNarrowable(filmId: Int @field(name: "film_id")): [Film] @tenantFanOut
+    # The list-valued narrowing: each decoded id names its own tenant (the String key segment
+    # coerced to the Integer tenant key), so the field queries exactly the tenants the ids name.
+    # An empty list names no tenant, so it constrains nothing and the field fans the whole domain.
+    filmsNarrowableByIds(ids: [ID] @nodeId(typeName: "Film")): [Film] @tenantFanOut
     # ROUTED carrier: an ArgumentBound connection root. The routed DSLContext rides the
     # generated connection carrier, so the lazy totalCount aggregate runs against the same
     # divined tenant source as the page query instead of re-acquiring by environment.
