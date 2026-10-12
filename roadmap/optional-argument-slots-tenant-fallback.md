@@ -1,7 +1,7 @@
 ---
 id: R1019
 title: "A field whose tenant slots may all be absent is a build error, or fans out when they are"
-status: Spec
+status: Ready
 bucket: bug
 priority: 4
 theme: runtime-connection
@@ -142,3 +142,13 @@ Non-blocking, for the revision if the author agrees:
 - The narrowing `fanOutDomain` should coerce decoded `String` segments to a numeric tenant key, as `divinedTenant` does, or a narrowed node-id slot never matches a hosted key.
 - Flattening a list-shaped level drops elements whose slot is null. That is exact only if such an element matches no rows. Where list-of-input-object filters with a nullable tenant member exist, it deserves one sentence.
 - R517's open questions 1 and 4 already carry the "R1019 settles this" notes, so that Implementation bullet is done.
+
+### Spec → Ready, round 2: sign off (session_015hKiSrQ3dbgVCLzZVVUTSD, 2026-10-12)
+
+Both questions hold. The goal reads on its own: a field whose only tenant-naming arguments the client may omit stops compiling into a fetcher that throws `NoSuchElementException` on omission. It is rejected with the two fixes, and `@tenantFanOut` now accepts that shape and narrows the fan-out to the tenants the given values name. Every symbol, test class and fixture the plan names exists as named. The plan extends the shapes in the tree: `DirectBinding` and its readers, the `armOf` rung beside the declines branch, the `fanOutArmOf` slots rung, the `FanOut` arm, and `fanOutDomain`. Round 1's two findings are settled: the service case takes `unroutedServiceCall`, and all four readings are stated for each reader.
+
+Non-blocking, for the implementer:
+
+- *Which slot-read fragment.* The projection-aware render of a slot read is `TenantDslEmitter.slotReads` / `projected`. It needs the emission context's decode-helper registry. `TenantAcquisitionFragments` and `TenantAcquisition.SlotRead` carry no projection. The launcher renderers (`RootLauncherRenderer`, `BatchedRowsFragments`) take tenancy fragments from the shell instead, as with `batchedDslDeclaration`. Carrying raw reads on `TenantStrategy.Fanned` without the projection would leave the decoded `filmsNarrowableByIds` case unrenderable. Expect either to hand the narrowing values in as a fragment the shell renders, or to carry the projection and thread the registry through.
+- *"No verdict change" under `siteDivinesTenant`.* That claim leaves out the case where an unmarked `Conditional` field needs no tenant and falls through to an untenanted leaf. It counted as a bound ancestor before and no longer does, so a `@tenantFanOut` descendant below it now classifies `FanOut` instead of rejecting. The new verdict is correct, and the case is a narrow one.
+- The `@tenantFanOut` description in `directives.graphqls` repeats the rejection list ("a bound argument"). It wants the same "non-null" edit as `tenantFanOut.adoc`.
