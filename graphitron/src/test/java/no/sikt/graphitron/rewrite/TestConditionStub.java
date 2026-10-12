@@ -78,7 +78,8 @@ class TestConditionStub {
     /**
      * Input-field-level {@code @condition} for a {@code NestingField} named {@code details}.
      */
-    public static Condition inputNestingCondition(org.jooq.Table<?> table, String details) {
+    public static Condition inputNestingCondition(org.jooq.Table<?> table,
+            java.util.Map<String, Object> details) {
         throw new UnsupportedOperationException();
     }
 
@@ -351,12 +352,10 @@ class TestConditionStub {
      * table slot's name as a claim used to leave {@code kriterier} unbound and reject structurally.
      */
     public static Condition tableSlotNamedLikeAnArgument(
-            no.sikt.graphitron.rewrite.test.jooq.tables.Film film, FilmFilter kriterier) {
+            no.sikt.graphitron.rewrite.test.jooq.tables.Film film,
+            java.util.Map<String, Object> kriterier) {
         throw new UnsupportedOperationException();
     }
-
-    /** The filter bean {@link #tableSlotNamedLikeAnArgument} takes: a named input's Java carrier. */
-    public record FilmFilter(String navn) {}
 
     /**
      * Fixture: a path-step overload set whose second slots agree. Both declarations arrive at

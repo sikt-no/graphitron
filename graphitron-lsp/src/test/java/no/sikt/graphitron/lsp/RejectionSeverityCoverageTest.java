@@ -492,6 +492,16 @@ class RejectionSeverityCoverageTest {
                 "@nodeId argument 'languageId' on field 'films': parameter 'languageId' of"
                     + " condition method 'byLanguage'");
         }
+        if (permit == no.sikt.graphitron.model.diagnostics.WireCoercionError.ConditionBeanAtInputField.class) {
+            return new no.sikt.graphitron.model.diagnostics.WireCoercionError.ConditionBeanAtInputField(
+                "FilmWrap", "inner", "com.example.FilmFilter",
+                "parameter 'inner' of condition method 'byFilter' in class 'com.example.Conditions'");
+        }
+        if (permit == no.sikt.graphitron.model.diagnostics.WireCoercionError.ConditionJooqRecordCarrier.class) {
+            return new no.sikt.graphitron.model.diagnostics.WireCoercionError.ConditionJooqRecordCarrier(
+                "com.example.jooq.tables.records.FilmRecord",
+                "parameter 'input' of condition method 'byFilter' in class 'com.example.Conditions'");
+        }
         // ServiceCarrierShapeError sub-seal of AuthorError. One sample per arm;
         // Diagnostics.compute's switch on Rejection.AuthorError catches them uniformly (Error
         // severity), and lspCodeOf forwards each arm's stable graphitron.service-carrier-shape.* code.

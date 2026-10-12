@@ -2721,7 +2721,8 @@ class BuildContext {
         var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
             argBindings, Set.copyOf(cond.contextArguments()),
-            java.util.Map.of(field.getName(), field.getType()));
+            java.util.Map.of(field.getName(), field.getType()),
+            new ConditionSite.InputField(parentTypeName, inputFieldName));
         if (result.failed()) {
             // Kept unprefixed: the reflect arms are typed sub-seals whose prefixedWith is a
             // deliberate no-op, so the "@condition on input field X" context is the consumer's to

@@ -95,6 +95,11 @@ final class InputBeanResolver {
      * populate the consumer's parameter without an unchecked cast that fails at first field
      * access. Every unusable pairing returns {@link Result.Failed}, never a silent fallback; the
      * rejection messages name each case.
+     *
+     * <p>The per-parameter decision is {@link #decideCarrier}, shared with the {@code @condition}
+     * site; this caller states the {@code @service} policy over its arms, which differs from the
+     * condition's in one place: a {@link SlotCarrier.MapPassThrough} parameter is a permanent
+     * rejection here.
      */
     Result enrich(MethodRef.Service method, GraphQLFieldDefinition fieldDef, String parentTypeName) {
         var argTypes = fieldDef.getArguments().stream()
@@ -121,91 +126,207 @@ final class InputBeanResolver {
                 continue;
             }
             GraphQLInputType sdlType = argTypes.get(arg.path().headName());
-            SdlElement sdl = peelSdlListNonNull(sdlType);
-            if (!(sdl.elementType() instanceof GraphQLInputObjectType iot)) {
+            if (inputObjectLeaf(sdlType) == null) {
                 newParams.add(p);
                 continue;
             }
-            JavaElement elt = peelJavaListSet(p.typeName());
-            var elementLoad = tryLoad(elt.elementTypeName());
-            if (elementLoad instanceof ConsumerClassLoad.Unlinkable unlinkable) {
-                return new Result.Failed(unlinkable.rejection());
-            }
-            Class<?> elementClass = elementLoad.loadedOrNull();
-            if (elementClass == null) {
-                return new Result.Failed(Rejection.structural(
-                    "parameter '" + p.name() + "' on method '" + method.methodName()
-                    + "' in class '" + method.className() + "' has Java element type '"
-                    + elt.elementTypeName() + "' which is not loadable, but the GraphQL argument '"
-                    + arg.path().headName() + "' is an input-object — declare a consumer-authored"
-                    + " bean class (record or class with a public no-arg constructor) for the parameter"));
-            }
-            if (Map.class.isAssignableFrom(elementClass)) {
-                return new Result.Failed(Rejection.structural(
-                    "parameter '" + p.name() + "' on method '" + method.methodName()
-                    + "' in class '" + method.className() + "' has Java type 'java.util.Map' for"
-                    + " the GraphQL input-object argument '" + arg.path().headName() + "' (type '"
+            var site = new SlotSite(p.name(), method.methodName(), method.className(),
+                arg.path().headName());
+            var useSite = ClassifyContext.UseSite.of(parentTypeName, fieldDef.getName(),
+                arg.path().headName());
+            var carrier = decideCarrier(site, p.typeName(), sdlType);
+            CarrierBuild built = switch (carrier) {
+                case SlotCarrier.Rejected r -> new CarrierBuild.Fail(r.rejection());
+                case SlotCarrier.MapPassThrough ignored -> new CarrierBuild.Fail(Rejection.structural(
+                    site.where() + " has Java type '" + p.typeName() + "' for"
+                    + " the GraphQL input-object argument '" + site.slotName() + "' (type '"
                     + GraphQLTypeUtil.simplePrint(sdlType) + "') — Map<K, V> at the service"
                     + " boundary is a permanent anti-pattern in graphitron; replace the parameter"
                     + " with a typed bean (record or class with a public no-arg constructor"
                     + " mirroring the input-object fields), or — for open-ended-JSON semantics —"
                     + " declare a custom scalar via `@scalarType` and bind its Java type instead"));
-            }
-            if (!looksLikeBeanCandidate(elementClass)) {
-                return new Result.Failed(Rejection.structural(
-                    "parameter '" + p.name() + "' on method '" + method.methodName()
-                    + "' in class '" + method.className() + "' has Java element type '"
-                    + elementClass.getName() + "' (JDK / jOOQ / enum / array) but the GraphQL"
-                    + " argument '" + arg.path().headName() + "' has input-object type '"
-                    + GraphQLTypeUtil.simplePrint(sdlType) + "' — replace the parameter type with a"
-                    + " consumer-authored bean class mirroring the input-object"));
-            }
-            if (elt.list() != sdl.list()) {
-                return new Result.Failed(Rejection.structural(
-                    "parameter '" + p.name() + "' on method '" + method.methodName()
-                    + "' in class '" + method.className() + "' is "
-                    + (elt.list() ? "list-shaped on Java side" : "scalar on Java side")
-                    + " but the GraphQL argument '" + arg.path().headName() + "' is "
-                    + (sdl.list() ? "list-shaped" : "scalar")
-                    + " — match the cardinalities"));
-            }
-            // The classifier's verdict for this SDL input is JooqTableRecordInputType, table and
-            // all; read that answer rather than re-resolving. lookAheadVerdict recomputes it
-            // registry-free: this runs during field classification, when the input may be a
-            // not-yet-visited child of the walk. A jOOQ-record param binds on the
-            // column axis (@field(name:) → ColumnRef, plus optional @nodeId identity decodes), not
-            // the Java-member axis the bean path uses. Sits after the shared input-object gates
-            // above so it reuses the loadable / Map / cardinality-parity checks; the walker relies
-            // on that parity to read list-ness off the Java type alone.
-            if (ctx.lookAheadVerdict(iot.getName()) instanceof GraphitronType.JooqTableRecordInputType jtr) {
-                JooqBuilt jbuilt = buildJooqRecord(jtr, iot, p.name(), method.methodName(),
-                    method.className(), arg.path().headName(),
-                    ClassifyContext.UseSite.of(parentTypeName, fieldDef.getName(),
-                        arg.path().headName()));
-                if (jbuilt instanceof JooqBuilt.Fail jf) {
-                    return new Result.Failed(jf.rejection());
-                }
-                var jr = ((JooqBuilt.Ok) jbuilt).record();
-                var jtyped = (MethodRef.Param.Typed) p;
-                newParams.add(new MethodRef.Param.Typed(jtyped.name(), jtyped.typeName(), jtyped.javaType(),
-                    new ParamSource.Arg(jr, arg.path())));
-                continue;
-            }
-            var built = buildInputBean(elementClass, iot, p.name(), method.methodName(),
-                method.className(), new HashSet<>(),
-                ClassifyContext.UseSite.of(parentTypeName, fieldDef.getName(),
-                    arg.path().headName()));
-            if (built instanceof Built.Fail f) {
+                case SlotCarrier.Bean bean -> buildBean(bean, site, useSite);
+                case SlotCarrier.JooqRecordInput jri -> buildRecordCarrier(jri, site, useSite);
+            };
+            if (built instanceof CarrierBuild.Fail f) {
                 return new Result.Failed(f.rejection());
             }
-            var ib = ((Built.Ok) built).bean();
             var typed = (MethodRef.Param.Typed) p;
             newParams.add(new MethodRef.Param.Typed(typed.name(), typed.typeName(), typed.javaType(),
-                new ParamSource.Arg(ib, arg.path())));
+                new ParamSource.Arg(((CarrierBuild.Ok) built).extraction(), arg.path())));
         }
         return new Result.Ok(new MethodRef.Service(method.className(), method.methodName(),
             method.returnType(), List.copyOf(newParams), method.declaredExceptions(),
             method.callShape()));
+    }
+
+    /**
+     * The parameter a carrier decision is about, as its messages name it: the parameter, the method
+     * and class declaring it, and the GraphQL slot it is bound to (an argument name, or a dotted
+     * path into one).
+     */
+    record SlotSite(String paramName, String methodName, String className, String slotName) {
+        String where() {
+            return "parameter '" + paramName + "' on method '" + methodName + "' in class '"
+                + className + "'";
+        }
+    }
+
+    /**
+     * The per-slot carrier decision for a parameter bound to a GraphQL input-object slot, before
+     * anything is built. Each caller states its own policy over the arms rather than passing a
+     * flag in: the decision is what a declared Java type <em>is</em> against what graphql-java
+     * delivers, and which of those a directive admits is the directive's.
+     *
+     * <ul>
+     *   <li>{@link MapPassThrough}: the declared type is one graphql-java's value is assignable to,
+     *       at matching cardinality: {@code Map} or {@code Object} on a single slot, a
+     *       {@code List} of either (or a type a {@code List} is assignable to) on a list slot. The
+     *       raw cast is wire-safe.</li>
+     *   <li>{@link Bean}: a consumer class to build from the map, through {@link #buildBean}.</li>
+     *   <li>{@link JooqRecordInput}: the input type classified as a jOOQ-record input, built
+     *       through {@link #buildRecordCarrier}.</li>
+     *   <li>{@link Rejected}: the declared type is no carrier for an input object at all (not
+     *       loadable, a JDK / jOOQ / enum / array type, a {@code Map} shape graphql-java does not
+     *       deliver, or a list-versus-single mismatch).</li>
+     * </ul>
+     *
+     * <p>Building is a second step because it is not side-effect free: a bean's {@code @nodeId}
+     * members and a jOOQ record's key decodes are transcribed into the decode ledger as they
+     * resolve, so a caller that refuses an arm must not build it first.
+     */
+    sealed interface SlotCarrier {
+        record MapPassThrough() implements SlotCarrier {}
+        record Bean(Class<?> beanClass, GraphQLInputObjectType inputType) implements SlotCarrier {}
+        record JooqRecordInput(GraphitronType.JooqTableRecordInputType verdict,
+                               GraphQLInputObjectType inputType) implements SlotCarrier {}
+        record Rejected(Rejection rejection) implements SlotCarrier {}
+    }
+
+    /**
+     * The input-object type {@code sdlType} names once list and non-null wrappers are peeled, or
+     * {@code null} when it names anything else. The precondition of {@link #decideCarrier}.
+     */
+    static GraphQLInputObjectType inputObjectLeaf(GraphQLInputType sdlType) {
+        return peelSdlListNonNull(sdlType).elementType() instanceof GraphQLInputObjectType iot
+            ? iot : null;
+    }
+
+    /**
+     * Decides what a parameter declared {@code declaredTypeName} is when bound to the input-object
+     * slot {@code sdlType}; see {@link SlotCarrier}. {@code sdlType} must satisfy
+     * {@link #inputObjectLeaf}.
+     */
+    SlotCarrier decideCarrier(SlotSite site, String declaredTypeName, GraphQLInputType sdlType) {
+        SdlElement sdl = peelSdlListNonNull(sdlType);
+        if (!(sdl.elementType() instanceof GraphQLInputObjectType iot)) {
+            throw new IllegalArgumentException("decideCarrier called on a slot that is not an input"
+                + " object: " + GraphQLTypeUtil.simplePrint(sdlType));
+        }
+        JavaElement elt = peelJavaListSet(declaredTypeName);
+        Class<?> elementClass;
+        if (elt.elementTypeName().equals("?")) {
+            // List<?>: the unbounded wildcard reads as Object, which a Map is assignable to.
+            elementClass = Object.class;
+        } else {
+            var elementLoad = tryLoad(elt.elementTypeName());
+            if (elementLoad instanceof ConsumerClassLoad.Unlinkable unlinkable) {
+                return new SlotCarrier.Rejected(unlinkable.rejection());
+            }
+            elementClass = elementLoad.loadedOrNull();
+        }
+        if (elementClass == null) {
+            return new SlotCarrier.Rejected(Rejection.structural(site.where() + " has Java element"
+                + " type '" + elt.elementTypeName() + "' which is not loadable, but the GraphQL"
+                + " argument '" + site.slotName() + "' is an input-object — declare a"
+                + " consumer-authored bean class (record or class with a public no-arg constructor)"
+                + " for the parameter"));
+        }
+        if (isWireMapShape(declaredTypeName, elt, elementClass, sdl.list())) {
+            return new SlotCarrier.MapPassThrough();
+        }
+        if (Map.class.isAssignableFrom(elementClass) || elementClass.isAssignableFrom(Map.class)) {
+            String delivered = sdl.list() ? "java.util.List<java.util.Map<String, Object>>"
+                : "java.util.Map<String, Object>";
+            return new SlotCarrier.Rejected(Rejection.structural(site.where() + " has Java type '"
+                + declaredTypeName + "' for the GraphQL input-object argument '" + site.slotName()
+                + "' (type '" + GraphQLTypeUtil.simplePrint(sdlType) + "'), but graphql-java"
+                + " delivers '" + delivered + "' there — a map-shaped parameter must be a supertype"
+                + " of what is delivered, at the slot's cardinality"));
+        }
+        if (!looksLikeBeanCandidate(elementClass)) {
+            return new SlotCarrier.Rejected(Rejection.structural(site.where() + " has Java element"
+                + " type '" + elementClass.getName() + "' (JDK / jOOQ / enum / array) but the GraphQL"
+                + " argument '" + site.slotName() + "' has input-object type '"
+                + GraphQLTypeUtil.simplePrint(sdlType) + "' — replace the parameter type with a"
+                + " consumer-authored bean class mirroring the input-object"));
+        }
+        if (elt.list() != sdl.list()) {
+            return new SlotCarrier.Rejected(Rejection.structural(site.where() + " is "
+                + (elt.list() ? "list-shaped on Java side" : "scalar on Java side")
+                + " but the GraphQL argument '" + site.slotName() + "' is "
+                + (sdl.list() ? "list-shaped" : "scalar")
+                + " — match the cardinalities"));
+        }
+        // The classifier's verdict for this SDL input is JooqTableRecordInputType, table and
+        // all; read that answer rather than re-resolving. lookAheadVerdict recomputes it
+        // registry-free: this runs during field classification, when the input may be a
+        // not-yet-visited child of the walk. A jOOQ-record param binds on the
+        // column axis (@field(name:) → ColumnRef, plus optional @nodeId identity decodes), not
+        // the Java-member axis the bean path uses. Sits after the shared input-object gates
+        // above so it reuses the loadable / Map / cardinality-parity checks; the walker relies
+        // on that parity to read list-ness off the Java type alone.
+        if (ctx.lookAheadVerdict(iot.getName()) instanceof GraphitronType.JooqTableRecordInputType jtr) {
+            return new SlotCarrier.JooqRecordInput(jtr, iot);
+        }
+        return new SlotCarrier.Bean(elementClass, iot);
+    }
+
+    /**
+     * Whether the declared type is one graphql-java's input-object value is assignable to, at the
+     * slot's cardinality: on a single slot a supertype of {@code Map}; on a list slot a
+     * {@code java.util.List} whose element is a supertype of {@code Map}, or a single type a
+     * {@code List} is assignable to ({@code Object}, {@code Collection}). A {@code Set} is not:
+     * graphql-java delivers a {@code List}.
+     */
+    private static boolean isWireMapShape(String declaredTypeName, JavaElement elt,
+            Class<?> elementClass, boolean sdlList) {
+        if (!sdlList) {
+            return !elt.list() && elementClass.isAssignableFrom(Map.class);
+        }
+        if (!elt.list()) {
+            return elementClass.isAssignableFrom(List.class);
+        }
+        return declaredTypeName.startsWith("java.util.List<") && elementClass.isAssignableFrom(Map.class);
+    }
+
+    /** Outcome of building a decided carrier: the extraction to install, or why it cannot be built. */
+    sealed interface CarrierBuild {
+        record Ok(CallSiteExtraction extraction) implements CarrierBuild {}
+        record Fail(Rejection rejection) implements CarrierBuild {}
+    }
+
+    /**
+     * Builds the {@link CallSiteExtraction.InputBean} a {@link SlotCarrier.Bean} decided on. A bean
+     * that cannot be built (not public, abstract, recursive, no no-arg constructor, a field set with
+     * no bijection to the SDL fields) fails with the message naming that case.
+     */
+    CarrierBuild buildBean(SlotCarrier.Bean bean, SlotSite site, ClassifyContext.UseSite useSite) {
+        return switch (buildInputBean(bean.beanClass(), bean.inputType(), site.paramName(),
+                site.methodName(), site.className(), new HashSet<>(), useSite)) {
+            case Built.Ok ok -> new CarrierBuild.Ok(ok.bean());
+            case Built.Fail f -> new CarrierBuild.Fail(f.rejection());
+        };
+    }
+
+    /** Builds the {@link CallSiteExtraction.JooqRecord} a {@link SlotCarrier.JooqRecordInput} decided on. */
+    CarrierBuild buildRecordCarrier(SlotCarrier.JooqRecordInput record, SlotSite site,
+            ClassifyContext.UseSite useSite) {
+        return switch (buildJooqRecord(record.verdict(), record.inputType(), site.paramName(),
+                site.methodName(), site.className(), site.slotName(), useSite)) {
+            case JooqBuilt.Ok ok -> new CarrierBuild.Ok(ok.record());
+            case JooqBuilt.Fail f -> new CarrierBuild.Fail(f.rejection());
+        };
     }
 
     private sealed interface Built {
@@ -1169,7 +1290,7 @@ final class InputBeanResolver {
      * generator's loader — the same classloader-agnostic discipline {@link #looksLikeBeanCandidate}
      * uses with its package-name test.
      */
-    private static boolean isJooqRecord(Class<?> cls) {
+    static boolean isJooqRecord(Class<?> cls) {
         if (cls == null) return false;
         if (cls.getName().equals("org.jooq.Record")) return true;
         for (Class<?> i : cls.getInterfaces()) {

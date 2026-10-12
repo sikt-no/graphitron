@@ -497,6 +497,46 @@ class GraphQLQueryTest {
             });
     }
 
+    // ===== Bean-typed @condition parameters: built from the delivered map =====
+
+    @Test
+    void filmsByTitleBean_recordBeanBoundByArgMapping_filtersByMember() {
+        // The record arrives populated: a Map cast to the record used to throw ClassCastException.
+        Map<String, Object> data = execute("{ filmsByTitleBean(by: {title: \"ACE GOLDFINGER\"}) { filmId } }");
+        assertThat(data).extractingByKey("filmsByTitleBean", as(list(Map.class)))
+            .extracting(f -> f.get("filmId")).containsExactly(2);
+    }
+
+    @Test
+    void filmsByTitleBean_absentInput_buildsNoBeanAndLeavesTheFieldUnfiltered() {
+        Map<String, Object> data = execute("{ filmsByTitleBean { filmId } }");
+        assertThat(data).extractingByKey("filmsByTitleBean", as(list(Map.class))).hasSize(5);
+    }
+
+    @Test
+    void filmsByTitleBeans_listOfRecordBeansAtAnArgumentCondition_filtersByEachMember() {
+        Map<String, Object> data = execute(
+            "{ filmsByTitleBeans(titles: [{title: \"ACE GOLDFINGER\"}, {title: \"AGENT TRUMAN\"}]) { filmId } }");
+        assertThat(data).extractingByKey("filmsByTitleBeans", as(list(Map.class)))
+            .extracting(f -> f.get("filmId")).containsExactly(2, 5);
+    }
+
+    @Test
+    void filmsBySearchBean_setterBeanWithNestedBeanThroughADottedPath_filtersByNestedMember() {
+        // Titles starting "A" are all five films; the nested range (length 48..100) keeps
+        // ACADEMY DINOSAUR (86), ACE GOLDFINGER (48) and ADAPTATION HOLES (50).
+        Map<String, Object> data = execute(
+            "{ filmsBySearchBean(wrap: {search: {title: \"A\", length: {min: 48, max: 100}}}) { filmId } }");
+        assertThat(data).extractingByKey("filmsBySearchBean", as(list(Map.class)))
+            .extracting(f -> f.get("filmId")).containsExactly(1, 2, 3);
+    }
+
+    @Test
+    void filmTitleEcho_serviceTakingTheSameBeanAsACondition_receivesItPopulated() {
+        Map<String, Object> data = execute("{ filmTitleEcho(by: {title: \"AGENT TRUMAN\"}) }");
+        assertThat(data).containsEntry("filmTitleEcho", "AGENT TRUMAN");
+    }
+
     @Test
     void store_customersByFirstName_inlineScalarCondition_narrowsByArgument() {
         // Inline (non-@splitQuery) @reference child list whose filter carries a scalar

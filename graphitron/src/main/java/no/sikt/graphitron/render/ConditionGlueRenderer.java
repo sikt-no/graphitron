@@ -89,6 +89,7 @@ public final class ConditionGlueRenderer {
             var classBuilder = TypeSpec.classBuilder(entry.getKey().simpleName()).addModifiers(Modifier.PUBLIC);
             CompositeDecodeHelperRegistry.collectInto(classBuilder, outputPackage, registry ->
                 RecordDecodeHelperRegistry.collectInto(classBuilder, outputPackage, decodes ->
+                InputBeanHelperRegistry.collectInto(classBuilder, outputPackage, decodes, beans ->
                 RequestContextHelper.collectInto(classBuilder, outputPackage, contextHelper -> {
                     // One projection host per class: the relation is the graph's, and reaching a decode
                     // registers its body here, so a called helper cannot go un-emitted.
@@ -96,20 +97,21 @@ public final class ConditionGlueRenderer {
                         projection -> decodes.register(NodeIdEncoderRef.of(outputPackage),
                             projection.typeId(), projection.nodeTypeName(),
                             projection.keyColumns(), projection.nodeTable()));
+                    var hosts = new Hosts(registry, contextHelper, beans);
                     for (var row : entry.getValue()) {
                         boolean takesEnv = row.readsRequestContext();
                         classBuilder.addMethod(buildGlueMethod(
                             row.glue().methodName(), CatalogRefs.tableClass(row.table()),
-                            row.predicates(), row.lifts(), takesEnv, registry, contextHelper,
+                            row.predicates(), row.lifts(), takesEnv, hosts,
                             keyHost.at(row.coordinate())));
                         for (var fragment : row.facets()) {
                             classBuilder.addMethod(buildGlueMethod(
                                 fragment.method().methodName(), CatalogRefs.tableClass(row.table()),
-                                fragment.predicates(), fragment.lifts(), takesEnv, registry, contextHelper,
+                                fragment.predicates(), fragment.lifts(), takesEnv, hosts,
                                 keyHost.at(row.coordinate())));
                         }
                     }
-                })));
+                }))));
             out.add(classBuilder.build());
         }
         return out;
@@ -119,9 +121,16 @@ public final class ConditionGlueRenderer {
     // One glue method
     // ------------------------------------------------------------------------------------------
 
+    /**
+     * The class-scoped helper hosts a glue method's binding locals register with: the node-id key
+     * decodes, the request-context reader, and the input-bean builders. One value per conditions
+     * class, so every glue method on it registers with the same three.
+     */
+    private record Hosts(CompositeDecodeHelperRegistry decodes, RequestContextHelper contextHelper,
+                         InputBeanHelperRegistry beans) {}
+
     private static MethodSpec buildGlueMethod(String methodName, TypeName jooqTableClass,
-            List<Predicate> predicates, List<OuterLift> lifts, boolean takesEnv,
-            CompositeDecodeHelperRegistry registry, RequestContextHelper contextHelper,
+            List<Predicate> predicates, List<OuterLift> lifts, boolean takesEnv, Hosts hosts,
             ProjectedKeyReads keys) {
         var builder = MethodSpec.methodBuilder(methodName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -150,7 +159,7 @@ public final class ConditionGlueRenderer {
         // projection the sink contributes nothing and this emits exactly what the loop used to.
         var bindingLocals = new ArrayList<CodeBlock>();
         for (var binding : bindings) {
-            bindingLocals.add(extractionExpr(binding.param(), liftLocals, registry, contextHelper, keys));
+            bindingLocals.add(extractionExpr(binding.param(), liftLocals, hosts, keys));
         }
         builder.addCode(keys.declarations());
         for (int i = 0; i < bindings.size(); i++) {
@@ -468,7 +477,7 @@ public final class ConditionGlueRenderer {
      * reads ({@code List<X>}) and generically-typed authored parameters
      * ({@code Map<String, Object>}). The {@code JooqConvert} form is carved out (its
      * {@code instanceof} pattern plus {@code DSL.val} coercion own the runtime shape without a
-     * cast), as is a NodeId decode (the helper takes {@code Object}).
+     * cast), as are a NodeId decode and an input bean (each helper takes the uncast wire value).
      */
     private static boolean emitsUncheckedLocalCast(CallParam param) {
         return switch (param.extraction()) {
@@ -477,6 +486,7 @@ public final class ConditionGlueRenderer {
             case CallSiteExtraction.NestedInputField nif ->
                 !(nif.leaf() instanceof CallSiteExtraction.JooqConvert)
                     && !(nif.leaf() instanceof CallSiteExtraction.NodeIdDecodeKeys)
+                    && !(nif.leaf() instanceof CallSiteExtraction.InputBean)
                     && localType(param) instanceof ParameterizedTypeName;
             default -> false;
         };
@@ -530,8 +540,7 @@ public final class ConditionGlueRenderer {
     }
 
     private static CodeBlock extractionExpr(CallParam param, Map<String, String> liftLocals,
-            CompositeDecodeHelperRegistry registry, RequestContextHelper contextHelper,
-            ProjectedKeyReads keys) {
+            Hosts hosts, ProjectedKeyReads keys) {
         return switch (param.extraction()) {
             case CallSiteExtraction.Direct ignored ->
                 CodeBlock.of("($T) args.get($S)", localType(param), param.name());
@@ -547,25 +556,48 @@ public final class ConditionGlueRenderer {
                 : CodeBlock.of("$T.val(args.get($S), table.$L.getDataType()).getValue()",
                     DSL, param.name(), jc.columnJavaName());
             case CallSiteExtraction.NodeIdDecodeKeys nidk ->
-                decodeCall(registry, nidk, decodesList(param), CodeBlock.of("args.get($S)", param.name()));
+                decodeCall(hosts.decodes(), nidk, decodesList(param), CodeBlock.of("args.get($S)", param.name()));
             case CallSiteExtraction.NestedInputField nif ->
-                nestedExtraction(nif, param, liftLocals, registry, keys);
+                nestedExtraction(nif, param, liftLocals, hosts, keys);
             // Request context is not in the args map: the local reads through the class's own
             // graphitronContext(env) helper, whose need the collector records so the drain and
             // the call cannot separate (the shipped-twice missing-helper bug class).
             case CallSiteExtraction.ContextArg ignored ->
                 CodeBlock.of("($T) $L.getContextArgument(env, $S)",
-                    localType(param), contextHelper.call(), param.name());
-            case CallSiteExtraction.InputBean ignored -> throw new IllegalStateException(
-                "InputBean is a @service parameter concept and never a condition binding");
+                    localType(param), hosts.contextHelper().call(), param.name());
+            case CallSiteExtraction.InputBean ib ->
+                beanBuild(hosts.beans(), ib, param, CodeBlock.of("args.get($S)", param.name()));
+            // Refused at classification (ServiceCatalog's condition carrier policy): the glue
+            // populates no jOOQ record from an input object.
             case CallSiteExtraction.JooqRecord ignored -> throw new IllegalStateException(
-                "JooqRecord is a @service parameter concept and never a condition binding");
+                "JooqRecord is a @service parameter carrier and never a condition binding");
             case CallSiteExtraction.NodeIdDecodeRecord ignored -> throw new IllegalStateException(
                 "NodeIdDecodeRecord is an input-bean field leaf only and never a condition binding");
             case CallSiteExtraction.NodeIdDecodePolymorphicRecord ignored ->
                 throw new IllegalStateException("NodeIdDecodePolymorphicRecord is a @service slot"
                     + " leaf only and never a condition binding");
         };
+    }
+
+    /**
+     * The call that builds a bean-typed condition parameter from its wire value, registering the
+     * helper with this class's {@link InputBeanHelperRegistry}. A list-typed parameter takes the
+     * {@code create<Bean>List(Object)} helper; a single one narrows the wire value with an
+     * {@code instanceof Map<?, ?>} pattern rather than casting it, so the emitted local carries no
+     * unchecked cast and a {@code null} or absent value yields a {@code null} bean.
+     *
+     * <p>List-ness is read off the declared type, as {@link #decodesList} reads it: an authored
+     * condition parameter's {@code CallParam} carries no list flag, and the classifier admits a bean
+     * on a list slot only as a {@code List} of it.
+     */
+    private static CodeBlock beanBuild(InputBeanHelperRegistry beans, CallSiteExtraction.InputBean ib,
+            CallParam param, CodeBlock wireExpr) {
+        if (decodesList(param)) {
+            return CodeBlock.of("$L($L)", beans.plural(ib), wireExpr);
+        }
+        String narrowed = param.name() + "Wire";
+        return CodeBlock.of("$L instanceof $T $L ? $L($L) : null",
+            wireExpr, InputBeanFragments.WILDCARD_MAP, narrowed, beans.singular(ib), narrowed);
     }
 
     /**
@@ -591,8 +623,7 @@ public final class ConditionGlueRenderer {
      * casts to the declared type.
      */
     private static CodeBlock nestedExtraction(CallSiteExtraction.NestedInputField nif, CallParam param,
-            Map<String, String> liftLocals, CompositeDecodeHelperRegistry registry,
-            ProjectedKeyReads keys) {
+            Map<String, String> liftLocals, Hosts hosts, ProjectedKeyReads keys) {
         if (nif.leaf() instanceof CallSiteExtraction.ContextArg) {
             // The resolver keeps context params bare when it rewraps a nested condition's value
             // params (ConditionResolver.rewrapForNested), so this leaf shape is unconstructable;
@@ -612,8 +643,14 @@ public final class ConditionGlueRenderer {
         // precedence rather than left to the sink's arity test, which used to keep the two apart by
         // refusing every single-segment path and so also refused every inferred projection.
         if (nif.leaf() instanceof CallSiteExtraction.NodeIdDecodeKeys nidk) {
-            return decodeCall(registry, nidk, decodesList(param),
+            return decodeCall(hosts.decodes(), nidk, decodesList(param),
                 WireMapChain.of(root, nif.path(), null, lifted));
+        }
+        // A bean at the end of a dotted path: the helper takes the uncast wire value the descent
+        // finds, as the top-level arm hands it args.get(name). No projected key can name an input
+        // object, so the sink below has nothing to say about this leaf.
+        if (nif.leaf() instanceof CallSiteExtraction.InputBean ib) {
+            return beanBuild(hosts.beans(), ib, param, WireMapChain.of(root, nif.path(), null, lifted));
         }
 
         // Row presence decides, ahead of every remaining leaf special case: a path that opens a

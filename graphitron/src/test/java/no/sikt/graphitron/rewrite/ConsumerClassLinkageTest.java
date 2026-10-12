@@ -113,7 +113,7 @@ class ConsumerClassLinkageTest {
     @Test
     void aConditionClassWithTheSameSiblingIsRejectedTheSameWay() {
         var result = newCatalog().reflectTableMethod("com.example.staged.SplitConditions", "byTable",
-            new ArgBindingMap(new LinkedHashMap<>(), Set.of()), Set.of(), Map.of());
+            new ArgBindingMap(new LinkedHashMap<>(), Set.of()), Set.of());
 
         assertThat(result.failed()).isTrue();
         assertThat(result.rejection()).isInstanceOfSatisfying(ReflectionError.ClassUnlinkable.class,

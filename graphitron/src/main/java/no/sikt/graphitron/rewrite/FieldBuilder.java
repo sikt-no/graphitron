@@ -2277,13 +2277,19 @@ class FieldBuilder {
             return new ArgumentRef.PaginationArgRef(name, typeName, nonNull, list, role);
         }
 
-        Optional<ArgConditionRef> argCondition = switch (conditionResolver.resolveArg(arg)) {
+        // A refused condition refuses the argument rather than leaving it classified without its
+        // condition: an argument that still classifies carries no error into projection, so a
+        // refusal recorded on the side was dropped and the field built without the filter the
+        // author wrote.
+        var conditionResult = conditionResolver.resolveArg(arg, parentTypeName, fieldDef);
+        if (conditionResult instanceof ConditionResolver.ArgConditionResult.Rejected r) {
+            return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list, r.rejection());
+        }
+        Optional<ArgConditionRef> argCondition = switch (conditionResult) {
             case ConditionResolver.ArgConditionResult.None n -> Optional.empty();
             case ConditionResolver.ArgConditionResult.Ok ok -> Optional.of(ok.ref());
-            case ConditionResolver.ArgConditionResult.Rejected r -> {
-                errors.add(r.message());
-                yield Optional.empty();
-            }
+            case ConditionResolver.ArgConditionResult.Rejected r -> throw new IllegalStateException(
+                "a refused argument condition returned above");
         };
 
         // @referenceFor is the per-participant path surface, and the decode rail is the only
@@ -2422,10 +2428,9 @@ class FieldBuilder {
                     { return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list, r.rejection()); }
                 case NodeIdLeafResolver.Resolved.AuthorOwnedPredicate ignored -> {
                     // No route resolved and this argument's own @condition(override: true) took the
-                    // predicate. The condition build has already run above; an argCondition that is
-                    // empty here means the reflection failed and its error is on the errors list, so
-                    // the argument falls through as unclassified rather than minting a carrier whose
-                    // invariant it cannot satisfy.
+                    // predicate. The condition build has already run above, and a failed reflection
+                    // refused the argument there; an argCondition still empty here falls through as
+                    // unclassified rather than minting a carrier whose invariant it cannot satisfy.
                     if (argCondition.isEmpty()) {
                         return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
                             Rejection.structural("@condition(override: true) owns this @nodeId"
@@ -2818,7 +2823,7 @@ class FieldBuilder {
             columnSlots);
         if (filters == null) return new TableFieldComponents.Rejected(foldRejections(errors));
         ConditionFilter fieldCondition;
-        switch (conditionResolver.resolveField(fieldDef)) {
+        switch (conditionResolver.resolveField(fieldDef, parentTypeName)) {
             case ConditionResolver.FieldConditionResult.None n -> fieldCondition = null;
             case ConditionResolver.FieldConditionResult.Ok ok -> fieldCondition = ok.filter();
             case ConditionResolver.FieldConditionResult.Rejected r -> {

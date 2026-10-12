@@ -760,7 +760,7 @@ class ServiceCatalogTest {
         var argByJavaName = bindings(Map.of("opptaksNavn", "opptaksNavn"));
         var result = newCatalog().reflectTableMethod(
             "no.sikt.graphitron.rewrite.TestConditionStub", "argConditionTypeUnique",
-            argByJavaName, Set.of(), slot);
+            argByJavaName, Set.of(), slot, new ConditionSite.Consuming("Query", "f"));
 
         assertThat(result.failed()).isFalse();
         var params = result.ref().params();
@@ -782,7 +782,7 @@ class ServiceCatalogTest {
         var argByJavaName = bindings(Map.of("first", "first"));
         var result = newCatalog().reflectTableMethod(
             "no.sikt.graphitron.rewrite.TestConditionStub", "argConditionTwoStrings",
-            argByJavaName, Set.of(), slot);
+            argByJavaName, Set.of(), slot, new ConditionSite.Consuming("Query", "f"));
 
         assertThat(result.failed()).isTrue();
         assertThat(result.rejection().message())

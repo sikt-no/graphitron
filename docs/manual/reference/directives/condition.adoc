@@ -145,14 +145,53 @@ The `EXISTS` applies only when the filter field carries a value. It is a semi-jo
 * A parameter bound to the whole of a `@nodeId` slot receives the *decoded* key, never the wire string, and this holds at every such coordinate: argument or input field, routed or author-owned, `override: true` or `false`, and whether the `@condition` sits on the slot itself or on the enclosing field. An arity-1 node key arrives as the key column's Java type, a composite key as a jOOQ `Row`, and a list-shaped slot wraps either in `List`. Ids that are malformed, or encoded for another node type, fail the request before your method runs, so there is nothing for it to parse or validate. Declaring the parameter as anything but that type fails the build, naming the coordinate and the type it must have. Bind such a parameter by giving it the slot's name, or with an `argMapping:` whose right-hand side is the bare slot; the type-based pairing that binds a differently-named parameter reads the slot's *wire* type (`String` for an `ID`) and will not pair a decoded key against it.
 * A *dotted* `argMapping:` path is not a whole-slot binding and gets a key column instead. It is the projection described in xref:routine.adoc#node-id-key-projection[Projecting a key column out of a node id], and it resolves whether or not you spell the column. Opening the slot with the column (`argMapping: "p: filmId.film_id"`) names it, and is the way to ask for one column of a composite key. Descending *through* an input object and stopping on a `@nodeId` input field (`argMapping: "p: filter.languageId"`, written on a field-level `@condition`) names nothing past the node id, so the node type's key decides: one column and that column is the projection, since there is nothing else the binding could mean; two or more and the build fails naming them, one binding carrying one value. Either way the parameter receives a decoded column's own value and never the encoded id, and its declared Java type must be that column's, which a primitive cannot be: the projected read is boxed at every path shape, so declaring `int` rather than `Integer` is a build error naming the parameter and the type to declare. An array or type-variable parameter and a method compiled without `-parameters` keep your compiler as their backstop, neither being a shape the build can name. Where the node id is absent, omitted by the client or sent as `null` anywhere on the projected path, the parameter receives `null` and your method decides what an absent filter means; a field-level `@condition` is bound to the whole field, so it is called either way. That is the contrast with the FK-target `@nodeId` whole-slot rail above, where an absent value contributes no predicate and the method is not called at all.
 * At a *composite* key the two spellings differ, and the difference is a real limit rather than an oversight. A bare binding gets the whole key as a jOOQ `Row`; a path dotted to the node id gets the build error above, a projection being per-column by construction with no way to name a `Row`. Two remedies: name a key column past the node id, or move the `@condition` onto the `@nodeId` input field itself, where the whole-slot handoff above applies.
-* Nested input types must be carrier-mapped to flow through `@condition`. A class-backed input maps to its Java record (and any input above it must also be a Java record); a jOOQ-record-backed input works only at the leaf (jOOQ records can not contain other records). An input is class-backed when the Java parameter it flows into is that record type; leaving it without a carrier routes through the `PojoInputType` path, which works for scalar paths at any depth.
-* Listed nested input types (`[InnerInput]` inside an outer record) require a Java record carrier on the outer input, the rewrite needs a stable Java type for the list element.
+* A parameter bound to an input object receives the delivered `Map` or a bean built from it, and any other declared type fails the build; see <<input-object-parameter>>.
+
+[#input-object-parameter]
+== Input-object parameters
+
+graphql-java delivers an input-object value as a `Map`. A parameter bound to one, by name, by `argMapping:`, or through a dotted path that ends on an input object, receives one of two carriers:
+
+* *The map itself.* Declare `Map<String, Object>` (or `Map<?, ?>`, or `Object`), and `List<Map<String, Object>>` on a list-shaped slot. This works at every placement, input-field level included.
+* *A bean built from the map.* Declare a Java record, or a class with a public no-arg constructor and setters, mirroring the input's fields, and the generated conditions class builds it before your method runs. It is the same bean, under the same rules for which shapes can be built, as a xref:../../how-to/handle-services.adoc#input-bean-parameter[`@service` parameter typed as a bean], nested beans and `@nodeId` members included. A `List` of beans takes a list-shaped slot. An absent or `null` value arrives as `null`.
+
+[source,graphql]
+----
+type Query {
+    filmsByTitle(by: FilmTitleInput): [Film!]!
+        @condition(condition: {
+            className: "com.example.conditions.FilmConditions",
+            method: "byTitle", argMapping: "filter: by"}, override: true)
+}
+
+input FilmTitleInput { title: String }
+----
+
+[source,java]
+----
+public record FilmTitleFilter(String title) {}
+
+public static Condition byTitle(Film table, FilmTitleFilter filter) {
+    return filter == null || filter.title() == null
+        ? DSL.noCondition()
+        : table.TITLE.eq(filter.title());
+}
+----
+
+Any other declared type fails the build, naming the parameter and the type graphql-java delivers, which is the type (or a supertype of it) to declare. So does a bean that cannot be built, with the reason, a list parameter on a single slot or the reverse, and a `Set` where graphql-java delivers a `List`. Three limits apply where `@service` would accept the same parameter:
+
+* *No bean at an input-field `@condition`.* Such a condition is resolved once per input type, without the consuming field a bean is built for. Take the `Map`, or move the `@condition` to the field or argument that consumes the input.
+* *No jOOQ record.* Binding an input onto a record's columns is a xref:../../how-to/handle-services.adoc#jooq-record-parameter[`@service` feature]; a `@condition` parameter declared as a generated jOOQ record fails the build.
+* *No bean on an interface or union field.* A field returning several tables' types refuses a bean-typed condition parameter at build time; take the `Map` there.
+
+A dotted path that passes through a list on its way to an input object fails the build too: there is no single value there to descend into.
+
+The bean belongs to the parameter. It does not make the input type class-backed, so the input's classification, and the implicit predicates that `override: false` leaves standing, are what they would be without the condition.
 
 == See also
 
 * xref:reference.adoc[`@reference`] supplies catalog-driven joins that `@condition` can layer additional filtering on.
 * xref:field.adoc[`@field(name: ...)`] is the column-binding axis, `@condition` and `@field` coexist on the same slot, `@field` drives the implicit predicate, `@condition` adds (or replaces) the explicit one.
-* An input type's backing class determines the carrier the condition method reads from: the carrier is the Java class the method parameter is typed as (inferred, not declared); a carrier-free input arrives as the runtime `Map` traversal's leaf values.
 * xref:service.adoc[`@service`] is the alternative when a *whole* fetcher is custom code, `@condition` is for adjusting a single predicate inside an otherwise generated query.
 * xref:../../how-to/condition-cascade.adoc[How-to: Stacking and overriding conditions] covers the override cascade rules, nested-input record conventions, and the divergence from legacy semantics.
 

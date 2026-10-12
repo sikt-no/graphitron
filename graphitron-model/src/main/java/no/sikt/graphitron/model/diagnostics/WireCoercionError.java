@@ -25,7 +25,10 @@ import java.util.stream.Collectors;
  * value the generator <em>transforms</em> before the call site sees it, so what the declared type
  * must equal is the decode's output rather than graphql-java's. The three share this family because
  * they share the failure they prevent: an emitted call that compiles at the consumer and is wrong
- * about what the value at that position actually is.
+ * about what the value at that position actually is. {@link ConditionBeanAtInputField} and
+ * {@link ConditionJooqRecordCarrier} are the two carriers a {@code @condition} parameter bound to an
+ * input object cannot be handed although {@code @service} can: the value graphql-java delivers would
+ * have to be converted, and at those sites no conversion is generated.
  *
  * <p>Sibling to {@link ServiceMethodCallError} / {@link ReflectionError} / {@link UpdateRowsError}
  * / {@link DeleteRowsError} / {@link ErrorChannelWalkerError}: each typed arm carries the
@@ -38,7 +41,9 @@ import java.util.stream.Collectors;
 public sealed interface WireCoercionError extends Rejection.AuthorError permits
     WireCoercionError.Assignability,
     WireCoercionError.EnumConstantDivergence,
-    WireCoercionError.NodeIdDecodedType
+    WireCoercionError.NodeIdDecodedType,
+    WireCoercionError.ConditionBeanAtInputField,
+    WireCoercionError.ConditionJooqRecordCarrier
 {
     /** LSP wire code under the {@code graphitron.wire-coercion.} namespace. */
     String lspCode();
@@ -132,5 +137,56 @@ public sealed interface WireCoercionError extends Rejection.AuthorError permits
                 + " parameter as '" + decodedType + "'; it is declared '" + declaredType + "'";
         }
         @Override public String lspCode() { return "graphitron.wire-coercion.nodeid-decoded-type"; }
+    }
+
+    /**
+     * A {@code @condition} on an input field takes a bean-typed parameter for an input-object value.
+     * A bean is built from the delivered {@code Map} per consuming coordinate, which is how its
+     * {@code @nodeId} members find their decode, and an input-field condition is resolved once per
+     * input type with no consuming coordinate. The value can be taken as the {@code Map} it is
+     * delivered as, or the {@code @condition} moved to the field consuming the input, where the bean
+     * is built.
+     *
+     * @param inputTypeName the input type declaring the field the condition sits on
+     * @param fieldName     the input field
+     * @param declaredType  the bean type the parameter declares
+     * @param site          the parameter and method
+     */
+    record ConditionBeanAtInputField(
+        String inputTypeName,
+        String fieldName,
+        String declaredType,
+        String site
+    ) implements WireCoercionError {
+        @Override public String message() {
+            return site + ": a @condition on input field '" + inputTypeName + "." + fieldName
+                + "' takes '" + declaredType + "', but a bean is built only at a @condition on the"
+                + " field consuming the input, where its coordinate is known. Declare the parameter"
+                + " as 'java.util.Map<String, Object>', or move the @condition to the consuming field"
+                + " or argument";
+        }
+        @Override public String lspCode() { return "graphitron.wire-coercion.condition-bean-at-input-field"; }
+    }
+
+    /**
+     * A {@code @condition} parameter bound to an input object declares a generated jOOQ record. A
+     * record carrier binds the input's fields onto columns, which the {@code @service} parameter path
+     * generates and the condition glue does not, so the parameter would receive the delivered
+     * {@code Map} cast to the record type.
+     *
+     * @param declaredType the record type the parameter declares
+     * @param site         the parameter and method
+     */
+    record ConditionJooqRecordCarrier(
+        String declaredType,
+        String site
+    ) implements WireCoercionError {
+        @Override public String message() {
+            return site + ": the parameter declares the jOOQ record '" + declaredType + "', and a"
+                + " @condition does not populate a jOOQ record from an input object. Declare the"
+                + " parameter as 'java.util.Map<String, Object>' or as a bean (a record or a class"
+                + " with a public no-arg constructor and setters) mirroring the input";
+        }
+        @Override public String lspCode() { return "graphitron.wire-coercion.condition-jooq-record-carrier"; }
     }
 }

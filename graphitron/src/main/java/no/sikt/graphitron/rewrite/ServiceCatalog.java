@@ -1066,7 +1066,7 @@ class ServiceCatalog {
      */
     ServiceReflectionResult reflectTableMethod(String className, String methodName,
             ArgBindingMap argBindings, Set<String> ctxKeys) {
-        return reflectTableMethod(className, methodName, argBindings, ctxKeys, Map.of());
+        return reflectTableMethod(className, methodName, argBindings, ctxKeys, Map.of(), null);
     }
 
     /**
@@ -1075,9 +1075,14 @@ class ServiceCatalog {
      * {@code @condition}, every field argument for field-level {@code @condition}), and feeds
      * {@link #inferBindingsByType} so an unbound Java parameter whose type uniquely matches a
      * single unclaimed slot binds positionally without requiring an {@code argMapping} entry.
+     *
+     * <p>{@code site} says where the directive sits, which the carrier decision for a parameter
+     * bound to an input-object slot reads ({@link #conditionCarrier}). It may be {@code null} only
+     * where {@code slotTypes} is empty, since no binding can then resolve to an input object.
      */
     ServiceReflectionResult reflectTableMethod(String className, String methodName,
-            ArgBindingMap argBindings, Set<String> ctxKeys, Map<String, GraphQLInputType> slotTypes) {
+            ArgBindingMap argBindings, Set<String> ctxKeys, Map<String, GraphQLInputType> slotTypes,
+            ConditionSite site) {
         var argByJavaName = argBindings.byJavaName();
         if (className == null || methodName == null) {
             return new ServiceReflectionResult(null, Rejection.structural("table method reference is incomplete"));
@@ -1137,11 +1142,24 @@ class ServiceCatalog {
             TypeName javaType = bindable.javaType();
             PathExpr resolvedPath = argByJavaName.get(pName);
             if (resolvedPath != null) {
-                // No wire-coercion check on this path: @condition arguments
-                // use legacyArgExtraction; only the @service caller rejects, via
-                // argExtraction.
+                // Two arms by the bound leaf. An input-object leaf goes through the carrier decision
+                // the @service input-bean path shares, under the condition's own policy; a scalar or
+                // enum leaf keeps legacyArgExtraction, which casts without the wire-coercion check
+                // the @service path applies through argExtraction.
+                GraphQLInputType leafType = resolvePathLeafType(resolvedPath, slotTypes);
+                CallSiteExtraction extraction;
+                if (InputBeanResolver.inputObjectLeaf(leafType) != null) {
+                    var carrier = conditionCarrier(pName, typeName, resolvedPath, leafType, slotTypes,
+                        site, methodName, className);
+                    if (carrier instanceof ArgExtraction.Rejected rejected) {
+                        return new ServiceReflectionResult(null, rejected.rejection());
+                    }
+                    extraction = ((ArgExtraction.Resolved) carrier).extraction();
+                } else {
+                    extraction = legacyArgExtraction(typeName, ctx.codegenLoader());
+                }
                 params.add(new MethodRef.Param.Typed(pName, typeName, javaType,
-                    new ParamSource.Arg(legacyArgExtraction(typeName, ctx.codegenLoader()), resolvedPath)));
+                    new ParamSource.Arg(extraction, resolvedPath)));
             } else if (ctxKeys.contains(pName)) {
                 params.add(new MethodRef.Param.Typed(pName, typeName, javaType, new ParamSource.Context()));
             } else {
@@ -1383,9 +1401,9 @@ class ServiceCatalog {
     /**
      * Extraction without the wire-coercion check: a jOOQ enum gets
      * {@link CallSiteExtraction.EnumValueOf}, everything else {@link CallSiteExtraction.Direct}.
-     * Used by the {@code @condition} argument path, which has no
-     * dimensional wire-coercion channel to surface a rejection; only the {@code @service} path
-     * rejects, via {@link #argExtraction}.
+     * Used by the {@code @condition} argument path for a scalar or enum leaf; an input-object leaf
+     * goes through {@link #conditionCarrier} instead, and the {@code @service} path checks every
+     * leaf through {@link #argExtraction}.
      */
     static CallSiteExtraction legacyArgExtraction(String typeName, ClassLoader codegenLoader) {
         try {
@@ -1395,6 +1413,138 @@ class ServiceCatalog {
             }
         } catch (ClassNotFoundException ignored) {}
         return new CallSiteExtraction.Direct();
+    }
+
+    /**
+     * The extraction for a {@code @condition} parameter bound to an input-object slot, or why it has
+     * none. The decision is {@link InputBeanResolver#decideCarrier}, the one the {@code @service}
+     * input-bean path makes; the policy over its arms is the condition's:
+     *
+     * <ul>
+     *   <li>{@link InputBeanResolver.SlotCarrier.MapPassThrough} keeps {@link CallSiteExtraction.Direct}.
+     *       graphql-java delivers exactly that type, so the cast is wire-safe; {@code @service} bans
+     *       the same shape as a matter of its own policy, not of soundness.</li>
+     *   <li>{@link InputBeanResolver.SlotCarrier.Bean} is built into a
+     *       {@link CallSiteExtraction.InputBean} at a {@link ConditionSite.Consuming} site, keyed on
+     *       the consuming coordinate the bound path descends from, and refused as
+     *       {@link WireCoercionError.ConditionBeanAtInputField} at a {@link ConditionSite.InputField}
+     *       one, which has no consuming coordinate to key it on. A bean that cannot be built fails
+     *       with the message naming why. A {@code Set} of beans is refused: the helper builds a
+     *       {@code List}, which is what graphql-java delivers.</li>
+     *   <li>{@link InputBeanResolver.SlotCarrier.JooqRecordInput}, and a bean class that is itself a
+     *       jOOQ record, are refused as {@link WireCoercionError.ConditionJooqRecordCarrier}: a record
+     *       carrier is bound on the column axis, which only the {@code @service} path generates.</li>
+     *   <li>{@link InputBeanResolver.SlotCarrier.Rejected} is refused as
+     *       {@link WireCoercionError.Assignability}: the declared type against the {@code Map} (or
+     *       {@code List} of it) graphql-java delivers, the input-object arm of the cast guard
+     *       {@link WireCoercionResolver#checkScalar} applies to scalars, whose message names the type
+     *       to declare.</li>
+     * </ul>
+     *
+     * <p>A path that passes through a list on its way to the input-object leaf is refused as
+     * {@code Assignability} too: nothing maps a value per element across a list on the condition
+     * path.
+     *
+     * <p>The built bean is parameter-local. It does not make the input type class-backed: nothing
+     * here feeds {@link RecordBindingResolver} or the store's type-backing rule, so the input's
+     * classification, and the implicit predicates an {@code override: false} condition leaves
+     * standing, are what they are without the condition.
+     */
+    private ArgExtraction conditionCarrier(String paramName, String typeName, PathExpr path,
+            GraphQLInputType leafType, Map<String, GraphQLInputType> slotTypes, ConditionSite site,
+            String methodName, String className) {
+        if (site == null) {
+            throw new IllegalStateException("a @condition binding resolved to an input-object slot"
+                + " without a ConditionSite; every slot-typed caller passes one");
+        }
+        String where = "parameter '" + paramName + "' of condition method '" + methodName
+            + "' in class '" + className + "'";
+        if (pathCrossesList(path, slotTypes)) {
+            return new ArgExtraction.Rejected(new WireCoercionError.Assignability(
+                GraphQLTypeUtil.simplePrint(leafType), deliveredInputObjectType(true), typeName,
+                where + " (the path '" + path.asString() + "' passes through a list before reaching it)"));
+        }
+        var beans = new InputBeanResolver(ctx);
+        var slot = new InputBeanResolver.SlotSite(paramName, methodName, className, path.asString());
+        return switch (beans.decideCarrier(slot, typeName, leafType)) {
+            case InputBeanResolver.SlotCarrier.MapPassThrough ignored ->
+                new ArgExtraction.Resolved(new CallSiteExtraction.Direct());
+            case InputBeanResolver.SlotCarrier.Rejected ignored -> assignability(leafType, typeName, where);
+            case InputBeanResolver.SlotCarrier.JooqRecordInput ignored -> new ArgExtraction.Rejected(
+                new WireCoercionError.ConditionJooqRecordCarrier(typeName, where));
+            case InputBeanResolver.SlotCarrier.Bean bean -> {
+                if (InputBeanResolver.isJooqRecord(bean.beanClass())) {
+                    yield new ArgExtraction.Rejected(
+                        new WireCoercionError.ConditionJooqRecordCarrier(typeName, where));
+                }
+                if (typeName.startsWith("java.util.Set<")) {
+                    yield assignability(leafType, typeName, where);
+                }
+                yield switch (site) {
+                    case ConditionSite.InputField inputField -> new ArgExtraction.Rejected(
+                        new WireCoercionError.ConditionBeanAtInputField(inputField.inputTypeName(),
+                            inputField.fieldName(), typeName, where));
+                    case ConditionSite.Consuming consuming -> switch (beans.buildBean(bean, slot,
+                            pathUseSite(path, consuming, slotTypes))) {
+                        case InputBeanResolver.CarrierBuild.Ok ok -> new ArgExtraction.Resolved(ok.extraction());
+                        case InputBeanResolver.CarrierBuild.Fail f -> new ArgExtraction.Rejected(f.rejection());
+                    };
+                };
+            }
+        };
+    }
+
+    /**
+     * The use site a bean bound along {@code path} is built at: the argument the path starts from on
+     * the consuming field, descended through each input field the path enters, with the container
+     * types read off the SDL walk as {@link #pathCoordinate} reads them. The caller has resolved the
+     * path to an input-object leaf, so every step resolves.
+     */
+    private static ClassifyContext.UseSite pathUseSite(PathExpr path, ConditionSite.Consuming site,
+            Map<String, GraphQLInputType> slotTypes) {
+        var useSite = ClassifyContext.UseSite.of(site.parentTypeName(), site.fieldName(),
+            path.headName());
+        var segments = path.segments();
+        GraphQLInputType current = slotTypes.get(path.headName());
+        for (int i = 1; i < segments.size(); i++) {
+            var iot = asInputObject(current);
+            var field = iot.getField(segments.get(i).name());
+            useSite = useSite.descending(iot.getName(), field.getName());
+            current = field.getType();
+        }
+        return useSite;
+    }
+
+    private static ArgExtraction assignability(GraphQLInputType leafType, String typeName, String where) {
+        boolean list = GraphQLTypeUtil.unwrapNonNull(leafType) instanceof GraphQLList;
+        return new ArgExtraction.Rejected(new WireCoercionError.Assignability(
+            GraphQLTypeUtil.simplePrint(leafType), deliveredInputObjectType(list), typeName, where));
+    }
+
+    /** What graphql-java delivers for an input-object slot, as an assignability message names it. */
+    private static String deliveredInputObjectType(boolean list) {
+        String map = "java.util.Map<java.lang.String, java.lang.Object>";
+        return list ? "java.util.List<" + map + ">" : map;
+    }
+
+    /**
+     * Whether {@code path} descends through a list-typed slot or input field before its last
+     * segment. The leaf itself may be a list; an intermediate list has no single value to descend
+     * into, and the nested-map read would find {@code null} there on every request.
+     */
+    static boolean pathCrossesList(PathExpr path, Map<String, GraphQLInputType> slotTypes) {
+        if (path == null || slotTypes == null) return false;
+        var segments = path.segments();
+        GraphQLInputType current = slotTypes.get(path.headName());
+        for (int i = 1; i < segments.size() && current != null; i++) {
+            if (GraphQLTypeUtil.unwrapNonNull(current) instanceof GraphQLList) return true;
+            var iot = asInputObject(current);
+            if (iot == null) return false;
+            var field = iot.getField(segments.get(i).name());
+            if (field == null) return false;
+            current = field.getType();
+        }
+        return false;
     }
 
     /**

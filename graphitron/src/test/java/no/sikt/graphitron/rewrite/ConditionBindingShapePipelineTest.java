@@ -112,7 +112,7 @@ class ConditionBindingShapePipelineTest {
             .isEqualTo("film");
         assertThat(cf.params().get(1).name()).isEqualTo("kriterier");
         assertThat(cf.params().get(1).source())
-            .as("the filter bean binds to the argument the table slot was named after")
+            .as("the filter map binds to the argument the table slot was named after")
             .isInstanceOf(ParamSource.Arg.class);
         assertThat(((ParamSource.Arg) cf.params().get(1).source()).path().headName())
             .isEqualTo("film");

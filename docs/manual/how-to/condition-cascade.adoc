@@ -128,9 +128,9 @@ The second regression-fence fixture exercises the same override shape on a secon
 
 == Nested-input record conventions
 
-The `@condition` reference page lists the carrier rules in two lines; here's the operational shape, with the carriers spelled out.
+What a `@condition` method parameter receives for an input object is a separate matter, covered in xref:../reference/directives/condition.adoc#input-object-parameter[Input-object parameters]: the delivered `Map`, or a bean built from it that belongs to the parameter and backs no type. This section is about the input type's own carrier.
 
-GraphQL input types classify into one of four carriers in the rewrite. For class-backed carriers, the backing class is reflected from the `@service` / `@condition` method parameter the input flows into:
+GraphQL input types classify into one of four carriers in the rewrite. For class-backed carriers, the backing class is reflected from the `@service` method parameter the input flows into:
 
 * *Class-backed by a Java record* (`JavaRecordInputType`): the producer's parameter is a record class; the rewrite binds GraphQL fields to its components.
 * *Class-backed by a jOOQ record* (`JooqRecordInputType`) or a jOOQ `TableRecord` (`JooqTableRecordInputType`): the reflected carrier is a jOOQ-generated row type.
@@ -143,7 +143,7 @@ The non-obvious composition rules around `@condition`:
 * *Listed nested inputs require a Java record carrier.* `[InnerInput]` inside an outer input means the outer carrier must be a Java record (so the list element has a stable Java type to deserialise into).
 * *Plain `PojoInputType` works for scalar paths at any depth.* The runtime `Map<String, Object>` traversal handles nested plain inputs whose leaves are scalars, `@condition`-annotated or not. The example schema's `NestedFilmInput` outer / `InnerFilmInput` inner / `filmId @condition` leaf composition exercises this; the multi-segment path `["inner", "filmId"]` is extracted at runtime via `NestedInputField`.
 
-The conservative default: leave filter inputs carrier-free (the `Map`-traversal handles the descent, and implicit predicates resolve against the consuming field's table). Only reach for a class-backed carrier (a service or condition method whose parameter is a typed Java class) when the method wants a typed Java carrier, or when listed nested inputs are involved.
+The conservative default: leave filter inputs carrier-free (the `Map`-traversal handles the descent, and implicit predicates resolve against the consuming field's table). A condition method that wants a typed Java value takes a bean without changing that; only a service method whose parameter is a typed Java class makes the input class-backed.
 
 == Lookup-key arguments are exempt
 

@@ -44,6 +44,7 @@ public static Result<FilmRecord> filmsByServiceRenamed(DSLContext dsl, List<Inte
 
 Both bind the `[Int!]!` argument to the method's `List<Integer>` parameter; the rename version reads more naturally on the Java side because `filmIds` is unambiguous in a class that handles many entity types. Use `argMapping:` when the Java method's signature already exists with a name you cannot change (e.g., a shared service class) or when the GraphQL argument's name is opaque (e.g. `id` on an interface) and the Java side wants more specificity.
 
+[#input-bean-parameter]
 === Nested input types
 
 When a field takes an input-type argument, the framework passes the input through as a single Java parameter, not flattened into per-field parameters. A field declared as

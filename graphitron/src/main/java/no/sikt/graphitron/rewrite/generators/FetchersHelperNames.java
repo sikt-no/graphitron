@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.render.CatalogRefs;
+import no.sikt.graphitron.render.InputBeanFragments;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 
 import java.util.ArrayList;
@@ -65,7 +66,7 @@ import java.util.Set;
  * contexts, which by construction carry at most one class per simple name and so answer the bare
  * {@code simpleName()}-based names unconditionally.
  */
-final class FetchersHelperNames {
+final class FetchersHelperNames implements InputBeanFragments.Names {
 
     private final boolean populated;
     /** {@code create*}-namespace class → base stem (before jOOQ shape-contention ordinals). */
@@ -173,12 +174,12 @@ final class FetchersHelperNames {
     }
 
     /** {@code create<Bean>} singular helper name for a bean / {@code @record} POJO class. */
-    String createSingular(ClassName beanClass) {
+    @Override public String createSingular(ClassName beanClass) {
         return "create" + createStem(beanClass);
     }
 
     /** {@code create<Bean>List} plural helper name. */
-    String createPlural(ClassName beanClass) {
+    @Override public String createPlural(ClassName beanClass) {
         return createSingular(beanClass) + "List";
     }
 
@@ -187,7 +188,7 @@ final class FetchersHelperNames {
      * decode is a function of rather than from the record class of its table: two node types can
      * back one table, and each checks the wire id against its own typeId.
      */
-    String decodeSingular(String typeName) {
+    @Override public String decodeSingular(String typeName) {
         if (populated && !decodeTypeNames.contains(typeName)) {
             throw uncollectedDecode("node type", typeName);
         }
@@ -195,7 +196,7 @@ final class FetchersHelperNames {
     }
 
     /** {@code decode<TypeName>RecordList} list node-ID decode helper name. */
-    String decodeList(String typeName) {
+    @Override public String decodeList(String typeName) {
         return decodeSingular(typeName) + "List";
     }
 
@@ -203,7 +204,7 @@ final class FetchersHelperNames {
      * {@code decode<Container>Record} scalar helper name for a polymorphic container, the helper that
      * reads the wire id's type prefix and decodes into whichever member's record it names.
      */
-    String decodeContainerSingular(String containerName) {
+    @Override public String decodeContainerSingular(String containerName) {
         if (populated && !decodeContainerNames.contains(containerName)) {
             throw uncollectedDecode("polymorphic container", containerName);
         }
@@ -211,7 +212,7 @@ final class FetchersHelperNames {
     }
 
     /** {@code decode<Container>RecordList} list form of the container helper. */
-    String decodeContainerList(String containerName) {
+    @Override public String decodeContainerList(String containerName) {
         return decodeContainerSingular(containerName) + "List";
     }
 
@@ -222,7 +223,7 @@ final class FetchersHelperNames {
      * single-type helper's, and the same class can host both for the same node type, so sharing the
      * name would make one member's arm raise instead of standing aside.
      */
-    String decodeContainerMember(String containerName, String memberTypeName) {
+    @Override public String decodeContainerMember(String containerName, String memberTypeName) {
         return decodeContainerSingular(containerName) + memberTypeName;
     }
 

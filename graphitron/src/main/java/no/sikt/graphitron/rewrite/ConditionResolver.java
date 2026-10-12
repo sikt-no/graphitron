@@ -59,12 +59,13 @@ final class ConditionResolver {
 
     /**
      * Builds an {@link ArgConditionRef} from a {@code @condition} directive on one GraphQL
-     * argument. Reflects the condition method via {@link ServiceCatalog#reflectTableMethod},
-     * binding the argument to its same-named Java parameter by default; {@code argMapping}
-     * overrides that binding. {@code @field(name:)} on the argument is the column-binding axis
+     * argument of {@code fieldDef} on {@code parentTypeName}, the consuming coordinate. Reflects
+     * the condition method via {@link ServiceCatalog#reflectTableMethod}, binding the argument to
+     * its same-named Java parameter by default; {@code argMapping} overrides that binding. {@code @field(name:)} on the argument is the column-binding axis
      * for the auto-equality path; the two axes coexist on the same slot.
      */
-    ArgConditionResult resolveArg(GraphQLArgument arg) {
+    ArgConditionResult resolveArg(GraphQLArgument arg, String parentTypeName,
+            GraphQLFieldDefinition fieldDef) {
         var cond = ctx.readConditionDirective(arg);
         if (cond == null) return new ArgConditionResult.None();
         var argName = arg.getName();
@@ -79,7 +80,8 @@ final class ConditionResolver {
         var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
         var slotTypes = java.util.Map.of(argName, arg.getType());
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
-            argBindings, Set.copyOf(cond.contextArguments()), slotTypes);
+            argBindings, Set.copyOf(cond.contextArguments()), slotTypes,
+            new ConditionSite.Consuming(parentTypeName, fieldDef.getName()));
         if (result.failed()) {
             return new ArgConditionResult.Rejected(result.rejection().prefixedWith("argument '" + argName + "' @condition: "));
         }
@@ -94,7 +96,7 @@ final class ConditionResolver {
      * field definition. Same reflection contract as {@link #resolveArg}, but every field
      * argument is available as a binding.
      */
-    FieldConditionResult resolveField(GraphQLFieldDefinition fieldDef) {
+    FieldConditionResult resolveField(GraphQLFieldDefinition fieldDef, String parentTypeName) {
         var cond = ctx.readConditionDirective(fieldDef);
         if (cond == null) return new FieldConditionResult.None();
         if (cond.argMappingError() != null) {
@@ -107,7 +109,8 @@ final class ConditionResolver {
         var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
             argBindings, Set.copyOf(cond.contextArguments()),
-            FieldBuilder.argSlotTypes(fieldDef));
+            FieldBuilder.argSlotTypes(fieldDef),
+            new ConditionSite.Consuming(parentTypeName, fieldDef.getName()));
         if (result.failed()) {
             return new FieldConditionResult.Rejected(result.rejection().prefixedWith("field '" + fieldDef.getName() + "' @condition: "));
         }

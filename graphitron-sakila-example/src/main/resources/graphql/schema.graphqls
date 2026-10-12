@@ -160,6 +160,12 @@ type CreateSecureNotePayload {
 input CustomerFirstNameOnly { name: String @field(name: "first_name") }
 input CustomerLastNameOnly  { name: String @field(name: "last_name") }
 
+# Inputs a bean-typed @condition parameter mirrors (Query.filmsByTitleBean and its siblings).
+input FilmTitleInput { title: String }
+input FilmLengthRangeInput { min: Int max: Int }
+input FilmSearchInput { title: String length: FilmLengthRangeInput }
+input FilmSearchWrapInput { search: FilmSearchInput }
+
 type Query {
     customers(active: Boolean @field(name: "ACTIVEBOOL")): [Customer!]! @auth(role: "admin")
     # Env-appending condition glue fixture: @condition(contextArguments:) on a root coordinate.
@@ -190,6 +196,26 @@ type Query {
     the root-launcher SQL baseline pins it.
     """
     filmsOrdered(order: [FilmOrderBy] @orderBy): [Film!]! @defaultOrder(primaryKey: true)
+    # Bean-typed @condition parameters: graphql-java delivers each input object as a Map, and the
+    # conditions class builds the declared bean from it before the call. A record bound by
+    # argMapping, a list of records at an argument-level condition, and a setter bean with a nested
+    # setter bean reached through a dotted path.
+    filmsByTitleBean(by: FilmTitleInput): [Film!]! @defaultOrder(primaryKey: true)
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.BeanConditionFixtures",
+            method: "filmTitleRecord", argMapping: "filter: by"}, override: true)
+    filmsByTitleBeans(titles: [FilmTitleInput!] @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.BeanConditionFixtures",
+            method: "filmTitlesRecordList"}, override: true)): [Film!]! @defaultOrder(primaryKey: true)
+    filmsBySearchBean(wrap: FilmSearchWrapInput): [Film!]! @defaultOrder(primaryKey: true)
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.BeanConditionFixtures",
+            method: "filmSearchBean", argMapping: "search: wrap.search"}, override: true)
+    # The @service twin of filmsByTitleBean, taking the same bean class on the same parent: the
+    # fetchers class and the conditions class each host their own builder for it.
+    filmTitleEcho(by: FilmTitleInput): String @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmTitleEchoService",
+        method: "echo"})
     # R190 fixture: the one @service(contextArguments: ...) site in the example schema.
     # Drives the generated Graphitron.newExecutionInput(DSLContext, String userId) factory's
     # typed userId slot; the L6 round-trip + missing-value diagnostic tests exercise this field.
