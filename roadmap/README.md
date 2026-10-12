@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R1014` | Custom-scalar default values reach the runtime schema as literals | Spec | 2026-10-12 | [plan](custom-scalar-default-value-literal.md) |
+| `R1014` | Custom-scalar default values reach the runtime schema as literals | Ready | 2026-10-12 | [plan](custom-scalar-default-value-literal.md) |
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-10-06 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |
 | `R923` | A grain declares its corpora, so a cross-corpus grain can say so | Spec | 2026-09-05 | [plan](grain-declares-its-corpora.md) |
@@ -631,7 +631,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### codegen-correctness
 
-- `R1014` [**Custom-scalar default values reach the runtime schema as literals**](custom-scalar-default-value-literal.md) — Spec, bug
+- `R1014` [**Custom-scalar default values reach the runtime schema as literals**](custom-scalar-default-value-literal.md) — Ready, bug
 - `R756` [**The orphan sweep never visits four subpackages the generator emits into**](orphan-sweep-misses-emitted-subpackages.md) — Backlog, correctness
 - `R480` [**@oneOf definition augment defeated by descriptions quoting the definition; federated SDL fails Apollo composition**](oneof-augment-defeated-by-descriptions.md) — Backlog, bug
 - `R679` [**A child lookup is rejected for a positional contract it does not have**](child-lookup-positional-rationale.md) — Backlog, bug
