@@ -7,7 +7,7 @@ priority: 2
 theme: tooling
 depends-on: []
 created: 2026-08-19
-last-updated: 2026-09-08
+last-updated: 2026-10-12
 ---
 
 # Hold the build wall clock with a budget, and take the derived-read slices R732 left unmeasured
@@ -21,11 +21,104 @@ choice and the remaining slices need numbers before they can be ordered against 
 Everything below restates the facts it needs rather than pointing into R732's body, because that
 body is deleted when R732 reaches Done.
 
-## A fourth measurement pass has run, and it is the current word
+## A fifth measurement pass has run, the first under mvnd, and it is the current word
 
-Read this one first. It supersedes the third pass below wherever the two disagree, and it disagrees
-about most of the numbers, because the build has grown two and a half times since that pass was
-taken. Where it does not restate something, the third pass still stands.
+Read this one first. It is the first pass taken the way web sessions actually build, through mvnd
+with modules in parallel, so its wall clock is not comparable with the sequential `mvn install`
+figures below; its per-goal and per-module figures are. Where it does not restate something, the
+fourth pass still stands.
+
+Taken 2026-10-12 at `86a38bf`, one 4 vCPU 15 GB sandbox, a per-session local repository chained to
+the shared one. One `mvnd clean install -Plocal-db`, green, **22:48 (1367 s)**.
+
+### The build is one chain, and the chain is the wall clock
+
+Module spans, from the extension's `ProjectEvent` windows:
+
+| Module | Start | Span |
+|---|---:|---:|
+| `graphitron-model` | 30 s | 342 s |
+| `graphitron` | 372 s | **760 s** |
+| `graphitron-mcp` | 372 s | 282 s |
+| `graphitron-lsp` | 372 s | 274 s |
+| `graphitron-roadmap-tool` | 646 s | 84 s |
+| `graphitron-maven-plugin` | 1132 s | 121 s |
+| `graphitron-docs` | 1132 s | 65 s |
+| `graphitron-sakila-example` | 1253 s | 114 s |
+
+`graphitron-sakila-db`, `graphitron-model`, `graphitron`, `graphitron-maven-plugin` and
+`graphitron-sakila-example` run back to back and add up to the whole build; everything else overlaps
+them. So under mvnd a second off any other module buys nothing, and a second off a goal on that chain
+is a second off the build. Mean machine utilisation was 0.79: 0.95 and above while `graphitron`,
+`graphitron-lsp` and `graphitron-mcp` tested together (load average 17 on 4 cores, three surefire
+forks at a JUnit parallelism of 4 each), 0.5 to 0.8 once `graphitron`'s tests ran alone.
+
+By goal, as mojo time rather than wall clock, since under mvnd mojos overlap (2086 s of mojo time in
+1367 s): `surefire:test` 1451 s (69.5%), `javadoc:javadoc-no-fork` 190 s (9.1%), `compile` 88 s,
+`testCompile` 76 s, `exec:exec` 65 s (`graphitron-mcp`'s docs index, off the chain), `invoker:run`
+49 s, `asciidoctor` 48 s, `graphitron:generate` 36 s. The goals on the chain that matter:
+`graphitron`'s tests **679 s**, `graphitron-model`'s tests 158 s and its javadoc gate **131 s**.
+
+### Two regressions the guardrail would have wanted, both already fixed
+
+Both are recorded because neither was found by anything in the repository, which is this item's
+argument; both were found by measuring, independently, by two sessions in the same week.
+
+**Test logging at DEBUG.** `graphitron`, `graphitron-lsp` and `graphitron-sakila-example` had
+logback on the test classpath with no configuration, so jOOQ's `LoggerListener` logged every
+statement, twice. One `graphitron` test run wrote 3.0 GB of `TEST-*.xml` and 2.7 GB of captured
+output, and 33% of the Maven JVM's own CPU samples were surefire's
+`StatelessXmlReporter$EncodingOutputStream.write(int)`. Trunk fixed it at `106f1b9`. Priced here
+before that fix arrived, with the arms alternated and `mvn test -pl :graphitron` forked as a build
+runs it: **551 s and 569 s against 431 s and 434 s**, so about 125 s (22%) off the module's test run,
+with reports falling to 10.6 MB.
+
+**Repeat mvnd builds failing in codegen.** `graphitron-model`'s jOOQ codegen database outlived the
+build inside a warm daemon, so a later build on the same daemon failed within seconds. Shipped as
+R1007.
+
+### What is left, measured
+
+* **The javadoc gate is 131 s of the chain and filed as R1021.** It renders 566 MB of HTML in
+  `graphitron-model` to answer a question javac answers in about 2 s with `-Xdoclint:reference`.
+  The fourth pass's 21.6 s for the gate is not wrong: the gate is stale-checked, so it is nearly
+  free on a warm `target/` and pays in full on a clean build.
+* **Both fixes together, end to end:** `mvnd clean install` on a fresh daemon with
+  `-Dmaven.javadoc.skip=true` and an INFO logback configuration took **16:51 (1009 s)**,
+  `graphitron-model` 342 s to 196 s and `graphitron` 760 s to 580 s. One run, so read it as
+  direction rather than a figure. It had one failure, `OptionalNodeIdProjectionExecutionTest`,
+  which is R959's shared-row race and not related to either change.
+* **R981 is 13% of `graphitron`'s test CPU**, the largest single project frame in an unforked JFR
+  profile; its body carries the detail. Raised from priority 3 to 2.
+* **The long poles are not a lever.** `EmittedRegistryAgreementTest` reports 401 s for one test
+  method that captures each corpus document in turn, and `DemandShadowTest`,
+  `ConditionMembershipShadowTest` and `InputOccurrenceShadowTest` report 190 to 350 s each. Removing
+  `EmittedRegistryAgreementTest` saved about 18 s in one pair (533 s against 551 s), within noise.
+  The phase is CPU-bound, at 0.99 utilisation for most of a forked run, so reported class time is
+  mostly time descheduled, which is the third pass's warning confirmed once more. What costs is the
+  total work: 888 captures and 273 boots per run (`StoreCostExtension`), and in the profile H2 reads
+  37%, capture 28%, the statistics reset 13%, the boot 12%.
+* **The chain waits on tests it does not need.** `graphitron-maven-plugin`,
+  `graphitron-sakila-example` and `graphitron-docs`, about 215 s, start only when `graphitron`'s
+  test phase ends, though they need only its jar. Maven 3 schedules per module; removing the wait
+  wants Maven 4's concurrent builder or `graphitron`'s heaviest tests in a module of their own. Not
+  costed, and not small.
+
+### Instrument notes for the next pass under mvnd
+
+* `-Dmvnd.jvmArgs=-XX:StartFlightRecording=...` makes the daemon fail at VM start (JFR's startup
+  hook and mvnd's javaagent collide). Start the build, wait for `mvnd --status` to show the daemon
+  `Busy`, then `jcmd <pid> JFR.start name=b settings=default`, and `JFR.dump` after the build. The
+  extension's events reach a recording started that way.
+* Under mvnd, attribute mojos to modules by `eventThread` and the `ProjectEvent` window on that
+  thread; the module windows overlap across threads, as the table above shows.
+
+## A fourth measurement pass has run, and it was the current word until 2026-10-12
+
+Superseded by the fifth pass above wherever the two disagree. It supersedes the third pass below
+wherever those two disagree, and it disagrees about most of the numbers, because the build has grown
+two and a half times since that pass was taken. Where it does not restate something, the third pass
+still stands.
 
 Taken 2026-09-08 at `7a3fae6e`, one 4 vCPU 15 GB sandbox, warm local repository, sequential
 `mvn install -Plocal-db`. Two full green runs: **1110 s and 1054 s**, 7440 tests in 758 classes.
