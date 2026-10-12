@@ -1,7 +1,7 @@
 ---
 id: R1020
 title: "A @condition parameter typed as a plain Java class is built or rejected, never cast from a Map"
-status: Spec
+status: Ready
 bucket: bug
 priority: 5
 theme: codegen-correctness
@@ -14,7 +14,7 @@ last-updated: 2026-10-12
 
 ## Goal
 
-A `@condition` method parameter bound to a GraphQL input-object argument receives a value of its declared Java type, or the build fails naming the parameter and the shapes it may take. Today a parameter typed as a consumer class (a Java record, or a class with setters) compiles cleanly and throws `ClassCastException: LinkedHashMap` on every request, because the generated condition call casts graphql-java's raw argument map straight to the class. When this lands, a bean-shaped parameter on a field- or argument-level `@condition` is built from the map exactly as the same class would be for a `@service` parameter, a `Map` parameter keeps working as it does now, and every other type is a build error naming the parameter and the type to declare. That is also what the user manual already promises: `how-to/condition-cascade.adoc` says field-level placement delivers an input-typed argument "as the carrier type the input is bound to", and nothing in the generator delivers it.
+A `@condition` method parameter bound to a GraphQL input-object argument receives a value of its declared Java type, or the build fails naming the parameter and the shapes it may take. Today a parameter typed as a consumer class (a Java record, or a class with setters) compiles cleanly and throws `ClassCastException: LinkedHashMap` on every request, because the generated condition call casts graphql-java's raw argument map straight to the class. When this lands, a bean-shaped parameter on a field- or argument-level `@condition` is built from the map exactly as the same class would be for a `@service` parameter, a `Map` parameter keeps working as it does now, and every other type is a build error naming the parameter and the type to declare. That is also what the user manual already promises: `how-to/add-custom-conditions.adoc` says field-level placement delivers an input-typed argument "as the carrier type the input is bound to", and nothing in the generator delivers it.
 
 The minimal pair, from the sis schema that surfaced it:
 
@@ -102,3 +102,16 @@ Phase 2:
 ## Provenance
 
 sis IT run against Oracle 18c on trunk `dd940c703` (`sis/GRAPHITRON10_STATUS.md`, section "Second IT run"). `PersonConditions.queryPersonProfilerFilterCondition(Person, QueryPersonProfilerFilterRecord)`, where `QueryPersonProfilerFilterRecord` is a POJO with setters and nested POJOs; the failing cast is in the generated `QueryConditions.personProfilerCondition`. sis can switch the parameter to `Map<String, Object>` today as a workaround; Phase 1 is what turns the next such mistake into a build error.
+
+## Reviewer findings
+
+### Round 1 (Spec → Ready sign-off)
+
+Signed off: the goal is clear and reachable, and the plan extends shapes already in the tree (`InputBeanResolver.enrich`'s gates, `WireCoercionError.Assignability`, the `RecordDecodeFragments` render-side body pattern). Corrected in this round: the Goal quoted the "carrier type the input is bound to" sentence from `how-to/condition-cascade.adoc`; it is in `how-to/add-custom-conditions.adoc` (line 224).
+
+Non-blocking, for the implementer:
+
+- The Documentation section lists `condition.adoc` and `condition-cascade.adoc`. `add-custom-conditions.adoc` carries the sentence the Goal quotes, so Phase 1 corrects it too.
+- Phase 2 changes more than "one policy arm". The Phase 2 tests have unbuildable beans reject with the shared function's messages (Phase 1 maps `Rejected` to `Assignability`), and they add the typed input-field-level and `JooqRecord` refusals. Settle which message a non-bean, non-`Map` type (`String`) gets after Phase 2. The Goal wants a message that names the type to declare, and on a condition that includes `Map`, which `enrich`'s JDK-type message omits.
+- `MapPassThrough` ("a `Map` is assignable to" the element type) and `enrich`'s current gate (`Map.class.isAssignableFrom(element)`, checked before cardinality) disagree on edge shapes: `Object`, a `HashMap` subtype, a `Map` on a list slot. Under the existing tests, `enrich` keeps its verdicts but may change wording on these. `peelJavaListSet` also folds `Set` into list-ness, so the condition arm has to tell `Set<Map<…>>` apart from `List<Map<…>>` itself, as the Tests section requires.
+- `ConditionResolver.resolveArg(GraphQLArgument)` and `resolveField(GraphQLFieldDefinition)` do not receive the parent type name that `ClassifyContext.UseSite` needs. Their callers in `FieldBuilder` (`classifyArgument`, `projectForFilter`) do, so the coordinate is threaded in one frame.
