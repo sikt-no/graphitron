@@ -35,7 +35,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
-| `R1019` | A field whose tenant slots may all be absent is a build error, or fans out when they are <sub>blocked by: [parent-row-tenant-outranks-argument-slot](parent-row-tenant-outranks-argument-slot.md)</sub> | In Progress | 2026-10-12 | [plan](optional-argument-slots-tenant-fallback.md) |
+| `R1019` | A field whose tenant slots may all be absent is a build error, or fans out when they are <sub>blocked by: [parent-row-tenant-outranks-argument-slot](parent-row-tenant-outranks-argument-slot.md)</sub> | In Review | 2026-10-12 | [plan](optional-argument-slots-tenant-fallback.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -592,7 +592,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R664` [**A growth-proof staged builder over the generated ExecutionInput factory**](execution-input-staged-builder.md) — Backlog, dx
 - `R469` [**Enable @defer/incremental delivery on the owned-connection path**](defer-under-owned-connections.md) — Backlog, architecture
 - `R468` [**Oracle/RAS execution-tier coverage for session identity hooks**](oracle-ras-session-hook-execution-coverage.md) — Backlog, architecture
-- `R1019` [**A field whose tenant slots may all be absent is a build error, or fans out when they are**](optional-argument-slots-tenant-fallback.md) — In Progress, bug, blocked by [parent-row-tenant-outranks-argument-slot](parent-row-tenant-outranks-argument-slot.md)
+- `R1019` [**A field whose tenant slots may all be absent is a build error, or fans out when they are**](optional-argument-slots-tenant-fallback.md) — In Review, bug, blocked by [parent-row-tenant-outranks-argument-slot](parent-row-tenant-outranks-argument-slot.md)
 - `R460` [**Targeted read-only enforcement for query paths graphitron does not control (@routine, @service)**](query-read-only-enforcement.md) — Backlog, architecture
 - `R1018` [**A child field routes on its parent row tenant, not on an optional argument slot**](parent-row-tenant-outranks-argument-slot.md) — In Review, bug
 - `R1016` [**A tenant-routed mutation payload carries both its tenant and its errors**](payload-errors-and-tenant-share-local-context.md) — In Review, bug
