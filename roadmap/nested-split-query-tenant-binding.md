@@ -1,7 +1,7 @@
 ---
 id: R1009
 title: "A @splitQuery field on a nesting type routes on its tenant binding"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 6
 theme: runtime-connection
@@ -92,6 +92,14 @@ R557 (the `@splitQuery` marker completeness sweep) covers the marker on the nest
 
 - **Unequal arms across sites record no arm rather than throwing in the fold.** The plan had the fold throw a generator-bug `IllegalStateException` when a coordinate's sites yield unequal arms. The fold runs at schema build, before `GraphitronSchemaValidator`, so a throw there would crash the build (and `graphitron:validate`, and the LSP) on exactly the schemas `validateNestingParentCompat` is about to reject: two global parents of one shared nesting type whose `@splitQuery` field mints `ParentRowBound` over each parent's own table is one. The fold instead records no arm and adds no text for that coordinate, the validator's multi-parent rejection reports it, and should a schema the validator admits ever reach the case, the new `TenantDslEmitter` invariant fails the generation naming the coordinate. Same guarantee, without the crash.
 - **`isMultiTenant` audit.** The scatter helper now reads the class's launcher relation's `carrierDsl`. The remaining `isMultiTenant` readers are the three connection-shaped sites in `MultiTablePolymorphicEmitter`, which serve multi-table polymorphic children; `isNestedWireableLeaf` rejects those at nested depth, so none is on the nested path.
+
+## Reviewer findings
+
+**In Review → Ready, 2026-10-12, at trunk `bbfd1de`.** Question 1 holds and question 2 fails. On question 1, the delivery is the change the spec approved. The fold builds one `Site` map with the sealed `Verdict` and the stated edge quantifiers. The nested class gets the schema plus the run's `carrierDsl`, and the scatter helper reads that fact. The emitter invariant replaces the silent fallback. The coverage walk in `ColumnBindingLedger` is extended, and the manual sentence is in. The one substitution, unequal arms recording no arm instead of throwing, is recorded under Implementation notes with its reason, and the reason holds. The emitter invariant also reaches `TenantDslEmitter.parentRowBinding`, one site beyond the four the plan named. That is inside the plan's own "no silent fallback under configured scopes", so it is not a finding. `mvn install -Plocal-db` passes. The generated `FilmStockFetchers` in the multitenant package reads `TenantConnections.tenantLoaderName(env)` and `dslFor(...)` on both nested fields.
+
+The failure is in the acceptance evidence for "each DataLoader batch holds one tenant's keys". The spec names it: in `TenantDivinedRoutingExecutionTest`, "a request divining two different tenants never shares one loader batch between them". The delivered test, `nestedInheritedChild_neverSharesOneBatchBetweenTwoTenants`, does not demonstrate this. I tested it by mutation. I made `TenantDslEmitter.loaderNameDeclaration` emit the bare-path `loaderName(env)` for `Inherited` on `FilmStock`, so both tenants' films share one batch. The generated class carried the bare name, and all 61 tests in the class still passed. The cause is the fixture: tenant 2 holds no inventory. A shared batch that runs on tenant 1's database therefore answers film 1 with two rows and film 2 with none, which is exactly what the test expects. The test also asserts no acquisition counts, and counts would not help here because a tenant's connection is taken once per request. Per `roadmap/workflow.adoc` (Revive), named acceptance evidence that does not demonstrate the goal decides the goal as undelivered. The routing half is demonstrated: `nestedInheritedChild_routesItsBatchToTheDivinedTenant` reads 2 rows where the default source would answer differently.
+
+**What would satisfy it.** The test has to fail when the nested loader name loses its tenant segment, so both tenants' films must expect non-empty, different answers. One way needs no fixture change. Add a nested `@splitQuery` child over `film_scene` (foreign key `film_scene.film_id` to `film`) to `FilmStock`. Tenant 1 holds one scene for film 1 and tenant 2 holds three for film 2, so a batch shared on either tenant empties the other film's list. Then assert 1 and 3 through `endorsements { film { stock { scenes } } }`. Seeding a tenant 2 inventory would also work, but it disturbs the existing "tenant 2 holds no inventory" assertions. Whichever way you choose, rerun the bare-path mutation above and confirm the test now fails. The rest of the delivery can stand as is.
 
 ## Provenance
 
