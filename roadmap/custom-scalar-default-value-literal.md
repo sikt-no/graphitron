@@ -1,7 +1,7 @@
 ---
 id: R1014
 title: "Custom-scalar default values reach the runtime schema as literals"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 1
 theme: codegen-correctness
