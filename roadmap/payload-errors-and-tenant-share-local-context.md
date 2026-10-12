@@ -1,7 +1,7 @@
 ---
 id: R1016
 title: "A tenant-routed mutation payload carries both its tenant and its errors"
-status: Spec
+status: Ready
 bucket: bug
 priority: 6
 theme: runtime-connection
@@ -174,3 +174,13 @@ Not blocking, for the author's next pass:
 - The same `Success(null)` hole already exists for a root `@service` whose method returns null under an errors payload. That is worth a Backlog item of its own, whichever way finding 1 is settled.
 
    *Author response:* all four taken. Separately, the Pipeline tests bullet prescribed code-string assertions (`new Success<>(`, `.localContext(_divinedTenant)`), which the development principles ban. It now asserts model and signature facts, and deletes the two existing body-string cases that pinned the retired mechanism. The slot narrowing and the decision to keep `RouterDispatched` as a one-member partition are Classification bullets. The `BINDING_SEAM_LEAVES` move is in the `SingleRecordIdFieldFromReturning` bullet, the `TenantHandDown` threading sites are named under "The slot's one meaning", and the `@service` hole is an Out of scope bullet.
+
+### Spec → Ready, sign-off (session_016xBLWMKgyBdxzq1WWmqZNe, 2026-10-12)
+
+Both questions pass. When this lands, a database-per-tenant build can put an `errors` field on a `@mutation` or `@routine` write payload and get its rows on success and its typed errors on failure. Today success fails with a type mismatch because the tenant key and the error list share `localContext`. The plan retires the second transport rather than standing a new one: the `Outcome` path is already reached by flipping `transportForParent`, since `FetcherEmitter.hasWrapperArmErrors` (and through it `ParentSourceBinding.of`) keys on `Transport.WrapperArm`, not on the producer kind. The `OutcomeRecord` prelude runs ahead of the loader-name declaration in `DataLoaderFetcherEmitter`, so the error arm reads no tenant. `ChannelCatchArmEmitter.emit` matches the same way `dispatchToLocalContext` does (mapping order, cause chain, `redact` fall-through), so only the transport moves. `detectErrorsFieldShape` never yields an empty error list, so narrowing to `ErrorChannel.Mapped` (non-empty by construction) cannot throw. After retirement, the `localContext(` / `getLocalContext` literals in generator main sources sit exactly in the guard's allow-list.
+
+Not blocking:
+
+- The `$errors` bullet says the LSP "stops offering it as a completion". `FieldCompletions` offers only `$source` today, and no LSP arm names `LOCAL_CONTEXT`, so the LSP half is the rename alone.
+- Inline test SDL in `graphitron/src/test` may hold DML payloads with an errors field and a non-null data field. The new `NonNullableSuccessProjectionField` rule will surface them, so fix the fixtures as part of the item.
+- `TenantHandDown` lives in `render` and is minted from `generators`, so its factory is public. "Only tenant code can mint" therefore rests on the meta-test, not on visibility. Keeping the `.localContext(` literal inside `TenantHandDown` itself makes that test's allow-list the whole enforcement.
