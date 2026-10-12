@@ -1449,13 +1449,16 @@ the store for. Its registration gate already left for `graphitron-model`. What s
 of case in one file: nine that compare the store against the walk, and the rest pinning capture
 against its own corpus, filed here because the walk's fixtures were.
 
-* **The walk's comparisons go** `open`. Nine cases take `GraphitronSchemaBuilder.build` or
+* **The walk's comparisons go** `done`. Nine cases took `GraphitronSchemaBuilder.build` or
   `AttributedRegistry` as the expected value: the type census, federation keys, connection
   provenance, source kind against the arrival fold, directive-driven carriers, scalar payloads,
   ordered child rows, code references and enum literals. Deleted with no accounting, on R740's
-  terms: a difference from the walk is a walk bug or an unmoved consumer, never a debt. They are
-  also readers of the walk, so "the generator builds no schema" loses nine. First check: no
-  expansion fact is pinned by one of them alone, the emitted-family case covering the union.
+  terms: a difference from the walk is a walk bug or an unmoved consumer, never a debt. Each
+  store-side claim was already pinned by a fact document or the store's own tests but two: the
+  `@service` and `@mutation` payload columns the editor's claim surface reads, now
+  `field-site-payloads.graphqls`. The connection provenance case was the named gate on the Edge
+  name, which the promoter and the mint state twice; a one-sided change was run and fails
+  `EmittedRegistryAgreementTest` and the execution tier without it.
 * **The catalog cases move to the jOOQ capture's test** `open`. Thirteen cases pin `sql_` against
   jOOQ's own API: tables and columns, kinds, ordinals, Java types, `Keys` constants, constraints,
   foreign-key pairing, node metadata, routines. That is capture's specification, and

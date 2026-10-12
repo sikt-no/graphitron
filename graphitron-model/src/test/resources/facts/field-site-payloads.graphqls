@@ -1,0 +1,29 @@
+# What a field-site decode carries, as the editor's claim surface reads it: @service's reference
+# spread into its class and its method, and @mutation's statement as the literal the author spelled,
+# with or without the table beside it.
+
+type Film @table(name: "film") { title: String }
+
+extend type Query {
+  produced(id: Int): Film
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})
+}
+
+type Mutation {
+  createFilm(in: FilmInput!): Film @mutation(typeName: INSERT)
+  deleteFilm(in: FilmKeyInput!): ID @mutation(typeName: DELETE, table: "film")
+}
+
+input FilmInput { title: String }
+input FilmKeyInput { filmId: Int! @field(name: "film_id") }
+
+extend schema @expectEquals(relation: "graphitron_service_entry", rows: """
+  type_name, field_name, class_name,                                                 method
+  Query,     produced,   no.sikt.graphitron.rewrite.test.services.FilmCarrierService, filmById
+  """)
+
+extend schema @expectEquals(relation: "graphitron_mutation_entry", rows: """
+  type_name, field_name, operation
+  Mutation,  createFilm, INSERT
+  Mutation,  deleteFilm, DELETE
+  """)

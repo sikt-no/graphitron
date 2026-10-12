@@ -42,10 +42,11 @@ public final class ConnectionNaming {
      * <p>A shared formula, not a shared fact. The fact store already holds the Edge name, as the
      * minted-type row and the {@code edges} field's named type written by capture's macro
      * expansion; {@code ConnectionPromoter} recomputes it only because classification runs ahead of
-     * capture in the pipeline. This method keeps the two evaluations equal until the promoter reads
-     * the minted row, and is deleted with the promoter. {@code FactCaptureAgreementTest}'s
-     * {@code synthesisProvenanceAgreesWithConnectionSynthesis} is the gate that fails the build on a
-     * one-sided change.
+     * capture in the pipeline. The mint states the same formula in SQL, and this method is the
+     * promoter's half until the promoter reads the minted row; it is deleted with the promoter.
+     * {@code EmittedRegistryAgreementTest}, which compares the two producers' schemas, and the
+     * execution tier, whose runtime schema cannot find a type the generated code names, both fail
+     * the build on a one-sided change.
      */
     public static String defaultEdgeName(String connectionName) {
         return connectionName + "Edge";
