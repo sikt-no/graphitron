@@ -44,8 +44,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R810` | Transitional surfaces say so where a reader arrives, and say why | Spec | 2026-08-22 | [plan](transitional-surfaces-say-so.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
-| `R1009` | A @splitQuery field on a nesting type routes on its tenant binding | Spec | 2026-10-12 <sub>created 2026-10-09</sub> | [plan](nested-split-query-tenant-binding.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
+| `R1009` | A @splitQuery field on a nesting type routes on its tenant binding | Ready | 2026-10-12 <sub>created 2026-10-09</sub> | [plan](nested-split-query-tenant-binding.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-08-06 | [plan](catalog-check-constraint-validation.md) |
@@ -591,7 +591,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R468` [**Oracle/RAS execution-tier coverage for session identity hooks**](oracle-ras-session-hook-execution-coverage.md) — Backlog, architecture
 - `R992` [**A reference whose FK lands on the tenant column routes on the parent row value**](tenant-from-fk-terminal-column.md) — In Review, architecture
 - `R460` [**Targeted read-only enforcement for query paths graphitron does not control (@routine, @service)**](query-read-only-enforcement.md) — Backlog, architecture
-- `R1009` [**A @splitQuery field on a nesting type routes on its tenant binding**](nested-split-query-tenant-binding.md) — Spec, architecture
+- `R1009` [**A @splitQuery field on a nesting type routes on its tenant binding**](nested-split-query-tenant-binding.md) — Ready, architecture
 - `R996` [**A tenant-scoped row referencing another tenant routes on the referenced tenant**](cross-tenant-reference-from-tenant-scoped-parent.md) — Backlog, architecture
 - `R505` [**Tenant-index tables: per-row tenant routing off an index parent**](tenant-index-parent-row-routing.md) — Backlog, architecture, blocked by [tenant-from-fk-terminal-column](tenant-from-fk-terminal-column.md)
 - `R995` [**The cross-scope tenant check sees every table a batched statement joins**](tenant-reach-includes-join-path-tables.md) — Backlog, architecture
