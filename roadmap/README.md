@@ -32,7 +32,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
 | `R808` | DML film_actor cases seed rows that concurrent reader cases see on -Plocal-db | In Review | 2026-10-09 <sub>created 2026-08-22</sub> | [plan](bridging-condition-join-execution-flake.md) |
-| `R1003` | createFilm execution test counts the film table, so a parallel writer fails it | In Review | 2026-10-08 | [plan](create-film-test-counts-its-own-row.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -799,7 +798,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R823` [**The dev-executor fidelity test reads a mutating table twice and calls the difference a fidelity failure**](dev-executor-fidelity-reads-a-mutating-table-twice.md) — Backlog, bug
 - `R774` [**The discriminator typed-bind render-tier code-string pins duplicate what the SQL baselines already pin**](discriminator-bind-render-tier-code-string-pins.md) — Backlog, tech-debt
 - `R968` [**The partition declaration's cost claim has no fixture evidence left**](partition-selectivity-declaration-has-no-instrument.md) — Backlog, tech-debt
-- `R1003` [**createFilm execution test counts the film table, so a parallel writer fails it**](create-film-test-counts-its-own-row.md) — In Review, cleanup
 - `R822` [**A Java-source watcher test times out under load instead of waiting for the event it needs**](java-source-watcher-debounce-flake.md) — Backlog, bug
 - `R136` [**Execution-tier coverage for FK-target/NodeType-keyColumns permutation**](nodeid-fk-permutation-execution-tier.md) — Backlog, validation
 - `R135` [**Multi-hop @nodeId pipeline test for FK-target/NodeType-keyColumns permutation**](multi-hop-nodeid-fk-permutation-test.md) — Backlog, validation
