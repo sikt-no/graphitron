@@ -1,7 +1,7 @@
 ---
 id: R1015
 title: "The lookup launcher joins its input rows with ON, not USING"
-status: Spec
+status: Ready
 bucket: bug
 priority: 6
 theme: codegen-correctness

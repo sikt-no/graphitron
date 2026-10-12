@@ -49,8 +49,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1018` | A child field routes on its parent row tenant, not on an optional argument slot | Spec | 2026-10-12 | [plan](parent-row-tenant-outranks-argument-slot.md) |
 | `R1016` | A tenant-routed mutation payload carries both its tenant and its errors | Spec | 2026-10-12 | [plan](payload-errors-and-tenant-share-local-context.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
-| `R1015` | The lookup launcher joins its input rows with ON, not USING | Spec | 2026-10-12 | [plan](lookup-launcher-joins-on-not-using.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
+| `R1015` | The lookup launcher joins its input rows with ON, not USING | Ready | 2026-10-12 | [plan](lookup-launcher-joins-on-not-using.md) |
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-08-06 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-08-06 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
@@ -658,7 +658,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R708` [**The $project selection gate fires on names selected at any depth below its unit**](projection-selection-gate-depth-leak.md) — Backlog, correctness
 - `R754` [**A String-typed field over a jOOQ-enum column reads the Java constant name, not the database literal**](string-field-over-enum-column-reads-java-constant.md) — Backlog, bug
 - `R752` [**JoinedTableReprojection dedupes same-named participant terms first-wins, silently dropping a divergent projection**](joined-table-reprojection-first-wins-drop.md) — Backlog, bug
-- `R1015` [**The lookup launcher joins its input rows with ON, not USING**](lookup-launcher-joins-on-not-using.md) — Spec, bug
+- `R1015` [**The lookup launcher joins its input rows with ON, not USING**](lookup-launcher-joins-on-not-using.md) — Ready, bug
 - `R412` [**Nested backing class emits $-qualified names at the no-Class-in-hand emit sites (backingClassOf, recordColumnReadArgs, FetcherEmitter, ChildField)**](nested-backing-class-emitter-lift.md) — Backlog, bug
 - `R1011` [**An input class is emitted for every reachable input type, though only a validated field reads one**](input-classes-emitted-without-a-reader.md) — Backlog, cleanup
 - `R85` [**Emit graphitronContext helper into Conditions and Type classes**](helper-emission-non-fetcher-hosts.md) — Backlog, cleanup
