@@ -1,7 +1,7 @@
 ---
 id: R1019
 title: "A field whose tenant slots may all be absent is a build error, or fans out when they are"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 4
 theme: runtime-connection
