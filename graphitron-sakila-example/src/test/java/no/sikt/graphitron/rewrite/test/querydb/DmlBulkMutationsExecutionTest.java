@@ -16,8 +16,10 @@ import org.junit.jupiter.api.Test;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
@@ -30,11 +32,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code deleteFilms} Mutation fields wired in the Sakila schema, plus the
  * {@code upsertFilmsDoNothing} surface that covers the {@code .doNothing()}
  * mode. Pinned in this tier because the bulk arms have execution-only
- * semantics not visible at compile or pipeline tier: the row-loop's
- * {@code containsKey}-gated DEFAULT/val dispatch (INSERT, UPSERT insert
- * branch), the dynamic SET walk (UPDATE, UPSERT update branch), the
- * uniform-shape / no-set-fields / duplicate-tuple guards (UPDATE, UPSERT
- * doUpdate), and the typed empty-list short-circuit.
+ * semantics not visible at compile or pipeline tier: the INSERT column list
+ * built from the columns the rows supply, with a gap cell ({@code DEFAULT})
+ * only where a row leaves out a column another row supplies (INSERT, UPSERT
+ * insert branch), observed on the rendered SQL; the dynamic SET walk (UPDATE,
+ * UPSERT update branch); the uniform-shape / no-set-fields / duplicate-tuple
+ * guards (UPDATE, UPSERT doUpdate); and the typed empty-list short-circuit.
  */
 @ExecutionTier
 @SuppressWarnings("unchecked")
@@ -47,6 +50,8 @@ class DmlBulkMutationsExecutionTest {
     static String dbPassword;
     static GraphQL graphql;
     static final AtomicInteger QUERY_COUNT = new AtomicInteger();
+    /** The SQL of every statement executed since the last clear, as rendered (binds as {@code ?}). */
+    static final List<String> EXECUTED_SQL = new CopyOnWriteArrayList<>();
 
     @BeforeAll
     static void startDatabase() throws Exception {
@@ -69,6 +74,7 @@ class DmlBulkMutationsExecutionTest {
             new org.jooq.ExecuteListener() {
                 @Override public void executeStart(org.jooq.ExecuteContext ctx) {
                     QUERY_COUNT.incrementAndGet();
+                    EXECUTED_SQL.add(ctx.sql());
                 }
             }));
 
@@ -134,6 +140,14 @@ class DmlBulkMutationsExecutionTest {
     }
 
     private String randomMarker(String prefix) { return prefix + "-" + UUID.randomUUID(); }
+
+    /** The INSERT statements executed since {@link #EXECUTED_SQL} was last cleared, lower-cased. */
+    private static List<String> insertStatements() {
+        return EXECUTED_SQL.stream()
+            .map(sql -> sql.toLowerCase(Locale.ROOT))
+            .filter(sql -> sql.startsWith("insert into"))
+            .toList();
+    }
 
     // ===== happy path: each verb writes N rows =====
 
@@ -411,9 +425,9 @@ class DmlBulkMutationsExecutionTest {
 
     @Test
     void createFilms_omittedFieldUsesColumnDefault() {
-        // Per-cell containsKey dispatch: omitted rentalDuration binds DSL.defaultValue
-        // (the smallint NOT NULL DEFAULT 3 lands); an unconditional typed-null write would
-        // surface an integrity-constraint violation instead.
+        // Neither row supplies rentalDuration, so the column is left out of the INSERT and its
+        // smallint NOT NULL DEFAULT 3 lands; an unconditional typed-null write would surface an
+        // integrity-constraint violation instead.
         String m1 = randomMarker("R77F-INS-DEF-A");
         String m2 = randomMarker("R77F-INS-DEF-B");
         try {
@@ -454,6 +468,159 @@ class DmlBulkMutationsExecutionTest {
             .isEqualTo(1);
         // Defensive cleanup.
         dsl.deleteFrom(DSL.table("film")).where(DSL.field("title").in(m1, m2)).execute();
+    }
+
+    // ===== INSERT column list: absent fields are not named =====
+    //
+    // Oracle rejects an explicit DEFAULT against a view (ORA-32575), so an INSERT leaves an absent
+    // field's column out instead of writing DEFAULT for it. PostgreSQL accepts either, so these
+    // cases read the rendered statement; that a row and a uniform batch carry no DEFAULT is a
+    // property of the statement, whatever the dialect.
+
+    @Test
+    void createFilm_omittedFieldIsLeftOutOfTheColumnList() {
+        String m = randomMarker("INS-OMIT-ONE");
+        try {
+            EXECUTED_SQL.clear();
+            Map<String, Object> data = execute("""
+                mutation { createFilm(in: { title: "%s", languageId: 1 }) { rentalDuration } }
+                """.formatted(m));
+            assertThat(insertStatements()).singleElement().satisfies(sql -> assertThat(sql)
+                .doesNotContain("rental_duration")
+                .doesNotContainPattern("\\bdefault\\b"));
+            Map<String, Object> film = (Map<String, Object>) data.get("createFilm");
+            assertThat(((Number) film.get("rentalDuration")).intValue()).isEqualTo(3);
+        } finally {
+            dsl.deleteFrom(DSL.table("film")).where(DSL.field("title").eq(m)).execute();
+        }
+    }
+
+    @Test
+    void createFilms_uniformRowsOmittingAFieldLeaveItOutOfTheColumnList() {
+        String m1 = randomMarker("INS-OMIT-UNI-A");
+        String m2 = randomMarker("INS-OMIT-UNI-B");
+        try {
+            EXECUTED_SQL.clear();
+            Map<String, Object> data = execute("""
+                mutation {
+                    createFilms(in: [
+                        { title: "%s", languageId: 1 },
+                        { title: "%s", languageId: 1 }
+                    ]) { rentalDuration }
+                }
+                """.formatted(m1, m2));
+            assertThat(insertStatements()).singleElement().satisfies(sql -> assertThat(sql)
+                .doesNotContain("rental_duration")
+                .doesNotContainPattern("\\bdefault\\b"));
+            List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("createFilms");
+            assertThat(rows).extracting(r -> ((Number) r.get("rentalDuration")).intValue())
+                .containsExactly(3, 3);
+        } finally {
+            dsl.deleteFrom(DSL.table("film")).where(DSL.field("title").in(m1, m2)).execute();
+        }
+    }
+
+    @Test
+    void createFilms_mixedRowsNameEveryColumnSomeRowSupplies() {
+        // The one statement has one column list, the union of what the rows supply; the row that
+        // leaves rentalDuration out takes DEFAULT in that one cell.
+        String m1 = randomMarker("INS-OMIT-MIX-A");
+        String m2 = randomMarker("INS-OMIT-MIX-B");
+        try {
+            EXECUTED_SQL.clear();
+            Map<String, Object> data = execute("""
+                mutation {
+                    createFilms(in: [
+                        { title: "%s", languageId: 1, rentalDuration: 5 },
+                        { title: "%s", languageId: 1 }
+                    ]) { rentalDuration }
+                }
+                """.formatted(m1, m2));
+            assertThat(insertStatements()).singleElement()
+                .satisfies(sql -> assertThat(sql).contains("rental_duration"));
+            List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("createFilms");
+            assertThat(rows).extracting(r -> ((Number) r.get("rentalDuration")).intValue())
+                .as("in input order")
+                .containsExactly(5, 3);
+        } finally {
+            dsl.deleteFrom(DSL.table("film")).where(DSL.field("title").in(m1, m2)).execute();
+        }
+    }
+
+    @Test
+    void createFilmsPayload_mixedRowsWriteNoDefault() {
+        // The payload-returning bulk INSERT issues one statement per row, so each row names only
+        // what it supplies, even when the rows differ.
+        String m1 = randomMarker("INS-OMIT-PAY-A");
+        String m2 = randomMarker("INS-OMIT-PAY-B");
+        try {
+            EXECUTED_SQL.clear();
+            Map<String, Object> data = execute("""
+                mutation {
+                    createFilmsPayload(in: [
+                        { title: "%s", languageId: 1, rentalDuration: 5 },
+                        { title: "%s", languageId: 1 }
+                    ]) { films { rentalDuration } }
+                }
+                """.formatted(m1, m2));
+            assertThat(insertStatements()).hasSize(2)
+                .allSatisfy(sql -> assertThat(sql).doesNotContainPattern("\\bdefault\\b"));
+            Map<String, Object> payload = (Map<String, Object>) data.get("createFilmsPayload");
+            List<Map<String, Object>> films = (List<Map<String, Object>>) payload.get("films");
+            assertThat(films).extracting(r -> ((Number) r.get("rentalDuration")).intValue())
+                .containsExactly(5, 3);
+        } finally {
+            dsl.deleteFrom(DSL.table("film")).where(DSL.field("title").in(m1, m2)).execute();
+        }
+    }
+
+    // The film_bookmark rows below carry no marker to clean up by, so each case runs in a
+    // transaction that rolls back.
+
+    @Test
+    void createFilmBookmarks_severalEmptyRowsInsertOneRowEach() {
+        // No row supplies a field, so the column union is empty; jOOQ would render that as one
+        // `default values` row. The emitter names every column with DEFAULT cells instead.
+        inRolledBackTransaction(tx -> {
+            EXECUTED_SQL.clear();
+            Map<String, Object> data = execute(tx, """
+                mutation { createFilmBookmarks(in: [{}, {}]) { bookmarkId note } }
+                """);
+            assertThat(insertStatements()).hasSize(1);
+            List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("createFilmBookmarks");
+            assertThat(rows).hasSize(2)
+                .extracting(r -> r.get("bookmarkId")).doesNotHaveDuplicates().doesNotContainNull();
+        });
+    }
+
+    @Test
+    void createFilmBookmarks_oneEmptyRowRendersDefaultValues() {
+        inRolledBackTransaction(tx -> {
+            EXECUTED_SQL.clear();
+            Map<String, Object> data = execute(tx, """
+                mutation { createFilmBookmarks(in: [{}]) { bookmarkId } }
+                """);
+            assertThat(insertStatements()).singleElement()
+                .satisfies(sql -> assertThat(sql).contains("default values"));
+            assertThat((List<Map<String, Object>>) data.get("createFilmBookmarks")).hasSize(1);
+        });
+    }
+
+    @Test
+    void insertBookmarkOverlap_sharedColumnWithNoWriterPresentIsNotNamed() {
+        // bookmarked_film is written by both bookmarkedFilm and filmRef; with both absent the
+        // column is left out, rather than taking a DEFAULT cell.
+        inRolledBackTransaction(tx -> {
+            EXECUTED_SQL.clear();
+            Map<String, Object> data = execute(tx, """
+                mutation { insertBookmarkOverlap(in: { note: "overlap" }) { bookmarkedFilm note } }
+                """);
+            assertThat(insertStatements()).singleElement().satisfies(sql -> assertThat(sql)
+                .doesNotContain("bookmarked_film")
+                .doesNotContainPattern("\\bdefault\\b"));
+            Map<String, Object> bookmark = (Map<String, Object>) data.get("insertBookmarkOverlap");
+            assertThat(bookmark).containsEntry("note", "overlap").containsEntry("bookmarkedFilm", null);
+        });
     }
 
     // ===== UPDATE missing-vs-null =====
@@ -514,8 +681,8 @@ class DmlBulkMutationsExecutionTest {
     @Test
     @org.junit.jupiter.api.Disabled("R144 retires UPSERT generation pending R145.")
     void upsertFilms_omittedFieldOnInsertBranchUsesColumnDefault() {
-        // INSERT branch fires (novel filmIds). Per-cell containsKey dispatch on the
-        // VALUES list binds DSL.defaultValue when rentalDuration is absent.
+        // INSERT branch fires (novel filmIds). Neither row supplies rentalDuration, so the
+        // INSERT leaves the column out and its default lands.
         int id1 = 999_201, id2 = 999_202;
         deleteFilmById(id1); deleteFilmById(id2);
         String m1 = randomMarker("R77F-UPS-INS-A");
@@ -545,8 +712,8 @@ class DmlBulkMutationsExecutionTest {
         // and binds DSL.excluded(col) only for present keys. rentalDuration is omitted
         // from the input, so it drops out of DO UPDATE SET entirely; existing value (7)
         // survives. A naive `c = EXCLUDED.c` for every setFields entry would overwrite
-        // with EXCLUDED.rental_duration, which (because the INSERT branch's value cell
-        // is DEFAULT) resolves to 3: silent data loss.
+        // with EXCLUDED.rental_duration, which (because the INSERT branch leaves the
+        // column to its default) resolves to 3: silent data loss.
         String origTitle1 = randomMarker("R77F-UPS-UPD-A");
         String origTitle2 = randomMarker("R77F-UPS-UPD-B");
         Integer id1 = insertFilm(origTitle1, 7);
@@ -966,8 +1133,8 @@ class DmlBulkMutationsExecutionTest {
     void createKeyedNode_singlePkNodeIdDecodedInsert_writesRow() {
         // Single-PK INSERT keyed by a client-supplied NodeId. Drives
         // buildInsertDecodeLocals (one preGuard decode local per NodeId-bearing
-        // carrier) plus buildPerCellValueList's NodeIdDecodeKeys arm
-        // (`__insertKey_<fi>.value1()` read into the values cell). Classifies as
+        // carrier) plus the INSERT cell's decode-value read
+        // (`insertKey_<fi>.value1()` put as the column's cell). Classifies as
         // ColumnField with NodeIdDecodeKeys extraction.
         String rowKey = "R130-INSERT-" + UUID.randomUUID();
         String nodeId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("KeyedNode", rowKey);

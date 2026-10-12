@@ -100,9 +100,11 @@ class CommandSeamRatchetTest {
      * arm list is declared on the variants instead of restated at each consumer. Lowered 69 to
      * 68 when the tenant-routing emitter's by-name resolution stopped probing the flat field
      * index for an {@code OutputField} and read the coordinate's tenant binding instead, the one
-     * lookup that serves nested coordinates too.
+     * lookup that serves nested coordinates too. Lowered 68 to 66 when the INSERT emitters folded
+     * onto one paired column/cell walk over the INSERT column plan: the bulk lambda-shape probe that
+     * tested each leaf for a NodeId carrier retired with the stream lambda it chose between.
      */
-    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 68;
+    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 66;
 
     /**
      * {@code case} patterns in {@code generators/} naming a leaf of the seven hierarchies.
@@ -137,8 +139,11 @@ class CommandSeamRatchetTest {
      * batched half landed: the fetcher dispatch arm plus the parent-input key-wrap probe's arm,
      * both a new leaf's own sites rather than new dispatch on an existing leaf. Lowered 62 to 61
      * when the errors field's localContext transport retired, taking its transport arm with it.
+     * Lowered 61 to 57 when the INSERT emitters folded onto one paired column/cell walk over the
+     * INSERT column plan: the column-list and cell-list switches over the two column carriers
+     * retired, the plan already naming each column and whether its writer decodes.
      */
-    private static final int GENERATOR_LEAF_CASE_PATTERNS = 61;
+    private static final int GENERATOR_LEAF_CASE_PATTERNS = 57;
 
     /**
      * Leaf references ({@code instanceof} plus {@code case}) inside {@code plan/}: the relocation

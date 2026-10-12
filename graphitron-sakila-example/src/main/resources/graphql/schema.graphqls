@@ -3926,8 +3926,8 @@ input FilmCreateInput {
     # R77 Phase B fixture: nullable, no trailing `!`, so graphql-java's argument coercion
     # preserves the absent-vs-explicit-null distinction (Map.containsKey) the
     # createFilm_omittedField/explicitNull execution tests turn on. Sakila's `rental_duration`
-    # is `smallint NOT NULL DEFAULT 3`: omitted lets the column default land via DSL.defaultValue;
-    # explicit null surfaces a NOT-NULL constraint violation.
+    # is `smallint NOT NULL DEFAULT 3`: omitted leaves the column out of the INSERT so its default
+    # lands; explicit null surfaces a NOT-NULL constraint violation.
     rentalDuration: Int     @field(name: "rental_duration")
 }
 
@@ -4037,7 +4037,7 @@ input DeleteFilmActorByNodeIdInput {
 # client-supplied varchar (not SERIAL), so `id: ID! @nodeId` on an INSERT input
 # classifies as ColumnField with NodeIdDecodeKeys extraction. Drives the
 # INSERT-arm decode-local lift (TypeFetcherGenerator.buildInsertDecodeLocals) and
-# the per-cell decode-value read (buildPerCellValueList's NodeIdDecodeKeys arm).
+# the decode-value read of the INSERT cell (TypeFetcherGenerator.buildSingleRowInsertValues).
 # The `id` PK is the carrier; `label` is a plain scalar SET-cell.
 type KeyedNode implements Node @table(name: "keyed_node") @node {
     id:    ID!     @nodeId
@@ -4112,6 +4112,29 @@ type FilmEndorsementNode implements Node @table(name: "film_endorsement") @node(
 input InsertEndorsementOverlapInput {
     filmRef: ID @nodeId(typeName: "Film")
     endorsedFilm: Int @field(name: "endorsed_film")
+    note: String @field(name: "note")
+}
+
+# INSERT fixtures over film_bookmark, whose every column is nullable or defaulted, so an INSERT that
+# supplies no field at all still lands a row. FilmBookmarkCreateInput's only field is nullable: a batch
+# of empty rows names no column, and the bulk INSERT must still insert one row per input row rather
+# than the single row `insert ... default values` would. FilmBookmarkOverlapInput is the nullable
+# sibling of InsertEndorsementOverlapInput: bookmarked_film is written by both a plain @field and the
+# @nodeId(typeName: "Film") FK reference, and with both writers absent the shared column is left out
+# of the statement (film_endorsement's endorsed_film is NOT NULL, so that shape cannot land there).
+type FilmBookmark @table(name: "film_bookmark") {
+    bookmarkId: Int @field(name: "bookmark_id")
+    bookmarkedFilm: Int @field(name: "bookmarked_film")
+    note: String @field(name: "note")
+}
+
+input FilmBookmarkCreateInput {
+    note: String @field(name: "note")
+}
+
+input FilmBookmarkOverlapInput {
+    filmRef: ID @nodeId(typeName: "Film")
+    bookmarkedFilm: Int @field(name: "bookmarked_film")
     note: String @field(name: "note")
 }
 
@@ -4481,8 +4504,8 @@ type Mutation {
     # and bulk-cardinality story before re-admitting UPSERT.
 
     # R77 Phase F: bulk DML mutations. Each takes a list of @table inputs and dispatches
-    # the per-verb bulk arm in TypeFetcherGenerator (INSERT: valuesOfRows + per-cell
-    # containsKey dispatch; UPDATE: VALUES join with uniform-shape, no-set-fields, and
+    # the per-verb bulk arm in TypeFetcherGenerator (INSERT: valuesOfRows over the columns some
+    # row supplies, gap cells for the rest; UPDATE: VALUES join with uniform-shape, no-set-fields, and
     # duplicate-tuple guards; DELETE: row-tuple IN). Return shapes deliberately mix
     # [Film!]! (ProjectedList) and [ID!]! (EncodedList) to cover both terminator arms.
     # UPSERT retired under R144 (see above).
@@ -4542,8 +4565,8 @@ type Mutation {
 
     # R130 single-PK NodeId-decoded INSERT: client supplies the PK as an opaque NodeId.
     # Drives buildInsertDecodeLocals (one decode local per NodeId-bearing carrier)
-    # and the buildPerCellValueList NodeIdDecodeKeys arm
-    # (`__insertKey_<fi>.value1()` read into the `values(...)` cell).
+    # and the INSERT cell's decode-value read
+    # (`insertKey_<fi>.value1()` put as the column's cell).
     createKeyedNode(in: CreateKeyedNodeInput!): ID @mutation(typeName: INSERT, table: "keyed_node")
 
     # Bulk projected INSERT over a client-supplied (non-SERIAL) primary key. Because the
@@ -4941,6 +4964,11 @@ type Mutation {
     # endorsed_film once (no "column specified more than once" crash) and requireColumnAgreement throws when
     # the two writers disagree; agreeing writers insert the agreed value.
     insertEndorsementOverlap(in: InsertEndorsementOverlapInput!): FilmEndorsement @mutation(typeName: INSERT)
+
+    # INSERTs whose input may supply no field (see FilmBookmark): the bulk arm over a batch of empty
+    # rows, and the single-row overlap whose shared column may have no writer present.
+    createFilmBookmarks(in: [FilmBookmarkCreateInput!]!): [FilmBookmark!]! @mutation(typeName: INSERT)
+    insertBookmarkOverlap(in: FilmBookmarkOverlapInput!): FilmBookmark @mutation(typeName: INSERT)
 
     # R322 single-row UPDATE SET value agreement: endorsed_film is SET by both endorsedFilm (@field) and
     # filmRef (@nodeId FK reference). requireColumnAgreement throws on disagreement before the .set(sets)

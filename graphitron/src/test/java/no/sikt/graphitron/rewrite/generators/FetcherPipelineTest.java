@@ -433,12 +433,12 @@ class FetcherPipelineTest {
     // generated SQL chain itself (banned per development-principles.adoc); we assert on the
     // structural invariants the emitter contracts: list-cast + empty-list short-circuit (both
     // centralised in buildDmlFetcher), verb-specific row-loop shape (valuesOfRows for INSERT,
-    // row-tuple IN for DELETE, VALUES-join for UPDATE), per-cell missing-vs-null dispatch on
-    // INSERT, dynamic SET on UPDATE, and the bulk UPDATE guards (uniform-shape, duplicate-tuple)
-    // plus its Postgres dialect guard.
+    // row-tuple IN for DELETE, VALUES-join for UPDATE), the INSERT column list built from the
+    // columns the rows supply with gap cells for the rest, dynamic SET on UPDATE, and the bulk
+    // UPDATE guards (uniform-shape, duplicate-tuple) plus its Postgres dialect guard.
 
     @Test
-    void dmlInsertField_bulkInput_emitsValuesOfRowsWithContainsKeyDispatchAndEmptyListShortCircuit() {
+    void dmlInsertField_bulkInput_emitsSuppliedColumnsWithGapCellsAndEmptyListShortCircuit() {
         var sdl = """
             type Film @table(name: "film") { title: String }
             input FilmInput {
@@ -446,9 +446,13 @@ class FetcherPipelineTest {
                 languageId: Int! @field(name: "language_id")
             }
             type Query { dummy: String }
-            type Mutation { createFilms(in: [FilmInput!]!): [Film!]! @mutation(typeName: INSERT) }
+            type Mutation {
+                createFilm(in: FilmInput!): Film @mutation(typeName: INSERT)
+                createFilms(in: [FilmInput!]!): [Film!]! @mutation(typeName: INSERT)
+            }
             """;
-        var createFilms = method(findSpec("MutationFetchers", sdl), "createFilms");
+        var spec = findSpec("MutationFetchers", sdl);
+        var createFilms = method(spec, "createFilms");
         var body = createFilms.code().toString();
         // JavaPoet writes fully-qualified type names; assertions track the canonical FQN so a
         // change in import resolution would surface here, not as a brittle short-name regex.
@@ -458,17 +462,26 @@ class FetcherPipelineTest {
             .as("empty-list short-circuit returns typed empty without round-trip")
             .contains("if (in.isEmpty())")
             .contains("graphql.execution.DataFetcherResult.<java.util.List<org.jooq.Record>>newResult().data(java.util.List.of()).build()")
-            .as("multi-row VALUES via stream + valuesOfRows")
-            .contains(".valuesOfRows(in.stream()")
-            .contains("org.jooq.impl.DSL.row(")
-            .contains(".toList()")
-            .as("per-cell missing-vs-null dispatch on row.containsKey")
+            .as("the included columns, the ones some row supplies, drive insertInto")
+            .contains("insertCols.add(")
+            .contains(".insertInto(filmTable, insertCols)")
+            .as("each row is a DSL.row over a collection of cells, fed to valuesOfRows")
+            .contains("org.jooq.impl.DSL.row(cells)")
+            .contains(".valuesOfRows(insertRows)")
+            .doesNotContain(".valuesOfRows(in.stream()")
+            .as("a row's presence picks its bound value or the gap cell")
             .contains("row.containsKey(\"title\")")
             .contains("row.containsKey(\"languageId\")")
-            .contains("org.jooq.impl.DSL.defaultValue(")
             .contains("org.jooq.impl.DSL.val(row.get(")
+            .contains("org.jooq.impl.DSL.defaultValue(")
             .as("no single-row in.containsKey on the bulk arm")
             .doesNotContain("in.containsKey(");
+        assertThat(method(spec, "createFilm").code().toString())
+            .as("the single-row arm puts only the supplied columns, so it writes no gap cell")
+            .contains("insertCols.put(")
+            .contains(".insertInto(filmTable, insertCols.keySet())")
+            .contains(".values(insertCols.values())")
+            .doesNotContain("org.jooq.impl.DSL.defaultValue(");
         assertThat(createFilms.returnType().toString())
             .as("DataFetcherResult parameter narrows from Object to List<Record> on the projected-list arm")
             .isEqualTo("graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>");

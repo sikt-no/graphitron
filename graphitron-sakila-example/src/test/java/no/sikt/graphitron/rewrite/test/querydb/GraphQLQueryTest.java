@@ -7702,13 +7702,13 @@ class GraphQLQueryTest {
             .isEqualTo("first[changed=true,val=null] last[changed=false,val=null]");
     }
 
-    // ===== missing-vs-null on single-row INSERT (containsKey-gated DEFAULT) =====
+    // ===== missing-vs-null on single-row INSERT (an absent field's column is left out) =====
 
     @Test
     @SuppressWarnings("unchecked")
     void createFilm_omittedFieldUsesColumnDefault() {
-        // Omitted columns bind DSL.defaultValue(...) per cell, not typed null (typed null
-        // surfaces a NOT-NULL constraint violation here). Sakila's `rental_duration` is
+        // An omitted field's column is left out of the INSERT, not bound to typed null (typed
+        // null surfaces a NOT-NULL constraint violation here). Sakila's `rental_duration` is
         // `smallint NOT NULL DEFAULT 3`; omitting it from the input lets the DB default land.
         String marker = "R77-PHASE-B-OMIT-" + java.util.UUID.randomUUID();
         try {
@@ -8014,10 +8014,9 @@ class GraphQLQueryTest {
     @SuppressWarnings("unchecked")
     @org.junit.jupiter.api.Disabled("R144 retires UPSERT generation pending R145.")
     void upsertFilm_omittedFieldOnInsertBranchUsesColumnDefault() {
-        // When the upsert hits the INSERT branch (no conflict), per-cell containsKey-gated
-        // DEFAULT applies. Sakila's `rental_duration` is NOT NULL DEFAULT 3. Omitting
-        // `rentalDuration` from the input lets DSL.defaultValue(...) bind in the VALUES list,
-        // and the DB default lands.
+        // When the upsert hits the INSERT branch (no conflict), an omitted field's column is
+        // left out of the INSERT. Sakila's `rental_duration` is NOT NULL DEFAULT 3, so omitting
+        // `rentalDuration` from the input lets the DB default land.
         int filmId = 999_002;
         String marker = "R77-PHASE-C-UPSERT-INSERT-BRANCH-" + java.util.UUID.randomUUID();
         var filmTable = org.jooq.impl.DSL.table("film");
