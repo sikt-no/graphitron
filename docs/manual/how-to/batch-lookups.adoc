@@ -30,7 +30,7 @@ A request `filmById(film_id: ["1", "999999", "2"]) { title }` returns three posi
 
 == Correlated multi-argument keys
 
-Two `@lookupKey` arguments at the same call site correlate by index. `customerById(customer_id: [ID] @lookupKey, store_id: ID @lookupKey)` matches `(customer_id[i], store_id[i])` per row; a scalar key broadcasts to every position, while two list keys must have the same length. The generator builds `VALUES(idx, customer_id, store_id) JOIN customer USING (customer_id, store_id)`.
+Two `@lookupKey` arguments at the same call site correlate by index. `customerById(customer_id: [ID] @lookupKey, store_id: ID @lookupKey)` matches `(customer_id[i], store_id[i])` per row; a scalar key broadcasts to every position, while two list keys must have the same length. The generator builds `VALUES(idx, customer_id, store_id) JOIN customer ON customer.customer_id = input.customer_id AND customer.store_id = input.store_id`.
 
 [source,graphql]
 ----

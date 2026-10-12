@@ -430,7 +430,11 @@ class RootLauncherRendererTest {
         assertThat(body)
             .as("the VALUES derived table joins the anchor over the mapping's key columns")
             .contains(".values(rows).as(\"filmByIdInput\", \"idx\", \"film_id\")")
-            .contains(".join(input).using(filmTable.FILM_ID)");
+            .contains(".join(input).on(filmTable.FILM_ID.eq(input.field(\"film_id\", filmTable.FILM_ID.getDataType())))");
+        assertThat(body)
+            .as("no USING clause: a computed key column is invalid inside one, and Oracle rejects "
+                + "the qualified key column $project selects alongside one")
+            .doesNotContain(".using(");
         assertThat(body)
             .as("the WHERE stays the condition local")
             .contains(".where(condition)")

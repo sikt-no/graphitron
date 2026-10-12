@@ -57,11 +57,7 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.*;
  * non-empty group. Result records carry the synthetic {@code __typename} column projected as a
  * literal so the schema-class TypeResolver routes each row to the correct concrete GraphQL type.
  *
- * <p><b>Join syntax: {@code .on(...)}, not {@code .using(...)}.</b> Stage 2's projection includes
- * {@code <TypeName>.$project(env.getSelectionSet().getFieldsGroupedByResultKey(), t, env)}, which references {@code t.<col>}
- * directly; USING would collapse the joined PK columns and risk colliding with $project-emitted
- * projections. See {@link no.sikt.graphitron.rewrite.generators.util.SelectMethodBody}'s
- * Javadoc for the same rationale on the federation dispatch path.
+ * <p>The join reads the derived table back through {@link ValuesJoinRowBuilder#onCondition}.
  *
  * <p>Scope: PK-bearing participants with uniform PK arity per interface or union. Validation
  * (in {@code GraphitronSchemaValidator.validateInterfaceType} / {@code validateUnionType})
@@ -2156,9 +2152,8 @@ public final class MultiTablePolymorphicEmitter {
     /**
      * Stage-2 per-typename SELECT helper: takes the stage-1 binding tuples for one typename,
      * issues the {@code VALUES (idx, pk0, ..., pkN) JOIN <table> ON t.PK = input.pk0 ... ORDER BY idx}
-     * SELECT, and scatters each typed Record back into {@code result[idx]}. Inherits the
-     * dispatcher-shape {@code .on(...)} (not {@code .using(...)}); see {@code SelectMethodBody}'s
-     * class-level Javadoc for the rationale.
+     * SELECT, and scatters each typed Record back into {@code result[idx]}. The join predicate
+     * is {@link ValuesJoinRowBuilder#onCondition}.
      */
     private static MethodSpec buildPerTypenameSelect(
             String fieldName, ParticipantRef.TableBound participant,
@@ -2244,21 +2239,8 @@ public final class MultiTablePolymorphicEmitter {
         b.addStatement("$T idxCol = input.field($S, $T.class)", fieldOfInteger, "idx", Integer.class);
         b.addStatement("fields.add(idxCol)");
 
-        // ON predicate: per-PK-slot equality. Mirrors the dispatcher in SelectMethodBody.
-        var on = CodeBlock.builder();
-        for (int i = 0; i < columns.size(); i++) {
-            var col = columns.get(i);
-            var colClass = CatalogRefs.columnType(col);
-            if (i == 0) {
-                on.add("$L.$L.eq(input.field($S, $T.class))",
-                    tableLocal, col.javaName(), col.sqlName(), colClass);
-            } else {
-                on.add(".and($L.$L.eq(input.field($S, $T.class)))",
-                    tableLocal, col.javaName(), col.sqlName(), colClass);
-            }
-        }
         b.beginControlFlow("for ($T r : dsl.select(fields).from($L).join(input).on($L).orderBy(idxCol).fetch())",
-            RECORD, tableLocal, on.build());
+            RECORD, tableLocal, ValuesJoinRowBuilder.onCondition(columns, columnFn, tableLocal, "input"));
         b.addStatement("int outIdx = r.get(idxCol)");
         b.addStatement("result[outIdx] = r");
         b.endControlFlow();

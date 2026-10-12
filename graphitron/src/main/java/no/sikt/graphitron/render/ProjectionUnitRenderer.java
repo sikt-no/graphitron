@@ -374,20 +374,10 @@ public final class ProjectionUnitRenderer {
             LookupRows.inputTableType(lm.mapping(), diagnostic), DSL,
             LookupRows.aliasArgs(lm.mapping(), c.field() + "Input", diagnostic));
 
-        // Explicit ON clause against the VALUES derived table (USING would be ambiguous when
-        // the FK chain traverses a junction table sharing a lookup-key column name).
-        var onCondition = CodeBlock.builder();
-        var lookupCols = lm.mapping().slotColumns();
-        for (int i = 0; i < lookupCols.size(); i++) {
-            if (i > 0) onCondition.add(".and(");
-            var col = lookupCols.get(i);
-            onCondition.add("$L.$L.eq(input.field($L.$L))",
-                terminalAlias, col.javaName(), terminalAlias, col.javaName());
-            if (i > 0) onCondition.add(")");
-        }
+        var onCondition = LookupRows.onCondition(lm.mapping(), terminalAlias, "input", diagnostic);
 
         code.addStatement("fields.add($T.multiset($L).as($S + entry.getKey()))",
-            DSL, lookupInnerSelect(c, lm, aliases, terminalAlias, onCondition.build(), outputPackage),
+            DSL, lookupInnerSelect(c, lm, aliases, terminalAlias, onCondition, outputPackage),
             rkPrefix(c));
         code.endControlFlow();
         return code.build();

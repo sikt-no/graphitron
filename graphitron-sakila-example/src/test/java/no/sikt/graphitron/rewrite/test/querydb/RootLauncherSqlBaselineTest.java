@@ -386,7 +386,7 @@ class RootLauncherSqlBaselineTest {
                 "select \"public\".\"language\".\"name\", \"languagebykeyinput\".\"idx\" as \"__idx__\" "
                     + "from \"public\".\"language\" "
                     + "join (values (0, ?), (1, ?)) as \"languagebykeyinput\" (\"idx\", \"language_id\") "
-                    + "using (\"language_id\")");
+                    + "on \"public\".\"language\".\"language_id\" = \"languagebykeyinput\".\"language_id\"");
     }
 
     @Test

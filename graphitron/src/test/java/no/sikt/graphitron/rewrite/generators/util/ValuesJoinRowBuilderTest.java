@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
 import no.sikt.graphitron.render.ValuesJoinRowBuilder;
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
@@ -173,12 +174,30 @@ class ValuesJoinRowBuilderTest {
     }
 
     @Test
-    void usingArgs_javaNamesInOrderQualifiedByTableLocal() {
+    void onCondition_oneSlotComparesTheColumnWithItsLabelTypedByTheColumn() {
+        var slots = List.of(col("film_id", "FILM_ID", "java.lang.Integer"));
+        var s = ValuesJoinRowBuilder.onCondition(slots, ID, "table", "input").toString();
+        assertThat(s).isEqualTo("table.FILM_ID.eq(input.field(\"film_id\", table.FILM_ID.getDataType()))");
+    }
+
+    @Test
+    void onCondition_twoSlotsChainedWithAndInSlotOrder() {
         var slots = List.of(
             col("film_id", "FILM_ID", "java.lang.Integer"),
             col("language_id", "LANGUAGE_ID", "java.lang.Integer"));
-        var s = ValuesJoinRowBuilder.usingArgs(slots, ID, "table").toString();
-        assertThat(s).isEqualTo("table.FILM_ID, table.LANGUAGE_ID");
+        var s = ValuesJoinRowBuilder.onCondition(slots, ID, "table", "input").toString();
+        assertThat(s).isEqualTo(
+            "table.FILM_ID.eq(input.field(\"film_id\", table.FILM_ID.getDataType()))"
+            + ".and(table.LANGUAGE_ID.eq(input.field(\"language_id\", table.LANGUAGE_ID.getDataType())))");
+    }
+
+    @Test
+    void onCondition_tableExprOverloadQualifiesBothSidesWithTheExpression() {
+        var slots = List.of(col("film_id", "FILM_ID", "java.lang.Integer"));
+        var tableExpr = CodeBlock.of("$T.FILM", ClassName.get("org.example", "Tables"));
+        var s = ValuesJoinRowBuilder.onCondition(slots, ID, tableExpr, "keysInput").toString();
+        assertThat(s).isEqualTo(
+            "org.example.Tables.FILM.FILM_ID.eq(keysInput.field(\"film_id\", org.example.Tables.FILM.FILM_ID.getDataType()))");
     }
 
     @Test

@@ -31,15 +31,9 @@ import java.util.function.Function;
  * {@code __typename} literal projection, and the join's {@code ON} predicate) lives here. See
  * {@link EntityFetcherDispatchClassGenerator}'s class Javadoc for the surrounding dispatch shape.
  *
- * <p><b>Join syntax: {@code .on(...)}, not {@code .using(...)}.</b> The SELECT projection here is
- * built from {@code <TypeName>.$project(env.getSelectionSet().getFieldsGroupedByResultKey(), t, env)}, which references
- * {@code t.<col>} directly. {@code USING} collapses joined columns into a single output column at
- * render time, which can interact poorly with {@code $project}-emitted projections that may include
- * the joined key columns themselves; the explicit {@code ON} predicate keeps both sides of the
- * join addressable through their original {@code t.<col>} / {@code input.field("<col>", T.class)}
- * references. The SQL-shape regression test
- * ({@code GraphQLQueryTest.nodes_perTypeIdBatch_emitsValuesJoinOrderByIdxShape}) gates the
- * {@code values}/{@code join}/{@code order by} substring shape across both call sites.
+ * <p>The join reads the derived table back through {@link ValuesJoinRowBuilder#onCondition}. The
+ * SQL-shape regression test ({@code GraphQLQueryTest.nodes_perTypeIdBatch_emitsValuesJoinOrderByIdxShape})
+ * gates the {@code values}/{@code join}/{@code order by} substring shape across both call sites.
  */
 final class SelectMethodBody {
 
@@ -127,22 +121,8 @@ final class SelectMethodBody {
         // no SQL impact.
         b.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
 
-        // ON, not USING; see the class Javadoc.
-        var on = CodeBlock.builder();
-        for (int i = 0; i < columns.size(); i++) {
-            var col = columns.get(i);
-            var colClass = CatalogRefs.columnType(col);
-            if (i == 0) {
-                on.add("$L.$L.eq(input.field($S, $T.class))",
-                    tableLocal, col.javaName(), col.sqlName(), colClass);
-            } else {
-                on.add(".and($L.$L.eq(input.field($S, $T.class)))",
-                    tableLocal, col.javaName(), col.sqlName(), colClass);
-            }
-        }
-
         b.beginControlFlow("for ($T r : dsl.select(fields).from($L).join(input).on($L).where(condition).orderBy(idxCol).fetch())",
-            RECORD, tableLocal, on.build());
+            RECORD, tableLocal, ValuesJoinRowBuilder.onCondition(columns, column, tableLocal, "input"));
         b.addStatement("int outIdx = r.get(idxCol)");
         b.addStatement("result[outIdx] = r");
         b.endControlFlow();

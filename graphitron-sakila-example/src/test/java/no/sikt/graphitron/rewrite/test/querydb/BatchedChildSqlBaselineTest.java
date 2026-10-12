@@ -134,7 +134,7 @@ class BatchedChildSqlBaselineTest {
                     + "\"filmbyidinput\".\"idx\" as \"__idx__\" "
                     + "from \"public\".\"film\" "
                     + "join (values (0, ?), (1, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") "
-                    + "using (\"film_id\")",
+                    + "on \"public\".\"film\".\"film_id\" = \"filmbyidinput\".\"film_id\"",
                 "select \"filmcontents_c0\".\"content_type\" as \"__discriminator__\", "
                     + "\"filmcontents_c0\".\"title\", \"parentinput\".\"idx\" as \"__idx__\" "
                     + "from (values (0, ?), (1, ?)) as \"parentinput\" (\"idx\", \"film_id\") "
@@ -175,7 +175,7 @@ class BatchedChildSqlBaselineTest {
                 "select \"public\".\"film\".\"film_id\", \"public\".\"film\".\"title\", "
                     + "\"filmbyidinput\".\"idx\" as \"__idx__\" "
                     + "from \"public\".\"film\" "
-                    + "join (values (0, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") using (\"film_id\")",
+                    + "join (values (0, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") on \"public\".\"film\".\"film_id\" = \"filmbyidinput\".\"film_id\"",
                 "select \"ranked\".\"__discriminator__\", \"ranked\".\"title\", \"ranked\".\"content_id\", "
                     + "\"ranked\".\"__idx__\", \"ranked\".\"__rn__\" "
                     + "from (select \"filmcontentsconnection_c0\".\"content_type\" as \"__discriminator__\", "
@@ -202,7 +202,7 @@ class BatchedChildSqlBaselineTest {
             .containsExactly(
                 "select \"public\".\"film\".\"film_id\", \"filmbyidinput\".\"idx\" as \"__idx__\" "
                     + "from \"public\".\"film\" "
-                    + "join (values (0, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") using (\"film_id\")",
+                    + "join (values (0, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") on \"public\".\"film\".\"film_id\" = \"filmbyidinput\".\"film_id\"",
                 "select \"ranked\".\"first_name\", \"ranked\".\"actor_id\", \"ranked\".\"__idx__\", \"ranked\".\"__rn__\" "
                     + "from (select \"actorsconnection_a1\".\"first_name\", \"actorsconnection_a1\".\"actor_id\", "
                     + "\"parentinput\".\"idx\" as \"__idx__\", "
@@ -229,7 +229,7 @@ class BatchedChildSqlBaselineTest {
             .containsExactly(
                 "select \"public\".\"film\".\"film_id\", \"filmbyidinput\".\"idx\" as \"__idx__\" "
                     + "from \"public\".\"film\" "
-                    + "join (values (0, ?), (1, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") using (\"film_id\")",
+                    + "join (values (0, ?), (1, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") on \"public\".\"film\".\"film_id\" = \"filmbyidinput\".\"film_id\"",
                 "select \"actorsbysplitlookup_a1\".\"first_name\", \"parentinput\".\"idx\" as \"__idx__\" "
                     + "from (values (0, ?), (1, ?)) as \"parentinput\" (\"idx\", \"film_id\") "
                     + "join \"public\".\"film_actor\" as \"actorsbysplitlookup_f0\" "
@@ -281,7 +281,7 @@ class BatchedChildSqlBaselineTest {
             .containsExactly(
                 "select \"public\".\"film\".\"film_id\", \"filmbyidinput\".\"idx\" as \"__idx__\" "
                     + "from \"public\".\"film\" "
-                    + "join (values (0, ?), (1, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") using (\"film_id\")",
+                    + "join (values (0, ?), (1, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") on \"public\".\"film\".\"film_id\" = \"filmbyidinput\".\"film_id\"",
                 "select max(\"titletranslationssplit_f0\".\"title_txt\") "
                     + "filter (where \"titletranslationssplit_f0\".\"lang_code\" = 'nno') as \"nn\", "
                     + "max(\"titletranslationssplit_f0\".\"title_txt\") "
@@ -304,7 +304,7 @@ class BatchedChildSqlBaselineTest {
             .containsExactly(
                 "select \"public\".\"film\".\"film_id\", \"filmbyidinput\".\"idx\" as \"__idx__\" "
                     + "from \"public\".\"film\" "
-                    + "join (values (0, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") using (\"film_id\")",
+                    + "join (values (0, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") on \"public\".\"film\".\"film_id\" = \"filmbyidinput\".\"film_id\"",
                 "select \"public\".\"film_actor\".\"actor_id\", \"public\".\"film_actor\".\"film_id\", "
                     + "\"public\".\"film_actor\".\"last_update\" "
                     + "from \"public\".\"film_actor\" "

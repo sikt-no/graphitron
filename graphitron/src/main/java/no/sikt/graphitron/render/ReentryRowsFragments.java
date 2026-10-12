@@ -108,7 +108,8 @@ public final class ReentryRowsFragments {
             b.add(valuesJoinDecls(correlation))
                 .add("return dsl.select($L)\n", select)
                 .add("    .from($L)\n", tableLocal)
-                .add("    .join($L).on($L)\n", KEYS_INPUT, valuesJoinOn(correlation))
+                .add("    .join($L).on($L)\n", KEYS_INPUT, ValuesJoinRowBuilder.onCondition(
+                    correlation.columns(), c -> c, ownerExpr(correlation), KEYS_INPUT))
                 .add("    .orderBy($L)\n", idxField())
                 .add("    .fetch(r -> r);\n");
         } else {
@@ -142,7 +143,9 @@ public final class ReentryRowsFragments {
                 .addStatement("$T condition = $T.noCondition()", CONDITION, DSL)
                 .add(DiscriminatedTableFragments.assembly(disc, List.of(), tableLocal))
                 .addStatement("return step.join($L).on($L).where(condition).orderBy($L).fetch()",
-                    KEYS_INPUT, valuesJoinOn(correlation), idxField());
+                    KEYS_INPUT, ValuesJoinRowBuilder.onCondition(
+                        correlation.columns(), c -> c, ownerExpr(correlation), KEYS_INPUT),
+                    idxField());
         } else {
             b.addStatement("$T condition = $L", CONDITION, keyEquality(correlation))
                 .add(DiscriminatedTableFragments.assembly(disc, List.of(), tableLocal))
@@ -161,8 +164,7 @@ public final class ReentryRowsFragments {
      */
     private static CodeBlock valuesJoinDecls(ParentCorrelation.OnLiftedSlots correlation) {
         var cols = correlation.columns();
-        var owner = correlation.targetTable();
-        CodeBlock tableExpr = CodeBlock.of("$T.$L", CatalogRefs.constantsClass(owner), owner.javaFieldName());
+        CodeBlock tableExpr = ownerExpr(correlation);
         var keyRowType = SourceKey.keyElementType(new SourceKey.Wrap.Record(), cols);
         var b = CodeBlock.builder();
         ValuesJoinRowBuilder.emitRowArrayDecl(b, cols, c -> c, ROW_CONTEXT,
@@ -182,26 +184,12 @@ public final class ReentryRowsFragments {
     }
 
     /**
-     * The list arm's join predicate over the carried correlation:
-     * {@code <target>.<COL>.eq(keysInput.field("<sqlName>", <target>.<COL>.getDataType()))} per
-     * column, chained with {@code .and(...)}. Field lookup by SQL name plus the owner column's
-     * {@code DataType} keeps converter-backed columns' type metadata faithful (the same
-     * resolution the batched rows methods use for their {@code parentInput} predicate).
+     * The correlation's target table as a constants-class reference, {@code Tables.FILM}: the
+     * table the {@code keysInput} cells bind against and the join predicate compares with.
      */
-    private static CodeBlock valuesJoinOn(ParentCorrelation.OnLiftedSlots correlation) {
-        var cols = correlation.columns();
+    private static CodeBlock ownerExpr(ParentCorrelation.OnLiftedSlots correlation) {
         var owner = correlation.targetTable();
-        var on = CodeBlock.builder();
-        for (int i = 0; i < cols.size(); i++) {
-            if (i > 0) on.add(".and(");
-            var col = cols.get(i);
-            on.add("$T.$L.$L.eq($L.field($S, $T.$L.$L.getDataType()))",
-                CatalogRefs.constantsClass(owner), owner.javaFieldName(), col.javaName(),
-                KEYS_INPUT, col.sqlName(),
-                CatalogRefs.constantsClass(owner), owner.javaFieldName(), col.javaName());
-            if (i > 0) on.add(")");
-        }
-        return on.build();
+        return CodeBlock.of("$T.$L", CatalogRefs.constantsClass(owner), owner.javaFieldName());
     }
 
     /** The list arm's ordering field: {@code keysInput.field("idx", Integer.class)}. */

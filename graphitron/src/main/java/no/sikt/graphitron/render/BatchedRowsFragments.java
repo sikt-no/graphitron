@@ -103,8 +103,8 @@ public final class BatchedRowsFragments {
         // Row<M+1>[] (idx + one cell per @lookupKey slot), the arm-entailed empty-input
         // short-circuit (every parent gets an empty list before any SQL; jOOQ rejects an empty
         // VALUES), and the second derived table the topology joins against the terminal.
+        String diagnostic = row.coordinate().getTypeName() + "." + fieldName;
         if (chain instanceof LaunchSource.CorrelatedLookupChain lookup) {
-            String diagnostic = row.coordinate().getTypeName() + "." + fieldName;
             body.addStatement("$T lookupRows = $L(env, $L)",
                 LookupRows.rowArrayType(lookup.mapping(), diagnostic),
                 lookup.inputRows().methodName(), prelude.terminalAlias());
@@ -136,8 +136,8 @@ public final class BatchedRowsFragments {
         fromBridgeAndParentJoin(sel, chain.joinPath(), prelude.aliases(), prelude.firstAlias(),
             chain.correlation(), prelude.joinOnAlias(), prelude.joinOnCols(), prelude.joinOnParentCols());
         if (chain instanceof LaunchSource.CorrelatedLookupChain lookup) {
-            sel.add(".join(lookupInput).on($L)\n",
-                lookupJoinCondition(lookup, prelude.terminalAlias()));
+            sel.add(".join(lookupInput).on($L)\n", LookupRows.onCondition(lookup.mapping(),
+                prelude.terminalAlias(), "lookupInput", diagnostic));
         }
         sel.add(".where($L)\n", whereCondition(row, chain, prelude));
         if (ordering != null) {
@@ -790,28 +790,6 @@ public final class BatchedRowsFragments {
                 RootLauncherRenderer.glueExpression(row.where(), prelude.terminalAlias()));
         }
         return where.build();
-    }
-
-    /**
-     * The lookup-input JOIN's ON predicate: {@code terminal.COL.eq(lookupInput.field(i+1,
-     * ColType.class))} per mapping slot, chained with {@code .and}. The read is deliberately
-     * positional (index 0 is idx, indices 1..M the lookup columns in mapping order) where the
-     * parent-input side resolves by sqlName plus the owner column's {@code DataType}: the
-     * lookup cells were built by the emitted helper against the terminal's own columns, so the
-     * type metadata is already faithful and the position is the mapping's own order.
-     */
-    private static CodeBlock lookupJoinCondition(LaunchSource.CorrelatedLookupChain lookup,
-            String terminalAlias) {
-        var onCond = CodeBlock.builder();
-        List<ColumnRef> lookupCols = lookup.mapping().slotColumns();
-        for (int i = 0; i < lookupCols.size(); i++) {
-            if (i > 0) onCond.add(".and(");
-            var col = lookupCols.get(i);
-            onCond.add("$L.$L.eq(lookupInput.field($L, $T.class))",
-                terminalAlias, col.javaName(), i + 1, CatalogRefs.columnType(col));
-            if (i > 0) onCond.add(")");
-        }
-        return onCond.build();
     }
 
     private static ClassName className(no.sikt.graphitron.command.UnitRef ref) {

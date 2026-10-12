@@ -179,7 +179,7 @@ class ConditionSqlBaselineTest {
             .containsExactlyInAnyOrder(
                 "select \"public\".\"store\".\"store_id\", \"storebyidinput\".\"idx\" as \"__idx__\" "
                     + "from \"public\".\"store\" "
-                    + "join (values (0, ?), (1, ?)) as \"storebyidinput\" (\"idx\", \"store_id\") using (\"store_id\")",
+                    + "join (values (0, ?), (1, ?)) as \"storebyidinput\" (\"idx\", \"store_id\") on \"public\".\"store\".\"store_id\" = \"storebyidinput\".\"store_id\"",
                 "select \"customersbyaddressdistrictsplit_c0\".\"last_name\", "
                     + "\"parentinput\".\"idx\" as \"__idx__\" "
                     + "from (values (0, ?), (1, ?)) as \"parentinput\" (\"idx\", \"store_id\") "
@@ -201,7 +201,7 @@ class ConditionSqlBaselineTest {
             .containsExactly(
                 "select \"public\".\"language\".\"name\", \"languagesbykeyfilteredinput\".\"idx\" as \"__idx__\" "
                     + "from \"public\".\"language\" "
-                    + "join (values (0, ?), (1, ?)) as \"languagesbykeyfilteredinput\" (\"idx\", \"language_id\") using (\"language_id\") "
+                    + "join (values (0, ?), (1, ?)) as \"languagesbykeyfilteredinput\" (\"idx\", \"language_id\") on \"public\".\"language\".\"language_id\" = \"languagesbykeyfilteredinput\".\"language_id\" "
                     + "where \"public\".\"language\".\"name\" like (replace(replace(replace(?, '!', '!!'), '%', '!%'), '_', '!_') || '%') escape '!'");
     }
 
@@ -217,7 +217,7 @@ class ConditionSqlBaselineTest {
             .containsExactly(
                 "select \"public\".\"language\".\"language_id\", \"languagesbykeygeneratedinput\".\"idx\" as \"__idx__\" "
                     + "from \"public\".\"language\" "
-                    + "join (values (0, ?), (1, ?), (2, ?)) as \"languagesbykeygeneratedinput\" (\"idx\", \"language_id\") using (\"language_id\") "
+                    + "join (values (0, ?), (1, ?), (2, ?)) as \"languagesbykeygeneratedinput\" (\"idx\", \"language_id\") on \"public\".\"language\".\"language_id\" = \"languagesbykeygeneratedinput\".\"language_id\" "
                     + "where \"public\".\"language\".\"name\" = ?");
 
         // The one behavioural consequence this item introduces, named rather than left implicit:
@@ -281,7 +281,7 @@ class ConditionSqlBaselineTest {
             .containsExactlyInAnyOrder(
                 "select \"public\".\"store\".\"store_id\", \"storebyidinput\".\"idx\" as \"__idx__\" "
                     + "from \"public\".\"store\" "
-                    + "join (values (0, ?)) as \"storebyidinput\" (\"idx\", \"store_id\") using (\"store_id\")",
+                    + "join (values (0, ?)) as \"storebyidinput\" (\"idx\", \"store_id\") on \"public\".\"store\".\"store_id\" = \"storebyidinput\".\"store_id\"",
                 "select \"customersseenbyuser_c0\".\"first_name\", "
                     + "\"parentinput\".\"idx\" as \"__idx__\" "
                     + "from (values (0, ?)) as \"parentinput\" (\"idx\", \"store_id\") "
@@ -307,7 +307,7 @@ class ConditionSqlBaselineTest {
                     + "fetch next ? rows only) as t) as \"__rk_languagefiltered\", "
                     + "\"public\".\"film\".\"title\", \"filmbyidinput\".\"idx\" as \"__idx__\" "
                     + "from \"public\".\"film\" "
-                    + "join (values (0, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") using (\"film_id\")");
+                    + "join (values (0, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") on \"public\".\"film\".\"film_id\" = \"filmbyidinput\".\"film_id\"");
     }
 
     @Test

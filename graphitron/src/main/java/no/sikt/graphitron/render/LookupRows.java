@@ -118,9 +118,11 @@ public final class LookupRows {
         return ValuesJoinRowBuilder.aliasArgs(requireSlots(cm, diagnosticName), Slot::targetColumn, alias);
     }
 
-    /** USING-args: {@code <tableLocal>.<COL1>, <tableLocal>.<COL2>, …}. */
-    public static CodeBlock usingArgs(ColumnMapping cm, String tableLocal, String diagnosticName) {
-        return ValuesJoinRowBuilder.usingArgs(requireSlots(cm, diagnosticName), Slot::targetColumn, tableLocal);
+    /** The {@code .join(<inputLocal>).on(…)} predicate over the labels {@link #aliasArgs} wrote. */
+    public static CodeBlock onCondition(ColumnMapping cm, String tableLocal, String inputLocal,
+            String diagnosticName) {
+        return ValuesJoinRowBuilder.onCondition(requireSlots(cm, diagnosticName), Slot::targetColumn,
+            tableLocal, inputLocal);
     }
 
     /**

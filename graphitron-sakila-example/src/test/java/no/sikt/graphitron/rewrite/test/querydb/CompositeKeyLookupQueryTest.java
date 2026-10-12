@@ -94,7 +94,7 @@ class CompositeKeyLookupQueryTest {
             .containsExactly("1:2", "2:3");
 
         // The composite-key VALUES + JOIN must reference *both* columns; a single-column
-        // join would be a regression. jOOQ renders it as a USING clause with both columns.
+        // join would be a regression. The ON predicate carries one equality per key column.
         var filmActorSelect = SQL_LOG.stream()
             .filter(s -> s.contains("\"film_actor\""))
             .findFirst()
@@ -102,7 +102,9 @@ class CompositeKeyLookupQueryTest {
                 "film_actor SELECT not found in SQL log: " + SQL_LOG));
         assertThat(filmActorSelect)
             .as("composite-key join uses both film_id and actor_id")
-            .contains("using (\"film_id\", \"actor_id\")");
+            .contains("on (\"public\".\"film_actor\".\"film_id\" = \"filmactorsbykeyinput\".\"film_id\" "
+                + "and \"public\".\"film_actor\".\"actor_id\" = \"filmactorsbykeyinput\".\"actor_id\")")
+            .doesNotContain("using (");
     }
 
     @Test

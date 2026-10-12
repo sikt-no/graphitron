@@ -123,7 +123,17 @@ public final class ColumnComparison {
      */
     public static CodeBlock equalityAgainstField(String alias, ColumnRef column,
             ColumnRef fieldColumn, CodeBlock fieldExpression) {
-        var left = CodeBlock.of("$L.$L", alias, column.javaName());
+        return equalityAgainstField(CodeBlock.of("$L", alias), column, fieldColumn, fieldExpression);
+    }
+
+    /**
+     * {@link #equalityAgainstField(String, ColumnRef, ColumnRef, CodeBlock)} whose table is an
+     * arbitrary expression rather than a Java-local name, typically a constants-class reference
+     * like {@code Tables.FILM}. Same rule.
+     */
+    public static CodeBlock equalityAgainstField(CodeBlock table, ColumnRef column,
+            ColumnRef fieldColumn, CodeBlock fieldExpression) {
+        var left = CodeBlock.of("$L.$L", table, column.javaName());
         return compare(left, CatalogRefs.columnType(column), fieldExpression, CatalogRefs.columnType(fieldColumn));
     }
 

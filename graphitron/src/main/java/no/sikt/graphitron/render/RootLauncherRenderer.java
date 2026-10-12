@@ -449,8 +449,8 @@ public final class RootLauncherRenderer {
      * The keyed-lookup arm: the input-rows helper builds the typed {@code Row[]} off the field's
      * arguments (a same-class private the launcher calls unqualified, its ref minted beside the
      * launcher's own), the empty-input short-circuit returns the empty result with no statement
-     * issued, and the VALUES derived table joins the anchor with {@code USING} over the mapping's
-     * key columns. The WHERE stays the condition local, the same glue-or-neutral fold every
+     * issued, and the VALUES derived table joins the anchor on
+     * {@link LookupRows#onCondition}'s per-key-column equality. The WHERE stays the condition local, the same glue-or-neutral fold every
      * condition-bearing arm chains.
      *
      * <p>The list arm delivers one output slot per input key, null where the key matched no row,
@@ -490,7 +490,7 @@ public final class RootLauncherRenderer {
             .indent()
             .add(".select($L)\n", isList ? CodeBlock.of("selectFields") : projection)
             .add(".from($L)\n", tableLocal)
-            .add(".join(input).using($L)\n", LookupRows.usingArgs(mapping, tableLocal, fieldName))
+            .add(".join(input).on($L)\n", LookupRows.onCondition(mapping, tableLocal, "input", fieldName))
             .add(".where(condition)\n")
             .add(isList ? ".fetch();\n" : ".fetchOne();\n")
             .unindent();

@@ -63,9 +63,7 @@ public sealed interface LookupMapping permits LookupMapping.ColumnMapping {
         /**
          * Flat list of target columns in slot order: one per {@link LookupArg.ScalarLookupArg},
          * one per binding for {@link LookupArg.MapInput} / {@link LookupArg.DecodedRecord}.
-         * The size equals the {@code Row<N+1>} arity (minus the {@code idx} cell). Used by
-         * the VALUES + JOIN emitter for typed-row construction, alias labels, and the
-         * USING / ON column list.
+         * The size equals the {@code Row<N+1>} arity (minus the {@code idx} cell).
          */
         public List<ColumnRef> slotColumns() {
             var cols = new ArrayList<ColumnRef>();

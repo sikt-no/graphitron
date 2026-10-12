@@ -35,8 +35,9 @@ import java.util.function.Function;
  * <p>Each method takes the caller's slot list as {@code List<S>} plus a
  * {@code Function<S, ColumnRef>} projection, so callers keep their own slot representation
  * without a parallel-list bridge. The per-row fill loop, the {@code idx} cell expression, extra
- * projections, the join syntax, and the {@code .where(…)} / {@code .orderBy(…)} chain stay
- * caller-local.
+ * projections, the join call itself, and the {@code .where(…)} / {@code .orderBy(…)} chain stay
+ * caller-local; the join's predicate does not, since every caller reads the derived table's
+ * labels back through {@link #onCondition}.
  */
 public final class ValuesJoinRowBuilder {
 
@@ -144,7 +145,7 @@ public final class ValuesJoinRowBuilder {
     /**
      * Returns the alias-args list for {@code DSL.values(rows).as(alias, "idx", "<sqlName1>", …)}.
      * Column labels are SQL names (case-sensitive in PostgreSQL with quoted identifiers); using
-     * Java field names here would render mismatched USING/ON predicates downstream.
+     * Java field names here would render mismatched {@link #onCondition} predicates downstream.
      */
     public static <S> CodeBlock aliasArgs(List<S> slots, Function<S, ColumnRef> column, String alias) {
         var b = CodeBlock.builder().add("$S, $S", alias, "idx");
@@ -155,17 +156,50 @@ public final class ValuesJoinRowBuilder {
     }
 
     /**
-     * Returns the USING-args list: {@code <tableLocal>.<COL1>, <tableLocal>.<COL2>, …}. Use as
-     * {@code .join(input).using(<usingArgs>)} on the SELECT chain. The dispatcher path uses an
-     * explicit {@code ON} predicate instead and does not consume this method.
+     * Returns the join predicate between a table and the {@code VALUES} derived table whose
+     * labels {@link #aliasArgs} wrote over the same slots:
+     * {@code <tableLocal>.<COL>.eq(<inputLocal>.field("<sqlName>", <tableLocal>.<COL>.getDataType()))}
+     * per slot, chained with {@code .and(...)} in slot order. Use as
+     * {@code .join(<inputLocal>).on(<onCondition>)}. Each equality is minted by
+     * {@link ColumnComparison#equalityAgainstField}; the operand is typed by the receiving column
+     * itself, so it never coerces.
+     *
+     * <p><b>{@code ON}, never {@code USING}.</b> A {@code USING} column must be a plain column
+     * name, so a key column whose jOOQ field renders as an expression (a client-side computed
+     * column) is invalid SQL there. Oracle also forbids qualifying a {@code USING} column
+     * anywhere in the statement, and the type's {@code $project} qualifies every column it
+     * selects. And a join path through a junction table can carry a second column with the key's
+     * name, which makes an unqualified {@code USING} column ambiguous. An explicit predicate keeps
+     * the column on the table side, where it renders like any other.
+     *
+     * <p>The input column is read back by the SQL name {@link #aliasArgs} labelled it with, not
+     * by position, so the writer and the reader of each label sit in this class and nothing
+     * depends on the slot order matching the cell order. It is typed by
+     * {@code getDataType()}, the {@code DataType} {@link #cellsCode} bound the cell at, so a
+     * converter-backed column's type stays faithful on both sides.
      */
-    public static <S> CodeBlock usingArgs(List<S> slots, Function<S, ColumnRef> column, String tableLocal) {
-        var b = CodeBlock.builder();
+    public static <S> CodeBlock onCondition(List<S> slots, Function<S, ColumnRef> column,
+                                            String tableLocal, String inputLocal) {
+        return onCondition(slots, column, CodeBlock.of("$L", tableLocal), inputLocal);
+    }
+
+    /**
+     * Variant of {@link #onCondition(List, Function, String, String)} whose table reference is an
+     * arbitrary {@link CodeBlock} expression, the counterpart of
+     * {@link #cellsCode(List, Function, CodeBlock, CodeBlock, BiFunction)}. Predicate shape is
+     * identical.
+     */
+    public static <S> CodeBlock onCondition(List<S> slots, Function<S, ColumnRef> column,
+                                            CodeBlock tableExpr, String inputLocal) {
+        var on = CodeBlock.builder();
         for (int i = 0; i < slots.size(); i++) {
-            if (i > 0) b.add(", ");
-            b.add("$L.$L", tableLocal, column.apply(slots.get(i)).javaName());
+            ColumnRef col = column.apply(slots.get(i));
+            var operand = CodeBlock.of("$L.field($S, $L.$L.getDataType())",
+                inputLocal, col.sqlName(), tableExpr, col.javaName());
+            var eq = ColumnComparison.equalityAgainstField(tableExpr, col, col, operand);
+            on.add(i == 0 ? "$L" : ".and($L)", eq);
         }
-        return b.build();
+        return on.build();
     }
 
     /** Convenience: array type {@code Row<N+1>[]} for a {@code returns} declaration on a helper method. */
