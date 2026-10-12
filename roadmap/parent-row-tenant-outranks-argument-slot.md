@@ -69,7 +69,7 @@ Root sites are unchanged by construction: the roots seed `withoutContext`, so `t
 
 **No emitter change.** `TenantDslEmitter` already emits `Inherited` and `ParentRowBound` for `@splitQuery` children (per-tenant loader names, `dslFor`, parent-row key reads), and those paths are execution-tested. The fields that change arm simply stop emitting the `divinedTenant(decode…TenantSlot…OrThrow(tenantSlot(env.getArgument(…))))` acquisition. Single-tenant output is byte-identical: without configured tenant scopes every `TenantDslEmitter` entry point returns the single-tenant form before it reads a binding.
 
-**User manual** (`docs/manual/how-to/tenant-scoping.adoc`, §2). After "Routing is divined from the operation: an argument bound to the tenant column routes the statement and hands the tenant down its subtree", add:
+**User manual** (`docs/manual/how-to/tenant-scoping.adoc`, §2). After "Routing is divined from the operation: an argument bound to the tenant column routes the statement and hands the tenant down its subtree", add the paragraph below. As implemented it sits a little later in §2, as its own paragraph after the nesting-type one, so it follows the parent-row routing it names:
 
 > Below a field that already has a tenant, either handed down or named by its parent row, a child field runs on that tenant even when its own arguments name the tenant column. There the argument only filters, inside the parent's tenant database, so it can be optional, and a value naming another tenant cannot route the field elsewhere.
 

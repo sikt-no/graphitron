@@ -454,8 +454,16 @@ class TenantRoutedFetcherPipelineTest {
             inventories: [Inventory!]! @splitQuery @reference(path: [{key: "inventory_film_id_fkey"}])
             inventoriesConnection: [Inventory!]! @asConnection @splitQuery
                 @reference(path: [{key: "inventory_film_id_fkey"}]) @defaultOrder(primaryKey: true)
+            scenesWhere(filter: FilmSceneFilter): [FilmScene!]! @splitQuery
+                @reference(path: [{key: "film_scene_film_id_fkey"}])
         }
         type Inventory @table(name: "inventory") { inventoryId: Int }
+        type FilmScene implements Node @table(name: "film_scene")
+                @node(keyColumns: ["film_id", "scene_no"]) {
+            id: ID! @nodeId
+            label: String @field(name: "label")
+        }
+        input FilmSceneFilter { scene: ID @nodeId(typeName: "FilmScene") }
         type Query {
             films(filmId: Int @field(name: "film_id")): [Film!]!
         }
@@ -475,7 +483,9 @@ class TenantRoutedFetcherPipelineTest {
     void aNestingTypesBatchedFieldsCarryTheirFoldedArm() {
         var schema = multiTenant(FILM_STOCK);
 
-        for (var field : java.util.List.of("inventories", "inventoriesConnection")) {
+        // scenesWhere's filter names the tenant column, but under a parent that already has a
+        // tenant it only filters: the field routes exactly as its argument-free siblings do.
+        for (var field : java.util.List.of("inventories", "inventoriesConnection", "scenesWhere")) {
             assertThat(schema.tenantBindingOf("FilmStock", field)).as(field)
                 .isEqualTo(new no.sikt.graphitron.rewrite.model.TenantBinding.Inherited("FilmStock"));
         }

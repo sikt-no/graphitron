@@ -655,6 +655,36 @@ public record TenantBindingIndex(
             boolean connectionService = roots.contains(coord.getTypeName())
                 && out instanceof ServiceField && bindsConnection(out) && !anyGlobal;
             boolean needsTenant = anyTenant || connectionService;
+            // The parent decides first, ahead of the field's own arguments: a parent that already
+            // supplies a tenant, named by its row or handed down from above, is the tenant the
+            // child runs on, and an argument that names the tenant column only filters inside it.
+            // Otherwise an optional argument would route the field (failing when it is omitted),
+            // and a batch whose parents span tenants would go to the one tenant it names. Roots
+            // never reach these rungs: they sit in withoutContext and have no parent row.
+            //
+            // The parent row names the tenant that holds the child row, so it decides even when
+            // an ancestor handed a tenant down. In a database-per-tenant deployment an inherited
+            // tenant finds the child only when the parent row names that same tenant.
+            var parentRow = parentRowBinding(site);
+            if (parentRow != null) {
+                return new Verdict.Arm(parentRow);
+            }
+            // A method call handed a connection-bound value (a DSLContext, or the $session handle
+            // its connection's mount returned) runs on whichever connection it is handed, so which
+            // connection serves it is semantics, not plumbing: under a tenant context the call runs
+            // on the inherited tenant's connection. Decided ahead of the reach-derived Untenanted
+            // arm, whose "touches no tables" reading is about graphitron's SQL only, a service's
+            // own SQL being opaque. Not where the field's own reach is global: graphitron re-reads
+            // that global return table on the same connection, and a global service runs on the
+            // default source, so the field keeps the Untenanted.DefaultSource leaf below.
+            if (!anyGlobal && bindsConnection(out) && tenantContextOf(coord.getTypeName())) {
+                return new Verdict.Arm(new TenantBinding.Inherited(coord.getTypeName()));
+            }
+            // Only where the statement needs a tenant: a field touching no tenant table keeps its
+            // Untenanted leaf below.
+            if (needsTenant && tenantContextOf(coord.getTypeName())) {
+                return new Verdict.Arm(new TenantBinding.Inherited(coord.getTypeName()));
+            }
             if (needsTenant && !direct.declines().isEmpty()) {
                 // A declined shape names the tenant column but cannot route on it. Each decline
                 // carries its own detail rather than falling through to the generic
@@ -691,30 +721,8 @@ public record TenantBindingIndex(
                     ? TenantBinding.Untenanted.GlobalRead.INSTANCE
                     : TenantBinding.NodeIdBound.INSTANCE);
             }
-            // Ahead of both Inherited checks: the parent row names the tenant that holds the
-            // child row, so it decides even when an ancestor handed a tenant down. In a
-            // database-per-tenant deployment an inherited tenant finds the child only when the
-            // parent row names that same tenant.
-            var parentRow = parentRowBinding(site);
-            if (parentRow != null) {
-                return new Verdict.Arm(parentRow);
-            }
-            // A method call handed a connection-bound value (a DSLContext, or the $session handle
-            // its connection's mount returned) runs on whichever connection it is handed, so which
-            // connection serves it is semantics, not plumbing: under a tenant context the call runs
-            // on the inherited tenant's connection. Decided ahead of the reach-derived Untenanted
-            // arm, whose "touches no tables" reading is about graphitron's SQL only, a service's
-            // own SQL being opaque. Not where the field's own reach is global: graphitron re-reads
-            // that global return table on the same connection, and a global service runs on the
-            // default source, so the field keeps the Untenanted.DefaultSource leaf below.
-            if (!anyGlobal && bindsConnection(out) && tenantContextOf(coord.getTypeName())) {
-                return new Verdict.Arm(new TenantBinding.Inherited(coord.getTypeName()));
-            }
             if (!needsTenant) {
                 return new Verdict.Arm(untenantedLeaf(members));
-            }
-            if (tenantContextOf(coord.getTypeName())) {
-                return new Verdict.Arm(new TenantBinding.Inherited(coord.getTypeName()));
             }
             if (connectionService) {
                 // The service fix, not the generic one: whatever the reach, what routes the call
@@ -784,18 +792,15 @@ public record TenantBindingIndex(
         /**
          * The {@link TenantBinding.ParentRowBound} arm for {@code site}, or {@code null}: a
          * table-sourced {@link ChildField.BatchedTableField} (its own statement on its own
-         * connection) carrying no tenancy marker and binding no tenant itself, whose correlation
-         * {@link #parentRowTenantSlot} matches. Shared by {@link #armOf} and the two edge
+         * connection) carrying no tenancy marker, whose correlation {@link #parentRowTenantSlot}
+         * matches. Its own arguments do not exclude it: an argument naming the tenant column only
+         * filters inside the tenant the parent row names. Shared by {@link #armOf} and the two edge
          * predicates, so the arm and the context it establishes derive from one test.
          */
         private TenantBinding.ParentRowBound parentRowBinding(Site site) {
             if (!(site.field() instanceof ChildField.BatchedTableField field)
                     || field.sourceShape() != SourceShape.Table
                     || fanMarked(site.coord()) || globalMarked(site.coord())) {
-                return null;
-            }
-            var direct = directBinding(site);
-            if (!direct.slots().isEmpty() || !direct.declines().isEmpty()) {
                 return null;
             }
             var slot = parentRowTenantSlot(field.parentCorrelation(), field.joinPath());

@@ -2554,4 +2554,96 @@ class TenantBindingClassificationTest {
             .hasSize(1);
         assertRejects(schema, "FilmMention.film", "Mark it @splitQuery");
     }
+
+    // ===== A parent that supplies a tenant outranks the child's own argument =====
+
+    @Test
+    void aChildArgumentNamingTheTenantColumnFiltersInsideTheInheritedTenant() {
+        var schema = build("""
+            type FilmActor implements Node @table(name: "film_actor")
+                    @node(keyColumns: ["actor_id", "film_id"]) {
+                id: ID! @nodeId
+            }
+            input FilmActorFilter { actor: ID @nodeId(typeName: "FilmActor") }
+            type Film @table(name: "film") {
+                title: String
+                byFilmId(filmId: Int @field(name: "film_id")): [Inventory!]! @splitQuery
+                byFilter(filter: FilmActorFilter): [FilmActor!]! @splitQuery
+            }
+            type Inventory @table(name: "inventory") { inventoryId: Int }
+            type Query { films(filmId: Int @field(name: "film_id")): [Film!]! }
+            """);
+
+        assertInherited(schema, "Film", "byFilter");
+        assertInherited(schema, "Film", "byFilmId");
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aChildArgumentNamingTheTenantColumnDoesNotOutrankTheParentRow() {
+        var bare = endorsements(" @splitQuery", "");
+        var withArgument = build(ENDORSEMENTS.replace("film: Film%s",
+            "film(filmId: Int @field(name: \"film_id\")): Film%s").formatted(" @splitQuery", ""));
+
+        var expected = (TenantBinding.ParentRowBound) bare.tenantBindingOf("FilmEndorsement", "film");
+        assertThat(withArgument.tenantBindingOf("FilmEndorsement", "film"))
+            .isInstanceOfSatisfying(TenantBinding.ParentRowBound.class, parentRow -> {
+                assertThat(parentRow.parentTable().tableName())
+                    .isEqualToIgnoringCase(expected.parentTable().tableName());
+                assertThat(parentRow.slot().sourceSide().sqlName())
+                    .isEqualToIgnoringCase(expected.slot().sourceSide().sqlName());
+                assertThat(parentRow.slot().targetSide().sqlName())
+                    .isEqualToIgnoringCase(expected.slot().targetSide().sqlName());
+            });
+        assertThat(withArgument.tenantBindings().rejections()).isEmpty();
+    }
+
+    /**
+     * {@code Language} is global and its {@code films} key lands on {@code film.language_id}, not
+     * the tenant column, so only a handed-down tenant can outrank the argument. {@code %s} is
+     * extra root fields.
+     */
+    private static final String LANGUAGE_FILMS = """
+        type Film @table(name: "film") {
+            title: String
+            language: Language @reference(path: [{key: "film_language_id_fkey"}])
+        }
+        type Language @table(name: "language") {
+            name: String
+            films(filmId: Int @field(name: "film_id")): [Film!]! @splitQuery
+                @reference(path: [{key: "film_language_id_fkey"}])
+        }
+        type Query {
+            films(filmId: Int @field(name: "film_id")): [Film!]!%s
+        }
+        """;
+
+    @Test
+    void aGlobalParentReachedOnlyUnderATenantHandsItDownToAnArgumentBearingChild() {
+        var schema = build(LANGUAGE_FILMS.formatted(""));
+
+        assertInherited(schema, "Language", "films");
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aGlobalParentAlsoReachedWithoutATenantLeavesTheArgumentRouting() {
+        var schema = build(LANGUAGE_FILMS.formatted("\n    languages: [Language!]!"));
+
+        assertThat(schema.tenantBindingOf("Language", "films"))
+            .isInstanceOfSatisfying(TenantBinding.ArgumentBound.class,
+                bound -> assertThat(bound.primary().slotName()).isEqualTo("filmId"));
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aNestedChildArgumentNamingTheTenantColumnFiltersInsideTheInheritedTenant() {
+        var schema = filmStock("""
+
+                byFilmId(filmId: Int @field(name: "film_id")): [Inventory!]! @splitQuery
+                    @reference(path: [{key: "inventory_film_id_fkey"}])""", "");
+
+        assertInherited(schema, "FilmStock", "byFilmId");
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
 }

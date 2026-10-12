@@ -52,7 +52,13 @@ type FilmStock {
     # Both tenants hold scenes (one for film 1, three for film 2), so a batch shared between the
     # tenants would empty one film's list: the per-tenant partition shows in the answer.
     scenes: [FilmScene!]! @splitQuery @reference(path: [{key: "film_scene_film_id_fkey"}])
+    # The filter's scene id embeds the tenant column, but the film already has a tenant, so the
+    # filter only narrows the rows inside it: omitting it routes exactly like scenes.
+    scenesWhere(filter: FilmSceneFilter): [FilmScene!]! @splitQuery
+        @reference(path: [{key: "film_scene_film_id_fkey"}])
 }
+
+input FilmSceneFilter { scene: ID @nodeId(typeName: "FilmScene") }
 
 type Inventory @table(name: "inventory") {
     inventoryId: Int @field(name: "inventory_id")

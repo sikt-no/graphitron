@@ -295,6 +295,58 @@ class TenantDivinedRoutingExecutionTest {
         });
     }
 
+    // ===== A parent that already has a tenant outranks the child's own tenant-naming argument =====
+
+    private static List<?> scenesWhere(Map<String, Object> film) {
+        return (List<?>) ((Map<String, Object>) film.get("stock")).get("scenesWhere");
+    }
+
+    @Test
+    void nestedChildWithAnOmittedTenantFilter_routesOnTheInheritedTenant() {
+        // The filter's scene id embeds the tenant column; were it the router, omitting it would
+        // leave the field with no tenant to run on.
+        var films = (List<Map<String, Object>>) data(
+            execute("{ films(filmId: 2) { stock { scenesWhere { id } } } }"), "films");
+        assertThat(films).hasSize(1);
+        assertThat(scenesWhere(films.get(0)))
+            .as("tenant 2's three scenes, read on the tenant the film was fetched under")
+            .hasSize(3);
+        assertThat(TENANT_1_OPENED.get())
+            .as("nothing in the operation touches the other tenant's database")
+            .isZero();
+    }
+
+    @Test
+    void nestedChildWithATenantFilter_filtersInsideTheInheritedTenant() {
+        String scene = NodeIdEncoder.encodeFilmScene(2, 2);
+        var films = (List<Map<String, Object>>) data(
+            execute("{ films(filmId: 2) { stock { scenesWhere(filter: { scene: \"" + scene + "\" })"
+                + " { id } } } }"), "films");
+        assertThat(films).hasSize(1);
+        assertThat(scenesWhere(films.get(0)))
+            .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.list(Map.class))
+            .extracting(m -> m.get("id"))
+            .containsExactly(scene);
+    }
+
+    @Test
+    void nestedChildWithAnOmittedTenantFilter_routesEachParentOnItsOwnTenant() {
+        // Each endorsement's film names its own tenant, so within one request the two films'
+        // scenesWhere batches run on two databases; an argument-routed field could not run here.
+        var result = execute("{ endorsements(note: \"" + ENDORSEMENT_NOTE + "\")"
+            + " { film { title stock { scenesWhere { id } } } } }");
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        var films = endorsedFilms(result);
+        assertThat(films).anySatisfy(f -> {
+            assertThat(f.get("title")).isEqualTo("Tenant One Film");
+            assertThat(scenesWhere(f)).as("tenant 1's batch").hasSize(1);
+        });
+        assertThat(films).anySatisfy(f -> {
+            assertThat(f.get("title")).isEqualTo("Tenant Two Film");
+            assertThat(scenesWhere(f)).as("tenant 2's batch").hasSize(3);
+        });
+    }
+
     @Test
     void nestedInheritedConnection_totalCountAggregatesOnTheDivinedTenantSource() {
         var films = (List<Map<String, Object>>) data(execute("{ films(filmId: 1) { stock {"
