@@ -102,3 +102,17 @@ sis IT run against Oracle 18c on trunk `dd940c703` (`sis/GRAPHITRON10_STATUS.md`
 ## Roadmap entries
 
 R103 (lift jOOQ column defaults onto input fields) assumed the `DSL.defaultValue` emission was the correct runtime story; its body already carries a retraction note pointing here. Its Spec should be read against the rule above: an absent field is omitted (single row, uniform batch) or written as `DEFAULT` (mixed-batch gap), and in neither case does Graphitron know the default's value.
+
+## Reviewer findings
+
+### Round 1 (Spec → Ready review): request revisions
+
+The goal reads cleanly: an INSERT stops naming columns the client left out, so a single-row INSERT and a uniform bulk INSERT never send `DEFAULT`, and Oracle views accept them. Every symbol, call site, test class, fixture field and manual line the plan names exists as named, the five INSERT-values call sites are the complete set, and the paired `LinkedHashMap` emitter extends the shape UPDATE already has. One gap fails question 1 (viability of the bulk rule as written); it is a fork the author settles, so it is not settled here.
+
+**Finding 1: a bulk INSERT whose rows all leave out every field loses rows.** The bulk rule makes the column list the union, over rows, of supplied columns. When every input field is nullable (the spec itself says this is reachable, and nothing in the classifier rejects it) and every row is `{}`, the union is empty. Checked against jOOQ 3.20.11 (the pinned version), `insertInto(t, List.of()).valuesOfRows(List.of(DSL.row(List.of()), DSL.row(List.of())))` renders `insert into "film" default values` for both `POSTGRES` and `DEFAULT` dialects: one row, not two. The fetcher would silently insert one row for an N-row input, and `RETURNING` would yield one record where the caller expects N. Today's static column list inserts N rows of `(default, ...)`, so this is a regression the plan introduces, and none of the listed tests would catch it. The single-row all-absent case is fine (`default values` inserts the one row asked for) and the spec already names its Oracle residual.
+
+To satisfy: say what a bulk INSERT does when no row supplies any column, and pin it with an execution test (a `[X!]!` of two or more empty rows inserts and returns that many rows). Options the author might weigh, without prescribing one: fall back to the full plan column list with `DEFAULT` cells for that case (today's behaviour, with the same Oracle-view residual as a mixed batch, named in the manual); issue one `default values` statement per row; or reject at runtime. Whichever is chosen, the bulk rule's prose and the manual bullet should cover it.
+
+**Non-blocking.** The `FetcherPipelineTest` replacement is described as "a pipeline-tier check that the fetcher compiles"; the pipeline tier asserts on generated source, compilation is the sakila-example build. Asserting the new shape (`valuesOfRows` over a `DSL.row(` of a collection, no `DSL.defaultValue(` on the single-row arm) would keep the test meaningful.
+
+Verdict: stays in Spec.
