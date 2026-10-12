@@ -125,3 +125,15 @@ To satisfy: say what a bulk INSERT does when no row supplies any column, and pin
 *Author response:* taken. Tests now names the replacement assertions: included columns into `insertInto`, `DSL.row(` over a collection into `.valuesOfRows(` on the bulk arm, no `DSL.defaultValue(` on the single-row arm.
 
 Verdict: stays in Spec.
+
+### Round 2 (Spec → Ready review): request revisions
+
+Reviewer session `session_01EWh2ntN1Nsqeq3Y2aThzQQ`, 2026-10-12.
+
+The goal reads cleanly and is viable: a single-row INSERT, and a bulk INSERT whose rows supply the same fields, stop naming columns the client left out, so no `DEFAULT` reaches Oracle and an INSERT into a view stops failing; mixed batches keep today's statement and say so. Round 1's finding is resolved. The widened empty union, `insertInto(t, Collection)`, `.values(Collection)`, `.valuesOfRows(Collection<RowN>)` and `DSL.row(Collection)` all render as the spec says against jOOQ 3.20.11. The paired map emitter extends the UPDATE `SET` map shape rather than standing beside it. One contradiction fails question 2.
+
+**Finding 1 (question 2): the Retired vocabulary retires a mechanism the bulk plan keeps.** The bulk rule and Implementation § Bulk keep a presence-gated cell on the bulk arm. For each included column, a row that supplies it binds its value; a row that leaves it out gets `DSL.defaultValue(...)`. Which batches are uniform is only known at runtime, so the generated bulk body still carries that `present ? DSL.val : DSL.defaultValue` choice for every included column. `emitInsertAgreementPrep`'s "no writer present" arm survives there too (the spec drops it only on the single-row path). Yet § Retired vocabulary declares "per-cell missing-vs-null dispatch" and its ternary retired for INSERT ("the term survives for nothing"). It also retires "DEFAULT-resolved cell" in `buildInsertDecodeLocals`' javadoc and the INSERT half of `DmlBulkMutationsExecutionTest`'s class javadoc, and both still describe the bulk arm accurately after this lands. § Tests has the same root: it calls `FetcherPipelineTest`'s `.contains("org.jooq.impl.DSL.defaultValue(")` the retired cell shape, but the bulk `createFilms` body keeps emitting it. The section is load-bearing. Under `roadmap/workflow.adoc` § Retirement sweep, the Done reviewer greps for these terms, and terms that keep surviving graduate into `RetiredVocabularyGuardTest`. As written, the implementer is told to remove prose that stays true, and the Done sweep flags code the plan requires.
+
+To satisfy: scope the retirement to what actually goes. That is the ternary on the single-row and per-row-record paths, the static typed column list, and the five named emitters. Then say what survives on the bulk arm (the gap cell) and under which name, so the sweep has a correct query. Bring the `FetcherPipelineTest` sentence into line: the bulk body may still contain `DSL.defaultValue(`; the single-row body must not.
+
+Verdict: stays in Spec. Nothing else blocks. With the section rescoped, the next pass should be a sign-off.
