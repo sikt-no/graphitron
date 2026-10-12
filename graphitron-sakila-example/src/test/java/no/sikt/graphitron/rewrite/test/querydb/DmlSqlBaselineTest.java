@@ -150,8 +150,8 @@ class DmlSqlBaselineTest {
             .as("projected single INSERT: the INSERT..RETURNING pk inside the transaction, "
                 + "then the companion SELECT re-projecting the return type by plain key equality")
             .containsExactly(
-                "insert into \"public\".\"film\" (\"title\", \"language_id\", \"rental_duration\") "
-                    + "values (?, ?, default) "
+                "insert into \"public\".\"film\" (\"title\", \"language_id\") "
+                    + "values (?, ?) "
                     + "returning \"public\".\"film\".\"film_id\"",
                 "select \"public\".\"film\".\"film_id\", \"public\".\"film\".\"title\" "
                     + "from \"public\".\"film\" "
@@ -183,8 +183,8 @@ class DmlSqlBaselineTest {
             .as("projected list INSERT: the multi-row INSERT..RETURNING, then the companion "
                 + "joining the returned PKs through the (idx, pk) VALUES table ordered by idx")
             .containsExactly(
-                "insert into \"public\".\"film\" (\"title\", \"language_id\", \"rental_duration\") "
-                    + "values (?, ?, default), (?, ?, default) "
+                "insert into \"public\".\"film\" (\"title\", \"language_id\") "
+                    + "values (?, ?), (?, ?) "
                     + "returning \"public\".\"film\".\"film_id\"",
                 "select \"public\".\"film\".\"film_id\", \"public\".\"film\".\"title\" "
                     + "from \"public\".\"film\" "
@@ -382,8 +382,8 @@ class DmlSqlBaselineTest {
                 + "restricted to the known discriminator values")
             .containsExactly(
                 "insert into \"public\".\"content\" "
-                    + "(\"title\", \"content_type\", \"length\", \"short_description\", \"film_id\") "
-                    + "values (?, cast(? as \"public\".\"content_kind\"), default, default, ?) "
+                    + "(\"title\", \"content_type\", \"film_id\") "
+                    + "values (?, cast(? as \"public\".\"content_kind\"), ?) "
                     + "returning \"public\".\"content\".\"content_id\"",
                 "select \"content\".\"content_type\" as \"__discriminator__\", "
                     + "\"public\".\"content\".\"content_id\", \"public\".\"content\".\"title\" "
@@ -398,12 +398,13 @@ class DmlSqlBaselineTest {
             + "{title: \"PIN SC\", contentType: \"SHORT\", description: \"short pin\"}]) "
             + "{ __typename ... on FilmContent { contentId } ... on ShortContent { contentId description } } }");
         assertThat(SQL_LOG)
-            .as("discriminated list INSERT: the discriminator re-projection plus the "
-                + "(idx, pk) VALUES join ordered by idx, in one companion statement")
+            .as("discriminated list INSERT: the rows differ, so the column list names what some "
+                + "row supplies and each row's gap is DEFAULT; then the discriminator re-projection "
+                + "plus the (idx, pk) VALUES join ordered by idx, in one companion statement")
             .containsExactly(
                 "insert into \"public\".\"content\" "
-                    + "(\"title\", \"content_type\", \"length\", \"short_description\", \"film_id\") "
-                    + "values (?, cast(? as \"public\".\"content_kind\"), default, default, ?), (?, cast(? as \"public\".\"content_kind\"), default, ?, default) "
+                    + "(\"title\", \"content_type\", \"short_description\", \"film_id\") "
+                    + "values (?, cast(? as \"public\".\"content_kind\"), default, ?), (?, cast(? as \"public\".\"content_kind\"), ?, default) "
                     + "returning \"public\".\"content\".\"content_id\"",
                 "select \"content\".\"content_type\" as \"__discriminator__\", "
                     + "\"public\".\"content\".\"content_id\", \"public\".\"content\".\"short_description\" "
