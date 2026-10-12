@@ -1,7 +1,7 @@
 ---
 id: R1017
 title: "An INSERT leaves absent input fields out of its column list instead of writing DEFAULT"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 5
 theme: mutation-write
