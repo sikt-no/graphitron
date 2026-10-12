@@ -48,8 +48,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
 | `R1017` | An INSERT leaves absent input fields out of its column list instead of writing DEFAULT | In Progress | 2026-10-12 | [plan](insert-omits-absent-columns.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
-| `R1018` | A child field routes on its parent row tenant, not on an optional argument slot | Ready | 2026-10-12 | [plan](parent-row-tenant-outranks-argument-slot.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
+| `R1018` | A child field routes on its parent row tenant, not on an optional argument slot | In Progress | 2026-10-12 | [plan](parent-row-tenant-outranks-argument-slot.md) |
 | `R1016` | A tenant-routed mutation payload carries both its tenant and its errors | In Progress | 2026-10-12 | [plan](payload-errors-and-tenant-share-local-context.md) |
 | `R1015` | The lookup launcher joins its input rows with ON, not USING | In Progress | 2026-10-12 | [plan](lookup-launcher-joins-on-not-using.md) |
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
@@ -595,7 +595,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R468` [**Oracle/RAS execution-tier coverage for session identity hooks**](oracle-ras-session-hook-execution-coverage.md) — Backlog, architecture
 - `R1019` [**A field whose tenant slots may all be absent is a build error, or fans out when they are**](optional-argument-slots-tenant-fallback.md) — Ready, bug, blocked by [parent-row-tenant-outranks-argument-slot](parent-row-tenant-outranks-argument-slot.md)
 - `R460` [**Targeted read-only enforcement for query paths graphitron does not control (@routine, @service)**](query-read-only-enforcement.md) — Backlog, architecture
-- `R1018` [**A child field routes on its parent row tenant, not on an optional argument slot**](parent-row-tenant-outranks-argument-slot.md) — Ready, bug
+- `R1018` [**A child field routes on its parent row tenant, not on an optional argument slot**](parent-row-tenant-outranks-argument-slot.md) — In Progress, bug
 - `R1016` [**A tenant-routed mutation payload carries both its tenant and its errors**](payload-errors-and-tenant-share-local-context.md) — In Progress, bug
 - `R996` [**A tenant-scoped row referencing another tenant routes on the referenced tenant**](cross-tenant-reference-from-tenant-scoped-parent.md) — Backlog, architecture
 - `R505` [**Tenant-index tables: per-row tenant routing off an index parent**](tenant-index-parent-row-routing.md) — Backlog, architecture
