@@ -10,8 +10,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * The realm check's decision, over hand-built rows and loader evidence. Maven's own realm
  * construction (which plugin-block entries land, in what order, with what trails) is what no
- * in-process test can reach; the {@code plugin-block-second-jooq} and
- * {@code plugin-block-mediated-jooq} invoker ITs carry that. The compiled-against version is a
+ * in-process test can reach; the {@code plugin-block-second-jooq},
+ * {@code plugin-block-mediated-jooq} and {@code plugin-block-transitive-jooq} invoker ITs carry
+ * that, on whichever Maven runs them, with or without trails. The compiled-against version is a
  * parameter here, so none of these cases depends on the constant javac inlines.
  */
 class PluginRealmTest {
@@ -90,6 +91,68 @@ class PluginRealmTest {
                 + " run on the jOOQ it was compiled against.\n\n"
                 + "Remove org.jooq:jooq from the plugin's <dependencies>; graphitron must run on its own"
                 + " jOOQ, and already reads the module's compile classpath for your code.");
+    }
+
+    @Test
+    void aSecondJarWithNoTrailThatIsTheEntryIsNamedAsDeclared() {
+        var second = Path.of("/repo/org/example/it/second-jooq/1.0/second-jooq-1.0.jar");
+        var stray = new PluginRealm.Row("org.example.it", "second-jooq", "1.0", second, null);
+        var realm = new PluginRealm(List.of(OUR_ROW, stray), List.of("org.example.it:second-jooq"),
+            "graphitron-maven-plugin");
+
+        assertThat(realm.refusal(List.of(second, OUR_JAR), OURS, OURS)).hasValue(
+            "graphitron runs on org.jooq:jooq:3.20.11, but its plugin classloader also holds"
+                + " org.example.it:second-jooq:1.0 (declared under <plugin><dependencies> for"
+                + " graphitron-maven-plugin). Two jOOQs in the plugin classloader make graphitron run"
+                + " on whichever answers first.\n\n"
+                + "Remove org.example.it:second-jooq from the plugin's <dependencies>; graphitron must"
+                + " run on its own jOOQ, and already reads the module's compile classpath for your code.");
+    }
+
+    @Test
+    void oneJarAtAnotherVersionWithNoTrailNamesTheEntryToRemove() {
+        var other = Path.of("/repo/org/jooq/jooq/3.19.99-it/jooq-3.19.99-it.jar");
+        var mediated = new PluginRealm.Row("org.jooq", "jooq", "3.19.99-it", other, null);
+        var realm = new PluginRealm(List.of(mediated), List.of("org.jooq:jooq"), "graphitron-maven-plugin");
+
+        assertThat(realm.refusal(List.of(other), "3.19.99", OURS)).hasValue(
+            "graphitron was compiled against org.jooq:jooq:3.20.11, but its plugin classloader holds"
+                + " org.jooq:jooq:3.19.99-it (declared under <plugin><dependencies> for"
+                + " graphitron-maven-plugin) in its place, which reports jOOQ 3.19.99. graphitron must"
+                + " run on the jOOQ it was compiled against.\n\n"
+                + "Remove org.jooq:jooq from the plugin's <dependencies>; graphitron must run on its own"
+                + " jOOQ, and already reads the module's compile classpath for your code.");
+    }
+
+    @Test
+    void aSecondJarWithNoTrailAndOneEntryNamesThatEntry() {
+        var pro = new PluginRealm.Row("org.jooq.pro", "jooq", "3.19.18", PRO_JAR, null);
+        var realm = new PluginRealm(List.of(pro, OUR_ROW), List.of("no.fellesstudentsystem:sis-service"),
+            "graphitron-maven-plugin");
+
+        assertThat(realm.refusal(List.of(PRO_JAR, OUR_JAR), "3.19.18", OURS)).hasValue(
+            "graphitron runs on org.jooq:jooq:3.20.11, but its plugin classloader also holds"
+                + " org.jooq.pro:jooq:3.19.18 (brought in by no.fellesstudentsystem:sis-service,"
+                + " declared under <plugin><dependencies> for graphitron-maven-plugin). Two jOOQs in"
+                + " the plugin classloader make graphitron run on whichever answers first.\n\n"
+                + "Move no.fellesstudentsystem:sis-service from the plugin's <dependencies> to the"
+                + " module's own <dependencies>; graphitron already reads the module's compile"
+                + " classpath. If it must stay in the plugin block, exclude org.jooq.pro:jooq from it.");
+    }
+
+    @Test
+    void oneEntryIsNamedEvenWhenTheTrailRunsThroughGraphitronsOwnDependency() {
+        var other = Path.of("/repo/org/jooq/jooq/3.19.99-it/jooq-3.19.99-it.jar");
+        var mediated = new PluginRealm.Row("org.jooq", "jooq", "3.19.99-it", other,
+            List.of(PLUGIN, "no.sikt:graphitron:jar:10-SNAPSHOT", "org.jooq:jooq:jar:3.19.99-it"));
+        var realm = new PluginRealm(List.of(mediated), List.of("com.example:service"),
+            "graphitron-maven-plugin");
+
+        assertThat(realm.refusal(List.of(other), "3.19.99", OURS)).hasValueSatisfying(message -> assertThat(message)
+            .contains("holds org.jooq:jooq:3.19.99-it (brought in by com.example:service, declared under"
+                + " <plugin><dependencies> for graphitron-maven-plugin)")
+            .contains("Move com.example:service from the plugin's <dependencies>")
+            .doesNotContain("no.sikt:graphitron,"));
     }
 
     @Test

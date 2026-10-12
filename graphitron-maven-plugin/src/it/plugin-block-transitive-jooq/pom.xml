@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>no.sikt.graphitron.it</groupId>
+  <artifactId>plugin-block-transitive-jooq</artifactId>
+  <version>1.0-SNAPSHOT</version>
+  <packaging>jar</packaging>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>no.sikt</groupId>
+        <artifactId>graphitron-maven-plugin</artifactId>
+        <version>@project.version@</version>
+        <executions>
+          <execution>
+            <id>rewrite-generate</id>
+            <goals>
+              <goal>generate</goal>
+            </goals>
+            <configuration>
+              <schemaInputs>
+                <schemaInput>
+                  <pattern>src/main/resources/schema.graphqls</pattern>
+                </schemaInput>
+              </schemaInputs>
+              <outputPackage>no.sikt.it.generated</outputPackage>
+              <jooqPackage>no.sikt.graphitron.rewrite.test.jooq</jooqPackage>
+            </configuration>
+          </execution>
+        </executions>
+        <dependencies>
+          <!-- The one plugin-block entry: a service jar, installed by setup-second-jooq-carrier, that depends on a second jOOQ under another coordinate. That jOOQ reaches the plugin realm transitively, so the refusal must trace it to this entry: by the dependency trail on a Maven that records one, by deduction from the single entry on one that does not. -->
+          <dependency>
+            <groupId>org.example.it</groupId>
+            <artifactId>second-jooq-carrier</artifactId>
+            <version>1.0</version>
+          </dependency>
+        </dependencies>
+      </plugin>
+    </plugins>
+  </build>
+</project>

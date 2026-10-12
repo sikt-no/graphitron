@@ -169,9 +169,10 @@
                     <cloneProjectsTo>${project.build.directory}/it</cloneProjectsTo>
                     <settingsFile>src/it/settings.xml</settingsFile>
                     <postBuildHookScript>verify.groovy</postBuildHookScript>
-                    <!-- Setup projects install the stub jOOQ jars the plugin-block-*-jooq ITs list
-                         under <plugin><dependencies>; invoker runs them first and excludes them from
-                         the ordinary project scan. -->
+                    <!-- Setup projects install the stub jOOQ jars, and the service jar carrying one,
+                         that the plugin-block-*-jooq ITs list under <plugin><dependencies>; invoker
+                         runs them first, in invoker.ordinal order, and excludes them from the
+                         ordinary project scan. -->
                     <setupIncludes>
                         <setupInclude>setup-*/pom.xml</setupInclude>
                     </setupIncludes>

@@ -48,6 +48,8 @@ record PluginRealm(List<Row> rows, List<String> consumerAdded, String pluginArti
     /**
      * One plugin-realm artifact. {@code trail} is Maven's dependency trail from the plugin itself,
      * so its second element is the direct dependency of the plugin that brought this artifact in.
+     * The trail may be empty: Maven 3.10 records none for plugin artifacts, which is why
+     * attributing a row to a plugin-block entry reads it as only one of its sources.
      */
     record Row(String groupId, String artifactId, String version, Path file, List<String> trail) {
         Row {
@@ -278,11 +280,25 @@ record PluginRealm(List<Row> rows, List<String> consumerAdded, String pluginArti
             + " stay in the plugin block, exclude " + coordinate + " from it.";
     }
 
-    /** The consumer-added plugin-block entry the trail names for {@code row}, if any. */
+    /**
+     * The consumer-added plugin-block entry that put {@code row} in the realm, if one can be told.
+     * First answer wins: the jar is itself an entry; the trail names an entry; the consumer
+     * declared exactly one entry. The last holds because graphitron's realm with an empty plugin
+     * block passes {@link #refusal}, so a realm that fails it was made to fail by the entries, and
+     * with one entry that entry is the cause whatever path the trail records, or whether Maven
+     * recorded one at all.
+     */
     private Optional<String> entryFor(Row row) {
         if (row == null) {
             return Optional.empty();
         }
-        return row.broughtInBy().filter(consumerAdded::contains);
+        if (consumerAdded.contains(row.coordinate())) {
+            return Optional.of(row.coordinate());
+        }
+        var traced = row.broughtInBy().filter(consumerAdded::contains);
+        if (traced.isPresent()) {
+            return traced;
+        }
+        return consumerAdded.size() == 1 ? Optional.of(consumerAdded.get(0)) : Optional.empty();
     }
 }
