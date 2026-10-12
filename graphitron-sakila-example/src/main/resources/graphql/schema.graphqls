@@ -21,7 +21,7 @@ directive @auth(role: String!) on FIELD_DEFINITION
 # A custom-scalar default on an author-declared directive definition. Needs no application:
 # every non-graphitron directive definition is emitted into the runtime schema, so a default the
 # real scalar rejects fails Graphitron.buildSchema.
-directive @rateTolerance(min: BigDecimal = 0) on FIELD_DEFINITION
+directive @rateTolerance(min: BigDecimal = 0, steps: [BigDecimal] = [1, 2]) on FIELD_DEFINITION
 
 # R300: the result type of the table-valued read function tilganger_for_feidebruker_med_fs_fiktivt_fnr.
 # jOOQ generates the function as a catalog Table<R>, so the @table binding resolves the same way a
@@ -516,10 +516,10 @@ type Query {
     # spells the argMapping out. Both filter film.rental_rate into [fra, til] identically.
     filmsByRentalRateRange(filter: FilmRentalRangeFilter): [Film!]!
     filmsByRentalRateRangeExplicit(filter: FilmRentalRangeFilterExplicit): [Film!]!
-    # Custom-scalar defaults: BigDecimal bounds defaulted on the input fields and inside the
-    # argument's input-object default reach the runtime schema as the authored literals, so the
-    # schema validates against the real GraphQLBigDecimal and the condition receives BigDecimal 0/1.
-    filmsByRentalRateRangeDefaulted(filter: FilmRentalRangeFilterDefaulted = {rentalRateRange: {fra: 0, til: 1}}): [Film!]!
+    # Custom-scalar defaults: the argument default spells bounds 4/5 and the input fields default to
+    # 0/1, so an omitted argument and an empty range select different films, each pinning its own
+    # path. Both reach the runtime schema as authored literals the real GraphQLBigDecimal accepts.
+    filmsByRentalRateRangeDefaulted(filter: FilmRentalRangeFilterDefaulted = {rentalRateRange: {fra: 4, til: 5}}): [Film!]!
     # argres Phase 4: @condition on a plain input field.
     # PlainFilmIdInput.filmId resolves against film → condition wired and called at runtime.
     # R205 retired the Language-side counterpart: Path B now rejects mismatched call sites

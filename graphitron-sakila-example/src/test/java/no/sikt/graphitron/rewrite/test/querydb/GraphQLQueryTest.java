@@ -4140,23 +4140,78 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void inputFieldCondition_customScalarDefaults_bindAsBigDecimalBounds() {
-        // RentalRateRangeDefaulted defaults fra/til to BigDecimal 0 and 1, and the argument's
-        // input-object default spells the same bounds. [0, 1] selects the 0.99 films only:
-        // ACADEMY DINOSAUR is in, ACE GOLDFINGER (4.99) and the three 2.99 films are out. The
-        // omitted-argument query exercises the argument default; the empty-range query exercises
-        // the input-field defaults.
+        // The argument default spells bounds [4, 5], which selects ACE GOLDFINGER (4.99) alone;
+        // the input fields default to [0, 1], which selects ACADEMY DINOSAUR (0.99) alone. Distinct
+        // bounds keep each path honest: had the argument default's BigDecimals not arrived, the
+        // field defaults would fill in and the omitted-argument query would answer [0, 1] instead.
         List<Map<String, Object>> viaArgumentDefault = (List<Map<String, Object>>) execute(
             "{ filmsByRentalRateRangeDefaulted { title } }").get("filmsByRentalRateRangeDefaulted");
         List<Map<String, Object>> viaFieldDefaults = (List<Map<String, Object>>) execute(
             "{ filmsByRentalRateRangeDefaulted(filter: {rentalRateRange: {}}) { title } }")
             .get("filmsByRentalRateRangeDefaulted");
 
-        for (var films : List.of(viaArgumentDefault, viaFieldDefaults)) {
-            assertThat(films).extracting(f -> f.get("title"))
-                .contains("ACADEMY DINOSAUR")
-                .doesNotContain("ACE GOLDFINGER", "ADAPTATION HOLES", "AFFAIR PREJUDICE", "AGENT TRUMAN");
-        }
-        assertThat(viaFieldDefaults).containsExactlyInAnyOrderElementsOf(viaArgumentDefault);
+        assertThat(viaArgumentDefault).extracting(f -> f.get("title")).containsExactly("ACE GOLDFINGER");
+        assertThat(viaFieldDefaults).extracting(f -> f.get("title")).containsExactly("ACADEMY DINOSAUR");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void customScalarDefaults_introspectAsTheAuthoredLiterals() {
+        // Custom-scalar defaults are wired as the authored literal and coerced by the real scalar,
+        // so introspection prints them as written; an AST toString ("IntValue{value=0}") never
+        // reaches the runtime schema. Covers the three emission sites (input field, field argument,
+        // directive-definition argument) and a list default, beside an undefaulted field and the
+        // synthesised connection `first` default. One request per introspection root, since
+        // graphql-java's bad-faith guard rejects a repeated __type.
+        assertThat(defaultsByName(inputFieldsOf("RentalRateRangeDefaulted")))
+            .containsExactlyInAnyOrderEntriesOf(Map.of("fra", "0", "til", "1"));
+        assertThat(inputFieldsOf("RentalRateRange")).extracting(f -> f.get("defaultValue")).containsOnlyNulls();
+
+        var queryFields = (List<Map<String, Object>>) ((Map<String, Object>) execute(
+            "{ __type(name: \"Query\") { fields { name args { name defaultValue } } } }")
+            .get("__type")).get("fields");
+        assertThat(defaultsByName(argsOf(queryFields, "filmsByRentalRateRangeDefaulted")))
+            .containsExactlyEntriesOf(Map.of("filter", "{rentalRateRange : {fra : 4, til : 5}}"));
+        assertThat(defaultsByName(argsOf(queryFields, "actorsByFilmFilterConnection")))
+            .containsEntry("first", "10");
+
+        Map<String, Object> data = execute(
+            "{ __schema { directives { name args { name type { name ofType { name } } defaultValue } } } }");
+        var directives = (List<Map<String, Object>>) ((Map<String, Object>) data.get("__schema")).get("directives");
+        var rateTolerance = directives.stream().filter(d -> "rateTolerance".equals(d.get("name"))).findFirst().orElseThrow();
+        var rateArgs = (List<Map<String, Object>>) rateTolerance.get("args");
+        assertThat(defaultsByName(rateArgs))
+            .containsExactlyInAnyOrderEntriesOf(Map.of("min", "0", "steps", "[1, 2]"));
+        // The definition's argument types name the real scalar, not a String placeholder, which is
+        // what lets the literal defaults validate against BigDecimal at schema build.
+        assertThat(rateArgs).extracting(a -> {
+                var type = (Map<String, Object>) a.get("type");
+                return type.get("name") != null ? type.get("name") : ((Map<String, Object>) type.get("ofType")).get("name");
+            })
+            .containsOnly("BigDecimal");
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> inputFieldsOf(String typeName) {
+        return (List<Map<String, Object>>) ((Map<String, Object>) execute(
+            "{ __type(name: \"" + typeName + "\") { inputFields { name defaultValue } } }")
+            .get("__type")).get("inputFields");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> argsOf(List<Map<String, Object>> fields, String fieldName) {
+        return (List<Map<String, Object>>) fields.stream()
+            .filter(f -> fieldName.equals(f.get("name")))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("no field " + fieldName))
+            .get("args");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> defaultsByName(Object namedValues) {
+        var out = new java.util.LinkedHashMap<String, Object>();
+        for (var v : (List<Map<String, Object>>) namedValues) out.put((String) v.get("name"), v.get("defaultValue"));
+        return out;
     }
 
     @Test

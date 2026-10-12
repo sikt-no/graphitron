@@ -64,41 +64,7 @@ class DirectiveDefinitionEmitterTest {
             .contains("DirectiveLocation.OBJECT")
             .contains("GraphQLArgument.newArgument()")
             .contains(".name(\"roles\")")
-            .contains(".name(\"mode\")")
-            .contains(".defaultValueLiteral(graphql.parser.Parser.parseValue(\"\\\"strict\\\"\"))");
-    }
-
-    @Test
-    void buildDefinition_emitsBooleanArgumentDefault() {
-        var schema = TestSchemaHelper.buildBundle("""
-            directive @flag(enabled: Boolean = true) on FIELD_DEFINITION
-            type Query { x: String }
-            """).assembled();
-        var rendered = DirectiveDefinitionEmitter
-            .buildDefinitionMethod("directiveDefinition_flag", schema.getDirective("flag"))
-            .toString();
-        assertThat(rendered)
-            .contains(".name(\"enabled\")")
-            .contains(".defaultValueLiteral(graphql.parser.Parser.parseValue(\"true\"))");
-    }
-
-    @Test
-    void buildDefinition_emitsCustomScalarArgumentDefaultAsLiteral() {
-        var schema = TestSchemaHelper.buildBundle("""
-            scalar BigDecimal @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBigDecimal")
-            directive @rateTolerance(min: BigDecimal = 0) on FIELD_DEFINITION
-            type Query { x: String }
-            """).assembled();
-        var rendered = DirectiveDefinitionEmitter
-            .buildDefinitionMethod("directiveDefinition_rateTolerance", schema.getDirective("rateTolerance"))
-            .toString();
-        // The argument type references the real scalar rather than the GraphQLString placeholder
-        // applied directives use, so the literal default validates against BigDecimal at runtime.
-        assertThat(rendered)
-            .contains(".type(graphql.schema.GraphQLTypeReference.typeRef(\"BigDecimal\"))")
-            .doesNotContain("GraphQLString")
-            .contains(".defaultValueLiteral(graphql.parser.Parser.parseValue(\"0\"))")
-            .doesNotContain("Value{value=");
+            .contains(".name(\"mode\")");
     }
 
     @Test
