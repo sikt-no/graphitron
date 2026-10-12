@@ -5,8 +5,8 @@ package no.sikt.graphitron.model.grammar;
  * the message that says where one of them is admitted.
  *
  * <p>{@code $source} binds the SDL field to the upstream Java value as a whole rather than to a
- * member of it; {@code $errors} forces the local-context transport on a payload type's errors
- * field. Both are values the author types, so recognising one is the same kind of question as the
+ * member of it; {@code $errors} is inert, kept parseable on an errors field so a schema carrying
+ * it still builds. Both are values the author types, so recognising one is the same kind of question as the
  * splits beside it here: what did the written value say.
  *
  * <p>It lives in the module both readers depend on because the literal and the rejection message
@@ -22,10 +22,10 @@ public final class FieldSourceSigilGrammar {
     public static final String UPSTREAM_ROOT = "$source";
 
     /**
-     * On an errors-shaped field of a payload-returning mutation type, forces the
-     * {@code env.getLocalContext()} transport rather than the accessor-then-local-context fallback.
+     * On an errors-shaped field, an inert sigil: the field's transport follows from its parent, so
+     * the generator warns that it can be removed.
      */
-    public static final String LOCAL_CONTEXT = "$errors";
+    public static final String ERRORS = "$errors";
 
     private FieldSourceSigilGrammar() {
     }

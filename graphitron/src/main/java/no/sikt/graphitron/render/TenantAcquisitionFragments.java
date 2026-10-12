@@ -29,11 +29,11 @@ public final class TenantAcquisitionFragments {
 
     /**
      * One entry point's resolved declaration. {@code statement} is the full block the site pastes
-     * where its {@code DSLContext dsl = ...} line goes; {@code localContextTail} is
-     * {@code .localContext(...)} exactly when the declaration divined a key the subtree's
-     * inherited acquisitions need, and empty otherwise.
+     * where its {@code DSLContext dsl = ...} line goes; {@code handDown} carries the divined key
+     * exactly when the declaration divined one the subtree's inherited acquisitions need, and is
+     * {@link TenantHandDown#none()} otherwise.
      */
-    public record Declaration(CodeBlock statement, CodeBlock localContextTail) {}
+    public record Declaration(CodeBlock statement, TenantHandDown handDown) {}
 
     /**
      * The declaration for {@code coordinate} under this run's axis. A single-tenant run declares
@@ -71,7 +71,7 @@ public final class TenantAcquisitionFragments {
             CodeBlock.builder()
                 .addStatement("$T dsl = $L.getDslContext(env)", DSL_CONTEXT, contextRead.call())
                 .build(),
-            CodeBlock.of(""));
+            TenantHandDown.none());
     }
 
     private static Declaration routed(TenantAcquisition acquisition, TypeName keyType,
@@ -81,20 +81,20 @@ public final class TenantAcquisitionFragments {
                 CodeBlock.builder()
                     .addStatement("$T dsl = $T.dslDefault(env)", DSL_CONTEXT, connections)
                     .build(),
-                CodeBlock.of(""));
+                TenantHandDown.none());
             case TenantAcquisition.Inherited ignored -> new Declaration(
                 CodeBlock.builder()
                     .addStatement("$T dsl = $T.dslFor(env, $T.divinedTenant(env.<Object>getLocalContext()))",
                         DSL_CONTEXT, connections, connections)
                     .build(),
-                CodeBlock.of(""));
+                TenantHandDown.none());
             case TenantAcquisition.ArgumentBound bound -> new Declaration(
                 CodeBlock.builder()
                     .add(divinedKey(bound, keyType, connections, contextRead))
                     .addStatement("$T dsl = $T.dslFor(env, $L)",
                         DSL_CONTEXT, connections, TENANT_KEY_LOCAL)
                     .build(),
-                CodeBlock.of(".localContext($L)", TENANT_KEY_LOCAL));
+                TenantHandDown.divined(TENANT_KEY_LOCAL));
         };
     }
 

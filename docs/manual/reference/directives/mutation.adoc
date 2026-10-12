@@ -173,6 +173,26 @@ Both shapes work with single and bulk DELETE; cardinality follows the carrier fi
 * Arbitrary non-PK columns of the deleted row. The row is gone; `RETURNING` is narrowed to primary-key columns. If you need the full pre-delete state, snapshot it in your application code before issuing the mutation.
 * A bare class-backed payload type. Use a NodeId echo or a `@table` projection.
 
+== Payload with an errors field
+
+A payload may declare an errors-shaped field beside its data field, a list of xref:error.adoc[`@error`] types; the xref:../../how-to/error-channel.adoc[errors-channel how-to] covers the types themselves. When the write raises an exception one of the handlers matches, the transaction rolls back and the field renders `{ films: null, errors: [<typed error>] }` with no field error. On success the data field carries the written rows and `errors` is `null`.
+
+[source,graphql]
+----
+type FilmsPayload {
+    films: [Film]
+    errors: [FilmWriteError]
+}
+----
+
+Three rules follow from that:
+
+* The data field must be nullable, at its outer position: on the error path it renders `null`, and a non-null field would let null propagation erase the errors list. `Film!` and `[Film!]!` are rejected at build time; `Film`, `[Film]` and `[Film!]` are accepted.
+* A list data field renders `null` on the error path, not an empty list, since nothing was written.
+* A single-row write whose key matches no row renders the whole payload `null`, the same as on a payload without an errors field.
+
+The same rules hold in a database-per-tenant build: the payload's fields read the tenant the write ran on, and the errors travel with the payload.
+
 == Constraints
 
 * `INSERT` and `UPDATE` derive their write target from the return (a `@table` return, or a payload's `@table`-element data field), falling back to `@mutation(table:)` for an encoded-`ID` / scalar return (see <<_naming_the_insert_and_update_write_target>>). `DELETE` names its write target with `@mutation(table: "…")` on the field (it cannot derive the table from its return type, since the row is gone after the statement). A field with no write-target source is rejected at build time, with the message naming the applicable fix. `@table` on the input type is a xref:table.adoc[deprecated location], ignored rather than consulted, so it is never a write-target source.

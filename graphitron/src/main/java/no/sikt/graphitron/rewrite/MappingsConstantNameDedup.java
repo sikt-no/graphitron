@@ -65,9 +65,8 @@ public final class MappingsConstantNameDedup {
         // Group every classified channel under one key per payload-equivalent identity. The
         // sealed split picks the grouping per arm so each consumer dedups within its own surface:
         // PayloadClass arms collapse by payload-class binary name (developer-payload-equivalent);
-        // LocalContext arms collapse by their bare mappingsConstantName (the wrapper SDL type
-        // name) because no payload class is consulted on that catch path. Classification order
-        // is preserved within each key.
+        // Mapped arms collapse by their bare mappingsConstantName because no payload class is
+        // consulted on that catch path. Classification order is preserved within each key.
         Map<String, List<ErrorChannel>> byGroup = new LinkedHashMap<>();
         for (var entry : fields.entrySet()) {
             var ch = channelOf(entry.getValue());
@@ -129,9 +128,9 @@ public final class MappingsConstantNameDedup {
     /**
      * Returns the dedup grouping key for a channel: payload-class binary name for
      * {@link ErrorChannel.PayloadClass}, bare {@code mappingsConstantName} for
-     * {@link ErrorChannel.LocalContext}. The two namespaces never collide at the dedup level:
+     * {@link ErrorChannel.Mapped}. The two namespaces never collide at the dedup level:
      * a {@code PayloadClass} group key contains dots ({@code com.example.FilmPayload}) while
-     * a {@code LocalContext} group key is a SCREAMING_SNAKE identifier
+     * a {@code Mapped} group key is a SCREAMING_SNAKE identifier
      * ({@code FILM_PAYLOAD}); even so, the sealed switch keeps the contract explicit rather
      * than relying on the namespace separation.
      */
@@ -139,7 +138,6 @@ public final class MappingsConstantNameDedup {
         return switch (ch) {
             case ErrorChannel.Mapped m -> m.mappingsConstantName();
             case ErrorChannel.PayloadClass p -> p.payloadClass().reflectionName();
-            case ErrorChannel.LocalContext lc -> lc.mappingsConstantName();
         };
     }
 
@@ -163,8 +161,6 @@ public final class MappingsConstantNameDedup {
             case ErrorChannel.PayloadClass p -> new ErrorChannel.PayloadClass(
                 p.mappedErrorTypes(), p.payloadClass(), p.errorsSlot(),
                 p.defaultedSlots(), newName);
-            case ErrorChannel.LocalContext lc -> new ErrorChannel.LocalContext(
-                lc.mappedErrorTypes(), newName);
         };
     }
 
@@ -207,10 +203,14 @@ public final class MappingsConstantNameDedup {
                 f.sourceKey(), f.keySource(), f.loaderRegistration(), f.errorChannel().map(c -> renameRouted(c, newName)));
             case MutationField.MutationDmlRecordField f -> new MutationField.MutationDmlRecordField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.write(),
-                f.errorChannel().map(c -> renameRouted(c, newName)));
+                f.errorChannel().map(c -> renameMapped(c, newName)));
             case MutationField.MutationBulkDmlRecordField f -> new MutationField.MutationBulkDmlRecordField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.write(),
-                f.errorChannel().map(c -> renameRouted(c, newName)));
+                f.errorChannel().map(c -> renameMapped(c, newName)));
+            case MutationField.MutationRoutineWriteRecordField f -> new MutationField.MutationRoutineWriteRecordField(
+                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.routine(),
+                f.routineResultTable(), f.capturedPairs(), f.targetTable(), f.dataFieldArrival(),
+                f.errorChannel().map(c -> renameMapped(c, newName)));
             default -> throw new IllegalStateException(
                 "MappingsConstantNameDedup: unhandled WithErrorChannel variant "
                     + field.getClass().getName()

@@ -424,7 +424,7 @@ class GeneratorUtils {
      * literal), then short-circuits to {@code completedFuture(null)} if any component is
      * {@code null}. The source=target carrier path relies on both: the typed bind keeps the
      * VALUES-join's {@code =} comparison well-typed, and the null short-circuit returns no row
-     * for the LocalContext error sentinel (an empty record with a {@code null} PK).
+     * for a key record whose primary key is {@code null}.
      */
     static CodeBlock buildKeyExtractionWithNullCheck(SourceKey sourceKey, TableRef parentTable, CodeBlock sourceExpr) {
         if (!(sourceKey.wrap() instanceof SourceKey.Wrap.Row)) {

@@ -273,7 +273,7 @@ public final class MultiTablePolymorphicEmitter {
             } else {
                 builder.addStatement("$T payload = ($T) null", RECORD, RECORD);
             }
-            builder.addCode(returnSyncSuccess(valueType, "payload", tenantHandDown.localContextTail()));
+            builder.addCode(returnSyncSuccess(valueType, "payload", tenantHandDown.handDown()));
             builder.nextControlFlow("catch ($T e)", Exception.class);
             builder.addCode(noChannelCatchArm(outputPackage));
             builder.endControlFlow();
@@ -291,7 +291,7 @@ public final class MultiTablePolymorphicEmitter {
         } else {
             builder.addStatement("$T payload = dispatched.length == 0 ? null : ($T) dispatched[0]", RECORD, RECORD);
         }
-        builder.addCode(returnSyncSuccess(valueType, "payload", tenantHandDown.localContextTail()));
+        builder.addCode(returnSyncSuccess(valueType, "payload", tenantHandDown.handDown()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
@@ -455,7 +455,7 @@ public final class MultiTablePolymorphicEmitter {
         builder.addStatement("$T fetched = step.where(condition).fetch()", resultOfRecord);
         builder.addCode(buildServiceTableInterfaceRemap(tableRef, tableLocal, isList, valueType));
 
-        builder.addCode(returnSyncSuccess(valueType, "payload", tenantHandDown.localContextTail()));
+        builder.addCode(returnSyncSuccess(valueType, "payload", tenantHandDown.handDown()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
@@ -837,7 +837,7 @@ public final class MultiTablePolymorphicEmitter {
             } else {
                 builder.addStatement("$T payload = ($T) null", RECORD, RECORD);
             }
-            builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.localContextTail()));
+            builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.handDown()));
             builder.nextControlFlow("catch ($T e)", Exception.class);
             builder.addCode(noChannelCatchArm(outputPackage));
             builder.endControlFlow();
@@ -874,7 +874,7 @@ public final class MultiTablePolymorphicEmitter {
         } else {
             builder.addStatement("$T payload = result.length == 0 ? null : ($T) result[0]", RECORD, RECORD);
         }
-        builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.localContextTail()));
+        builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.handDown()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
@@ -1092,7 +1092,7 @@ public final class MultiTablePolymorphicEmitter {
             builder.addStatement("$T payload = new $T($T.of(), page, null, null"
                 + (TenantDslEmitter.isMultiTenant(ctx) ? ", dsl" : "") + ")",
                 valueType, connectionResultClass, LIST);
-            builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.localContextTail()));
+            builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.handDown()));
             builder.nextControlFlow("catch ($T e)", Exception.class);
             builder.addCode(noChannelCatchArm(outputPackage));
             builder.endControlFlow();
@@ -1200,7 +1200,7 @@ public final class MultiTablePolymorphicEmitter {
         builder.addStatement("$T cr = new $T(payload, page, $L, $T.noCondition()"
             + (TenantDslEmitter.isMultiTenant(ctx) ? ", dsl" : "") + ")",
             valueType, connectionResultClass, CONNECTION_PAGES_LOCAL, DSL);
-        builder.addCode(returnSyncSuccess(valueType, "cr", tenantDsl.localContextTail()));
+        builder.addCode(returnSyncSuccess(valueType, "cr", tenantDsl.handDown()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
@@ -1702,8 +1702,8 @@ public final class MultiTablePolymorphicEmitter {
             .addParameter(ENV, "env");
 
         // The binding's prelude runs ahead of the loader registration: narrow Outcome.Success
-        // (escaping completedFuture(null) on the ErrorList arm) or short-circuit the
-        // LocalContext null source before touching the loader registry.
+        // (escaping completedFuture(null) on the ErrorList arm) or short-circuit a null source
+        // before touching the loader registry.
         builder.addCode(parentSource.prelude(ENV_SOURCE,
             CodeBlock.of("$T.completedFuture(null)", COMPLETABLE_FUTURE)));
         builder.addCode(TenantDslEmitter.loaderNameDeclaration(ctx, fieldName, "name", outputPackage));
@@ -2644,18 +2644,17 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     private static CodeBlock returnSyncSuccess(TypeName valueType, String payloadLocal) {
-        return returnSyncSuccess(valueType, payloadLocal, CodeBlock.of(""));
+        return returnSyncSuccess(valueType, payloadLocal, no.sikt.graphitron.render.TenantHandDown.none());
     }
 
     /**
-     * {@link #returnSyncSuccess(TypeName, String)} with a builder tail: routed tenant sites pass
-     * {@code TenantDslEmitter.Resolution#localContextTail()} so a divined key rides down the
-     * subtree as graphql-java {@code localContext} (empty everywhere else).
+     * {@link #returnSyncSuccess(TypeName, String)} with a hand-down: routed tenant sites pass
+     * {@code TenantDslEmitter.Resolution#handDown()} so a divined key rides down the subtree
+     * ({@code TenantHandDown.none()} everywhere else).
      */
-    private static CodeBlock returnSyncSuccess(TypeName valueType, String payloadLocal, CodeBlock builderTail) {
-        TypeName boxed = valueType.isPrimitive() ? valueType.box() : valueType;
-        return CodeBlock.of("return $T.<$T>newResult().data($L)$L.build();\n",
-            ClassName.get("graphql.execution", "DataFetcherResult"), boxed, payloadLocal, builderTail);
+    private static CodeBlock returnSyncSuccess(TypeName valueType, String payloadLocal,
+            no.sikt.graphitron.render.TenantHandDown handDown) {
+        return no.sikt.graphitron.render.FetcherResult.success(valueType, payloadLocal, handDown);
     }
 
     private static CodeBlock noChannelCatchArm(String outputPackage) {

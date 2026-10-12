@@ -47,7 +47,6 @@ public class GraphitronSchemaValidator {
         schema.fields().values().forEach(field -> validateField(field, schema, types, errors));
         validateNestingParentCompat(schema, errors);
         validateReachableSourceShapes(schema, errors);
-        validateLocalContextErrorsFieldGuards(schema, errors);
         validateOutcomeTypeShape(schema, errors);
         validateOutcomeChildArmSwitch(schema, errors);
         validateWrapperArmSiblingPosture(schema, errors);
@@ -465,7 +464,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.QueryField.QueryServiceTableInterfaceField f -> validateQueryServiceTableInterfaceField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.DmlTableField f            -> validateDmlTableField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationRoutineWriteField f    -> {} // RoutineDirectiveResolver pins routine resolution + arg binding at classify time; RoutineChain's compact constructor and the leaf's own pins (hops non-empty, terminus rule, ColumnPairs hop 0 via the classifier's re-read-anchor verdict) carry the structural shape
-            case no.sikt.graphitron.rewrite.model.MutationField.MutationRoutineWriteRecordField f -> {} // Narrow ResultReturnType + LocalContext channel + the compact ctor's two-statements pins (pairs non-empty, name-matched, target side == target PK) carry the structural shape; the classify-time rejections (scan rejects, the D7 non-null data field, the unmatched-PK keying, the fourth-cell directive conflict) surface as UnclassifiedField through validateUnclassifiedField, per the validator-mirrors-classifier rule
+            case no.sikt.graphitron.rewrite.model.MutationField.MutationRoutineWriteRecordField f -> {} // Narrow ResultReturnType + Mapped channel + the compact ctor's two-statements pins (pairs non-empty, name-matched, target side == target PK) carry the structural shape; the classify-time rejections (scan rejects, the D7 non-null data field, the unmatched-PK keying, the fourth-cell directive conflict) surface as UnclassifiedField through validateUnclassifiedField, per the validator-mirrors-classifier rule
             case no.sikt.graphitron.rewrite.model.MutationField.MutationServiceTableField f    -> validateMutationServiceTableField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationServiceRecordField f   -> validateMutationServiceRecordField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationServicePolymorphicField f -> validateMutationServicePolymorphicField(f, errors);
@@ -1964,89 +1963,6 @@ public class GraphitronSchemaValidator {
     }
 
     /**
-     * {@link ChildField.ErrorsField} variants carry their data through either
-     * {@link ChildField.Transport.PayloadAccessor} (the parent payload's errors-named property) or
-     * {@link ChildField.Transport.LocalContext} (graphql-java's {@code DataFetcherResult.localContext}
-     * slot). The latter pairs with an {@link no.sikt.graphitron.rewrite.model.ErrorChannel.LocalContext}
-     * catch arm in {@code TypeFetcherGenerator} that ships
-     * {@code data(null).localContext(errors).build()}: the parent payload is bypassed entirely and
-     * the sibling data-channel field's fetcher fires against a {@code null} source.
-     *
-     * <p>The fetcher emitted for that sibling must short-circuit on {@code null} source and return
-     * {@code null}; otherwise the catch path renders {@code data} as a corrupt half-payload instead
-     * of the SDL-level {@code data: null, errors: [...]} shape. The {@code @service}-payload
-     * lifting in {@code FieldBuilder.findPayloadErrorsBinding} keeps the data-channel role's
-     * variants within {@link #isLocalContextGuardedDataChannel} by construction; widening the
-     * admission to a new variant requires extending the allow-list along with the matching
-     * fetcher's null-source guard. This validator pass is the cross-check that turns a
-     * silently-broken admission into a build-time {@link Rejection.AuthorError.Structural}.
-     */
-    private void validateLocalContextErrorsFieldGuards(GraphitronSchema schema, List<ValidationError> errors) {
-        for (var f : schema.fields().values()) {
-            if (!(f instanceof ChildField.ErrorsField ef)) continue;
-            if (!(ef.transport() instanceof ChildField.Transport.LocalContext)) continue;
-            for (var sib : schema.fieldsOf(ef.parentTypeName())) {
-                if (sib == ef) continue;
-                if (sib instanceof ChildField.ErrorsField) continue;
-                if (!isLocalContextGuardedDataChannel(sib)) {
-                    // Name the disqualifying fact, not just the class: a lookup-keyed batched
-                    // read shares its class with an admitted plain read and differs only on
-                    // the resolution axis.
-                    String siblingShape = sib instanceof ChildField.TableTargetField ttf
-                            && ttf.lookup().isKeyed()
-                        ? sib.getClass().getSimpleName() + " with a keyed lookup"
-                        : sib.getClass().getSimpleName();
-                    errors.add(new ValidationError(
-                        ef.qualifiedName(),
-                        Rejection.structural("Field '" + ef.qualifiedName()
-                            + "': LocalContext errors transport requires the carrier's data-channel "
-                            + "fetcher to short-circuit on a null source, but sibling field '"
-                            + sib.qualifiedName() + "' classifies as " + siblingShape
-                            + " which is not on the LocalContext-safe allow-list"),
-                        ef.location()
-                    ));
-                }
-            }
-        }
-    }
-
-    /**
-     * Field variants whose generated fetcher honors the null-source short-circuit guard at emit
-     * time, making them safe siblings for an {@link ChildField.ErrorsField} with
-     * {@link ChildField.Transport.LocalContext}:
-     *
-     * <ul>
-     *   <li>Record-sourced {@code BatchedTableField} → the Record-shape arm of
-     *       {@code TypeFetcherGenerator.buildBatchedDataFetcher} (explicit
-     *       {@code if (env.getSource() == null) return completedFuture(null);} prelude before
-     *       the key read; the Outcome arm's {@code instanceof Success} narrowing also rejects
-     *       null). The Table-sourced arm is deliberately excluded: it emits an empty prelude
-     *       with no null-source guard.</li>
-     *   <li>{@code SingleRecordIdFieldFromReturning} →
-     *       {@code FetcherEmitter.buildSingleRecordIdFromReturningFetcherValue} (explicit
-     *       {@code if (source == null) return null;} guard before encoder dispatch).</li>
-     * </ul>
-     *
-     * <p>The lookup-keyed shape is not admitted, although it routes through the same
-     * source-shape-gated builder arms as the plain read; widening the allow-list is a
-     * validator behavior change that needs its own validation-coverage decision, so the
-     * lookup fold preserved the exclusion as the resolution gate below rather than widening
-     * it by rename.
-     *
-     * <p>Admitting a variant here requires the matching emitter site to honor the guard;
-     * removing the guard from an existing emitter arm must remove the variant here.
-     */
-    private static boolean isLocalContextGuardedDataChannel(GraphitronField field) {
-        return switch (field) {
-            case ChildField.BatchedTableField f ->
-                f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Record
-                    && f.lookup() instanceof no.sikt.graphitron.rewrite.model.LookupResolution.None;
-            case ChildField.SingleRecordIdFieldFromReturning ignored -> true;
-            default -> false;
-        };
-    }
-
-    /**
      * Mirror-the-classifier check for the single-errors-field invariant on outcome types.
      * The binary {@code Outcome} witness ({@code Success | ErrorList}) has one error slot, so a type
      * carrying two {@link ChildField.ErrorsField} children has no well-defined success/error fork.
@@ -2056,7 +1972,7 @@ public class GraphitronSchemaValidator {
      * the walker.
      *
      * <p>Pure model check, independent of the errors-field transport: any object type with two or
-     * more errors fields is rejected, regardless of whether it uses the wrapper, localContext, or
+     * more errors fields is rejected, regardless of whether it uses the wrapper or the
      * payload-accessor transport.
      */
     private void validateOutcomeTypeShape(GraphitronSchema schema, List<ValidationError> errors) {
@@ -2081,7 +1997,7 @@ public class GraphitronSchemaValidator {
     }
 
     /**
-     * The {@code Outcome}-wrapper analogue of {@link #validateLocalContextErrorsFieldGuards}.
+     * The sibling rule for errors fields on the {@code Outcome} wrapper transport.
      * Under the wrapper transport ({@link ChildField.Transport.WrapperArm}), every immediate child
      * of an in-scope outcome type receives a non-null {@code Outcome} as {@code env.getSource()}, so
      * each data-channel fetcher must unwrap {@code Success} before its existing read (returning null

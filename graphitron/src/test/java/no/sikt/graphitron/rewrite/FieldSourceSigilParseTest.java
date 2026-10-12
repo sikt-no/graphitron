@@ -60,20 +60,20 @@ class FieldSourceSigilParseTest {
     }
 
     @Test
-    void errorsSigilResolvesToLocalContext() {
+    void errorsSigilResolvesToErrorsSigil() {
         var result = FieldSourceSigil.parseRawValue("$errors");
         assertThat(result).isInstanceOf(FieldSourceSigil.ParseResult.Ok.class);
         assertThat(((FieldSourceSigil.ParseResult.Ok) result).ref())
-            .isEqualTo(new FieldSourceSigil.FieldNameRef.LocalContext());
+            .isEqualTo(new FieldSourceSigil.FieldNameRef.ErrorsSigil());
     }
 
     @Test
     void errorsSigilLiteralExposesExpectedConstant() {
         // Pin the literal so a typo in the constant (e.g. "$error" vs "$errors") fires
         // a unit-tier failure rather than slipping past the parser.
-        assertThat(FieldSourceSigil.LOCAL_CONTEXT_LITERAL).isEqualTo("$errors");
-        assertThat(FieldSourceSigil.parseRawValue(FieldSourceSigil.LOCAL_CONTEXT_LITERAL))
-            .isEqualTo(new FieldSourceSigil.ParseResult.Ok(new FieldSourceSigil.FieldNameRef.LocalContext()));
+        assertThat(FieldSourceSigil.ERRORS_LITERAL).isEqualTo("$errors");
+        assertThat(FieldSourceSigil.parseRawValue(FieldSourceSigil.ERRORS_LITERAL))
+            .isEqualTo(new FieldSourceSigil.ParseResult.Ok(new FieldSourceSigil.FieldNameRef.ErrorsSigil()));
     }
 
     @Test

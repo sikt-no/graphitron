@@ -51,8 +51,8 @@ type Rental @table(name: "rental") {
 }
 
 # The routine-carrier error channel on the @routine pillar, mirroring
-# FilmCreateLocalContextPayload on the DML pillar: the payload is a plain SDL Object, so the
-# structural routine-carrier scan admits it and the channel binds ErrorChannel.LocalContext.
+# FilmCreateCheckedPayload on the DML pillar: the payload is a plain SDL Object, so the
+# structural routine-carrier scan admits it and the fetcher returns the typed Outcome wrapper.
 # The data field must be nullable (the classifier's zero-row rule): the post-commit re-read is
 # the data field's own SELECT and can legitimately return no row.
 type RentFilmConstraintViolation @error(handlers: [{
@@ -1587,14 +1587,12 @@ type FilmReviewWithFilmPayload {
     errors: [FilmReviewError]
 }
 
-# R12 fixture: DML mutation with a LocalContext error channel. The payload is a plain SDL
-# Object (no @record(record:{className:})), so the structural DML-payload scan admits it and
-# FieldBuilder.detectStructuralDmlErrorChannel binds the channel to ErrorChannel.LocalContext.
-# MutationDmlRecordField carries the channel; the catch arm dispatches through
-# ErrorRouter.dispatchToLocalContext, packing the matched Throwable into env.getLocalContext().
-# The errors field on the carrier reads via env.getLocalContext(), and the data field (Film)
-# short-circuits on null source so the SDL response renders
-# { film: null, errors: [{ __typename, path, message }] }.
+# DML mutation payloads with an errors field. The payloads are plain SDL Objects (no
+# @record(record:{className:})), so the structural DML-payload scan admits them and the fetcher
+# returns the typed Outcome wrapper: Outcome.Success around the RETURNING keys on success,
+# Outcome.ErrorList around the matched throwable on a mapped error. The errors field reads the
+# list off the Outcome, and the data field renders null on the error arm, so the SDL response is
+# { film: null, errors: [{ __typename, path, message }] }. The data fields must be nullable.
 type FilmCreateConstraintViolation @error(handlers: [{
         handler: GENERIC,
         className: "org.jooq.exception.IntegrityConstraintViolationException"
@@ -1605,7 +1603,20 @@ type FilmCreateConstraintViolation @error(handlers: [{
 
 union FilmCreateError = FilmCreateConstraintViolation
 
-type FilmCreateLocalContextPayload {
+type FilmCreateCheckedPayload {
+    film: Film
+    errors: [FilmCreateError]
+}
+
+# The bulk form: on the error arm the list data field renders null, not an empty list, since
+# the whole batch rolled back.
+type FilmsCreateCheckedPayload {
+    films: [Film]
+    errors: [FilmCreateError]
+}
+
+# Single-row UPDATE: a key that matches no row renders the whole payload null.
+type FilmUpdateCheckedPayload {
     film: Film
     errors: [FilmCreateError]
 }
@@ -4371,8 +4382,8 @@ type Mutation {
     # The hop-less routine carrier: the same rent_film write returning a payload carrier
     # instead of the chained @table. Step 1 captures the routine's returned rental_id under
     # rental's key field inside the per-field transaction; the payload's `rental` data field
-    # owns the post-commit re-read (the implicit single name-matched hop), and `errors` is the
-    # typed LocalContext channel.
+    # owns the post-commit re-read (the implicit single name-matched hop), and `errors` reads the
+    # typed Outcome the fetcher returns.
     rentFilmPayload(inventoryId: Int!, customerId: Int!): RentFilmPayload
         @routine(
             name: "rent_film"
@@ -4563,14 +4574,16 @@ type Mutation {
     # DmlBulkMutationsExecutionTest to confirm the return-derived carrier executes end to end.
     createFilmsReturnDerivedPayload(in: [FilmCreateReturnDerivedInput!]!): FilmsReturnDerivedPayload @mutation(typeName: INSERT)
 
-    # R12 + R161 execute-tier fixture: carrier-walk DML mutation that returns a payload with an
-    # errors slot binding to ErrorChannel.LocalContext. Happy path mirrors createFilmPayload
-    # (PK-only RETURNING in a transaction, follow-up SELECT for the data field); error path is
-    # exercised by passing an out-of-range languageId, which trips PostgreSQL FK 23503 against
-    # public.language → jOOQ IntegrityConstraintViolationException. The catch arm dispatches
-    # through ErrorRouter.dispatchToLocalContext into env.getLocalContext(); the errors field
-    # reads it back. See R12LocalContextDmlExecutionTest in the execution tier.
-    createFilmWithErrors(in: FilmCreateInput!): FilmCreateLocalContextPayload @mutation(typeName: INSERT, table: "film")
+    # Execute-tier fixtures: carrier-walk DML mutations that return a payload with an errors
+    # field. Happy path mirrors createFilmPayload (PK-only RETURNING in a transaction, follow-up
+    # SELECT for the data field); the error path is exercised by passing an out-of-range
+    # languageId, which trips PostgreSQL FK 23503 against public.language → jOOQ
+    # IntegrityConstraintViolationException. The catch arm returns Outcome.ErrorList and the
+    # errors field reads it back. Pinned by GraphQLQueryTest's createFilmWithErrors_*,
+    # createFilmsWithErrors_* and updateFilmWithErrors_* cases.
+    createFilmWithErrors(in: FilmCreateInput!): FilmCreateCheckedPayload @mutation(typeName: INSERT, table: "film")
+    createFilmsWithErrors(in: [FilmCreateInput!]!): FilmsCreateCheckedPayload @mutation(typeName: INSERT, table: "film")
+    updateFilmWithErrors(in: FilmUpdateInput!): FilmUpdateCheckedPayload @mutation(typeName: UPDATE)
 
     # R156 compilation-tier fixture: payload-returning DELETE carrier, ID-typed element-shape arm.
     # Bulk DELETE returning [ID!] of encoded NodeIds. Classifies as a MutationBulkDmlRecordField carrying a Delete write arm,

@@ -122,18 +122,6 @@ class RoutineMutationWritePipelineTest {
             .isEqualTo(1);
     }
 
-    @Test
-    void routineCarrierFetcher_catchArmCarriesSentinel() {
-        // Outcome (a): the routine raised. The catch arm must return the non-null
-        // all-null-column sentinel (DSL.using(SQLDialect.DEFAULT).newRecord(...)) so
-        // graphql-java traverses into the errors field instead of short-circuiting on a null
-        // parent; the data field's null-key SELECT then renders null.
-        String body = carrierFetcherBody();
-        assertThat(body)
-            .contains("dispatchToLocalContext")
-            .contains("newRecord(");
-    }
-
     /** The nested form: the routine's IN parameters live inside a wrapper input argument. */
     private static final String NESTED_SDL = """
         type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }

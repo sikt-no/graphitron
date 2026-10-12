@@ -435,7 +435,7 @@ public final class FetcherEmitter {
             // Payload-returning DELETE carrier: read the PK column(s) off each RETURNING row and
             // encode. No follow-up SELECT; the row is gone.
             return envDependent(field.name(), fetchersClass,
-                buildSingleRecordIdFromReturningFetcherValue(idCarrier));
+                buildSingleRecordIdFromReturningFetcherValue(idCarrier, outputPackage));
         }
         if (field instanceof ChildField.SingleRecordIdField serviceIdCarrier) {
             // ID-element data field on an @service source-record carrier: read the node-key
@@ -453,17 +453,13 @@ public final class FetcherEmitter {
         if (field instanceof ChildField.ErrorsField ef) {
             // The Transport discriminator rides on the field-level model (resolved at classify
             // time with the parent carrier's channel in scope), so this emission never re-walks
-            // the parent. LocalContext is populated by the catch arm of an
-            // ErrorChannel.LocalContext-bound carrier.
+            // the parent.
             return switch (ef.transport()) {
                 case ChildField.Transport.PayloadAccessor ignored -> {
                     var propertyDataFetcher = ClassName.get("graphql.schema", "PropertyDataFetcher");
                     yield new FetcherBinding.Inline(
                         CodeBlock.of("$T.fetching($S)", propertyDataFetcher, field.name()));
                 }
-                case ChildField.Transport.LocalContext ignored ->
-                    envDependent(field.name(), fetchersClass,
-                        CodeBlock.of("return env.getLocalContext();\n"));
                 // On the Success arm resolve null (not List.of()) to honour the errors field's
                 // SDL nullability on the wire. The NonNullableErrorsField classify-time rule
                 // guarantees the field is nullable, so null is always a legal success-arm value.
@@ -683,8 +679,10 @@ public final class FetcherEmitter {
     }
 
     /**
-     * Data-fetcher value for a {@link ChildField.SingleRecordIdFieldFromReturning}: reads the
-     * resolved PK column(s) off {@code env.getSource()} and runs them through the pre-resolved
+     * Data-fetcher value for a {@link ChildField.SingleRecordIdFieldFromReturning}: binds the
+     * RETURNING {@code Record} / {@code Result<Record>} through {@link #emitRecordSourceLocal}'s
+     * envelope fork (narrowing {@code Outcome.Success} when the payload carries an errors field),
+     * reads the resolved PK column(s) off it and runs them through the pre-resolved
      * {@link no.sikt.graphitron.rewrite.model.HelperRef.Encode} helper, mapping each row of the
      * {@code Result<Record>} when the wrapper is list-shaped. The encoder reference is
      * pre-resolved at carrier-classify time ({@link no.sikt.graphitron.rewrite.FieldBuilder}'s
@@ -694,7 +692,7 @@ public final class FetcherEmitter {
      * upstream Record.
      */
     private static CodeBlock buildSingleRecordIdFromReturningFetcherValue(
-            ChildField.SingleRecordIdFieldFromReturning carrier) {
+            ChildField.SingleRecordIdFieldFromReturning carrier, String outputPackage) {
         var encoder = carrier.encode().encodeMethod();
         var encoderClass = encoder.encoderClass();
         var encoderMethod = encoder.methodName();
@@ -702,6 +700,7 @@ public final class FetcherEmitter {
         var jooqRecord = ClassName.get("org.jooq", "Record");
         var jooqResult = ClassName.get("org.jooq", "Result");
         boolean isList = carrier.returnType().wrapper().isList();
+        boolean outcomeWrapped = carrier.envelope() == SourceEnvelope.OUTCOME_SUCCESS;
         var body = CodeBlock.builder();
         if (isList) {
             var resultOfRecord = ParameterizedTypeName.get(jooqResult, jooqRecord);
@@ -710,7 +709,7 @@ public final class FetcherEmitter {
                 ClassName.get("java.util", "ArrayList"), stringClass);
             var listOfString = ParameterizedTypeName.get(
                 ClassName.get("java.util", "List"), stringClass);
-            body.add("    $T source = env.getSource();\n", resultOfRecord);
+            emitRecordSourceLocal(body, resultOfRecord, outcomeWrapped, outputPackage);
             body.add("    if (source == null) return null;\n");
             body.add("    $T ids = new $T(source.size());\n", listOfString, arrayListOfString);
             body.add("    for ($T row : source) {\n", jooqRecord);
@@ -725,7 +724,7 @@ public final class FetcherEmitter {
             body.add("    }\n");
             body.add("    return ids;\n");
         } else {
-            body.add("    $T source = env.getSource();\n", jooqRecord);
+            emitRecordSourceLocal(body, jooqRecord, outcomeWrapped, outputPackage);
             body.add("    if (source == null) return null;\n");
             body.add("    return $T.$L(", encoderClass, encoderMethod);
             for (int i = 0; i < pkColumns.size(); i++) {

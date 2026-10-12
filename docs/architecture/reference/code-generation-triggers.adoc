@@ -371,15 +371,14 @@ error channel's own coordinate, and the method in its row is where a caught thro
 the wire can carry.
 
 What that method looks like depends on how the carrier ships the errors, which the classifier
-resolves once, with the parent's channel in scope, and which has three answers. Here the errors ride
+resolves once, with the parent's channel in scope, and which has two answers. Here the errors ride
 an error-list arm of the value the producer returned, so the emitted method takes the source and
 unwraps that arm, resolving to null on the success arm to honour the field's nullability; that is the
-`(Object)` signature in the block above. A carrier that ships them out of band instead, on the
-result's local context, emits a method taking the `DataFetchingEnvironment` and reading them back
-from there. A plain class-backed parent whose `errors`-shaped field is a slot the developer
-populated emits no method at all: the registration wires a `PropertyDataFetcher` onto the property,
-the way `severity` is wired above. Only that third form is a passthrough, and a producer-bound
-payload like this one does not take it.
+`(Object)` signature in the block above. Every producer-bound payload takes this form, whether a
+`@service`, a `@mutation` or a `@routine` field returns it. A plain class-backed parent whose
+`errors`-shaped field is a slot the developer populated emits no method at all: the registration
+wires a `PropertyDataFetcher` onto the property, the way `severity` is wired above. Only that second
+form is a passthrough, and a producer-bound payload like this one does not take it.
 
 The rest of the `handlers:` option set (SQL-state and vendor-code matching, validation fan-out,
 `matches:` message filters) is in `docs/manual/reference/directives/error.adoc`; the classification

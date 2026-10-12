@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.render.TenantHandDown;
 import no.sikt.graphitron.render.CompositeDecodeHelperRegistry;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
@@ -908,7 +909,7 @@ public class TypeFetcherGenerator {
                 // FetcherEmitter.bind into a named (DataFetchingEnvironment env) method, collected below.
                 case ChildField.RecordCompositeField ignored    -> { /* source passthrough reified by FetcherEmitter.bind, collected below */ }
                 case ChildField.ComputedField ignored           -> { /* alias-pickup read reified by FetcherEmitter.bind; projected via the type's $project unit */ }
-                case ChildField.ErrorsField ignored             -> { /* LocalContext / WrapperArm reified by FetcherEmitter.bind; PayloadAccessor still PropertyDataFetcher.fetching */ }
+                case ChildField.ErrorsField ignored             -> { /* WrapperArm reified by FetcherEmitter.bind; PayloadAccessor still PropertyDataFetcher.fetching */ }
                 // Cannot occur — filtered by generateForType before dispatch
                 case InputField ignored ->
                     throw new AssertionError("InputField in type dispatch: " + ignored.qualifiedName());
@@ -1219,7 +1220,7 @@ public class TypeFetcherGenerator {
             var tenantDsl = TenantDslEmitter.resolve(ctx, field, outputPackage);
             builder.addCode(tenantDsl.declaration());
             builder.addStatement("$T payload = $T.$L(dsl, env)", valueType, launcherClass, row.unit().methodName());
-            builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.localContextTail()));
+            builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.handDown()));
         }
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(noChannelCatchArm(outputPackage));
@@ -1676,10 +1677,10 @@ public class TypeFetcherGenerator {
         String payloadLocal = lift == null ? "result" : "payload";
         if (wrap) {
             builder.addCode(returnSyncSuccessWrapped(payloadType, outputPackage, payloadLocal,
-                tenantHandDown.localContextTail()));
+                tenantHandDown.handDown()));
         } else {
             builder.addCode(returnSyncSuccess(liftedValueType, payloadLocal,
-                tenantHandDown.localContextTail()));
+                tenantHandDown.handDown()));
         }
         builder.nextControlFlow("catch ($T e)", Exception.class);
         if (wrap) {
@@ -1793,15 +1794,14 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Success-path return wrapping the method result in {@code Outcome.Success}. {@code builderTail}
-     * is the routed tenant site's {@code localContext} hand-down, empty everywhere else.
+     * Success-path return wrapping the method result in {@code Outcome.Success}. {@code handDown}
+     * is the routed tenant site's hand-down, {@link TenantHandDown#none()} everywhere else.
      */
     private static CodeBlock returnSyncSuccessWrapped(TypeName outcomeType, String outputPackage,
-                                                      String resultLocal, CodeBlock builderTail) {
+                                                      String resultLocal, TenantHandDown handDown) {
         var success = ClassName.get(outputPackage + ".schema", OutcomeClassGenerator.CLASS_NAME)
             .nestedClass(OutcomeClassGenerator.SUCCESS_CLASS);
-        return CodeBlock.of("return $T.<$T>newResult().data(new $T<>($L))$L.build();\n",
-            DATA_FETCHER_RESULT, outcomeType, success, resultLocal, builderTail);
+        return no.sikt.graphitron.render.FetcherResult.outcomeSuccess(outcomeType, success, resultLocal, handDown);
     }
 
     /**
@@ -4878,7 +4878,7 @@ public class TypeFetcherGenerator {
 
         builder.addCode(emitDmlReturnExpression(ctx, field, rex, row, carrierDsl, valueType,
             tableRef, tablesOnly, outputPackage, dmlChain));
-        builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.localContextTail()));
+        builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.handDown()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(catchArm(outputPackage, errorChannel));
         builder.endControlFlow();
@@ -5411,14 +5411,20 @@ public class TypeFetcherGenerator {
      * {@code TableInputArg}) and {@link #buildMutationUpdatePayloadFetcher} (payload-returning
      * UPDATE, SET/WHERE off the {@link UpdateRows} carrier). The shape is invariant across both: a
      * PK-only {@code .returningResult(pkCols).fetchOne()} inside {@code dsl.transactionResult(...)},
-     * a {@link #returnSyncSuccess} wrap, and a {@link #catchArm} routing thrown exceptions through
-     * the error channel with a {@link #singleRecordSentinelFor} non-null sentinel. Only the DML
-     * chain (and its pre-DML guards) varies; {@code chainFn} is the seam, parameterised on the
-     * resolved table names rather than threading a {@code DmlKind} that re-switches internally.
+     * a success return, and a catch arm. Only the DML chain (and its pre-DML guards) varies;
+     * {@code chainFn} is the seam, parameterised on the resolved table names rather than threading
+     * a {@code DmlKind} that re-switches internally.
+     *
+     * <p>With an error channel the value type is {@code Outcome<RecordN<PK>>}: the success return
+     * wraps the key record in {@code Outcome.Success}, and a mapped error returns
+     * {@code Outcome.ErrorList} through {@link ChannelCatchArmEmitter}. A write that matches no row
+     * ({@code fetchOne()} answering {@code null}) returns null data ahead of the wrap, so the whole
+     * payload renders {@code null} with or without a channel; wrapping it as {@code Success(null)}
+     * would hand the data field a non-null payload with no key to read.
      */
     private static MethodSpec buildSingleRecordTwoStepFetcher(
             TypeFetcherEmissionContext ctx, no.sikt.graphitron.rewrite.model.OutputField field, String argName,
-            TableRef tableRef, Optional<ErrorChannel.RouterDispatched> errorChannel, String qualifiedName,
+            TableRef tableRef, Optional<ErrorChannel.Mapped> errorChannel, String qualifiedName,
             java.util.function.BiFunction<GeneratorUtils.ResolvedTableNames, String, DmlChainAndGuards> chainFn,
             String outputPackage) {
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
@@ -5431,10 +5437,12 @@ public class TypeFetcherGenerator {
         }
         TypeName payloadType = no.sikt.graphitron.rewrite.model.SourceKey.keyElementType(
             new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record(), pkCols);
+        boolean wrap = errorChannel.isPresent();
+        TypeName valueType = wrap ? outcomeOf(payloadType, outputPackage) : payloadType;
 
         var builder = MethodSpec.methodBuilder(field.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(syncResultType(payloadType))
+            .returns(syncResultType(valueType))
             .addParameter(ENV, "env");
         builder.beginControlFlow("try");
         var tenantDsl = TenantDslEmitter.resolve(ctx, field, outputPackage);
@@ -5458,12 +5466,28 @@ public class TypeFetcherGenerator {
             .add(".fetchOne());\n").unindent();
         builder.addCode(dmlEmit.build());
 
-        builder.addCode(returnSyncSuccess(payloadType, "payload", tenantDsl.localContextTail()));
+        if (wrap) {
+            builder.addCode(CodeBlock.builder().add("if (payload == null) ")
+                .add(no.sikt.graphitron.render.FetcherResult.nullData(valueType)).build());
+            builder.addCode(returnSyncSuccessWrapped(valueType, outputPackage, "payload", tenantDsl.handDown()));
+        } else {
+            builder.addCode(returnSyncSuccess(payloadType, "payload", tenantDsl.handDown()));
+        }
         builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(catchArm(outputPackage, errorChannel,
-            no.sikt.graphitron.render.RecordSentinel.single(tableRef, pkCols)));
+        builder.addCode(dmlCarrierCatchArm(errorChannel, valueType, outputPackage));
         builder.endControlFlow();
         return builder.build();
+    }
+
+    /**
+     * The DML payload carriers' catch arm: the {@code Outcome}-wrapped dispatch when the payload
+     * declares an errors field, the no-channel disposition otherwise.
+     */
+    private static CodeBlock dmlCarrierCatchArm(Optional<ErrorChannel.Mapped> errorChannel,
+            TypeName valueType, String outputPackage) {
+        return errorChannel.isPresent()
+            ? ChannelCatchArmEmitter.emit(errorChannel.get(), valueType, outputPackage)
+            : catchArm(outputPackage, Optional.empty());
     }
 
     /**
@@ -5722,8 +5746,9 @@ public class TypeFetcherGenerator {
      * (record-carrier INSERT/DELETE) and {@link #buildMutationBulkUpdatePayloadFetcher}
      * (payload-returning bulk UPDATE). The shape is invariant: an empty-list short-circuit, then a
      * per-row N+1 accumulator collecting PK echoes into a {@code Result<RecordN<PK>>} in input order
-     * inside one {@code dsl.transactionResult(...)}, wrapped by {@link #returnSyncSuccess} /
-     * {@link #catchArm}. Only the per-row body varies; {@code perRowBodyFn} is the seam, parameterised
+     * inside one {@code dsl.transactionResult(...)}, then the success return and catch arm, both
+     * {@code Outcome}-wrapped when the payload declares an errors field (the empty-list
+     * short-circuit included). Only the per-row body varies; {@code perRowBodyFn} is the seam, parameterised
      * on the resolved table names / PK columns rather than threading a {@code DmlKind} that
      * re-switches internally. The order-preservation invariant ({@code output.data[i]} corresponds
      * to {@code input[i]}) is a property of this skeleton's input-order loop and is audited at the
@@ -5731,7 +5756,7 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildBulkRecordTwoStepFetcher(
             TypeFetcherEmissionContext ctx, no.sikt.graphitron.rewrite.model.OutputField field, String argName,
-            TableRef tableRef, Optional<ErrorChannel.RouterDispatched> errorChannel, String qualifiedName,
+            TableRef tableRef, Optional<ErrorChannel.Mapped> errorChannel, String qualifiedName,
             BulkPerRowBodyFn perRowBodyFn, String outputPackage) {
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
@@ -5746,10 +5771,12 @@ public class TypeFetcherGenerator {
         var resultClass = ClassName.get("org.jooq", "Result");
         TypeName resultType = ParameterizedTypeName.get(resultClass, recordRowType);
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
+        boolean wrap = errorChannel.isPresent();
+        TypeName valueType = wrap ? outcomeOf(resultType, outputPackage) : resultType;
 
         var builder = MethodSpec.methodBuilder(field.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(syncResultType(resultType))
+            .returns(syncResultType(valueType))
             .addParameter(ENV, "env");
         builder.beginControlFlow("try");
         var tenantDsl = TenantDslEmitter.resolve(ctx, field, outputPackage);
@@ -5762,8 +5789,10 @@ public class TypeFetcherGenerator {
         // Empty-list short-circuit: no DML, return empty Result. Mirrors the empty-input
         // short-circuit on the direct-@table bulk arms (no transaction opened, no rows touched).
         builder.beginControlFlow("if (in.isEmpty())")
-            .addStatement("return $T.<$T>newResult().data(dsl.newResult($L)).build()",
-                DATA_FETCHER_RESULT, resultType, buildPkFieldList(pkCols, tablesOnly, tableRef))
+            .addStatement("$T empty = dsl.newResult($L)", resultType, buildPkFieldList(pkCols, tablesOnly, tableRef))
+            .addCode(wrap
+                ? returnSyncSuccessWrapped(valueType, outputPackage, "empty", tenantDsl.handDown())
+                : returnSyncSuccess(resultType, "empty", tenantDsl.handDown()))
             .endControlFlow();
 
         // transactionResult: per-row DML inside one transaction. The lambda binds a transactional
@@ -5771,8 +5800,7 @@ public class TypeFetcherGenerator {
         // in declaration order, runs one DML per row with PK RETURNING, and appends the returned
         // RecordN to the Result. On any per-row throw (constraint violation, type mismatch, RLS
         // denial, ...), the transaction rolls back; the outer catch arm routes the exception
-        // through ErrorRouter into the carrier's error channel (currently no-op for
-        // DML carriers).
+        // through the carrier's error channel, or redacts it when the payload has none.
         builder.addCode(CodeBlock.builder()
             .add("$T payload = dsl.transactionResult(tx -> {\n", resultType).indent()
             .add("$T txd = $T.using(tx);\n", dslContextClass, DSL)
@@ -5784,10 +5812,11 @@ public class TypeFetcherGenerator {
             .unindent().add("});\n")
             .build());
 
-        builder.addCode(returnSyncSuccess(resultType, "payload", tenantDsl.localContextTail()));
+        builder.addCode(wrap
+            ? returnSyncSuccessWrapped(valueType, outputPackage, "payload", tenantDsl.handDown())
+            : returnSyncSuccess(resultType, "payload", tenantDsl.handDown()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(catchArm(outputPackage, errorChannel,
-            no.sikt.graphitron.render.RecordSentinel.bulk(tableRef, pkCols)));
+        builder.addCode(dmlCarrierCatchArm(errorChannel, valueType, outputPackage));
         builder.endControlFlow();
         return builder.build();
     }
@@ -6034,14 +6063,12 @@ public class TypeFetcherGenerator {
      *       loader round-trip). A {@link SourceShape#Record} parent holds a producer-handed
      *       backing object; the key read consumes the stored {@link KeyLift}
      *       ({@link GeneratorUtils#buildRecordParentKeyExtraction}).</li>
-     *   <li><b>Prelude.</b> Only the record arms participate in the LocalContext / Outcome
-     *       transports, and both halves come from the per-type {@link ParentSourceBinding}:
-     *       under a flipped Outcome payload the binding's prelude narrows
-     *       {@code env.getSource()} to {@code Outcome.Success} before touching the loader
-     *       registry and its source expression repoints the key extraction at
-     *       {@code success.value()}; otherwise the prelude short-circuits a null source (the
-     *       LocalContext errors transport fires the data-channel fetcher with
-     *       {@code data(null)}, so the guard is load-bearing). The {@code TableRow} arm's
+     *   <li><b>Prelude.</b> Only the record arms participate in the Outcome transport, and both
+     *       halves come from the per-type {@link ParentSourceBinding}: under a flipped Outcome
+     *       payload the binding's prelude narrows {@code env.getSource()} to
+     *       {@code Outcome.Success} before touching the loader registry and its source
+     *       expression repoints the key extraction at {@code success.value()}; otherwise the
+     *       prelude short-circuits a null source. The {@code TableRow} arm's
      *       source is never null mid-query and never Outcome-wrapped: empty prelude.</li>
      * </ul>
      *
@@ -6107,7 +6134,7 @@ public class TypeFetcherGenerator {
                 RowsMethodCall.batchLoaderLambda(rowsMethodName, keyType, registration),
                 CodeBlock.of(""),
                 keyExtraction,
-                asyncWrapTail(resultValueType, outputPackage, Optional.empty(), handDown.localContextTail()),
+                asyncWrapTail(resultValueType, outputPackage, Optional.empty(), handDown.handDown()),
                 dataLoaderSyncCatchBody(resultValueType, outputPackage, Optional.empty()),
                 TenantDslEmitter.loaderNameDeclaration(ctx, field.name(), "name", outputPackage));
         }
@@ -6118,7 +6145,7 @@ public class TypeFetcherGenerator {
                 : GeneratorUtils.buildKeyExtractionWithNullCheck(sourceKey, parentTable);
         } else {
             // Record arms: the binding's prelude runs ahead of the loader registration (narrowing
-            // Outcome.Success, or short-circuiting the LocalContext null source) and its source
+            // Outcome.Success, or short-circuiting a null source) and its source
             // expression repoints the field's own key extraction — the same backing object the
             // non-wrapped source would have been (the Success.value() invariant).
             var escape = CodeBlock.of("$T.completedFuture(null)", COMPLETABLE_FUTURE);
@@ -6279,51 +6306,12 @@ public class TypeFetcherGenerator {
      */
     private static CodeBlock catchArm(String outputPackage,
                                       Optional<ErrorChannel.RouterDispatched> errorChannel) {
-        return catchArm(outputPackage, errorChannel, null);
-    }
-
-    /**
-     * Overload accepting the LocalContext sentinel source. Non-null sentinel is required for the
-     * {@link ErrorChannel.LocalContext} arm because graphql-java's
-     * {@code completeValueForObject} short-circuits children on a null parent value. Pass
-     * {@code null} for the sentinel when the call site cannot reach a {@code LocalContext}
-     * channel (every site reachable by today's classifier except
-     * {@code buildMutationDmlRecordFetcher} and {@code buildMutationBulkDmlRecordFetcher} is in
-     * this category).
-     */
-    private static CodeBlock catchArm(String outputPackage,
-                                      Optional<ErrorChannel.RouterDispatched> errorChannel,
-                                      CodeBlock localContextSentinel) {
         if (errorChannel.isEmpty()) {
             return noChannelCatchArm(outputPackage);
         }
         return switch (errorChannel.get()) {
             case ErrorChannel.PayloadClass pc -> dispatchCatchArm(outputPackage, pc);
-            case ErrorChannel.LocalContext lc -> {
-                if (localContextSentinel == null) {
-                    throw new IllegalStateException(
-                        "catchArm reached ErrorChannel.LocalContext without a sentinel source; "
-                        + "every emitter that may produce a LocalContext-bound channel must call "
-                        + "the 3-arg overload of catchArm");
-                }
-                yield dispatchToLocalContextCatchArm(outputPackage, lc, localContextSentinel);
-            }
         };
-    }
-
-    /**
-     * Builds the LocalContext-bound catch arm: routes the throw through
-     * {@code ErrorRouter.dispatchToLocalContext} with this channel's mapping-table constant.
-     * No payload-factory lambda is needed: the matched throwable is placed into
-     * {@code DataFetcherResult.localContext}; the carrier's errors-field DataFetcher reads
-     * it via {@code env.getLocalContext()}, and the data field's null-source guard
-     * short-circuits the data side of the response.
-     */
-    private static CodeBlock dispatchToLocalContextCatchArm(String outputPackage,
-            ErrorChannel.LocalContext channel, CodeBlock sentinel) {
-        return no.sikt.graphitron.render.ErrorDispatchFragments.localContextArm(
-            errorRouterClass(outputPackage), errorMappingsClass(outputPackage),
-            channel.mappingsConstantName(), sentinel);
     }
 
     /**
@@ -6415,17 +6403,17 @@ public class TypeFetcherGenerator {
      * the local first.
      */
     private static CodeBlock returnSyncSuccess(TypeName valueType, String payloadLocal) {
-        return returnSyncSuccess(valueType, payloadLocal, CodeBlock.of(""));
+        return returnSyncSuccess(valueType, payloadLocal, TenantHandDown.none());
     }
 
     /**
-     * {@link #returnSyncSuccess(TypeName, String)} with a builder tail: routed tenant sites pass
-     * {@code TenantDslEmitter.Resolution#localContextTail()} so the divined tenant key rides down
-     * the subtree as graphql-java {@code localContext} (empty everywhere else, keeping the
-     * single-tenant form byte-identical).
+     * {@link #returnSyncSuccess(TypeName, String)} with a hand-down: routed tenant sites pass
+     * {@code TenantDslEmitter.Resolution#handDown()} so the divined tenant key rides down the
+     * subtree ({@link TenantHandDown#none()} everywhere else, keeping the single-tenant form
+     * byte-identical).
      */
-    private static CodeBlock returnSyncSuccess(TypeName valueType, String payloadLocal, CodeBlock builderTail) {
-        return no.sikt.graphitron.render.FetcherResult.success(valueType, payloadLocal, builderTail);
+    private static CodeBlock returnSyncSuccess(TypeName valueType, String payloadLocal, TenantHandDown handDown) {
+        return no.sikt.graphitron.render.FetcherResult.success(valueType, payloadLocal, handDown);
     }
 
     /**
@@ -6438,19 +6426,19 @@ public class TypeFetcherGenerator {
      */
     private static CodeBlock asyncWrapTail(TypeName valueType, String outputPackage,
                                            Optional<ErrorChannel.RouterDispatched> errorChannel) {
-        return asyncWrapTail(valueType, outputPackage, errorChannel, CodeBlock.of(""));
+        return asyncWrapTail(valueType, outputPackage, errorChannel, TenantHandDown.none());
     }
 
     /**
-     * {@link #asyncWrapTail(TypeName, String, Optional)} with {@code localContextTail} riding the
+     * {@link #asyncWrapTail(TypeName, String, Optional)} with {@code handDown} riding the
      * result, so a fetcher that divined a tenant hands it down to the loaded value's subtree.
      */
     private static CodeBlock asyncWrapTail(TypeName valueType, String outputPackage,
                                            Optional<ErrorChannel.RouterDispatched> errorChannel,
-                                           CodeBlock localContextTail) {
+                                           TenantHandDown handDown) {
         return CodeBlock.builder()
             .add(".thenApply(payload -> $T.<$T>newResult().data(payload)$L.build())\n",
-                DATA_FETCHER_RESULT, boxed(valueType), localContextTail)
+                DATA_FETCHER_RESULT, boxed(valueType), handDown.builderTail())
             .add(".exceptionally(t -> ").add(asyncRouterCall(outputPackage, errorChannel, "t")).add(")")
             .build();
     }
@@ -6484,11 +6472,6 @@ public class TypeFetcherGenerator {
                 .add(payloadFactoryLambda(pc))
                 .add(")")
                 .build();
-            case ErrorChannel.LocalContext lc -> CodeBlock.of(
-                "$T.dispatchToLocalContext($L, $T.$L, env)",
-                errorRouterClass(outputPackage), throwableVar,
-                errorMappingsClass(outputPackage),
-                lc.mappingsConstantName());
         };
     }
 

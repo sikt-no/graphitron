@@ -221,11 +221,11 @@ public final class RoutineWriteCommands {
      * {@link WithErrorChannel}, which the whole classified model shares, so no mutation leaf is
      * named here.
      *
-     * <p>An absent channel is the router's privacy disposition; a {@link ErrorChannel.LocalContext}
-     * channel hands the matched throwable back as graphql-java {@code localContext}, and its
-     * mappings constant is all the arm needs. The remaining channel arm is unreachable on these two
-     * shapes by classification: a routine write's carrier is a directiveless structural payload,
-     * which has no developer payload class for the mapped arm to instantiate.
+     * <p>An absent channel is the router's privacy disposition; an {@link ErrorChannel.Mapped}
+     * channel rides the typed {@code Outcome} wrapper, and its mappings constant is all the arm
+     * needs beyond the generated units. The payload-class arm is unreachable on these two shapes
+     * by classification: a routine write's carrier is a directiveless structural payload, which
+     * has no developer payload class to instantiate.
      */
     private static ErrorDispatch dispatchFor(GraphitronSchema schema, FieldCoordinates coordinate,
             GeneratedUnits units) {
@@ -236,14 +236,14 @@ public final class RoutineWriteCommands {
         if (channel.isEmpty()) {
             return new ErrorDispatch.Redacting(units.errorRouter());
         }
-        if (channel.get() instanceof ErrorChannel.LocalContext lc) {
-            return new ErrorDispatch.LocalContextRouted(units.errorRouter(), units.errorMappings(),
-                lc.mappingsConstantName());
+        if (channel.get() instanceof ErrorChannel.Mapped mapped) {
+            return new ErrorDispatch.OutcomeWrapped(units.errorRouter(), units.errorMappings(),
+                units.outcome(), mapped.mappingsConstantName());
         }
         throw new IllegalStateException(
             "a routine-write coordinate carries an error channel this relation cannot state: "
             + channel.get().getClass().getSimpleName() + "; the routine-write carrier is a"
             + " directiveless structural payload, so the classifier produces only the"
-            + " localContext-routed channel here");
+            + " Outcome-wrapped channel here");
     }
 }

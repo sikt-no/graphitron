@@ -90,7 +90,9 @@ class TenantDivinedRoutingExecutionTest {
             dsl.execute("drop database if exists " + db + " with (force)");
             dsl.execute("create database " + db);
             try (var tenant = DSL.using(tenantUrl(db), jdbcUser, jdbcPassword)) {
-                tenant.execute("create table film (film_id int primary key, title text not null)");
+                // The empty-title check gives the errors-payload cases a database error to route.
+                tenant.execute("create table film (film_id int primary key,"
+                    + " title text not null check (title <> ''))");
                 tenant.execute("create table inventory (inventory_id serial primary key,"
                     + " film_id int not null, store_id int not null)");
                 tenant.execute("create table film_actor (actor_id int not null, film_id int not null,"
@@ -374,6 +376,55 @@ class TenantDivinedRoutingExecutionTest {
             .satisfies(film -> assertThat((List<?>) film.get("inventories"))
                 .as("tenant 2 holds no inventory, so an empty list is tenant 2's answer").isEmpty());
         assertThat(TENANT_1_OPENED.get()).as("nothing reads tenant 1's inventory").isZero();
+    }
+
+    @Test
+    void dmlPayload_onTheErrorChannel_routesAndHandsTheTenantDown() {
+        // The successful write: the payload's data field re-reads the updated row from the tenant
+        // the decoded id names, its inherited child reads that tenant through the handed-down
+        // key, and the errors field reads the Outcome rather than the tenant slot.
+        try {
+            var result = execute("mutation { retitleFilmsChecked(in: [{ id: \""
+                + NodeIdEncoder.encodeFilm(2) + "\", title: \"Retitled Checked\" }])"
+                + " { films { title inventories { inventoryId } } errors { __typename } } }");
+            assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+            var payload = (Map<String, Object>) ((Map<String, Object>) result.getData()).get("retitleFilmsChecked");
+            assertThat(payload).containsEntry("errors", null);
+            assertThat((List<Map<String, Object>>) payload.get("films"))
+                .singleElement()
+                .satisfies(film -> {
+                    assertThat(film.get("title")).isEqualTo("Retitled Checked");
+                    assertThat((List<?>) film.get("inventories"))
+                        .as("tenant 2 holds no inventory, so an empty list is tenant 2's answer").isEmpty();
+                });
+            assertThat(TENANT_1_OPENED.get()).as("the other tenant's database is never opened").isZero();
+        } finally {
+            try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
+                t2.execute("update film set title = 'Tenant Two Film' where film_id = 2");
+            }
+        }
+    }
+
+    @Test
+    void dmlPayload_onTheErrorChannel_aDatabaseErrorRendersTheTypedError() {
+        // The failed write: the tenant's check constraint refuses the empty title, the batch
+        // rolls back, and the payload carries the typed error with a null data field and no
+        // top-level error, on the tenant the input names.
+        var result = execute("mutation { retitleFilmsChecked(in: [{ id: \""
+            + NodeIdEncoder.encodeFilm(2) + "\", title: \"\" }])"
+            + " { films { title } errors { __typename } } }");
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        var payload = (Map<String, Object>) ((Map<String, Object>) result.getData()).get("retitleFilmsChecked");
+        assertThat(payload).containsEntry("films", null);
+        assertThat((List<Map<String, Object>>) payload.get("errors"))
+            .singleElement()
+            .satisfies(error -> assertThat(error.get("__typename")).isEqualTo("FilmWriteDbError"));
+        assertThat(TENANT_2_OPENED.get()).as("the write ran on the tenant the input names").isPositive();
+        assertThat(TENANT_1_OPENED.get()).as("the other tenant's database is never opened").isZero();
+        try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
+            assertThat(t2.fetchValue("select title from film where film_id = 2"))
+                .as("the refused batch committed nothing").isEqualTo("Tenant Two Film");
+        }
     }
 
     @Test

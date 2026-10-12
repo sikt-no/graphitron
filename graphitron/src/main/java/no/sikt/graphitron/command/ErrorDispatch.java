@@ -15,7 +15,7 @@ import java.util.Objects;
  * would admit the resolved error types, and through them every arm of the type hierarchy, into
  * the surface {@code PackageImportDirectionTest} pins.
  */
-public sealed interface ErrorDispatch permits ErrorDispatch.Redacting, ErrorDispatch.LocalContextRouted {
+public sealed interface ErrorDispatch permits ErrorDispatch.Redacting, ErrorDispatch.OutcomeWrapped {
 
     /** The generated error router both arms route the throw through. */
     UnitRef errorRouter();
@@ -31,19 +31,22 @@ public sealed interface ErrorDispatch permits ErrorDispatch.Redacting, ErrorDisp
     }
 
     /**
-     * A channel that hands the matched throwable back as graphql-java {@code localContext}: the
-     * payload's errors field reads it from there, and the data side is short-circuited by the
-     * non-null sentinel the renderer composes from the row's own key columns.
+     * A channel on the typed {@code Outcome} transport: the entry point returns
+     * {@code Outcome.Success} around its value on success and {@code Outcome.ErrorList} around the
+     * matched throwable on a mapped error, so the payload's errors field reads the list off its
+     * source. Unlike the redacting arm this one governs the success return and the entry point's
+     * value type as well as the {@code catch} arm.
      *
      * <p>{@code mappingsConstantName} is the {@code Mapping[]} constant on the generated
      * mappings class holding this channel's dispatch table, deduped at classify time. It rides
      * as a name because that is all the arm emits.
      */
-    record LocalContextRouted(UnitRef errorRouter, UnitRef errorMappings,
-                              String mappingsConstantName) implements ErrorDispatch {
-        public LocalContextRouted {
+    record OutcomeWrapped(UnitRef errorRouter, UnitRef errorMappings, UnitRef outcome,
+                          String mappingsConstantName) implements ErrorDispatch {
+        public OutcomeWrapped {
             Objects.requireNonNull(errorRouter, "errorRouter");
             Objects.requireNonNull(errorMappings, "errorMappings");
+            Objects.requireNonNull(outcome, "outcome");
             if (mappingsConstantName == null || mappingsConstantName.isBlank()) {
                 throw new IllegalArgumentException(
                     "a routed dispatch names the mappings constant it dispatches on; a blank name"

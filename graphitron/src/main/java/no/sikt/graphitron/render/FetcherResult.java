@@ -29,14 +29,29 @@ public final class FetcherResult {
     }
 
     /**
-     * {@code return DataFetcherResult.<P>newResult().data(<local>)<tail>.build();}
+     * {@code return DataFetcherResult.<P>newResult().data(<local>)<hand-down>.build();}
      *
-     * <p>{@code builderTail} is the routed-tenant sites' {@code localContext} rider, empty
+     * <p>{@code handDown} is the routed-tenant sites' rider, {@link TenantHandDown#none()}
      * everywhere else, which keeps the single-tenant form byte-identical.
      */
-    public static CodeBlock success(TypeName valueType, String payloadLocal, CodeBlock builderTail) {
+    public static CodeBlock success(TypeName valueType, String payloadLocal, TenantHandDown handDown) {
+        return successOf(valueType, CodeBlock.of("$L", payloadLocal), handDown);
+    }
+
+    /**
+     * {@code return DataFetcherResult.<Outcome<X>>newResult().data(new Outcome.Success<>(<local>))
+     * <hand-down>.build();} — the success envelope of a fetcher on the {@code Outcome} transport.
+     * {@code outcomeType} is the declared {@code Outcome<X>} and {@code successClass} its
+     * {@code Success} arm.
+     */
+    public static CodeBlock outcomeSuccess(TypeName outcomeType, ClassName successClass,
+            String payloadLocal, TenantHandDown handDown) {
+        return successOf(outcomeType, CodeBlock.of("new $T<>($L)", successClass, payloadLocal), handDown);
+    }
+
+    private static CodeBlock successOf(TypeName valueType, CodeBlock data, TenantHandDown handDown) {
         return CodeBlock.of("return $T.<$T>newResult().data($L)$L.build();\n",
-            DATA_FETCHER_RESULT, boxed(valueType), payloadLocal, builderTail);
+            DATA_FETCHER_RESULT, boxed(valueType), data, handDown.builderTail());
     }
 
     /** {@code return DataFetcherResult.<P>newResult().data(null).build();} — the empty single shape. */

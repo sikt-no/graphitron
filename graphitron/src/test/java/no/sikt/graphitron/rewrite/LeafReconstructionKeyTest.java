@@ -133,7 +133,7 @@ class LeafReconstructionKeyTest {
         Map.entry(ChildField.SingleRecordIdFieldFromReturning.class,
             triple("DML RETURNING keys", "inline", "encoded node id")),
         Map.entry(ChildField.ErrorsField.class,
-            triple("error transport (payload accessor | local context)", "inline", "errors list")));
+            triple("error transport (payload accessor | outcome wrapper)", "inline", "errors list")));
 
     /**
      * Collisions the key tolerates, each with its owner. The single and bulk DML record

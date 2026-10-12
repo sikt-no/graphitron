@@ -558,19 +558,19 @@ class SingleRecordPayloadPipelineTest {
             "@service mutation");
     }
 
-    // ===== LocalContext error channel on DML payloads (structural-scan integration) =====
+    // ===== Error channel on DML payloads (structural-scan integration) =====
     //
     // The structural DML-payload scan (BuildContext.scanStructuralDmlPayload) admits a carrier
     // shape with one @table-element or record-backed element data field plus an optional errors-shaped
-    // sibling; FieldBuilder.detectStructuralDmlErrorChannel binds the errors-channel transport
-    // to ErrorChannel.LocalContext when the carrier has no reflected developer-supplied payload
-    // class with an errors slot (its element binds via the DML RETURNING). These tests pin that the resulting
-    // MutationDmlRecordField / MutationBulkDmlRecordField carries Optional.of(LocalContext) and
-    // the sibling ErrorsField on the payload classifies with Transport.LocalContext — the two
-    // halves the emitter's catch arm (TypeFetcherGenerator.catchArm) and the data fetcher
-    // (FetcherEmitter.dataFetcherValue's ErrorsField switch) read at emit time.
+    // sibling; FieldBuilder.detectStructuralDmlErrorChannel binds the channel to
+    // ErrorChannel.Mapped, the typed Outcome transport, since the carrier has no developer-supplied
+    // payload class (its element binds via the DML RETURNING). These tests pin that the resulting
+    // MutationDmlRecordField / MutationBulkDmlRecordField carries Optional.of(Mapped) and the
+    // sibling ErrorsField on the payload classifies with Transport.WrapperArm: the two halves the
+    // emitter's catch arm (ChannelCatchArmEmitter) and the data fetcher (FetcherEmitter's
+    // ErrorsField switch) read at emit time.
 
-    private static final String CARRIER_WALK_LOCAL_CONTEXT_ERRORS = """
+    private static final String CARRIER_WALK_ERRORS = """
             type SimpleErr @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) {
                 path: [String!]!
                 message: String!
@@ -580,7 +580,7 @@ class SingleRecordPayloadPipelineTest {
 
     @ParameterizedTest
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
-    void payload_singleInput_withErrorsField_classifiesAsMutationDmlRecordFieldWithLocalContext(DmlKind kind) {
+    void payload_singleInput_withErrorsField_classifiesAsMutationDmlRecordFieldWithMappedChannel(DmlKind kind) {
         // The consumer shape from the field report: an errors-as-data channel beside the data
         // field, with no @mutation(table:). The errors field is skipped by the carrier scan, so the
         // payload return-derives its write target off the @table-element data field like any other
@@ -588,28 +588,28 @@ class SingleRecordPayloadPipelineTest {
         // pass ran while the ErrorIndex was still empty, the errors field read as a second data
         // channel, no DmlEmitted was minted, and the field rejected with "not yet supported".
         var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(kind,
-            CARRIER_WALK_LOCAL_CONTEXT_ERRORS
+            CARRIER_WALK_ERRORS
             + "type FilmPayload { film: Film errors: [CarrierError!] }"));
 
         // UPDATE folds in with a Write.Update arm; INSERT carries Write.Insert.
-        // The LocalContext error channel is carried on the common WithErrorChannel supertype either way.
+        // The error channel is carried on the common WithErrorChannel supertype either way.
         var mutField = schema.field("Mutation", mutationName(kind));
         assertThat(mutField).isInstanceOf(expectedSingleLeaf(kind));
         var dml = (no.sikt.graphitron.rewrite.model.WithErrorChannel) mutField;
         assertThat(dml.errorChannel()).isPresent();
         assertThat(dml.errorChannel().get())
-            .isInstanceOf(no.sikt.graphitron.rewrite.model.ErrorChannel.LocalContext.class);
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.ErrorChannel.Mapped.class);
         assertThat(dml.errorChannel().get().mappedErrorTypes())
             .extracting(et -> et.name()).containsExactly("SimpleErr");
 
         var errorsField = schema.field("FilmPayload", "errors");
         assertThat(errorsField).isInstanceOf(ChildField.ErrorsField.class);
         var ef = (ChildField.ErrorsField) errorsField;
-        assertThat(ef.transport()).isInstanceOf(ChildField.Transport.LocalContext.class);
+        assertThat(ef.transport()).isInstanceOf(ChildField.Transport.WrapperArm.class);
 
         // Sibling data channel still classifies as a record-sourced BatchedTableField (lift
-        // arity ONE for the single-input form). The validator-mirror allow-list admits this arm; the runtime
-        // fetcher honors the null-source short-circuit guard the LocalContext catch path needs.
+        // arity ONE for the single-input form), which narrows Outcome.Success through the
+        // parent-source binding seam.
         var dataField = schema.field("FilmPayload", "film");
         assertThat(dataField).isInstanceOf(ChildField.BatchedTableField.class);
         var btf = (ChildField.BatchedTableField) dataField;
@@ -619,80 +619,34 @@ class SingleRecordPayloadPipelineTest {
 
     @ParameterizedTest
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
-    void payload_bulkInput_withErrorsField_classifiesAsMutationBulkDmlRecordFieldWithLocalContext(DmlKind kind) {
+    void payload_bulkInput_withErrorsField_classifiesAsMutationBulkDmlRecordFieldWithMappedChannel(DmlKind kind) {
         // The bulk-input half of the same regression pin: an errors channel does not stop the
         // payload from return-deriving its write target, so no @mutation(table:) is needed.
         var schema = TestSchemaHelper.buildSchema(payloadDml(kind,
-            CARRIER_WALK_LOCAL_CONTEXT_ERRORS
+            CARRIER_WALK_ERRORS
             + "type FilmPayload { films: [Film!] errors: [CarrierError!] }"));
 
         // UPDATE folds in with a Write.Update arm; INSERT carries Write.Insert.
-        // The LocalContext error channel is carried on the common WithErrorChannel supertype either way.
+        // The error channel is carried on the common WithErrorChannel supertype either way.
         var mutField = schema.field("Mutation", mutationName(kind));
         assertThat(mutField).isInstanceOf(expectedBulkLeaf(kind));
         var bulk = (no.sikt.graphitron.rewrite.model.WithErrorChannel) mutField;
         assertThat(bulk.errorChannel()).isPresent();
         assertThat(bulk.errorChannel().get())
-            .isInstanceOf(no.sikt.graphitron.rewrite.model.ErrorChannel.LocalContext.class);
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.ErrorChannel.Mapped.class);
         assertThat(bulk.errorChannel().get().mappedErrorTypes())
             .extracting(et -> et.name()).containsExactly("SimpleErr");
 
         var errorsField = schema.field("FilmPayload", "errors");
         assertThat(errorsField).isInstanceOf(ChildField.ErrorsField.class);
         assertThat(((ChildField.ErrorsField) errorsField).transport())
-            .isInstanceOf(ChildField.Transport.LocalContext.class);
+            .isInstanceOf(ChildField.Transport.WrapperArm.class);
 
         var dataField = schema.field("FilmPayload", "films");
         assertThat(dataField).isInstanceOf(ChildField.BatchedTableField.class);
         assertThat(((ChildField.BatchedTableField) dataField).lift())
             .isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
                 pr -> assertThat(pr.arity()).isEqualTo(Arity.MANY));
-    }
-
-    @Test
-    void payload_withErrorsField_emittedFetcher_dispatchesThroughLocalContextRouter() throws Exception {
-        // End-to-end emit pin: the MutationDmlRecordField fetcher's catch arm dispatches through
-        // ErrorRouter.dispatchToLocalContext, and the payload's errors-field fetcher reads via
-        // env.getLocalContext() (the FetcherEmitter LocalContext arm). The two emissions are the
-        // only emit-time consequences of the LocalContext
-        // binding; pinning their presence in the generated source guards against silent
-        // regressions to the PayloadAccessor transport without a model-level signal.
-        var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(DmlKind.INSERT,
-            CARRIER_WALK_LOCAL_CONTEXT_ERRORS
-            + "type FilmPayload { film: Film errors: [CarrierError!] }"));
-
-        var generated = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE);
-        var mutationFetchers = generated.stream()
-            .filter(t -> t.name().equals("MutationFetchers"))
-            .findFirst().orElseThrow().toString();
-        assertThat(mutationFetchers)
-            .as("MutationFetchers source")
-            .contains("ErrorRouter.dispatchToLocalContext")
-            .contains("ErrorMappings.")
-            // The sentinel is the 4th argument: a non-null Record1 constructed via
-            // DSL.using(SQLDialect.DEFAULT).newRecord(<pk fields>). Required because
-            // graphql-java's completeValueForObject skips children on a null parent value;
-            // the sentinel keeps the carrier traversable and the data field's null-PK SELECT
-            // renders {data: null} via the SELECT's natural empty-result.
-            .contains("SQLDialect.DEFAULT")
-            .contains("newRecord");
-
-        // The payload's ErrorsField with Transport.LocalContext is reified onto
-        // FilmPayloadFetchers as an env-dependent method (return env.getLocalContext()); the
-        // schema-level wiring registers a method reference into it rather than an inline lambda.
-        var wirings = SchemaShapeRenderTestSupport.fetcherRegistrations(
-            schema, DEFAULT_OUTPUT_PACKAGE);
-        var filmPayloadWiring = wirings.get("FilmPayload");
-        assertThat(filmPayloadWiring).as("FilmPayload wiring present").isNotNull();
-        assertThat(filmPayloadWiring.toString())
-            .as("FilmPayload.errors registers a method reference into FilmPayloadFetchers")
-            .contains("FilmPayloadFetchers::errors");
-        var filmPayloadFetchers = generated.stream()
-            .filter(t -> t.name().equals("FilmPayloadFetchers"))
-            .findFirst().orElseThrow().toString();
-        assertThat(filmPayloadFetchers)
-            .as("FilmPayloadFetchers.errors reads env.getLocalContext()")
-            .contains("env.getLocalContext()");
     }
 
     @Test
@@ -710,7 +664,7 @@ class SingleRecordPayloadPipelineTest {
         // classify-phase cross-check rejects one. The flipped fixtures above carry this item's
         // regression weight.
         var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(DmlKind.INSERT,
-            CARRIER_WALK_LOCAL_CONTEXT_ERRORS
+            CARRIER_WALK_ERRORS
             + "type FilmPayload { film: Film errors: [CarrierError!] }", true));
 
         var mutField = schema.field("Mutation", mutationName(DmlKind.INSERT));

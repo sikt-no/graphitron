@@ -272,12 +272,12 @@ class RoutineWriteRelationTest {
             .isEqualTo(Arity.SINGLE);
         assertThat(row.errors())
             .as("the payload carries an errors field, so the throw is routed back through"
-                + " localContext with its mappings constant")
-            .isInstanceOf(ErrorDispatch.LocalContextRouted.class);
-        assertThat(((ErrorDispatch.LocalContextRouted) row.errors()).mappingsConstantName())
-            .isNotBlank();
-        assertThat(((ErrorDispatch.LocalContextRouted) row.errors()).errorMappings())
-            .isEqualTo(UNITS.errorMappings());
+                + " the typed Outcome with its mappings constant")
+            .isInstanceOf(ErrorDispatch.OutcomeWrapped.class);
+        var outcome = (ErrorDispatch.OutcomeWrapped) row.errors();
+        assertThat(outcome.mappingsConstantName()).isNotBlank();
+        assertThat(outcome.errorMappings()).isEqualTo(UNITS.errorMappings());
+        assertThat(outcome.outcome()).isEqualTo(UNITS.outcome());
     }
 
     @Test

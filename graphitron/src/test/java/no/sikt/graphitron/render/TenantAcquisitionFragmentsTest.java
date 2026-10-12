@@ -58,7 +58,7 @@ class TenantAcquisitionFragmentsTest {
 
         assertThat(declaration.statement().toString())
             .isEqualTo("org.jooq.DSLContext dsl = graphitronContext(env).getDslContext(env);\n");
-        assertThat(declaration.localContextTail().toString())
+        assertThat(declaration.handDown().builderTail().toString())
             .as("a single-tenant run divines no key, so there is nothing to hand down")
             .isEmpty();
     }
@@ -70,7 +70,7 @@ class TenantAcquisitionFragmentsTest {
         assertThat(declaration.statement().toString())
             .isEqualTo("org.jooq.DSLContext dsl = "
                 + "com.example.generated.schema.TenantConnections.dslDefault(env);\n");
-        assertThat(declaration.localContextTail().toString())
+        assertThat(declaration.handDown().builderTail().toString())
             .as("global reference data divines nothing and hands nothing down")
             .isEmpty();
     }
@@ -83,7 +83,7 @@ class TenantAcquisitionFragmentsTest {
             .isEqualTo("org.jooq.DSLContext dsl = com.example.generated.schema.TenantConnections"
                 + ".dslFor(env, com.example.generated.schema.TenantConnections"
                 + ".divinedTenant(env.<Object>getLocalContext()));\n");
-        assertThat(declaration.localContextTail().toString())
+        assertThat(declaration.handDown().builderTail().toString())
             .as("the key was divined by an ancestor and is already on the local context")
             .isEmpty();
     }
@@ -98,7 +98,7 @@ class TenantAcquisitionFragmentsTest {
                 + ".TenantConnections.divinedTenant(env.<Object>getArgument(\"customerId\"));\n"
                 + "org.jooq.DSLContext dsl = com.example.generated.schema.TenantConnections"
                 + ".dslFor(env, _divinedTenant);\n");
-        assertThat(declaration.localContextTail().toString())
+        assertThat(declaration.handDown().builderTail().toString())
             .as("the divining site is the one that hands the key to its subtree")
             .isEqualTo(".localContext(_divinedTenant)");
     }

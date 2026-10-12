@@ -350,14 +350,13 @@ public final class ErrorMappingsClassGenerator {
     /**
      * Human-readable label for the channel used in the per-constant Javadoc.
      * {@link ErrorChannel.PayloadClass} carries a payload-class simple name; the
-     * {@link ErrorChannel.LocalContext} arm has no payload class so we fall back to the
+     * {@link ErrorChannel.Mapped} arm has no payload class so we fall back to the
      * constant name itself.
      */
     private static String channelLabel(ErrorChannel channel) {
         return switch (channel) {
             case ErrorChannel.Mapped m -> m.mappingsConstantName();
             case ErrorChannel.PayloadClass p -> p.payloadClass().simpleName();
-            case ErrorChannel.LocalContext lc -> lc.mappingsConstantName();
         };
     }
 

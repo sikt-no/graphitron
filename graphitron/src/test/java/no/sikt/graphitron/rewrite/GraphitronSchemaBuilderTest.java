@@ -8420,10 +8420,10 @@ class GraphitronSchemaBuilderTest {
         """;
 
     @Test
-    void mutationRoutineCarrierWithErrorsFieldClassifiesWithLocalContextChannel() {
+    void mutationRoutineCarrierWithErrorsFieldClassifiesWithMappedChannel() {
         // The directiveless carrier admitted with an errors field: the leaf carries the routine
         // call, the name-matched captured pairs (target side == rental's PK), the target table,
-        // the data field's arrival, and the narrow LocalContext channel.
+        // the data field's arrival, and the Outcome-transport Mapped channel.
         var schema = build(RENT_FILM_CARRIER);
         var f = (MutationField.MutationRoutineWriteRecordField) schema.field("Mutation", "rentFilm");
         assertThat(f.routine().methodName()).isEqualTo("rentFilm");
@@ -8438,16 +8438,16 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    void mutationRoutineCarrierErrorsFieldBindsLocalContextTransport() {
+    void mutationRoutineCarrierErrorsFieldBindsWrapperArmTransport() {
         // The transport pin: the carrier's errors field classifies as ErrorsField with
-        // Transport.LocalContext. This is the assertion that fails if the activeChannel gate
+        // Transport.WrapperArm. This is the assertion that fails if the activeChannel gate
         // was not widened to the routine arm — the errors field would silently fall through to
         // PayloadAccessor, the one transport a directiveless structural carrier cannot serve —
         // and it fails at classify time rather than three tiers later in execution.
         var schema = build(RENT_FILM_CARRIER);
         var errors = (ErrorsField) schema.field("RentFilmPayload", "errors");
         assertThat(errors.transport())
-            .isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.Transport.LocalContext.class);
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.Transport.WrapperArm.class);
         // And the data field is the record-sourced re-fetch, correlated on the target's PK.
         var data = (BatchedTableField) schema.field("RentFilmPayload", "rental");
         assertThat(data.parentCorrelation())

@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.render.TenantHandDown;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator;
 import no.sikt.graphitron.rewrite.model.OutputField;
 import no.sikt.graphitron.rewrite.model.TenantBinding;
@@ -68,16 +69,14 @@ final class TenantDslEmitter {
      * One site's resolved declaration. {@code declaration} is the full statement block the site
      * pastes where its {@code DSLContext dsl = ...} line goes. {@code handsDownTenant} is true
      * exactly when the declaration bound the {@value #TENANT_KEY_LOCAL} local: the site's
-     * success return should then carry {@code .localContext(_divinedTenant)} so descendant
-     * fields' {@link TenantBinding.Inherited} reads see the divined key.
+     * success return should then carry {@link #handDown()} so descendant fields'
+     * {@link TenantBinding.Inherited} reads see the divined key.
      */
     record Resolution(CodeBlock declaration, boolean handsDownTenant) {
 
-        /** {@code .localContext(_divinedTenant)} when the site divined a key, empty otherwise. */
-        CodeBlock localContextTail() {
-            return handsDownTenant
-                ? CodeBlock.of(".localContext($L)", TENANT_KEY_LOCAL)
-                : CodeBlock.of("");
+        /** The divined key's hand-down when the site divined one, {@link TenantHandDown#none()} otherwise. */
+        TenantHandDown handDown() {
+            return handsDownTenant ? TenantHandDown.divined(TENANT_KEY_LOCAL) : TenantHandDown.none();
         }
     }
 

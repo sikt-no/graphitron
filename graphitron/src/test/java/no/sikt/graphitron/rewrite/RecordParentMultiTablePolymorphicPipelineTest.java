@@ -110,8 +110,8 @@ class RecordParentMultiTablePolymorphicPipelineTest {
         // returning FilmRecord (JooqTableRecordType) vs. @table(name: "film"). Both classify to
         // the same permit on the same hub, so the emitted FilmFetchers methods for the polymorphic
         // child field must be identical up to the parent-source binding: the record parent is
-        // producer-handed, so its fetcher additionally carries the DirectRecord null-source guard
-        // (the LocalContext errors transport fires data fetchers with data(null)); the table
+        // producer-handed, so its fetcher additionally carries the DirectRecord null-source guard;
+        // the table
         // parent's own projected row is never null mid-query, so its prelude is empty. Everything
         // else must match; drift in either producer fails this comparison.
         var recordParentSchema = TestSchemaHelper.buildSchema(INTERFACE_PARTICIPANTS + """

@@ -135,9 +135,10 @@ class CommandSeamRatchetTest {
      * {@code MutationRoutineWriteRecordField} arm, a new leaf's one dispatch site, not new
      * dispatch on an existing leaf). Raised 60 to 62 when the discriminated interface child's
      * batched half landed: the fetcher dispatch arm plus the parent-input key-wrap probe's arm,
-     * both a new leaf's own sites rather than new dispatch on an existing leaf.
+     * both a new leaf's own sites rather than new dispatch on an existing leaf. Lowered 62 to 61
+     * when the errors field's localContext transport retired, taking its transport arm with it.
      */
-    private static final int GENERATOR_LEAF_CASE_PATTERNS = 62;
+    private static final int GENERATOR_LEAF_CASE_PATTERNS = 61;
 
     /**
      * Leaf references ({@code instanceof} plus {@code case}) inside {@code plan/}: the relocation

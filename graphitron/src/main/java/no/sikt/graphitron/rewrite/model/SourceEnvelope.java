@@ -12,8 +12,9 @@ package no.sikt.graphitron.rewrite.model;
  * {@code FieldBuilder.carrierPayloadHasErrorsField} — the same structural signal (an
  * errors-shaped field on the payload SDL) that gives the producer its
  * {@link ErrorChannel.Mapped} channel, so the consumer-side envelope and the producer-side
- * channel agree by construction. Carried first-class on the two envelope-forking leaves,
- * {@link ChildField.SingleRecordIdField#envelope()} and
+ * channel agree by construction. Carried first-class on the three envelope-forking leaves,
+ * {@link ChildField.SingleRecordIdField#envelope()},
+ * {@link ChildField.SingleRecordIdFieldFromReturning#envelope()} and
  * {@link ChildField.RecordCompositeField#envelope()}. (Formerly
  * {@code SourceKey.Reader.SourceEnvelope}, riding on the retired {@code ResultRowWalk} reader
  * arm.) The batched re-fetch and polymorphic paths never carry it; there the generator derives
@@ -22,11 +23,11 @@ package no.sikt.graphitron.rewrite.model;
  * twin, which every parent-reading fetcher builder consumes.
  */
 public enum SourceEnvelope {
-    /** {@code env.getSource()} is the value(s) directly (DML mutation carrier). */
+    /** {@code env.getSource()} is the value(s) directly (a carrier whose payload has no errors field). */
     DIRECT,
     /**
      * {@code env.getSource()} is the non-null {@code Outcome} of an error-channel
- * {@code @service} carrier: the value(s) live in
+     * carrier: the value(s) live in
      * {@code Outcome.Success.value()}, and the {@code Outcome.ErrorList} arm resolves the
      * data field to {@code null}.
      */

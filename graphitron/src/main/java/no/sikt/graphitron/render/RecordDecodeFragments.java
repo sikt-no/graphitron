@@ -25,7 +25,7 @@ import no.sikt.graphitron.model.jooq.ColumnRef;
  * {@code @condition} is the {@code <Root>Conditions} class that {@link ConditionGlueRenderer} builds
  * and cannot reach the legacy emitter from. Copying the body into the second host would leave two
  * spellings of one emitted form, so it moved here and the unmigrated host delegates, the same
- * arrangement {@link FetcherResult} and {@link RecordSentinel} carry.
+ * arrangement {@link FetcherResult} and {@link ErrorDispatchFragments} carry.
  *
  * <p>Naming is deliberately <em>not</em> here. One generated class's private-static method namespace is
  * that class's to allocate: {@code <Type>Fetchers} allocates its {@code decode*} names across the node

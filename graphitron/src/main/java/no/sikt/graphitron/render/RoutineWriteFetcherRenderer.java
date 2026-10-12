@@ -90,18 +90,19 @@ public final class RoutineWriteFetcherRenderer {
         var dsl = TenantAcquisitionFragments.declare(tenancy, row.coordinate(), contextRead);
         return switch (row) {
             case RoutineWriteCommand.ChainReread r ->
-                renderChainReread(r, dsl.statement(), dsl.localContextTail(), argHelpers, keys);
+                renderChainReread(r, dsl.statement(), dsl.handDown(), argHelpers, keys);
             case RoutineWriteCommand.CarrierKeys r ->
-                renderCarrierKeys(r, dsl.statement(), dsl.localContextTail(), argHelpers, keys);
+                renderCarrierKeys(r, dsl.statement(), dsl.handDown(), argHelpers, keys);
         };
     }
 
     private static MethodSpec renderChainReread(RoutineWriteCommand.ChainReread row,
-            CodeBlock dslDeclaration, CodeBlock localContextTail, ArgPathHelperRegistry argHelpers,
+            CodeBlock dslDeclaration, TenantHandDown handDown, ArgPathHelperRegistry argHelpers,
             ProjectedKeyReads keys) {
         boolean isList = row.arity() == Arity.LIST;
         TypeName valueType = isList ? ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
-        var builder = entryPoint(row, valueType);
+        TypeName declaredType = ErrorDispatchFragments.declaredValueType(row.errors(), valueType);
+        var builder = entryPoint(row, declaredType);
 
         var call = RoutineCallEmitter.emitCall(row.call(), new ArgumentValueSource.Env(),
             argHelpers, keys);
@@ -126,7 +127,7 @@ public final class RoutineWriteFetcherRenderer {
         builder.addCode(captureTransaction(
             isList ? ParameterizedTypeName.get(RESULT, keyRowType) : keyRowType,
             capturedColumns, null, isList));
-        builder.addCode(nullKeysGuard(valueType, isList));
+        builder.addCode(nullKeysGuard(declaredType, isList));
 
         // The post-commit re-read: departing from the anchor's table keyed by the captured values,
         // with the tail hops joining forward exactly as the read chain's fetcher emits them.
@@ -167,17 +168,18 @@ public final class RoutineWriteFetcherRenderer {
         sel.add(isList ? ".fetch();\n" : ".fetchOne();\n").unindent();
         builder.addCode(sel.build());
 
-        return closeEntryPoint(builder, row, valueType, "payload", localContextTail, null);
+        return closeEntryPoint(builder, row, declaredType, "payload", handDown);
     }
 
     private static MethodSpec renderCarrierKeys(RoutineWriteCommand.CarrierKeys row,
-            CodeBlock dslDeclaration, CodeBlock localContextTail, ArgPathHelperRegistry argHelpers,
+            CodeBlock dslDeclaration, TenantHandDown handDown, ArgPathHelperRegistry argHelpers,
             ProjectedKeyReads keys) {
         boolean isList = row.arity() == Arity.LIST;
         var targetKeyColumns = row.capturedPairs().stream().map(KeyPair::targetSide).toList();
         TypeName keyRowType = CatalogRefs.keyRecordType(targetKeyColumns);
         TypeName valueType = isList ? ParameterizedTypeName.get(RESULT, keyRowType) : keyRowType;
-        var builder = entryPoint(row, valueType);
+        TypeName declaredType = ErrorDispatchFragments.declaredValueType(row.errors(), valueType);
+        var builder = entryPoint(row, declaredType);
 
         var call = RoutineCallEmitter.emitCall(row.call(), new ArgumentValueSource.Env(),
             argHelpers, keys);
@@ -197,28 +199,33 @@ public final class RoutineWriteFetcherRenderer {
         }
         builder.addCode(captureTransaction(valueType, sourceSides(row.capturedPairs()),
             coerceTo.build(), isList));
-        builder.addCode(nullKeysGuard(valueType, isList));
+        builder.addCode(nullKeysGuard(declaredType, isList));
 
-        var sentinel = isList
-            ? RecordSentinel.bulk(row.targetTable(), targetKeyColumns)
-            : RecordSentinel.single(row.targetTable(), targetKeyColumns);
-        return closeEntryPoint(builder, row, valueType, "keys", localContextTail, sentinel);
+        return closeEntryPoint(builder, row, declaredType, "keys", handDown);
     }
 
-    /** The entry point's signature: the field's own name, one {@code env} parameter. */
-    private static MethodSpec.Builder entryPoint(RoutineWriteCommand row, TypeName valueType) {
+    /**
+     * The entry point's signature: the field's own name, one {@code env} parameter.
+     * {@code declaredType} is the row's value type as its error dispatch declares it
+     * ({@link ErrorDispatchFragments#declaredValueType}): {@code Outcome}-wrapped when the
+     * payload carries an errors field.
+     */
+    private static MethodSpec.Builder entryPoint(RoutineWriteCommand row, TypeName declaredType) {
         return MethodSpec.methodBuilder(row.unit().methodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(FetcherResult.syncResultType(valueType))
+            .returns(FetcherResult.syncResultType(declaredType))
             .addParameter(ENV, "env");
     }
 
-    /** The success return plus the {@code catch} arm, closing the {@code try} both arms opened. */
+    /**
+     * The success return plus the {@code catch} arm, closing the {@code try} both arms opened.
+     * Both read the row's error dispatch, which governs the success wrap as well as the catch.
+     */
     private static MethodSpec closeEntryPoint(MethodSpec.Builder builder, RoutineWriteCommand row,
-            TypeName valueType, String payloadLocal, CodeBlock localContextTail, CodeBlock sentinel) {
-        builder.addCode(FetcherResult.success(valueType, payloadLocal, localContextTail));
+            TypeName declaredType, String payloadLocal, TenantHandDown handDown) {
+        builder.addCode(ErrorDispatchFragments.successReturn(row.errors(), declaredType, payloadLocal, handDown));
         builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(ErrorDispatchFragments.catchArm(row.errors(), sentinel));
+        builder.addCode(ErrorDispatchFragments.catchArm(row.errors(), declaredType));
         builder.endControlFlow();
         return builder.build();
     }
@@ -250,10 +257,10 @@ public final class RoutineWriteFetcherRenderer {
      * was keyed and the whole payload renders null, the same contract the DML single-row shape
      * carries. The many shape needs none, an empty {@code Result} being a value.
      */
-    private static CodeBlock nullKeysGuard(TypeName valueType, boolean isList) {
+    private static CodeBlock nullKeysGuard(TypeName declaredType, boolean isList) {
         return isList
             ? CodeBlock.of("")
-            : CodeBlock.builder().add("if (keys == null) ").add(FetcherResult.nullData(valueType)).build();
+            : CodeBlock.builder().add("if (keys == null) ").add(FetcherResult.nullData(declaredType)).build();
     }
 
     private static List<CatalogColumn> sourceSides(List<KeyPair> pairs) {

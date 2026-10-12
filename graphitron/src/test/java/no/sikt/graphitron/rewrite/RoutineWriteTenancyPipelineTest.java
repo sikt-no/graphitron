@@ -85,6 +85,54 @@ class RoutineWriteTenancyPipelineTest {
             .hasToString("Mutation.rentFilm");
     }
 
+    /**
+     * The routine-write payload counterpart of the tenant-routed DML payload with an errors field:
+     * the errors ride the typed {@code Outcome} the entry point returns, never the
+     * {@code localContext} slot the tenant hand-down owns. A routine write mints no tenant slot
+     * of its own (its only member is the routine call), so under a {@code film_id} tenant column
+     * the rental write classifies untenanted and hands nothing down; what this pins is that the
+     * channel, the errors transport and the entry point's declared value agree on the wrapper.
+     */
+    @Test
+    void aRoutineWritePayloadWithErrorsRidesTheOutcomeTransport() {
+        var sdl = """
+            type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union RentFilmError = DbErr
+            type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+            type RentFilmPayload { rental: Rental errors: [RentFilmError] }
+            type Query { rental: Rental }
+            type Mutation {
+              rentFilm(inventoryId: Int!, customerId: Int!): RentFilmPayload
+                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+            }
+            """;
+        var ctx = TestConfiguration.testContext().withTenantColumn("film_id");
+        var schema = TestSchemaHelper.buildSchema(sdl, ctx);
+        assertThat(schema.tenantBindingOf("Mutation", "rentFilm"))
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.TenantBinding.Untenanted.DefaultSource.class);
+        assertThat(((no.sikt.graphitron.rewrite.model.MutationField.MutationRoutineWriteRecordField)
+                schema.field("Mutation", "rentFilm")).errorChannel())
+            .get().isInstanceOf(no.sikt.graphitron.rewrite.model.ErrorChannel.Mapped.class);
+        assertThat(((no.sikt.graphitron.rewrite.model.ChildField.ErrorsField)
+                schema.field("RentFilmPayload", "errors")).transport())
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.Transport.WrapperArm.class);
+
+        var fetcher = TestSchemaHelper.storeBackedFetchers(tmp, sdl, ctx).stream()
+            .filter(t -> t.name().equals("MutationFetchers"))
+            .findFirst().orElseThrow()
+            .methodSpecs().stream().filter(m -> m.name().equals("rentFilm"))
+            .findFirst().orElseThrow();
+        assertThat(fetcher.returnType())
+            .isInstanceOfSatisfying(no.sikt.graphitron.javapoet.ParameterizedTypeName.class, result ->
+                assertThat(result.typeArguments()).singleElement()
+                    .isInstanceOfSatisfying(no.sikt.graphitron.javapoet.ParameterizedTypeName.class,
+                        outcome -> assertThat(outcome.rawType().canonicalName())
+                            .isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".schema.Outcome")));
+    }
+
     private static EmitPlan planFor(RunContext ctx) {
         return TestSchemaHelper.storeBackedPlan(tmp, SDL, ctx);
     }

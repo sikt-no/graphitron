@@ -32,8 +32,9 @@ import java.util.Set;
  * {@code FieldBuilder.carrierPayloadHasErrorsField} (any errors-shaped payload field, the signal
  * that mints {@link no.sikt.graphitron.rewrite.model.SourceEnvelope} on the two envelope-carrying
  * leaves), answers a broader question on a narrower population. The two agree wherever both
- * apply because the wrapper transport is granted exactly to service-produced payloads whose SDL
- * carries an errors-shaped field; this binding is the type-level derivation of the same fork
+ * apply because the wrapper transport is granted exactly to producer-returned payloads (root
+ * {@code @service}, DML and {@code @routine} carriers) whose SDL carries an errors-shaped field;
+ * this binding is the type-level derivation of the same fork
  * {@code SourceEnvelope} carries leaf-level.
  *
  * <p>The one thing that varies per consumer is the escape the prelude returns when the parent
@@ -58,8 +59,8 @@ public sealed interface ParentSourceBinding {
     /**
      * The producer. {@link SourceShape#Table} wins unconditionally: a table-backed parent's
      * source is its own projected row, never null mid-query and never {@code Outcome}-wrapped
-     * (the wrapper transport is granted only to service-produced payloads, which classify
-     * class-backed). On the {@link SourceShape#Record} arm, {@code outcomeWrapped} forks
+     * (the wrapper transport is granted only to producer-returned payloads, which classify
+     * class-backed or as producer-bound record carriers). On the {@link SourceShape#Record} arm, {@code outcomeWrapped} forks
      * {@link OutcomeRecord} from {@link DirectRecord}.
      */
     static ParentSourceBinding of(SourceShape parentShape, boolean outcomeWrapped, String outputPackage) {
@@ -84,9 +85,9 @@ public sealed interface ParentSourceBinding {
 
     /**
      * A producer-handed backing object with no wrapper transport in play. The null-source guard
-     * is load-bearing, not defensive: the {@code LocalContext} errors transport fires the
-     * data-channel fetcher with {@code data(null)}, so a consumer that skips the guard throws
-     * {@code NullPointerException} on that transport's error arm.
+     * covers a producer that hands down no backing object for this child (a list element or
+     * nested object the producer left null), so a consumer reading straight off the source does
+     * not throw {@code NullPointerException}.
      */
     record DirectRecord() implements ParentSourceBinding {
         @Override public CodeBlock prelude(CodeBlock subject, CodeBlock escape) {
@@ -139,7 +140,7 @@ public sealed interface ParentSourceBinding {
      * the source-defaulting {@code GeneratorUtils.buildRecordParentKeyExtraction} overload,
      * obtaining a binding is how those builders get a source expression at all, so the compiler
      * enforces consumption); the inline reads arm-switch through
-     * {@code FetcherEmitter.bind}'s fork onto the same producer; the two
+     * {@code FetcherEmitter.bind}'s fork onto the same producer; the three
      * {@link no.sikt.graphitron.rewrite.model.SourceEnvelope}-carrying leaves answer the same
      * question through their classify-time envelope, this binding's leaf-level twin.
      *
@@ -158,12 +159,13 @@ public sealed interface ParentSourceBinding {
         ChildField.RecordReadField.class,
         ChildField.NestingField.class,
         ChildField.SingleRecordIdField.class,
+        ChildField.SingleRecordIdFieldFromReturning.class,
         ChildField.RecordCompositeField.class);
 
     /**
      * Leaves whose fetcher reads no parent backing object: root fetchers (the source is the
-     * root object), the errors field's own transports (they read the {@code Outcome} /
-     * localContext error channel itself, which is the outcome-aware read), and input-object
+     * root object), the errors field's own transports (they read the {@code Outcome} error
+     * channel itself, which is the outcome-aware read), and input-object
      * leaves (attached to input types; no fetcher is emitted at all).
      */
     Set<Class<? extends GraphitronField>> NO_PARENT_SOURCE_LEAVES = Set.of(
@@ -199,8 +201,8 @@ public sealed interface ParentSourceBinding {
      * inventory-absent under a class-backed payload by classifier construction (the
      * table-projection family needs a SELECT-projected parent, so
      * {@code FieldBuilder.classifyChildFieldOnResultType} never mints them); the child
-     * {@code @service} leaves and the DML RETURNING id carrier are mintable on record parents
-     * but read {@code env.getSource()} unconditionally, so
+     * {@code @service} leaves are mintable on record parents but read {@code env.getSource()}
+     * unconditionally, so
      * {@code GraphitronSchemaValidator.validateWrapperArmSiblingPosture} turns the combination
      * into a build-time rejection rather than a request-time {@code ClassCastException}.
      * {@link GraphitronField.UnclassifiedField} belongs here for completeness; the
@@ -217,7 +219,6 @@ public sealed interface ParentSourceBinding {
         ChildField.BatchedPivotField.class,
         ChildField.PivotSlotField.class,
         ChildField.ComputedField.class,
-        ChildField.SingleRecordIdFieldFromReturning.class,
         ChildField.ServiceTableField.class,
         ChildField.ServiceRecordField.class,
         GraphitronField.UnclassifiedField.class);

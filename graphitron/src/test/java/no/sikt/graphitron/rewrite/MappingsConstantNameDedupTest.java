@@ -173,21 +173,25 @@ class MappingsConstantNameDedupTest {
     }
 
     /**
-     * A DML-record mutation field: the lightest {@link WithErrorChannel} variant whose
+     * A direct-return DML mutation field: the lightest {@link WithErrorChannel} variant whose
      * channel slot carries the {@link ErrorChannel.RouterDispatched} partition the dedup's
-     * grouping rules cover (root {@code @service} variants carry {@link ErrorChannel.Mapped},
-     * which dedups by bare constant name only).
+     * grouping rules cover (root {@code @service} and payload-carrier variants carry
+     * {@link ErrorChannel.Mapped}, which dedups by bare constant name only).
      */
-    private static MutationField.MutationDmlRecordField routedField(
+    private static MutationField.DmlTableField routedField(
             String fieldName, Optional<ErrorChannel.RouterDispatched> channel) {
         var tableInputArg = new no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg(
             "in", "FilmInput", true, false, TestFixtures.filmTable(), List.of(), Optional.empty(),
             List.of(), List.of(), List.of());
-        return new MutationField.MutationDmlRecordField(
+        return new MutationField.DmlTableField(
             "Query",
             fieldName,
             null,
-            new ReturnTypeRef.ResultReturnType("FilmPayload", new FieldWrapper.Single(true), null, null),
+            new no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedSingle(
+                new no.sikt.graphitron.rewrite.model.HelperRef.Encode(
+                    no.sikt.graphitron.javapoet.ClassName.get("fake.code.generated", "NodeIdEncoder"),
+                    "encodeFilm",
+                    List.of(new no.sikt.graphitron.model.jooq.ColumnRef("film_id", "FILM_ID", "java.lang.Long")))),
             new no.sikt.graphitron.rewrite.model.OperationMember.Write.Insert(tableInputArg),
             channel);
     }

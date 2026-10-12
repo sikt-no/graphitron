@@ -45,9 +45,10 @@ public sealed interface ErrorChannel permits ErrorChannel.Mapped, ErrorChannel.R
      * success path wraps the jOOQ record in {@code Success}, the error path returns
      * {@code ErrorList(matchedErrors)}). No developer payload class is constructed or reflected on.
      *
-     * <p>Carries the same two fields as {@link LocalContext} by coincidence; they are distinct
-     * types because they drive different emit ({@code Mapped} → {@code Outcome},
-     * {@code LocalContext} → sentinel + {@code dispatchToLocalContext}).
+     * <p>Every root producer of a payload the classifier recognises structurally rides this arm:
+     * a root {@code @service} field, a DML carrier ({@code @mutation} returning a payload) and a
+     * {@code @routine} write carrier. The {@code mappingsConstantName} for the structural carriers
+     * is minted from the payload's SDL name, no developer payload class being consulted.
      */
     record Mapped(
         List<GraphitronType.ErrorType> mappedErrorTypes,
@@ -64,8 +65,7 @@ public sealed interface ErrorChannel permits ErrorChannel.Mapped, ErrorChannel.R
 
     /**
      * The {@link ErrorChannel} partition whose catch-side ferry dispatches through the generated
-     * {@code ErrorRouter} ({@code dispatch} for {@link PayloadClass}, {@code dispatchToLocalContext}
-     * for {@link LocalContext}), emitted by the sync {@code catchArm} and async
+     * {@code ErrorRouter}'s {@code dispatch}, emitted by the sync {@code catchArm} and async
      * {@code asyncRouterCall} seams in
      * {@link no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator}. {@link Mapped} sits
      * outside this partition: it rides the typed {@code Outcome} wrapper and is emitted solely by
@@ -73,7 +73,7 @@ public sealed interface ErrorChannel permits ErrorChannel.Mapped, ErrorChannel.R
      * the compiler-checked membership; a field variant whose channel slot declares this type
      * cannot hand a {@code Mapped} channel to the router seams.
      */
-    sealed interface RouterDispatched extends ErrorChannel permits PayloadClass, LocalContext {}
+    sealed interface RouterDispatched extends ErrorChannel permits PayloadClass {}
 
     /**
      * The catch arm constructs a developer payload class and slots the errors list into it.
@@ -124,43 +124,6 @@ public sealed interface ErrorChannel permits ErrorChannel.Mapped, ErrorChannel.R
                     }
                 }
             }
-        }
-    }
-
-    /**
-     * The catch arm hands errors back through graphql-java's {@code DataFetcherResult.localContext}.
-     * Produced by {@code FieldBuilder.detectStructuralDmlErrorChannel} on a wrapper shaped
-     * {@code { data: X, errors: [SomeError!]! }}, where the errors-field side of the carrier
-     * binds directly to this arm. This is the unified DML error-channel transport used by
-     * {@code MutationDmlRecordField} / {@code MutationBulkDmlRecordField}.
-     *
-     * <p>The catch arm emits a pattern that consults the channel's mapping table via
-     * {@code ErrorRouter.dispatchToLocalContext(throwable, mappings, env, sentinel)} and returns
-     * {@code DataFetcherResult.<R>newResult().data(sentinel).localContext(List.of(t)).build()}
-     * on the first match, falling through to {@code ErrorRouter.redact} on no match.
-     *
-     * <p>The {@code sentinel} is a non-null structurally-valid source whose every column is
-     * null (a jOOQ {@code Record1}/{@code Record2}/{@code Result} constructed via
-     * {@code DSL.using(SQLDialect.DEFAULT).newRecord(...)} or {@code newResult(...)}). The
-     * non-null source is required because graphql-java's {@code completeValueForObject}
-     * short-circuits children on a null parent value: {@code data: null} would prevent the
-     * carrier's children from being fetched at all, so the {@code errors} field would never
-     * resolve. With the sentinel in place the data field's null-PK SELECT naturally renders
-     * {@code null} (jOOQ's {@code WHERE pk = null} resolves to no row) and the errors-field
-     * DataFetcher reads the throwable list via {@code env.getLocalContext()}.
-     *
-     * <p>The bare {@code mappingsConstantName} comes from
-     * {@code SCREAMING_SNAKE(wrapperSdlTypeName)} (e.g. {@code FilmPayload} →
-     * {@code FILM_PAYLOAD}) rather than from a payload-class simple name; no developer payload
-     * class is consulted on the catch path.
-     */
-    record LocalContext(
-        List<GraphitronType.ErrorType> mappedErrorTypes,
-        String mappingsConstantName
-    ) implements RouterDispatched {
-
-        public LocalContext {
-            mappedErrorTypes = List.copyOf(mappedErrorTypes);
         }
     }
 }

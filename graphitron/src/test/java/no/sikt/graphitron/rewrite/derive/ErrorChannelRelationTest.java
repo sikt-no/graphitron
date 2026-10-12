@@ -30,7 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Every case captures real SDL against the test catalog rather than seeding rows, for the reason
  * {@code CarrierDataFieldTest} states: a seeded fixture is free to declare a shape capture never
  * writes, and the case then pins behaviour no build can produce. The transport decode is the reason
- * that matters most here, its three arms turning on whether the carrier recognition admits the
+ * that matters most here, its arms turning on whether the carrier recognition admits the
  * payload, which is itself derived from the catalog.
  *
  * <p>Each case asserts the whole graph's rows for the relation under test rather than a projection,
@@ -325,10 +325,10 @@ class ErrorChannelRelationTest {
     // ===== The channel itself =====
 
     /**
-     * A root {@code @service} field rides the typed {@code Outcome} wrapper, and that arm is tested
-     * before the carrier arm: this payload is a carrier under its own family too, so the two arms
-     * both answer and the precedence is what decides. The payload is a plain SDL type no class
-     * backs, so the class is absent and the count says which kind of absence it is.
+     * A root {@code @service} field rides the typed {@code Outcome} wrapper whatever shape its
+     * payload has; this payload is a carrier under its own family too, so both of the arm's
+     * conditions answer. The payload is a plain SDL type no class backs, so the class is absent
+     * and the count says which kind of absence it is.
      */
     @Test
     void aRootServiceChannelRidesTheOutcomeWrapper() {
@@ -349,12 +349,12 @@ class ErrorChannelRelationTest {
     }
 
     /**
-     * A {@code @mutation} write whose payload the carrier recognition admits ferries its errors
-     * through graphql-java's localContext: no root {@code @service} field is involved, so the first
-     * arm declines and the carrier arm answers.
+     * A root {@code @mutation} write whose payload the carrier recognition admits rides the typed
+     * Outcome wrapper too: no {@code @service} field is involved, and the carrier admission is
+     * what qualifies it.
      */
     @Test
-    void aStructuralCarrierFerriesThroughLocalContext() {
+    void aRootStructuralCarrierRidesTheOutcomeWrapper() {
         var sdl = ERRORS + """
             type Film @table(name: "film") { title: String }
             type DeleteFilmPayload {
@@ -368,13 +368,13 @@ class ErrorChannelRelationTest {
             }
             """;
         withCapturedStore(sdl, dsl -> assertThat(channels(dsl)).containsExactly(
-            "Mutation.deleteFilm LOCAL_CONTEXT DML DeleteFilmPayload errors@1 null 0"));
+            "Mutation.deleteFilm OUTCOME_WRAPPER DML DeleteFilmPayload errors@1 null 0"));
     }
 
     /**
-     * Neither arm above: a child {@code @service} field, so not a root, returning a payload the
-     * carrier recognition does not admit, that scan reading mutation roots only. What is left
-     * constructs a developer payload class at the catch site.
+     * Not a root producer: a child {@code @service} field returning a payload the carrier
+     * recognition does not admit, that scan reading mutation roots only. What is left constructs a
+     * developer payload class at the catch site.
      */
     @Test
     void anythingElseConstructsAPayloadClass() {

@@ -8,15 +8,17 @@ import no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.OutcomeClassGenerator;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 
-import java.util.List;
-
 /**
  * Emits the body of a synchronous fetcher's {@code catch (Throwable e)} arm for a field whose
- * channel is {@link ErrorChannel.Mapped}: the typed-{@code Outcome}-wrapper transport. This is
- * the {@code Mapped} half of the channel-emit partition; the
- * {@link ErrorChannel.RouterDispatched} arms emit through the {@code catchArm} /
- * {@code asyncRouterCall} seams in {@link TypeFetcherGenerator}, and the parameter types on both
- * sides keep the partition compiler-checked.
+ * channel is {@link ErrorChannel.Mapped}: the typed-{@code Outcome}-wrapper transport, shared by
+ * root {@code @service} fields and the DML and {@code @routine} payload carriers. This is the
+ * {@code Mapped} half of the channel-emit partition; the {@link ErrorChannel.RouterDispatched}
+ * arm emits through the {@code catchArm} / {@code asyncRouterCall} seams in
+ * {@link TypeFetcherGenerator}, and the parameter types on both sides keep the partition
+ * compiler-checked. The arm's spelling is
+ * {@link no.sikt.graphitron.render.ErrorDispatchFragments#outcomeArm}, which the command-seam
+ * renderers reach through their dispatch row; this host resolves the generated units off the
+ * classifier's channel and delegates.
  *
  * <p>{@code valueType} is the {@code Outcome<X>} parameterisation of the emitted
  * {@code DataFetcherResult}.
@@ -29,47 +31,15 @@ public final class ChannelCatchArmEmitter {
             ErrorChannel.Mapped channel,
             TypeName valueType,
             String outputPackage) {
-        return CodeBlock.builder()
-            .add("for ($T mapping : $T.$L) {\n",
-                mappingInterface(outputPackage), errorMappingsClass(outputPackage),
-                channel.mappingsConstantName())
-            .indent()
-            .add("for ($T cause = e; cause != null; cause = cause.getCause()) {\n", ClassName.get(Throwable.class))
-            .indent()
-            .add("if (mapping.match(cause)) {\n")
-            .indent()
-            .add("return $T.<$T>newResult().data(new $T<>($T.of(cause))).build();\n",
-                dataFetcherResult(), valueType, errorListClass(outputPackage),
-                ClassName.get(List.class))
-            .unindent()
-            .add("}\n")
-            .unindent()
-            .add("}\n")
-            .unindent()
-            .add("}\n")
-            .add("return $T.redact(e, env);\n", errorRouterClass(outputPackage))
-            .build();
-    }
-
-    private static ClassName dataFetcherResult() {
-        return ClassName.get("graphql.execution", "DataFetcherResult");
-    }
-
-    private static ClassName errorRouterClass(String outputPackage) {
-        return ErrorRouterClassGenerator.routerClass(outputPackage);
-    }
-
-    private static ClassName mappingInterface(String outputPackage) {
-        return ErrorRouterClassGenerator.mappingInterface(outputPackage);
-    }
-
-    private static ClassName errorMappingsClass(String outputPackage) {
-        return ErrorMappingsClassGenerator.mappingsClass(outputPackage);
+        return no.sikt.graphitron.render.ErrorDispatchFragments.outcomeArm(
+            ErrorRouterClassGenerator.mappingInterface(outputPackage),
+            ErrorMappingsClassGenerator.mappingsClass(outputPackage),
+            channel.mappingsConstantName(), valueType, errorListClass(outputPackage),
+            ErrorRouterClassGenerator.routerClass(outputPackage));
     }
 
     private static ClassName errorListClass(String outputPackage) {
-        var outcome = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).singleton(
-            no.sikt.graphitron.plan.GeneratedUnits.SUB_SCHEMA, OutcomeClassGenerator.CLASS_NAME);
+        var outcome = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).outcome();
         return ClassName.get(outcome.packageName(), outcome.simpleName())
             .nestedClass(OutcomeClassGenerator.ERROR_LIST_CLASS);
     }

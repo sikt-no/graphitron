@@ -254,16 +254,15 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * <p>{@code dataFieldArrival} is the payload data field's SDL wrapper cardinality, the only
      * cardinality claim in the system for this shape (jOOQ types every table-valued function as
      * a {@code Table<R>}, so the catalog carries no per-call cardinality fact). It drives step
-     * 1's {@code fetch()} vs {@code fetchOne()} and the catch arm's sentinel shape.
+     * 1's {@code fetch()} vs {@code fetchOne()}.
      *
-     * <p>The channel slot is the narrow {@link ErrorChannel.LocalContext}: a directiveless
-     * structural carrier has no developer payload class, so
-     * {@code FieldBuilder.detectStructuralDmlErrorChannel} can only ever produce
-     * {@code LocalContext}; declaring the narrow type puts that contract in the signature. The
-     * two null-data outcomes are distinct and only one goes through the channel: (a) the routine
-     * raised, the catch arm returns the all-null-column sentinel and {@code errors} populates;
-     * (b) the routine succeeded and the post-commit re-read cannot see the row (row-level
-     * security), data field null, {@code errors} empty, no sentinel involved.
+     * <p>The channel slot is {@link ErrorChannel.Mapped}: the fetcher returns the typed
+     * {@code Outcome}, so the errors travel on the payload object and graphql-java's
+     * {@code localContext} stays free for the tenant hand-down. The two null-data outcomes are
+     * distinct and only one goes through the channel: (a) the routine raised, the catch arm
+     * returns {@code Outcome.ErrorList} and the data field renders null; (b) the routine
+     * succeeded and the post-commit re-read cannot see the row (row-level security), data field
+     * null, {@code errors} null.
      */
     record MutationRoutineWriteRecordField(
         String parentTypeName,
@@ -275,7 +274,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         List<JoinSlot.FkSlot> capturedPairs,
         TableRef targetTable,
         Arity dataFieldArrival,
-        Optional<ErrorChannel.LocalContext> errorChannel
+        Optional<ErrorChannel.Mapped> errorChannel
     ) implements MutationField {
 
         public MutationRoutineWriteRecordField {
@@ -488,7 +487,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         SourceLocation location,
         ReturnTypeRef.ResultReturnType returnType,
         OperationMember.Write.Dml write,
-        Optional<ErrorChannel.RouterDispatched> errorChannel
+        Optional<ErrorChannel.Mapped> errorChannel
     ) implements MutationField, DmlWriteField {
 
         public MutationDmlRecordField {
@@ -544,7 +543,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         SourceLocation location,
         ReturnTypeRef.ResultReturnType returnType,
         OperationMember.Write.Dml write,
-        Optional<ErrorChannel.RouterDispatched> errorChannel
+        Optional<ErrorChannel.Mapped> errorChannel
     ) implements MutationField, DmlWriteField {
 
         public MutationBulkDmlRecordField {

@@ -21,7 +21,7 @@ import java.util.function.Function;
  * Generates the {@code ErrorRouter} class emitted at
  * {@code <outputPackage>.schema.ErrorRouter}, once per code-generation run: the runtime
  * entry points the per-fetcher try/catch wrappers call ({@code redact},
- * {@code surfaceClientErrorOrRedact}, {@code dispatch}, {@code dispatchToLocalContext})
+ * {@code surfaceClientErrorOrRedact}, {@code dispatch})
  * plus the nested {@code Mapping} taxonomy the dispatch arms match against. Per-method
  * contracts live in the emitted javadoc (the {@code addJavadoc} strings below).
  *
@@ -104,7 +104,6 @@ public final class ErrorRouterClassGenerator {
 
         var surfaceClientErrorOrRedact = buildSurfaceClientErrorOrRedactMethod(typeP, resultOfP, outputPackage);
         var dispatch = buildDispatchMethod(typeP, resultOfP);
-        var dispatchToLocalContext = buildDispatchToLocalContextMethod(typeP, resultOfP);
 
         var spec = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
@@ -115,14 +114,6 @@ public final class ErrorRouterClassGenerator {
                 + "({@code dispatch}, with a {@code Mapping[]} constant from {@code ErrorMappings})\n"
                 + "or, in the no-channel case, to a redacted {@code DataFetcherResult} carrying\n"
                 + "only a correlation ID ({@code redact}).\n"
-                + "\n"
-                + "<p>{@code dispatchToLocalContext} is the LocalContext-channel counterpart of\n"
-                + "{@code dispatch}: instead of constructing a developer payload class, it returns\n"
-                + "a {@code DataFetcherResult} with {@code data=null} and the matched exception in\n"
-                + "{@code localContext}, so the carrier's errors-field DataFetcher can read it via\n"
-                + "{@code env.getLocalContext()} and the data field's null-source guard short-\n"
-                + "circuits. Used by {@code MutationDmlRecordField} / {@code MutationBulkDmlRecordField}\n"
-                + "wrappers.\n"
                 + "\n"
                 + "<p>Generated alongside {@code ErrorMappings}; preserves the rewrite's\n"
                 + "no-runtime-jar invariant.\n")
@@ -135,7 +126,6 @@ public final class ErrorRouterClassGenerator {
             .addMethod(redact)
             .addMethod(surfaceClientErrorOrRedact)
             .addMethod(dispatch)
-            .addMethod(dispatchToLocalContext)
             .build();
 
         return List.of(spec);
@@ -406,57 +396,6 @@ public final class ErrorRouterClassGenerator {
             .endControlFlow()
             .endControlFlow()
             // ----- Unmatched: redact -----
-            .addCode("\n// Unmatched: log + redacted DataFetcherResult.\n")
-            .addStatement("return redact(thrown, env)")
-            .build();
-    }
-
-    private static MethodSpec buildDispatchToLocalContextMethod(
-            TypeVariableName typeP,
-            ParameterizedTypeName resultOfP) {
-        var mapping = ClassName.get("", MAPPING_INTERFACE);
-        var mappingArray = ArrayTypeName.of(mapping);
-
-        return MethodSpec.methodBuilder("dispatchToLocalContext")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .addTypeVariable(typeP)
-            .returns(resultOfP)
-            .addParameter(THROWABLE, "thrown")
-            .addParameter(mappingArray, "mappings")
-            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
-            .addParameter(typeP, "sentinel")
-            .addJavadoc("Channel-mapped dispatch on the LocalContext-bound catch path. For each mapping in\n"
-                + "source-declaration order, walks the cause chain outermost-first; the first match\n"
-                + "returns a {@code DataFetcherResult} whose data is the caller-supplied non-null\n"
-                + "{@code sentinel} and whose {@code localContext} carries the matched\n"
-                + "{@code Throwable} as a single-element list. The non-null sentinel is required\n"
-                + "because graphql-java's {@code completeValueForObject} short-circuits on a null\n"
-                + "field value: returning {@code data=null} would prevent the carrier's children\n"
-                + "from being fetched at all, so the {@code errors} field would never resolve. The\n"
-                + "sentinel must be a structurally-valid source for the carrier's children but\n"
-                + "carry null content (typically a jOOQ {@code Record1}/{@code Result} with all\n"
-                + "fields null), so the data field's null-source guard renders the SDL response as\n"
-                + "{@code data: null}.\n"
-                + "\n"
-                + "<p>The carrier's errors-field DataFetcher reads the throwable list via\n"
-                + "{@code env.getLocalContext()} and feeds graphql-java's {@code PropertyDataFetcher}s\n"
-                + "for the declared {@code @error} fields.\n"
-                + "\n"
-                + "<p>Falls through to {@link #redact} on no match: the privacy contract is the same\n"
-                + "as the no-channel disposition.\n"
-                + "\n"
-                + "<p>Used by DML payload-returning wrappers; the binding lives on\n"
-                + "{@code ErrorChannel.LocalContext}, produced by\n"
-                + "{@code FieldBuilder.detectStructuralDmlErrorChannel}.\n")
-            .addCode("// Source-order match: first (mapping, cause) pair that satisfies the predicate.\n")
-            .beginControlFlow("for ($T mapping : mappings)", mapping)
-            .beginControlFlow("for ($T t = thrown; t != null; t = t.getCause())", THROWABLE)
-            .beginControlFlow("if (mapping.match(t))")
-            .addStatement("return $T.<P>newResult().data(sentinel).localContext($T.of(t)).build()",
-                DATA_FETCHER_RESULT, LIST_CN)
-            .endControlFlow()
-            .endControlFlow()
-            .endControlFlow()
             .addCode("\n// Unmatched: log + redacted DataFetcherResult.\n")
             .addStatement("return redact(thrown, env)")
             .build();

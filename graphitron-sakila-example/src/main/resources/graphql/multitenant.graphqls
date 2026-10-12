@@ -313,6 +313,22 @@ type RateFilmsDbError @error(handlers: [{handler: DATABASE}]) {
 
 union RateFilmsError = RateFilmsDbError
 
+# A tenant-routed DML payload on the error channel: the bulk UPDATE divines its tenant from the
+# decoded ids and hands it down to the data field's re-read, while the errors ride the Outcome the
+# fetcher returns, so the two never share graphql-java's localContext slot. The data field is
+# nullable, as an errors-bearing payload requires: the error arm renders it null.
+type FilmsRetitledPayload {
+    films: [Film]
+    errors: [FilmWriteError]
+}
+
+type FilmWriteDbError @error(handlers: [{handler: DATABASE}]) {
+    path: [String!]!
+    message: String!
+}
+
+union FilmWriteError = FilmWriteDbError
+
 type Mutation {
     # ArgumentBound @service arms: the tenant is divined from the batch's ids before the service
     # is called, so a batch naming two tenants is refused without running it.
@@ -348,6 +364,7 @@ type Mutation {
     deleteFilmActorByNodeId(in: DeleteFilmActorByNodeIdInput!): ID @mutation(typeName: DELETE, table: "film_actor")
     deleteFilmActorsByNodeId(in: [DeleteFilmActorByNodeIdInput!]!): [ID!]! @mutation(typeName: DELETE, table: "film_actor")
     updateFilmByNodeId(in: UpdateFilmByNodeIdInput!): Film @mutation(typeName: UPDATE, table: "film")
+    retitleFilmsChecked(in: [UpdateFilmByNodeIdInput!]!): FilmsRetitledPayload @mutation(typeName: UPDATE, table: "film")
     updateFilmActorNoteByNodeId(in: UpdateFilmActorNoteByNodeIdInput!): ID @mutation(typeName: UPDATE, table: "film_actor_note")
     updateFilmSceneParent(in: UpdateFilmSceneParentInput!): ID @mutation(typeName: UPDATE, table: "film_scene")
     updateFilmSceneParents(in: [UpdateFilmSceneParentInput!]!): [ID!]! @mutation(typeName: UPDATE, table: "film_scene")

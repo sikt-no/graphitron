@@ -156,14 +156,21 @@ public sealed interface ChildField extends OutputField
      * and {@link BatchKeyField} (no DataLoader). {@link #encode} carries the resolved per-Node
      * encoder and column shape on the {@link CallSiteCompaction.NodeIdEncodeKeys} slot every
      * other NodeId-encoded projection uses, keeping the element-shape and projection axes split.
+     * {@link #envelope()} is {@code OUTCOME_SUCCESS} when the payload carries an errors field (the
+     * DELETE fetcher then returns the typed {@code Outcome}), {@code DIRECT} otherwise; the same
+     * axis {@link SingleRecordIdField} carries.
      */
     record SingleRecordIdFieldFromReturning(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef.ScalarReturnType returnType,
+        SourceEnvelope envelope,
         CallSiteCompaction.NodeIdEncodeKeys encode
     ) implements ChildField {
+        public SingleRecordIdFieldFromReturning {
+            java.util.Objects.requireNonNull(envelope, "envelope");
+        }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Plain(STRING_CLASS);
         }
@@ -1475,16 +1482,15 @@ public sealed interface ChildField extends OutputField
      *
      * <p>{@code transport} discriminates at emit time between the two ways graphql-java can
      * surface the errors list to the field's data fetcher: a property accessor off the
-     * parent payload (the catch-arm built a developer payload class and slotted the list in)
-     * or {@link graphql.execution.DataFetcherResult#getLocalContext()} (the catch arm shipped
-     * {@code data(null).localContext(errors).build()}). The arm is selected by
-     * {@code FieldBuilder.liftToErrorsField} at classify time with the parent carrier's
-     * resolved {@link ErrorChannel} in scope, then printed by
-     * {@code FetcherEmitter.dataFetcherValue} via an exhaustive switch on
-     * {@link Transport}. The {@link Transport.LocalContext} arm fires when the parent payload has
-     * a producer binding ({@code DmlEmitted} or {@code ServiceEmitted}), routed through
-     * {@code FieldBuilder.transportForParent}; the {@link Transport.PayloadAccessor} arm fires
-     * for plain class-backed parents whose errors-shaped field is a developer-owned slot.
+     * parent payload (a developer payload class carries the list) or the {@code Outcome.ErrorList}
+     * arm of the {@code Outcome} the producing fetcher returned. The arm is selected by
+     * {@code FieldBuilder.liftToErrorsField} at classify time, then printed by
+     * {@code FetcherEmitter.dataFetcherValue} via an exhaustive switch on {@link Transport}. The
+     * {@link Transport.WrapperArm} arm fires when the parent payload has an active channel (a
+     * root {@code @service}-produced payload, or a payload bound to a DML, {@code @service} or
+     * {@code @routine} producer), routed through {@code FieldBuilder.transportForParent}; the
+     * {@link Transport.PayloadAccessor} arm fires for plain class-backed parents whose
+     * errors-shaped field is a developer-owned slot.
      */
     record ErrorsField(
         String parentTypeName,
@@ -1522,11 +1528,6 @@ public sealed interface ChildField extends OutputField
      *   <li>{@link PayloadAccessor} : the parent payload exposes the errors list as a
      *       property reachable via graphql-java's default {@code PropertyDataFetcher}
      *       (record accessor, JavaBean getter, or public field).</li>
-     *   <li>{@link LocalContext} : the fetcher reads from
-     *       {@code env.getLocalContext()}. Pairs with an
-     *       {@link ErrorChannel.LocalContext} catch arm that ships
-     *       {@code DataFetcherResult.<R>newResult().data(null).localContext(errors).build()};
-     *       the parent payload is bypassed entirely.</li>
      *   <li>{@link WrapperArm} : the errors ride an {@code Outcome.ErrorList} arm on
      *       {@code env.getSource()}, paired with an {@link ErrorChannel.Mapped} catch arm.</li>
      * </ul>
@@ -1536,16 +1537,9 @@ public sealed interface ChildField extends OutputField
         record PayloadAccessor() implements Transport {}
 
         /**
-         * The errors list rides on graphql-java's {@code DataFetcherResult.localContext} slot.
-         * The parent's data field's fetcher must short-circuit on a null source so the
-         * catch path renders {@code data: null, errors: [...]} at the SDL level.
-         */
-        record LocalContext() implements Transport {}
-
-        /**
          * The errors list rides on an {@code Outcome.ErrorList} arm carried as the
-         * {@code env.getSource()} of an in-scope {@code @service} outcome
-         * type. The errors-field fetcher reads {@code ErrorList.errors} off the non-null
+         * {@code env.getSource()} of an in-scope outcome type (a payload returned by a root
+         * {@code @service}, DML or {@code @routine} producer). The errors-field fetcher reads {@code ErrorList.errors} off the non-null
          * {@code Outcome} source; sibling data fields project {@code Success.value} (rendering null
          * on the error arm). Pairs with an {@link ErrorChannel.Mapped} catch arm. Every immediate
          * child of such an outcome type must arm-switch (pinned by

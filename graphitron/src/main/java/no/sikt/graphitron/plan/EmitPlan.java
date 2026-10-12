@@ -152,7 +152,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         globals.add(one(GlobalUnitKind.CLIENT_EXCEPTION,
             units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronClientException")));
         globals.add(one(GlobalUnitKind.ERROR_ROUTER, units.errorRouter()));
-        globals.add(one(GlobalUnitKind.OUTCOME, units.singleton(GeneratedUnits.SUB_SCHEMA, "Outcome")));
+        globals.add(one(GlobalUnitKind.OUTCOME, units.outcome()));
         globals.add(one(GlobalUnitKind.ERROR_MAPPINGS, units.errorMappings()));
         globals.add(one(GlobalUnitKind.SCHEMA_CLASS, units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronSchema")));
         if (schema.types().values().stream().anyMatch(t -> t instanceof GraphitronType.NodeType)) {

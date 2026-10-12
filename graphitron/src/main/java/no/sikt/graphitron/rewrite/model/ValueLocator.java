@@ -21,8 +21,8 @@ import no.sikt.graphitron.model.jooq.ColumnRef;
  *
  * <p>The axis is deliberately partial against the full locator family:
  * {@link ChildField.NestingField}'s identity read (passthrough) and
- * {@link ChildField.Transport}'s localContext arms are the same axis under other names and
- * are expected to converge onto it in a follow-up. Until then a component on the single
+ * {@link ChildField.Transport}'s arms are the same axis under other names and are expected to
+ * converge onto it in a follow-up. Until then a component on the single
  * record-read leaf is the correct home; the read sites fork on locator identity, a sealed
  * switch, not a capability.
  */

@@ -12,7 +12,7 @@ import java.util.Optional;
 /**
  * Shared callables for the {@code @field(name:)} root-value sigils: {@code $source}
  * (binds the upstream Java value at the payload data field site) and {@code $errors}
- * (binds the field to {@code env.getLocalContext()} on payload-returning mutation types).
+ * (inert: it once selected an errors field's transport, and now only earns a build warning).
  * Owns the canonical rejection messages and the literals themselves; the classifier and both LSP
  * arms (completions, diagnostics) route through them, so a message tweak lands on all three
  * surfaces. Where the sigil is admitted is not here: that is a fact about a coordinate, which the
@@ -32,21 +32,20 @@ public final class FieldSourceSigil {
     public static final String UPSTREAM_ROOT_LITERAL = FieldSourceSigilGrammar.UPSTREAM_ROOT;
 
     /**
-     * Sigil literal. On an errors-shaped field of a payload-returning mutation type,
-     * forces the {@code env.getLocalContext()} transport for that field's DataFetcher,
-     * bypassing the accessor-then-localContext fallback that fires for an unannotated
-     * {@code errors}-named field.
+     * Sigil literal, kept parseable so a schema carrying it still builds. It selects nothing: an
+     * errors field's transport follows from its parent, and the classifier warns that the sigil
+     * can be removed.
      */
-    public static final String LOCAL_CONTEXT_LITERAL = FieldSourceSigilGrammar.LOCAL_CONTEXT;
+    public static final String ERRORS_LITERAL = FieldSourceSigilGrammar.ERRORS;
 
     private FieldSourceSigil() {}
 
     /** Parsed form of a {@code @field(name:)} argument value: a bare column / accessor name, or one of the two sigils. */
     public sealed interface FieldNameRef
-            permits FieldNameRef.BareName, FieldNameRef.UpstreamRoot, FieldNameRef.LocalContext {
+            permits FieldNameRef.BareName, FieldNameRef.UpstreamRoot, FieldNameRef.ErrorsSigil {
         record BareName(String value) implements FieldNameRef {}
         record UpstreamRoot() implements FieldNameRef {}
-        record LocalContext() implements FieldNameRef {}
+        record ErrorsSigil() implements FieldNameRef {}
     }
 
     /**
@@ -89,8 +88,8 @@ public final class FieldSourceSigil {
             if (UPSTREAM_ROOT_LITERAL.equals(trimmed)) {
                 return new ParseResult.Ok(new FieldNameRef.UpstreamRoot());
             }
-            if (LOCAL_CONTEXT_LITERAL.equals(trimmed)) {
-                return new ParseResult.Ok(new FieldNameRef.LocalContext());
+            if (ERRORS_LITERAL.equals(trimmed)) {
+                return new ParseResult.Ok(new FieldNameRef.ErrorsSigil());
             }
             return new ParseResult.UnknownSigil(trimmed);
         }
@@ -100,7 +99,7 @@ public final class FieldSourceSigil {
     /** Canonical message for {@code @field(name: "$X")} where {@code $X} is not an admitted sigil literal. */
     public static String unknownSigilMessage(String raw) {
         return "Unknown sigil '" + raw + "' on @field(name:); allowed: "
-            + UPSTREAM_ROOT_LITERAL + ", " + LOCAL_CONTEXT_LITERAL;
+            + UPSTREAM_ROOT_LITERAL + ", " + ERRORS_LITERAL;
     }
 
     /**

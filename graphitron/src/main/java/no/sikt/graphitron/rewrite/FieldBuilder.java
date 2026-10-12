@@ -3971,7 +3971,9 @@ class FieldBuilder {
         // post-commit re-read (a row-level-security read policy) — makes the zero-row re-read a
         // first-class success path, so a non-null single data field would have graphql-java's
         // non-null propagation null the whole payload and destroy the errors list. A list data
-        // field renders the zero-row read as an empty list and is exempt.
+        // field renders the zero-row read as an empty list and is exempt from this rule; with an
+        // errors field present, detectStructuralDmlErrorChannel's nullable-success-projection
+        // check still rejects a non-null list, which the Outcome error arm renders null.
         var dataWrapper = buildWrapper(admit.dataField());
         if (dataWrapper instanceof FieldWrapper.Single single && !single.nullable()) {
             return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(
@@ -3984,10 +3986,9 @@ class FieldBuilder {
 
         var channelResult = detectStructuralDmlErrorChannel(payloadName);
         if (channelResult instanceof StructuralDmlErrorChannel.RuleViolation violation) {
-            return new UnclassifiedField(parentTypeName, name, location,
-                Rejection.structural(violation.reason()));
+            return new UnclassifiedField(parentTypeName, name, location, violation.rejection());
         }
-        Optional<ErrorChannel.LocalContext> channel =
+        Optional<ErrorChannel.Mapped> channel =
             channelResult instanceof StructuralDmlErrorChannel.Present present
                 ? Optional.of(present.channel()) : Optional.empty();
 
@@ -4276,21 +4277,6 @@ class FieldBuilder {
      */
     GraphitronField liftToErrorsField(GraphQLFieldDefinition fieldDef, String parentTypeName,
                                               ReturnTypeRef.PolymorphicReturnType returnType) {
-        return liftToErrorsField(fieldDef, parentTypeName, returnType, null);
-    }
-
-    /**
-     * Overload taking the parent's reflected backing class. Threaded by
-     * {@link #classifyChildFieldOnResultType} so the transport selector can probe the parent
-     * class for an accessor matching the errors-shaped SDL field. The 3-arg overload above
-     * stays for the {@code ServiceDirectiveResolver} caller, where the parent's backing class
-     * is not in scope; that caller falls back to {@code accessorMatchesErrors = false}, the
-     * transport for the unannotated default-name path on payloads with no developer-supplied
-     * class.
-     */
-    GraphitronField liftToErrorsField(GraphQLFieldDefinition fieldDef, String parentTypeName,
-                                              ReturnTypeRef.PolymorphicReturnType returnType,
-                                              Class<?> parentBackingClass) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
 
@@ -4345,14 +4331,7 @@ class FieldBuilder {
                 new ErrorChannelWalkerError.NonNullableErrorsField(parentTypeName, name));
         }
 
-        // Transport selection runs through {@link #selectErrorsTransport}
-        // (the unit-tier rule table pinned by {@link ErrorsTransportSelectionTest}). The active-
-        // channel gate ahead of the rule firing reads the producer-binding maps: a parent
-        // is treated as having an active error channel iff a payload-returning producer
-        // (an EmittedCarrierBinding arm) is bound to it. Non-producer-bound parents (plain
-        // class-backed types reachable as service / query returns whose errors-shaped field is a
-        // developer-owned slot) fall back to PayloadAccessor regardless of the rule's output.
-        var transport = transportForParent(fieldDef, name, parentTypeName, parentBackingClass);
+        var transport = transportForParent(fieldDef, parentTypeName);
         return new ErrorsField(parentTypeName, name, location, errorTypes, transport);
     }
 
@@ -4369,113 +4348,41 @@ class FieldBuilder {
         return ctx.isServiceProducedPayload(payloadTypeName);
     }
 
-    private ChildField.Transport transportForParent(GraphQLFieldDefinition fieldDef,
-            String errorsFieldName, String parentTypeName, Class<?> parentBackingClass) {
-        // Active-channel gate: a parent qualifies as carrying an error channel iff a producer-
-        // returning mutation is bound to it (an EmittedCarrierBinding arm: DML, @service or
-        // @routine). Non-producer-bound parents (plain
-        // class-backed types reachable as service / query returns whose errors-shaped field is a
-        // developer-owned slot, or orphan carrier-shaped types unreachable through any producer)
-        // fall back to PayloadAccessor.
-        // An @service-produced outcome type rides the typed Outcome wrapper, so its errors
-        // field reads ErrorList.errors() off the Outcome source (WrapperArm), not a payload accessor
-        // or localContext. This is the payload-side counterpart of resolveServiceOutcomeChannel's
-        // ErrorChannel.Mapped on the producing @service field; the two flip together. The signal is
-        // "this payload type is returned by a root @service field" (read straight off the schema,
-        // order-independent), not the ServiceEmitted producer binding, which only grounds the
-        // @table-data-field carrier shape and is absent for the class-backed scalar payloads in scope.
-        // DML payloads keep their LocalContext/PayloadAccessor selection (out of scope this slice).
-        if (isRootServiceProducedPayload(parentTypeName)) {
+    /**
+     * The errors field's transport. A parent with an active error channel rides the typed
+     * {@code Outcome} wrapper ({@link ChildField.Transport.WrapperArm}): a payload returned by a
+     * root {@code @service} field (read straight off the schema, order-independent; this covers
+     * the class-backed scalar payloads the producer bindings do not ground), or a payload bound to
+     * an emitted-carrier producer (an {@link no.sikt.graphitron.rewrite.model.EmittedCarrierBinding}
+     * arm: DML, {@code @service} or {@code @routine}). This is the payload-side counterpart of
+     * the producing field's {@link ErrorChannel.Mapped} channel; the two flip together. Every
+     * other parent (a plain class-backed type whose errors-shaped field is a developer-owned slot,
+     * or an orphan carrier-shaped type no producer reaches) reads a payload accessor.
+     */
+    private ChildField.Transport transportForParent(GraphQLFieldDefinition fieldDef, String parentTypeName) {
+        warnIfErrorsSigil(fieldDef, parentTypeName);
+        if (isRootServiceProducedPayload(parentTypeName)
+                || emittedCarrierBinding(parentTypeName).isPresent()) {
             return new ChildField.Transport.WrapperArm();
         }
-        boolean activeChannel = emittedCarrierBinding(parentTypeName).isPresent();
-        if (!activeChannel) {
-            return new ChildField.Transport.PayloadAccessor();
+        return new ChildField.Transport.PayloadAccessor();
+    }
+
+    /**
+     * {@code @field(name: "$errors")} on an errors-shaped field once selected a transport; every
+     * errors field now derives its transport from its parent, so the sigil is inert. It still
+     * parses, so a schema carrying it keeps building, and this warning says it can go.
+     */
+    private void warnIfErrorsSigil(GraphQLFieldDefinition fieldDef, String parentTypeName) {
+        if (FieldSourceSigil.parseArgFieldNameRef(fieldDef, DIR_FIELD, ARG_NAME)
+                instanceof FieldSourceSigil.ParseResult.Ok ok
+                && ok.ref() instanceof FieldSourceSigil.FieldNameRef.ErrorsSigil) {
+            ctx.addWarning(new BuildWarning.NoRule(
+                parentTypeName + "." + fieldDef.getName() + ": @field(name: \""
+                + FieldSourceSigil.ERRORS_LITERAL + "\") is no longer needed: an errors field "
+                + "reads its errors from the payload its producer returns. Remove the directive.",
+                locationOf(fieldDef)));
         }
-        var parsed = FieldSourceSigil.parseArgFieldNameRef(fieldDef, DIR_FIELD, ARG_NAME);
-        boolean accessorMatchesErrors = probeErrorsAccessor(parentBackingClass, errorsFieldName);
-        return selectErrorsTransport(parsed, accessorMatchesErrors);
-    }
-
-    /**
-     * Probe the parent's reflected class for an accessor matching the SDL
-     * errors-shaped field name. Returns {@code false} when the parent has no developer-
-     * supplied class or when no accessor matches.
-     *
-     * <p>The expected return type is {@code java.util.List} — errors-shaped fields are
-     * list-typed by structural rule (validated upstream in {@link #liftToErrorsField}).
-     * The candidate-order is {@link ClassAccessorResolver.CandidateOrder#RECORD_FIRST}
-     * so a Java-record component accessor wins over a getter-prefixed lookup; this matches
-     * the resolution preference graphql-java's {@code PropertyDataFetcher} uses against
-     * record-shaped payloads.
-     */
-    private static boolean probeErrorsAccessor(Class<?> parentBackingClass, String accessorBaseName) {
-        if (parentBackingClass == null) return false;
-        var resolution = ClassAccessorResolver.resolve(
-            parentBackingClass,
-            accessorBaseName,
-            java.util.List.class,
-            new ClassAccessorResolver.PerArgument(java.util.List.of()),
-            ClassAccessorResolver.CandidateOrder.RECORD_FIRST);
-        return resolution instanceof AccessorResolution.Resolved;
-    }
-
-    /**
-     * Errors-field transport selection.
-     *
-     * <p>Pure decision: given the parsed {@code @field(name:)} value on an SDL errors-shaped
-     * field and whether the parent payload's backing class exposes a matching {@code errors}
-     * accessor, returns the {@link ChildField.Transport} arm per the errors-field
-     * defaulting rule:
-     *
-     * <ul>
-     *   <li>{@code @field(name: "$errors")} → {@link ChildField.Transport.LocalContext}.
-     *       Explicit opt-in to the {@code env.getLocalContext()} transport; no accessor
-     *       lookup runs even when the parent class exposes a matching member.</li>
-     *   <li>{@code @field(name: "<literal>")} (explicit non-sigil, including
-     *       {@code @field(name: "errors")}) → {@link ChildField.Transport.PayloadAccessor}.
-     *       The caller is responsible for validating that the literal resolves to a real
-     *       accessor on the parent class; the localContext fallback is not applied to
-     *       explicit names.</li>
-     *   <li>{@code @field(name: "$source")} → {@link ChildField.Transport.PayloadAccessor}.
-     *       The {@code $source} sigil on an errors-shaped field is rejected upstream
-     *       (errors-shaped fields are by definition polymorphic-of-{@code @error}, not
-     *       passthrough identity); this fall-through is unreachable in practice and exists
-     *       only to keep the switch exhaustive.</li>
-     *   <li>No {@code @field} directive, parent class exposes an {@code errors} accessor →
-     *       {@link ChildField.Transport.PayloadAccessor}.</li>
-     *   <li>No {@code @field} directive, no matching accessor →
-     *       {@link ChildField.Transport.LocalContext}. The default-name fallback that lets
-     *       payloads without a developer-authored {@code errors} property still receive
-     *       typed errors via {@code env.getLocalContext()}.</li>
-     *   <li>{@link FieldSourceSigil.ParseResult.UnknownSigil} →
-     *       {@link ChildField.Transport.PayloadAccessor}. Unknown sigils are rejected
-     *       upstream by the directive validator; this fall-through is unreachable and
-     *       exists for switch exhaustiveness.</li>
-     * </ul>
-     *
-     * <p>Package-private for the unit-tier rule-table pin
-     * {@code ErrorsTransportSelectionTest}; {@link #transportForParent} is the production
-     * call site.
-     */
-    static ChildField.Transport selectErrorsTransport(
-            FieldSourceSigil.ParseResult parsed, boolean accessorMatchesErrors) {
-        return switch (parsed) {
-            case FieldSourceSigil.ParseResult.Ok ok -> switch (ok.ref()) {
-                case FieldSourceSigil.FieldNameRef.LocalContext ignored ->
-                    new ChildField.Transport.LocalContext();
-                case FieldSourceSigil.FieldNameRef.BareName ignored ->
-                    new ChildField.Transport.PayloadAccessor();
-                case FieldSourceSigil.FieldNameRef.UpstreamRoot ignored ->
-                    new ChildField.Transport.PayloadAccessor();
-            };
-            case FieldSourceSigil.ParseResult.Absent ignored ->
-                accessorMatchesErrors
-                    ? new ChildField.Transport.PayloadAccessor()
-                    : new ChildField.Transport.LocalContext();
-            case FieldSourceSigil.ParseResult.UnknownSigil ignored ->
-                new ChildField.Transport.PayloadAccessor();
-        };
     }
 
     // ===== Carrier classifier: ErrorChannel resolution =====
@@ -4551,16 +4458,9 @@ class FieldBuilder {
         // errors field is classified, in liftToErrorsField -> NonNullableErrorsField; a non-null
         // errors field surfaces there as an UnclassifiedField on the errors field itself, so it is
         // not re-checked here. This sibling check owns only the success-projection (data) field.
-        // Nullable-success-projection invariant: a non-null data field resolves null on the
-        // ErrorList arm and bubbles NonNullableFieldWasNullError up, dropping the sibling errors
-        // field. Enforced here (classify time) where the SDL nullability is visible.
-        for (var f : payloadObj.getFieldDefinitions()) {
-            if (f == errorsFieldDef) continue;
-            if (graphql.schema.GraphQLTypeUtil.isNonNull(f.getType())) {
-                return new ServiceOutcomeResult.Reject(
-                    new ErrorChannelWalkerError.NonNullableSuccessProjectionField(
-                        result.returnTypeName(), f.getName()));
-            }
+        var nonNullable = nonNullableSuccessProjection(payloadObj, result.returnTypeName(), errorsFieldDef);
+        if (nonNullable != null) {
+            return new ServiceOutcomeResult.Reject(nonNullable);
         }
         // Registry-free look-ahead at the payload's data type; reproduces the
         // ctx.types verdict (including a producer-bound carrier) without reading the in-progress registry.
@@ -4583,6 +4483,25 @@ class FieldBuilder {
             case no.sikt.graphitron.rewrite.model.WalkerResult.Err<ErrorChannel.Mapped> err ->
                 new ServiceOutcomeResult.Reject(err.errors().getFirst());
         };
+    }
+
+    /**
+     * The nullable-success-projection invariant of an outcome payload: a non-null data field
+     * resolves null on the {@code ErrorList} arm and bubbles {@code NonNullableFieldWasNullError}
+     * up, dropping the sibling errors field. One rule for every producer on the {@code Outcome}
+     * transport (root {@code @service}, DML and {@code @routine} carriers), enforced at classify
+     * time where the SDL nullability is visible. Returns the rejection naming the first non-null
+     * sibling of {@code errorsFieldDef}, or {@code null} when every sibling is nullable.
+     */
+    private static ErrorChannelWalkerError.NonNullableSuccessProjectionField nonNullableSuccessProjection(
+            GraphQLObjectType payloadObj, String payloadName, GraphQLFieldDefinition errorsFieldDef) {
+        for (var f : payloadObj.getFieldDefinitions()) {
+            if (f == errorsFieldDef) continue;
+            if (graphql.schema.GraphQLTypeUtil.isNonNull(f.getType())) {
+                return new ErrorChannelWalkerError.NonNullableSuccessProjectionField(payloadName, f.getName());
+            }
+        }
+        return null;
     }
 
     /**
@@ -5501,17 +5420,17 @@ class FieldBuilder {
     /**
      * Structural detection of a DML payload's error channel. Scans the payload
      * SDL for an errors-shaped field (via {@link BuildContext#detectErrorsFieldShape}), runs
-     * the channel-level handler rules (rule 7 and rule 8) inline, and produces either an
-     * {@link ErrorChannel.LocalContext} binding, an empty result when the payload has no
-     * errors-shaped field, or a rule-violation rejection naming the offending channel.
+     * the channel-level handler rules (rule 7 and rule 8) inline, then the
+     * nullable-success-projection rule ({@link #nonNullableSuccessProjection}), and produces
+     * either an {@link ErrorChannel.Mapped} binding, an empty result when the payload has no
+     * errors-shaped field, or a rule-violation rejection naming the offending field.
      */
     private sealed interface StructuralDmlErrorChannel {
         record None() implements StructuralDmlErrorChannel {}
-        // The narrow LocalContext type: a directiveless structural carrier has no developer
-        // payload class, so this detection can only ever produce LocalContext; the declaration
-        // puts that contract in the signature instead of in the producer's body.
-        record Present(ErrorChannel.LocalContext channel) implements StructuralDmlErrorChannel {}
-        record RuleViolation(String reason) implements StructuralDmlErrorChannel {}
+        // A directiveless structural carrier has no developer payload class, so its channel rides
+        // the typed Outcome wrapper the root @service fields already use.
+        record Present(ErrorChannel.Mapped channel) implements StructuralDmlErrorChannel {}
+        record RuleViolation(Rejection rejection) implements StructuralDmlErrorChannel {}
     }
 
     private StructuralDmlErrorChannel detectStructuralDmlErrorChannel(String payloadSdlName) {
@@ -5525,16 +5444,20 @@ class FieldBuilder {
             if (errorTypes == null) continue;
             String handlerCardinality = checkChannelLevelHandlerRules(errorTypes);
             if (handlerCardinality != null) {
-                return new StructuralDmlErrorChannel.RuleViolation(
-                    "errors-shaped carrier field '" + f.getName() + "': " + handlerCardinality);
+                return new StructuralDmlErrorChannel.RuleViolation(Rejection.structural(
+                    "errors-shaped carrier field '" + f.getName() + "': " + handlerCardinality));
             }
             String duplicateMatchCriteria = checkDuplicateMatchCriteria(errorTypes);
             if (duplicateMatchCriteria != null) {
-                return new StructuralDmlErrorChannel.RuleViolation(
-                    "errors-shaped carrier field '" + f.getName() + "': " + duplicateMatchCriteria);
+                return new StructuralDmlErrorChannel.RuleViolation(Rejection.structural(
+                    "errors-shaped carrier field '" + f.getName() + "': " + duplicateMatchCriteria));
+            }
+            var nonNullable = nonNullableSuccessProjection(payloadObj, payloadSdlName, f);
+            if (nonNullable != null) {
+                return new StructuralDmlErrorChannel.RuleViolation(nonNullable);
             }
             return new StructuralDmlErrorChannel.Present(
-                new ErrorChannel.LocalContext(errorTypes,
+                new ErrorChannel.Mapped(errorTypes,
                     no.sikt.graphitron.plan.GeneratedUnits.mappingsConstant(payloadSdlName)));
         }
         return new StructuralDmlErrorChannel.None();
@@ -6510,9 +6433,9 @@ class FieldBuilder {
         // separate table-match check is needed here.
         var dmlChannelResult = detectStructuralDmlErrorChannel(returnType.returnTypeName());
         if (dmlChannelResult instanceof StructuralDmlErrorChannel.RuleViolation rv) {
-            return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(rv.reason()));
+            return new UnclassifiedField(parentTypeName, name, location, rv.rejection());
         }
-        Optional<ErrorChannel.RouterDispatched> dmlChannel = (dmlChannelResult instanceof StructuralDmlErrorChannel.Present p)
+        Optional<ErrorChannel.Mapped> dmlChannel = (dmlChannelResult instanceof StructuralDmlErrorChannel.Present p)
             ? Optional.of(p.channel()) : Optional.empty();
 
         // UpdateRows walker: PK-or-UK identification + SET/WHERE partition over the already-classified
@@ -6752,8 +6675,15 @@ class FieldBuilder {
                 var encoder = ((IdEncoderResolution.Resolved) encoderResolution).nodeType().encodeMethod();
                 var returnType_id = new ReturnTypeRef.ScalarReturnType("ID", wrapper);
                 var coords = graphql.schema.FieldCoordinates.coordinates(returnType.returnTypeName(), dataField.getName());
+                // An errors-bearing payload's DELETE fetcher returns the typed Outcome, so the id
+                // fetcher narrows Outcome.Success before encoding; the same signal as the
+                // @service id carrier's envelope.
+                var idEnvelope = carrierPayloadHasErrorsField(returnType.returnTypeName())
+                    ? SourceEnvelope.OUTCOME_SUCCESS
+                    : SourceEnvelope.DIRECT;
                 var carrier = new ChildField.SingleRecordIdFieldFromReturning(
                     returnType.returnTypeName(), dataField.getName(), dataFieldLocation, returnType_id,
+                    idEnvelope,
                     new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(encoder));
                 // The @mutation DELETE classifier owns the final carrier; accept any provisional.
                 ctx.fieldRegistry.reclassify(coords, carrier, null);
@@ -6777,9 +6707,9 @@ class FieldBuilder {
 
         var dmlChannelResult = detectStructuralDmlErrorChannel(returnType.returnTypeName());
         if (dmlChannelResult instanceof StructuralDmlErrorChannel.RuleViolation rv) {
-            return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(rv.reason()));
+            return new UnclassifiedField(parentTypeName, name, location, rv.rejection());
         }
-        Optional<ErrorChannel.RouterDispatched> dmlChannel = (dmlChannelResult instanceof StructuralDmlErrorChannel.Present p)
+        Optional<ErrorChannel.Mapped> dmlChannel = (dmlChannelResult instanceof StructuralDmlErrorChannel.Present p)
             ? Optional.of(p.channel()) : Optional.empty();
 
         if (inputArg.list()) {
@@ -7127,9 +7057,9 @@ class FieldBuilder {
 
         var dmlChannelResult = detectStructuralDmlErrorChannel(returnType.returnTypeName());
         if (dmlChannelResult instanceof StructuralDmlErrorChannel.RuleViolation rv) {
-            return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(rv.reason()));
+            return new UnclassifiedField(parentTypeName, name, location, rv.rejection());
         }
-        Optional<ErrorChannel.RouterDispatched> dmlChannel = (dmlChannelResult instanceof StructuralDmlErrorChannel.Present p)
+        Optional<ErrorChannel.Mapped> dmlChannel = (dmlChannelResult instanceof StructuralDmlErrorChannel.Present p)
             ? Optional.of(p.channel()) : Optional.empty();
 
         if (tia.list()) {
@@ -7176,10 +7106,10 @@ class FieldBuilder {
 
     /**
      * Whether the carrier payload type declares an {@code errors} field (structural match
-     * via {@link BuildContext#detectErrorsFieldShape}). This is the condition under which an
-     * {@code @service} carrier's producer routes through the typed {@code Outcome} wrapper (the
-     * mutation field's {@link ErrorChannel.Mapped} channel from
-     * {@link #resolveServiceOutcomeChannel}); the data field uses it to record its
+     * via {@link BuildContext#detectErrorsFieldShape}). This is the condition under which a
+     * carrier's producer routes through the typed {@code Outcome} wrapper (the mutation field's
+     * {@link ErrorChannel.Mapped} channel from {@link #resolveServiceOutcomeChannel} or
+     * {@link #detectStructuralDmlErrorChannel}); the data field uses it to record its
      * {@link SourceEnvelope}. Mirrors the errors-field detection in
      * {@code resolveServiceOutcomeChannel} so the consumer-side envelope and the producer-side
      * channel agree on the same structural signal.
@@ -7262,7 +7192,7 @@ class FieldBuilder {
         //
         // Only @table-typed children on DML-emitted parents are admitted here (the
         // SettKvotesporsmal bug fixture and FilmPayload / FilmsPayload /
-        // FilmCreateLocalContextPayload all have this shape). Errors-shaped children lift via
+        // FilmCreateCheckedPayload all have this shape). Errors-shaped children lift via
         // liftToErrorsField; class-backed and scalar children fall through to the arms below.
         var dmlEmitted = dmlEmittedBinding(parentTypeName);
         if (dmlEmitted.isPresent()) {
@@ -7272,7 +7202,7 @@ class FieldBuilder {
                 ? ctx.connectionElementTypeName(rawTypeName0) : rawTypeName0;
             var resolvedReturnType = ctx.resolveReturnType(elementTypeName0, buildWrapper(fieldDef));
             if (resolvedReturnType instanceof ReturnTypeRef.PolymorphicReturnType p) {
-                var lift = liftToErrorsField(fieldDef, parentTypeName, p, parentBackingClass);
+                var lift = liftToErrorsField(fieldDef, parentTypeName, p);
                 if (lift != null) return lift;
             }
             if (resolvedReturnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
@@ -7309,7 +7239,7 @@ class FieldBuilder {
                 ? ctx.connectionElementTypeName(rawTypeName1) : rawTypeName1;
             var resolvedReturnType = ctx.resolveReturnType(elementTypeName1, buildWrapper(fieldDef));
             if (resolvedReturnType instanceof ReturnTypeRef.PolymorphicReturnType p) {
-                var lift = liftToErrorsField(fieldDef, parentTypeName, p, parentBackingClass);
+                var lift = liftToErrorsField(fieldDef, parentTypeName, p);
                 if (lift != null) return lift;
             }
             if (resolvedReturnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
@@ -7383,7 +7313,7 @@ class FieldBuilder {
                 ? ctx.connectionElementTypeName(rawTypeName2) : rawTypeName2;
             var resolvedReturnType = ctx.resolveReturnType(elementTypeName2, buildWrapper(fieldDef));
             if (resolvedReturnType instanceof ReturnTypeRef.PolymorphicReturnType p) {
-                var lift = liftToErrorsField(fieldDef, parentTypeName, p, parentBackingClass);
+                var lift = liftToErrorsField(fieldDef, parentTypeName, p);
                 if (lift != null) return lift;
             }
             if (resolvedReturnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
@@ -7603,7 +7533,7 @@ class FieldBuilder {
             case ReturnTypeRef.ScalarReturnType s -> recordReadFieldOrUnclassified(
                 fieldDef, parentTypeName, name, location, s, columnName, parentResultType, parentBackingClass);
             case ReturnTypeRef.PolymorphicReturnType p -> {
-                var lift = liftToErrorsField(fieldDef, parentTypeName, p, parentBackingClass);
+                var lift = liftToErrorsField(fieldDef, parentTypeName, p);
                 if (lift != null) yield lift;
                 yield classifyRecordParentPolymorphicChild(fieldDef, parentTypeName, name, location,
                     elementTypeName, p, parentResultType);

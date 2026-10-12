@@ -17,8 +17,9 @@ import java.util.Optional;
  * whether to dispatch via the generated {@code ErrorRouter}.
  *
  * <p>The wildcard return lets each variant declare the narrowest channel partition its
- * construction path can mint ({@link ErrorChannel.Mapped} for the root {@code @service}
- * variants, {@link ErrorChannel.RouterDispatched} for everything else), so the emit seams take
+ * construction path can mint ({@link ErrorChannel.Mapped} for the variants on the
+ * {@code Outcome} transport: root {@code @service}, DML and {@code @routine} payload carriers;
+ * {@link ErrorChannel.RouterDispatched} for everything else), so the emit seams take
  * the narrowed type and the compiler enforces the seam partition. Channel-agnostic readers
  * (dedup, mappings emission) consume this accessor; emit seams read the variant's own component.
  */

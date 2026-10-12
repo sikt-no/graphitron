@@ -346,10 +346,11 @@ class ErrorMappingsClassGeneratorTest {
     }
 
     /**
-     * Synthesises a minimal schema with one DML-record mutation field per channel
+     * Synthesises a minimal schema with one direct-return DML mutation field per channel
      * supplied: the lightest field variant whose channel slot carries the
      * {@link ErrorChannel.RouterDispatched} partition {@link ErrorChannel.PayloadClass}
-     * belongs to (root {@code @service} variants carry {@link ErrorChannel.Mapped}).
+     * belongs to (root {@code @service} and payload-carrier variants carry
+     * {@link ErrorChannel.Mapped}).
      */
     private static GraphitronSchema synthesizeSchema(List<ErrorChannel.PayloadClass> channels) {
         Map<String, GraphitronType> types = new LinkedHashMap<>();
@@ -360,11 +361,15 @@ class ErrorMappingsClassGeneratorTest {
             var tableInputArg = new no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg(
                 "in", "FilmInput", true, false, TestFixtures.filmTable(), List.of(), Optional.empty(),
                 List.of(), List.of(), List.of());
-            var field = new no.sikt.graphitron.rewrite.model.MutationField.MutationDmlRecordField(
+            var field = new no.sikt.graphitron.rewrite.model.MutationField.DmlTableField(
                 "Query",
                 fieldName,
                 null,
-                new ReturnTypeRef.ResultReturnType("FilmPayload", new FieldWrapper.Single(true), null, null),
+                new no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedSingle(
+                    new no.sikt.graphitron.rewrite.model.HelperRef.Encode(
+                        no.sikt.graphitron.javapoet.ClassName.get("fake.code.generated", "NodeIdEncoder"),
+                        "encodeFilm",
+                        List.of(new no.sikt.graphitron.model.jooq.ColumnRef("film_id", "FILM_ID", "java.lang.Long")))),
                 new no.sikt.graphitron.rewrite.model.OperationMember.Write.Insert(tableInputArg),
                 Optional.of(channels.get(i)));
             fields.put(FieldCoordinates.coordinates("Query", fieldName), field);

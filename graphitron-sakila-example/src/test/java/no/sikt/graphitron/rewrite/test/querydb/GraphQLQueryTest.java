@@ -6809,14 +6809,14 @@ class GraphQLQueryTest {
     // rentFilmPayload classifies as MutationRoutineWriteRecordField: the same rent_film write as
     // rentFilm above, returning a payload carrier instead of the chained @table. The fetcher owns
     // step 1 alone (the routine call plus the key capture inside transactionResult); the payload's
-    // `rental` data field runs the post-commit re-read, and the errors field is the LocalContext
-    // channel, exactly as on createFilmWithErrors' DML pillar.
+    // `rental` data field runs the post-commit re-read, and the errors field reads the typed
+    // Outcome the fetcher returns, exactly as on createFilmWithErrors' DML pillar.
 
     @Test
     @SuppressWarnings("unchecked")
     void rentFilmPayload_happyPath_dataFieldReReadsCommittedRow() {
         // Outcome: the routine succeeded and the row is visible. The data field's post-commit
-        // SELECT projects the committed rental; errors stays null (no localContext was set).
+        // SELECT projects the committed rental; errors stays null (the Outcome is a Success).
         int countBefore = dsl.fetchCount(org.jooq.impl.DSL.table("rental"));
         Integer rentalId = null;
         try {
@@ -7067,11 +7067,11 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void rentFilmPayload_failingRoutine_routesThroughLocalContextErrorChannel() {
+    void rentFilmPayload_failingRoutine_routesThroughErrorChannel() {
         // Outcome (a): the routine raised (FK violation: inventory 999999 does not exist). The
-        // catch arm returns the non-null all-null-column sentinel so graphql-java traverses
-        // into the errors field; the data field's null-key SELECT renders null, and the typed
-        // error surfaces inside data, not as a top-level field error. Nothing is committed.
+        // catch arm returns Outcome.ErrorList, so graphql-java traverses into the errors field;
+        // the data field renders null on the error arm, and the typed error surfaces inside
+        // data, not as a top-level field error. Nothing is committed.
         int countBefore = dsl.fetchCount(org.jooq.impl.DSL.table("rental"));
         graphql.ExecutionResult result = executeRaw("""
             mutation {
@@ -8646,24 +8646,22 @@ class GraphQLQueryTest {
         only.containsEntry("message", "film 999 not found");
     }
 
-    // ===== DML LocalContext error channel end-to-end =====
+    // ===== DML error channel end-to-end =====
     //
     // Mirrors the @service-backed submitFilmReview tests on the DML pillar. The
     // createFilmWithErrors mutation classifies as MutationDmlRecordField (admitted by the
-    // structural DML-carrier scan) with errorChannel = Optional.of(ErrorChannel.LocalContext)
-    // (bound by FieldBuilder.detectStructuralDmlErrorChannel). The catch arm dispatches
-    // through ErrorRouter.dispatchToLocalContext, which packs the matched throwable into
-    // env.getLocalContext() as a single-element list and returns data: null; the carrier's
-    // errors field reads that list back via env.getLocalContext(), and the data field (Film)
-    // short-circuits on the null source so the SDL response renders { film: null, errors: [{
-    // __typename, path, message }] }.
+    // structural DML-carrier scan) with an ErrorChannel.Mapped channel (bound by
+    // FieldBuilder.detectStructuralDmlErrorChannel). The fetcher returns the typed Outcome: the
+    // catch arm returns Outcome.ErrorList around the matched throwable, the carrier's errors
+    // field reads that list off its source, and the data field (Film) renders null on the error
+    // arm, so the SDL response renders { film: null, errors: [{ __typename, path, message }] }.
 
     @Test
     @SuppressWarnings("unchecked")
     void createFilmWithErrors_validLanguage_returnsHappyPathPayload() {
         // Happy path: valid language_id round-trips through the carrier-walk DML fetcher. The
         // catch arm doesn't fire; the data field's follow-up SELECT projects the inserted row.
-        // Confirms the LocalContext wiring doesn't perturb non-error returns.
+        // Confirms the Outcome wrapper doesn't perturb non-error returns.
         String title = "R12-LC-HAPPY-" + java.util.UUID.randomUUID();
         try {
             var rawResult = executeRaw("""
@@ -8680,9 +8678,8 @@ class GraphQLQueryTest {
             payload.extractingByKey("film", as(MAP))
                 .containsEntry("title", title)
                 .containsEntry("languageId", 1);
-            // graphql-java renders an absent localContext as null for the nullable
-            // [FilmCreateError] list; on the happy path no exception fires, so localContext is
-            // never set.
+            // The errors field resolves null on the Success arm, honouring the nullable
+            // [FilmCreateError] list on the wire.
             payload.containsEntry("errors", null);
         } finally {
             // Inserted rows would otherwise drift the totalCount / ordering assertions in the
@@ -8695,14 +8692,14 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void createFilmWithErrors_invalidLanguageId_routesThroughLocalContextErrorChannel() {
+    void createFilmWithErrors_invalidLanguageId_routesThroughErrorChannel() {
         // Invalid FK reference: language_id 99999 doesn't exist in `language`. PostgreSQL raises
         // SQLSTATE 23503 (foreign_key_violation); jOOQ surfaces it as
         // org.jooq.exception.IntegrityConstraintViolationException, which the @error
         // GENERIC-handler mapping on FilmCreateConstraintViolation matches.
-        // ErrorRouter.dispatchToLocalContext packs the throwable into env.getLocalContext();
-        // the data field (Film) short-circuits on the null source and the errors field reads the
-        // list back. graphql-java's source-class TypeResolver dispatches the union arm.
+        // The catch arm returns Outcome.ErrorList around the throwable; the data field (Film)
+        // renders null on that arm and the errors field reads the list back. graphql-java's
+        // source-class TypeResolver dispatches the union arm.
         graphql.ExecutionResult result = executeRaw("""
             mutation {
                 createFilmWithErrors(in: { title: "R12-LC-FK-ERR", languageId: 99999 }) {
@@ -8733,6 +8730,124 @@ class GraphQLQueryTest {
         // formatting drift.
         only.extractingByKey("message", as(STRING))
             .containsIgnoringCase("foreign key");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void createFilmsWithErrors_invalidLanguageId_rendersNullListDataField() {
+        // The bulk form of the error arm: one row of the batch violates the language FK, the
+        // whole transaction rolls back, and the list data field renders null rather than an
+        // empty list. Nothing from the batch is committed, the valid first row included.
+        String title = "BULK-ERR-" + java.util.UUID.randomUUID();
+        graphql.ExecutionResult result = executeRaw("""
+            mutation {
+                createFilmsWithErrors(in: [
+                    { title: "%s", languageId: 1 },
+                    { title: "%s", languageId: 99999 }
+                ]) {
+                    films { title }
+                    errors {
+                        __typename
+                        ... on FilmCreateConstraintViolation { path message }
+                    }
+                }
+            }
+            """.formatted(title, title));
+        assertThat(result.getErrors()).as("top-level errors: %s", result.getErrors()).isEmpty();
+        Map<String, Object> data = result.getData();
+        var payload = assertThat(data).extractingByKey("createFilmsWithErrors", as(MAP));
+        payload.containsEntry("films", null);
+        var only = payload.extractingByKey("errors", as(list(Map.class)))
+            .hasSize(1)
+            .element(0, as(MAP));
+        only.containsEntry("__typename", "FilmCreateConstraintViolation");
+        only.extractingByKey("message", as(STRING))
+            .containsIgnoringCase("foreign key");
+        // Counted by the batch's own title: other test classes write films concurrently.
+        assertThat(dsl.fetchCount(DSL.table("film"), DSL.field("title", String.class).eq(title)))
+            .as("the failed batch committed nothing")
+            .isZero();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void createFilmsWithErrors_validRows_returnRowsInInputOrder() {
+        // The bulk success arm: the list data field projects every inserted row and errors is null.
+        String title = "BULK-OK-" + java.util.UUID.randomUUID();
+        try {
+            var rawResult = executeRaw("""
+                mutation {
+                    createFilmsWithErrors(in: [
+                        { title: "%s-a", languageId: 1 },
+                        { title: "%s-b", languageId: 2 }
+                    ]) {
+                        films { title languageId }
+                        errors { __typename }
+                    }
+                }
+                """.formatted(title, title));
+            assertThat(rawResult.getErrors()).as("top-level errors: %s", rawResult.getErrors()).isEmpty();
+            Map<String, Object> data = rawResult.getData();
+            var payload = assertThat(data).extractingByKey("createFilmsWithErrors", as(MAP));
+            payload.containsEntry("errors", null);
+            payload.extractingByKey("films", as(list(Map.class)))
+                .extracting(m -> m.get("title"))
+                .containsExactly(title + "-a", title + "-b");
+        } finally {
+            dsl.deleteFrom(DSL.table("film"))
+                .where(DSL.field("title", String.class).startsWith(title))
+                .execute();
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void updateFilmWithErrors_existingFilm_returnsTheUpdatedRow() {
+        // A single-row UPDATE whose key matches a row: the payload carries the updated row and
+        // a null errors list.
+        String original = dsl.select(DSL.field("title", String.class)).from(DSL.table("film"))
+            .where(DSL.field("film_id", Integer.class).eq(1)).fetchOne(0, String.class);
+        String title = "UPD-OK-" + java.util.UUID.randomUUID();
+        try {
+            var rawResult = executeRaw("""
+                mutation {
+                    updateFilmWithErrors(in: { filmId: 1, title: "%s" }) {
+                        film { filmId title }
+                        errors { __typename }
+                    }
+                }
+                """.formatted(title));
+            assertThat(rawResult.getErrors()).as("top-level errors: %s", rawResult.getErrors()).isEmpty();
+            Map<String, Object> data = rawResult.getData();
+            var payload = assertThat(data).extractingByKey("updateFilmWithErrors", as(MAP));
+            payload.containsEntry("errors", null);
+            payload.extractingByKey("film", as(MAP))
+                .containsEntry("filmId", 1)
+                .containsEntry("title", title);
+        } finally {
+            dsl.update(DSL.table("film"))
+                .set(DSL.field("title", String.class), original)
+                .where(DSL.field("film_id", Integer.class).eq(1))
+                .execute();
+        }
+    }
+
+    @Test
+    void updateFilmWithErrors_noMatchingRow_rendersTheWholePayloadNull() {
+        // A single-row UPDATE whose key matches nothing: fetchOne() answers null and the fetcher
+        // returns null data ahead of the Outcome wrap, so the mutation field renders null with no
+        // top-level error, exactly as on a payload without an errors field.
+        graphql.ExecutionResult result = executeRaw("""
+            mutation {
+                updateFilmWithErrors(in: { filmId: 999999, title: "UPD-NO-ROW" }) {
+                    film { filmId }
+                    errors { __typename }
+                }
+            }
+            """);
+        assertThat(result.getErrors()).as("top-level errors: %s", result.getErrors()).isEmpty();
+        Map<String, Object> data = result.getData();
+        assertThat(data).containsEntry("updateFilmWithErrors", null);
     }
 
     // ===== Mutable-bean payload shape end-to-end =====

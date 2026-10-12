@@ -125,6 +125,54 @@ class TenantRoutedFetcherPipelineTest {
         });
     }
 
+    /**
+     * A tenant-routed DML payload with an errors field: the tenant is divined from the decoded ids
+     * and handed down, and the errors ride the typed {@code Outcome} the fetcher returns, so the
+     * two never share graphql-java's one {@code localContext} slot. That the success arm returns
+     * the rows and the error arm the typed errors is behaviour, pinned by
+     * {@code TenantDivinedRoutingExecutionTest}'s {@code dmlPayload_onTheErrorChannel_*} cases.
+     */
+    @Test
+    void tenantRoutedDmlPayloadWithErrorsRidesTheOutcomeTransport() {
+        var schema = multiTenant("""
+            interface Node { id: ID! }
+            type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+                id: ID! @nodeId
+                title: String
+            }
+            input RetitleFilmInput { id: ID! @nodeId(typeName: "Film") title: String @field(name: "title") }
+            type DbErr @error(handlers: [{handler: DATABASE}]) { path: [String!]! message: String! }
+            union WriteError = DbErr
+            type FilmsRetitledPayload { films: [Film] errors: [WriteError] }
+            type Query { x: String }
+            type Mutation {
+                retitleFilms(in: [RetitleFilmInput!]!): FilmsRetitledPayload @mutation(typeName: UPDATE, table: "film")
+            }
+            """);
+
+        assertThat(schema.tenantBindingOf("Mutation", "retitleFilms"))
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.TenantBinding.ArgumentBound.class);
+        assertThat(((no.sikt.graphitron.rewrite.model.MutationField.MutationBulkDmlRecordField)
+                schema.field("Mutation", "retitleFilms")).errorChannel())
+            .get().isInstanceOf(no.sikt.graphitron.rewrite.model.ErrorChannel.Mapped.class);
+        assertThat(((no.sikt.graphitron.rewrite.model.ChildField.ErrorsField)
+                schema.field("FilmsRetitledPayload", "errors")).transport())
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.Transport.WrapperArm.class);
+        assertReturnsOutcome(method(schema, "MutationFetchers", "retitleFilms"));
+    }
+
+    /** {@code DataFetcherResult<Outcome<…>>}: the fetcher's declared value is the typed wrapper. */
+    static void assertReturnsOutcome(MethodSpec fetcher) {
+        assertThat(fetcher.returnType())
+            .isInstanceOfSatisfying(no.sikt.graphitron.javapoet.ParameterizedTypeName.class, result -> {
+                assertThat(result.rawType().canonicalName()).isEqualTo("graphql.execution.DataFetcherResult");
+                assertThat(result.typeArguments()).singleElement()
+                    .isInstanceOfSatisfying(no.sikt.graphitron.javapoet.ParameterizedTypeName.class,
+                        outcome -> assertThat(outcome.rawType().canonicalName())
+                            .isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".schema.Outcome"));
+            });
+    }
+
     @Test
     void inheritedChildRowsMethodReadsTheHandedDownTenant() {
         var schema = multiTenant("""

@@ -535,7 +535,7 @@ class ErrorChannelClassificationTest {
             .contains("java.lang.RuntimeException");
     }
 
-    // ===== Carrier-walk LocalContext binding =====
+    // ===== Carrier-walk error channel binding =====
 
     private static final String CARRIER_WALK_ERROR_SDL = """
             type SimpleErr @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) {
@@ -548,10 +548,10 @@ class ErrorChannelClassificationTest {
             """;
 
     @Test
-    void payloadErrorsField_classifiesAsErrorsFieldWithLocalContextTransport() {
+    void payloadErrorsField_classifiesAsErrorsFieldWithWrapperArmTransport() {
         // A plain SDL Object carrier (bound to a JooqTableRecordType after promotion) with an
         // errors-shaped field admits at the structural DML-payload scan. The errors field
-        // classifies as ChildField.ErrorsField carrying Transport.LocalContext (the
+        // classifies as ChildField.ErrorsField carrying Transport.WrapperArm (the
         // discriminator FetcherEmitter reads at emit time). The mutation classifies as
         // MutationBulkDmlRecordField and FieldBuilder.detectStructuralDmlErrorChannel wires
         // the channel onto its Optional<ErrorChannel> slot.
@@ -565,7 +565,7 @@ class ErrorChannelClassificationTest {
         assertThat(errorsField).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ErrorsField.class);
         var ef = (no.sikt.graphitron.rewrite.model.ChildField.ErrorsField) errorsField;
         assertThat(ef.transport())
-            .isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.Transport.LocalContext.class);
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.Transport.WrapperArm.class);
         assertThat(ef.errorTypes()).extracting(et -> et.name()).containsExactly("SimpleErr");
     }
 

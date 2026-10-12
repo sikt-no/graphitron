@@ -140,6 +140,14 @@ public final class GeneratedUnits {
         return unit(SUB_SCHEMA, "ErrorRouter");
     }
 
+    /**
+     * {@code <pkg>.schema.Outcome}: the typed success-or-errors wrapper a fetcher on the
+     * {@code Outcome} error transport returns.
+     */
+    public UnitRef outcome() {
+        return unit(SUB_SCHEMA, "Outcome");
+    }
+
     /** {@code <pkg>.schema.ErrorMappings} — the per-channel {@code Mapping[]} dispatch tables. */
     public UnitRef errorMappings() {
         return unit(SUB_SCHEMA, "ErrorMappings");
