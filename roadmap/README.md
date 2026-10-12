@@ -44,8 +44,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R810` | Transitional surfaces say so where a reader arrives, and say why | Spec | 2026-08-22 | [plan](transitional-surfaces-say-so.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
-| `R1020` | A @condition parameter typed as a plain Java class is built or rejected, never cast from a Map | In Progress | 2026-10-12 | [plan](condition-class-parameter-binding.md) |
 | `R1017` | An INSERT leaves absent input fields out of its column list instead of writing DEFAULT | In Progress | 2026-10-12 | [plan](insert-omits-absent-columns.md) |
+| `R1020` | A @condition parameter typed as a plain Java class is built or rejected, never cast from a Map | In Review | 2026-10-12 | [plan](condition-class-parameter-binding.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
 | `R1015` | The lookup launcher joins its input rows with ON, not USING | In Progress | 2026-10-12 | [plan](lookup-launcher-joins-on-not-using.md) |
@@ -651,7 +651,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R288` [**Inline TableInterfaceField children (currently N+1)**](inline-interface-and-tablemethod-children.md) — Backlog, bug
 - `R886` [**ParentSourceBinding.of is the single producer of the last step only; both call sites splice its inputs by hand**](parent-source-binding-splice-duplicated-at-both-mint-sites.md) — Backlog, cleanup
 - `R556` [**Shared pivot/nesting projection type: fetcher read name diverges under @field(name:) remap**](pivot-nesting-representative-read-divergence.md) — Backlog, bug
-- `R1020` [**A @condition parameter typed as a plain Java class is built or rejected, never cast from a Map**](condition-class-parameter-binding.md) — In Progress, bug
+- `R1020` [**A @condition parameter typed as a plain Java class is built or rejected, never cast from a Map**](condition-class-parameter-binding.md) — In Review, bug
 - `R231` [**Emit text-mapped-enum fields as the GraphQL enum type, not String**](emit-text-mapped-enum-fields-as-enum-type.md) — Backlog, architecture
 - `R534` [**Record key decodes erase explicit-null column writes via jOOQ from() flag reset**](record-key-decode-null-write-erasure.md) — Backlog, architecture
 - `R708` [**The $project selection gate fires on names selected at any depth below its unit**](projection-selection-gate-depth-leak.md) — Backlog, correctness
