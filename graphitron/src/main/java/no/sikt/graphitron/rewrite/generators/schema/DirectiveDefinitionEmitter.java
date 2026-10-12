@@ -69,7 +69,7 @@ public final class DirectiveDefinitionEmitter {
             String argVar = "a" + argIdx++;
             body.addStatement("$T.Builder $L = $T.newArgument()", ARGUMENT, argVar, ARGUMENT);
             body.addStatement("$L.name($S)", argVar, arg.getName());
-            body.addStatement("$L.type($L)", argVar, AppliedDirectiveEmitter.emitInputType(arg.getType()));
+            body.addStatement("$L.type($L)", argVar, AppliedDirectiveEmitter.emitDefinitionInputType(arg.getType()));
             if (arg.getDescription() != null && !arg.getDescription().isEmpty()) {
                 body.addStatement("$L.description($S)", argVar, arg.getDescription());
             }

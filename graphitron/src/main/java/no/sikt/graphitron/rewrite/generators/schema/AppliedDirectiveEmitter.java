@@ -170,20 +170,38 @@ public final class AppliedDirectiveEmitter {
      *
      * <p>Other named types (enums, input objects) use {@code GraphQLTypeReference.typeRef("<name>")}
      * since those types are present in the base schema.
+     *
+     * <p>Any other scalar gets the {@code Scalars.GraphQLString} placeholder; see
+     * {@link #emitDefinitionInputType} for the directive-definition variant that references it.
      */
     static CodeBlock emitInputType(GraphQLInputType type) {
+        return emitInputType(type, false);
+    }
+
+    /**
+     * {@link #emitInputType}, except that a custom scalar is referenced by name rather than
+     * replaced by the {@code GraphQLString} placeholder. Directive-definition argument types
+     * need the real scalar: a default on such an argument is emitted as its authored literal,
+     * which graphql-java validates against the argument's type at schema build. Every classified
+     * scalar is registered on the generated schema, so the reference resolves.
+     */
+    static CodeBlock emitDefinitionInputType(GraphQLInputType type) {
+        return emitInputType(type, true);
+    }
+
+    private static CodeBlock emitInputType(GraphQLInputType type, boolean customScalarsByReference) {
         if (type == null) return CodeBlock.of("$T.typeRef($S)", CN_TYPE_REF, "String");
         if (type instanceof GraphQLNonNull nn) {
             return CodeBlock.builder()
                 .add("$T.nonNull(", CN_NON_NULL)
-                .add(emitInputType((GraphQLInputType) nn.getWrappedType()))
+                .add(emitInputType((GraphQLInputType) nn.getWrappedType(), customScalarsByReference))
                 .add(")")
                 .build();
         }
         if (type instanceof GraphQLList list) {
             return CodeBlock.builder()
                 .add("$T.list(", CN_LIST)
-                .add(emitInputType((GraphQLInputType) list.getWrappedType()))
+                .add(emitInputType((GraphQLInputType) list.getWrappedType(), customScalarsByReference))
                 .add(")")
                 .build();
         }
@@ -193,14 +211,12 @@ public final class AppliedDirectiveEmitter {
                 && ScalarTypeResolver.resolveBuiltIn(name) instanceof ScalarResolution.Resolved r) {
                 return CodeBlock.of("$T.$L", r.scalarConstantOwner(), r.scalarConstantField());
             }
-            if (ScalarTypeResolver.isFederationNamespaceScalar(name)) {
+            if (ScalarTypeResolver.isFederationNamespaceScalar(name) || customScalarsByReference) {
                 return CodeBlock.of("$T.typeRef($S)", CN_TYPE_REF, name);
             }
-            // Custom scalars not in the resolver's recognised tables: keep the existing
-            // GraphQLString placeholder. Threading consumer-resolved scalars (via @scalarType /
-            // convention) through here would require the BuildContext model and is out of Phase 3
-            // scope — directive-arg type slots are metadata for the federation transform, not
-            // runtime coercion, so the placeholder remains acceptable.
+            // Applied-directive argument type slots: custom scalars keep the GraphQLString
+            // placeholder. Those slots are metadata for the federation transform, not runtime
+            // coercion, so the placeholder remains acceptable there.
             return CodeBlock.of("$T.GraphQLString", SCALARS);
         }
         if (type instanceof GraphQLNamedType named) {

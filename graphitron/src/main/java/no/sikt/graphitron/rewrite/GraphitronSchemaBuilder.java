@@ -24,6 +24,7 @@ import graphql.util.TraverserContext;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import graphql.schema.idl.errors.SchemaProblem;
 
+import no.sikt.graphitron.rewrite.generators.schema.DirectiveDefinitionEmitter;
 import no.sikt.graphitron.rewrite.model.CarriesObjectForm;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.model.schema.OneOfDirectiveSdl;
@@ -725,8 +726,12 @@ public class GraphitronSchemaBuilder {
      *
      * <p>Population: the schema-shape forms, which is precisely where the generator emits
      * {@code GraphQLTypeReference.typeRef(<scalarName>)} ({@code ObjectTypeGenerator}'s and
-     * {@code InputTypeGenerator}'s type-ref rendering does not special-case scalars). Directive
-     * definitions and applied directives are deliberately not swept: their type slots go through
+     * {@code InputTypeGenerator}'s type-ref rendering does not special-case scalars), plus the
+     * custom scalars of survivor directive definitions' argument types, which
+     * {@code AppliedDirectiveEmitter.emitDefinitionInputType} references by name. Spec built-ins
+     * and federation-namespace scalars are skipped on that sweep: the definition embeds the
+     * {@code graphql.Scalars} constant for the first and Graphitron synthesises the second.
+     * Applied directives are not swept: their type slots go through
      * {@code AppliedDirectiveEmitter.emitInputType}, which embeds the {@code graphql.Scalars}
      * constant inline for a spec built-in and a placeholder for an unrecognised scalar, so they
      * demand no {@code additionalType} registration at all. The forms come from the same
@@ -785,6 +790,16 @@ public class GraphitronSchemaBuilder {
                     checkScalarReference(ctx, rebuiltAssembled, registered, reported,
                         typeName + "." + field.getName(), field.getType());
                 }
+            }
+        }
+        for (var dir : DirectiveDefinitionEmitter.survivors(rebuiltAssembled)) {
+            for (var arg : dir.getArguments()) {
+                String scalarName = referencedTypeName(arg.getType());
+                if (scalarName == null
+                    || ScalarTypeResolver.isSpecBuiltIn(scalarName)
+                    || ScalarTypeResolver.isFederationNamespaceScalar(scalarName)) continue;
+                checkScalarReference(ctx, rebuiltAssembled, registered, reported,
+                    "@" + dir.getName() + "(" + arg.getName() + ":)", arg.getType());
             }
         }
     }

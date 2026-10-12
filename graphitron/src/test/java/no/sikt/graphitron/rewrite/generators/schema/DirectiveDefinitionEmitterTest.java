@@ -92,7 +92,11 @@ class DirectiveDefinitionEmitterTest {
         var rendered = DirectiveDefinitionEmitter
             .buildDefinitionMethod("directiveDefinition_rateTolerance", schema.getDirective("rateTolerance"))
             .toString();
+        // The argument type references the real scalar rather than the GraphQLString placeholder
+        // applied directives use, so the literal default validates against BigDecimal at runtime.
         assertThat(rendered)
+            .contains(".type(graphql.schema.GraphQLTypeReference.typeRef(\"BigDecimal\"))")
+            .doesNotContain("GraphQLString")
             .contains(".defaultValueLiteral(graphql.parser.Parser.parseValue(\"0\"))")
             .doesNotContain("Value{value=");
     }
