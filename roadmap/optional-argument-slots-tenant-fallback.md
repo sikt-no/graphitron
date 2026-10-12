@@ -66,7 +66,7 @@ This settles R517's open questions 1 (a requested tenant outside the request set
 
 ## Implementation
 
-- `TenantBindingIndex`: the presence function and its call in `SlotCollector.add`; `DirectBinding`'s sealed reading and its six readers; the `Conditional` rejection in `armOf`; the ladder factoring and the `Conditional` narrowing in `fanOutArmOf`.
+- `TenantBindingIndex`: the presence function and its call in `SlotCollector.add`; `DirectBinding`'s sealed reading and its five readers; the `Conditional` rejection in `armOf`; the ladder factoring and the `Conditional` narrowing in `fanOutArmOf`.
 - `TenantBinding`: `BoundSlot.required`; the `ArgumentBound` and `FanOut` constructor assertions; `FanOut(List<BoundSlot> narrowing)`, with every `FanOut.INSTANCE` site and exhaustive switch over the arm moved to the record.
 - `ConnectionRuntimeClassGenerator`: the narrowing `fanOutDomain` form; `fanOutRows` / `fanOutBatchRows` take the narrowing values and pass them through.
 - `TenantStrategy.Fanned` and the launcher render (`plan/LauncherCommands`, `render/`): carry and render the narrowing reads. The batched form (`fanOutBatchRows`) reads the narrowing values from the same environment its statement reads the filter's own values from, so the domain and the WHERE clause see one set of arguments.
@@ -111,3 +111,23 @@ Latent in the sis IT run against Oracle 18c on trunk `dd940c703` (`sis/GRAPHITRO
 ## Related
 
 R1018 (prerequisite) is the child-field variant, where the parent row supplies the tenant and the fix is ordering. R517 (a tenant-column list argument narrows the fan-out domain) shares this item's narrowing semantics; this item settles its open questions 1 and 4. The `@tenant` marker (shipped under R989, see `changelog.md`) mints slots like any other, so a nullable `@tenant` argument or input-bean member falls under the same rule.
+
+## Reviewer findings
+
+### Spec → Ready, round 1: request revisions (session_01Gi18Yfhx6pV9XENi2M6z9f, 2026-10-12)
+
+Question 1 holds. The goal reads on its own: a field whose only tenant-naming arguments are nullable stops building into a fetcher that crashes when the client omits them, and `@tenantFanOut` gains a narrowing meaning for exactly that shape. The code it describes exists as named, and the outcome is reachable. Question 2 holds for the classification axis, the `FanOut(List<BoundSlot>)` arm and the runtime narrowing: they extend shapes already in the tree. Two points in the `DirectBinding` reading and the new rejection are left for the implementer to design, and they are what sends the item back.
+
+1. **The `Conditional` rejection cannot be `Rejection.noTenantBinding` for a connection-bound root `@service`.** The spec includes service value shapes and `@tenant`-marked scalars as mint sites, and its Related section applies the rule to a nullable `@tenant` member. Take `rateFilmsByFilmId(in: [RateByFilmIdInput!]!): RateFilmsPayload @service(...)` in `multitenant.graphqls` with `filmId: Int @tenant` (nullable). The plain payload's reach is empty, so in `Fold.armOf` `connectionService` holds while `anyTenant` does not. The binding reads `Conditional` and hits the new rung, but `noTenantBinding(coordinate, tableName, detail)` needs a tenant-scoped table from reach, and there is none. As written, `reach...findFirst().orElseThrow()` throws inside the generator, or the message claims a table the field does not reach. The declines branch a few lines above already handles this case: it switches to `Rejection.unroutedServiceCall` because "NoTenantBinding's 'reaches table' opening would be false". To satisfy this, name the rejection for the `!anyTenant` connection-service case (for example `unroutedServiceCall` naming the optional slots, or whatever shape the author prefers). Add a `TenantBindingClassificationTest` case for it, a root service with a nullable `@tenant` member and a non-`@table` return. Derived from the ladder, the fan-out hint will not appear there, which is correct.
+
+2. **The sealed reading's per-reader table covers only `Guaranteed` and `Conditional`.** Each reader switches on the reading, so each one needs an answer for `Declined` and `Unbound` too, and one of those answers is not obvious. Today `fanOutArmOf` ignores declines entirely. A marked field whose only tenant-naming argument declines (say a multi-table `@nodeId` filter) classifies `FanOut`, while one with declines and slots rejects as "already binds". Because `Declined` takes precedence over slots, the implementer would have to choose between keeping that, rejecting, or treating the declined argument as a non-narrowing filter. To satisfy this, state `Declined` and `Unbound` for each of the five readers, even if the answer is "as today", and name the `fanOutArmOf` choice explicitly.
+
+Corrected in passing: "its six readers" under Implementation became "five", matching the five readers listed under Design once R1018 removes `parentRowBinding`'s read.
+
+Non-blocking, for the revision if the author agrees:
+
+- Fixtures beyond the `filmId: Int` ones will newly reject. They use nullable node-id slots: `Query.filmActorsByNodeId(ids: [ID!] @nodeId(...))` in `multitenant.graphqls` (exercised by `TenantDivinedRoutingExecutionTest`), and the `filmActorsByNodeId`, `filmsByNodeId(ids: [ID!])` and `FilmActorFilter { id: ID }` fixtures in `TenantBindingClassificationTest`. The Tests section's migration bullet could name them, since the sakila build breaks without the first.
+- The presence walk says "the outer argument and every input field on the path". Say whether a list wrapper's element nullability counts too (`filter: [F]!` with a null element names no tenant for that element). The function also needs the slot name for `TopLevelArg` and `ContextArg`, and `SlotCollector` is static today, so the field definition has to be threaded into it.
+- The narrowing `fanOutDomain` should coerce decoded `String` segments to a numeric tenant key, as `divinedTenant` does, or a narrowed node-id slot never matches a hosted key.
+- Flattening a list-shaped level drops elements whose slot is null. That is exact only if such an element matches no rows. Where list-of-input-object filters with a nullable tenant member exist, it deserves one sentence.
+- R517's open questions 1 and 4 already carry the "R1019 settles this" notes, so that Implementation bullet is done.
