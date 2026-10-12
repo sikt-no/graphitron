@@ -1,7 +1,7 @@
 ---
 id: R1018
 title: "A child field routes on its parent row tenant, not on an optional argument slot"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 6
 theme: runtime-connection
@@ -85,6 +85,10 @@ Root sites are unchanged by construction: the roots seed `withoutContext`, so `t
   - `films(filmId: 2) { stock { scenesWhere { label } } }` with `filter` omitted answers tenant 2's three scenes. Today this throws `NoSuchElementException`, so it is the acceptance evidence for the goal.
   - The same query with `filter: {scene: <film 2 scene id>}` answers that one scene.
   - `endorsements(note: ENDORSEMENT_NOTE) { film { stock { scenesWhere { label } } } }` with `filter` omitted answers one scene for film 1 and three for film 2, the same shape as the existing `FilmStock.scenes` two-tenant case. Both tenants hold scenes, so this shows each parent routes on its own tenant within one request; with the argument as the router it could not run at all.
+
+## Implementation notes
+
+Landed at `7731985d7`, as planned: the three parent rungs moved ahead of the declines rejection and the `ArgumentBound` rung in `Fold.armOf`, and `parentRowBinding` no longer reads the direct binding. No emitter change, no build-time verdict change. The four *flips* classification cases (scalar and `@nodeId`-filter arguments under `films(filmId:)`, the `FilmEndorsement.film` argument, `Language.films` reached only under a tenant, the nested `FilmStock` field) were each run against the old ladder first and failed with `ArgumentBound`; the unchanged twin (`Language.films` with an untenanted `languages` root) passes on both. The execution tests query `scenesWhere { id }` rather than `{ label }`, since the test resets every scene's label to null; the filtered case asserts the one encoded id. The manual paragraph went in as its own paragraph after the nesting-type one, see the note under Implementation.
 
 ## Other solutions we've considered
 
