@@ -1,11 +1,17 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
+import graphql.language.ArrayValue;
+import graphql.language.IntValue;
+import graphql.schema.InputValueWithState;
 import org.junit.jupiter.api.Test;
+
+import java.math.BigInteger;
 
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 @UnitTier
@@ -54,5 +60,42 @@ class GraphQLValueEmitterTest {
     void emit_nestedList_rendersRecursively() {
         var out = GraphQLValueEmitter.emit(List.of(List.of(1, 2), List.of(3))).toString();
         assertThat(out).isEqualTo("java.util.List.of(java.util.List.of(1, 2), java.util.List.of(3))");
+    }
+
+    @Test
+    void emit_unsupportedValue_throwsNamingTheClass() {
+        assertThatThrownBy(() -> GraphQLValueEmitter.emit(new IntValue(BigInteger.ZERO)))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("graphql.language.IntValue");
+    }
+
+    @Test
+    void emitDefault_literalState_emitsParsedAuthoredLiteral() {
+        var state = InputValueWithState.newLiteralValue(ArrayValue.newArrayValue()
+            .value(new IntValue(BigInteger.ONE)).value(new IntValue(BigInteger.TWO)).build());
+        assertThat(GraphQLValueEmitter.emitDefault(state, "Query.x(l:)").toString())
+            .isEqualTo("defaultValueLiteral(graphql.parser.Parser.parseValue(\"[1, 2]\"))");
+    }
+
+    @Test
+    void emitDefault_internalState_emitsProgrammaticValue() {
+        var state = InputValueWithState.newInternalValue(100);
+        assertThat(GraphQLValueEmitter.emitDefault(state, "Query.films(first:)").toString())
+            .isEqualTo("defaultValueProgrammatic(100)");
+    }
+
+    @Test
+    void emitDefault_externalState_throwsNamingTheCoordinate() {
+        var state = InputValueWithState.newExternalValue(100);
+        assertThatThrownBy(() -> GraphQLValueEmitter.emitDefault(state, "Query.films(first:)"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("Query.films(first:)");
+    }
+
+    @Test
+    void emitDefault_notSet_throwsNamingTheCoordinate() {
+        assertThatThrownBy(() -> GraphQLValueEmitter.emitDefault(InputValueWithState.NOT_SET, "Input.f"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("Input.f");
     }
 }

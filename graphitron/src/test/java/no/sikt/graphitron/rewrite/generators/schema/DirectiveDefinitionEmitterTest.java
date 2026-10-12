@@ -65,14 +65,11 @@ class DirectiveDefinitionEmitterTest {
             .contains("GraphQLArgument.newArgument()")
             .contains(".name(\"roles\")")
             .contains(".name(\"mode\")")
-            .contains(".defaultValueProgrammatic(")
-            .contains("\"strict\"");
+            .contains(".defaultValueLiteral(graphql.parser.Parser.parseValue(\"\\\"strict\\\"\"))");
     }
 
     @Test
     void buildDefinition_emitsBooleanArgumentDefault() {
-        // GraphQLValueEmitter.emit(...) dispatches on the boxed Java value, so booleans hit a
-        // different emit arm than strings; cover both shapes.
         var schema = TestSchemaHelper.buildBundle("""
             directive @flag(enabled: Boolean = true) on FIELD_DEFINITION
             type Query { x: String }
@@ -82,8 +79,22 @@ class DirectiveDefinitionEmitterTest {
             .toString();
         assertThat(rendered)
             .contains(".name(\"enabled\")")
-            .contains(".defaultValueProgrammatic(")
-            .contains("true");
+            .contains(".defaultValueLiteral(graphql.parser.Parser.parseValue(\"true\"))");
+    }
+
+    @Test
+    void buildDefinition_emitsCustomScalarArgumentDefaultAsLiteral() {
+        var schema = TestSchemaHelper.buildBundle("""
+            scalar BigDecimal @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBigDecimal")
+            directive @rateTolerance(min: BigDecimal = 0) on FIELD_DEFINITION
+            type Query { x: String }
+            """).assembled();
+        var rendered = DirectiveDefinitionEmitter
+            .buildDefinitionMethod("directiveDefinition_rateTolerance", schema.getDirective("rateTolerance"))
+            .toString();
+        assertThat(rendered)
+            .contains(".defaultValueLiteral(graphql.parser.Parser.parseValue(\"0\"))")
+            .doesNotContain("Value{value=");
     }
 
     @Test

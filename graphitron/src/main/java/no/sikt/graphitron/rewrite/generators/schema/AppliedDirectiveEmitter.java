@@ -47,8 +47,6 @@ public final class AppliedDirectiveEmitter {
         ClassName.get("graphql.schema", "GraphQLList");
     private static final ClassName CN_TYPE_REF =
         ClassName.get("graphql.schema", "GraphQLTypeReference");
-    private static final ClassName PARSER =
-        ClassName.get("graphql.parser", "Parser");
 
     private AppliedDirectiveEmitter() {}
 
@@ -156,7 +154,7 @@ public final class AppliedDirectiveEmitter {
             arg.getType(),
             GraphQLContext.getDefault(),
             Locale.getDefault());
-        return CodeBlock.of("$T.parseValue($S)", PARSER, AstPrinter.printAst(ast));
+        return CodeBlock.of("$T.parseValue($S)", GraphQLValueEmitter.PARSER, AstPrinter.printAst(ast));
     }
 
     /**

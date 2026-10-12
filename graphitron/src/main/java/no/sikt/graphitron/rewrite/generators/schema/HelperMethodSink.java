@@ -73,9 +73,9 @@ final class HelperMethodSink {
         return name;
     }
 
-    String addInputFieldDef(GraphQLInputObjectField field) {
+    String addInputFieldDef(String parentTypeName, GraphQLInputObjectField field) {
         String name = "inputFieldDef_" + sanitise(field.getName());
-        methods.add(InputTypeGenerator.buildFieldDefinitionMethod(name, field, this));
+        methods.add(InputTypeGenerator.buildFieldDefinitionMethod(name, parentTypeName, field, this));
         return name;
     }
 

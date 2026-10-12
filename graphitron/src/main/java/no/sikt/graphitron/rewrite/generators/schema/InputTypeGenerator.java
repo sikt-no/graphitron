@@ -71,7 +71,7 @@ public final class InputTypeGenerator {
             body.addStatement("b.description($S)", inputType.getDescription());
         }
         for (var field : inputType.getFieldDefinitions()) {
-            String helper = sink.addInputFieldDef(field);
+            String helper = sink.addInputFieldDef(inputType.getName(), field);
             body.addStatement("b.field($L())", helper);
         }
         AppliedDirectiveEmitter.emitApplications(body, "b", inputType, sink);
@@ -94,7 +94,7 @@ public final class InputTypeGenerator {
      * Builds a {@code private static GraphQLInputObjectField <methodName>()} factory method
      * whose body is statement-flattened.
      */
-    static MethodSpec buildFieldDefinitionMethod(String methodName,
+    static MethodSpec buildFieldDefinitionMethod(String methodName, String parentTypeName,
                                                   graphql.schema.GraphQLInputObjectField field,
                                                   HelperMethodSink sink) {
         var body = CodeBlock.builder();
@@ -105,8 +105,8 @@ public final class InputTypeGenerator {
             body.addStatement("b.description($S)", field.getDescription());
         }
         if (field.hasSetDefaultValue()) {
-            Object defaultValue = graphql.schema.GraphQLInputObjectField.getInputFieldDefaultValue(field);
-            body.addStatement("b.defaultValueProgrammatic($L)", GraphQLValueEmitter.emit(defaultValue));
+            body.addStatement("b.$L", GraphQLValueEmitter.emitDefault(
+                field.getInputFieldDefaultValue(), parentTypeName + "." + field.getName()));
         }
         if (field.isDeprecated()) {
             body.addStatement("b.deprecate($S)", field.getDeprecationReason());

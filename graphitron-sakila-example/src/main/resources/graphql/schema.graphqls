@@ -18,6 +18,11 @@ scalar BigDecimal @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBi
 # without error and survive multi-file aggregation + classification).
 directive @auth(role: String!) on FIELD_DEFINITION
 
+# A custom-scalar default on an author-declared directive definition. Needs no application:
+# every non-graphitron directive definition is emitted into the runtime schema, so a default the
+# real scalar rejects fails Graphitron.buildSchema.
+directive @rateTolerance(min: BigDecimal = 0) on FIELD_DEFINITION
+
 # R300: the result type of the table-valued read function tilganger_for_feidebruker_med_fs_fiktivt_fnr.
 # jOOQ generates the function as a catalog Table<R>, so the @table binding resolves the same way a
 # plain table type does and the routine-result columns map by name.
@@ -511,6 +516,10 @@ type Query {
     # spells the argMapping out. Both filter film.rental_rate into [fra, til] identically.
     filmsByRentalRateRange(filter: FilmRentalRangeFilter): [Film!]!
     filmsByRentalRateRangeExplicit(filter: FilmRentalRangeFilterExplicit): [Film!]!
+    # Custom-scalar defaults: BigDecimal bounds defaulted on the input fields and inside the
+    # argument's input-object default reach the runtime schema as the authored literals, so the
+    # schema validates against the real GraphQLBigDecimal and the condition receives BigDecimal 0/1.
+    filmsByRentalRateRangeDefaulted(filter: FilmRentalRangeFilterDefaulted = {rentalRateRange: {fra: 0, til: 1}}): [Film!]!
     # argres Phase 4: @condition on a plain input field.
     # PlainFilmIdInput.filmId resolves against film → condition wired and called at runtime.
     # R205 retired the Language-side counterpart: Path B now rejects mismatched call sites
@@ -3175,6 +3184,18 @@ input RentalRateRange { fra: BigDecimal  til: BigDecimal }
 
 input FilmRentalRangeFilter {
     rentalRateRange: RentalRateRange
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "rentalRateRange"
+        }, override: true)
+}
+
+# Defaulted sibling of RentalRateRange: custom-scalar input-field defaults. Kept separate so the
+# undefaulted null bounds the range test above relies on stay as they are.
+input RentalRateRangeDefaulted { fra: BigDecimal = 0  til: BigDecimal = 1 }
+
+input FilmRentalRangeFilterDefaulted {
+    rentalRateRange: RentalRateRangeDefaulted = {}
         @condition(condition: {
             className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
             method: "rentalRateRange"

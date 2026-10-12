@@ -4139,6 +4139,28 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void inputFieldCondition_customScalarDefaults_bindAsBigDecimalBounds() {
+        // RentalRateRangeDefaulted defaults fra/til to BigDecimal 0 and 1, and the argument's
+        // input-object default spells the same bounds. [0, 1] selects the 0.99 films only:
+        // ACADEMY DINOSAUR is in, ACE GOLDFINGER (4.99) and the three 2.99 films are out. The
+        // omitted-argument query exercises the argument default; the empty-range query exercises
+        // the input-field defaults.
+        List<Map<String, Object>> viaArgumentDefault = (List<Map<String, Object>>) execute(
+            "{ filmsByRentalRateRangeDefaulted { title } }").get("filmsByRentalRateRangeDefaulted");
+        List<Map<String, Object>> viaFieldDefaults = (List<Map<String, Object>>) execute(
+            "{ filmsByRentalRateRangeDefaulted(filter: {rentalRateRange: {}}) { title } }")
+            .get("filmsByRentalRateRangeDefaulted");
+
+        for (var films : List.of(viaArgumentDefault, viaFieldDefaults)) {
+            assertThat(films).extracting(f -> f.get("title"))
+                .contains("ACADEMY DINOSAUR")
+                .doesNotContain("ACE GOLDFINGER", "ADAPTATION HOLES", "AFFAIR PREJUDICE", "AGENT TRUMAN");
+        }
+        assertThat(viaFieldDefaults).containsExactlyInAnyOrderElementsOf(viaArgumentDefault);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void inputFieldCondition_plainInput_filmTable_filtersByFilmId() {
         // PlainFilmIdInput → PojoInputType → PlainInputArg at the call site. filmId resolves
         // against film → ColumnField with condition is classified, walkInputFieldConditions

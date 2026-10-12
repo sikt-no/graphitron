@@ -245,8 +245,8 @@ public final class ObjectTypeGenerator {
                 body.addStatement("$L.description($S)", argVar, arg.getDescription());
             }
             if (arg.hasSetDefaultValue()) {
-                Object defaultValue = graphql.schema.GraphQLArgument.getArgumentDefaultValue(arg);
-                body.addStatement("$L.defaultValueProgrammatic($L)", argVar, GraphQLValueEmitter.emit(defaultValue));
+                body.addStatement("$L.$L", argVar, GraphQLValueEmitter.emitDefault(arg.getArgumentDefaultValue(),
+                    parentTypeName + "." + field.getName() + "(" + arg.getName() + ":)"));
             }
             if (arg.isDeprecated()) {
                 body.addStatement("$L.deprecate($S)", argVar, arg.getDeprecationReason());

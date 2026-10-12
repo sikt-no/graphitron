@@ -1,28 +1,59 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
+import graphql.language.AstPrinter;
+import graphql.language.Value;
+import graphql.schema.InputValueWithState;
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 
 import java.util.List;
 import java.util.Map;
 
 /**
- * Translates a coerced GraphQL input value (as returned by graphql-java's
- * {@code getValue()} on an argument / input field / applied-directive argument) into a
- * {@link CodeBlock} that reconstructs the value at runtime.
+ * Translates GraphQL input values into {@link CodeBlock}s that reconstruct them at runtime.
  *
- * <p>Enum values arrive as plain strings (graphql-java coerces them to their string name) and are
- * emitted unchanged; graphql-java re-coerces when the target type is an enum.
+ * <p>{@link #emitDefault} is the entry point for input-field, field-argument and
+ * directive-definition-argument defaults ({@link InputTypeGenerator},
+ * {@link ObjectTypeGenerator}, {@link DirectiveDefinitionEmitter}). A default authored in SDL is
+ * held in the literal state, so it is emitted as the authored AST and re-parsed at consumer
+ * class-init via {@link graphql.parser.Parser#parseValue}; the real scalar's
+ * {@code parseLiteral} then coerces it at runtime, exactly as for the same literal in a query.
+ * This matters for custom scalars, which are wired as stand-in coercers at build time and so
+ * cannot be coerced to a Java value here. The emitted schema is derived from the store, which
+ * carries every default as SDL text, so the synthesised connection {@code first} argument takes
+ * the literal path too; a programmatic-state default is emitted through {@link #emit}.
  *
- * <p>Used from {@link InputTypeGenerator} and {@link ObjectTypeGenerator} for
- * {@code .defaultValueProgrammatic(...)} emission on input fields and field arguments.
- * Applied-directive argument values instead go through
- * {@link AppliedDirectiveEmitter}, which preserves AST shape via graphql-java's
- * {@code ValuesResolver.valueToLiteral} so federation-jvm can read them as
- * {@link graphql.language.Value} nodes.
+ * <p>{@link #emit} handles Java values set programmatically: strings, booleans,
+ * numbers, and lists and maps of those. Any other shape is a generator defect and throws, so it
+ * fails the build rather than the consumer's schema validation.
+ *
+ * <p>Applied-directive argument values go through {@link AppliedDirectiveEmitter}, which
+ * preserves AST shape via graphql-java's {@code ValuesResolver.valueToLiteral} so
+ * federation-jvm can read them as {@link Value} nodes.
  */
 public final class GraphQLValueEmitter {
 
+    static final ClassName PARSER = ClassName.get("graphql.parser", "Parser");
+
     private GraphQLValueEmitter() {}
+
+    /**
+     * Emits the builder call that sets {@code state} as a default value:
+     * {@code defaultValueLiteral(Parser.parseValue("<literal>"))} for a literal-state default,
+     * {@code defaultValueProgrammatic(<value>)} for a programmatic one. {@code coordinate}
+     * names the defaulted element in the failure message for any other state.
+     */
+    public static CodeBlock emitDefault(InputValueWithState state, String coordinate) {
+        if (state.isLiteral()) {
+            return CodeBlock.of("defaultValueLiteral($T.parseValue($S))",
+                PARSER, AstPrinter.printAst((Value<?>) state.getValue()));
+        }
+        if (state.isInternal()) {
+            return CodeBlock.of("defaultValueProgrammatic($L)", emit(state.getValue()));
+        }
+        throw new IllegalStateException(
+            "Cannot emit default value for " + coordinate + ": unsupported state " + state);
+    }
 
     public static CodeBlock emit(Object value) {
         if (value == null)                 return CodeBlock.of("null");
@@ -34,9 +65,8 @@ public final class GraphQLValueEmitter {
         if (value instanceof Float f)      return CodeBlock.of("$LF", f);
         if (value instanceof List<?> list) return emitList(list);
         if (value instanceof Map<?, ?> m)  return emitMap(m);
-        // Fall back: quote the toString. Keeps emission total; downstream graphql-java coercion
-        // decides whether the value is acceptable.
-        return CodeBlock.of("$S", value.toString());
+        throw new IllegalStateException(
+            "Cannot emit value of type " + value.getClass().getName() + ": " + value);
     }
 
     private static CodeBlock emitList(List<?> list) {
