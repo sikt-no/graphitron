@@ -6,6 +6,8 @@ import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
+import no.sikt.graphitron.model.test.AgreementCorpus;
+import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
@@ -20,8 +22,11 @@ import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
 import java.util.List;
 
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
+import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -134,6 +139,32 @@ class GraphQLSourceCaptureTest {
                 .as("the declaration beside the refused one is in the registry")
                 .containsKey("Innocent");
         });
+    }
+
+    /**
+     * Every file the reading declared a type from has a source row. The SDL side declares no
+     * foreign key into {@code store_source}: a schema-level row can carry a null source name, and
+     * the FK doctrine puts one only where the writer stands on the parent while writing the child.
+     * Reachability is what the partition rule asks for, and these rows are it.
+     */
+    @Test
+    @DisplayName("every schema file the reading declared from has a source row")
+    void schemaFilesAreRecordedAsSources() {
+        try (var store = CapturedStore.of(tmp, AgreementCorpus.SDL)) {
+            var declared = new LinkedHashSet<>(store.dsl()
+                .selectDistinct(GRAPHQL_TYPE_DECLARATION.SOURCE_NAME)
+                .from(GRAPHQL_TYPE_DECLARATION)
+                .where(GRAPHQL_TYPE_DECLARATION.SOURCE_NAME.isNotNull())
+                .fetch(GRAPHQL_TYPE_DECLARATION.SOURCE_NAME));
+            assertThat(declared).as("the fixture declares types, so this pins something").isNotEmpty();
+
+            assertThat(store.dsl()
+                    .select(STORE_SOURCE.SOURCE_NAME)
+                    .from(STORE_SOURCE)
+                    .where(STORE_SOURCE.SOURCE_KIND.eq("SCHEMA_FILE"))
+                    .fetch(STORE_SOURCE.SOURCE_NAME))
+                .containsAll(declared);
+        }
     }
 
     private List<GraphQLSourceCapture.SourceDocument> capture(DSLContext dsl) {

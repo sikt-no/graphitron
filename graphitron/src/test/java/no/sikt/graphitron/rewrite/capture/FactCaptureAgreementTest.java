@@ -1,20 +1,9 @@
 package no.sikt.graphitron.rewrite.capture;
 
-import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.run.ModelCapture;
-import graphql.language.Directive;
-import graphql.language.EnumTypeDefinition;
-import graphql.language.EnumValueDefinition;
-import graphql.language.FieldDefinition;
-import graphql.language.InputObjectTypeDefinition;
-import graphql.language.InputValueDefinition;
-import graphql.language.InterfaceTypeDefinition;
-import graphql.language.ObjectTypeDefinition;
-import graphql.language.TypeDefinition;
 import no.sikt.graphitron.model.Public;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
-import no.sikt.graphitron.model.test.AgreementCorpus;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.model.config.ClasspathEntry;
@@ -29,13 +18,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
-import java.security.MessageDigest;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
@@ -71,17 +57,13 @@ import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.BUILD_WARNING_NO_RULE;
-import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
 import static no.sikt.graphitron.model.Tables.LINT_FINDING;
 import static no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR;
 import static no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
-import static no.sikt.graphitron.model.Tables.STORE_STAMP;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.val;
@@ -91,7 +73,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENUM_VALUE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_ELEMENT;
@@ -510,28 +491,6 @@ class FactCaptureAgreementTest {
                     .fetch(INTENT_TYPE_DOMAIN.TYPE_NAME))
                 .as("the assembly handed the derivations a schema, so the domain is populated")
                 .contains("Query", "Film", "Language", "Actor");
-        }
-    }
-
-    @Test
-    @DisplayName("per-coordinate applied-directive counts match the SDL")
-    void appliedDirectiveCountsMatchTheSdl(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, AgreementCorpus.SDL)) {
-            // One select where this was a five-arm union, and the key is the coordinate rather
-            // than a site kind plus whichever of three names that site decomposes into. The walk
-            // spells the same coordinate from what it holds, so the two sides compare the string
-            // the store is keyed by instead of a tuple assembled to stand in for it.
-            var captured = new LinkedHashMap<String, Integer>();
-            store.dsl()
-                .select(GRAPHQL_DIRECTIVE_APPLICATION.COORDINATE,
-                    GRAPHQL_DIRECTIVE_APPLICATION.DIRECTIVE_NAME)
-                .from(GRAPHQL_DIRECTIVE_APPLICATION)
-                .fetch()
-                .forEach(row -> captured.merge(
-                    String.join("|", row.value1(), row.value2()), 1, Integer::sum));
-            assertThat(captured).as("the fixture applies foreign directives, so this pins something")
-                .isNotEmpty();
-            assertThat(captured).containsExactlyInAnyOrderEntriesOf(sdlApplicationCounts(store));
         }
     }
 
@@ -1183,67 +1142,6 @@ class FactCaptureAgreementTest {
     }
 
     /**
-     * The store's stamp names the DDL it was built from. Equality against the resource rather than
-     * against a recorded constant, because the whole job of the stamp is to make a persisted file
-     * unreadable the moment the schema moves: a stamp computed from anything but the DDL this store
-     * ran would let an older file survive an edit and answer with relations that no longer mean what
-     * they say.
-     */
-    @Test
-    @DisplayName("the store stamp names the DDL the store was built from")
-    void theStampNamesTheSchema() throws Exception {
-        byte[] ddl;
-        try (var in = GraphitronModelStore.class.getResourceAsStream(GraphitronModelStore.DDL_RESOURCE)) {
-            ddl = in.readAllBytes();
-        }
-        String expected = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(ddl));
-
-        try (var store = GraphitronModelStore.open()) {
-            var stamps = store.dsl().selectFrom(STORE_STAMP).fetch();
-            assertThat(stamps).as("at most one row, and a booted store has it").hasSize(1);
-            assertThat(stamps.getFirst().getDdlHash()).isEqualTo(expected);
-        }
-    }
-
-    /**
-     * Every captured class is reachable from the entry it was read from, which is the partition a
-     * refresh deletes and re-walks. A jar is stamped by content so an unchanged one is read once; a
-     * directory is not, changing on every compile.
-     */
-    @Test
-    @DisplayName("the class census is partitioned by the classpath entry it came from")
-    void classCensusIsPartitionedBySource(@TempDir Path tmp) {
-        var ctx = testContext();
-        try (var store = GraphitronModelStore.open()) {
-            captureClasspath(store, ctx, graph(tmp), SubjectConfig.none());
-
-            var expected = new LinkedHashSet<>(declaredEntries(ctx));
-            assertThat(expected).as("the classpath names an entry, so this pins something").isNotEmpty();
-
-            var captured = new LinkedHashSet<>(store.dsl()
-                .select(STORE_SOURCE.SOURCE_NAME)
-                .from(STORE_SOURCE)
-                .where(STORE_SOURCE.SOURCE_KIND.in("DIRECTORY", "JAR"))
-                .fetch(STORE_SOURCE.SOURCE_NAME));
-            assertThat(captured).isEqualTo(expected);
-
-            var unstamped = store.dsl()
-                .select(STORE_SOURCE.SOURCE_NAME)
-                .from(STORE_SOURCE)
-                .where(STORE_SOURCE.SOURCE_KIND.eq("JAR"))
-                .and(STORE_SOURCE.STAMP.isNull())
-                .fetch(STORE_SOURCE.SOURCE_NAME);
-            assertThat(unstamped).as("a jar the capture read is a jar it can hash").isEmpty();
-
-            var unstampedDirectories = store.dsl().fetchCount(STORE_SOURCE,
-                STORE_SOURCE.SOURCE_KIND.eq("DIRECTORY").and(STORE_SOURCE.STAMP.isNull()));
-            assertThat(unstampedDirectories)
-                .as("a directory is walked for a stamp, which is what lets an unchanged one be skipped")
-                .isZero();
-        }
-    }
-
-    /**
      * The catalog is partitioned by the generated package its schema lives in, which is the
      * granularity codegen rewrites. The classpath entry the classes came from would also be true of
      * these rows and is the wrong unit: one jar carries every schema a codegen run produced, so
@@ -1283,101 +1181,11 @@ class FactCaptureAgreementTest {
         }
     }
 
-    /**
-     * The SDL side is partitionable too. It declares no foreign key into {@code store_source}: a
-     * schema-level row can carry a null source name, and the FK doctrine puts one only where the
-     * walk writes the child while standing on the parent. Reachability is what the partition rule
-     * asks for, and these rows are it.
-     */
-    @Test
-    @DisplayName("every schema file the walk read has a source row")
-    void schemaFilesAreRecordedAsSources(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, AgreementCorpus.SDL)) {
-            var declared = new LinkedHashSet<>(store.dsl()
-                .selectDistinct(GRAPHQL_TYPE_DECLARATION.SOURCE_NAME)
-                .from(GRAPHQL_TYPE_DECLARATION)
-                .where(GRAPHQL_TYPE_DECLARATION.SOURCE_NAME.isNotNull())
-                .fetch(GRAPHQL_TYPE_DECLARATION.SOURCE_NAME));
-            assertThat(declared).as("the fixture declares types, so this pins something").isNotEmpty();
-
-            var sources = new LinkedHashSet<>(store.dsl()
-                .select(STORE_SOURCE.SOURCE_NAME)
-                .from(STORE_SOURCE)
-                .where(STORE_SOURCE.SOURCE_KIND.eq("SCHEMA_FILE"))
-                .fetch(STORE_SOURCE.SOURCE_NAME));
-            assertThat(sources).containsAll(declared);
-        }
-    }
-
-    /**
-     * The membership relation's equality anchor: the run's read-set reduced two ways, once by
-     * capture's own notes and once by re-enumerating the run's inputs here (the SDL registry's
-     * source census, the catalog's schema packages, the classpath's declared entries). Two graphs in one
-     * store, one catalog-bearing and one SDL-only, so "this graph's sources" is distinguishable
-     * from "sources anyone read": the SDL-only graph must not inherit the sibling's catalog
-     * membership, and capturing it must leave the sibling's rows standing.
-     */
-    @Test
-    @DisplayName("graph-to-source membership equals the run's own read-set, per graph")
-    void graphSourceMembershipEqualsTheRunsReadSet(@TempDir Path tmp) throws java.io.IOException {
-        var ctx = testContext();
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        Path aDir = java.nio.file.Files.createDirectories(tmp.resolve("a"));
-        Path bDir = java.nio.file.Files.createDirectories(tmp.resolve("b"));
-        try (var store = GraphitronModelStore.open()) {
-            var aRegistry = CapturedStore.registryOf(aDir, AgreementCorpus.SDL);
-            capture(store, new GraphIdentity("a", aDir), CapturedStore.corpusOf(aDir),
-                classpathOf(ctx), jooq);
-
-            var expectedA = new LinkedHashSet<>(sdlSourceNames(aRegistry));
-            for (var entry : jooq.allTableEntries()) {
-                expectedA.add(entry.table().getSchema().getClass().getPackageName());
-            }
-            expectedA.addAll(declaredEntries(ctx));
-            assertThat(membership(store, "a")).isEqualTo(expectedA);
-
-            var bRegistry = CapturedStore.registryOf(bDir, "type Query { ping: String }");
-            capture(store, new GraphIdentity("b", bDir), CapturedStore.corpusOf(bDir),
-                List.of(), null);
-            assertThat(membership(store, "b"))
-                .as("an SDL-only capture's membership is its own file census, no inherited catalog")
-                .isEqualTo(new LinkedHashSet<>(sdlSourceNames(bRegistry)));
-            assertThat(membership(store, "a"))
-                .as("a sibling's capture leaves this graph's membership standing")
-                .isEqualTo(expectedA);
-        }
-    }
-
-    /**
-     * The classpath capture, which the walk does not perform.
-     *
-     * <p>The code_ family is the classpath gatherer's, and the classpath gatherer runs in
-     * ModelCapture, so a fixture wanting those rows runs that pass rather than expecting the walk
-     * to have written them. The roots are {@link #classpathOf}, the same answer the expectations
-     * are read from.
-     *
-     * <p>The corpus is the caller's, and matters: the pass reads the SDL corpus too, and one handed
-     * a narrower corpus than the walk was handed would drop the membership the walk had recorded.
-     */
-    private static void captureClasspath(GraphitronModelStore store, RunContext ctx,
-                                         GraphIdentity graph, SubjectConfig config) {
-        capture(store, graph, config, classpathOf(ctx), null);
-    }
-
     /** The classpath a fixture captures, the module's own output where the context names none. */
     private static List<ClasspathEntry> classpathOf(RunContext ctx) {
         return ctx.classpathRoots().isEmpty()
             ? List.of(ClasspathEntry.project(ctx.basedir().resolve("target/classes")))
             : ctx.classpathRoots();
-    }
-
-    /** The entries a capture of {@link #classpathOf} reads, which is every one it did not inherit. */
-    private static List<String> declaredEntries(RunContext ctx) {
-        return classpathOf(ctx).stream()
-            .filter(entry -> entry.origin() != ClasspathEntry.Origin.TRANSITIVE)
-            .filter(entry -> java.nio.file.Files.exists(entry.path()))
-            .map(entry -> entry.path().toString())
-            .toList();
     }
 
     /**
@@ -1403,46 +1211,6 @@ class FactCaptureAgreementTest {
                                 JooqCatalog jooq) {
         ModelCapture.capture(store.dsl(), graph, corpus, classpath, jooq,
             java.time.LocalDateTime.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS));
-    }
-
-    /** The graph's membership rows, as a set for order-free comparison. */
-    private static Set<String> membership(GraphitronModelStore store, String graphName) {
-        return new LinkedHashSet<>(store.dsl()
-            .select(STORE_GRAPH_SOURCE.SOURCE_NAME)
-            .from(STORE_GRAPH_SOURCE)
-            .where(STORE_GRAPH_SOURCE.GRAPH_NAME.eq(graphName))
-            .fetch(STORE_GRAPH_SOURCE.SOURCE_NAME));
-    }
-
-    /**
-     * The registry's source-name census, mirroring the SDL walk's own enumeration (types, scalars,
-     * directive definitions, the schema definition and its extensions, and every type-extension
-     * map), which is what makes the membership comparison a second reduction of the same input.
-     */
-    private static Set<String> sdlSourceNames(graphql.schema.idl.TypeDefinitionRegistry registry) {
-        var names = new LinkedHashSet<String>();
-        registry.schemaDefinition().ifPresent(node -> addSourceName(names, node));
-        registry.getSchemaExtensionDefinitions().forEach(node -> addSourceName(names, node));
-        registry.getDirectiveDefinitions().values().forEach(node -> addSourceName(names, node));
-        registry.types().values().forEach(node -> addSourceName(names, node));
-        registry.scalars().values().forEach(node -> addSourceName(names, node));
-        registry.objectTypeExtensions().values().forEach(sites -> sites.forEach(node -> addSourceName(names, node)));
-        registry.interfaceTypeExtensions().values().forEach(sites -> sites.forEach(node -> addSourceName(names, node)));
-        registry.unionTypeExtensions().values().forEach(sites -> sites.forEach(node -> addSourceName(names, node)));
-        registry.enumTypeExtensions().values().forEach(sites -> sites.forEach(node -> addSourceName(names, node)));
-        registry.scalarTypeExtensions().values().forEach(sites -> sites.forEach(node -> addSourceName(names, node)));
-        registry.inputObjectTypeExtensions().values().forEach(sites -> sites.forEach(node -> addSourceName(names, node)));
-        // Every capture reads the specification's document too, and no registry holds it, the
-        // schema not being composed from it.
-        names.add(no.sikt.graphitron.model.schema.SchemaLoader.SPECIFICATION_SOURCE_NAME);
-        return names;
-    }
-
-    private static void addSourceName(Set<String> names, graphql.language.Node<?> node) {
-        if (node != null && node.getSourceLocation() != null
-                && node.getSourceLocation().getSourceName() != null) {
-            names.add(node.getSourceLocation().getSourceName());
-        }
     }
 
     /**
@@ -1630,75 +1398,6 @@ class FactCaptureAgreementTest {
                 JAVAC_DIAGNOSTIC.COLUMN_NUMBER, JAVAC_DIAGNOSTIC.ORDINAL)
             .fetch()
             .map(Object::toString);
-    }
-
-    /** Counts every non-graphitron directive application in the fixture, keyed as the view keys them. */
-    private static Map<String, Integer> sdlApplicationCounts(CapturedStore store) {
-        var counts = new LinkedHashMap<String, Integer>();
-        var registry = store.registry();
-
-        registry.schemaDefinition().ifPresent(schema ->
-            count(counts, schema.getDirectives(), SchemaCoordinateSyntax.ofSchema()));
-        registry.getSchemaExtensionDefinitions().forEach(extension ->
-            count(counts, extension.getDirectives(), SchemaCoordinateSyntax.ofSchema()));
-
-        // A formal argument of a directive definition is a coordinate too, and an application on
-        // one is a row like any other. It reached no relation while the applications were kept per
-        // site; the walk counts it here because the store now holds it.
-        registry.getDirectiveDefinitions().values().forEach(definition ->
-            definition.getInputValueDefinitions().forEach(argument ->
-                count(counts, argument.getDirectives(), SchemaCoordinateSyntax
-                    .ofDirectiveArgument(definition.getName(), argument.getName()))));
-
-        // graphql-java declares types() over the raw TypeDefinition; widen once here rather than
-        // naming the raw type at every use site.
-        var definitions = new ArrayList<TypeDefinition<?>>();
-        registry.types().values().forEach(definitions::add);
-        definitions.addAll(registry.scalars().values());
-        registry.objectTypeExtensions().values().forEach(definitions::addAll);
-        registry.interfaceTypeExtensions().values().forEach(definitions::addAll);
-        registry.unionTypeExtensions().values().forEach(definitions::addAll);
-        registry.enumTypeExtensions().values().forEach(definitions::addAll);
-        registry.inputObjectTypeExtensions().values().forEach(definitions::addAll);
-        registry.scalarTypeExtensions().values().forEach(definitions::addAll);
-
-        for (TypeDefinition<?> definition : definitions) {
-            String type = definition.getName();
-            count(counts, definition.getDirectives(), SchemaCoordinateSyntax.ofType(type));
-            switch (definition) {
-                case ObjectTypeDefinition object -> countFields(counts, type, object.getFieldDefinitions());
-                case InterfaceTypeDefinition iface -> countFields(counts, type, iface.getFieldDefinitions());
-                case InputObjectTypeDefinition input -> input.getInputValueDefinitions().forEach(field ->
-                    count(counts, field.getDirectives(),
-                        SchemaCoordinateSyntax.ofField(type, field.getName())));
-                case EnumTypeDefinition enumType -> {
-                    for (EnumValueDefinition value : enumType.getEnumValueDefinitions()) {
-                        count(counts, value.getDirectives(),
-                            SchemaCoordinateSyntax.ofEnumValue(type, value.getName()));
-                    }
-                }
-                default -> { /* unions and scalars carry no member-level applications */ }
-            }
-        }
-        return counts;
-    }
-
-    private static void countFields(Map<String, Integer> counts, String type, List<FieldDefinition> fields) {
-        for (FieldDefinition field : fields) {
-            count(counts, field.getDirectives(),
-                SchemaCoordinateSyntax.ofField(type, field.getName()));
-            for (InputValueDefinition argument : field.getInputValueDefinitions()) {
-                count(counts, argument.getDirectives(),
-                    SchemaCoordinateSyntax.ofArgument(type, field.getName(), argument.getName()));
-            }
-        }
-    }
-
-    private static void count(Map<String, Integer> counts, List<Directive> directives,
-                              String coordinate) {
-        for (Directive directive : directives) {
-            counts.merge(String.join("|", coordinate, directive.getName()), 1, Integer::sum);
-        }
     }
 
     /**

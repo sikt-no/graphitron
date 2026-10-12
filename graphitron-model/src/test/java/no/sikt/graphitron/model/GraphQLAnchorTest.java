@@ -1,9 +1,20 @@
 package no.sikt.graphitron.model;
 
+import graphql.language.Directive;
+import graphql.language.EnumTypeDefinition;
+import graphql.language.EnumValueDefinition;
+import graphql.language.FieldDefinition;
+import graphql.language.InputObjectTypeDefinition;
+import graphql.language.InputValueDefinition;
+import graphql.language.InterfaceTypeDefinition;
+import graphql.language.ObjectTypeDefinition;
+import graphql.language.TypeDefinition;
 import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLAstEntries;
+import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
+import no.sikt.graphitron.model.test.AgreementCorpus;
 import no.sikt.graphitron.model.test.CapturedStore;
 import org.assertj.core.api.ListAssert;
 import org.assertj.core.groups.Tuple;
@@ -19,6 +30,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -161,6 +173,98 @@ class GraphQLAnchorTest {
                     + "deprecation reason this case has no business restating")
                 .containsExactly("reason");
         });
+    }
+
+    /**
+     * The same, over a corpus rather than one file, and counted against graphql-java's own reading
+     * of it: per coordinate and directive, as many rows as the registry holds applications. A
+     * repeated directive is several rows at one coordinate, so the count rather than the set is
+     * what the comparison has to be.
+     */
+    @Test
+    @DisplayName("per-coordinate applied-directive counts match the SDL")
+    void appliedDirectiveCountsMatchTheSdl(@TempDir Path directory) {
+        try (var store = CapturedStore.of(directory, AgreementCorpus.SDL)) {
+            var captured = new LinkedHashMap<String, Integer>();
+            store.dsl()
+                .select(GRAPHQL_DIRECTIVE_APPLICATION.COORDINATE,
+                    GRAPHQL_DIRECTIVE_APPLICATION.DIRECTIVE_NAME)
+                .from(GRAPHQL_DIRECTIVE_APPLICATION)
+                .fetch()
+                .forEach(row -> captured.merge(
+                    String.join("|", row.value1(), row.value2()), 1, Integer::sum));
+            assertThat(captured).as("the fixture applies foreign directives, so this pins something")
+                .isNotEmpty();
+            assertThat(captured).containsExactlyInAnyOrderEntriesOf(sdlApplicationCounts(store));
+        }
+    }
+
+    /** Every directive application the registry holds, keyed as the relation keys them. */
+    private static Map<String, Integer> sdlApplicationCounts(CapturedStore store) {
+        var counts = new LinkedHashMap<String, Integer>();
+        var registry = store.registry();
+
+        registry.schemaDefinition().ifPresent(schema ->
+            count(counts, schema.getDirectives(), SchemaCoordinateSyntax.ofSchema()));
+        registry.getSchemaExtensionDefinitions().forEach(extension ->
+            count(counts, extension.getDirectives(), SchemaCoordinateSyntax.ofSchema()));
+
+        // A formal argument of a directive definition is a coordinate too, and an application on
+        // one is a row like any other.
+        registry.getDirectiveDefinitions().values().forEach(definition ->
+            definition.getInputValueDefinitions().forEach(argument ->
+                count(counts, argument.getDirectives(), SchemaCoordinateSyntax
+                    .ofDirectiveArgument(definition.getName(), argument.getName()))));
+
+        // graphql-java declares types() over the raw TypeDefinition; widen once here rather than
+        // naming the raw type at every use site.
+        var definitions = new ArrayList<TypeDefinition<?>>();
+        registry.types().values().forEach(definitions::add);
+        definitions.addAll(registry.scalars().values());
+        registry.objectTypeExtensions().values().forEach(definitions::addAll);
+        registry.interfaceTypeExtensions().values().forEach(definitions::addAll);
+        registry.unionTypeExtensions().values().forEach(definitions::addAll);
+        registry.enumTypeExtensions().values().forEach(definitions::addAll);
+        registry.inputObjectTypeExtensions().values().forEach(definitions::addAll);
+        registry.scalarTypeExtensions().values().forEach(definitions::addAll);
+
+        for (TypeDefinition<?> definition : definitions) {
+            String type = definition.getName();
+            count(counts, definition.getDirectives(), SchemaCoordinateSyntax.ofType(type));
+            switch (definition) {
+                case ObjectTypeDefinition object -> countFields(counts, type, object.getFieldDefinitions());
+                case InterfaceTypeDefinition iface -> countFields(counts, type, iface.getFieldDefinitions());
+                case InputObjectTypeDefinition input -> input.getInputValueDefinitions().forEach(field ->
+                    count(counts, field.getDirectives(),
+                        SchemaCoordinateSyntax.ofField(type, field.getName())));
+                case EnumTypeDefinition enumType -> {
+                    for (EnumValueDefinition value : enumType.getEnumValueDefinitions()) {
+                        count(counts, value.getDirectives(),
+                            SchemaCoordinateSyntax.ofEnumValue(type, value.getName()));
+                    }
+                }
+                default -> { /* unions and scalars carry no member-level applications */ }
+            }
+        }
+        return counts;
+    }
+
+    private static void countFields(Map<String, Integer> counts, String type, List<FieldDefinition> fields) {
+        for (FieldDefinition field : fields) {
+            count(counts, field.getDirectives(),
+                SchemaCoordinateSyntax.ofField(type, field.getName()));
+            for (InputValueDefinition argument : field.getInputValueDefinitions()) {
+                count(counts, argument.getDirectives(),
+                    SchemaCoordinateSyntax.ofArgument(type, field.getName(), argument.getName()));
+            }
+        }
+    }
+
+    private static void count(Map<String, Integer> counts, List<Directive> directives,
+                              String coordinate) {
+        for (Directive directive : directives) {
+            counts.merge(String.join("|", coordinate, directive.getName()), 1, Integer::sum);
+        }
     }
 
     /**

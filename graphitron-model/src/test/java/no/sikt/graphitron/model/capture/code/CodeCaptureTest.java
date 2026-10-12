@@ -256,6 +256,30 @@ class CodeCaptureTest {
     }
 
     /**
+     * Every captured class is reachable from the entry it was read from, which is the partition a
+     * refresh deletes and re-walks. A jar is stamped by content so an unchanged one is read once; a
+     * directory is walked for a stamp too, which is what lets an unchanged one be skipped.
+     */
+    @Test
+    @DisplayName("the class census is partitioned by the classpath entry it came from")
+    void theCensusIsPartitionedByEntry() {
+        withCapture(FIRST, dsl -> {
+            assertThat(dsl.select(STORE_SOURCE.SOURCE_NAME, STORE_SOURCE.SOURCE_KIND)
+                    .from(STORE_SOURCE)
+                    .where(STORE_SOURCE.SOURCE_KIND.in("DIRECTORY", "JAR"))
+                    .fetch(r -> r.value1() + " " + r.value2()))
+                .as("one source per entry read, of the kind the entry is")
+                .containsExactlyInAnyOrder(
+                    CLASSPATH.get(0).path() + " DIRECTORY",
+                    CLASSPATH.get(1).path() + " JAR");
+            assertThat(dsl.fetchCount(STORE_SOURCE,
+                    STORE_SOURCE.SOURCE_KIND.in("DIRECTORY", "JAR").and(STORE_SOURCE.STAMP.isNull())))
+                .as("a jar hashed and a directory walked, so either can be skipped while unchanged")
+                .isZero();
+        });
+    }
+
+    /**
      * The arm's whole difficulty in one case. A classfile names its superclass and stops, so the
      * chain above {@code AssertException} is readable from the jar for exactly one hop and leaves
      * the classpath at {@code RuntimeException}, which is in no entry. An arm that only read

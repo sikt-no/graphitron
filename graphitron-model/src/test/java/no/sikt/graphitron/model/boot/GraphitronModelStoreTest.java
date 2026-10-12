@@ -8,15 +8,19 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
+import java.security.MessageDigest;
 import java.time.Instant;
+import java.util.HexFormat;
 
+import static no.sikt.graphitron.model.Tables.STORE_STAMP;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The sweep's call site, as opposed to the sweep itself: that {@link GraphitronModelStore#openAt}
  * runs it once per home per JVM, that it runs in the arms that fall back to an in-memory store, and
- * that the recency marker is written strictly after a successful open.
+ * that the recency marker is written strictly after a successful open. And the stamp a booted store
+ * carries, which names the DDL it ran.
  *
  * <p>These belong beside the class rather than in a module that consumes it, being assertions about
  * what opening the store does rather than about what capture writes. The policy the sweep applies
@@ -113,6 +117,29 @@ class GraphitronModelStoreTest {
         assertThat(live.resolve("store.last-used"))
             .as("the marker is written strictly after a successful open, which candidacy rests on")
             .doesNotExist();
+    }
+
+    /**
+     * The store's stamp names the DDL it was built from. Equality against the resource rather than
+     * against a recorded constant, because the whole job of the stamp is to make a persisted file
+     * unreadable the moment the schema moves: a stamp computed from anything but the DDL this store
+     * ran would let an older file survive an edit and answer with relations that no longer mean what
+     * they say.
+     */
+    @Test
+    @DisplayName("the store stamp names the DDL the store was built from")
+    void theStampNamesTheSchema() throws Exception {
+        byte[] ddl;
+        try (var in = GraphitronModelStore.class.getResourceAsStream(GraphitronModelStore.DDL_RESOURCE)) {
+            ddl = in.readAllBytes();
+        }
+        String expected = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(ddl));
+
+        try (var store = GraphitronModelStore.open()) {
+            var stamps = store.dsl().selectFrom(STORE_STAMP).fetch();
+            assertThat(stamps).as("at most one row, and a booted store has it").hasSize(1);
+            assertThat(stamps.getFirst().getDdlHash()).isEqualTo(expected);
+        }
     }
 
     /**

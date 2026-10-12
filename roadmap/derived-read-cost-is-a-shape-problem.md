@@ -1643,10 +1643,13 @@ against its own corpus, filed here because the walk's fixtures were.
   foreign-key pairing, node metadata, routines. That is capture's specification, and
   `JooqFactCaptureTest` in `graphitron-model` already reaches both sakila catalogs; overlap
   dedupes there.
-* **The source and membership cases move to their gatherers' tests** `open`. The stamp, the
-  partitions by classpath entry and by schema package, schema-file sources and per-graph
-  membership. The per-coordinate directive application counts against the SDL go to the
-  `graphql_` capture's tests on the same terms.
+* **The source and membership cases move to their gatherers' tests** `done`, but for the partition
+  by schema package, which reads the multi-schema fixture as a catalog of its own and so moves
+  with the catalog cases. The stamp went to `GraphitronModelStoreTest`, the partition by classpath
+  entry to `CodeCaptureTest` over the model's own classpath corpus, schema-file sources to
+  `GraphQLSourceCaptureTest`, the per-coordinate directive application counts against the SDL to
+  `GraphQLAnchorTest`, and per-graph membership to a test of its own, `ModelCaptureMembershipTest`,
+  being a claim about the whole run's read-set.
 * **The configuration cases move beside the configuration gatherer** `open`. The recipe
   round-trips and the configuration family against the run's resolved configuration.
 * **The emitted family's union moves beside `EmittedRegistry`** `open`, with the federated
