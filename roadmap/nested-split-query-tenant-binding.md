@@ -1,7 +1,7 @@
 ---
 id: R1009
 title: "A @splitQuery field on a nesting type routes on its tenant binding"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 6
 theme: runtime-connection
