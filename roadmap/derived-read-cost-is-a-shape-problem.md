@@ -1233,18 +1233,21 @@ Reading a jar is safe for a release and dangerous for a snapshot, and Maven sett
   module before it starts, running the plan itself rather than forking a lifecycle, because a dev
   tool needs to control what runs. Evidence:
   `roadmap/audits/2026-10-12-how-a-sibling-module-reaches-a-run.md`.
-  * **A workspace module resolves to its own output, in place** `open`. A classpath element whose
-    artifact is a module of the workspace is replaced at its own position by the module's
-    `target/classes`, else its jar in `target/`, else left as the repository resolved it. The
-    workspace is the aggregator chain the sibling scan already walks, each module's coordinate read
-    from its pom with the parent's `groupId` inherited, so a declared module classifies `REACTOR`
-    under its coordinate and the scan stops naming modules by directory. An undeclared module stays
-    appended behind the classpath as `SIBLING`, which is what the build refuses by name.
-    * **The sibling scan's classification is pinned** `open`. Run from inside a module today, the
-      scan appends each sibling's `target/classes` behind an installed jar of the same module, the
-      jar classifying `DECLARED` and the directory `SIBLING`. A case states what that does now,
-      which class two entries carry is read from and whether the nameability rule refuses it, so the
-      node above changes a pinned behaviour rather than an unknown one.
+  * **A workspace module resolves to its own output, in place** `done`. The workspace is every
+    module under the outermost aggregator, `AbstractRewriteMojo.workspaceModules`, each coordinate
+    read from its pom with the parent's `groupId` inherited, the projects Maven loaded answering
+    first. A classpath element that is one of a module's outputs or carries its coordinate, an
+    installed copy among them, is replaced at its own position by the module's `target/classes`,
+    else its jar in `target/`, else left as Maven resolved it, and classifies `REACTOR` or
+    `SIBLING` under the module's coordinate. A module the classpath does not hold is appended
+    behind as `SIBLING`, named by coordinate where the scan used to name it by directory, and the
+    source-root walk covers the same modules, so completion and goto-definition agree.
+    * **The sibling scan's classification is pinned** `done`. `InstalledSiblingTest` stated first
+      what a goal run inside one module made of a declared sibling: the installed jar `DECLARED`,
+      the sibling's `target/classes` `SIBLING` behind it, and a class added since the install
+      refused as the build's own undeclared module, the opptak symptom told wrongly. The same case
+      now states the replacement: the sibling's classes in the jar's place, `REACTOR`, and the
+      added class nameable.
   * **The dev goal runs its module's plan through compile** `open`. Before the first round the goal
     executes its own module's bound goals from `validate` through `process-classes`, the way
     `quarkus:dev` does, skipping any the session already ran. A consumer binds `graphitron:generate`
@@ -1254,15 +1257,14 @@ Reading a jar is safe for a release and dangerous for a snapshot, and Maven sett
     `dev-loop-internals.adoc` § Multi-module projects and the classpath paragraph of
     `mojo-configuration.adoc` say every goal reads a sibling's output before the repository and
     compiles no sibling, and that the dev goal compiles its own module first.
-* **A reactor entry is never a release** `open`. The plugin calls a resolved jar a release when the
-  artifact's version is not a snapshot, and a reactor module building at a release version, during
-  a release itself, is a jar the build rewrites every time. Release is trusted for a jar a
-  repository resolved and never for one the reactor produced.
+* **A reactor entry is never a release** `done`. A workspace module's entry takes its kind from the
+  path the run reads, a directory or a snapshot jar, whatever version it builds at; release is
+  trusted only for a jar a repository resolved.
 * An entry says what it is `done`. Both halves of the classpath corpus were handed to capture as this
   module's own output, which was false twice, and the lie was load-bearing: it removed the reactor
   limit the `@service` arm leans on.
 * The store records which repository answered `done`, by consequence.
-* **The version is carried** `blocked`, on a workspace module resolving in place. `store_graph_dependency.coordinate`
+* **The version is carried** `open`. `store_graph_dependency.coordinate`
   is `groupId:artifactId` by design, for naming a module in a refusal, and stops one field short of
   the identity question. The version is a fact the build declares, so it arrives with the dependency
   rather than as another column on the entry. That is also where the dependency stops being keyed
@@ -1281,7 +1283,7 @@ Reading a jar is safe for a release and dangerous for a snapshot, and Maven sett
   and `diagnostics` answers and as an LSP diagnostic; the "could not be resolved" diagnostics it
   explains point back to it, so 98 read as one cause; a warning that never blocks generation, a
   false positive costing one line. Absorbed R987.
-  * **A workspace module with no output is a stale input** `open`, waits on in-place resolution. It
+  * **A workspace module with no output is a stale input** `open`. It
     falls back to the repository, which is the stale read the old resolution made silently.
   * **What stale compares is decided** `open`. A module's newest source against its newest output,
     where the `java_file` stamps the source census already holds may answer without a new walk; a
@@ -1840,7 +1842,7 @@ Values `AUTHORED_EXPRESSION` and `TRAILING_SEGMENTS_BEYOND_ONE`.
 `field-chain-link-reach` grain's key shape. Added rather than retired, and
 listed because the grain is the point: `store_graph_source.stamp` and `store_graph_source.read_at`.
 
-**Java.** `CodeCapture.tablesByClass`; `DemandRuleTest`, `DemandShadowTest`, `DemandResidue`, `SchemaQueries.Demand` and the
+**Java.** `CodeCapture.tablesByClass`; `AbstractRewriteMojo.reactorOutputCoordinates`; `DemandRuleTest`, `DemandShadowTest`, `DemandResidue`, `SchemaQueries.Demand` and the
 MCP schema tool's `demand` slot; `MacroCapture.expandConnections` (now `expand`); the `Expansions` record, the five
 `captureXDirective` callbacks, `captureNavigation`, `connectionElementByType`;
 `EntryFamilyFixture.ENTRY_RELATIONS` and `ANCHOR_RELATIONS` (now `entryRelations()`);

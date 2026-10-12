@@ -218,31 +218,6 @@ public class DevMojo extends AbstractRewriteMojo {
         }
     }
 
-    /**
-     * The workspace a module belongs to: the outermost reactor root, resolved off the filesystem
-     * aggregator chain by chaining {@link AbstractRewriteMojo#nearestAggregator}'s one step until no ancestor pom
-     * lists the current directory. Outermost rather than nearest because two subgraph modules
-     * under different intermediate aggregators of one checkout have to land in one store to be
-     * composable at all. Filesystem-only on purpose: the Maven session's top-level project and
-     * execution root both answer "where was {@code mvn} invoked", so a module built from inside
-     * its own directory would resolve a different workspace than the same module built from the
-     * root and boot cold against a store one directory away; and the parent chain is a different
-     * graph than the aggregator chain (an empty {@code <relativePath/>} resolves the parent from
-     * the repository, an aggregator need not be the parent), so it cannot serve either. Each hop
-     * is a strict ancestor of the previous, so the walk terminates on path depth; a module no
-     * ancestor pom lists resolves to itself, which fires on a property of the tree (there is no
-     * aggregator on disk) rather than on how Maven happened to resolve anything.
-     */
-    static Path workspaceRoot(Path moduleBasedir) {
-        Path workspace = moduleBasedir.toAbsolutePath().normalize();
-        for (Path aggregator = nearestAggregator(workspace);
-             aggregator != null;
-             aggregator = nearestAggregator(workspace)) {
-            workspace = aggregator;
-        }
-        return workspace;
-    }
-
     @Parameter(property = "graphitron.dev.port", defaultValue = "8487")
     int port;
 

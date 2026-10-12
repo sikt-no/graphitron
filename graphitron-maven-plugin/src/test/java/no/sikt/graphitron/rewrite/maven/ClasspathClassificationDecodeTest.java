@@ -15,7 +15,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
@@ -38,6 +37,11 @@ class ClasspathClassificationDecodeTest {
             artifact.setDependencyTrail(trail);
         }
         return artifact;
+    }
+
+    /** A workspace module whose classes directory is {@code classes}, its build directory the parent. */
+    private static AbstractRewriteMojo.WorkspaceModule module(String coordinate, Path classes) {
+        return new AbstractRewriteMojo.WorkspaceModule(coordinate, classes, classes.getParent());
     }
 
     private static Dependency declared(String groupId, String artifactId) {
@@ -72,7 +76,7 @@ class ClasspathClassificationDecodeTest {
                 artifact("io.example", "transitive", transitiveJar,
                     List.of(root, "com.example:declared:jar:1.0", "io.example:transitive:jar:1.0"))),
             List.of(declared("com.example", "declared")),
-            Map.of(siblingClasses, "no.sikt:sibling"));
+            List.of(module("no.sikt:sibling", siblingClasses)));
 
         assertThat(entries)
             .extracting(ClasspathEntry::path, ClasspathEntry::origin, ClasspathEntry::coordinate)
@@ -99,7 +103,7 @@ class ClasspathClassificationDecodeTest {
             own,
             List.of(artifact("com.example", "release", releaseJar, null), snapshot),
             List.of(declared("com.example", "release"), declared("com.example", "snapshot")),
-            Map.of());
+            List.of());
 
         assertThat(entries)
             .extracting(ClasspathEntry::path, ClasspathEntry::kind)
@@ -128,7 +132,7 @@ class ClasspathClassificationDecodeTest {
             List.of(artifact("no.sikt", "service", moduleClasses,
                 List.of(root, "no.sikt:service:jar:1.0"))),
             List.of(declared("no.sikt", "service")),
-            Map.of(moduleClasses, "no.sikt:service"));
+            List.of(module("no.sikt:service", moduleClasses)));
 
         assertThat(entries)
             .extracting(ClasspathEntry::path, ClasspathEntry::origin, ClasspathEntry::coordinate)
@@ -139,10 +143,9 @@ class ClasspathClassificationDecodeTest {
 
     @Test
     void aPackagedReactorModuleIsMatchedByCoordinate(@TempDir Path tmp) throws IOException {
-        // Once the upstream module has been packaged, a downstream one resolves its jar rather
-        // than its output directory, and the reactor map is keyed by the directory. Being the
-        // build's own module is a fact about the module, not about which of its two forms this
-        // classpath carries, so the coordinate answers where the path cannot.
+        // Once the upstream module has been packaged, Maven hands a downstream one its jar. The
+        // run reads the module's classes directory in the jar's place, the one an IDE or the
+        // module's own compile keeps current, under the module's coordinate.
         Path own = Files.createDirectories(tmp.resolve("own/target/classes")).toAbsolutePath().normalize();
         Path moduleClasses = Files.createDirectories(tmp.resolve("service/target/classes"))
             .toAbsolutePath().normalize();
@@ -155,11 +158,13 @@ class ClasspathClassificationDecodeTest {
             List.of(artifact("no.sikt", "service", moduleJar,
                 List.of(root, "no.sikt:service:jar:1.0"))),
             List.of(declared("no.sikt", "service")),
-            Map.of(moduleClasses, "no.sikt:service"));
+            List.of(module("no.sikt:service", moduleClasses)));
 
         assertThat(entries)
-            .extracting(ClasspathEntry::origin, ClasspathEntry::coordinate)
-            .contains(tuple(Origin.REACTOR, "no.sikt:service"));
+            .extracting(ClasspathEntry::path, ClasspathEntry::origin, ClasspathEntry::coordinate)
+            .containsExactly(
+                tuple(own, Origin.PROJECT, null),
+                tuple(moduleClasses, Origin.REACTOR, "no.sikt:service"));
     }
 
     @Test
@@ -175,7 +180,7 @@ class ClasspathClassificationDecodeTest {
                 artifact("com.example", "declared", declaredJar, null),
                 artifact("io.example", "transitive", transitiveJar, null)),
             List.of(declared("com.example", "declared")),
-            Map.of());
+            List.of());
 
         assertThat(entries)
             .extracting(ClasspathEntry::origin, ClasspathEntry::coordinate)
@@ -197,7 +202,7 @@ class ClasspathClassificationDecodeTest {
             own,
             List.of(artifact("com.example", "managed", managedJar, null)),
             List.of(declared("com.example", "managed")),
-            Map.of());
+            List.of());
 
         assertThat(entries)
             .extracting(ClasspathEntry::origin)
@@ -220,7 +225,7 @@ class ClasspathClassificationDecodeTest {
             List.of(artifact("no.sikt", "sibling", siblingClasses,
                 List.of(root, "com.example:middle:jar:1.0", "no.sikt:sibling:jar:1.0"))),
             List.of(),
-            Map.of(siblingClasses, "no.sikt:sibling"));
+            List.of(module("no.sikt:sibling", siblingClasses)));
 
         assertThat(entries)
             .extracting(ClasspathEntry::origin, ClasspathEntry::coordinate)
@@ -241,7 +246,7 @@ class ClasspathClassificationDecodeTest {
             own,
             List.of(),
             List.of(),
-            Map.of());
+            List.of());
 
         assertThat(entries)
             .extracting(ClasspathEntry::origin, ClasspathEntry::coordinate)
@@ -268,7 +273,7 @@ class ClasspathClassificationDecodeTest {
             own,
             List.of(),
             List.of(),
-            Map.of());
+            List.of());
 
         assertThat(entries)
             .extracting(ClasspathEntry::path, ClasspathEntry::suppliedStamp)
@@ -296,7 +301,7 @@ class ClasspathClassificationDecodeTest {
             Files.getLastModifiedTime(overwritten).toMillis() + 60_000L));
 
         var entries = AbstractRewriteMojo.classifyCompileClasspath(
-            List.of(own.toString(), overwritten.toString()), own, List.of(), List.of(), Map.of());
+            List.of(own.toString(), overwritten.toString()), own, List.of(), List.of(), List.of());
 
         assertThat(entries)
             .extracting(ClasspathEntry::path, ClasspathEntry::suppliedStamp)
@@ -315,7 +320,7 @@ class ClasspathClassificationDecodeTest {
         sidecar(jar, "not-a-digest");
 
         var entries = AbstractRewriteMojo.classifyCompileClasspath(
-            List.of(own.toString(), jar.toString()), own, List.of(), List.of(), Map.of());
+            List.of(own.toString(), jar.toString()), own, List.of(), List.of(), List.of());
 
         assertThat(entries)
             .extracting(ClasspathEntry::suppliedStamp)
@@ -344,7 +349,7 @@ class ClasspathClassificationDecodeTest {
             own,
             List.of(),
             List.of(),
-            Map.of(never, "no.sikt:never-built"));
+            List.of(module("no.sikt:never-built", never)));
 
         assertThat(entries)
             .extracting(ClasspathEntry::path)

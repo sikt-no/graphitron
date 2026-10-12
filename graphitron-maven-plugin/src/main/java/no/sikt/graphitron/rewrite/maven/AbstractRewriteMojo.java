@@ -633,7 +633,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             projectOutputDirectory(),
             project.getArtifacts(),
             project.getDependencies(),
-            reactorOutputCoordinates());
+            workspaceModules());
     }
 
     /** This module's own compile-output directory, normalized; the {@code PROJECT} arm's anchor. */
@@ -645,42 +645,93 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     }
 
     /**
-     * Every reactor project's compile-output directory mapped to the name the {@code SIBLING}
-     * rejection message needs: {@code groupId:artifactId} for a loaded reactor project, the
-     * module directory name for a {@link #siblingModuleBasedirs() convention-scanned sibling}
-     * (an unloaded sibling has no {@link MavenProject} to read coordinates from). Insertion
-     * order follows {@link #reactorProjects()} then declared {@code <modules>} order, matching
-     * what {@link #resolveCompileSourceRoots()} follows on the source-root side.
+     * One module of the workspace: its {@code groupId:artifactId}, and where its build writes its
+     * classes and its jar.
      */
-    private Map<Path, String> reactorOutputCoordinates() {
-        var byPath = new LinkedHashMap<Path, String>();
+    record WorkspaceModule(String coordinate, Path classesDirectory, Path buildDirectory) {
+
+        /** A module laid out by convention, its build writing under {@code target}. */
+        static WorkspaceModule conventional(String coordinate, Path basedir) {
+            Path build = basedir.resolve("target").toAbsolutePath().normalize();
+            return new WorkspaceModule(coordinate, build.resolve("classes"), build);
+        }
+    }
+
+    /**
+     * Every module of the workspace this module belongs to: the projects Maven loaded, with the
+     * output directories their builds declare, then every module under {@link #workspaceRoot}
+     * that Maven did not load, laid out by convention. Loaded first because a loaded project's
+     * coordinate and directories are Maven's rather than read off a pom.
+     */
+    private List<WorkspaceModule> workspaceModules() {
+        var byCoordinate = new LinkedHashMap<String, WorkspaceModule>();
         for (MavenProject p : reactorProjects()) {
-            String dir = p.getBuild() == null ? null : p.getBuild().getOutputDirectory();
-            if (dir == null) continue;
-            byPath.putIfAbsent(Path.of(dir).toAbsolutePath().normalize(),
-                p.getGroupId() + ":" + p.getArtifactId());
+            if (p.getBuild() == null || p.getBuild().getOutputDirectory() == null) continue;
+            String build = p.getBuild().getDirectory();
+            byCoordinate.putIfAbsent(p.getGroupId() + ":" + p.getArtifactId(), new WorkspaceModule(
+                p.getGroupId() + ":" + p.getArtifactId(),
+                Path.of(p.getBuild().getOutputDirectory()).toAbsolutePath().normalize(),
+                build == null ? p.getBasedir().toPath().resolve("target").toAbsolutePath().normalize()
+                    : Path.of(build).toAbsolutePath().normalize()));
         }
-        for (Path base : siblingModuleBasedirs()) {
-            Path fileName = base.getFileName();
-            byPath.putIfAbsent(base.resolve("target/classes").toAbsolutePath().normalize(),
-                fileName != null ? fileName.toString() : base.toString());
+        if (project.getBasedir() != null) {
+            for (WorkspaceModule module : workspaceModules(workspaceRoot(project.getBasedir().toPath()))) {
+                byCoordinate.putIfAbsent(module.coordinate(), module);
+            }
         }
-        return byPath;
+        return List.copyOf(byCoordinate.values());
+    }
+
+    /**
+     * The modules under {@code root}, found through each aggregator's {@code <modules>} in
+     * declared order, depth first, an aggregator itself being no module. A module's
+     * {@code groupId} is its own or, where it declares none, its parent's. Lenient: a pom that
+     * does not read contributes nothing rather than failing the goal.
+     */
+    static List<WorkspaceModule> workspaceModules(Path root) {
+        var modules = new ArrayList<WorkspaceModule>();
+        collectModules(root.toAbsolutePath().normalize(), modules, new HashSet<>());
+        return List.copyOf(modules);
+    }
+
+    private static void collectModules(Path basedir, List<WorkspaceModule> into, Set<Path> seen) {
+        if (!seen.add(basedir)) {
+            return;
+        }
+        Model model = readModel(basedir.resolve("pom.xml"));
+        if (model == null) {
+            return;
+        }
+        String groupId = model.getGroupId() != null ? model.getGroupId()
+            : model.getParent() != null ? model.getParent().getGroupId() : null;
+        if (!"pom".equals(model.getPackaging()) && groupId != null && model.getArtifactId() != null) {
+            into.add(WorkspaceModule.conventional(groupId + ":" + model.getArtifactId(), basedir));
+        }
+        if (model.getModules() != null) {
+            for (String module : model.getModules()) {
+                Path child = resolveModuleBasedir(basedir, module);
+                if (child != null) {
+                    collectModules(child, into, seen);
+                }
+            }
+        }
     }
 
     /**
      * The classification decode: Maven's untyped view of the classpath in, the classified
      * {@link ClasspathEntry} list out, so {@link Artifact} and {@link Dependency} never cross
      * into {@code graphitron} (the {@link #decodeDependencyVersions} precedent). Per path, in
-     * compile-classpath order with the reactor outputs folded in behind:
+     * compile-classpath order with the workspace's other modules folded in behind:
      *
      * <ul>
      *   <li>this module's own output: {@code PROJECT};</li>
-     *   <li>another reactor module, matched by output directory or, once that module has been
-     *       packaged, by the coordinate of the jar the reactor resolved: {@code REACTOR} where
-     *       this module declares it and {@code SIBLING} where it does not, both carrying the
-     *       module name the build-side rejection message needs. Asked before directness, a
-     *       declared reactor module being otherwise indistinguishable from a third-party jar;</li>
+     *   <li>another module of the workspace, matched by its build's outputs or by the coordinate
+     *       of a jar, its installed copy among them: read from its own {@code target/classes},
+     *       else its jar in {@code target}, else as Maven resolved it, at the position Maven put
+     *       it. {@code REACTOR} where this module declares it and {@code SIBLING} where it does
+     *       not, both carrying the coordinate the build-side rejection message needs. Asked
+     *       before directness, a declared reactor module being otherwise indistinguishable from a
+     *       third-party jar;</li>
      *   <li>a resolved artifact this module declares: {@code DECLARED};</li>
      *   <li>a resolved artifact the module does not declare: {@code TRANSITIVE};</li>
      *   <li>a path no artifact and no reactor project accounts for: {@code DECLARED} with no
@@ -701,7 +752,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
         Path projectOutputDirectory,
         Collection<Artifact> resolvedArtifacts,
         Collection<Dependency> declaredDependencies,
-        Map<Path, String> reactorOutputs
+        List<WorkspaceModule> workspace
     ) {
         var artifactByPath = new LinkedHashMap<Path, Artifact>();
         if (resolvedArtifacts != null) {
@@ -723,66 +774,94 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
         for (String element : compileClasspathElements) {
             if (element == null) continue;
             Path path = Path.of(element).toAbsolutePath().normalize();
-            if (byPath.containsKey(path)) continue;
-            byPath.put(path, classifyElement(path, projectOutputDirectory, artifactByPath,
-                declaredKeys, reactorOutputs));
+            var entry = classifyElement(path, projectOutputDirectory, artifactByPath,
+                declaredKeys, workspace);
+            byPath.putIfAbsent(entry.path(), entry);
         }
-        for (Map.Entry<Path, String> reactor : reactorOutputs.entrySet()) {
-            Path path = reactor.getKey();
+        for (WorkspaceModule module : workspace) {
+            Path path = module.classesDirectory();
             if (byPath.containsKey(path) || !Files.isDirectory(path)) continue;
             Origin origin = path.equals(projectOutputDirectory) ? Origin.PROJECT : Origin.SIBLING;
             byPath.put(path, new ClasspathEntry(path,
-                origin, origin == Origin.PROJECT ? null : reactor.getValue()));
+                origin, origin == Origin.PROJECT ? null : module.coordinate()));
         }
         return List.copyOf(byPath.values());
     }
 
     private static ClasspathEntry classifyElement(
         Path path, Path projectOutputDirectory, Map<Path, Artifact> artifactByPath,
-        Set<String> declaredKeys, Map<Path, String> reactorOutputs
+        Set<String> declaredKeys, List<WorkspaceModule> workspace
     ) {
-        // Taken once per element and attached to whichever arm claims it: the stamp is a fact
-        // about the file, and none of the four origins below changes what the bytes are.
-        String stamp = resolvedIdentity(path);
         if (path.equals(projectOutputDirectory)) {
-            return new ClasspathEntry(path, Origin.PROJECT, null, stamp);
+            return new ClasspathEntry(path, Origin.PROJECT, null, resolvedIdentity(path));
         }
         Artifact artifact = artifactByPath.get(path);
+        boolean direct = artifact != null && isDirect(artifact, declaredKeys);
+        String coordinate = artifact == null ? null
+            : artifact.getGroupId() + ":" + artifact.getArtifactId();
+        WorkspaceModule module = moduleOf(path, coordinate, workspace);
+        if (module != null) {
+            // Asked before directness, because being the build's own module is the more specific
+            // fact and the one no consumer can recover: a declared reactor module is otherwise
+            // spelled exactly like a third-party jar. Directness then only picks which reactor
+            // arm answers, REACTOR for the ordinary declared case and SIBLING for the module an
+            // author can name today and must declare before the build accepts it. Whatever form
+            // Maven resolved the module in, the run reads the module's own output in its place,
+            // and a module the reactor produces is never a release.
+            Path own = ownOutput(module, artifact, path);
+            return new ClasspathEntry(own, direct ? Origin.REACTOR : Origin.SIBLING,
+                module.coordinate(), resolvedIdentity(own), ClasspathEntry.Kind.unresolved(own));
+        }
+        // Taken once per element and attached to whichever arm claims it: the stamp is a fact
+        // about the file, and neither origin below changes what the bytes are.
+        String stamp = resolvedIdentity(path);
         // A jar resolved from a repository says whether its version can be replaced; anything else
         // is what the path alone says it is.
         ClasspathEntry.Kind kind =
             artifact != null && Files.isRegularFile(path) && !artifact.isSnapshot()
                 ? ClasspathEntry.Kind.RELEASE
                 : ClasspathEntry.Kind.unresolved(path);
-        boolean direct = artifact != null && isDirect(artifact, declaredKeys);
-        String coordinate = artifact == null ? null
-            : artifact.getGroupId() + ":" + artifact.getArtifactId();
-        String reactorCoordinate = reactorOutputs.get(path);
-        if (reactorCoordinate == null && coordinate != null
-            && reactorOutputs.containsValue(coordinate)) {
-            // The same module, reached as an installed jar rather than as its output directory,
-            // which is what a downstream module resolves once the upstream one has been packaged.
-            // Being the build's own module is a fact about the module, not about which of its two
-            // forms this classpath happens to carry.
-            reactorCoordinate = coordinate;
-        }
-        if (reactorCoordinate != null) {
-            // Asked before directness, because being the build's own module is the more specific
-            // fact and the one no consumer can recover: a declared reactor module is otherwise
-            // spelled exactly like a third-party jar. Directness then only picks which reactor
-            // arm answers, REACTOR for the ordinary declared case and SIBLING for the module an
-            // author can name today and must declare before the build accepts it.
-            return new ClasspathEntry(path, direct ? Origin.REACTOR : Origin.SIBLING,
-                reactorCoordinate, stamp, kind);
-        }
         if (direct) {
             return new ClasspathEntry(path, Origin.DECLARED, coordinate, stamp, kind);
         }
         if (artifact != null) {
-            return new ClasspathEntry(path, Origin.TRANSITIVE,
-                artifact.getGroupId() + ":" + artifact.getArtifactId(), stamp, kind);
+            return new ClasspathEntry(path, Origin.TRANSITIVE, coordinate, stamp, kind);
         }
         return new ClasspathEntry(path, Origin.DECLARED, null, stamp);
+    }
+
+    /**
+     * The workspace module {@code path} is a form of: one of its build's outputs, or a jar
+     * carrying its coordinate, which is how an installed copy reaches the classpath.
+     */
+    private static WorkspaceModule moduleOf(Path path, String coordinate,
+                                            List<WorkspaceModule> workspace) {
+        for (WorkspaceModule module : workspace) {
+            if (path.equals(module.classesDirectory()) || path.startsWith(module.buildDirectory())
+                || module.coordinate().equals(coordinate)) {
+                return module;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * What the run reads for a workspace module: its classes directory, else the jar its build
+     * packaged, else what Maven resolved, which is then an installed copy the workspace holds no
+     * output for.
+     */
+    private static Path ownOutput(WorkspaceModule module, Artifact artifact, Path resolved) {
+        if (Files.isDirectory(module.classesDirectory())) {
+            return module.classesDirectory();
+        }
+        if (artifact != null) {
+            Path packaged = module.buildDirectory().resolve(artifact.getArtifactId() + "-"
+                + artifact.getBaseVersion() + "." + (artifact.getType() == null ? "jar" : artifact.getType()));
+            if (Files.isRegularFile(packaged)) {
+                return packaged;
+            }
+        }
+        return resolved;
     }
 
     /**
@@ -921,6 +1000,31 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     }
 
     /**
+     * The workspace a module belongs to: the outermost reactor root, resolved off the filesystem
+     * aggregator chain by chaining {@link #nearestAggregator}'s one step until no ancestor pom
+     * lists the current directory. Outermost rather than nearest because two subgraph modules
+     * under different intermediate aggregators of one checkout have to land in one store to be
+     * composable at all. Filesystem-only on purpose: the Maven session's top-level project and
+     * execution root both answer "where was {@code mvn} invoked", so a module built from inside
+     * its own directory would resolve a different workspace than the same module built from the
+     * root and boot cold against a store one directory away; and the parent chain is a different
+     * graph than the aggregator chain (an empty {@code <relativePath/>} resolves the parent from
+     * the repository, an aggregator need not be the parent), so it cannot serve either. Each hop
+     * is a strict ancestor of the previous, so the walk terminates on path depth; a module no
+     * ancestor pom lists resolves to itself, which fires on a property of the tree (there is no
+     * aggregator on disk) rather than on how Maven happened to resolve anything.
+     */
+    static Path workspaceRoot(Path moduleBasedir) {
+        Path workspace = moduleBasedir.toAbsolutePath().normalize();
+        for (Path aggregator = nearestAggregator(workspace);
+             aggregator != null;
+             aggregator = nearestAggregator(workspace)) {
+            workspace = aggregator;
+        }
+        return workspace;
+    }
+
+    /**
      * One step of the aggregator chain, shared by the sibling scan and the workspace resolver so
      * the two questions share one notion of "which reactor is this module part of": the nearest
      * ancestor directory whose {@code pom.xml}'s {@code <modules>} resolve to include
@@ -951,11 +1055,19 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * shape.
      */
     private static List<String> parseModules(Path pom) {
+        Model model = readModel(pom);
+        return model != null && model.getModules() != null ? model.getModules() : List.of();
+    }
+
+    /** {@code pom} read leniently, or null where it does not read. */
+    private static Model readModel(Path pom) {
+        if (!Files.isRegularFile(pom)) {
+            return null;
+        }
         try (var reader = Files.newBufferedReader(pom)) {
-            Model model = new MavenXpp3Reader().read(reader, false);
-            return model.getModules() != null ? model.getModules() : List.of();
+            return new MavenXpp3Reader().read(reader, false);
         } catch (IOException | XmlPullParserException e) {
-            return List.of();
+            return null;
         }
     }
 
@@ -977,10 +1089,9 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * {@link #generatedSourceRoots(MavenProject)} (jOOQ output among them). The LSP parses
      * these to recover Java declaration positions and Javadoc for goto-definition / hover.
      *
-     * <p>Resolved over the same {@link #reactorProjects()} set as
-     * {@link #reactorOutputCoordinates()}, so the scan path and the walk path cannot drift in
-     * which modules they cover: a class scanned for completion is a class whose source root is
-     * walked for goto-definition.
+     * <p>Resolved over the same modules as {@link #workspaceModules()}, so the scan path and the
+     * walk path cannot drift in which modules they cover: a class scanned for completion is a
+     * class whose source root is walked for goto-definition.
      *
      * <p>The generated-sources half is taken from disk rather than from
      * {@code project.getCompileSourceRoots()}, which only carries a generated-sources root once
@@ -993,12 +1104,14 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     private List<Path> resolveCompileSourceRoots() {
         var roots = new LinkedHashSet<>(
             collectExistingDirs(reactorProjects(), AbstractRewriteMojo::compileSourceRootsOf));
-        // Same sibling set as reactorOutputCoordinates(): a sibling scanned for
-        // completion also gets its source roots walked for goto-definition.
-        for (Path base : siblingModuleBasedirs()) {
-            addExistingDir(roots, base.resolve("src/main/java"));
-            for (String generated : generatedSourceRootsUnder(base.resolve("target"))) {
-                addExistingDir(roots, Path.of(generated));
+        // The modules Maven did not load, laid out by convention, as workspaceModules() reads them.
+        if (project.getBasedir() != null) {
+            for (WorkspaceModule module : workspaceModules(workspaceRoot(project.getBasedir().toPath()))) {
+                Path base = module.buildDirectory().getParent();
+                addExistingDir(roots, base.resolve("src/main/java"));
+                for (String generated : generatedSourceRootsUnder(module.buildDirectory())) {
+                    addExistingDir(roots, Path.of(generated));
+                }
             }
         }
         return new ArrayList<>(roots);

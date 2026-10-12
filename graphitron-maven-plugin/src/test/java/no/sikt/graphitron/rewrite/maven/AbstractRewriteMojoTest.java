@@ -263,10 +263,12 @@ class AbstractRewriteMojoTest {
         Files.writeString(root.resolve("pom.xml"), aggregatorPom("spec-module", "service-module"));
 
         Path specBase = Files.createDirectories(root.resolve("spec-module"));
+        Files.writeString(specBase.resolve("pom.xml"), modulePom("spec-module"));
         Path specClasses = Files.createDirectories(specBase.resolve("target/classes"));
         Path specSrc = Files.createDirectories(specBase.resolve("src/main/java"));
 
-        Path serviceBase = root.resolve("service-module");
+        Path serviceBase = Files.createDirectories(root.resolve("service-module"));
+        Files.writeString(serviceBase.resolve("pom.xml"), modulePom("service-module"));
         Path serviceClasses = Files.createDirectories(serviceBase.resolve("target/classes"));
         Path serviceSrc = Files.createDirectories(serviceBase.resolve("src/main/java"));
         writePublicClass(serviceClasses, "no.sikt.example.service.CategoryConditions");
@@ -288,8 +290,8 @@ class AbstractRewriteMojoTest {
 
         // Classpath side: the sibling service module's target/classes is scanned,
         // alongside the spec module's own, and each carries its classification: the module's
-        // own output is PROJECT, the convention-scanned sibling is SIBLING named by its module
-        // directory, which is what the build-side rejection message needs.
+        // own output is PROJECT, the undeclared sibling is SIBLING under the coordinate its pom
+        // states, which is what the build-side rejection message needs.
         assertThat(ctx.classpathRoots())
             .extracting(no.sikt.graphitron.model.config.ClasspathEntry::path,
                 no.sikt.graphitron.model.config.ClasspathEntry::origin,
@@ -298,13 +300,20 @@ class AbstractRewriteMojoTest {
                 org.assertj.core.groups.Tuple.tuple(specClasses.toAbsolutePath().normalize(),
                     no.sikt.graphitron.model.config.ClasspathEntry.Origin.PROJECT, null),
                 org.assertj.core.groups.Tuple.tuple(serviceClasses.toAbsolutePath().normalize(),
-                    no.sikt.graphitron.model.config.ClasspathEntry.Origin.SIBLING, "service-module"));
+                    no.sikt.graphitron.model.config.ClasspathEntry.Origin.SIBLING, "test:service-module"));
         // Source side (load-bearing for scan/walk parity): the sibling's source root is
         // walked too, so goto-definition / hover on its declarations resolves rather
         // than silently no-jumping. Without this assertion the test would pass with
         // only the classpath side wired.
         assertThat(ctx.compileSourceRoots()).contains(
             serviceSrc.toAbsolutePath().normalize());
+    }
+
+    /** A module of {@link #aggregatorPom}, inheriting its groupId from it as its parent. */
+    private static String modulePom(String artifactId) {
+        return "<project><modelVersion>4.0.0</modelVersion>"
+            + "<parent><groupId>test</groupId><artifactId>aggregator</artifactId><version>1.0</version></parent>"
+            + "<artifactId>" + artifactId + "</artifactId></project>";
     }
 
     /** A {@code <project>} with the given {@code <module>} entries, in order. */
