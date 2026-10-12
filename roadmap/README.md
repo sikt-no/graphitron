@@ -37,13 +37,13 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
-| `R1017` | An INSERT leaves absent input fields out of its column list instead of writing DEFAULT | Spec | 2026-10-12 | [plan](insert-omits-absent-columns.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R797` | Pull diagnostics, so a client can ask, cancel, and be told to ask again | Spec | 2026-08-21 | [plan](pull-diagnostics-so-a-client-can-ask-and-cancel.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R810` | Transitional surfaces say so where a reader arrives, and say why | Spec | 2026-08-22 | [plan](transitional-surfaces-say-so.md) |
 | `R1020` | A @condition parameter typed as a plain Java class is built or rejected, never cast from a Map | Ready | 2026-10-12 | [plan](condition-class-parameter-binding.md) |
+| `R1017` | An INSERT leaves absent input fields out of its column list instead of writing DEFAULT | Ready | 2026-10-12 | [plan](insert-omits-absent-columns.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
 | `R1018` | A child field routes on its parent row tenant, not on an optional argument slot | Spec | 2026-10-12 | [plan](parent-row-tenant-outranks-argument-slot.md) |
@@ -557,7 +557,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R882` [**A nullable input field can be the sole supplier of a matched-key column on UPDATE, and an omitted value then has no diagnostic**](nullable-carrier-as-sole-row-identity.md) — Backlog, validation
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
 - `R881` [**No write carrier reads column nullability, so a clear or a write into a NOT NULL column is only the database's to refuse**](write-carriers-never-read-column-nullability.md) — Backlog, validation
-- `R1017` [**An INSERT leaves absent input fields out of its column list instead of writing DEFAULT**](insert-omits-absent-columns.md) — Spec, bug
+- `R1017` [**An INSERT leaves absent input fields out of its column list instead of writing DEFAULT**](insert-omits-absent-columns.md) — Ready, bug
 - `R192` [**Mojo-configured custom Bean Validation factory**](custom-validator-factory.md) — Backlog, architecture
 - `R98` [**Multi-source input validation: SDL directives + DB CHECK + Jakarta on a unified rendered schema**](multi-source-input-validation.md) — Backlog, architecture, blocked by [catalog-check-constraint-validation](catalog-check-constraint-validation.md)
 - `R172` [**Audit: forbid service-side references to <outputPackage>.inputs.***](inputs-package-internal-use-audit.md) — Backlog, architecture
