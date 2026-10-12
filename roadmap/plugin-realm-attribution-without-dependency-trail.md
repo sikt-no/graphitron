@@ -1,7 +1,7 @@
 ---
 id: R1013
 title: "The plugin realm refusal names the declared entry without Maven dependency trail"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 1
 theme: tooling
@@ -150,6 +150,20 @@ ordering support rather than relying on directory-name order.
 
 Acceptance: CI's `rewrite-build.yml` green on trunk under Maven 3.10.0, and the local verification build
 green under 3.9.11.
+
+## Implementation record
+
+Shipped as planned: `PluginRealm.entryFor` takes the three steps, `PluginRealmTest` carries the four
+new cases, and `plugin-block-transitive-jooq` with its `setup-second-jooq-carrier` setup project is
+in place; `setup-second-jooq` sets `invoker.ordinal=1` so it installs first. The manual sentence in
+`mojo-configuration.adoc` and its echo in `docs/manual/how-to/external-code.adoc` both now say "or the
+candidate entries when Maven does not record which one did".
+
+Local evidence: the verification build is green under Maven 3.9.11 (trail path), and
+`mvn verify -pl graphitron-maven-plugin` run with a downloaded Maven 3.10.0 passes all eleven invoker
+ITs, the three plugin-block ITs among them (no-trail path). The CI half of the acceptance, trunk's
+`rewrite-build.yml` green under the runner's Maven 3.10.0, is for the reviewer to read off the run on
+the pushed head.
 
 ## Other solutions we've considered
 
