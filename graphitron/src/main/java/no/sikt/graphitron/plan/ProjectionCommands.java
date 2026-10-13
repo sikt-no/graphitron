@@ -188,10 +188,12 @@ public final class ProjectionCommands {
             // identity; the payload extraction inside keeps the sanctioned leaf reads.
             case ChildField.TableTargetField ttf ->
                 tableTargetContribution(schema, ttf, owner, units, glueEnvByMethod, nested);
+            // The splice carries the field's own parent-row demand (the columns its null-collapse
+            // check reads), read off the same accessor the fetcher emitter consumes.
             case ChildField.NestingField nf -> {
                 var nested2 = mintNestedUnit(schema, nf, anchorTypeName, units, glueEnvByMethod, census);
-                yield Optional.of(new Contribution.Call(nf.name(), nested2, new CallWrap.Splice(),
-                    aliasOwnerOf(nf)));
+                yield Optional.of(new Contribution.Call(nf.name(), nested2,
+                    new CallWrap.Splice(nf.parentRowColumns()), aliasOwnerOf(nf)));
             }
             case ChildField.ComputedField cmp -> Optional.of(new Contribution.Project(cmp.name(),
                 List.of(new SelectTerm.HelperCall(cmp.method())), aliasOwnerOf(cmp)));

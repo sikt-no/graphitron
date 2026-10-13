@@ -5117,4 +5117,14 @@ type PriceByCurrency {
 type PivotNestingHost @table(name: "pivot_nesting_host") {
     hostId: Int! @field(name: "host_id")
     texts: TranslatedTexts
+    labels: HostLabels
+    labelsRequired: HostLabels!
+}
+
+# A plain nesting type over two of pivot_nesting_host's nullable columns, reached once nullable and
+# once non-null: the nullable field resolves to null when both columns are, the non-null one to an
+# object of nulls.
+type HostLabels {
+    nn: String
+    nb: String
 }

@@ -156,6 +156,25 @@ Two consequences worth highlighting:
 * *Nested types don't inherit `@table` from their parent.* `Address` inside `Customer` re-binds to its own table; `@field` inside `Address` resolves against `address`, not `customer`. The xref:../reference/directives/reference.adoc[`@reference`] on `customer.address` carries the FK path so the join is correct.
 * *Arguments resolve against the return type.* `customers(active: Boolean @field(name: "ACTIVEBOOL")): [Customer!]!` resolves `ACTIVEBOOL` against the `customer` table (the return type) even though the field lives on `Query`. This is why argument-side `@field` works without a `@table` on the argument itself.
 
+== Grouping columns into a nested object
+
+An object type without `@table`, returned by a field of a `@table` type, groups columns of the parent's row under one field. It is not a join: its fields read the parent's columns.
+
+[source,graphql]
+----
+type Film @table {
+    release: FilmRelease
+}
+type FilmRelease {
+    year: Int @field(name: "RELEASE_YEAR")
+    minutes: Int @field(name: "LENGTH")
+}
+----
+
+When the field is nullable and every field of the nested type would be null, the field resolves to `null` rather than to an object of nulls. This is decided over all the nested type's fields, whatever the query selects, so `release { year }` and `release { minutes }` agree on whether `release` is null. Declare the field non-null (`release: FilmRelease!`) to always get an object.
+
+A nested type that also holds a field fetched another way, such as an xref:../reference/directives/reference.adoc[`@reference`] to another table, an xref:../reference/directives/externalField.adoc[`@externalField`], or a xref:../reference/directives/splitQuery.adoc[`@splitQuery`] field, always resolves to an object.
+
 == Constraints and pitfalls
 
 * `@field(name:)` is required (graphql-java rejects no-arg `@field` at parse time).

@@ -5,6 +5,7 @@ import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ParentCorrelation;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.model.jooq.TableRef;
 
 import java.util.List;
@@ -33,8 +34,18 @@ public sealed interface CallWrap {
     /**
      * Same row: the callee is a nesting unit sharing this unit's table instance, so its returned
      * fields are added as they are ({@code fields.addAll(<Callee>.$project(merged, table, env))}).
+     *
+     * @param callerDemand columns of this unit's row the calling field's own fetcher reads,
+     *                     projected under their base name ahead of the callee's fields whenever
+     *                     the field is selected. The demand belongs to the calling field, not the
+     *                     callee: one nesting unit serves every site of its type under an anchor,
+     *                     and only some of them read columns the selection may leave out.
      */
-    record Splice() implements CallWrap {}
+    record Splice(List<ColumnRef> callerDemand) implements CallWrap {
+        public Splice {
+            callerDemand = List.copyOf(callerDemand);
+        }
+    }
 
     /**
      * Other rows over a {@code @reference} path (or standalone against the callee's own table

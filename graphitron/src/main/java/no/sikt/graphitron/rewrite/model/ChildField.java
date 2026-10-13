@@ -950,8 +950,15 @@ public sealed interface ChildField extends OutputField
 
     /**
      * A nesting child field whose value is a fragment of the parent's table-bound projection.
-     * The fetcher emit is {@code env -> env.getSource()}: graphql-java's traversal walks
-     * the nested SDL fields through their own per-field fetchers on the shared parent record.
+     * The nested SDL type's fields read columns of the parent's row through their own fetchers;
+     * this field's own fetcher hands the parent's record down, or {@code null} when
+     * {@link #nullContract()} collapses an absent wrapper.
+     *
+     * <p>A nullable wrapper whose contents are all columns of the parent row resolves to
+     * {@code null} exactly when every {@link PresenceLeaf} is absent, decided over the whole
+     * subtree rather than the selection; a non-null wrapper, and one holding any child fetched
+     * another way, always resolves to an object. The collapse reads columns the query may not
+     * have selected, which is this field's {@link #parentRowColumns() parent-row demand}.
      */
     record NestingField(
         String parentTypeName,
@@ -959,19 +966,137 @@ public sealed interface ChildField extends OutputField
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         List<ChildField> nestedFields
-    ) implements ChildField {
+    ) implements ChildField, ParentRowDemand {
         /**
-         * NestingField is a pass-through: the fetcher emits {@code env -> env.getSource()}, so
-         * the children of the nested SDL type receive the parent's record verbatim. The parent's
-         * table varies across nesting-reuse sites (the same nested SDL type can be reached from
-         * multiple {@code @table} parents; see {@code GraphitronSchemaBuilderTest.
-         * SHARED_NESTED_TYPE_ACROSS_PARENTS_COMPATIBLE}); the children read by column name on
-         * the generic jOOQ {@code Record} interface, not by typed {@code Tables.X.COL}. The
-         * domain-return identity is therefore the generic {@code org.jooq.Record}, which any
-         * nesting reuse-site agrees on.
+         * NestingField is a pass-through: the children of the nested SDL type receive the
+         * parent's record verbatim. The parent's table varies across nesting-reuse sites (the
+         * same nested SDL type can be reached from multiple {@code @table} parents; see
+         * {@code GraphitronSchemaBuilderTest.SHARED_NESTED_TYPE_ACROSS_PARENTS_COMPATIBLE}); the
+         * children read the representative site's typed column constants, which resolve on any
+         * reuse site's record by column name. The domain-return identity is therefore the generic
+         * {@code org.jooq.Record}, which any nesting reuse-site agrees on.
          */
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Plain(ClassName.get("org.jooq", "Record"));
+        }
+
+        /**
+         * The subtree's presence leaves, or the child that blocks the collapse. Ignores this
+         * field's own nullability: a non-null inner nesting field still contributes its leaves
+         * to an enclosing nullable wrapper, and a blocked inner one blocks every enclosing one.
+         */
+        public SubtreePresence subtreePresence() {
+            var leaves = new java.util.ArrayList<PresenceLeaf>();
+            for (var child : nestedFields) {
+                switch (child) {
+                    case ColumnBackedField cbf -> leaves.add(new PresenceLeaf(cbf.columns()));
+                    case NestingField inner -> {
+                        switch (inner.subtreePresence()) {
+                            case SubtreePresence.Leaves l -> leaves.addAll(l.leaves());
+                            case SubtreePresence.Blocked b -> {
+                                return b;
+                            }
+                        }
+                    }
+                    default -> {
+                        return new SubtreePresence.Blocked(child);
+                    }
+                }
+            }
+            return new SubtreePresence.Leaves(leaves);
+        }
+
+        /** The null contract of this field: whether an absent wrapper resolves to {@code null}. */
+        public NullContract nullContract() {
+            return switch (returnType.wrapper()) {
+                case FieldWrapper.Single s when !s.nullable() ->
+                    new NullContract.AlwaysObject(new NullContract.Reason.NonNull());
+                case FieldWrapper.Single ignored -> switch (subtreePresence()) {
+                    case SubtreePresence.Leaves l -> new NullContract.CollapsesWhenAbsent(l.leaves());
+                    case SubtreePresence.Blocked b ->
+                        new NullContract.AlwaysObject(new NullContract.Reason.BlockedBy(b.blocker()));
+                };
+                // A list-wrapped nesting field reaches the model and is rejected by the validator.
+                case FieldWrapper.List ignored ->
+                    new NullContract.AlwaysObject(new NullContract.Reason.NotSingle());
+                case FieldWrapper.Connection ignored ->
+                    new NullContract.AlwaysObject(new NullContract.Reason.NotSingle());
+            };
+        }
+
+        /**
+         * The columns the presence check reads: the distinct columns of a
+         * {@link NullContract.CollapsesWhenAbsent} contract, empty otherwise.
+         */
+        @Override public List<ColumnRef> parentRowColumns() {
+            if (!(nullContract() instanceof NullContract.CollapsesWhenAbsent c)) {
+                return List.of();
+            }
+            return c.leaves().stream().flatMap(l -> l.columns().stream()).distinct().toList();
+        }
+
+        /**
+         * One value the wrapper carries, over the parent-row columns it reads as-is: present when
+         * every column is non-null. A plain column leaf is one column; a {@code @nodeId} leaf is
+         * its key columns, since the node-id encoder answers {@code null} on any null key value.
+         */
+        public record PresenceLeaf(List<ColumnRef> columns) {
+            public PresenceLeaf {
+                columns = List.copyOf(columns);
+                if (columns.isEmpty()) {
+                    throw new IllegalArgumentException("PresenceLeaf requires at least one column");
+                }
+            }
+        }
+
+        /** The outcome of {@link #subtreePresence()}. */
+        public sealed interface SubtreePresence {
+            /** Every value in the subtree is a column leaf; the subtree is absent when all are. */
+            record Leaves(List<PresenceLeaf> leaves) implements SubtreePresence {
+                public Leaves {
+                    leaves = List.copyOf(leaves);
+                }
+            }
+            /** The subtree holds {@code blocker}, a child fetched some other way than a column read. */
+            record Blocked(ChildField blocker) implements SubtreePresence {
+                public Blocked {
+                    java.util.Objects.requireNonNull(blocker, "blocker");
+                }
+            }
+        }
+
+        /** The outcome of {@link #nullContract()}. */
+        public sealed interface NullContract {
+            /** A nullable wrapper over column leaves only: {@code null} when every leaf is absent. */
+            record CollapsesWhenAbsent(List<PresenceLeaf> leaves) implements NullContract {
+                public CollapsesWhenAbsent {
+                    leaves = List.copyOf(leaves);
+                }
+            }
+            /** The field always resolves to an object, for {@link #reason()}. */
+            record AlwaysObject(Reason reason) implements NullContract {
+                public AlwaysObject {
+                    java.util.Objects.requireNonNull(reason, "reason");
+                }
+            }
+            /** Why a nesting field never collapses to {@code null}. */
+            sealed interface Reason {
+                /** The field is declared non-null. */
+                record NonNull() implements Reason {}
+                /**
+                 * The subtree holds a child fetched another way (a {@code @reference}, an
+                 * {@code @externalField}, a {@code @splitQuery} child): its value is never null or
+                 * costs a subquery the client did not select. Graphitron 9 counted some of these
+                 * toward the collapse; this is a documented divergence.
+                 */
+                record BlockedBy(ChildField blocker) implements Reason {
+                    public BlockedBy {
+                        java.util.Objects.requireNonNull(blocker, "blocker");
+                    }
+                }
+                /** The field is list-wrapped, a shape the validator rejects. */
+                record NotSingle() implements Reason {}
+            }
         }
     }
 

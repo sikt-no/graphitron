@@ -340,8 +340,8 @@ public final class FetcherEmitter {
      * (the {@link ParentSourceBinding}'s source expression, {@code success.value()} on the outcome
      * arm). The read shape is an exhaustive switch over the record-read leaf's {@link ValueLocator},
      * mirroring {@link #bindRaw} / {@link #recordReadBinding} so there is no parallel taxonomy:
-     * a jOOQ-record column {@code get}, a class-backed accessor call, or the nesting source
-     * passthrough. The parent {@code resultType} is consulted only for the cast target, per
+     * a jOOQ-record column {@code get} or a class-backed accessor call (a nesting field never
+     * reaches here, its parent being table-bound). The parent {@code resultType} is consulted only for the cast target, per
      * arm, under the validate-time-checked arm/parent-shape compatibility.
      *
      * <p>{@code encode} is the leaf's encode compaction or {@code null}, and it changes the
@@ -352,7 +352,11 @@ public final class FetcherEmitter {
     private static CodeBlock inlineSuccessReturn(
             GraphitronField field, GraphitronType.ResultType resultType, CodeBlock sourceExpr) {
         if (field instanceof ChildField.NestingField) {
-            return CodeBlock.of("return $L;\n", sourceExpr);
+            // Unreachable: a nesting field is classified only on table parents, whose binding is
+            // ParentSourceBinding.TableRow, never the outcome arm that routes here.
+            throw new IllegalStateException(
+                "inline success-projection arm-switch: nesting field " + field.qualifiedName()
+                + " under an outcome parent; nesting fields classify only on table parents");
         }
         var rrf = (ChildField.RecordReadField) field;
         var encode = rrf.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys e ? e : null;
@@ -423,13 +427,42 @@ public final class FetcherEmitter {
         }
     }
 
+    /**
+     * The nesting fetcher's body: a source passthrough, guarded by the per-leaf presence check
+     * when {@link ChildField.NestingField#nullContract()} collapses an absent wrapper. Each leaf
+     * is present when all its columns are non-null, and the wrapper when any leaf is. The
+     * columns are always on the row: the field's splice projects its
+     * {@link ChildField.NestingField#parentRowColumns() demand} whenever it is selected.
+     *
+     * <p>An inner nesting field's fetcher lives on the shared nesting type's fetchers class and
+     * reads the representative site's table constants; every reuse site agrees on leaf class and
+     * column names ({@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator#compareNestedFieldsShape}),
+     * so the constants resolve by name on any site's record, as the column leaves' reads do.
+     */
+    private static CodeBlock nestingBody(ChildField.NestingField nf) {
+        if (!(nf.nullContract() instanceof ChildField.NestingField.NullContract.CollapsesWhenAbsent c)) {
+            return CodeBlock.of("return source;\n");
+        }
+        var table = nf.returnType().table();
+        var body = CodeBlock.builder().add("$T row = ($T) source;\n", RECORD, RECORD);
+        for (var leaf : c.leaves()) {
+            body.add("if (");
+            for (int i = 0; i < leaf.columns().size(); i++) {
+                if (i > 0) body.add(" && ");
+                body.add("row.get($T.$L.$L) != null", CatalogRefs.constantsClass(table),
+                    table.javaFieldName(), leaf.columns().get(i).javaName());
+            }
+            body.add(") return source;\n");
+        }
+        return body.add("return null;\n").build();
+    }
+
     private static FetcherBinding bindRaw(
             GraphitronField field, ClassName fetchersClass,
             TableRef parentTable, GraphitronType.ResultType resultType,
             String outputPackage) {
-        if (field instanceof ChildField.NestingField) {
-            // Source passthrough: the field value is the source object itself.
-            return sourceOnly(field.name(), fetchersClass, outputPackage, CodeBlock.of("return source;\n"));
+        if (field instanceof ChildField.NestingField nf) {
+            return sourceOnly(field.name(), fetchersClass, outputPackage, nestingBody(nf));
         }
         if (field instanceof ChildField.SingleRecordIdFieldFromReturning idCarrier) {
             // Payload-returning DELETE carrier: read the PK column(s) off each RETURNING row and

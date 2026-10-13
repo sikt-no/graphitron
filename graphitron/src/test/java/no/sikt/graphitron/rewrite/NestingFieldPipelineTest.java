@@ -4,6 +4,7 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
+import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
 import org.junit.jupiter.api.Test;
 
@@ -147,7 +148,86 @@ class NestingFieldPipelineTest {
         assertThat(TypeSpecAssertions.armProjectsColumn(nestedUnit, "cast", "FILM_ID")).isTrue();
     }
 
+    // ===== Null contract =====
+
+    private static final String RELEASE_SDL = """
+        type Film @table(name: "film") {
+            release: FilmRelease
+            releaseRequired: FilmRelease!
+        }
+        type FilmRelease {
+            year: Int @field(name: "RELEASE_YEAR")
+            minutes: Int @field(name: "LENGTH")
+        }
+        type Query { film: Film }
+        """;
+
+    @Test
+    void nullableWrapper_fetcherChecksEveryLeafBeforeReturningTheSource() {
+        var body = fetcherMethodBody("FilmFetchers", "release", RELEASE_SDL);
+        assertThat(body)
+            .contains("row.get(no.sikt.graphitron.rewrite.test.jooq.public_.Tables.FILM.RELEASE_YEAR) != null) return source;")
+            .contains("row.get(no.sikt.graphitron.rewrite.test.jooq.public_.Tables.FILM.LENGTH) != null) return source;")
+            .endsWith("return null;\n");
+    }
+
+    @Test
+    void nonNullWrapper_fetcherReturnsTheSource() {
+        assertThat(fetcherMethodBody("FilmFetchers", "releaseRequired", RELEASE_SDL))
+            .isEqualTo("return source;\n");
+    }
+
+    @Test
+    void nullableWrapper_spliceProjectsTheDemandedColumns() {
+        // The check reads every presence column whatever the query selects under the wrapper, so
+        // the anchor's splice arm projects them whenever the field is selected.
+        var filmType = findType("Film", RELEASE_SDL);
+        assertThat(TypeSpecAssertions.armProjectsColumn(filmType, "release", "RELEASE_YEAR")).isTrue();
+        assertThat(TypeSpecAssertions.armProjectsColumn(filmType, "release", "LENGTH")).isTrue();
+        assertThat(TypeSpecAssertions.armProjectsColumn(filmType, "releaseRequired", "RELEASE_YEAR")).isFalse();
+    }
+
+    @Test
+    void referenceChild_blocksTheCollapse() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Language @table(name: "language") { name: String }
+            type FilmInfo {
+                year: Int @field(name: "RELEASE_YEAR")
+                language: Language @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Film @table(name: "film") { info: FilmInfo }
+            type Query { film: Film }
+            """);
+        var nf = (NestingField) schema.field("Film", "info");
+        assertThat(nf.nullContract()).isInstanceOfSatisfying(NestingField.NullContract.AlwaysObject.class,
+            c -> assertThat(c.reason()).isInstanceOfSatisfying(NestingField.NullContract.Reason.BlockedBy.class,
+                b -> assertThat(b.blocker()).isInstanceOf(ChildField.TableField.class)));
+        assertThat(fetcherMethodBody("FilmFetchers", "info", schema)).isEqualTo("return source;\n");
+    }
+
+    @Test
+    void splitQueryChild_blocksTheCollapse() {
+        var nf = (NestingField) TestSchemaHelper.buildSchema(SPLIT_NESTING_SDL).field("Film", "info");
+        assertThat(nf.nullContract()).isInstanceOfSatisfying(NestingField.NullContract.AlwaysObject.class,
+            c -> assertThat(c.reason()).isInstanceOfSatisfying(NestingField.NullContract.Reason.BlockedBy.class,
+                b -> assertThat(b.blocker()).isInstanceOf(ChildField.BatchedTableField.class)));
+    }
+
     // ===== Helpers =====
+
+    private static String fetcherMethodBody(String fetchersClass, String method, String sdl) {
+        return fetcherMethodBody(fetchersClass, method, TestSchemaHelper.buildSchema(sdl));
+    }
+
+    private static String fetcherMethodBody(String fetchersClass, String method, GraphitronSchema schema) {
+        return TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+            .filter(t -> t.name().equals(fetchersClass))
+            .flatMap(t -> t.methodSpecs().stream())
+            .filter(m -> m.name().equals(method))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Fetcher method not found: " + fetchersClass + "." + method))
+            .code().toString();
+    }
 
     private static TypeSpec findType(String className, String sdl) {
         return ProjectionRenderTestSupport.renderProjections(TestSchemaHelper.buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE).stream()

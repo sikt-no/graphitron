@@ -144,10 +144,22 @@ public final class ProjectionUnitRenderer {
                 switch (c.wrap()) {
                     // A spliced nesting unit's terms are declared on the nested type, which owns
                     // its own namespace verdict; nothing here is aliased, so no prefix applies.
-                    case CallWrap.Splice ignored ->
-                        builder.addCode("        case $S -> fields.addAll($L);\n", c.field(),
-                            ProjectionCall.fromOccurrences(c.callee(),
-                                CodeBlock.of("entry.getValue()"), CodeBlock.of("table"), outputPackage));
+                    // The calling field's own demand lands first under base names, the identity
+                    // the callee's column leaves project under, so a column both select lands once.
+                    case CallWrap.Splice s -> {
+                        var callee = ProjectionCall.fromOccurrences(c.callee(),
+                            CodeBlock.of("entry.getValue()"), CodeBlock.of("table"), outputPackage);
+                        if (s.callerDemand().isEmpty()) {
+                            builder.addCode("        case $S -> fields.addAll($L);\n", c.field(), callee);
+                        } else {
+                            builder.addCode("        case $S -> {\n", c.field());
+                            for (var column : s.callerDemand()) {
+                                builder.addCode("            fields.add(table.$L);\n", column.javaName());
+                            }
+                            builder.addCode("            fields.addAll($L);\n", callee);
+                            builder.addCode("        }\n");
+                        }
+                    }
                     case CallWrap.Multiset m -> {
                         builder.addCode("        case $S -> {\n", c.field());
                         builder.addCode("$L", multisetArmBody(argHelpers, c, m, outputPackage));

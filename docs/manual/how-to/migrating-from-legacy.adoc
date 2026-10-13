@@ -236,6 +236,12 @@ Schemas that relied on the legacy "outer owns everything" silently dropping inne
 
 The example schema's `filmsOuterOverrideFilterInput` and `filmsOuterOverridePlainInput` fixtures pin the rewrite's behavior as a regression-fence. The full mechanics live in xref:condition-cascade.adoc[How-to: Stacking and overriding conditions] under "Divergence from legacy semantics".
 
+== Behavior divergence: nested objects holding a fetched field
+
+A nullable field returning a nested object type (one without `@table`, whose fields read the parent's columns) resolves to `null` when every field of the nested type would be null, as in Graphitron 9; see xref:map-types-to-tables.adoc[How-to: Map types to tables] under "Grouping columns into a nested object".
+
+The divergence is in what counts. Graphitron 9 also counted a single `@reference` object and a correlated subquery toward that collapse. The rewrite collapses only nested types whose fields are all columns of the parent row (including `@nodeId` fields and further nested objects of the same kind). A nested type that holds an `@reference`, an `@externalField` or a `@splitQuery` field always resolves to an object, because those values are either never null or cost a subquery the client did not select. A client that tested such a field for `null` should test the fields inside it instead.
+
 == Things that didn't change
 
 Every other directive on the legacy surface reads under the rewrite the same way, with one nuance per directive worth flagging:
@@ -248,6 +254,7 @@ Every other directive on the legacy surface reads under the rewrite the same way
 * xref:../reference/directives/node.adoc[`@node`], xref:../reference/directives/nodeId.adoc[`@nodeId`]: unchanged contract. The migration work is the `@field(name:)` inference removal above, plus the two shapes it lists. `keyColumns:` migration semantics carry over (cursor invalidation on key changes).
 * xref:../reference/directives/condition.adoc[`@condition`]: same surface; the cascade divergence (above) is the only behavior change.
 * xref:../reference/directives/error.adoc[`@error`]: same handler-tuple surface, and `description:` keeps its Graphitron 9 contract of replacing the exception's message on `message:`. Two classify-time rejections are new: duplicate handler tuples, and `description:` on a `{handler: VALIDATION}` entry (the validator emits one error per constraint violation, each with its own interpolated message, so put the client-facing string on the constraint annotation's `message` attribute). xref:error-channel.adoc[How-to: The errors channel] covers the dispatch loop and the resolution order for `message:`.
+* Nested object types without `@table`: a nullable field returning one whose fields are all columns of the parent row still resolves to `null` when they all are, decided over every field of the type whatever the query selects; a non-null field still always resolves to an object. The one divergence is above.
 * xref:../reference/directives/lookupKey.adoc[`@lookupKey`], xref:../reference/directives/splitQuery.adoc[`@splitQuery`]: unchanged. Mid-migration schemas that mixed `@splitQuery` with `@notGenerated` (the legacy custom-batch-fetcher pattern) need to migrate the body to `@service` (above).
 
 == Migration sequence

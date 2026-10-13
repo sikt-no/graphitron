@@ -1845,8 +1845,13 @@ INSERT INTO film_price (film_id, currency_code, amount) VALUES
     (1, 'NOK', 49.90),
     (1, 'EUR', 4.20);
 
+-- Host 1 stays first: PivotExecutionTest reads it by position. Hosts 2 and 3 serve the nesting
+-- null contract: every column null (a nullable wrapper resolves to null), and nb alone set (the
+-- wrapper's presence does not depend on which of its fields the query selects).
 INSERT INTO pivot_nesting_host (host_id, nn, nb, se, en) VALUES
-    (1, 'nn-vert', 'nb-vert', NULL, 'en-host');
+    (1, 'nn-vert', 'nb-vert', NULL, 'en-host'),
+    (2, NULL, NULL, NULL, NULL),
+    (3, NULL, 'nb-only', NULL, NULL);
 
 -- Execution-tier fixture for the ordering contract on a @splitQuery child list whose target has
 -- NO PRIMARY KEY. A consumer reported this shape: a batched child list over a keyless relation,
