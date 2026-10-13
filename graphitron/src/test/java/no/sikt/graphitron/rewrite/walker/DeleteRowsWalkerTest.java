@@ -49,7 +49,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @UnitTier
 class DeleteRowsWalkerTest {
 
-    private static final String NODE_FIXTURE = "no.sikt.graphitron.rewrite.nodeidfixture";
+    private static final String NODE_FIXTURE = "no.sikt.graphitron.rewrite.test.jooq";
 
     private final DeleteRowsWalker walker = new DeleteRowsWalker();
     private final JooqCatalog PUBLIC = new JooqCatalog(DEFAULT_JOOQ_PACKAGE);

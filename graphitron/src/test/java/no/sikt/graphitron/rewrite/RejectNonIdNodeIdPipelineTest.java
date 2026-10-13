@@ -39,7 +39,7 @@ class RejectNonIdNodeIdPipelineTest {
     // ChildField.ColumnBackedReferenceField with NodeIdEncodeKeys — exactly finding H's encoded-key shape.
     private static final RunContext FIXTURE_CTX = new RunContext(
         List.of(), Path.of(""), "RejectNonIdNodeIdPipelineTest", Path.of(""),
-        DEFAULT_OUTPUT_PACKAGE, "no.sikt.graphitron.rewrite.nodeidfixture"
+        DEFAULT_OUTPUT_PACKAGE, "no.sikt.graphitron.rewrite.test.jooq"
     );
 
     // ===== Finding F: @nodeId on a non-ID input-object field =====

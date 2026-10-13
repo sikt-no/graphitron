@@ -874,7 +874,7 @@ class TestServiceStub {
      * reconciled to node-key (decode) order {@code [fk_a, fk_b, fk_c]}, not the FK declaration order.
      */
     public static String modifyReorderedFkChild(
-            no.sikt.graphitron.rewrite.nodeidfixture.tables.records.ReorderedFkChildRecord in) {
+            no.sikt.graphitron.rewrite.test.jooq.nodeidfixture.tables.records.ReorderedFkChildRecord in) {
         throw new UnsupportedOperationException();
     }
 
@@ -886,7 +886,7 @@ class TestServiceStub {
      * omitting it gives the ambiguous-FK rejection.
      */
     public static String modifyStudierett(
-            no.sikt.graphitron.rewrite.idreffixture.tables.records.StudierettRecord in) {
+            no.sikt.graphitron.rewrite.test.jooq.idreffixture.tables.records.StudierettRecord in) {
         throw new UnsupportedOperationException();
     }
 
@@ -897,7 +897,7 @@ class TestServiceStub {
      * {@code @nodeId(typeName: "ParentNode")} through that FK leaves {@code pk_id} uncovered, which rejects.
      */
     public static String modifyChildRef(
-            no.sikt.graphitron.rewrite.nodeidfixture.tables.records.ChildRefRecord in) {
+            no.sikt.graphitron.rewrite.test.jooq.nodeidfixture.tables.records.ChildRefRecord in) {
         throw new UnsupportedOperationException();
     }
 

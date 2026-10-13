@@ -44,7 +44,7 @@ class MutationTableArgClassificationTest {
         Path.of(""), "MutationTableArgClassificationTest",
         Path.of(""),
         "fake.code.generated",
-        "no.sikt.graphitron.rewrite.nodeidfixture"
+        "no.sikt.graphitron.rewrite.test.jooq"
     );
 
     @Test

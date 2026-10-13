@@ -25,8 +25,8 @@ import no.sikt.graphitron.model.jooq.JooqCatalog;
 @UnitTier
 class JooqCatalogIdRefTest {
 
-    private static final String NODEID_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.nodeidfixture";
-    private static final String IDREF_JOOQ_PACKAGE  = "no.sikt.graphitron.rewrite.idreffixture";
+    private static final String NODEID_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
+    private static final String IDREF_JOOQ_PACKAGE  = "no.sikt.graphitron.rewrite.test.jooq";
 
     private static JooqCatalog sakila() {
         return new JooqCatalog(DEFAULT_JOOQ_PACKAGE);

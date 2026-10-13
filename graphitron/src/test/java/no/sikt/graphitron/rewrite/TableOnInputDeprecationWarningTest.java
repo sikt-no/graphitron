@@ -49,7 +49,7 @@ class TableOnInputDeprecationWarningTest {
         Path.of(""), "TableOnInputDeprecationWarningTest",
         Path.of(""),
         "fake.code.generated",
-        "no.sikt.graphitron.rewrite.nodeidfixture"
+        "no.sikt.graphitron.rewrite.test.jooq"
     );
 
     @Test

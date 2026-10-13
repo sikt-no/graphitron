@@ -29,7 +29,7 @@ import no.sikt.graphitron.model.config.RunContext;
 @UnitTier
 class SynthesizeFkJoinReorderedKeysTest {
 
-    private static final String NODEID_PACKAGE = "no.sikt.graphitron.rewrite.nodeidfixture";
+    private static final String NODEID_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
 
     private static JooqCatalog nodeIdCatalog() {
         return new JooqCatalog(NODEID_PACKAGE);

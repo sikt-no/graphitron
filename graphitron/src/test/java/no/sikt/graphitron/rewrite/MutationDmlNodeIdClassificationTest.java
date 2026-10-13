@@ -35,7 +35,7 @@ class MutationDmlNodeIdClassificationTest {
         Path.of(""), "MutationDmlNodeIdClassificationTest",
         Path.of(""),
         "fake.code.generated",
-        "no.sikt.graphitron.rewrite.nodeidfixture"
+        "no.sikt.graphitron.rewrite.test.jooq"
     );
 
     @Test

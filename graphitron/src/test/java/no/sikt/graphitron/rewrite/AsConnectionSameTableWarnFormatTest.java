@@ -41,7 +41,7 @@ class AsConnectionSameTableWarnFormatTest {
         Path.of(""), "AsConnectionSameTableWarnFormatTest",
         Path.of(""),
         "fake.code.generated",
-        "no.sikt.graphitron.rewrite.nodeidfixture"
+        "no.sikt.graphitron.rewrite.test.jooq"
     );
 
     private static final String CONNECTION_DECLS = """

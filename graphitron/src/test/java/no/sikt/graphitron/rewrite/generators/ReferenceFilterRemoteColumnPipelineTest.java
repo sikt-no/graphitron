@@ -45,7 +45,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class ReferenceFilterRemoteColumnPipelineTest {
 
-    private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.nodeidfixture";
+    private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
     private static final RunContext FIXTURE_CTX = new RunContext(
         List.of(), Path.of(""), "ReferenceFilterRemoteColumnPipelineTest", Path.of(""),
         DEFAULT_OUTPUT_PACKAGE, FIXTURE_JOOQ_PACKAGE);

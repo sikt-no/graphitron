@@ -30,7 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class NodeMetadataCaptureTest {
 
-    private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.nodeidfixture";
+    private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
 
     private static final String SDL = """
         type Query {

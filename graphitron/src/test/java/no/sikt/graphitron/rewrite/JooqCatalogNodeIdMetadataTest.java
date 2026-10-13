@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.model.jooq.JooqCatalog.ColumnEntry;
 import no.sikt.graphitron.model.jooq.ColumnRef;
-import no.sikt.graphitron.rewrite.nodeidfixture.tables.Bar;
+import no.sikt.graphitron.rewrite.test.jooq.nodeidfixture.tables.Bar;
 import org.jooq.Field;
 import org.jooq.impl.DSL;
 import org.jooq.impl.SQLDataType;
@@ -28,7 +28,7 @@ import no.sikt.graphitron.model.jooq.JooqCatalog;
 @UnitTier
 class JooqCatalogNodeIdMetadataTest {
 
-    private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.nodeidfixture";
+    private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
 
     private JooqCatalog catalog() {
         return new JooqCatalog(FIXTURE_JOOQ_PACKAGE);

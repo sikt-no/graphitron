@@ -106,7 +106,7 @@ class ScalarReferenceClosurePipelineTest {
 
     private static final RunContext FIXTURE_CTX = new RunContext(
         List.of(), Path.of(""), "ScalarReferenceClosurePipelineTest", Path.of(""),
-        DEFAULT_OUTPUT_PACKAGE, "no.sikt.graphitron.rewrite.nodeidfixture");
+        DEFAULT_OUTPUT_PACKAGE, "no.sikt.graphitron.rewrite.test.jooq");
 
     /**
      * The classified {@link BuildContext} after the type pass, the same seam

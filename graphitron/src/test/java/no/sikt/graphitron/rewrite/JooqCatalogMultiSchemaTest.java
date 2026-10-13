@@ -417,7 +417,7 @@ class JooqCatalogMultiSchemaTest {
         // the `__` separator and whose SQL name does not, so the two namespaces are distinguishable
         // in the (unranked) candidate list the rejection carries.
         var ctx = new BuildContext(null,
-            new JooqCatalog("no.sikt.graphitron.rewrite.nodeidfixture"), stubRunContext());
+            new JooqCatalog("no.sikt.graphitron.rewrite.test.jooq"), stubRunContext());
 
         // Bare SQL-form attempt -> SQL-namespace candidates (no TABLE__CONSTRAINT separator).
         var sqlForm = (no.sikt.graphitron.model.diagnostics.Rejection.AuthorError.UnknownName)

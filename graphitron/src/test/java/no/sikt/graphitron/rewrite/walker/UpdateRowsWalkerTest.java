@@ -42,7 +42,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @UnitTier
 class UpdateRowsWalkerTest {
 
-    private static final String NODE_FIXTURE = "no.sikt.graphitron.rewrite.nodeidfixture";
+    private static final String NODE_FIXTURE = "no.sikt.graphitron.rewrite.test.jooq";
 
     private final UpdateRowsWalker walker = new UpdateRowsWalker();
     private final JooqCatalog PUBLIC = new JooqCatalog(DEFAULT_JOOQ_PACKAGE);

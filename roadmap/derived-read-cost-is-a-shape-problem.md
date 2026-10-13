@@ -1498,7 +1498,7 @@ conversion frees one.
   so a derivation that drops `graph_name` fails whichever document it leaks into.
   `PolymorphicNodeIdDecodeTest` waits on the branch above, because a document written now would pin
   the rule that branch replaces.
-* **The fixture catalog is one catalog over every schema** `open`. `graphitron-sakila-db` generates
+* **The fixture catalog is one catalog over every schema** `done`. `graphitron-sakila-db` generates
   four catalogs from one database: `public`, `nodeidfixture` and `idreffixture` each pinned to one
   `<inputSchema>`, and the multischema fixture over `multischema_a` and `multischema_b`, which omits
   it to get jOOQ's per-schema sub-package layout, the one consumers with several schemas have. The
@@ -1542,9 +1542,14 @@ conversion frees one.
       as the fixture codegen did, and the codegen is gone. The fixtures' second multi-schema
       catalog constants and constructors fold into the default; the MCP cases that wanted a
       catalog other than the default had moved to the single-schema fixture first.
+    * **The node-id fixtures are part of the fixture catalog** `done`. `nodeidfixture` and
+      `idreffixture` are read as `<root>.nodeidfixture` and `<root>.idreffixture`, and their
+      codegens are gone. Nothing failed: their tables are bare-unique across the catalog, and the
+      metadata `NodeIdFixtureGenerator` keys on a bare table name reaches them as before.
 * **The table-binding and node subject converts** `open`, and frees "The node is settled from the
-  position-keyed entries". Its conversions wait on the fixture catalog above, the nodes subject's
-  cases wanting metadata keyed off the primary key and one table name in two schemas. Forty-five classes seed `@table` and `@node` through `seedTableBinding`,
+  position-keyed entries". Its conversions waited on the fixture catalog above, the nodes subject's
+  cases wanting metadata keyed off the primary key and one table name in two schemas, which every
+  fact document now reaches. Forty-five classes seed `@table` and `@node` through `seedTableBinding`,
   `seedNode` and their siblings, which write the coordinate copies. Read for a production reader
   first, on this branch's terms: fifteen of them had none, and four pinned a dead relation beside a
   live one.

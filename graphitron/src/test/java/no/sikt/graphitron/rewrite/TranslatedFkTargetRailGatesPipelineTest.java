@@ -49,7 +49,7 @@ class TranslatedFkTargetRailGatesPipelineTest {
         Path.of(""), "TranslatedFkTargetRailGatesPipelineTest",
         Path.of(""),
         "fake.code.generated",
-        "no.sikt.graphitron.rewrite.nodeidfixture"
+        "no.sikt.graphitron.rewrite.test.jooq"
     );
 
     /** The shared cause every rail reports, minted by {@code FilterBinding.remoteBindingUnsupported}. */

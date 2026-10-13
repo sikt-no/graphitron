@@ -353,8 +353,8 @@ class JooqRecordServiceParamPipelineTest {
             DEFAULT_OUTPUT_PACKAGE, jooqPackage);
     }
 
-    private static final RunContext NODEID_CTX = fixtureCtx("no.sikt.graphitron.rewrite.nodeidfixture");
-    private static final RunContext IDREF_CTX = fixtureCtx("no.sikt.graphitron.rewrite.idreffixture");
+    private static final RunContext NODEID_CTX = fixtureCtx("no.sikt.graphitron.rewrite.test.jooq");
+    private static final RunContext IDREF_CTX = fixtureCtx("no.sikt.graphitron.rewrite.test.jooq");
 
     private static final String PURE_FK_SDL = """
         type Film implements Node @table(name: "film") @node { id: ID! }

@@ -45,7 +45,7 @@ class ConditionCommandsPipelineTest {
      */
     private static final RunContext NODE_ID_FIXTURE_CTX = new RunContext(
         List.of(), Path.of(""), "ConditionCommandsPipelineTest", Path.of(""),
-        DEFAULT_OUTPUT_PACKAGE, "no.sikt.graphitron.rewrite.nodeidfixture");
+        DEFAULT_OUTPUT_PACKAGE, "no.sikt.graphitron.rewrite.test.jooq");
 
     @Test
     void filteredRootCoordinate_producesOneRowCarryingBothArms() {
