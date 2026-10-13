@@ -1,7 +1,7 @@
 ---
 id: R1024
 title: "Node and entity dispatch hand no tenant down, so Inherited children of a node fail"
-status: In Review
+status: Ready
 bucket: bug
 priority: 2
 theme: runtime-connection
@@ -95,6 +95,16 @@ Landed as specified. Points for the reviewer:
 - *Classifier.* `routableDispatchSurface` now reads `byEntityType` alone. `TenantBindingClassificationTest` and `TenantScopeValidationTest` pass unchanged.
 - *Execution coverage* is the three named cases in `TenantDivinedRoutingExecutionTest`, all green beside the existing global-node, refused-tenant and fan-out cases (69 in the class).
 - *Sandbox flakes seen during verification, not this change:* `TextDocumentServiceTest.completionAfterMultiByteDescriptionResolvesCorrectDirective` timed out once under reactor-parallel load and passed on the rerun; `GraphQLQueryTest.filmsByTitleBean_absentInput_buildsNoBeanAndLeavesTheFieldUnfiltered` saw a stale DML film row in the local `rewrite_test` database (the case R1026's notes record) and passed on a module rerun.
+
+## Reviewer findings
+
+### In Review → Done, 2026-10-13: rework (one finding, test tier only)
+
+The code is the change the spec approved, and the goal is shown delivered. The emitted multi-tenant dispatcher calls `TenantConnections.handDown` in every per-tenant group and wraps the global group in a bare envelope; `getNode` / `fetchById` return `DataFetcherResult<Record>`; `routableDispatchSurface` reads `byEntityType` alone. The three named execution cases pass beside the existing global-node, refused-tenant and fan-out cases (69 green in `TenantDivinedRoutingExecutionTest`), and the full verification build is green on `84e5b99`. Nothing below asks for a change to main sources.
+
+**Finding (blocks on the approval precondition "no code-string assertions on generated method bodies in the delivered tests", and on the spec's own Tests section):** `TenantRuntimeKeyTypeTest.multiTenantCarrierShipsTheFanOutHelpers` gained two new string matches against emitted method bodies, `.contains("elements.add(handDown(row, success.key()))")` (the body of `fanOutRows`) and `.contains(".localContext(tenantKey)")` (the body of `handDown`). The implementation notes present this as pinning "the helper and the fan-out's call to it". `development-principles.adoc` ("Behaviour is pinned at the pipeline tier and above") bans this at every tier, and the spec's Tests section turned down exactly this pin ("asserting the stamp as code strings ... would pin shape, not behaviour"). This delivery shows why the ban exists: the refactor broke the old body match `.localContext(success.key())`, and the fix replaced it with two new ones, so the next refactor of either body breaks them again.
+
+**What satisfies it:** drop both body matches. Keep the shape of `handDown` if you want it pinned, but read it through the test's existing `method(...)` / `parameters(...)` helpers rather than the rendered string: public static, returns `DataFetcherResult<T>`, parameters `T row` and the typed `java.lang.Integer tenantKey`. That last one is the typed-key guarantee the spec asked for, and it is a signature fact. The behaviour the dropped matches stood for already has its pins at execution tier: the fan-out's per-element stamp in the existing `filmsEverywhere` / batched fan-out cases, and dispatch's stamp in the three new cases. Then update the implementation note that describes the carrier test. No other change is needed to reach Done.
 
 ## Other solutions we've considered
 
