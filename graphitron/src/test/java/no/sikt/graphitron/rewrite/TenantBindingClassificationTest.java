@@ -2826,4 +2826,68 @@ class TenantBindingClassificationTest {
         assertInherited(schema, "FilmStock", "byFilmId");
         assertThat(schema.tenantBindings().rejections()).isEmpty();
     }
+
+    // ===== A rejected optional-only root rejects alone =====
+
+    @Test
+    void aRejectedOptionalOnlyRootLeavesItsSubtreeInheritingFromTheOtherRoots() {
+        // Both repairs the rejection offers (non-null, or @tenantFanOut) make the root establish
+        // a tenant, so its subtree is judged as if it already did and only the root itself rejects.
+        var schema = build("""
+            type Film @table(name: "film") {
+                title: String
+                inventories: [Inventory!]! @splitQuery
+                inventoriesBy(filmId: Int @field(name: "film_id")): [Inventory!]! @splitQuery
+            }
+            type Inventory @table(name: "inventory") { inventoryId: Int }
+            type Query {
+                films(filmId: Int! @field(name: "film_id")): [Film!]!
+                filmsMaybe(filmId: Int @field(name: "film_id")): [Film!]!
+            }
+            """);
+
+        assertRejectsOptionalOnly(schema, "Query.filmsMaybe", "filmId", true);
+        assertInherited(schema, "Film", "inventories");
+        assertInherited(schema, "Film", "inventoriesBy");
+        assertThat(schema.tenantBindings().rejections()).hasSize(1);
+    }
+
+    @Test
+    void anOptionalOnlyRootThatNeedsNoTenantStillHandsDownNothing() {
+        // The same service and input as wrapperServiceWithANodeIdRecordMemberDivinesAndItsChildrenInherit,
+        // with the input made nullable: the decoded slot is optional, so the root reads
+        // conditional. It is handed no connection and its own reach is empty, so it needs no
+        // tenant and runs on the default source; its subtree really has none, and the payload's
+        // tenant-scoped child rejects on its own.
+        var schema = build(SERVICE_TYPES + """
+            type Mutation { rateFilm(in: RateFilmInput): RateFilmsPayload %s }
+            """.formatted(service("rateFilm")));
+
+        assertThat(schema.tenantBindingOf("Mutation", "rateFilm"))
+            .isEqualTo(TenantBinding.Untenanted.DefaultSource.INSTANCE);
+        assertThat(schema.tenantBindings().rejections())
+            .noneMatch(e -> e.coordinate().equals("Mutation.rateFilm"));
+        assertRejects(schema, "RateFilmsPayload.films", "no ancestor established a tenant context");
+    }
+
+    @Test
+    void anOptionalOnlyConnectionServiceRejectsAloneAndItsSubtreeInherits() {
+        // The same nullable input, but the service is handed a DSLContext, so it needs a tenant:
+        // the root rejects with the optional-only detail, and its subtree is judged as either fix
+        // leaves it.
+        var schema = build(SERVICE_TYPES + """
+            type Mutation { rateFilmWithDsl(in: RateFilmInput): RateFilmsPayload %s }
+            """.formatted(service("rateFilmWithDsl")));
+
+        assertThat(schema.tenantBindingOf("Mutation", "rateFilmWithDsl")).isNull();
+        assertThat(schema.tenantBindings().rejections())
+            .singleElement()
+            .satisfies(e -> {
+                var unrouted = (Rejection.AuthorError.UnroutedServiceCall) e.rejection();
+                assertThat(unrouted.declines()).singleElement().asString()
+                    .contains("'Mutation.rateFilmWithDsl' " + OPTIONAL_ONLY + " (in.film)");
+            });
+        assertInherited(schema, "RateFilmsPayload", "films");
+        assertInherited(schema, "Film", "inventories");
+    }
 }

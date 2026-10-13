@@ -468,7 +468,7 @@ public record TenantBindingIndex(
             // The ancestor facts read the dispatch facts just filled, and armOf reads them.
             foldAncestorContexts();
             for (var entry : sites.entrySet()) {
-                var arm = combine(entry.getValue().stream().map(this::armOf).toList());
+                var arm = combine(entry.getValue().stream().map(this::checkedArmOf).toList());
                 if (arm != null) {
                     byCoordinate.put(entry.getKey(), arm);
                 }
@@ -476,6 +476,29 @@ public record TenantBindingIndex(
             sweepUnreachedMarkers();
             sweepTenantMarkers();
             return new TenantBindingIndex(byCoordinate, byEntityType, rejections);
+        }
+
+        /**
+         * {@link #armOf}, holding it to what the ancestor folds assumed: a site
+         * {@link #handsDownAsIfFixed} counted as handing a tenant down must route by its parent
+         * row, inherit, or reject. Any other verdict means the folds handed a tenant to a subtree
+         * that will not get one, which is a generator bug, not an authoring error.
+         */
+        private Verdict checkedArmOf(Site site) {
+            Verdict verdict = armOf(site);
+            boolean expected = switch (verdict) {
+                case Verdict.Rejected ignored -> true;
+                case Verdict.Arm a -> a.binding() instanceof TenantBinding.ParentRowBound
+                    || a.binding() instanceof TenantBinding.Inherited;
+            };
+            if (!expected && handsDownAsIfFixed(site)) {
+                var coord = site.coord();
+                throw new IllegalStateException("Generator bug: '" + coord.getTypeName() + "."
+                    + coord.getFieldName() + "' was counted as handing its subtree a tenant, but"
+                    + " classified " + verdict + " rather than routing by its parent row,"
+                    + " inheriting, or rejecting.");
+            }
+            return verdict;
         }
 
         /**
@@ -713,13 +736,8 @@ public record TenantBindingIndex(
             }
             var members = site.members();
             var direct = directBinding(site);
-            // A root service handed a connection runs its own SQL on that connection, and that SQL
-            // is opaque, so it needs a tenant whatever graphitron's own reach says. Not where the
-            // reach holds a global table: graphitron re-reads that return on the same connection,
-            // and a global service runs on the default source, so the structure decides the field.
-            boolean connectionService = roots.contains(coord.getTypeName())
-                && out instanceof ServiceField && bindsConnection(out) && !anyGlobal;
-            boolean needsTenant = anyTenant || connectionService;
+            boolean connectionService = connectionService(site, anyGlobal);
+            boolean needsTenant = needsTenant(site, reach);
             // The parent decides first, ahead of the field's own arguments: a parent that already
             // supplies a tenant, named by its row or handed down from above, is the tenant the
             // child runs on, and an argument that names the tenant column only filters inside it.
@@ -765,9 +783,11 @@ public record TenantBindingIndex(
                     return new Verdict.Arm(new TenantBinding.ArgumentBound(guaranteed.slots()));
                 }
                 // Every slot is optional, so a request may leave them all out and name no tenant:
-                // there is no correct routing for that request. Where nothing in the field's own
-                // SQL needs a tenant it falls through like an unbound field, and a tenant-scoped
-                // child below it then finds no context and rejects on its own.
+                // there is no correct routing for that request. The rejection is the field's
+                // alone: the ancestor folds treat its subtree as either fix leaves it
+                // (handsDownAsIfFixed). Where nothing in the field's own SQL needs a tenant it
+                // falls through like an unbound field, and a tenant-scoped child below it then
+                // finds no context and rejects on its own.
                 case Reading.Conditional conditional when needsTenant -> {
                     return rejectUnrouted(coordinate, reach, anyTenant,
                         List.of(optionalOnlyDetail(site, coordinate, conditional.slots())),
@@ -861,6 +881,55 @@ public record TenantBindingIndex(
          */
         private boolean acceptsFanOut(Site site) {
             return !site.nested() && fanOutArmOf(site) instanceof Verdict.Arm;
+        }
+
+        /**
+         * Whether the field's own statement needs a tenant: {@code reach} (its
+         * {@link #reachedTables}) holds a tenant-scoped table, or it is a
+         * {@link #connectionService}. A function of the site alone, so the ancestor fold can ask it
+         * before any arm is assigned.
+         */
+        private boolean needsTenant(Site site, List<TableRef> reach) {
+            return reach.stream().anyMatch(this::tenantScoped)
+                || connectionService(site, reach.stream().anyMatch(t -> !tenantScoped(t)));
+        }
+
+        /**
+         * A root service handed a connection runs its own SQL on that connection, and that SQL is
+         * opaque, so it needs a tenant whatever graphitron's own reach says. Not where the reach
+         * holds a global table: graphitron re-reads that return on the same connection, and a
+         * global service runs on the default source, so the structure decides the field.
+         */
+        private boolean connectionService(Site site, boolean anyGlobal) {
+            return roots.contains(site.coord().getTypeName())
+                && site.field() instanceof ServiceField && bindsConnection(site.field()) && !anyGlobal;
+        }
+
+        /**
+         * Whether an optional-only field hands its subtree a tenant in both ancestor folds,
+         * {@link #siteEstablishesContext} and {@link #siteDivinesTenant}: the field carries neither
+         * tenancy marker, every slot naming the tenant is optional ({@link Reading.Conditional}),
+         * and its own statement {@link #needsTenant needs a tenant}.
+         *
+         * <p>Such a field ends in one of three verdicts in {@link #armOf}: it routes by its parent
+         * row, it inherits the tenant its parent type already has on every path, or it rejects. A
+         * rejected field generates nothing, so its subtree is judged as it will be once the
+         * author applies a fix the rejection offers, and each fix hands a tenant down: the
+         * {@link #optionalOnlyDetail} offers a non-null slot, and {@code @tenantFanOut} only where
+         * {@link #acceptsFanOut} holds; a connection service is rejected as
+         * {@link no.sikt.graphitron.model.diagnostics.Rejection.AuthorError.UnroutedServiceCall}
+         * carrying that same detail as a decline, so it is never steered to {@code @globalData},
+         * which would hand nothing down. A rejection that starts offering any other fix must
+         * revisit this predicate; {@link #run} throws if a counted site ends in a fourth verdict.
+         *
+         * <p>Marked fields are excluded: they take their verdict from the marker's ladder, and a
+         * {@code @tenantFanOut} field narrowing on an optional slot ends {@code FanOut}. One that
+         * needs no tenant runs on the default source, and its subtree really has none.
+         */
+        private boolean handsDownAsIfFixed(Site site) {
+            return !fanMarked(site.coord()) && !globalMarked(site.coord())
+                && directBinding(site).reading() instanceof Reading.Conditional
+                && needsTenant(site, reachedTables(site.field()));
         }
 
         // ===== The parent-row binding =====
@@ -1177,7 +1246,10 @@ public record TenantBindingIndex(
         }
 
         private boolean siteDivinesTenant(Site site) {
-            if (directBinding(site).reading() instanceof Reading.Guaranteed) {
+            // The same posture as siteEstablishesContext: a @tenantFanOut field below an
+            // optional-only field rejects now, as it would after either fix.
+            if (directBinding(site).reading() instanceof Reading.Guaranteed
+                    || handsDownAsIfFixed(site)) {
                 return true;
             }
             if (hasKind(site.members(), OperationMember.Kind.NODE_RESOLVE)) {
@@ -1302,7 +1374,11 @@ public record TenantBindingIndex(
          * rather than the generic "nothing maps to the tenant column". A coordinate carrying one
          * also stops divining for its subtree, which is what {@link #reading()} states: it
          * rejects, so nothing is handed down and a child inheriting from it would inherit a value
-         * that is never computed.
+         * that is never computed. That holds for {@link Reading.Declined} only, which has not
+         * adopted the forward-looking posture an optional-only reading takes: a
+         * {@link Reading.Conditional} field that needs a tenant hands its subtree one as either
+         * fix would ({@link Fold#handsDownAsIfFixed}), so it rejects without its children
+         * repeating the error.
          *
          * <p>{@code evidence} names the argument values typed by a tenant-scoped table that bound
          * no slot (a {@code FilmRecord} bound only to {@code title}, a decode of a tenant-scoped
@@ -2168,9 +2244,11 @@ public record TenantBindingIndex(
         }
 
         private boolean siteEstablishesContext(Site site) {
-            // Only a guaranteed binding names a tenant on every request; an optional-only field
-            // either rejects or inherits a tenant an upstream edge already counted.
-            if (directBinding(site).reading() instanceof Reading.Guaranteed) {
+            // A guaranteed binding names a tenant on every request. An optional-only field that
+            // needs a tenant is judged as its fixes leave it, so it rejects alone rather than
+            // voiding the context of every type it reaches.
+            if (directBinding(site).reading() instanceof Reading.Guaranteed
+                    || handsDownAsIfFixed(site)) {
                 return true;
             }
             if (hasKind(site.members(), OperationMember.Kind.NODE_RESOLVE)) {
