@@ -50,15 +50,26 @@ build (for example `cd opptak-subgraph && mvn graphitron:dev`, for faster
 startup and scoped logs) picks up the `@service` / `@condition` /
 `@record` classes declared in *sibling* modules automatically: completion,
 hover, go-to-definition, find-references, and the unknown-class diagnostics all resolve
-against them. Graphitron reads the parent pom's `<modules>` list to find the
-siblings, so this works for the standard reactor layout without running from
-the aggregator.
+against them. Graphitron finds the workspace by walking up to the outermost pom
+whose `<modules>` lists the module you started from, and takes every module
+beneath it, reading each one's coordinate from its pom. This works for the
+standard reactor layout, nested aggregators included, without running from the
+aggregator.
 
-The one caveat: a sibling must have been compiled at least once, so its
-`target/classes` exists on disk. `graphitron:dev` does not build siblings for
-you; run `mvn install` (or `mvn -pl <sibling> compile`) once after a checkout.
-If the dev goal reports that it resolved a single module and found no siblings,
-check that the parent pom's `<modules>` lists the module you started from.
+A sibling is read from its own output: its `target/classes`, else its jar in
+`target`. Maven resolves a module it did not build in this run to the copy
+installed in the local repository, which may be older than the sibling's
+sources; graphitron puts the sibling's own output in that copy's place on the
+classpath, so a class added since the last install resolves. Every graphitron
+goal does this, not only `graphitron:dev`.
+
+The caveat: `graphitron:dev` does not compile siblings. A sibling with no
+`target/classes` and no jar in `target` is read from its installed copy, and
+one with no installed copy either fails Maven's own dependency resolution before
+graphitron runs, so compile it once after a checkout
+(`mvn -pl <sibling> compile`), and again when its sources change. If the dev goal
+reports that it resolved a single module and found no siblings, check that the
+parent pom's `<modules>` lists the module you started from.
 ****
 
 [#federation-internals]

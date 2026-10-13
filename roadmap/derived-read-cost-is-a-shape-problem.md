@@ -1764,6 +1764,12 @@ not surviving the harvest, so they are recorded here as they land rather than fo
 * **Changed: `graphitron:capture` never fails over the schema it read** ("capture captures, and
   nothing else"). A schema that will not parse, assemble or classify is still captured, and what
   refused it is in the store as `graphql_schema_problem` rows rather than in the build's exit code.
+* **Changed: a reactor sibling is read from its own output** ("a workspace module is read from its
+  own output, in place"). In a multi-module project every graphitron goal, `graphitron:generate`
+  and `graphitron:dev` among them, reads a sibling module from its `target/classes`, else its jar in
+  `target`, in the place Maven put the module on the classpath, and falls back to the installed copy
+  only where the sibling has no output. A class added to a sibling since its last install is no
+  longer refused as being in a module the project does not declare.
 
 ## Retired vocabulary
 
