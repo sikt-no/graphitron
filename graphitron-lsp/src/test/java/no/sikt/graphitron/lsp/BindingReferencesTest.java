@@ -46,6 +46,11 @@ class BindingReferencesTest {
      *  9   title: String
      * 12 type Other @table(name: "language") {
      * 13   name: String @service(service: {className: ..., method: "shifted"})
+     * 16 type Round @table(name: "actor") {
+     * 17   trip: [Foo!]! @reference(path: [
+     * 18     {table: "film_actor"},
+     * 19     {table: "actor"},
+     * 20     {table: "film_actor"}
      * </pre>
      */
     private static final String CAPTURED = """
@@ -63,6 +68,14 @@ class BindingReferencesTest {
 
         type Other @table(name: "language") {
           name: String @service(service: {className: "no.sikt.graphitron.rewrite.test.services.PriceService", method: "shifted"})
+        }
+
+        type Round @table(name: "actor") {
+          trip: [Foo!]! @reference(path: [
+            {table: "film_actor"},
+            {table: "actor"},
+            {table: "film_actor"}
+          ])
         }
         """;
 
@@ -143,7 +156,7 @@ class BindingReferencesTest {
             .containsExactly(4);
     }
 
-    /** A path hop is positioned by the reference it belongs to, the store holding no hop position. */
+    /** A path hop is located at the name it wrote, not at the application holding the path. */
     @Test
     void aPathHopKeyedOnTheConstraintIsListed() {
         var uses = referencesTo(
@@ -151,6 +164,25 @@ class BindingReferencesTest {
                 + FK_CONSTANT + "\"}]) }", 0, FK_CONSTANT);
 
         assertThat(uses).extracting(BindingReferencesTest::line).containsExactly(5);
+        assertThat(uses).extracting(BindingReferencesTest::character)
+            .as("the key's own string, not the @reference")
+            .containsExactly(column(5, "\"" + FK_CONSTANT + "\""));
+    }
+
+    /**
+     * Each step naming a table is a use of its own, at the line it was written: a path several lines
+     * long names film_actor twice, and both are listed where the author wrote them.
+     */
+    @Test
+    void eachStepNamingTheTableIsListedWhereItWasWritten() {
+        var uses = referencesTo("type Cursor @table(name: \"film_actor\") { bar: Int }", 0,
+            "film_actor");
+
+        assertThat(uses).extracting(BindingReferencesTest::line)
+            .as("the first and third steps of Round.trip, never the @reference on line 17")
+            .containsExactly(18, 20);
+        assertThat(uses).extracting(BindingReferencesTest::character)
+            .containsExactly(column(18, "\"film_actor\""), column(20, "\"film_actor\""));
     }
 
     /**
@@ -175,6 +207,15 @@ class BindingReferencesTest {
 
     private static int line(Location use) {
         return use.getRange().getStart().getLine();
+    }
+
+    private static int character(Location use) {
+        return use.getRange().getStart().getCharacter();
+    }
+
+    /** Where {@code text} starts on one zero-based line of {@link #CAPTURED}. */
+    private static int column(int line, String text) {
+        return CAPTURED.split("\n")[line].indexOf(text);
     }
 
     private static List<Location> referencesTo(String buffer, int line, String token) {

@@ -511,6 +511,12 @@ entry is written by the capture phase alone. Counted in `roadmap/audits/2026-09-
       argument's `@referenceFor` is found as well. `graphitron_reference_for_step_entry` and
       `graphitron_argument_reference_for_step_entry` then had no reader and went; the registry
       decode still writes their method references and spellings.
+    * **The language server locates a step at the name it wrote** `done`. A step is located at the
+      string written under `table:` or `key:`, the value the twin's element holds, rather than at
+      the application holding the path: that string is the reference an editor would change, a
+      path naming one table at two steps is two uses, and a step several lines into a path is
+      found where it was written. The twin keys the step by its element already, so the climb to
+      the holder's parent goes.
     * **Whether a coordinate carries a path is read off its applications** `open`. The node-id
       instruction and column-scope rules and `intent_field_column_table` ask only that, at fields,
       input fields and arguments alike, which `graphql_directive_application` answers once an

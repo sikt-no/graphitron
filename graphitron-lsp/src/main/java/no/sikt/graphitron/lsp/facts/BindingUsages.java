@@ -24,7 +24,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_REFEREN
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_REFERENCE_FOR_TABLE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_REFERENCE_KEY_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_REFERENCE_TABLE_STEP_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_VALUE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
@@ -40,9 +39,8 @@ import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
  * <p>The decoded {@code graphitron_} relations are the reverse index already: each is keyed by SDL
  * coordinate and carries the bound target as a payload column, so "who binds this?" is a filter
  * rather than a walk. Most of them carry their own {@code source_name} / {@code source_line} /
- * {@code source_column} too, so a site needs no join back to the generic directive census; the three
- * reference-step families are the exception, and they take their position from the reference row
- * they belong to.
+ * {@code source_column} too, so a site needs no join back to the generic directive census. A path
+ * step is read off the transcription's step twins and located at the name it wrote.
  *
  * <p>Three matching rules appear here and the differences between them are deliberate, because a
  * reader deserves to know which of their answers is resolution-exact and which is name-exact.
@@ -241,26 +239,28 @@ public final class BindingUsages {
 
     /**
      * The {@code @reference} and {@code @referenceFor} path steps naming this table or key, at every
-     * site a path is written, each located at the application holding it. A step is a use of the
-     * name even though the site reported is the application's.
+     * site a path is written, each located at the name itself: the string the step wrote under
+     * {@code table:} or {@code key:}, which is the reference an editor would change. A path naming
+     * one table at two steps is two uses, and a step several lines into a path is found where it
+     * was written rather than at the application holding the path.
      */
     private static Result<Record3<String, Integer, Integer>> hopSites(
         StoreHandle store, Spelled spelled
     ) {
-        var v = GRAPHQL_AST_VALUE_ENTRY;
-        var holder = GRAPHQL_AST_ENTRY;
+        // The step twins key a step by the path element it sits in; the name is the value written
+        // inside that element at the field the twin spells.
+        var name = GRAPHQL_AST_VALUE_ENTRY;
+        String fieldName = spelled.isKey() ? "key" : "table";
         Select<Record3<String, Integer, Integer>> sites = null;
         for (var step : spelled.isKey() ? KEY_STEPS : TABLE_STEPS) {
             var select = store.dsl()
-                .select(v.SOURCE_NAME, holder.PARENT_LINE, holder.PARENT_COLUMN)
+                .select(name.SOURCE_NAME, name.SOURCE_LINE, name.SOURCE_COLUMN)
                 .from(step.table())
-                .join(v).on(v.GRAPH_NAME.eq(step.graphName()), v.SOURCE_NAME.eq(step.sourceName()),
-                    v.SOURCE_LINE.eq(step.sourceLine()), v.SOURCE_COLUMN.eq(step.sourceColumn()))
-                // The argument holding the path, whose parent is the application.
-                .join(holder).on(holder.GRAPH_NAME.eq(v.GRAPH_NAME),
-                    holder.SOURCE_NAME.eq(v.SOURCE_NAME), holder.SOURCE_LINE.eq(v.HOLDER_LINE),
-                    holder.SOURCE_COLUMN.eq(v.HOLDER_COLUMN))
-                .where(v.GRAPH_NAME.eq(store.graphName()))
+                .join(name).on(name.GRAPH_NAME.eq(step.graphName()),
+                    name.SOURCE_NAME.eq(step.sourceName()), name.PARENT_LINE.eq(step.sourceLine()),
+                    name.PARENT_COLUMN.eq(step.sourceColumn()),
+                    name.OBJECT_FIELD_NAME.eq(fieldName))
+                .where(step.graphName().eq(store.graphName()))
                 .and(hopNames(spelled, step.nameUpper(), step.namespaceUpper()));
             sites = sites == null ? select : sites.unionAll(select);
         }
@@ -325,9 +325,9 @@ public final class BindingUsages {
     }
 
     /**
-     * File, then position, with duplicates collapsed. A path that names the same table at two hops
-     * is one site as far as an editor is concerned, and two identical entries in a usage list read
-     * as a bug rather than as a detail about paths.
+     * File, then position, with duplicates collapsed: two arms reaching one written position are one
+     * site, and two identical entries in a usage list read as a bug rather than as a detail of how
+     * the answer was gathered.
      */
     static List<Location> sorted(List<Location> sites) {
         return sites.stream()
