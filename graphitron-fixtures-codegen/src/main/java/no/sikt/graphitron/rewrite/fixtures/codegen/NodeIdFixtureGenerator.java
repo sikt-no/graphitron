@@ -11,7 +11,7 @@ import java.util.Locale;
 /**
  * Custom jOOQ code generator for graphitron-rewrite test fixtures. Appends NodeId-metadata
  * constants ({@code __NODE_TYPE_ID} and {@code __NODE_KEY_COLUMNS}) to specific fixture tables
- * across the public, nodeidfixture, and idreffixture schemas, mimicking what Sikt's
+ * across the public, nodeidfixture, idreffixture and singleschema schemas, mimicking what Sikt's
  * {@code KjerneJooqGenerator} emits for NodeId-bearing tables in production.
  *
  * <p>The mapping is hard-coded in {@link #METADATA}. Tables outside the map generate as stock jOOQ
@@ -55,6 +55,8 @@ public class NodeIdFixtureGenerator extends JavaGenerator {
         // through @field.
         Map.entry("keyed_elsewhere", new Metadata("KeyedElsewhere", List.of("KEY_X"))),
         Map.entry("studieprogram", new Metadata("Studieprogram", List.of("STUDIEPROGRAM_ID"))),
+        // The single-schema fixture's node table, the root-package counterpart of baz.
+        Map.entry("solo_parent", new Metadata("SoloParent", List.of("PARENT_ID"))),
         // Composite-PK NodeType in the public (sakila-derived) schema, used by
         // GraphQLQueryTest's filmActorByNodeId round-trip for the LookupArg.DecodedRecord
         // arm. PK column order matches `init.sql`'s declaration: actor_id first, film_id second.

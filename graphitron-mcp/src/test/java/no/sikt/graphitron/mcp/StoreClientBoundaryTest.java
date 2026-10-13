@@ -74,7 +74,8 @@ class StoreClientBoundaryTest {
         "no.sikt.graphitron.rewrite.test.jooq",
         "no.sikt.graphitron.rewrite.test.services",
         "no.sikt.graphitron.rewrite.test.conditions",
-        "no.sikt.graphitron.rewrite.multischemafixture");
+        "no.sikt.graphitron.rewrite.multischemafixture",
+        "no.sikt.graphitron.rewrite.singleschemafixture");
 
     /**
      * The store's boot class and the JDBC vocabulary a hand-rolled connection needs. The module is

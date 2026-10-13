@@ -71,10 +71,16 @@ public final class StoreFixture implements AutoCloseable, FixtureView {
 
     /**
      * The two-schema generated model, which declares {@code event} in both {@code multischema_a} and
-     * {@code multischema_b} precisely so an unqualified name reaches two tables. Also the second
-     * catalog a test needs when its subject is a census that changed rather than a census.
+     * {@code multischema_b} precisely so an unqualified name reaches two tables.
      */
     public static final String MULTISCHEMA_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.multischemafixture";
+
+    /**
+     * The single-schema fixture, a generated model the fixture catalog shares no table with: the
+     * second catalog a test needs when its subject is a census that changed, or two graphs whose
+     * censuses differ, rather than a census.
+     */
+    public static final String OTHER_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.singleschemafixture";
 
     /** SDL for a fixture whose subject is the catalog, so its schema is beside the point. */
     private static final String PLACEHOLDER_SDL = "type Query { placeholder: Int }\n";
@@ -103,6 +109,11 @@ public final class StoreFixture implements AutoCloseable, FixtureView {
     /** The catalog shape over an SDL of the caller's, for a case whose subject spans both. */
     public static StoreFixture ofCatalog(Path directory, String sdl) {
         return ofJooqPackage(directory, sdl, JOOQ_PACKAGE);
+    }
+
+    /** The catalog shape over {@link #OTHER_JOOQ_PACKAGE}, the catalog that is not this one. */
+    public static StoreFixture ofOtherCatalog(Path directory) {
+        return ofJooqPackage(directory, PLACEHOLDER_SDL, OTHER_JOOQ_PACKAGE);
     }
 
     /** The catalog shape over the two-schema generated model. */

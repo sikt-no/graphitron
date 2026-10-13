@@ -74,7 +74,7 @@ jobs:
       - name: Apply graphitron-sakila-db init.sql
         # The local-db profile expects database `rewrite_test` to exist with the rewrite-test
         # schema applied. The Postgres service container creates the database; this step
-        # loads the public + nodeidfixture + idreffixture + multischema_a + multischema_b
+        # loads the public + nodeidfixture + idreffixture + multischema_a + multischema_b + singleschema
         # tables that the jOOQ codegen reads.
         env:
           PGPASSWORD: postgres

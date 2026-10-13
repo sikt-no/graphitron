@@ -21,7 +21,7 @@ The repository is a single Maven reactor rooted at the `graphitron-rewrite-paren
 | Builds the test database and runs jOOQ codegen against it.
 
 | `graphitron-sakila-db`
-| Packages those generated jOOQ classes (Sakila-inspired catalog plus the `nodeidfixture` and `idreffixture` sub-schemas) as a jar that downstream tests depend on.
+| Packages those generated jOOQ classes as a jar that downstream tests depend on: the fixture catalog, every schema of the Sakila-inspired database in a sub-package each, and the single-schema fixture beside it in the root-package layout.
 
 | `graphitron-sakila-service`
 | `@service` / `@externalField` / `@condition` implementations referenced from the example schemas (`FilmService`, `SampleQueryService`, ...). Compile-scope dep on `graphitron-sakila-db` for the jOOQ tables.

@@ -25,9 +25,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * genuinely changed. {@link StoreFixture} pays a schema parse and a catalog walk for that, not a
  * generator run.
  *
- * <p>Three distinct censuses are available and the reaping case needs all three: the single-schema
- * generated model, the two-schema one, and no catalog at all, which is the pre-codegen state and hashes
- * as the empty corpus it is.
+ * <p>Three distinct censuses are available and the reaping case needs all three: the fixture
+ * catalog, the single-schema fixture it shares no table with, and no catalog at all, which is the
+ * pre-codegen state and hashes as the empty corpus it is.
  */
 class CatalogSearchIndexTest {
 
@@ -53,7 +53,7 @@ class CatalogSearchIndexTest {
 
             // A recapture against a different generated model: the graph's source membership is
             // rewritten, so the census its scope sees is another catalog and every descriptor changes.
-            fixture.recaptureCatalog(StoreFixture.MULTISCHEMA_JOOQ_PACKAGE);
+            fixture.recaptureCatalog(StoreFixture.OTHER_JOOQ_PACKAGE);
             assertThat(index.awaitWarm()).isInstanceOf(WarmState.Ready.class);
             assertThat(embedder.embedCalls).as("a changed census re-embeds").hasValue(2);
             assertThat(embedder.lastTexts).isEqualTo(composed(fixture.reader()));
@@ -152,7 +152,7 @@ class CatalogSearchIndexTest {
             // state, whose empty corpus is an answer and hashes as one. Reaping keeps current plus one.
             try (var index = newIndex(reader, new SpyEmbedder(4), cache)) {
                 assertThat(index.awaitWarm()).isInstanceOf(WarmState.Ready.class);
-                fixture.recaptureCatalog(StoreFixture.MULTISCHEMA_JOOQ_PACKAGE);
+                fixture.recaptureCatalog(StoreFixture.OTHER_JOOQ_PACKAGE);
                 assertThat(index.awaitWarm()).isInstanceOf(WarmState.Ready.class);
                 fixture.recaptureCatalog(null);
                 assertThat(index.awaitWarm()).isInstanceOf(WarmState.Ready.class);
