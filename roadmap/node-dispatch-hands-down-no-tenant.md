@@ -1,7 +1,7 @@
 ---
 id: R1024
 title: "Node and entity dispatch hand no tenant down, so Inherited children of a node fail"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 2
 theme: runtime-connection
@@ -83,6 +83,18 @@ One local (`rowType`, `Record` or `Object` by `schema.tenantScopes()`) feeds the
 - **Global node in a multi-tenant build** (regression for the uniform slot shape): the existing `defaultTenant_nodeOfAGlobalType_resolvesInTheDefaultTenantsDatabase` and `nodes_batchSpanningTheSetsEdge_resolvesThePermittedTenant_andNullsTheOther` keep passing.
 - **Fan-out regression**: the existing `filmsEverywhere` / batched fan-out execution cases continue to pass on the shared `handDown` helper.
 - **Consumer reproduction**: sis's `OrganisasjonsenhetInstituttQueryIT.enhetPaaInstituttnivaFarSegSelvSomInstitutt` and `enhetUtenInstituttnummerFarIkkeInstitutt`, once sis generates on trunk (after R1023). Not a gate for Done; the execution-tier reproduction above is.
+
+## Implementation notes
+
+Landed as specified. Points for the reviewer:
+
+- *The stamp has one emitted home.* `TenantConnections.handDown(row, tenantKey)` is typed on the build's tenant key; `fanOutRows` and `fanOutBatchRows` call it in place of their inline `localContext(success.key())`, and the dispatcher's call is minted by `TenantAcquisitionFragments.handDownRow`, so the `LocalContextOwnershipGuardTest` owner list did not grow. `TenantRuntimeKeyTypeTest.multiTenantCarrierShipsTheFanOutHelpers` now pins the helper and the fan-out's call to it.
+- *Slot wrapping sits after the group's SELECT.* `HandleMethodBody.emitSlotWrap` loops the group's bindings and wraps each filled slot: `handDownRow` in the per-tenant branch (with the same `tenantKey` local `dslFor` was routed on), a bare `DataFetcherResult` in the multi-tenant global branch. Groups skipped by `permits` never reach the loop, so refused slots stay `null`.
+- *Single-tenant emission is unchanged.* Every fork reads `TenantScopes.Configured`: the emitted `resolveByReps` javadoc, `fetchById` / `getNode` return types, the `nodes` loader and list types, and the two root fetchers in `TypeFetcherGenerator` (`multiTenant(ctx)`). The single-tenant baselines in `TenantRoutedFetcherPipelineTest` pass untouched.
+- *`fetchById` carries `@SuppressWarnings("unchecked")`* in multi-tenant emission only, for the `(DataFetcherResult<Record>) result[0]` cast the slot contract makes total; the consumer compile runs `-Xlint:all -Werror`.
+- *Classifier.* `routableDispatchSurface` now reads `byEntityType` alone. `TenantBindingClassificationTest` and `TenantScopeValidationTest` pass unchanged.
+- *Execution coverage* is the three named cases in `TenantDivinedRoutingExecutionTest`, all green beside the existing global-node, refused-tenant and fan-out cases (69 in the class).
+- *Sandbox flakes seen during verification, not this change:* `TextDocumentServiceTest.completionAfterMultiByteDescriptionResolvesCorrectDirective` timed out once under reactor-parallel load and passed on the rerun; `GraphQLQueryTest.filmsByTitleBean_absentInput_buildsNoBeanAndLeavesTheFieldUnfiltered` saw a stale DML film row in the local `rewrite_test` database (the case R1026's notes record) and passed on a module rerun.
 
 ## Other solutions we've considered
 
