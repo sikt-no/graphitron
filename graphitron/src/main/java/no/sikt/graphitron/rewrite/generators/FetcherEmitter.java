@@ -12,6 +12,7 @@ import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
 import no.sikt.graphitron.rewrite.model.AccessorResolution;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.ChildField.NestingField.NullContract;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -440,12 +441,15 @@ public final class FetcherEmitter {
      * so the constants resolve by name on any site's record, as the column leaves' reads do.
      */
     private static CodeBlock nestingBody(ChildField.NestingField nf) {
-        if (!(nf.nullContract() instanceof ChildField.NestingField.NullContract.CollapsesWhenAbsent c)) {
-            return CodeBlock.of("return source;\n");
-        }
-        var table = nf.returnType().table();
+        return switch (nf.nullContract()) {
+            case NullContract.AlwaysObject ignored -> CodeBlock.of("return source;\n");
+            case NullContract.CollapsesWhenAbsent c -> presenceCheck(nf.returnType().table(), c.leaves());
+        };
+    }
+
+    private static CodeBlock presenceCheck(TableRef table, List<ChildField.NestingField.PresenceLeaf> leaves) {
         var body = CodeBlock.builder().add("$T row = ($T) source;\n", RECORD, RECORD);
-        for (var leaf : c.leaves()) {
+        for (var leaf : leaves) {
             body.add("if (");
             for (int i = 0; i < leaf.columns().size(); i++) {
                 if (i > 0) body.add(" && ");
