@@ -303,7 +303,7 @@ public final class TestFixtures {
      * Builds a {@link TableRef} with the typed-class fields synthesised from {@code TEST_JOOQ_ROOT}
      * + {@code simpleClassName} (e.g. {@code Film}). Use this for any test that needs a TableRef
      * rooted in a single notional schema; cross-schema scenarios should use the real
-     * multischemafixture catalog via {@link JooqCatalog} instead.
+     * fixture catalog via {@link JooqCatalog} instead.
      */
     public static TableRef tableRef(String sqlName, String javaFieldName, String simpleClassName,
                                     List<ColumnRef> pkColumns) {

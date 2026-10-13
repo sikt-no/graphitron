@@ -310,7 +310,7 @@ class MultiTableOrderingLoweringTest {
             Path.of(""), "MultiTableOrderingLoweringTest",
             Path.of(""),
             "fake.code.generated.multischema",
-            "no.sikt.graphitron.rewrite.multischemafixture"
+            "no.sikt.graphitron.rewrite.test.jooq"
         );
     }
 }

@@ -476,7 +476,7 @@ class EntryDefectTest {
     }
 
     /** A catalog whose two schemas each declare a table named {@code event}. */
-    private static final String MULTISCHEMA = "no.sikt.graphitron.rewrite.multischemafixture";
+    private static final String MULTISCHEMA = "no.sikt.graphitron.rewrite.test.jooq";
 
     /** {@link #withCatalogStore(Path, String, Consumer)} against another generated catalog. */
     private static void withCatalogStore(Path directory, String jooqPackage, String sdl,

@@ -31,8 +31,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * described as offering both schemas' keys would have offered none.
  *
  * <p>The census comes from the fixture modules' real generated jOOQ models, so a constraint name here
- * is one an author could actually have typed, and the multi-schema model supplies the two shapes a
- * single-schema one cannot: a name declared in two schemas, and a name declared twice inside one.
+ * is one an author could actually have typed, and its {@code multischema_a} and {@code multischema_b}
+ * schemas supply the two shapes in question: a name declared in two schemas, and a name declared
+ * twice inside one.
  */
 class ReferenceCompletionsTest {
 
@@ -95,7 +96,7 @@ class ReferenceCompletionsTest {
      */
     @Test
     void anAmbiguousBindingOffersEachCandidatesKeys(@TempDir Path tmp) {
-        try (var fixture = StoreFixture.ofMultiSchemaCatalog(tmp, bound("event"))) {
+        try (var fixture = StoreFixture.ofCatalog(tmp, StoreFixture.GRAPH, bound("event"))) {
             assertThat(labels(items(fixture, keySite())))
                 .contains("multischema_a.note_event_fk", "multischema_b.note_event_fk")
                 .doesNotContain("note_event_fk")
@@ -111,7 +112,7 @@ class ReferenceCompletionsTest {
      */
     @Test
     void oneSpellingCoveringTwoKeysNamesBothJoins(@TempDir Path tmp) {
-        try (var fixture = StoreFixture.ofMultiSchemaCatalog(tmp, bound("gizmo"))) {
+        try (var fixture = StoreFixture.ofCatalog(tmp, StoreFixture.GRAPH, bound("gizmo"))) {
             var items = items(fixture, keySite());
 
             assertThat(labels(items)).containsExactly("dup_gizmo_fk");

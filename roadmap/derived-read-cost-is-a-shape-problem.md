@@ -1537,6 +1537,11 @@ conversion frees one.
     names, qualifying only where two schemas share one. `nodeidfixture`'s `collide_a` and
     `collide_b` share a type id on purpose and keep it, unwarned: two classes sharing a type id
     matter only to a schema binding both.
+    * **The multischema fixture is part of the fixture catalog** `done`. Its readers name
+      `<root>.multischema_a` and `<root>.multischema_b` of the fixture catalog, which jOOQ lays out
+      as the fixture codegen did, and the codegen is gone. The fixtures' second multi-schema
+      catalog constants and constructors fold into the default; the MCP cases that wanted a
+      catalog other than the default had moved to the single-schema fixture first.
 * **The table-binding and node subject converts** `open`, and frees "The node is settled from the
   position-keyed entries". Its conversions wait on the fixture catalog above, the nodes subject's
   cases wanting metadata keyed off the primary key and one table name in two schemas. Forty-five classes seed `@table` and `@node` through `seedTableBinding`,

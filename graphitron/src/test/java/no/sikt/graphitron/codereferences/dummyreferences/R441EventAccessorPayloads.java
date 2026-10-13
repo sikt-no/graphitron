@@ -1,6 +1,6 @@
 package no.sikt.graphitron.codereferences.dummyreferences;
 
-import no.sikt.graphitron.rewrite.multischemafixture.multischema_a.tables.records.EventRecord;
+import no.sikt.graphitron.rewrite.test.jooq.multischema_a.tables.records.EventRecord;
 
 import java.util.List;
 
@@ -41,5 +41,5 @@ public final class R441EventAccessorPayloads {
      * a different table and must be dropped, so the field still rejects.
      */
     public record SchemaBEventsPayload(
-        List<no.sikt.graphitron.rewrite.multischemafixture.multischema_b.tables.records.EventRecord> events) {}
+        List<no.sikt.graphitron.rewrite.test.jooq.multischema_b.tables.records.EventRecord> events) {}
 }

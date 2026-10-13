@@ -173,7 +173,7 @@ class InferredTableHintsTest {
     void anAmbiguousBindingRendersNothing(@TempDir Path directory) {
         // Two schemas declare a table named event, so there is no value inference would fill in.
         // Showing either would tell the author graphitron resolved something it declined to.
-        try (var multiSchema = StoreFixture.ofMultiSchemaCatalog(directory, """
+        try (var multiSchema = StoreFixture.ofCatalog(directory, StoreFixture.GRAPH, """
             type Query { placeholder: Int }
 
             type Foo @table(name: "event") {

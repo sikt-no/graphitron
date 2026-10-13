@@ -621,15 +621,14 @@ class GraphitronMcpServerTest {
     }
 
     /**
-     * A bare spelling two schemas declare names the candidates instead of picking one. This is the
-     * case a capture from the single-schema package cannot produce at all, every name there being
-     * unique, so it reads a census the fixture module generates from two schemas that declare
-     * {@code event} between them for exactly this purpose.
+     * A bare spelling two schemas declare names the candidates instead of picking one. The fixture
+     * catalog's {@code multischema_a} and {@code multischema_b} declare {@code event} between them
+     * for exactly this purpose.
      */
     @Test
     @SuppressWarnings("unchecked")
     void catalogDescribeNamesTheCandidatesForASpellingTwoSchemasDeclare(@TempDir Path tmp) {
-        try (var census = StoreFixture.ofMultiSchemaCatalog(tmp)) {
+        try (var census = StoreFixture.ofCatalog(tmp)) {
             var result = GraphitronMcpServer.catalogDescribeResult(
                 census.handle(), census.reader(), Map.of("table", "event"));
 

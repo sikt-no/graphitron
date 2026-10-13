@@ -913,7 +913,7 @@ class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
-    // ===== Cross-schema helper-name collision fixtures (multischemafixture catalog) =====
+    // ===== Cross-schema helper-name collision fixtures (multischema_a / multischema_b) =====
     //
     // multischema_a.event and multischema_b.event both generate an EventRecord with an identical
     // simple name but distinct packages. A @service field binding each on one *Fetchers class forces
@@ -922,13 +922,13 @@ class TestServiceStub {
 
     /** multischema_a.event record @service param — one arm of the cross-schema collision pair. */
     public static String modifyMultischemaAEvent(
-            no.sikt.graphitron.rewrite.multischemafixture.multischema_a.tables.records.EventRecord in) {
+            no.sikt.graphitron.rewrite.test.jooq.multischema_a.tables.records.EventRecord in) {
         throw new UnsupportedOperationException();
     }
 
     /** multischema_b.event record @service param — the other arm of the cross-schema collision pair. */
     public static String modifyMultischemaBEvent(
-            no.sikt.graphitron.rewrite.multischemafixture.multischema_b.tables.records.EventRecord in) {
+            no.sikt.graphitron.rewrite.test.jooq.multischema_b.tables.records.EventRecord in) {
         throw new UnsupportedOperationException();
     }
 

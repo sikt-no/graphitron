@@ -76,7 +76,7 @@ class DiagnosticsTest {
 
     /** The generated catalog and nothing else, over a graph that binds {@code Foo} to {@code film}. */
     private static StoreFixture catalogOnly;
-    /** The two-schema generated model, where a constraint name stops identifying one key. */
+    /** The fixture catalog under a graph of its own, where a constraint name stops identifying one key. */
     private static StoreFixture multiSchema;
     /** The catalog plus the corpus the class-name, method and scalar arms resolve against. */
     private static StoreFixture withClasses;
@@ -94,7 +94,7 @@ class DiagnosticsTest {
     @BeforeAll
     static void capture() {
         catalogOnly = StoreFixture.held().ofCatalog(catalogRoot, TABLE_SDL);
-        multiSchema = StoreFixture.held().ofMultiSchemaCatalog(multiSchemaRoot, PLACEHOLDER_SDL);
+        multiSchema = StoreFixture.held().ofCatalog(multiSchemaRoot, StoreFixture.GRAPH, PLACEHOLDER_SDL);
         withClasses = StoreFixture.held().ofCatalog(classesRoot, PLACEHOLDER_SDL,
             ClasspathCorpus.entries());
         withBackingClasses = StoreFixture.held().ofCatalog(backingRoot, BACKED_SDL,

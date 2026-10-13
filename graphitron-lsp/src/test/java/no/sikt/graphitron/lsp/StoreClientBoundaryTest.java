@@ -77,8 +77,7 @@ class StoreClientBoundaryTest {
         "no.sikt.graphitron.rewrite.test.conditions",
         "no.sikt.graphitron.rewrite.test.extensions",
         "no.sikt.graphitron.rewrite.test.nameless",
-        "no.sikt.graphitron.rewrite.test.scalars",
-        "no.sikt.graphitron.rewrite.multischemafixture");
+        "no.sikt.graphitron.rewrite.test.scalars");
 
     /** Floors on the scanned-file counts: a walk that reached nothing would otherwise pass. */
     private static final int MIN_MAIN_FILES = 20;

@@ -156,7 +156,7 @@ class HoversTest {
             """);
         var pos = pointAt(file, 0, "event");
 
-        try (var multiSchema = StoreFixture.ofMultiSchemaCatalog(directory, SDL)) {
+        try (var multiSchema = StoreFixture.ofCatalog(directory, StoreFixture.GRAPH, SDL)) {
             var md = markdownOf(multiSchema, file, pos);
 
             assertThat(md).contains("**Table** `event`")
@@ -291,7 +291,7 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "note_event_fk");
 
-        try (var multiSchema = StoreFixture.ofMultiSchemaCatalog(directory, SDL)) {
+        try (var multiSchema = StoreFixture.ofCatalog(directory, StoreFixture.GRAPH, SDL)) {
             var md = markdownOf(multiSchema, file, pos);
 
             assertThat(md).contains("**Foreign key** `note_event_fk`")

@@ -23,18 +23,15 @@ import no.sikt.graphitron.model.jooq.TableRef;
  * {@link JooqCatalog#findTable(String, String)},
  * and {@link JooqCatalog.TableEntry}'s typed accessors.
  *
- * <p>The fixture is the multi-schema jOOQ codegen output produced by the
- * {@code jooq-codegen-multischema-fixture} execution in {@code graphitron-sakila-db}:
- * two schemas ({@code multischema_a}, {@code multischema_b}) sharing
- * one table name ({@code event}) and connected by a cross-schema FK
- * ({@code multischema_b.gadget -> multischema_a.widget}). Single-schema fixtures elsewhere
- * cannot exercise the ambiguity-policy or qualified-name branches because their tables
- * never collide.
+ * <p>The fixture is two schemas of the fixture catalog ({@code multischema_a},
+ * {@code multischema_b}) sharing one table name ({@code event}) and connected by a cross-schema FK
+ * ({@code multischema_b.gadget -> multischema_a.widget}), the shapes the ambiguity-policy and
+ * qualified-name branches need; no other schema's tables collide.
  */
 @UnitTier
 class JooqCatalogMultiSchemaTest {
 
-    private static final String MULTI_PACKAGE = "no.sikt.graphitron.rewrite.multischemafixture";
+    private static final String MULTI_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
 
     private static JooqCatalog multi() {
         return new JooqCatalog(MULTI_PACKAGE);
@@ -254,14 +251,14 @@ class JooqCatalogMultiSchemaTest {
     void tableEntry_tableClass_returnsSchemaQualifiedFqn() {
         var entry = multi().findTable("multischema_a", "widget").orElseThrow();
         assertThat(entry.tableClassName())
-            .isEqualTo("no.sikt.graphitron.rewrite.multischemafixture.multischema_a.tables.Widget");
+            .isEqualTo("no.sikt.graphitron.rewrite.test.jooq.multischema_a.tables.Widget");
     }
 
     @Test
     void tableEntry_recordClass_returnsSchemaQualifiedRecordFqn() {
         var entry = multi().findTable("multischema_a", "widget").orElseThrow();
         assertThat(entry.recordClassName())
-            .isEqualTo("no.sikt.graphitron.rewrite.multischemafixture.multischema_a.tables"
+            .isEqualTo("no.sikt.graphitron.rewrite.test.jooq.multischema_a.tables"
                 + ".records.WidgetRecord");
     }
 
@@ -269,7 +266,7 @@ class JooqCatalogMultiSchemaTest {
     void tableEntry_constantsClass_returnsSchemaTablesClassFqn() {
         var entry = multi().findTable("multischema_a", "widget").orElseThrow();
         assertThat(entry.constantsClassName())
-            .isEqualTo(Optional.of("no.sikt.graphitron.rewrite.multischemafixture"
+            .isEqualTo(Optional.of("no.sikt.graphitron.rewrite.test.jooq"
                 + ".multischema_a.Tables"));
     }
 
@@ -278,7 +275,7 @@ class JooqCatalogMultiSchemaTest {
         // gadget is in B; constants class must point to B's Tables, not A's.
         var entry = multi().findTable("multischema_b", "gadget").orElseThrow();
         assertThat(entry.constantsClassName())
-            .isEqualTo(Optional.of("no.sikt.graphitron.rewrite.multischemafixture"
+            .isEqualTo(Optional.of("no.sikt.graphitron.rewrite.test.jooq"
                 + ".multischema_b.Tables"));
     }
 
@@ -325,7 +322,7 @@ class JooqCatalogMultiSchemaTest {
         assertThat(resolution).isInstanceOf(JooqCatalog.ForeignKeyResolution.Resolved.class);
         var ref = ((JooqCatalog.ForeignKeyResolution.Resolved) resolution).ref();
         assertThat(CatalogRefs.className(ref.keysClassName())).isEqualTo(ClassName.get(
-            "no.sikt.graphitron.rewrite.multischemafixture.multischema_b", "Keys"));
+            "no.sikt.graphitron.rewrite.test.jooq.multischema_b", "Keys"));
         assertThat(ref.sqlName()).isEqualToIgnoringCase("gadget_widget_id_fkey");
         // Stock JavaGenerator names the constant <TABLE>__<FK_NAME> (uppercased), not FK_<...>;
         // pin the upper-cased SQL constraint name as the suffix to avoid coupling to the table prefix.
@@ -461,7 +458,7 @@ class JooqCatalogMultiSchemaTest {
     void verifyTablesClassPresent_existingPackageAcceptsSilently() {
         // Real fixture package: this should not throw.
         JooqCatalog.verifyTablesClassPresent("multischema_a",
-            "no.sikt.graphitron.rewrite.multischemafixture.multischema_a",
+            "no.sikt.graphitron.rewrite.test.jooq.multischema_a",
             JooqCatalogMultiSchemaTest.class.getClassLoader());
     }
 
@@ -638,9 +635,9 @@ class JooqCatalogMultiSchemaTest {
         var refA = ((JooqCatalog.ForeignKeyResolution.Resolved) multi().findForeignKeyRef(fkA)).ref();
         var refB = ((JooqCatalog.ForeignKeyResolution.Resolved) multi().findForeignKeyRef(fkB)).ref();
         assertThat(CatalogRefs.className(refA.keysClassName())).isEqualTo(ClassName.get(
-            "no.sikt.graphitron.rewrite.multischemafixture.multischema_a", "Keys"));
+            "no.sikt.graphitron.rewrite.test.jooq.multischema_a", "Keys"));
         assertThat(CatalogRefs.className(refB.keysClassName())).isEqualTo(ClassName.get(
-            "no.sikt.graphitron.rewrite.multischemafixture.multischema_b", "Keys"));
+            "no.sikt.graphitron.rewrite.test.jooq.multischema_b", "Keys"));
     }
 
     // D2: synthesizeFkJoin over the colliding-name FK resolves the endpoint 'event' by class, from

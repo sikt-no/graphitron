@@ -70,12 +70,6 @@ public final class StoreFixture implements AutoCloseable, FixtureView {
     public static final String JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
 
     /**
-     * The two-schema generated model, which declares {@code event} in both {@code multischema_a} and
-     * {@code multischema_b} precisely so an unqualified name reaches two tables.
-     */
-    public static final String MULTISCHEMA_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.multischemafixture";
-
-    /**
      * The single-schema fixture, a generated model the fixture catalog shares no table with: the
      * second catalog a test needs when its subject is a census that changed, or two graphs whose
      * censuses differ, rather than a census.
@@ -114,11 +108,6 @@ public final class StoreFixture implements AutoCloseable, FixtureView {
     /** The catalog shape over {@link #OTHER_JOOQ_PACKAGE}, the catalog that is not this one. */
     public static StoreFixture ofOtherCatalog(Path directory) {
         return ofJooqPackage(directory, PLACEHOLDER_SDL, OTHER_JOOQ_PACKAGE);
-    }
-
-    /** The catalog shape over the two-schema generated model. */
-    public static StoreFixture ofMultiSchemaCatalog(Path directory) {
-        return ofJooqPackage(directory, PLACEHOLDER_SDL, MULTISCHEMA_JOOQ_PACKAGE);
     }
 
     /**

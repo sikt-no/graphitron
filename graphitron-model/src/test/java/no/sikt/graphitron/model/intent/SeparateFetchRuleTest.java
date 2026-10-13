@@ -34,7 +34,7 @@ class SeparateFetchRuleTest {
 
     private static final String GRAPH = CapturedStore.GRAPH;
 
-    private static final String MULTISCHEMA = "no.sikt.graphitron.rewrite.multischemafixture";
+    private static final String MULTISCHEMA = "no.sikt.graphitron.rewrite.test.jooq";
 
     private static final String SDL = """
         type Event @table(name: "event") { name: String }

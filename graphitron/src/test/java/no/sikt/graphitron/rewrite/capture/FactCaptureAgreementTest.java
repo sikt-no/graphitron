@@ -1252,11 +1252,10 @@ class FactCaptureAgreementTest {
     @Test
     @DisplayName("the table census is partitioned by its schema's generated package")
     void catalogIsPartitionedBySchemaPackage(@TempDir Path tmp) {
-        // The multi-schema fixture, because the single-schema catalog cannot tell a per-schema
-        // partition from a per-jar one: both fixtures ship in the same jar, and only this one
-        // spreads its tables over more than one generated package.
-        var jooq = new JooqCatalog("no.sikt.graphitron.rewrite.multischemafixture",
-            testContext().codegenLoader());
+        // The fixture catalog spreads its tables over a generated package per schema inside one
+        // jar, which is what tells a per-schema partition from a per-jar one.
+        var ctx = testContext();
+        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
             capture(store, graph(tmp), jooq);
 

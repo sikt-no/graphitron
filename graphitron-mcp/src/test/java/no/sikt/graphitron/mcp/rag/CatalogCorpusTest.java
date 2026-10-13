@@ -77,7 +77,7 @@ class CatalogCorpusTest {
      */
     @Test
     void aNameTwoSchemasDeclareIsTwoCorpusEntries(@TempDir Path tmp) {
-        try (var fixture = StoreFixture.ofMultiSchemaCatalog(tmp)) {
+        try (var fixture = StoreFixture.ofCatalog(tmp)) {
             var corpus = answered(CatalogCorpus.read(fixture.reader(), fixture.graphName()));
 
             assertThat(corpus).extracting(CorpusTable::id)

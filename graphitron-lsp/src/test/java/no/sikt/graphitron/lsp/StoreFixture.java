@@ -61,13 +61,6 @@ final class StoreFixture implements AutoCloseable {
     /** The generated jOOQ model the {@code sql_} arms are captured from. */
     private static final String JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
 
-    /**
-     * A generated model whose two schemas landed in packages of their own, which is where a catalog
-     * coordinate stops being unique: one constraint name declared in both schemas, and one declared
-     * twice inside a single schema on two tables.
-     */
-    private static final String MULTI_SCHEMA_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.multischemafixture";
-
     /** The package holding the record and POJO the class-backed member arms resolve against. */
     private static final String FIXTURE_PACKAGE = "no.sikt.graphitron.lsp.fixtures.";
 
@@ -182,11 +175,6 @@ final class StoreFixture implements AutoCloseable {
             return ofJooqPackage(Lifetime.HELD, directory, graphName, sdl, List.of(), JOOQ_PACKAGE);
         }
 
-        StoreFixture ofMultiSchemaCatalog(Path directory, String sdl) {
-            return ofJooqPackage(Lifetime.HELD, directory, GRAPH, sdl, List.of(),
-                MULTI_SCHEMA_JOOQ_PACKAGE);
-        }
-
         StoreFixture ofFiles(Path directory, String firstName, String firstSdl,
                              String secondName, String secondSdl) {
             return new StoreFixture(Lifetime.HELD.ofFiles(directory, firstName, firstSdl, secondName,
@@ -231,14 +219,6 @@ final class StoreFixture implements AutoCloseable {
      */
     static StoreFixture ofCatalog(Path directory, String graphName, String sdl) {
         return ofJooqPackage(Lifetime.CASE, directory, graphName, sdl, List.of(), JOOQ_PACKAGE);
-    }
-
-    /**
-     * The catalog shape over the multi-schema generated model, for the reads whose answer depends on
-     * a name being ambiguous across schemas rather than on any one table's contents.
-     */
-    static StoreFixture ofMultiSchemaCatalog(Path directory, String sdl) {
-        return ofJooqPackage(Lifetime.CASE, directory, GRAPH, sdl, List.of(), MULTI_SCHEMA_JOOQ_PACKAGE);
     }
 
     /** The catalog axis in this module's terms: the name of a generated package. */

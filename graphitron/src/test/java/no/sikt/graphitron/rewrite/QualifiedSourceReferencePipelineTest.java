@@ -41,7 +41,7 @@ import no.sikt.graphitron.model.config.RunContext;
 @PipelineTier
 class QualifiedSourceReferencePipelineTest {
 
-    private static final String MULTI_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.multischemafixture";
+    private static final String MULTI_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
     private static final String MULTI_OUTPUT_PACKAGE = "fake.code.generated.multischema";
 
     private static final ClassName SIGNAL =

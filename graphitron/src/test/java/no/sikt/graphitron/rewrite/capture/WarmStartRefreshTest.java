@@ -613,7 +613,7 @@ class WarmStartRefreshTest {
     @Test
     @DisplayName("a warm refresh over a multi-package jOOQ catalog completes")
     void aWarmRefreshOverAMultiPackageCatalogCompletes(@TempDir Path tmp) {
-        var jooq = new JooqCatalog("no.sikt.graphitron.rewrite.multischemafixture",
+        var jooq = new JooqCatalog("no.sikt.graphitron.rewrite.test.jooq",
             testContext().codegenLoader());
         try (var store = GraphitronModelStore.open()) {
             CapturedStore.writeSource(tmp, SDL);

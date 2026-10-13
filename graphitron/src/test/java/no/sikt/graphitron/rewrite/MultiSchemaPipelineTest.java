@@ -24,11 +24,9 @@ import no.sikt.graphitron.model.config.RunContext;
 
 /**
  * SDL → classified schema → generated {@code TypeSpec} pipeline coverage for the
- * multi-schema jOOQ fixture. The fixture makes one bug class visible: imports emitted as
- * {@code <jooqPackage>.tables.X}, dropping the schema segment. Single-schema fixtures
- * cannot reproduce it because their generated jOOQ classes live at the root package; this
- * fixture distributes them across {@code multischema_a.tables.*} and
- * {@code multischema_b.tables.*}.
+ * fixture catalog's {@code multischema_a} and {@code multischema_b} schemas. The sub-package
+ * layout makes one bug class visible: imports emitted as {@code <jooqPackage>.tables.X},
+ * dropping the schema segment, which no generated class answers to.
  *
  * <p>Three shape cases: unqualified-and-unique resolution ({@code Widget}), qualified
  * resolution of a table name present in both schemas ({@code Event}), and a cross-schema
@@ -46,7 +44,7 @@ import no.sikt.graphitron.model.config.RunContext;
 @PipelineTier
 class MultiSchemaPipelineTest {
 
-    private static final String MULTI_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.multischemafixture";
+    private static final String MULTI_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
     private static final String MULTI_OUTPUT_PACKAGE = "fake.code.generated.multischema";
 
     private static final String SDL = """

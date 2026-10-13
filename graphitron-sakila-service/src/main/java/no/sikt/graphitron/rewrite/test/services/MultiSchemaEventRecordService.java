@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.test.services;
 
-import no.sikt.graphitron.rewrite.multischemafixture.multischema_a.tables.records.EventRecord;
+import no.sikt.graphitron.rewrite.test.jooq.multischema_a.tables.records.EventRecord;
 
 /**
  * Compilation-tier fixture for the cross-schema {@code create<Record>} helper-name collision: two
@@ -26,7 +26,7 @@ public final class MultiSchemaEventRecordService {
 
     /** Binds the {@code multischema_b.event} record param. */
     public static String modifyEventB(
-            no.sikt.graphitron.rewrite.multischemafixture.multischema_b.tables.records.EventRecord in) {
+            no.sikt.graphitron.rewrite.test.jooq.multischema_b.tables.records.EventRecord in) {
         return "b:" + in.getEventId();
     }
 }

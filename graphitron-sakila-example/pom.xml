@@ -379,11 +379,11 @@
                         </configuration>
                     </execution>
                     <!--
-                        Multi-schema fixture (R83). Points at the multischemafixture jOOQ catalog
-                        in graphitron-sakila-db (the multischema_a / multischema_b two-schema
-                        codegen R78 set up) and writes generated emission to its own disjoint
-                        subpackage. Compiling against this catalog is the compile-tier signal
-                        that emitters wire schema-segmented FQNs correctly. The refs carry the
+                        Multi-schema fixture (R83). A schema over the multischema_a / multischema_b
+                        tables of the fixture catalog in graphitron-sakila-db, writing generated
+                        emission to its own disjoint subpackage. Compiling it is the compile-tier
+                        signal that emitters wire schema-segmented FQNs correctly, for the
+                        cross-schema reference and the name two schemas share. The refs carry the
                         class name the catalog reader read off live jOOQ reflection
                         (TableRef.tableClassName, ForeignKeyRef.keysClassName), and the emitters
                         spell it through the one lift in render.CatalogRefs, so the schema
@@ -438,7 +438,7 @@
                                     <pattern>src/main/resources/graphql/multischema.graphqls</pattern>
                                 </schemaInput>
                             </schemaInputs>
-                            <jooqPackage>no.sikt.graphitron.rewrite.multischemafixture</jooqPackage>
+                            <jooqPackage>no.sikt.graphitron.rewrite.test.jooq</jooqPackage>
                             <outputPackage>no.sikt.graphitron.generated.multischema</outputPackage>
                         </configuration>
                     </execution>
@@ -464,7 +464,7 @@
                                     <pattern>src/main/resources/graphql/multischema-mutation.graphqls</pattern>
                                 </schemaInput>
                             </schemaInputs>
-                            <jooqPackage>no.sikt.graphitron.rewrite.multischemafixture</jooqPackage>
+                            <jooqPackage>no.sikt.graphitron.rewrite.test.jooq</jooqPackage>
                             <outputPackage>no.sikt.graphitron.generated.multischemamutation</outputPackage>
                             <!--
                                 The direct jOOQ-Routines shape of the method-hook contract,

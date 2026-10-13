@@ -36,16 +36,6 @@ final class StoreBackedBuild implements AutoCloseable {
      */
     static final String JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
 
-    /**
-     * The two-schema generated package, for the cases whose subject is a bare spelling reaching more
-     * than one table. It declares {@code event} in both {@code multischema_a} and
-     * {@code multischema_b} precisely so an unqualified name is ambiguous. A capture from
-     * {@link #JOOQ_PACKAGE} cannot show ambiguity at all, every name there being unique, and a real
-     * capture can only show what the source declares; the projections these cases replace could
-     * assert one by fiat.
-     */
-    static final String MULTISCHEMA_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.multischemafixture";
-
     private final BuiltStore built;
     private StoreReader reader;
 

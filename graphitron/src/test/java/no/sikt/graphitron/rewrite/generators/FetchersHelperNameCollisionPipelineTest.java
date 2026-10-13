@@ -24,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link FetchersHelperNames} resolver disambiguates them by the pascal-cased schema segment:
  * {@code createMultischemaAEventRecord} / {@code createMultischemaBEventRecord}.
  *
- * <p>Backed by the real multischemafixture catalog (built by earlier multi-schema roadmap work) and
+ * <p>Backed by the fixture catalog's two {@code event} tables, in {@code multischema_a} and {@code multischema_b}, and
  * the {@code TestServiceStub.modifyMultischema*Event} methods. The record params bind on their
  * {@code @nodeId} identity (each event table's {@code event_id} PK); {@code @field} column binding on
  * a jOOQ-record {@code @service} param resolves the backing table by bare name, which is a separate
@@ -37,7 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class FetchersHelperNameCollisionPipelineTest {
 
-    private static final String MULTI_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.multischemafixture";
+    private static final String MULTI_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
     private static final String MULTI_OUTPUT_PACKAGE = "fake.code.generated.multischema";
 
     private static final String SVC = "no.sikt.graphitron.rewrite.TestServiceStub";

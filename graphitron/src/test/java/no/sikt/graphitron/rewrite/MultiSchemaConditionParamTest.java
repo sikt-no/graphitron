@@ -30,7 +30,7 @@ import no.sikt.graphitron.model.config.RunContext;
 class MultiSchemaConditionParamTest {
 
     private static final String STUB = "no.sikt.graphitron.rewrite.MultiSchemaConditionStub";
-    private static final String MULTI_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.multischemafixture";
+    private static final String MULTI_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
     private static final String MULTI_OUTPUT_PACKAGE = "fake.code.generated.multischema";
 
     private static RunContext multiSchemaContext() {
