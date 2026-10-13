@@ -209,6 +209,19 @@ The invariant the emitter relies on is that `ColumnWriteBound.Length` sits only 
 
 Reported by the sis Oracle IT run (fs-plattform, branch `sis/upgrade-graphitron`, write-up in `sis/GRAPHITRON10_STATUS.md` § "Third IT run"; consumer tests include `MutationValidationIT.mutationWithJavaBeanValidationViolationShouldReturnCustomValidationErr`). The run used a pre-R1019 snapshot. R1019 touched tenant binding, not the error channel, so the behaviour is expected to be the same on trunk, but that has not been re-checked.
 
+## Implementation notes
+
+Landed as specified. Points for the reviewer:
+
+- *Pre-change re-check.* Run on trunk before the fixture changed: a 256-character `title` on `createFilmWithErrors` came back as a top-level `An error occurred. Reference: …` with `createFilmWithErrors: null`, matching the report (PostgreSQL `22001` reaching the redacting catch arm, since `FilmCreateConstraintViolation` matches only integrity violations).
+- *`hasValidationHandler` moved onto the model.* `LengthCheck.of` needs it, so it is now `ErrorChannel.hasValidationHandler()` (a default method), and the `@service` pre-step in `TypeFetcherGenerator` calls the same method instead of keeping a private copy.
+- *`writeBound` checks the `ColumnRef`'s binding before reading `columnFacts`.* The ref carries the same binding name `ColumnFacts.bindingType()` reports, so the cheap test keeps the reflective `columnFactsOf` walk to `String` columns; every `classifyInputField` call, query-side filters included, goes through it. The facts' binding type is still checked as the spec states.
+- *`WrittenCell.column` on a composite carrier* is the carrier's first column (its cells share one path). It only matters for the advisory's message, and composite carriers are always `Unbounded`.
+- *Test 9, second half.* `keyColumnsAsSetGroups` passes `Unbounded` literally, and the `SetGroup` it feeds into carries no bound, so there is nothing observable to assert downstream. What pins that key cells are never length-checked is test 4 (`update_writesTheSetCellsAndNotTheKey`: `filmId` is in `whereKeyColumns()` and not in `writtenCells()`, which is the only source the emitter reads). The first half is pinned twice: `DmlWriteLengthCheckClassificationTest.updateSetColumn_carriesTheBoundDecidedOnItsCarrier` at the pipeline tier, and `UpdateRowsWalkerTest.setColumn_copiesItsCarriersBound_andNeverDecidesOne`, which hands the walker a bound that disagrees with the catalog (7 against `film.title`'s 255) and sees it copied.
+- *Test 5's fixtures.* The implicit-`id` arm uses `xlat_parent` (`pk_id varchar(50)`) because `keyed_node` has a real `id` column, which the shadowing rule rejects. The FK-target arm is `emne_link.link_code` → `rolle` (a `DirectFk`, `Local` binding). The test also asserts each case's extraction and carrier type, so it proves the arm it names was reached.
+- *Execution coverage* is four new `GraphQLQueryTest` cases (`createFilmWithErrors_overLongTitle_isRejectedBeforeTheStatement`, `createFilmsWithErrors_overLongTitleOnOneRow_rejectsTheWholeBatch`, `updateFilmWithErrors_overLongTitle_leavesTheRowUnchanged`, `createFilmWithErrors_titleOf255SupplementaryCharacters_isAccepted`). The six existing `*WithErrors` DML cases pass unchanged.
+- *Docs.* The lint rule is documented in `mojo-configuration.adoc` § "Silencing lint warnings", beside the other classifier advisories, as the round-1 note suggested. The error-channel paragraph carries the anchor `column-length-check`, which `error.adoc`, `mutation.adoc` and the lint entry link to.
+
 ## Reviewer findings
 
 ### Round 1: Spec → Ready, request revisions (session_01LX58XQJwzk4onc6gfDqx78, 2026-10-13)
