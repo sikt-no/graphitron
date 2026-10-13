@@ -118,7 +118,10 @@ public final class JooqFactCapture {
 
     // --------------------------------------------------------------- what a row is written about
 
-    /** One table of the generated model, with the parts every row about it repeats. */
+    /**
+     * One table of the generated model, with the parts every row about it repeats. Its source is
+     * the schema package it was generated into, {@link JooqCatalog#schemaPackageOf}.
+     */
     private record TableAt(String source, String schema, String name, Table<?> table,
                            String jooqName) {}
 
@@ -817,7 +820,7 @@ public final class JooqFactCapture {
         List<TableAt> tables = new ArrayList<>();
         for (JooqCatalog.TableEntry entry : jooq.allTableEntries()) {
             Table<?> table = entry.table();
-            tables.add(new TableAt(packageOf(table), schemaOf(table), table.getName(), table,
+            tables.add(new TableAt(JooqCatalog.schemaPackageOf(table.getSchema()).orElse(""), schemaOf(table), table.getName(), table,
                 entry.javaFieldName()));
         }
         return tables;
@@ -890,14 +893,6 @@ public final class JooqFactCapture {
             positions.put(declared[i].getName(), i);
         }
         return positions;
-    }
-
-    /** The generated table class's package, which is the source a jOOQ-described row belongs to. */
-    private static String packageOf(Table<?> table) {
-        String fqn = table.getClass().getName();
-        int lastDot = fqn.lastIndexOf('.');
-        String pkg = lastDot < 0 ? "" : fqn.substring(0, lastDot);
-        return pkg.endsWith(".tables") ? pkg.substring(0, pkg.length() - ".tables".length()) : pkg;
     }
 
     private static String schemaOf(Table<?> table) {

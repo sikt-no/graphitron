@@ -590,6 +590,16 @@ and the emitters read, and it goes when nothing reads what it builds.
       matching the primary key of the first link's table, or `@sourceRow`, which is a forced choice.
       A root field has none. The `from_` columns of `graphitron_field_table` are the first rule
       stated per target.
+  * **The hand-built model tests dissolve** `open`. About fifty-five classes build the walk's
+    classified model by hand through `TestFixtures`' made-up table and key refs, a `TableType` over
+    `filmTable()` holding a `ColumnBackedField`, and run the walk's validator, renderers or plan
+    lowering over it: no schema goes in and nothing is captured. Thirty-three are
+    `validation/*ValidationTest`, one per field or type variant. They pin the records this section
+    retires, and keep the walk's rules read by something other than production. A validation case
+    becomes a fact document, a schema in and `graphitron_entry_defect_site` rows out, when its
+    constraint is a located defect, and its class goes with the walk rule it pins; the renderer and
+    lowering tests go with the records they build. First, each validation class is mapped to the
+    store rule stating its constraint today, or to none.
 * **`validate` reads only the store** `open`, as "Validate is a query over the store". Second to
   last, a verdict being a narrower read than an emission.
 * **`generate` and `dev` read only the store** `blocked`, on the node above. The last step: the
@@ -1388,15 +1398,29 @@ conversion frees one.
   tests, and the generator they needed now runs on `public` too. A fact document is captured against
   `public` alone, so the shapes the other fixtures hold, metadata keyed off the primary key or one
   table name in two schemas, are gaps to every document though the database has them.
-  * One codegen execution over all five schemas becomes the fixture catalog, and the documents, the
-    pipeline tests and the example are captured and generated against it. A bare `@table` naming
-    `event` or `note` is ambiguous everywhere then, as it is to a consumer with those schemas.
-  * A small single-schema fixture keeps the root-package layout covered, a few tables with a
-    foreign key, a composite key and node metadata, rather than `public` kept beside the combined
-    catalog.
-  * The readers of the `public` package move to its sub-package, about 157 files and four how-to
-    pages, and the seventeen tests that load one fixture package as a catalog of its own take the
-    combined catalog or the single-schema one.
+  * The layout is `JooqCatalog`'s alone. A pair of its tests, one over the combined catalog and one
+    over a small single-schema fixture (a few tables with a foreign key, a composite key and node
+    metadata), ask both the same questions: a table found bare and qualified, its columns, keys,
+    indexes and node metadata, its routines, and the classes it names. Nothing else reads the
+    single-schema fixture, and nothing outside `JooqCatalog` reads a layout.
+    * **A table's source package is the catalog's** `done`. Capture took it from the table class's
+      package with `.tables` cut off; `JooqCatalog.schemaPackageOf` reads it off the schema class,
+      which sits in it under either layout, and the values are today's. `FetchersHelperNames`
+      prefixes a colliding class with its own package by design, for beans as for records, and
+      `TestFixtures` makes names up for tests no catalog reaches; neither reads a layout, and the
+      constant moves with the paths.
+  * One codegen execution over all five schemas becomes the fixture catalog, under the root package
+    `public` has now, and the documents, the pipeline tests and the example are captured and
+    generated against it. Its readers' paths move to the `public` sub-package, about 154 files and
+    four how-to pages; that is code compiled against generated classes as a consumer's is, not
+    layout logic. A bare `@table` naming `event` or `note` is ambiguous everywhere then, as it is to
+    a consumer with those schemas, and qualification answers it where a test needs it.
+  * The three other fixtures' readers then move onto it one fixture at a time, each execution going
+    with its last reader; the root-package layout stays covered by the two node-id fixtures until
+    the single-schema fixture replaces them. `NodeIdFixtureGenerator` keeps keying on bare table
+    names, qualifying only where two schemas share one. `nodeidfixture`'s `collide_a` and
+    `collide_b` share a type id on purpose and keep it, unwarned: two classes sharing a type id
+    matter only to a schema binding both.
 * **The table-binding and node subject converts** `open`, and frees "The node is settled from the
   position-keyed entries". Its conversions wait on the fixture catalog above, the nodes subject's
   cases wanting metadata keyed off the primary key and one table name in two schemas. Forty-five classes seed `@table` and `@node` through `seedTableBinding`,

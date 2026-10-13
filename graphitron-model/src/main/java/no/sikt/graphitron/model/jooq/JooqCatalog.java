@@ -868,6 +868,16 @@ public class JooqCatalog {
     }
 
     /**
+     * The package a schema's generated classes are written into: the catalog's own package when
+     * the codegen was pinned to one schema, that schema's sub-package when it read several. Read off
+     * the schema class itself, which sits in it under either layout. Empty for a table with no
+     * schema.
+     */
+    public static Optional<String> schemaPackageOf(Schema schema) {
+        return schema == null ? Optional.empty() : Optional.of(schema.getClass().getPackageName());
+    }
+
+    /**
      * The fully qualified name of the generated {@code Keys} class holding a schema's key constants,
      * resolved by loading the class off the codegen classpath. Empty when the generated model carries
      * none for the schema.
