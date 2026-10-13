@@ -1,11 +1,15 @@
 package no.sikt.graphitron.model.test;
 
+import no.sikt.graphitron.model.catalog.GraphPartition;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraph;
@@ -15,8 +19,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The funnel's own store discipline: that two bodies on one thread share a store, that the second
- * one cannot see the first one's rows, and that the module boots a store per thread rather than per
- * case.
+ * one cannot see the first one's rows or statistics, and that the module boots a store per thread
+ * rather than per case.
  *
  * <p>The last of those is the mechanism's whole claim, so a test states it rather than a comment.
  * It is an equality rather than the literal four, and that is not caution: {@code parallelism=4}
@@ -56,6 +60,65 @@ class ThreadConfinedStoreTest {
             seedGraph(dsl, "derivable");
             SeededStore.derive(dsl);
         });
+    }
+
+    /**
+     * The other half of a booted state, and the half no row count can see: a body that analyses
+     * leaves selectivities behind on the tables the clear truncates and on the populated
+     * {@code meta_} tables it does not, and on an empty graph-keyed table the analysis also drops
+     * the partition declaration. The next body has to see none of that. Compared with a created
+     * store's snapshot rather than with the two values spelled out, because "what a created store
+     * carries" is the claim, and the drift is asserted first so the comparison is never vacuous.
+     */
+    @Test
+    @DisplayName("a body gets a created store's statistics, whatever the previous body analysed")
+    void resetsStatisticsBetweenBodies() {
+        Map<String, Integer> created;
+        try (var store = FactStores.inMemory()) {
+            created = selectivities(store.dsl());
+        }
+        withSeededStore(dsl -> {
+            seedGraph(dsl, "analysed");
+            dsl.execute("ANALYZE");
+            assertThat(drift(selectivities(dsl), created).keySet())
+                .as("columns the analysis moved off a created store's values: on a table the clear"
+                    + " truncates, on a meta_ table it keeps, and a partition column")
+                .anyMatch(column -> column.startsWith("STORE_GRAPH."))
+                .anyMatch(column -> column.startsWith("META_"))
+                .anyMatch(column -> column.endsWith("." + GraphPartition.COLUMN));
+        });
+        withSeededStore(dsl -> {
+            Map<String, Integer> borrowed = selectivities(dsl);
+            assertThat(borrowed.keySet())
+                .as("base-table columns, against a created store's")
+                .isEqualTo(created.keySet());
+            assertThat(drift(borrowed, created))
+                .as("columns whose selectivity differs from a created store's, each with what it"
+                    + " reports instead")
+                .isEmpty();
+        });
+    }
+
+    /** The columns of {@code seen} reporting something other than {@code created} does. */
+    private static Map<String, Integer> drift(Map<String, Integer> seen, Map<String, Integer> created) {
+        var drift = new TreeMap<>(seen);
+        drift.entrySet().removeIf(column -> column.getValue().equals(created.get(column.getKey())));
+        return drift;
+    }
+
+    /** Every base-table column's selectivity, keyed {@code TABLE.COLUMN}. */
+    private static Map<String, Integer> selectivities(DSLContext dsl) {
+        Set<String> baseTables = Set.copyOf(ThreadConfinedStore.baseTables(dsl));
+        var selectivities = new TreeMap<String, Integer>();
+        dsl.fetch("""
+            SELECT TABLE_NAME, COLUMN_NAME, SELECTIVITY FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = 'PUBLIC'
+            """).forEach(row -> {
+                if (baseTables.contains(row.get(0, String.class))) {
+                    selectivities.put(row.get(0) + "." + row.get(1), row.get(2, Integer.class));
+                }
+            });
+        return selectivities;
     }
 
     @Test

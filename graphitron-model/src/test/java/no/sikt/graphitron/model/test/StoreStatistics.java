@@ -3,6 +3,8 @@ package no.sikt.graphitron.model.test;
 import no.sikt.graphitron.model.catalog.GraphPartition;
 import org.jooq.DSLContext;
 
+import java.util.Set;
+
 /**
  * H2's per-column statistics, as the operations a fact-store fixture needs: put a store back to
  * knowing nothing, and ask whether one relation has been analysed. Its own type because several
@@ -43,10 +45,10 @@ public final class StoreStatistics {
      * which goes back to {@link GraphPartition#DECLARED_SELECTIVITY}. Views are skipped because a
      * view has no selectivity of its own to state.
      *
-     * <p>One statement finds the drifted columns and one {@code ALTER} per hit puts each back, so a
-     * case whose writes never crossed H2's own analysis threshold, which is nearly every case, pays
-     * a single catalog read and issues nothing. The end state is exactly what
-     * {@link #resetIncludingTheDeclaration} followed by the creation-time declaration over
+     * <p>One catalog read finds the drifted columns and one {@code ALTER} per hit puts each back, so
+     * a case whose writes never crossed H2's own analysis threshold, which is nearly every case,
+     * pays that read and the base-table list beside it and issues nothing. The end state is exactly
+     * what {@link #resetIncludingTheDeclaration} followed by the creation-time declaration over
      * {@link GraphPartition#keyedBaseTables} leave, at a fraction of the statements: walking every
      * column instead cost about three quarters of a second per clear on a schema past two thousand
      * columns, and was most of the store-heavy modules' test time.
@@ -55,16 +57,21 @@ public final class StoreStatistics {
      * be in. A bare reset models a store created before the declaration existed: every plan measured
      * against it is a plan no run can get, and a regime built on one would report the declaration's
      * own effect as the baseline.
+     *
+     * <p>The base tables are read apart from the columns and filtered here rather than joined in
+     * the statement, because H2 charges for that join per surviving row: after a capture's
+     * {@code ANALYZE} it was nearly the reset's whole cost, ten times what the {@code ALTER}s took.
      */
     public static void reset(DSLContext dsl) {
+        Set<String> baseTables = Set.copyOf(ThreadConfinedStore.baseTables(dsl));
         dsl.fetch("""
-            SELECT c.TABLE_NAME, c.COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS c
-            JOIN INFORMATION_SCHEMA.TABLES t
-              ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME
-            WHERE c.TABLE_SCHEMA = 'PUBLIC' AND t.TABLE_TYPE = 'BASE TABLE'
-              AND c.SELECTIVITY <> CASE WHEN c.COLUMN_NAME = ? THEN ? ELSE ? END
-            ORDER BY c.TABLE_NAME, c.ORDINAL_POSITION
+            SELECT TABLE_NAME, COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = 'PUBLIC'
+              AND SELECTIVITY <> CASE WHEN COLUMN_NAME = ? THEN ? ELSE ? END
+            ORDER BY TABLE_NAME, ORDINAL_POSITION
             """, GraphPartition.COLUMN, GraphPartition.DECLARED_SELECTIVITY, UNANALYSED)
+            .stream()
+            .filter(row -> baseTables.contains(row.get(0, String.class)))
             .forEach(row -> {
                 String column = row.get(1, String.class);
                 int selectivity = GraphPartition.COLUMN.equals(column)
@@ -79,15 +86,19 @@ public final class StoreStatistics {
      * included: the state a store created before the declaration existed was in, which no store can
      * be in now. Only a measurement of what the declaration itself is worth has any business asking
      * for it, and {@code PartitionSelectivityWorthTest} is the one that does.
+     *
+     * <p>Not a join to the base tables, for {@link #reset}'s reason, which costs this one the most:
+     * it keeps every base-table column rather than only the drifted ones.
      */
     public static void resetIncludingTheDeclaration(DSLContext dsl) {
+        Set<String> baseTables = Set.copyOf(ThreadConfinedStore.baseTables(dsl));
         dsl.fetch("""
-            SELECT c.TABLE_NAME, c.COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS c
-            JOIN INFORMATION_SCHEMA.TABLES t
-              ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME
-            WHERE c.TABLE_SCHEMA = 'PUBLIC' AND t.TABLE_TYPE = 'BASE TABLE'
-            ORDER BY c.TABLE_NAME, c.ORDINAL_POSITION
-            """).forEach(row -> dsl.execute("ALTER TABLE \"" + row.get(0)
+            SELECT TABLE_NAME, COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = 'PUBLIC'
+            ORDER BY TABLE_NAME, ORDINAL_POSITION
+            """).stream()
+            .filter(row -> baseTables.contains(row.get(0, String.class)))
+            .forEach(row -> dsl.execute("ALTER TABLE \"" + row.get(0)
                 + "\" ALTER COLUMN \"" + row.get(1) + "\" SELECTIVITY 0"));
     }
 

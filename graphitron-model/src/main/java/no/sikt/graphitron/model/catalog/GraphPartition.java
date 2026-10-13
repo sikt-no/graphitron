@@ -3,6 +3,7 @@ package no.sikt.graphitron.model.catalog;
 import org.jooq.DSLContext;
 
 import java.util.List;
+import java.util.Set;
 
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.name;
@@ -66,19 +67,24 @@ public final class GraphPartition {
     /**
      * Every base table in this store carrying the partition column, in name order: the population
      * the declaration above is stated on, a view having no selectivity of its own to state.
+     *
+     * <p>The base tables are read apart from the columns and filtered here rather than joined in
+     * the statement, because H2 charges for that join per surviving row, which made it about a
+     * fifth of every store's creation.
      */
     public static List<String> keyedBaseTables(DSLContext dsl) {
-        return dsl.select(field(name("C", "TABLE_NAME"), String.class))
-            .from(table(name("INFORMATION_SCHEMA", "COLUMNS")).as("C"))
-            .join(table(name("INFORMATION_SCHEMA", "TABLES")).as("T"))
-            .on(field(name("T", "TABLE_SCHEMA"), String.class)
-                .eq(field(name("C", "TABLE_SCHEMA"), String.class)))
-            .and(field(name("T", "TABLE_NAME"), String.class)
-                .eq(field(name("C", "TABLE_NAME"), String.class)))
-            .where(field(name("C", "TABLE_SCHEMA"), String.class).eq("PUBLIC"))
-            .and(field(name("C", "COLUMN_NAME"), String.class).eq(COLUMN))
-            .and(field(name("T", "TABLE_TYPE"), String.class).eq("BASE TABLE"))
-            .orderBy(field(name("C", "TABLE_NAME")))
-            .fetch(0, String.class);
+        Set<String> baseTables = Set.copyOf(dsl.select(field(name("TABLE_NAME"), String.class))
+            .from(table(name("INFORMATION_SCHEMA", "TABLES")))
+            .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
+            .and(field(name("TABLE_TYPE"), String.class).eq("BASE TABLE"))
+            .fetch(0, String.class));
+        return dsl.select(field(name("TABLE_NAME"), String.class))
+            .from(table(name("INFORMATION_SCHEMA", "COLUMNS")))
+            .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
+            .and(field(name("COLUMN_NAME"), String.class).eq(COLUMN))
+            .orderBy(field(name("TABLE_NAME")))
+            .fetch(0, String.class).stream()
+            .filter(baseTables::contains)
+            .toList();
     }
 }
