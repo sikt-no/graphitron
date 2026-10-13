@@ -45,29 +45,39 @@ Rule 4 is the divergence from Graphitron 9, which counted a single `@reference` 
 
 ## Implementation
 
-**Model, `ChildField.NestingField`.** Add a derived method, computed from the components the record already carries (`returnType().wrapper()` and `nestedFields()`), so classification and the fact store are untouched:
+**Model, `ChildField.NestingField`.** Two derived methods, computed from the components the record already carries (`returnType().wrapper()` and `nestedFields()`), so classification and the fact store are untouched. Wrapper nullability and child classification are not in the store, and `ParentRowDemand.parentRowColumns()` is the precedent for a derived read on the leaf.
 
 ```java
-/** Null when every presence leaf is null; empty when the wrapper always resolves to an object. */
-Optional<List<List<ColumnRef>>> presenceLeaves()
+/** The subtree's presence leaves, or the child that blocks the collapse; ignores this field's own nullability. */
+SubtreePresence subtreePresence()
+    // sealed: Leaves(List<PresenceLeaf> leaves) | Blocked(ChildField blocker)
+
+/** The null contract of this field. */
+NullContract nullContract()
+    // sealed: CollapsesWhenAbsent(List<PresenceLeaf> leaves)
+    //       | AlwaysObject(Reason reason)   // NonNull | BlockedBy(ChildField) | NotSingle
+
+record PresenceLeaf(List<ColumnRef> columns)   // present when every column is non-null
 ```
 
-Each inner list is one leaf's columns (a Direct `ColumnBackedField` contributes its one column, a `NodeIdEncodeKeys` one contributes its key columns); a leaf is present when all its columns are non-null. The method answers empty when `((FieldWrapper.Single) returnType().wrapper()).nullable()` is false, or when any child in the subtree is neither a `ColumnBackedField` nor a `NestingField` (rule 4). A non-null inner `NestingField` contributes its subtree's leaves (rule 3), and so does a nullable inner one that is not blocked. The method is the one home of the rule: the projection and the fetcher both read it. The synthetic pivot nesting field `NestingReach.pivotWiring` mints holds `PivotSlotField` children, so it answers empty and nothing reads it there.
+`subtreePresence()` is the recursion: a Direct `ColumnBackedField` yields a one-column leaf, a `NodeIdEncodeKeys` one yields a leaf over its key columns, an inner `NestingField` contributes its own `subtreePresence()` whatever its nullability (rule 3), and any other child answers `Blocked` with that child (rule 4), which propagates up. `nullContract()` combines it with the wrapper: switch on `returnType().wrapper()` (a list-wrapped nesting field reaches the model and is rejected only by the validator, so the switch answers `AlwaysObject(NotSingle)` rather than casting), then `Single(false)` answers `AlwaysObject(NonNull)`, and `Single(true)` answers `CollapsesWhenAbsent` or `AlwaysObject(BlockedBy)` from the subtree. Carrying the blocking child keeps the Graphitron 9 divergence on the model rather than leaving it to be re-derived. The synthetic pivot nesting field `NestingReach.pivotWiring` mints holds `PivotSlotField` children, so it answers `AlwaysObject(BlockedBy)` and nothing reads it there. The type names are the implementer's; the shape (one nullability-independent recursion, one sealed contract with a reason) is the plan.
 
-Update the `NestingField` javadoc while there: it still says the fetcher is `env -> env.getSource()`, and its first sentence feeds the generated `docs/manual/_generated/supported-schema-shapes.adoc`.
+**Parent-row demand.** `NestingField` implements `ParentRowDemand`: its fetcher now reads columns off the parent's row, which is exactly that capability. `parentRowColumns()` is the flattened, distinct columns of a `CollapsesWhenAbsent` contract and empty otherwise. Add `NestingField` to the implementer list in `ParentRowDemand`'s javadoc.
 
-**Projection, `ProjectionCommands.contributionFor`.** The `NestingField` arm emits `Contribution.Call(nf.name(), nested, new CallWrap.Splice(), ...)`, and the nested unit projects only the selected subfields, with unselected columns absent from the record (`Record.get(Field)` on an absent field throws). Rule 2 needs the presence columns in the row whenever the nesting field is selected. Give `CallWrap.Splice` a `List<ColumnRef> presenceColumns` component (the flattened, distinct columns of `presenceLeaves()`, empty when it is empty), and have `ProjectionUnitRenderer.emitArm`'s `Splice` arm add them as `SelectTerm.Column(col, TermAlias.BY_COLUMN_IDENTITY)` ahead of the callee's fields. Base-name identity is what the nested column leaves already project under, so a presence column the query also selects lands once (the unit's field set de-duplicates). `PlanCompileGraph`'s `Splice` arm and `requireAliasedWriteArm` stay as they are; no result-key alias is minted.
+**Projection, `ProjectionCommands.contributionFor`.** The `NestingField` arm emits `Contribution.Call(nf.name(), nested, new CallWrap.Splice(), ...)`, and the nested unit projects only the selected subfields, with unselected columns absent from the record (`Record.get(Field)` on an absent field throws). Rule 2 needs the demanded columns in the row whenever the nesting field is selected. A second `Contribution` for the same field would emit a duplicate `case` label, so the demand rides the splice: give `CallWrap.Splice` a component carrying the calling field's parent-row demand (named for that role, since `CallWrap`'s axis is how the callee's fields arrive), filled from `nf.parentRowColumns()`, so supply and demand are one read as the `correlationKeyArm` comment in `contributionFor` asks. `ProjectionUnitRenderer.emitArm`'s `Splice` arm adds those columns as base-name column terms ahead of the callee's fields. Base-name identity is what the nested column leaves already project under, so a demanded column the query also selects lands once (the unit's field set is a `LinkedHashSet`). `PlanCompileGraph`'s `Splice` arm and `requireAliasedWriteArm` stay as they are; no result-key alias is minted. Adding the columns inside the nested unit instead does not work: the unit is keyed on (anchor, nesting type), shared by a nullable and a non-null site of the same type, and the demand belongs to the field.
 
-The alternative of adding the presence columns inside the nested unit's `$project` unconditionally works too, but the nested unit is shared across the reuse sites of the same nesting type under one anchor and the decision belongs to the field (a nullable and a non-null site can share the type), so the call site carries it.
-
-**Fetcher, `FetcherEmitter.bindRaw`.** The `NestingField` arm stays `sourceOnly` (a `LightFetcher`, no `env`): with the presence columns always projected, the check needs only the record. When `presenceLeaves()` is present it emits
+**Fetcher, `FetcherEmitter.bindRaw`.** The `NestingField` arm stays `sourceOnly` (a `LightFetcher`, no `env`): with the demanded columns always projected, the check needs only the record. On `CollapsesWhenAbsent` it emits one statement per leaf:
 
 ```java
-Record r = (Record) source;
-return (r.get(T.A) != null) || (r.get(T.B) != null && r.get(T.C) != null) ? source : null;
+Record row = (Record) source;
+if (row.get(T.A) != null) return source;
+if (row.get(T.B) != null && row.get(T.C) != null) return source;
+return null;
 ```
 
-with `T` the nesting field's table constants (`CatalogRefs.constantsClass(nf.returnType().table())`, the same read the column leaves use), one disjunct per leaf. When it is empty the body stays `return source;`. The `inlineSuccessReturn` `NestingField` arm is unreachable for nesting (`ParentSourceBinding.of` answers `TableRow` for a table parent); leave it, or make it throw if the implementer confirms that, but do not add a second copy of the check.
+with `T` the nesting field's table constants (`CatalogRefs.constantsClass(nf.returnType().table())`, the read the column leaves use). On `AlwaysObject` the body stays `return source;`. An inner nesting field's fetcher lives on the shared nested type's `Fetchers` class and reads the representative site's table constants; that is sound because `GraphitronSchemaValidator.compareNestedFieldsShape` requires the same leaf class and column names at every reuse site, which the emitter's javadoc cites with `{@link}`. The `inlineSuccessReturn` `NestingField` arm is unreachable (`NestingField` is classified only on table parents, for which `ParentSourceBinding.of` answers `TableRow`); make it throw rather than carry a second copy of the check.
+
+Update the stale `NestingField` javadoc while there: the record's says the fetcher is `env -> env.getSource()` (its first sentence feeds the generated `docs/manual/_generated/supported-schema-shapes.adoc`), and `domainReturnType()`'s says the children read by column name where they read typed constants.
 
 **Docs.**
 
@@ -98,12 +108,13 @@ Draft section for `map-types-to-tables.adoc`, after "Re-binding and the table-co
 
 ## Tests
 
-- **Model unit test** on `NestingField.presenceLeaves()`: columns only (present), a `@nodeId` leaf (one leaf of several columns), a non-null inner nesting field (contributes leaves), a nullable inner nesting field (contributes leaves), a child `TableField` / `ComputedField` / `BatchedTableField` (empty, and empty for every enclosing wrapper), non-null outer (empty).
-- **Pipeline tier, `NestingFieldPipelineTest`**: the nesting fetcher body carries the presence check for a nullable wrapper and is `return source;` for a non-null one; the parent's projection arm for the nesting field adds the presence columns. `outerFetcherRegistration_wiresNestingFieldAsLightFetcher` keeps passing unchanged (the fetcher stays source-only).
-- **Execution tier, `PivotExecutionTest` or a sibling** over `PivotNestingHost.texts: TranslatedTexts` (four nullable columns `nn nb se en`). Seed a second `pivot_nesting_host` row with all four columns null in `graphitron-sakila-db/src/main/resources/init.sql` (the existing row 1 is `('nn-vert','nb-vert',NULL,'en-host')`; the existing test reads host 1 by position, so check it stays first). Then:
-  - host 2 resolves `texts` to `null`;
-  - host 1 resolves `texts { se }` to `{se: null}`, the selection-independence case (rule 2);
-  - a non-null control: add `textsRequired: TranslatedTexts!` (or a similarly named field) to `PivotNestingHost`; host 2 resolves it to an object of nulls.
+- **Model unit test** on `NestingField.subtreePresence()` and `nullContract()`: columns only (`CollapsesWhenAbsent`, one leaf per column); a `@nodeId` leaf (one leaf over several columns); a non-null inner nesting field and a nullable inner one (both contribute their leaves); a child `TableField`, `ComputedField` and `BatchedTableField` (each `AlwaysObject(BlockedBy)` naming that child, and the same for every enclosing wrapper); a non-null outer (`AlwaysObject(NonNull)`); a list-wrapped nesting field (`AlwaysObject(NotSingle)`, no cast failure). `parentRowColumns()` is the flattened leaves for the collapsing case and empty for the others.
+- **Pipeline tier, `NestingFieldPipelineTest`**: the nesting fetcher body carries the per-leaf check for a nullable wrapper and is `return source;` for a non-null one; the parent's projection arm for the nesting field adds the demanded columns. `outerFetcherRegistration_wiresNestingFieldAsLightFetcher` keeps passing unchanged (the fetcher stays source-only).
+- **Execution tier**, a dedicated fixture rather than `TranslatedTexts`, which is already a pivot projection type, a nesting type and a `@service` result at once, so a failure there would be ambiguous. Add a plain nesting type over `pivot_nesting_host`'s nullable columns to the sakila example schema, reached twice from `PivotNestingHost`, once nullable and once non-null (say `HostLabels { nn: String  nb: String }` as `labels: HostLabels` and `labelsRequired: HostLabels!`). Seed a second `pivot_nesting_host` row with all four columns null in `graphitron-sakila-db/src/main/resources/init.sql` (the existing row 1 is `('nn-vert','nb-vert',NULL,'en-host')`; `PivotExecutionTest` reads host 1 by position, so check it stays first). Then:
+  - host 2 resolves `labels` to `null`;
+  - host 2 resolves `labelsRequired` to `{nn: null, nb: null}`, the non-null control;
+  - host 1 resolves `labels` to an object;
+  - a host whose `nb` is non-null and `nn` null (seed a third row, or reuse one if the seed already has the shape) resolves `labels { nn }` to `{nn: null}`, the selection-independence case (rule 2).
 
 ## Provenance
 
