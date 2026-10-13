@@ -1,7 +1,7 @@
 ---
 id: R981
 title: "Stop the thread store's clear paying almost a boot to reset statistics after a capture"
-status: In Progress
+status: In Review
 bucket: dx
 priority: 2
 theme: tooling
@@ -153,3 +153,26 @@ set. The rest of each method is unchanged: its contract, its ordering and its `A
   observe. `ModelCapture.capture` runs `ANALYZE` on purpose around the derivations, and
   `DerivationStratum` analyses each step's writes, so test captures would plan differently from
   real runs.
+
+## Implementation notes
+
+Where the landed code departs from the plan above, or adds to it:
+
+- **A real capture drifts more columns than the simulation, and the fix still holds.** A
+  `CapturedStore.ofCatalog` capture of a one-type schema against the Sakila catalog leaves 795
+  drifted base-table columns, not 670. On that state the borrow's pieces measure: truncate 3 ms,
+  row census 4 ms, base-table list 2 ms, drifted-column read 7 ms, 795 `ALTER`s 22 ms. The read is
+  no longer the cost; the `ALTER`s are what is left, and they are the work the reset exists to do.
+- **The new `ThreadConfinedStoreTest` case asserts the drift before it asserts the reset.** The
+  analysing body first checks that the `ANALYZE` moved a column on `STORE_GRAPH` (truncated), on a
+  `META_` table (kept) and on a partition column (an empty graph-keyed table analyses back to
+  `UNANALYSED`, dropping the declaration). Without that, a future change that stops the `ANALYZE`
+  from drifting anything would leave the comparison passing vacuously. The comparison reports only
+  the columns that differ, each with its value, rather than the whole 2,400-entry map. Both
+  hand-checks from the Tests section fail it: a reset that skips the `META_` tables, and one that
+  writes 0 to the partition column instead of restating the declaration.
+- **Measuring across modules needs the model's test-jar installed.** `graphitron` resolves
+  `graphitron-model`'s `tests` classifier, and `-Pquick` sets `maven.test.skip`, which builds no
+  test-jar. A `-Pquick` install of the model therefore leaves `graphitron` reading whatever
+  test-jar the local repository (or its chained tail) already held, and an A/B run that way
+  measures the old `StoreStatistics` on both sides. Install with `-DskipTests` instead.
