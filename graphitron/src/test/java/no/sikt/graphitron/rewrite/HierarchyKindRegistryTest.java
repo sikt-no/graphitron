@@ -226,6 +226,11 @@ class HierarchyKindRegistryTest {
         Map.entry(no.sikt.graphitron.rewrite.model.ErrorFieldRead.class, HierarchyKind.RESOLVED_VIEW),
         Map.entry(ErrorsSlot.class, HierarchyKind.RESOLVED_VIEW),
         Map.entry(DialectRequirement.class, HierarchyKind.RESOLVED_VIEW),
+        // A written cell's length bound: a coalesce of the catalog's declared length, the cell's
+        // extraction and its GraphQL type, decided where the input field resolves, with no walk of
+        // its own. LengthCheck is derived from it and the error channel, like DialectRequirement.
+        Map.entry(no.sikt.graphitron.rewrite.model.ColumnWriteBound.class, HierarchyKind.RESOLVED_VIEW),
+        Map.entry(no.sikt.graphitron.rewrite.model.LengthCheck.class, HierarchyKind.RESOLVED_VIEW),
         Map.entry(InputColumnBinding.class, HierarchyKind.RESOLVED_VIEW),
         Map.entry(InputColumnBindingGroup.class, HierarchyKind.RESOLVED_VIEW),
         Map.entry(DomainReturnType.class, HierarchyKind.RESOLVED_VIEW),

@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.rewrite.model.ColumnWriteBound;
 import no.sikt.graphitron.rewrite.ArgConditionRef;
 import no.sikt.graphitron.model.diagnostics.RejectionKind;
 import no.sikt.graphitron.rewrite.TestFixtures;
@@ -47,7 +48,7 @@ class InputColumnBackedReferenceFieldValidationTest {
             List<ColumnRef> columns, Optional<ArgConditionRef> condition, CallSiteExtraction extraction) {
         return new InputField.ColumnBackedReferenceField(
             "FilmFilter", "languageName", null, "String", false, false,
-            columns, CONDITION_PATH, new FilterBinding.Remote(), false, condition, extraction);
+            columns, CONDITION_PATH, new FilterBinding.Remote(), false, condition, extraction, ColumnWriteBound.Unbounded.INSTANCE);
     }
 
     private static Optional<ArgConditionRef> stubCondition() {

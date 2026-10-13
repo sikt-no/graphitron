@@ -8871,6 +8871,117 @@ class GraphQLQueryTest {
         }
     }
 
+    // ===== Column-length check on the DML carriers =====
+    //
+    // FilmCreateError carries FilmWriteInvalid, whose {handler: VALIDATION} turns on the
+    // pre-execution length check on all three *WithErrors carriers: a title longer than
+    // film.title's varchar(255) comes back as a typed error with an input path, and the
+    // statement never runs. Without the member it reached PostgreSQL (22001) and came back as a
+    // redacted top-level error.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void createFilmWithErrors_overLongTitle_isRejectedBeforeTheStatement() {
+        String title = "LEN-" + "x".repeat(252);
+        assertThat(title).hasSize(256);
+        graphql.ExecutionResult result = executeRaw("""
+            mutation {
+                createFilmWithErrors(in: { title: "%s", languageId: 1 }) {
+                    film { title }
+                    errors { __typename ... on FilmWriteInvalid { path message } }
+                }
+            }
+            """.formatted(title));
+        assertThat(result.getErrors()).as("top-level errors: %s", result.getErrors()).isEmpty();
+        Map<String, Object> data = result.getData();
+        var payload = assertThat(data).extractingByKey("createFilmWithErrors", as(MAP));
+        payload.containsEntry("film", null);
+        var only = payload.extractingByKey("errors", as(list(Map.class))).hasSize(1).element(0, as(MAP));
+        only.containsEntry("__typename", "FilmWriteInvalid");
+        only.containsEntry("message", "size must be between 0 and 255");
+        only.extractingByKey("path", as(LIST)).containsExactly("createFilmWithErrors", "in", "title");
+        assertThat(dsl.fetchCount(DSL.table("film"), DSL.field("title", String.class).eq(title)))
+            .as("nothing was written").isZero();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void createFilmsWithErrors_overLongTitleOnOneRow_rejectsTheWholeBatch() {
+        String prefix = "LEN-BULK-" + java.util.UUID.randomUUID();
+        String tooLong = prefix + "x".repeat(256 - prefix.length());
+        graphql.ExecutionResult result = executeRaw("""
+            mutation {
+                createFilmsWithErrors(in: [
+                    { title: "%s-ok", languageId: 1 },
+                    { title: "%s", languageId: 1 }
+                ]) {
+                    films { title }
+                    errors { __typename ... on FilmWriteInvalid { path message } }
+                }
+            }
+            """.formatted(prefix, tooLong));
+        assertThat(result.getErrors()).as("top-level errors: %s", result.getErrors()).isEmpty();
+        Map<String, Object> data = result.getData();
+        var payload = assertThat(data).extractingByKey("createFilmsWithErrors", as(MAP));
+        payload.containsEntry("films", null);
+        var only = payload.extractingByKey("errors", as(list(Map.class))).hasSize(1).element(0, as(MAP));
+        only.containsEntry("__typename", "FilmWriteInvalid");
+        only.extractingByKey("path", as(LIST)).containsExactly("createFilmsWithErrors", "in", "1", "title");
+        assertThat(dsl.fetchCount(DSL.table("film"), DSL.field("title", String.class).startsWith(prefix)))
+            .as("neither row was inserted, the valid first one included").isZero();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void updateFilmWithErrors_overLongTitle_leavesTheRowUnchanged() {
+        String original = dsl.select(DSL.field("title", String.class)).from(DSL.table("film"))
+            .where(DSL.field("film_id", Integer.class).eq(1)).fetchOne(0, String.class);
+        graphql.ExecutionResult result = executeRaw("""
+            mutation {
+                updateFilmWithErrors(in: { filmId: 1, title: "%s" }) {
+                    film { title }
+                    errors { __typename ... on FilmWriteInvalid { path message } }
+                }
+            }
+            """.formatted("y".repeat(256)));
+        assertThat(result.getErrors()).as("top-level errors: %s", result.getErrors()).isEmpty();
+        Map<String, Object> data = result.getData();
+        var payload = assertThat(data).extractingByKey("updateFilmWithErrors", as(MAP));
+        var only = payload.extractingByKey("errors", as(list(Map.class))).hasSize(1).element(0, as(MAP));
+        only.containsEntry("__typename", "FilmWriteInvalid");
+        only.extractingByKey("path", as(LIST)).containsExactly("updateFilmWithErrors", "in", "title");
+        assertThat(dsl.select(DSL.field("title", String.class)).from(DSL.table("film"))
+                .where(DSL.field("film_id", Integer.class).eq(1)).fetchOne(0, String.class))
+            .as("the row's title is unchanged").isEqualTo(original);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void createFilmWithErrors_titleOf255SupplementaryCharacters_isAccepted() {
+        // 255 code points outside the Basic Multilingual Plane are 510 UTF-16 units. PostgreSQL's
+        // varchar(255) counts characters, so it accepts the value; so must the check, which counts
+        // code points rather than String.length().
+        String title = "\uD83C\uDFAC".repeat(255);
+        assertThat(title.codePointCount(0, title.length())).isEqualTo(255);
+        try {
+            var result = executeRaw("""
+                mutation {
+                    createFilmWithErrors(in: { title: "%s", languageId: 1 }) {
+                        film { title }
+                        errors { __typename }
+                    }
+                }
+                """.formatted(title));
+            assertThat(result.getErrors()).as("top-level errors: %s", result.getErrors()).isEmpty();
+            Map<String, Object> data = result.getData();
+            var payload = assertThat(data).extractingByKey("createFilmWithErrors", as(MAP));
+            payload.containsEntry("errors", null);
+            payload.extractingByKey("film", as(MAP)).containsEntry("title", title);
+        } finally {
+            dsl.deleteFrom(DSL.table("film")).where(DSL.field("title", String.class).eq(title)).execute();
+        }
+    }
+
     @Test
     void updateFilmWithErrors_noMatchingRow_rendersTheWholePayloadNull() {
         // A single-row UPDATE whose key matches nothing: fetchOne() answers null and the fetcher

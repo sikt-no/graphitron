@@ -191,6 +191,8 @@ Three rules follow from that:
 * A list data field renders `null` on the error path, not an empty list, since nothing was written.
 * A single-row write whose key matches no row renders the whole payload `null`, the same as on a payload without an errors field.
 
+Give one `@error` type in the errors field `{handler: VALIDATION}` and every string the write stores is also checked against its column's declared length before the statement runs; see xref:../../how-to/error-channel.adoc#column-length-check[the column-length check].
+
 The same rules hold in a database-per-tenant build: the payload's fields read the tenant the write ran on, and the errors travel with the payload.
 
 == Constraints

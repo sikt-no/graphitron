@@ -239,11 +239,13 @@ public final class JooqFactCapture {
             i -> val(facts.get(i).sqlType(), t.SQL_TYPE),
             i -> val(facts.get(i).bindingType(), t.BINDING_TYPE),
             i -> val(facts.get(i).nullable(), t.NULLABLE),
+            i -> val(facts.get(i).declaredLength(), t.DECLARED_LENGTH),
             i -> val(nullIfBlank(facts.get(i).comment()), t.DESCRIPTION),
             i -> val(touchedAt, t.TOUCHED_AT)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.COLUMN_NAME, t.ORDINAL,
-                    t.JOOQ_NAME, t.SQL_TYPE, t.BINDING_TYPE, t.NULLABLE, t.DESCRIPTION, t.TOUCHED_AT)
+                    t.JOOQ_NAME, t.SQL_TYPE, t.BINDING_TYPE, t.NULLABLE, t.DECLARED_LENGTH, t.DESCRIPTION,
+                    t.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.ORDINAL, excluded(t.ORDINAL))
@@ -251,6 +253,7 @@ public final class JooqFactCapture {
                 .set(t.SQL_TYPE, excluded(t.SQL_TYPE))
                 .set(t.BINDING_TYPE, excluded(t.BINDING_TYPE))
                 .set(t.NULLABLE, excluded(t.NULLABLE))
+                .set(t.DECLARED_LENGTH, excluded(t.DECLARED_LENGTH))
                 .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }

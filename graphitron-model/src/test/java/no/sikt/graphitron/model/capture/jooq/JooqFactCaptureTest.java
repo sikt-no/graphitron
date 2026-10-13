@@ -57,6 +57,37 @@ class JooqFactCaptureTest {
     }
 
     /**
+     * A column's declared length is what its type says, and nothing when it says none: a
+     * {@code text} column and an integer one both read null, which is what
+     * {@code DataType.lengthDefined()} answers where {@code hasLength()} would claim a length of 0.
+     * Read once off the catalog projection and once off the captured rows, since the two must agree.
+     */
+    @Test
+    @DisplayName("a column's declared length is captured, and is null where the type declares none")
+    void aColumnsDeclaredLengthIsCaptured() {
+        var jooq = new JooqCatalog(JOOQ_PACKAGE);
+        java.util.function.BiFunction<String, String, Integer> facts = (table, column) ->
+            jooq.columnFactsOf(jooq.findTable(table).asEntry().orElseThrow().table()).stream()
+                .filter(f -> f.sqlName().equals(column)).findFirst().orElseThrow().declaredLength();
+        assertThat(facts.apply("film", "title")).as("varchar(255)").isEqualTo(255);
+        assertThat(facts.apply("film", "description")).as("text").isNull();
+        assertThat(facts.apply("film", "film_id")).as("serial").isNull();
+        assertThat(facts.apply("language", "name")).as("char(20)").isEqualTo(20);
+
+        withCapture(FIRST, dsl -> {
+            java.util.function.BiFunction<String, String, Integer> captured = (table, column) ->
+                dsl.select(SQL_COLUMN.DECLARED_LENGTH).from(SQL_COLUMN)
+                    .where(SQL_COLUMN.TABLE_SCHEMA.eq("public"), SQL_COLUMN.TABLE_NAME.eq(table),
+                        SQL_COLUMN.COLUMN_NAME.eq(column))
+                    .fetchSingle(SQL_COLUMN.DECLARED_LENGTH);
+            assertThat(captured.apply("film", "title")).isEqualTo(255);
+            assertThat(captured.apply("film", "description")).isNull();
+            assertThat(captured.apply("film", "film_id")).isNull();
+            assertThat(captured.apply("language", "name")).isEqualTo(20);
+        });
+    }
+
+    /**
      * Every row carries the reading that wrote it, which is what the sweep tells readings apart by.
      * Asserted over the whole family rather than one relation, because a relation whose writer
      * forgot the stamp would be swept away by the next reading and its rows would simply vanish.

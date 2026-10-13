@@ -7,6 +7,7 @@ import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.model.AgreementObligation;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.CarrierNullRule;
+import no.sikt.graphitron.rewrite.model.ColumnWriteBound;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FilterBinding;
 import no.sikt.graphitron.rewrite.model.InputField;
@@ -118,9 +119,14 @@ public final class UpdateRowsWalker {
      * returned {@code Record<N>}. The type system cannot carry that alignment, which is why stage 6
      * reads the index off this list once and hands every downstream row an explicit slot rather than
      * letting each emitter re-derive one from its own partition's ordering.
+     *
+     * <p>{@code bound} is the walked carrier's own {@link ColumnWriteBound}, decided on the leaf
+     * before {@link #wrap} adds any nested access path, and copied into every {@link SetColumn} the
+     * contribution mints.
      */
     private record Contribution(String sdlFieldName, List<ColumnRef> columns, CallSiteExtraction extraction,
-                                CarrierRole role, boolean nonNull, SourceLocation location) {
+                                CarrierRole role, boolean nonNull, SourceLocation location,
+                                ColumnWriteBound bound) {
 
         /** A self-FK's columns are a sibling pointer, so they never pin the row they live on. */
         boolean pinsIdentity() { return !(role instanceof CarrierRole.SelfFk); }
@@ -235,7 +241,7 @@ public final class UpdateRowsWalker {
                             if (keySqlNames.contains(col.sqlName())) {
                                 identityClaims.add(new ColumnSlot(c, col, slot));
                             } else {
-                                setColumns.add(new SetColumn(c.sdlFieldName(), col, c.extraction(), slot));
+                                setColumns.add(new SetColumn(c.sdlFieldName(), col, c.extraction(), slot, c.bound()));
                             }
                         }
                         if (!c.nonNull()) {
@@ -417,7 +423,8 @@ public final class UpdateRowsWalker {
             switch (f) {
                 case InputField.ColumnBackedField c -> classifyColumnCarrier(
                     c.name(), c.list(), c.columns(), wrap(c.extraction(), prefix, c.name(), outerArgName),
-                    new CarrierRole.OwnColumns(), c.nonNull(), c.condition(), c.location(), errors, contributions);
+                    new CarrierRole.OwnColumns(), c.nonNull(), c.condition(), c.location(), c.bound(),
+                    errors, contributions);
                 // A reference carrier contributes the tuple its binding names on this table. A
                 // Remote binding has none: its decoded key identifies a target row and reaches this
                 // table only through the join, so there is nothing to put in a SET or a WHERE
@@ -427,7 +434,7 @@ public final class UpdateRowsWalker {
                         case FilterBinding.Local(var ownTableColumns) -> classifyColumnCarrier(
                             c.name(), c.list(), ownTableColumns, wrap(c.extraction(), prefix, c.name(), outerArgName),
                             c.selfReference() ? new CarrierRole.SelfFk() : new CarrierRole.CrossTableFk(),
-                            c.nonNull(), c.condition(), c.location(), errors, contributions);
+                            c.nonNull(), c.condition(), c.location(), c.bound(), errors, contributions);
                         case FilterBinding.Remote ignored ->
                             errors.add(new UpdateRowsError.UnsupportedInputFieldShape(
                                 c.name(), "translated FK-target @nodeId reference",
@@ -497,7 +504,7 @@ public final class UpdateRowsWalker {
     private void classifyColumnCarrier(
         String name, boolean list, List<ColumnRef> columns, CallSiteExtraction extraction,
         CarrierRole role, boolean nonNull, Optional<ArgConditionRef> condition, SourceLocation location,
-        List<Rejection.AuthorError> errors, List<Contribution> contributions
+        ColumnWriteBound bound, List<Rejection.AuthorError> errors, List<Contribution> contributions
     ) {
         if (list) {
             errors.add(new UpdateRowsError.UnsupportedInputFieldShape(
@@ -517,7 +524,7 @@ public final class UpdateRowsWalker {
             }
             return;
         }
-        contributions.add(new Contribution(name, columns, extraction, role, nonNull, location));
+        contributions.add(new Contribution(name, columns, extraction, role, nonNull, location, bound));
     }
 
     /** One column of one contribution, with the decode slot it sits at: a straddler's in-key column
@@ -532,7 +539,7 @@ public final class UpdateRowsWalker {
     /** Append every column of {@code c} to the SET partition, each at its decode slot. */
     private static void addSetColumns(List<SetColumn> setColumns, Contribution c) {
         for (int slot = 0; slot < c.columns().size(); slot++) {
-            setColumns.add(new SetColumn(c.sdlFieldName(), c.columns().get(slot), c.extraction(), slot));
+            setColumns.add(new SetColumn(c.sdlFieldName(), c.columns().get(slot), c.extraction(), slot, c.bound()));
         }
     }
 

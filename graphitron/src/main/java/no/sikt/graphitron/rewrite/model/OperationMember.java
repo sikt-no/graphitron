@@ -334,6 +334,54 @@ public sealed interface OperationMember {
                     case Delete d -> d.deleteRows().whereColumns();
                 };
             }
+
+            /**
+             * The value cells the statement writes, one per input path, the sibling of
+             * {@link #whereKeyColumns()}. Reads the partition the write plan already made rather
+             * than re-deciding it: INSERT and UPSERT write the {@link InputField.SetField} leaves of
+             * {@code fields()} (nested groupings recursed into, their path kept; a
+             * {@link FilterBinding.Remote} reference is never written, the write rails reject it),
+             * UPDATE writes its {@link UpdateRows#setColumns()} (a composite NodeId carrier's rows
+             * collapse to one cell by path), and DELETE writes nothing. Key and WHERE cells are not
+             * written cells.
+             */
+            default List<WrittenCell> writtenCells() {
+                return switch (this) {
+                    case Insert i -> insertCells(i.input().fields(), List.of());
+                    case Upsert u -> insertCells(u.input().fields(), List.of());
+                    case Update u -> {
+                        var byPath = new java.util.LinkedHashMap<List<String>, WrittenCell>();
+                        for (var sc : u.updateRows().setColumns()) {
+                            List<String> path = sc.extraction() instanceof CallSiteExtraction.NestedInputField nif
+                                ? nif.path()
+                                : List.of(sc.sdlFieldName());
+                            byPath.putIfAbsent(path, new WrittenCell(path, sc.targetColumn(), sc.bound()));
+                        }
+                        yield List.copyOf(byPath.values());
+                    }
+                    case Delete ignored -> List.of();
+                };
+            }
+
+            private static List<WrittenCell> insertCells(List<InputField> fields, List<String> prefix) {
+                var out = new java.util.ArrayList<WrittenCell>();
+                for (var f : fields) {
+                    var path = new java.util.ArrayList<>(prefix);
+                    path.add(f.name());
+                    switch (f) {
+                        case InputField.NestingField n -> out.addAll(insertCells(n.fields(), path));
+                        case InputField.ColumnBackedField c ->
+                            out.add(new WrittenCell(path, c.columns().getFirst(), c.bound()));
+                        case InputField.ColumnBackedReferenceField r -> {
+                            if (r.binding() instanceof FilterBinding.Local(var ownTableColumns)) {
+                                out.add(new WrittenCell(path, ownTableColumns.getFirst(), r.bound()));
+                            }
+                        }
+                        default -> { }
+                    }
+                }
+                return out;
+            }
         }
 
         /** A DML INSERT write. */

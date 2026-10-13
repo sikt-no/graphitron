@@ -496,6 +496,15 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(write.table());
         }
+
+        /**
+         * Whether the strings this write stores are checked against their columns' declared
+         * lengths before the statement, derived from the write plan and the error channel; see
+         * {@link LengthCheck#of}.
+         */
+        public LengthCheck lengthCheck() {
+            return LengthCheck.of(write, errorChannel);
+        }
     }
 
     /**
@@ -563,6 +572,11 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(write.table());
+        }
+
+        /** The bulk twin of {@link MutationDmlRecordField#lengthCheck()}; see {@link LengthCheck#of}. */
+        public LengthCheck lengthCheck() {
+            return LengthCheck.of(write, errorChannel);
         }
     }
 

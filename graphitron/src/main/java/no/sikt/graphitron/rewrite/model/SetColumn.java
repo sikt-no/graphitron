@@ -19,14 +19,19 @@ import no.sikt.graphitron.model.jooq.ColumnRef;
  * decode. It is stated rather than recovered from the row's position in the SET partition, because
  * a straddling cross-table reference splits one decode record across the WHERE and SET sides and
  * leaves each side a non-contiguous slice; see {@link ColumnOverlap.SlotColumn}.
+ *
+ * <p>{@link #bound()} is copied from the input-field carrier the row was derived from, never
+ * decided here; see {@link ColumnWriteBound}.
  */
 public record SetColumn(
     String sdlFieldName,
     ColumnRef targetColumn,
     CallSiteExtraction extraction,
-    int decodeSlot
+    int decodeSlot,
+    ColumnWriteBound bound
 ) {
     public SetColumn {
+        java.util.Objects.requireNonNull(bound, "bound");
         if (decodeSlot < 0) {
             throw new IllegalArgumentException(
                 "SetColumn '" + sdlFieldName + "' decodeSlot cannot be negative: " + decodeSlot);

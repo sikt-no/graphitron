@@ -1309,6 +1309,11 @@ public class JooqCatalog {
      * column: {@code getDataType().getTypeName()} is what the database declares,
      * {@code getType().getName()} is what the generator binds it to. Only a live {@code Field} on
      * the codegen classpath can answer the second, so it is captured here or not at all.
+     *
+     * <p>The declared length is read with {@code DataType.lengthDefined()} rather than
+     * {@code hasLength()}: jOOQ answers {@code hasLength()} true with a length of 0 for a
+     * {@code CLOB}, PostgreSQL's {@code text} and an unbounded {@code varchar}, none of which
+     * declares a length.
      */
     public java.util.List<ColumnFacts> columnFactsOf(Table<?> table) {
         return Arrays.stream(table.getClass().getFields())
@@ -1316,13 +1321,15 @@ public class JooqCatalog {
             .map(f -> {
                 var col = (org.jooq.Field<?>) instanceFieldValue(f, table);
                 String comment = col.getComment();
+                var dataType = col.getDataType();
                 return new ColumnFacts(
                     col.getName(),
                     f.getName(),
-                    col.getDataType().getTypeName(),
+                    dataType.getTypeName(),
                     col.getType().getName(),
-                    col.getDataType().nullable(),
-                    comment == null ? "" : comment);
+                    dataType.nullable(),
+                    comment == null ? "" : comment,
+                    dataType.lengthDefined() && dataType.length() > 0 ? dataType.length() : null);
             })
             .toList();
     }
@@ -1377,8 +1384,9 @@ public class JooqCatalog {
 
     /**
      * A column's full discovery facts: SQL name, jOOQ Java field name, SQL data-type name, the Java
-     * type jOOQ binds the column to, nullability, and comment (empty when codegen captured none).
-     * See {@link #columnFactsOf}.
+     * type jOOQ binds the column to, nullability, comment (empty when codegen captured none), and
+     * the length the column's type declares (null when it declares none). See
+     * {@link #columnFactsOf}.
      *
      * <p>Carries every fact {@link ColumnEntry} does. The one thing it does not carry is that
      * record's {@code columnType}, which is the javapoet rendering of the same binding type rather
@@ -1388,7 +1396,7 @@ public class JooqCatalog {
      * is what {@link ColumnEntry} is not.
      */
     public record ColumnFacts(String sqlName, String javaName, String sqlType, String bindingType,
-                              boolean nullable, String comment) {}
+                              boolean nullable, String comment, Integer declaredLength) {}
 
     /**
      * An index's name and its SQL column names in index order. See {@link #indexFactsOf}.

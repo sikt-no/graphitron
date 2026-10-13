@@ -5346,6 +5346,7 @@ CREATE TABLE sql_column (
   sql_type     VARCHAR NOT NULL,
   binding_type VARCHAR NOT NULL,
   nullable     BOOLEAN NOT NULL,
+  declared_length INT CHECK (declared_length > 0),
   description  VARCHAR,
   column_name_upper VARCHAR GENERATED ALWAYS AS (UPPER(column_name)),
   jooq_name_upper   VARCHAR GENERATED ALWAYS AS (UPPER(jooq_name)),
@@ -5363,6 +5364,7 @@ COMMENT ON COLUMN sql_column.jooq_name IS 'the generated jOOQ Java field name; t
 COMMENT ON COLUMN sql_column.sql_type IS 'the column''s SQL type as jOOQ reports it';
 COMMENT ON COLUMN sql_column.binding_type IS 'the fully qualified Java type jOOQ binds the column to, as Field.getType() reports it; read off the live Field during the catalog walk and unrecoverable afterwards, since nothing outside the codegen classpath can resolve a configured binding. Hover renders it beside the SQL type, which is why a column needs both and why keeping only one of them capped what the editor could say about a column.';
 COMMENT ON COLUMN sql_column.nullable IS 'whether the column admits NULL';
+COMMENT ON COLUMN sql_column.declared_length IS 'the length the column''s type declares, as jOOQ reports it, for example 255 for film.title''s varchar(255); in the dialect''s own unit, characters on PostgreSQL and bytes or characters on Oracle by the column''s length semantics, which the catalog does not say; null when the type declares no length';
 COMMENT ON COLUMN sql_column.description IS 'the database comment on the column, when present';
 COMMENT ON COLUMN sql_column.column_name_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against an authored column reference or the field name standing in for one. Generated, so nothing writes it and nothing can. Fold only where an authored spelling meets a catalog name. Two values of one family are compared exactly, and a comparison that does want a fold on both sides reaches this column by joining sql_column on its key rather than by having it forwarded through a derived view. sql_name_matched_key_column is the worked example of that second sentence: both of its column names are catalog values, so it reaches a key column''s fold through the foreign key sql_constraint_column already declares here';
 COMMENT ON COLUMN sql_column.jooq_name_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against an authored column reference or the field name standing in for one, which is the tier tried before the SQL name. Generated, so nothing writes it and nothing can. Fold only where an authored spelling meets a catalog name. Two values of one family are compared exactly, and a comparison that does want a fold on both sides reaches this column by joining sql_column on its key rather than by having it forwarded through a derived view';
@@ -12979,6 +12981,7 @@ INSERT INTO lint_rule VALUES
   ('splitquery-redundant-on-discriminated-interface-child', 'CLASSIFIER', 'WARNING'),
   ('redundant-record-directive', 'CLASSIFIER', 'WARNING'),
   ('asconnection-same-table-pk-in', 'CLASSIFIER', 'WARNING'),
+  ('dml-write-length-unrouted', 'CLASSIFIER', 'WARNING'),
   ('no-session-state', 'CODEGEN', 'WARNING'),
   ('graphql-java-version-lag', 'CODEGEN', 'WARNING'),
   ('jooq-version-lag', 'CODEGEN', 'WARNING'),

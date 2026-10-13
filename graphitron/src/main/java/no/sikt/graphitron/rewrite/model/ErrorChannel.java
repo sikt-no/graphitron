@@ -40,6 +40,17 @@ public sealed interface ErrorChannel permits ErrorChannel.Mapped, ErrorChannel.R
     String mappingsConstantName();
 
     /**
+     * Whether any handler on any mapped {@code @error} type is a {@code VALIDATION} handler: the
+     * channel can receive a pre-execution validation error, which is what turns the pre-execution
+     * checks on.
+     */
+    default boolean hasValidationHandler() {
+        return mappedErrorTypes().stream()
+            .flatMap(et -> et.handlers().stream())
+            .anyMatch(h -> h instanceof GraphitronType.ErrorType.ValidationHandler);
+    }
+
+    /**
      * The classify-time descriptor of which {@code @error} types map and which
      * {@code ErrorMappings} constant drives them; it drives the {@code Outcome} wrapper emit (the
      * success path wraps the jOOQ record in {@code Success}, the error path returns

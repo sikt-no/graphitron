@@ -66,6 +66,7 @@ import no.sikt.graphitron.model.diagnostics.Arity;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.model.grammar.DirectiveArgs;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.rewrite.model.ColumnWriteBound;
 import no.sikt.graphitron.model.grammar.NodeDeclaration;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.diagnostics.ServiceCarrierShapeError;
@@ -2952,6 +2953,7 @@ class BuildContext {
             if (path.hasError()) return unresolved(field, name, untypedUpstream(path.errorMessage()));
             return svc.resolveColumnForReference(columnName, path.elements(), resolvedTable)
                 .<InputFieldResolution>map(col -> {
+                    var direct = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct();
                     Optional<ArgConditionRef> cond = buildInputFieldCondition(field, parentTypeName, name, conditionFailures);
                     // Plain (non-@nodeId) @reference: the predicate fires against the resolved
                     // column. An empty path means the column is on the field's own table, so it
@@ -2965,8 +2967,8 @@ class BuildContext {
                         path.elements().isEmpty()
                             ? new FilterBinding.Local(List.of(col))
                             : new FilterBinding.Remote(),
-                        false, cond,
-                        new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct()));
+                        false, cond, direct,
+                        writeBound(field, resolvedTable, List.of(col), direct)));
                 })
                 .orElseGet(() -> unresolved(field, name, Rejection.unknownColumn(
                     "no column '" + columnName + "' reachable via @reference path",
@@ -3058,7 +3060,8 @@ class BuildContext {
                 recordImplicitDisposition(ctx, parentTypeName, name, extraction);
                 return new InputFieldResolution.Resolved(new InputField.ColumnBackedField(
                     parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                    node.nodeKeyColumns(), nodeIdCond, extraction));
+                    node.nodeKeyColumns(), nodeIdCond, extraction,
+                    writeBound(field, resolvedTable, node.nodeKeyColumns(), extraction)));
             }
             if (nodesOnTable.size() > 1) {
                 var ambiguous = Rejection.structural(
@@ -3086,10 +3089,11 @@ class BuildContext {
                     parentTypeName, name, locationOf(field), typeName, nonNull, list,
                     cond.get(), Optional.of(column)));
             }
+            var direct = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct();
             return new InputFieldResolution.Resolved(new InputField.ColumnBackedField(
                 parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                List.of(column), cond,
-                new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct()));
+                List.of(column), cond, direct,
+                writeBound(field, resolvedTable, List.of(column), direct)));
         }
         // Column miss. @condition(override: true) lifts to ConditionOwnedField (the method owns
         // the predicate, and with no column resolved its resolvedColumn is empty). Otherwise the
@@ -3131,6 +3135,49 @@ class BuildContext {
         return new InputFieldResolution.Resolved(new InputField.UnboundField(
             parentTypeName, name, locationOf(field), typeName, nonNull, list,
             unboundCond, columnName));
+    }
+
+    /**
+     * The length bound a write of one resolved input-field cell must respect, decided once per use
+     * against the consuming field's table. The one place {@link ColumnWriteBound.Length} is minted,
+     * and it is minted only on a cell whose raw wire value is the column's own text: a
+     * {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct} extraction (which excludes
+     * every NodeId-decoded arm), exactly one column, a field whose named GraphQL type is not an enum
+     * (enum inputs arrive {@code Direct} too, graphql-java having already translated the wire value,
+     * and their values are authored constants rather than client text), and a column bound to
+     * {@code java.lang.String} whose type declares a length. Everything else is
+     * {@link ColumnWriteBound.Unbounded}. Query-side filters carry the answer without reading it.
+     */
+    private ColumnWriteBound writeBound(GraphQLInputObjectField field, TableRef table,
+            List<ColumnRef> columns, no.sikt.graphitron.rewrite.model.CallSiteExtraction extraction) {
+        if (!(extraction instanceof no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct)
+                || columns.size() != 1
+                || GraphQLTypeUtil.unwrapAll(field.getType()) instanceof graphql.schema.GraphQLEnumType
+                // The ref carries the same binding fact the catalog reports; checking it first keeps
+                // the reflective facts walk below to String columns.
+                || !String.class.getName().equals(columns.get(0).columnClass())) {
+            return ColumnWriteBound.Unbounded.INSTANCE;
+        }
+        var facts = columnFacts(table, columns.get(0));
+        if (!String.class.getName().equals(facts.bindingType()) || facts.declaredLength() == null) {
+            return ColumnWriteBound.Unbounded.INSTANCE;
+        }
+        return new ColumnWriteBound.Length(facts.declaredLength());
+    }
+
+    /**
+     * The captured facts of one column, read through
+     * {@link no.sikt.graphitron.model.jooq.JooqCatalog#columnFactsOf}, the values the catalog
+     * capture writes to {@code sql_column}. A column the catalog cannot place falls back to the
+     * binding the {@link ColumnRef} already carries, an unknown SQL type and no declared length.
+     */
+    JooqCatalog.ColumnFacts columnFacts(TableRef table, ColumnRef column) {
+        return catalog.findTable(table.tableName()).asEntry()
+            .flatMap(te -> catalog.columnFactsOf(te.table()).stream()
+                .filter(f -> f.sqlName().equalsIgnoreCase(column.sqlName()))
+                .findFirst())
+            .orElseGet(() -> new JooqCatalog.ColumnFacts(
+                column.sqlName(), column.javaName(), null, column.columnClass(), true, "", null));
     }
 
     /**
@@ -3207,7 +3254,8 @@ class BuildContext {
                 var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch(st.decodeMethod());
                 return new InputFieldResolution.Resolved(new InputField.ColumnBackedField(
                     parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                    st.keyColumns(), condition, extraction));
+                    st.keyColumns(), condition, extraction,
+                    writeBound(field, resolvedTable, st.keyColumns(), extraction)));
             }
             case NodeIdLeafResolver.Resolved.FkTarget.DirectFk direct -> {
                 // Authored input-field FK-target @nodeId filter throws on malformed/wrong-type ids.
@@ -3216,7 +3264,8 @@ class BuildContext {
                     parentTypeName, name, locationOf(field), typeName, nonNull, list,
                     direct.keyColumns(), direct.joinPath(),
                     new FilterBinding.Local(direct.liftedSourceColumns()),
-                    direct.selfReference(), condition, extraction));
+                    direct.selfReference(), condition, extraction,
+                    writeBound(field, resolvedTable, direct.liftedSourceColumns(), extraction)));
             }
             case NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk translated -> {
                 var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch(translated.decodeMethod());
@@ -3229,7 +3278,8 @@ class BuildContext {
                 return new InputFieldResolution.Resolved(new InputField.ColumnBackedReferenceField(
                     parentTypeName, name, locationOf(field), typeName, nonNull, list,
                     translated.keyColumns(), translated.joinPath(),
-                    new FilterBinding.Remote(), false, condition, extraction));
+                    new FilterBinding.Remote(), false, condition, extraction,
+                    writeBound(field, resolvedTable, translated.keyColumns(), extraction)));
             }
         }
     }

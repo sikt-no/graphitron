@@ -82,6 +82,8 @@ import no.sikt.graphitron.rewrite.model.LookupResolution;
 import no.sikt.graphitron.rewrite.model.RoutineResolution;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField;
+import no.sikt.graphitron.rewrite.model.LengthCheck;
+import no.sikt.graphitron.rewrite.model.ColumnWriteBound;
 import no.sikt.graphitron.rewrite.model.RoutineChain;
 import no.sikt.graphitron.rewrite.model.RoutineRef;
 import no.sikt.graphitron.rewrite.model.NodeIdArgDispatch;
@@ -815,6 +817,44 @@ class FieldBuilder {
     }
 
     /**
+     * Emits the {@link LintRule#DML_WRITE_LENGTH_UNROUTED} advisory when a payload-returning DML
+     * carrier writes length-bounded columns into a payload whose errors field has no
+     * {@code VALIDATION} member, and hands the carrier back unchanged. Reads the carrier's derived
+     * {@link MutationField.MutationDmlRecordField#lengthCheck()}, the same accessor the emitter reads.
+     */
+    private MutationField.MutationDmlRecordField advisedOnLength(MutationField.MutationDmlRecordField field) {
+        warnLengthUnrouted(field.qualifiedName(), field.location(), field.write(), field.lengthCheck());
+        return field;
+    }
+
+    /** The bulk twin of {@link #advisedOnLength(MutationField.MutationDmlRecordField)}. */
+    private MutationField.MutationBulkDmlRecordField advisedOnLength(MutationField.MutationBulkDmlRecordField field) {
+        warnLengthUnrouted(field.qualifiedName(), field.location(), field.write(), field.lengthCheck());
+        return field;
+    }
+
+    private void warnLengthUnrouted(String coordinate, SourceLocation location,
+            OperationMember.Write.Dml write, LengthCheck check) {
+        if (!(check instanceof LengthCheck.Unrouted unrouted)) {
+            return;
+        }
+        String table = write.table().tableName();
+        var bounded = unrouted.bounded();
+        String columns = bounded.stream().limit(3)
+            .map(c -> table + "." + c.column().sqlName() + " "
+                + ((ColumnWriteBound.Length) c.bound()).declaredLength())
+            .collect(java.util.stream.Collectors.joining(", "))
+            + (bounded.size() > 3 ? ", ..." : "");
+        ctx.addWarning(BuildWarning.LintFinding.of(
+            coordinate + " writes length-bounded columns (" + columns + ") but no @error type on"
+                + " its payload's errors field declares {handler: VALIDATION}, so an over-long value"
+                + " reaches the database. Add {handler: VALIDATION} to one @error type there to have it"
+                + " rejected before the statement. (Graphitron 9's"
+                + " <recordValidation><schemaErrorType> named that type.)",
+            location, LintRule.DML_WRITE_LENGTH_UNROUTED));
+    }
+
+    /**
      * Emits the {@code @asConnection} + required-same-table-{@code @nodeId} hygiene advisory.
      *
      * <p>@asConnection + a required same-table @nodeId leaf is hygiene-flagged but allowed:
@@ -1355,11 +1395,11 @@ class FieldBuilder {
             }
             var typingParticipant = firstEntry.getKey();
             var typingColumn = columnByParticipant.get(typingParticipant);
-            var typingFacts = columnFacts(typingParticipant.table(), typingColumn);
+            var typingFacts = ctx.columnFacts(typingParticipant.table(), typingColumn);
             boolean positionRejected = false;
             for (var e : columnByParticipant.entrySet()) {
                 if (e.getKey().equals(typingParticipant)) continue;
-                var facts = columnFacts(e.getKey().table(), e.getValue());
+                var facts = ctx.columnFacts(e.getKey().table(), e.getValue());
                 if (!Objects.equals(facts.sqlType(), typingFacts.sqlType())
                         || !Objects.equals(facts.bindingType(), typingFacts.bindingType())) {
                     failures.add(new ParticipantFailure(e.getKey().typeName(), Rejection.structural(
@@ -1425,21 +1465,6 @@ class FieldBuilder {
             }
         }
         return direction;
-    }
-
-    /**
-     * The captured SQL and binding type of one participant column, read through
-     * {@link no.sikt.graphitron.model.jooq.JooqCatalog#columnFactsOf}, the values the catalog
-     * capture writes to {@code sql_column}. A column the catalog cannot place falls back to the
-     * binding the {@link ColumnRef} already carries and an unknown SQL type.
-     */
-    private JooqCatalog.ColumnFacts columnFacts(TableRef table, ColumnRef column) {
-        return ctx.catalog.findTable(table.tableName()).asEntry()
-            .flatMap(te -> ctx.catalog.columnFactsOf(te.table()).stream()
-                .filter(f -> f.sqlName().equalsIgnoreCase(column.sqlName()))
-                .findFirst())
-            .orElseGet(() -> new JooqCatalog.ColumnFacts(
-                column.sqlName(), column.javaName(), null, column.columnClass(), true, ""));
     }
 
     /** One participant's lowering failure, kept with the participant it belongs to. */
@@ -6452,13 +6477,13 @@ class FieldBuilder {
         return switch (walkerResult) {
             case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.UpdateRows> ok -> {
                 if (inputArg.list()) {
-                    yield new MutationField.MutationBulkDmlRecordField(
+                    yield advisedOnLength(new MutationField.MutationBulkDmlRecordField(
                         parentTypeName, name, location, returnType,
-                        new OperationMember.Write.Update(inputArg, ok.carrier()), channel);
+                        new OperationMember.Write.Update(inputArg, ok.carrier()), channel));
                 }
-                yield new MutationField.MutationDmlRecordField(
+                yield advisedOnLength(new MutationField.MutationDmlRecordField(
                     parentTypeName, name, location, returnType,
-                    new OperationMember.Write.Update(inputArg, ok.carrier()), channel);
+                    new OperationMember.Write.Update(inputArg, ok.carrier()), channel));
             }
             case no.sikt.graphitron.rewrite.model.WalkerResult.Err<no.sikt.graphitron.rewrite.model.UpdateRows> err ->
                 new UnclassifiedField(parentTypeName, name, location, err.errors().getFirst());
@@ -7068,13 +7093,13 @@ class FieldBuilder {
             ? Optional.of(p.channel()) : Optional.empty();
 
         if (tia.list()) {
-            return new MutationField.MutationBulkDmlRecordField(
+            return advisedOnLength(new MutationField.MutationBulkDmlRecordField(
                 parentTypeName, name, location, returnType,
-                new OperationMember.Write.Insert(tia), dmlChannel);
+                new OperationMember.Write.Insert(tia), dmlChannel));
         }
-        return new MutationField.MutationDmlRecordField(
+        return advisedOnLength(new MutationField.MutationDmlRecordField(
             parentTypeName, name, location, returnType,
-            new OperationMember.Write.Insert(tia), dmlChannel);
+            new OperationMember.Write.Insert(tia), dmlChannel));
     }
 
     /**

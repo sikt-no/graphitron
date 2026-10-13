@@ -36,9 +36,9 @@ class InputColumnBackedFieldInvariantTest {
     @Test
     void inputColumnBackedField_acceptsAnyArityUnderNodeIdDecodeKeys() {
         var single = new InputField.ColumnBackedField("In", "id", LOC, "ID", true, false,
-            List.of(ID_1), Optional.empty(), decode(List.of(ID_1)));
+            List.of(ID_1), Optional.empty(), decode(List.of(ID_1)), ColumnWriteBound.Unbounded.INSTANCE);
         var composite = new InputField.ColumnBackedField("In", "id", LOC, "ID", true, false,
-            List.of(ID_1, ID_2), Optional.empty(), decode(List.of(ID_1, ID_2)));
+            List.of(ID_1, ID_2), Optional.empty(), decode(List.of(ID_1, ID_2)), ColumnWriteBound.Unbounded.INSTANCE);
         assertThat(single.isComposite()).isFalse();
         assertThat(composite.isComposite()).isTrue();
     }
@@ -46,7 +46,7 @@ class InputColumnBackedFieldInvariantTest {
     @Test
     void inputColumnBackedField_rejectsEmptyColumns() {
         assertThatThrownBy(() -> new InputField.ColumnBackedField("In", "id", LOC, "ID", true, false,
-                List.of(), Optional.empty(), new CallSiteExtraction.Direct()))
+                List.of(), Optional.empty(), new CallSiteExtraction.Direct(), ColumnWriteBound.Unbounded.INSTANCE))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("at least one column");
     }
@@ -55,7 +55,7 @@ class InputColumnBackedFieldInvariantTest {
     void inputColumnBackedField_rejectsMultiColumnSingleScalarExtraction() {
         // Direct (and every other single-scalar extraction) implies arity 1.
         assertThatThrownBy(() -> new InputField.ColumnBackedField("In", "id", LOC, "ID", true, false,
-                List.of(ID_1, ID_2), Optional.empty(), new CallSiteExtraction.Direct()))
+                List.of(ID_1, ID_2), Optional.empty(), new CallSiteExtraction.Direct(), ColumnWriteBound.Unbounded.INSTANCE))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("NodeIdDecodeKeys");
     }
@@ -64,10 +64,10 @@ class InputColumnBackedFieldInvariantTest {
     void inputColumnBackedReferenceField_acceptsAnyArityUnderNodeIdDecodeKeys() {
         var single = new InputField.ColumnBackedReferenceField("In", "ref", LOC, "ID", true, false,
             List.of(ID_1), List.of(), new FilterBinding.Local(List.of(ID_1)), false,
-            Optional.empty(), decode(List.of(ID_1)));
+            Optional.empty(), decode(List.of(ID_1)), ColumnWriteBound.Unbounded.INSTANCE);
         var composite = new InputField.ColumnBackedReferenceField("In", "ref", LOC, "ID", true, false,
             List.of(ID_1, ID_2), List.of(), new FilterBinding.Local(List.of(ID_1, ID_2)), false,
-            Optional.empty(), decode(List.of(ID_1, ID_2)));
+            Optional.empty(), decode(List.of(ID_1, ID_2)), ColumnWriteBound.Unbounded.INSTANCE);
         assertThat(single.isComposite()).isFalse();
         assertThat(composite.isComposite()).isTrue();
     }
@@ -76,7 +76,7 @@ class InputColumnBackedFieldInvariantTest {
     void inputColumnBackedReferenceField_rejectsEmptyColumns() {
         assertThatThrownBy(() -> new InputField.ColumnBackedReferenceField("In", "ref", LOC, "ID", true, false,
                 List.of(), List.of(), new FilterBinding.Local(List.of(ID_1)), false,
-                Optional.empty(), new CallSiteExtraction.Direct()))
+                Optional.empty(), new CallSiteExtraction.Direct(), ColumnWriteBound.Unbounded.INSTANCE))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("at least one column");
     }
@@ -85,7 +85,7 @@ class InputColumnBackedFieldInvariantTest {
     void inputColumnBackedReferenceField_rejectsMultiColumnSingleScalarExtraction() {
         assertThatThrownBy(() -> new InputField.ColumnBackedReferenceField("In", "ref", LOC, "ID", true, false,
                 List.of(ID_1, ID_2), List.of(), new FilterBinding.Local(List.of(ID_1, ID_2)), false,
-                Optional.empty(), new CallSiteExtraction.Direct()))
+                Optional.empty(), new CallSiteExtraction.Direct(), ColumnWriteBound.Unbounded.INSTANCE))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("NodeIdDecodeKeys");
     }
@@ -97,7 +97,7 @@ class InputColumnBackedFieldInvariantTest {
         // later by BodyParam.RemoteColumnPredicate at emit.
         assertThatThrownBy(() -> new InputField.ColumnBackedReferenceField("In", "ref", LOC, "ID", true, false,
                 List.of(ID_1), List.of(), new FilterBinding.Remote(), false, Optional.empty(),
-                new CallSiteExtraction.Direct()))
+                new CallSiteExtraction.Direct(), ColumnWriteBound.Unbounded.INSTANCE))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("empty joinPath");
     }

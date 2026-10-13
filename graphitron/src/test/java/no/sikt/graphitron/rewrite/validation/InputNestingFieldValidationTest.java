@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.model.diagnostics.ValidationError;
+import no.sikt.graphitron.rewrite.model.ColumnWriteBound;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.InputField.NestingField;
@@ -24,10 +25,10 @@ class InputNestingFieldValidationTest {
             new NestingField("FooInput", "range", null, "RangeInput", true, false, List.of(
                 new InputField.ColumnBackedField("RangeInput", "fromYear", null, "Int", false, false,
                     List.of(new ColumnRef("release_year", "RELEASE_YEAR", "java.lang.Integer")), Optional.empty(),
-                    new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct()),
+                    new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct(), ColumnWriteBound.Unbounded.INSTANCE),
                 new InputField.ColumnBackedField("RangeInput", "toYear", null, "Int", false, false,
                     List.of(new ColumnRef("rental_rate", "RENTAL_RATE", "java.math.BigDecimal")), Optional.empty(),
-                    new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct())
+                    new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct(), ColumnWriteBound.Unbounded.INSTANCE)
             ), Optional.empty()),
             List.of()),
 

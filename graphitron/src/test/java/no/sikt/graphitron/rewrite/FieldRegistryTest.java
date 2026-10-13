@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import graphql.schema.FieldCoordinates;
+import no.sikt.graphitron.rewrite.model.ColumnWriteBound;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.InputField;
@@ -26,7 +27,7 @@ class FieldRegistryTest {
             parent, name, null, "String", true, false,
             List.of(new ColumnRef("col", "COL", "java.lang.String")),
             Optional.empty(),
-            new CallSiteExtraction.Direct());
+            new CallSiteExtraction.Direct(), ColumnWriteBound.Unbounded.INSTANCE);
     }
 
     @Test

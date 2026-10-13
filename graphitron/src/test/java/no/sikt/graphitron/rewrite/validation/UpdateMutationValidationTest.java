@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ArgumentRef;
+import no.sikt.graphitron.rewrite.model.ColumnWriteBound;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -41,7 +42,7 @@ class UpdateMutationValidationTest {
                     List.of(new no.sikt.graphitron.rewrite.model.SetColumn(
                         "title",
                         new no.sikt.graphitron.model.jooq.ColumnRef("title", "TITLE", "java.lang.String"),
-                        new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct(), 0)),
+                        new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct(), 0, ColumnWriteBound.Unbounded.INSTANCE)),
                     List.of(new no.sikt.graphitron.rewrite.model.KeyColumn(
                         "filmId",
                         new no.sikt.graphitron.model.jooq.ColumnRef("film_id", "FILM_ID", "java.lang.Integer"),

@@ -43,6 +43,7 @@ public enum LintRule {
         "splitquery-redundant-on-discriminated-interface-child", Source.CLASSIFIER),
     REDUNDANT_RECORD_DIRECTIVE("redundant-record-directive", Source.CLASSIFIER),
     ASCONNECTION_SAME_TABLE_PK_IN("asconnection-same-table-pk-in", Source.CLASSIFIER),
+    DML_WRITE_LENGTH_UNROUTED("dml-write-length-unrouted", Source.CLASSIFIER),
 
     // Codegen advisories: facts the generator's own producers state, folded in at report assembly,
     // not derived from the AST and not from a per-field classifier verdict, so neither an engine

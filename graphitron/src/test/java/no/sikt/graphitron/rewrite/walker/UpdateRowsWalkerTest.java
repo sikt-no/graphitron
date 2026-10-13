@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.walker;
 
 import graphql.language.SourceLocation;
+import no.sikt.graphitron.rewrite.model.ColumnWriteBound;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.ArgConditionRef;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
@@ -61,6 +62,22 @@ class UpdateRowsWalkerTest {
         assertThat(carrier.keyColumns()).extracting(k -> k.targetColumn().sqlName()).containsExactly("film_id");
         assertThat(carrier.setColumns()).extracting(s -> s.targetColumn().sqlName())
             .containsExactlyInAnyOrder("title", "description");
+    }
+
+    @Test
+    void setColumn_copiesItsCarriersBound_andNeverDecidesOne() {
+        // film.title declares 255; the carrier says 7. The SET row must carry the carrier's
+        // decision, not one re-derived from the catalog, and the WHERE key carries none.
+        var title = new InputField.ColumnBackedField("In", "title", loc(), "String", true, false,
+            List.of(col(PUBLIC, "film", "title")), Optional.empty(), new CallSiteExtraction.Direct(),
+            new ColumnWriteBound.Length(7));
+        var result = walker.walk(null, table("film"), List.of(
+            columnField("filmId", col(PUBLIC, "film", "film_id")),
+            title
+        ), PUBLIC, "input");
+
+        assertThat(ok(result).setColumns()).singleElement()
+            .satisfies(sc -> assertThat(sc.bound()).isEqualTo(new ColumnWriteBound.Length(7)));
     }
 
     @Test
@@ -640,33 +657,33 @@ class UpdateRowsWalkerTest {
 
     private static InputField.ColumnBackedField columnField(String name, ColumnRef column) {
         return new InputField.ColumnBackedField("In", name, loc(), "Scalar", true, false,
-            List.of(column), Optional.empty(), new CallSiteExtraction.Direct());
+            List.of(column), Optional.empty(), new CallSiteExtraction.Direct(), ColumnWriteBound.Unbounded.INSTANCE);
     }
 
     // A single-column @nodeId-decode carrier: a ColumnField whose value is only knowable at runtime, so an
     // overlap involving it is decode-involving (admitted, deferred to agreement) rather than a plain collision.
     private static InputField.ColumnBackedField decodeColumnField(String name, ColumnRef column) {
         return new InputField.ColumnBackedField("In", name, loc(), "ID", true, false,
-            List.of(column), Optional.empty(), dummyDecode(List.of(column)));
+            List.of(column), Optional.empty(), dummyDecode(List.of(column)), ColumnWriteBound.Unbounded.INSTANCE);
     }
 
     private static InputField.ColumnBackedField compositeColumnField(String name, List<ColumnRef> columns) {
         return new InputField.ColumnBackedField("In", name, loc(), "ID", true, false,
-            columns, Optional.empty(), dummyDecode(columns));
+            columns, Optional.empty(), dummyDecode(columns), ColumnWriteBound.Unbounded.INSTANCE);
     }
 
     private static InputField.ColumnBackedReferenceField columnReferenceField(String name, List<ColumnRef> lifted) {
         // Cross-table FK reference (selfReference = false): partitions by key membership.
         return new InputField.ColumnBackedReferenceField("In", name, loc(), "ID", true, false,
             List.of(lifted.getFirst()), List.of(), new FilterBinding.Local(lifted), false,
-            Optional.empty(), new CallSiteExtraction.Direct());
+            Optional.empty(), new CallSiteExtraction.Direct(), ColumnWriteBound.Unbounded.INSTANCE);
     }
 
     private static InputField.ColumnBackedReferenceField compositeReferenceField(String name, List<ColumnRef> lifted) {
         // Non-null cross-table FK reference (selfReference = false): partitions per column, and a
         // straddle is admitted.
         return new InputField.ColumnBackedReferenceField("In", name, loc(), "ID", true, false,
-            lifted, List.of(), new FilterBinding.Local(lifted), false, Optional.empty(), dummyDecode(lifted));
+            lifted, List.of(), new FilterBinding.Local(lifted), false, Optional.empty(), dummyDecode(lifted), ColumnWriteBound.Unbounded.INSTANCE);
     }
 
     /** The nullable spelling of {@link #compositeReferenceField}: admitted where its in-key half is
@@ -674,7 +691,7 @@ class UpdateRowsWalkerTest {
     private static InputField.ColumnBackedReferenceField nullableCompositeReferenceField(
             String name, List<ColumnRef> lifted) {
         return new InputField.ColumnBackedReferenceField("In", name, loc(), "ID", false, false,
-            lifted, List.of(), new FilterBinding.Local(lifted), false, Optional.empty(), dummyDecode(lifted));
+            lifted, List.of(), new FilterBinding.Local(lifted), false, Optional.empty(), dummyDecode(lifted), ColumnWriteBound.Unbounded.INSTANCE);
     }
 
     /** A nullable single-column cross-table FK reference: nothing to straddle, so always admitted. */
@@ -682,7 +699,7 @@ class UpdateRowsWalkerTest {
             String name, List<ColumnRef> lifted) {
         return new InputField.ColumnBackedReferenceField("In", name, loc(), "ID", false, false,
             List.of(lifted.getFirst()), List.of(), new FilterBinding.Local(lifted), false,
-            Optional.empty(), dummyDecode(lifted));
+            Optional.empty(), dummyDecode(lifted), ColumnWriteBound.Unbounded.INSTANCE);
     }
 
     /** The nullable spelling of {@link #selfReferenceField}: admitted, and refused a clear where one
@@ -690,13 +707,13 @@ class UpdateRowsWalkerTest {
     private static InputField.ColumnBackedReferenceField nullableSelfReferenceField(
             String name, List<ColumnRef> lifted) {
         return new InputField.ColumnBackedReferenceField("In", name, loc(), "ID", false, false,
-            lifted, List.of(), new FilterBinding.Local(lifted), true, Optional.empty(), dummyDecode(lifted));
+            lifted, List.of(), new FilterBinding.Local(lifted), true, Optional.empty(), dummyDecode(lifted), ColumnWriteBound.Unbounded.INSTANCE);
     }
 
     private static InputField.ColumnBackedReferenceField selfReferenceField(String name, List<ColumnRef> lifted) {
         // Self-FK reference (selfReference = true): routes all lifted columns to SET.
         return new InputField.ColumnBackedReferenceField("In", name, loc(), "ID", true, false,
-            lifted, List.of(), new FilterBinding.Local(lifted), true, Optional.empty(), dummyDecode(lifted));
+            lifted, List.of(), new FilterBinding.Local(lifted), true, Optional.empty(), dummyDecode(lifted), ColumnWriteBound.Unbounded.INSTANCE);
     }
 
     // A plain (non-list) NestingField is admitted by flattening it; a list-typed nesting stays

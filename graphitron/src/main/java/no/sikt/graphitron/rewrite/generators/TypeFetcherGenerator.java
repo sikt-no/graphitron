@@ -1656,7 +1656,7 @@ public class TypeFetcherGenerator {
         // throw still propagates to the wrapper's catch arm uniformly with the body's exceptions;
         // the body is never invoked when violations exist. The early return wraps the violation
         // list in Outcome.ErrorList (channel-agnostic under the wrapper).
-        if (wrap && hasValidationHandler(errorChannel.get())) {
+        if (wrap && errorChannel.get().hasValidationHandler()) {
             builder.addCode(validatorPreStep(ctx, carrier, fieldName, payloadType, outputPackage));
         }
 
@@ -1860,13 +1860,6 @@ public class TypeFetcherGenerator {
      */
     static boolean needsDsl(MethodRef.CallShape callShape) {
         return callShape.needsDsl();
-    }
-
-    /** Whether any flattened handler on the channel is a {@code ValidationHandler}. */
-    private static boolean hasValidationHandler(ErrorChannel channel) {
-        return channel.mappedErrorTypes().stream()
-            .flatMap(et -> et.handlers().stream())
-            .anyMatch(h -> h instanceof no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler);
     }
 
     /**
@@ -3358,11 +3351,13 @@ public class TypeFetcherGenerator {
     /**
      * The WHERE partition projected into the {@link SetGroup} shape, so the agreement preamble reads
      * a key side and a reference side through one accessor set. Only the access path and the decode
-     * extraction are consulted there, both of which a {@link KeyColumn} already carries.
+     * extraction are consulted there, both of which a {@link KeyColumn} already carries. Key cells
+     * are never written cells, so each projected row is unbounded.
      */
     private static List<SetGroup> keyColumnsAsSetGroups(List<KeyColumn> keyColumns) {
         return setGroupsOf(keyColumns.stream()
-            .map(kc -> new SetColumn(kc.sdlFieldName(), kc.targetColumn(), kc.extraction(), kc.decodeSlot()))
+            .map(kc -> new SetColumn(kc.sdlFieldName(), kc.targetColumn(), kc.extraction(), kc.decodeSlot(),
+                no.sikt.graphitron.rewrite.model.ColumnWriteBound.Unbounded.INSTANCE))
             .toList());
     }
 
@@ -5271,7 +5266,7 @@ public class TypeFetcherGenerator {
             case OperationMember.Write.Insert _, OperationMember.Write.Upsert _ -> {
                 var input = recordCarrierInput(f.write());
                 yield buildSingleRecordTwoStepFetcher(
-                    ctx, f, input.name(), input.inputTable(), f.errorChannel(), f.qualifiedName(),
+                    ctx, f, input.name(), input.inputTable(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
                     (tablesOnly, tableLocal) -> buildDmlChainForRecord(f.write(), input.inputTable(), tablesOnly, tableLocal),
                     outputPackage);
             }
@@ -5282,7 +5277,7 @@ public class TypeFetcherGenerator {
                 var obligations = w.updateRows().agreementObligations();
                 var setNullRules = nullRulesByPath(w.updateRows().nullRules());
                 yield buildSingleRecordTwoStepFetcher(
-                    ctx, f, w.inputArg().name(), w.inputArg().table(), f.errorChannel(), f.qualifiedName(),
+                    ctx, f, w.inputArg().name(), w.inputArg().table(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
                     (tablesOnly, tableLocal) -> buildCarrierUpdateChainSingle(
                         setGroups, keyGroups, keySetGroups, setNullRules, obligations,
                         w.inputArg().table(), tablesOnly, tableLocal),
@@ -5291,7 +5286,7 @@ public class TypeFetcherGenerator {
             case OperationMember.Write.Delete w -> {
                 var whereGroups = keyGroupsOf(w.deleteRows().whereColumns());
                 yield buildSingleRecordTwoStepFetcher(
-                    ctx, f, w.inputArg().name(), w.inputArg().table(), f.errorChannel(), f.qualifiedName(),
+                    ctx, f, w.inputArg().name(), w.inputArg().table(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
                     (tablesOnly, tableLocal) -> buildRecordDeleteChain(
                         whereGroups, w.inputArg().table(), tablesOnly, tableLocal),
                     outputPackage);
@@ -5335,7 +5330,8 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildSingleRecordTwoStepFetcher(
             TypeFetcherEmissionContext ctx, no.sikt.graphitron.rewrite.model.OutputField field, String argName,
-            TableRef tableRef, Optional<ErrorChannel.Mapped> errorChannel, String qualifiedName,
+            TableRef tableRef, Optional<ErrorChannel.Mapped> errorChannel,
+            no.sikt.graphitron.rewrite.model.LengthCheck lengthCheck, String qualifiedName,
             java.util.function.BiFunction<GeneratorUtils.ResolvedTableNames, String, DmlChainAndGuards> chainFn,
             String outputPackage) {
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
@@ -5361,6 +5357,10 @@ public class TypeFetcherGenerator {
         builder.addStatement("$T<?, ?> in = ($T<?, ?>) env.getArgument($S)", MAP, MAP, argName);
         builder.addStatement("$T $L = $T.$L",
             tablesOnly.jooqTableClass(), tableLocal, tablesOnly.tablesClass(), tableRef.javaFieldName());
+
+        if (lengthCheck instanceof no.sikt.graphitron.rewrite.model.LengthCheck.Checked checked) {
+            builder.addCode(lengthCheckPreStep(checked, argName, false, valueType, outputPackage));
+        }
 
         var chainAndGuards = chainFn.apply(tablesOnly, tableLocal);
         builder.addCode(chainAndGuards.preGuard());
@@ -5388,6 +5388,56 @@ public class TypeFetcherGenerator {
         builder.addCode(dmlCarrierCatchArm(errorChannel, valueType, outputPackage));
         builder.endControlFlow();
         return builder.build();
+    }
+
+    /**
+     * The column-length pre-step of a payload-returning DML carrier whose channel carries a
+     * {@code VALIDATION} handler: every length-bounded written cell
+     * ({@link no.sikt.graphitron.rewrite.model.LengthCheck.Checked#bounded()}) is tested on the raw
+     * argument map before the statement, its decode or its transaction, and any violation returns
+     * the whole list through {@link ChannelEarlyReturnEmitter} so nothing is written. The value is
+     * read with {@link ArgCallEmitter#nestedMapValueExpr}, the read the VALUES and SET emit use, so an
+     * absent or null field is not checked. Lengths count code points, which is what a character-length
+     * column counts; the model guarantees a bounded cell's raw value is the column's own text.
+     *
+     * <p>{@code bulk} loops the list argument by index, putting the index into the error path, and
+     * checks every row before any statement runs.
+     */
+    private static CodeBlock lengthCheckPreStep(no.sikt.graphitron.rewrite.model.LengthCheck.Checked check,
+            String argName, boolean bulk, TypeName valueType, String outputPackage) {
+        var constraintViolations = ClassName.get(outputPackage + ".schema",
+            ConstraintViolationsClassGenerator.CLASS_NAME);
+        String mapLocal = bulk ? "lengthRow" : "in";
+        var b = CodeBlock.builder();
+        b.addStatement("$T<$T> violations = new $T<>()", LIST, Object.class, ArrayList.class);
+        if (bulk) {
+            b.beginControlFlow("for (int i = 0; i < in.size(); i++)");
+            b.addStatement("$T<?, ?> $L = in.get(i)", MAP, mapLocal);
+        }
+        b.beginControlFlow("if ($L != null)", mapLocal);
+        for (var cell : check.bounded()) {
+            int max = ((no.sikt.graphitron.rewrite.model.ColumnWriteBound.Length) cell.bound()).declaredLength();
+            var argPath = CodeBlock.builder().add("$S", argName);
+            if (bulk) {
+                argPath.add(", i");
+            }
+            for (var segment : cell.inputPath()) {
+                argPath.add(", $S", segment);
+            }
+            b.beginControlFlow("if ($L instanceof $T lengthValue && lengthValue.codePointCount(0, lengthValue.length()) > $L)",
+                ArgCallEmitter.nestedMapValueExpr(mapLocal, cell.inputPath()), String.class, max);
+            b.addStatement("violations.add($T.sizeExceeded(env, $T.of($L), $L))",
+                constraintViolations, LIST, argPath.build(), max);
+            b.endControlFlow();
+        }
+        b.endControlFlow();
+        if (bulk) {
+            b.endControlFlow();
+        }
+        b.beginControlFlow("if (!violations.isEmpty())");
+        b.add(ChannelEarlyReturnEmitter.emit(valueType, "violations", outputPackage));
+        b.endControlFlow();
+        return b.build();
     }
 
     /**
@@ -5585,7 +5635,7 @@ public class TypeFetcherGenerator {
             case OperationMember.Write.Insert _ -> {
                 var input = recordCarrierInput(f.write());
                 yield buildBulkRecordTwoStepFetcher(
-                    ctx, f, input.name(), input.inputTable(), f.errorChannel(), f.qualifiedName(),
+                    ctx, f, input.name(), input.inputTable(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
                     (tablesOnly, tableLocal, pkCols, recordRowType) ->
                         buildBulkRecordPerRowBody(f.write(), input.inputTable(), tablesOnly, tableLocal, pkCols, recordRowType),
                     outputPackage);
@@ -5594,7 +5644,7 @@ public class TypeFetcherGenerator {
                 var setGroups = setGroupsOf(w.updateRows().setColumns());
                 var keyGroups = keyGroupsOf(w.updateRows().keyColumns());
                 yield buildBulkRecordTwoStepFetcher(
-                    ctx, f, w.inputArg().name(), w.inputArg().table(), f.errorChannel(), f.qualifiedName(),
+                    ctx, f, w.inputArg().name(), w.inputArg().table(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
                     (tablesOnly, tableLocal, pkCols, recordRowType) -> buildCarrierBulkPerRowUpdateBody(
                         setGroups, keyGroups, keyColumnsAsSetGroups(w.updateRows().keyColumns()),
                         nullRulesByPath(w.updateRows().nullRules()),
@@ -5605,7 +5655,7 @@ public class TypeFetcherGenerator {
             case OperationMember.Write.Delete w -> {
                 var whereGroups = keyGroupsOf(w.deleteRows().whereColumns());
                 yield buildBulkRecordTwoStepFetcher(
-                    ctx, f, w.inputArg().name(), w.inputArg().table(), f.errorChannel(), f.qualifiedName(),
+                    ctx, f, w.inputArg().name(), w.inputArg().table(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
                     (tablesOnly, tableLocal, pkCols, recordRowType) -> buildBulkRecordPerRowDeleteBody(
                         whereGroups, w.inputArg().table(), tablesOnly, tableLocal, pkCols, recordRowType),
                     outputPackage);
@@ -5637,7 +5687,8 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildBulkRecordTwoStepFetcher(
             TypeFetcherEmissionContext ctx, no.sikt.graphitron.rewrite.model.OutputField field, String argName,
-            TableRef tableRef, Optional<ErrorChannel.Mapped> errorChannel, String qualifiedName,
+            TableRef tableRef, Optional<ErrorChannel.Mapped> errorChannel,
+            no.sikt.graphitron.rewrite.model.LengthCheck lengthCheck, String qualifiedName,
             BulkPerRowBodyFn perRowBodyFn, String outputPackage) {
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
@@ -5666,6 +5717,9 @@ public class TypeFetcherGenerator {
             LIST, MAP, argName);
         builder.addStatement("$T $L = $T.$L",
             tablesOnly.jooqTableClass(), tableLocal, tablesOnly.tablesClass(), tableRef.javaFieldName());
+        if (lengthCheck instanceof no.sikt.graphitron.rewrite.model.LengthCheck.Checked checked) {
+            builder.addCode(lengthCheckPreStep(checked, argName, true, valueType, outputPackage));
+        }
 
         // Empty-list short-circuit: no DML, return empty Result. Mirrors the empty-input
         // short-circuit on the direct-@table bulk arms (no transaction opened, no rows touched).

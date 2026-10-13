@@ -1627,7 +1627,15 @@ type FilmCreateConstraintViolation @error(handlers: [{
     message: String!
 }
 
-union FilmCreateError = FilmCreateConstraintViolation
+# Receives the column-length check the three *WithErrors carriers run before their statement: a
+# title longer than film.title's varchar(255) is rejected with a path to the input field. Pinned by
+# GraphQLQueryTest's *_overLongTitle* cases.
+type FilmWriteInvalid @error(handlers: [{handler: VALIDATION}]) {
+    path: [String!]!
+    message: String!
+}
+
+union FilmCreateError = FilmCreateConstraintViolation | FilmWriteInvalid
 
 type FilmCreateCheckedPayload {
     film: Film

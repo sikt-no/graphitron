@@ -41,8 +41,10 @@ class ConstraintViolationsClassGeneratorTest {
     void toGraphQLError_buildsPathFromExecutionStepInfoAndArgNameAndPropertyPath() {
         var helper = generate();
         var body = method(helper, "toGraphQLError").code().toString();
-        assertThat(body).contains("env.getExecutionStepInfo().getPath().toList()");
-        assertThat(body).contains("path.add(argName)");
+        assertThat(method(helper, "validationError").code().toString())
+            .contains("env.getExecutionStepInfo().getPath().toList()")
+            .contains("path.addAll(argPath)");
+        assertThat(body).contains("argPath.add(argName)");
         assertThat(body).contains("violation.getPropertyPath()");
         // CONTAINER_ELEMENT vs PROPERTY/BEAN arms produce list-index/map-key and property-name
         // entries respectively (matches §5's property-path → response-path projection).
@@ -60,14 +62,29 @@ class ConstraintViolationsClassGeneratorTest {
         // visibility by declaring (or omitting) an extensions-shaped field on their @error type.
         var helper = generate();
         var body = method(helper, "toGraphQLError").code().toString();
-        assertThat(body).contains("LinkedHashMap");
-        assertThat(body).contains("extensions.put(\"constraint\"");
+        var shared = method(helper, "validationError").code().toString();
+        assertThat(shared).contains("LinkedHashMap");
+        assertThat(shared).contains("extensions.put(\"constraint\", constraint)");
         assertThat(body).contains("violation.getConstraintDescriptor()");
         assertThat(body).contains("getAnnotation()");
         assertThat(body).contains("annotationType()");
         assertThat(body).contains("getSimpleName()");
         // Builder chain wires the map onto the GraphQLError.
-        assertThat(body).contains(".extensions(extensions)");
+        assertThat(shared).contains(".extensions(extensions)");
+    }
+
+    @Test
+    void sizeExceeded_sharesTheWireShapeWithToGraphQLError() {
+        // The column-length check's error goes through the same private builder as a Jakarta
+        // violation, so the two cannot drift; only the message and constraint name differ.
+        var helper = generate();
+        var m = method(helper, "sizeExceeded");
+        assertThat(m.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
+        assertThat(m.parameters()).extracting(p -> p.name()).containsExactly("env", "argPath", "max");
+        assertThat(m.code().toString())
+            .contains("validationError(env, argPath, \"size must be between 0 and \" + max, \"Size\")");
+        assertThat(method(helper, "validationError").modifiers()).contains(Modifier.PRIVATE);
+        assertThat(method(helper, "toGraphQLError").code().toString()).contains("return validationError(env, argPath,");
     }
 
     private static TypeSpec generate() {

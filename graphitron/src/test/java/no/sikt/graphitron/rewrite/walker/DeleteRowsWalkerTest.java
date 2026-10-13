@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.walker;
 
 import graphql.language.SourceLocation;
+import no.sikt.graphitron.rewrite.model.ColumnWriteBound;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.ArgConditionRef;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
@@ -259,12 +260,12 @@ class DeleteRowsWalkerTest {
 
     private static InputField.ColumnBackedField columnField(String name, ColumnRef column) {
         return new InputField.ColumnBackedField("In", name, loc(), "Scalar", true, false,
-            List.of(column), Optional.empty(), new CallSiteExtraction.Direct());
+            List.of(column), Optional.empty(), new CallSiteExtraction.Direct(), ColumnWriteBound.Unbounded.INSTANCE);
     }
 
     private static InputField.ColumnBackedField compositeColumnField(String name, List<ColumnRef> columns) {
         return new InputField.ColumnBackedField("In", name, loc(), "ID", true, false,
-            columns, Optional.empty(), dummyDecode(columns));
+            columns, Optional.empty(), dummyDecode(columns), ColumnWriteBound.Unbounded.INSTANCE);
     }
 
     // A plain (non-list) NestingField is admitted by flattening it; a list-typed nesting stays

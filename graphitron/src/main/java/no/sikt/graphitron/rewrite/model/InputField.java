@@ -77,6 +77,8 @@ public sealed interface InputField extends GraphitronField
      *     extraction producing a multi-column tuple and is required at arity &ge; 2. The body
      *     emitter pairs it with {@link BodyParam.RowEq RowEq} (scalar same-table NodeId equality) or
      *     {@link BodyParam.RowIn RowIn} (list filter) on the composite shape.
+     * @param bound the length bound a write of this cell must respect, decided where the field is
+     *     resolved against the consuming field's table; carried and not read on the query side.
      */
     record ColumnBackedField(
         String parentTypeName,
@@ -87,11 +89,13 @@ public sealed interface InputField extends GraphitronField
         boolean list,
         List<ColumnRef> columns,
         Optional<ArgConditionRef> condition,
-        CallSiteExtraction extraction
+        CallSiteExtraction extraction,
+        ColumnWriteBound bound
     ) implements InputField, LookupKeyField, SetField {
 
         public ColumnBackedField {
             columns = List.copyOf(columns);
+            Objects.requireNonNull(bound, "bound");
             if (columns.isEmpty()) {
                 throw new IllegalArgumentException("InputField.ColumnBackedField requires at least one column");
             }
@@ -147,6 +151,10 @@ public sealed interface InputField extends GraphitronField
      *     construction site sets {@code false}. On a {@link FilterBinding.Remote} carrier the value is
      *     unreachable rather than merely unused: the flag's one reader is the UPDATE SET partition,
      *     which refuses a remote binding at its own gate before reading it.
+     * @param bound the length bound a write of this cell must respect. {@link ColumnWriteBound.Length}
+     *     is reachable only on a plain {@code @reference} with an empty path, the one arm that is
+     *     {@link CallSiteExtraction.Direct} and binds {@link FilterBinding.Local} on the consuming
+     *     table's own column; every FK-target arm is NodeId-decoded and so unbounded.
      */
     record ColumnBackedReferenceField(
         String parentTypeName,
@@ -160,13 +168,15 @@ public sealed interface InputField extends GraphitronField
         FilterBinding binding,
         boolean selfReference,
         Optional<ArgConditionRef> condition,
-        CallSiteExtraction extraction
+        CallSiteExtraction extraction,
+        ColumnWriteBound bound
     ) implements InputField, LookupKeyField, SetField {
 
         public ColumnBackedReferenceField {
             columns = List.copyOf(columns);
             joinPath = List.copyOf(joinPath);
             Objects.requireNonNull(binding, "binding");
+            Objects.requireNonNull(bound, "bound");
             if (columns.isEmpty()) {
                 throw new IllegalArgumentException("InputField.ColumnBackedReferenceField requires at least one column");
             }
