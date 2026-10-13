@@ -1,7 +1,7 @@
 ---
 id: R1023
 title: "A rejected optional-only tenant root does not void its subtree tenant context"
-status: Backlog
+status: Spec
 bucket: bug
 priority: 1
 theme: diagnostics
@@ -14,18 +14,77 @@ last-updated: 2026-10-13
 
 ## Goal
 
-A root field whose tenant arguments are all optional (a "Conditional" reading: a request may omit every slot that names the tenant column) rejects with "takes its tenant only from optional values", and that one rejection is the only error it causes. Today it also voids the tenant context of every type it reaches, on every route, so each tenant-scoped child of those types rejects as well, either with "no ancestor established a tenant context" or, when the child carries an optional slot of its own, with a second "optional values" rejection. On sis the 22 intended root rejections arrive buried under roughly 700 consequential ones (719 author errors in all, against 1 at the commit before the regression), and the nested ones read like a routing regression in children that routed fine before.
+A field whose tenant arguments are all optional rejects with "takes its tenant only from optional values", and that one rejection is the only error it causes: the fields below it are judged as they will be once the author applies either fix the rejection offers (make an argument non-null, or mark the field `@tenantFanOut`), both of which hand the subtree a tenant. Today the rejected field instead takes the tenant away from every type it reaches, on every route, so each tenant-scoped child of those types rejects too, even where another root hands it a tenant. On sis the 22 intended root rejections arrive buried under roughly 700 consequential ones (719 author errors in all, against 1 at the commit before the regression), and the nested ones read like a routing regression in children that routed fine before.
 
-## Diagnosis
+A minimal pair, from the prototype's test (sakila fixture, where `film` and `inventory` are tenant-scoped):
 
-`TenantBindingIndex.Fold.siteEstablishesContext` used to ask `DirectBinding.divines()`, which held for optional slots. The optional-only rejection rework (`20e11d5af`) narrowed it to `Reading.Guaranteed`. `tenantContextOf` is an every-path fold (`edgeEstablishesContext` is an `allMatch`, and `withoutContext` propagates transitively), so one Conditional root reaching a type takes context away from that type for every other root that reaches it too. Children of a tenant-scoped `@table` parent route only through the Inherited rung; `parentRowBinding` serves a *global* parent row that carries the tenant column, so it never rescues them. With context gone they fall to the reading switch: no slot means "no ancestor established a tenant context", an optional slot means a nested "optional values" rejection. This is not an interaction with the parent-row rung (`7731985d7`).
+```graphql
+type Film @table(name: "film") {
+    inventories: [Inventory!]! @splitQuery
+}
+type Inventory @table(name: "inventory") { inventoryId: Int }
+type Query {
+    films(filmId: Int! @field(name: "film_id")): [Film!]!      # names a tenant on every request
+    filmsMaybe(filmId: Int @field(name: "film_id")): [Film!]!  # may name none: rejects
+}
+```
 
-The cascade was pinned on purpose: `TenantFanOutClassificationTest.anUnmarkedOptionalOnlyParentRejectsAndHandsItsChildrenNoTenant` asserts the child's "no ancestor" rejection. So this item reverses a decision rather than repairing an oversight, and the reversal is what the Spec review should judge.
+Today this build reports two errors: `Query.filmsMaybe` ("takes its tenant only from optional values (filmId)") and `Film.inventories` ("no ancestor established a tenant context"), although `Film.inventories` runs on the tenant `Query.films` hands it and neither fix to `filmsMaybe` touches it. After this item it reports one, on `Query.filmsMaybe`, and `Film.inventories` inherits its parent's tenant. Without `Query.films` the outcome is the same: one error, on the optional-only root.
 
-## Proposed change
+No build that fails today passes after this item; it fails on exactly the fields the author has to change. The one place an error is added is a `@tenantFanOut` field below an optional-only field that needs a tenant, which rejects today only after the author has fixed its ancestor (or not at all, below a node or entity type that dispatch enters with a tenant), and now rejects up front (see the rule below).
 
-A Conditional site that needs a tenant (it reaches a tenant-scoped table, or is a connection-bound root service) counts as establishing context in the fold. Both fixes its rejection offers, a non-null slot (Guaranteed) and `@tenantFanOut` (a fanned edge), make that edge establish context, so the subtree is judged as it will be once the author applies either fix, and the field rejects alone. Where such a site does not reject, it inherits, and its subtree has the inherited tenant anyway. A Conditional site that needs no tenant keeps falling through to the default source and keeps establishing nothing, so a tenant-scoped child below it still rejects on its own; that is armOf's documented fall-through and stays.
+## Implementation
 
-`needsTenant` and `connectionService` move out of `armOf` into helpers over the site alone (`reachedTables` is static and pure), so the fold and the arm share one predicate.
+Terms used below. A *site* is one occurrence of a field in an operation shape; an *edge* is a field seen as a link from its parent type to the types it returns. A field's *reading* says how its own arguments name the tenant: `Guaranteed` (some slot is non-null on every request), `Conditional` (every slot naming the tenant is optional), `Declined` (an argument names the tenant column in a shape that cannot route), or `Unbound`. A type has *tenant context* (`TenantBindingIndex.Fold.tenantContextOf`) when every path from a root to it crosses an edge that hands a tenant down; a tenant-scoped field on such a type classifies `TenantBinding.Inherited`. A site *needs a tenant* when its own statement reaches a tenant-scoped table, or it is a connection-bound root `@service` with no global table in reach (the `needsTenant` and `connectionService` locals of `Fold.armOf` today).
 
-A prototype exists: the new `TenantBindingClassificationTest.aRejectedOptionalOnlyRootLeavesItsSubtreeInheritingFromTheOtherRoots` fails on trunk (`Film.inventories` classifies `null`, expected `Inherited`) and passes with the change, and the pinned fan-out test flips to expect one rejection. The generator unit tier (`-DexcludedGroups=execution`) is green with it. Still owed: the execution tier, and a sis rerun (`mvn -o clean install -P quick -pl :sis-graphql-spec,:fsapi-rest` on the sis upgrade branch), which should drop from 719 errors to the root ones only.
+**The premise.** `Fold.siteEstablishesContext` decides whether an edge hands a tenant down. Before `20e11d5af` (the optional-only rejection rework) it asked the direct binding's `divines()`, which held for optional slots; that commit narrowed it to `Reading.Guaranteed`. The context fold is every-path (`edgeEstablishesContext` is an `allMatch` over the edge's sites, and `foldAncestorContexts` closes `withoutContext` forward from the roots along every non-establishing edge), so one Conditional root reaching a type removes context from that type for every other root reaching it. Children of a tenant-scoped `@table` parent route only through the Inherited rung of `armOf` (`parentRowBinding` serves a *global* parent row that carries the tenant column, so it never rescues them), and with context gone they fall to the reading switch: no slot gives "no ancestor established a tenant context", an optional slot gives a second "optional values" rejection.
+
+**The rule.** A `Reading.Conditional` site that needs a tenant hands its subtree a tenant, in both ancestor folds:
+
+- `Fold.siteEstablishesContext` (every-path, feeds `tenantContextOf` and the Inherited verdict) gains the rung beside `Reading.Guaranteed`.
+- `Fold.siteDivinesTenant` (any-path, feeds `anyBoundAncestor` and the `@tenantFanOut` ladder's "tenant-bound ancestor" rung) gains the same rung, so the two folds keep reading one posture and the `anyBoundAncestor` javadoc's "any-path mirror of `tenantContextOf`" stays true. Under either fix the rejection offers, a `@tenantFanOut` field below such a site rejects (on the bound-ancestor rung after the non-null fix, on the fanned-ancestor rung after the fan-out fix), so it rejects now rather than one fix later. In a build that passes, the rung counts only sites that route by parent row (already divining) or inherit; an inheriting site's tenant came from an upstream divining or fanned edge, which already rejects the fan-out field, except where it came from a routable dispatch surface (`routableDispatchSurface`, a node or entity type entered with a tenant). There a `@tenantFanOut` field below an inheriting optional-only field newly rejects, which is correct: an ancestor fixed the tenant. The implementer pins that case if a fixture reaches it cheaply.
+
+Both rungs call one predicate, `handsDownAsIfFixed(site)` or similar: reading is Conditional and the site needs a tenant. `needsTenant` and `connectionService` move out of `armOf` into private helpers over the site and its reach (`reachedTables` is static and pure); `armOf` calls them in place of its locals and is otherwise unchanged. Computing the predicate once per site and carrying it as a fact is acceptable too, at the implementer's judgment.
+
+**Why the rule is sound, and what enforces it.** In `armOf`, an unmarked Conditional site that needs a tenant has exactly three outcomes: it routes by its parent row (`parentRowBinding`, which both folds already count); it inherits because its parent type has context, so its subtree has that tenant on every path anyway; or it rejects, so nothing is generated and the subtree is judged as it will be after a fix. The marker paths are closed: a nested marked site rejects, `globalDataArmOf` rejects any reading that is not `Unbound`, and a fanned edge already hands a tenant down. The fold already judges by binding rather than by verdict: a Guaranteed site that rejects as cross-scope establishes context today.
+
+That enumeration depends on the rung order in `armOf` and on what the rejection offers, neither of which a shared predicate pins. So:
+
+- `Fold.run` checks it after classification: every site the new rung counted must have ended `Arm(ParentRowBound)`, `Arm(Inherited)` or `Rejected`; anything else throws an `IllegalStateException` naming the coordinate as a generator bug. The `armOf` loop in `run` maps sites to verdicts already, so the check sits there.
+- The fix coupling is stated once, in the javadoc of the shared predicate, with `{@link}`s to `optionalOnlyDetail` (which offers `@tenantFanOut` only where `acceptsFanOut` holds) and to `Rejection.AuthorError.UnroutedServiceCall` (a Conditional connection service always carries the optional-only detail as a decline, so it is never steered to `@globalData`, a fix that would not hand a tenant down). A future message that offers a fix outside those two must revisit the predicate.
+
+A Conditional site that needs no tenant keeps handing down nothing. It falls through to the default source (`armOf`'s documented fall-through), so its subtree really has no tenant, and a tenant-scoped child below it still rejects on its own.
+
+**Comments that state the reversed rule**, rewritten in the same change:
+
+- the comment inside `siteEstablishesContext` ("Only a guaranteed binding names a tenant on every request; an optional-only field either rejects or inherits ...");
+- the `Reading.Conditional` case comment in `armOf` ("a tenant-scoped child below it then finds no context and rejects on its own"), which stays true only for the site that needs no tenant;
+- the `DirectBinding` javadoc paragraph saying a decline "stops divining for its subtree ... a child inheriting from it would inherit a value that is never computed": scope it to `Declined` and say that Declined has not adopted the forward-looking posture yet (see below), rather than leaving it read as the general rule.
+
+**Docs.** No user-manual change. The tenant-scoping page already describes the intended behaviour for optional arguments ("the build rejects the field") and never mentions the cascade; `tenantFanOut.adoc` already lists "any ancestor that fixed the tenant" among its rejections.
+
+**Out of scope.**
+
+- *Declined and Unbound sites.* The same forward-looking argument applies to them: every decline detail offers a routing fix, and an Unbound site that needs a tenant rejects with "bind an argument", which would also hand a tenant down. Their cascades predate the regression (`divines()` required `declines.isEmpty()` and a slot), sis does not show them at scale, and adopting the posture for them reverses the ~15 pinned "no ancestor established" assertions below unbound roots in `TenantBindingClassificationTest`, a larger and separate decision. This item restores the extent the fold had before `20e11d5af`, on the posture stated above; generalising it to "a site that needs a tenant hands one down in every build that passes" is a follow-up item, filed at Spec sign-off if the reviewer agrees the posture is right.
+- *Cross-scope Conditional sites* (reach holds both tenant-scoped and global tables) need a tenant, so the rule counts them. They reject regardless; this matches both pre-`20e11d5af` behaviour and how a cross-scope Guaranteed site is treated today.
+
+The prototype at `fd30be5ff` (pushed as `origin/claude/r1023-rejected-optional-only-root-keeps-subtree-context`, a `wip:` commit) covers `siteEstablishesContext`, the helper lift and the first two tests below; the `siteDivinesTenant` rung, the post-classification check and the comment rewrites are not in it yet.
+
+## Tests
+
+All in the generator's unit tier (`TenantBindingClassificationTest`, `TenantFanOutClassificationTest`, both `@UnitTier`). The new behaviour shows only in builds that reject, so no compilation or execution tier can observe it; the execution tier must stay green as a regression check.
+
+- `TenantBindingClassificationTest.aRejectedOptionalOnlyRootLeavesItsSubtreeInheritingFromTheOtherRoots` (in the prototype): the minimal pair above, plus a child `inventoriesBy(filmId: Int @field(name: "film_id"))` carrying its own optional slot. Asserts one rejection, on `Query.filmsMaybe`, and both children `Inherited`. Fails on trunk (`Film.inventories` classifies `null`).
+- `TenantFanOutClassificationTest.anUnmarkedOptionalOnlyParentRejectsAndHandsItsChildrenNoTenant` pinned the cascade on purpose. It flips, renamed `anUnmarkedOptionalOnlyParentRejectsAloneAndItsChildrenInherit`: a single rejection on `Query.films`, the only route to `Film`, and `Film.inventories` `Inherited`.
+- New, in `TenantFanOutClassificationTest`: a `@tenantFanOut` child below an unmarked optional-only root that needs a tenant rejects on the tenant-bound-ancestor rung, beside the root's own rejection.
+- New, the fall-through: a Conditional root that needs no tenant still hands down nothing, so a tenant-scoped child under it rejects "no ancestor established a tenant context". Shape: a root `@service` handed a connection and returning a global `@table` type (so it is not a connection service and its reach is global), with an optional argument naming the tenant; assert the root classifies untenanted and the tenant-scoped child of the returned type rejects on its own. Confirm the root reads `Conditional`, not `Declined`, before relying on the shape.
+- No existing "no ancestor established" assertion sits below a Conditional root that needs a tenant (those in `TenantBindingClassificationTest` sit below unbound or global roots); the prototype's green unit tier is the evidence, and the implementer re-runs it.
+
+Acceptance beyond this repo: a sis rerun (`mvn -o clean install -P quick -pl :sis-graphql-spec,:fsapi-rest` on the sis upgrade branch, against this worktree's install) reports 23 author errors: the 22 optional-only root rejections plus the 1 that stood before `20e11d5af`, give or take any `@tenantFanOut` field the fan-out rung newly reaches. A count outside that is a finding to explain before In Review. sis is outside this repo, so the unit tests remain the evidence a reviewer can reproduce.
+
+## Other solutions we've considered
+
+- **Keep the cascade (the status quo).** It was pinned deliberately, on the reading that a rejected root hands its subtree nothing, so the subtree honestly has no tenant. That is true of the rejected build and of no build the author will ship: both fixes the rejection names hand a tenant down, so the child errors describe a state that disappears with the root's fix. They cost the author a search through ~700 consequential errors for the 22 that matter, and read as a regression in fields the author did not touch. The fold already takes the forward-looking reading for Guaranteed sites that reject on other grounds.
+- **Suppress consequential errors at report time.** Keep the fold and filter child rejections whose cause is a rejected ancestor. That needs a causal link from each child rejection back to the ancestor that voided its context, which the every-path fold does not record, and it leaves the children classified `null` rather than `Inherited`, so later consumers of the binding (LSP hints, generated docs) still see the wrong answer. Fixing the fact is smaller and adds no second mechanism.
+- **Count every Conditional site, needing a tenant or not.** A simpler predicate, but a Conditional site that needs no tenant runs on the default source and genuinely hands its subtree nothing, so its tenant-scoped children would classify `Inherited` with no tenant at runtime. Unsound.
+- **Change only the every-path fold.** Leaves `siteDivinesTenant` on the old posture, so the two folds disagree on one reading and a `@tenantFanOut` child below a rejected optional-only root is accepted now and rejected after either fix: the same two-step error discovery this item removes, run in reverse.
