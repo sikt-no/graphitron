@@ -1798,6 +1798,10 @@ against its own corpus, filed here because the walk's fixtures were.
   names) and `catalog-node-metadata`. A broken row in each was run and fails. The fixture catalog
   has no constraint without a `Keys` constant, so the null case the old one named was never
   exercised and is not stated.
+  * **A primary key names a primary-key constraint, and the database refuses otherwise** `done`.
+    The old case checked it with a query over every row. `sql_primary_key` now carries its form,
+    fixed and defaulted, and its foreign key into `sql_constraint` includes it, so a row naming a
+    unique key or a foreign key cannot be written.
 * **The source and membership cases move to their gatherers' tests** `done`. The partition by
   schema package is the fact document `catalog-partition.graphqls`, over the fixture catalog's
   package per schema and `event` in two of them. The stamp went to `GraphitronModelStoreTest`, the partition by classpath

@@ -5414,6 +5414,9 @@ CREATE TABLE sql_constraint (
   jooq_name_upper       VARCHAR GENERATED ALWAYS AS (UPPER(jooq_name)),
   touched_at            TIMESTAMP,
   PRIMARY KEY (source_name, table_schema, table_name, constraint_name),
+  -- The key with its form beside it, which the primary key already makes unique; it is here so
+  -- sql_primary_key can reference a constraint of one form and no other.
+  UNIQUE (source_name, table_schema, table_name, constraint_name, constraint_type),
   FOREIGN KEY (source_name, table_schema, table_name) REFERENCES sql_table (source_name, table_schema, table_name),
   CHECK (constraint_type IN ('PRIMARY KEY', 'UNIQUE', 'FOREIGN KEY'))
 );
@@ -5458,16 +5461,19 @@ CREATE TABLE sql_primary_key (
   table_schema    VARCHAR NOT NULL,
   table_name      VARCHAR NOT NULL,
   constraint_name VARCHAR NOT NULL,
+  constraint_type VARCHAR NOT NULL DEFAULT 'PRIMARY KEY',
   touched_at      TIMESTAMP,
   PRIMARY KEY (source_name, table_schema, table_name),
-  FOREIGN KEY (source_name, table_schema, table_name, constraint_name)
-    REFERENCES sql_constraint (source_name, table_schema, table_name, constraint_name)
+  FOREIGN KEY (source_name, table_schema, table_name, constraint_name, constraint_type)
+    REFERENCES sql_constraint (source_name, table_schema, table_name, constraint_name, constraint_type),
+  CHECK (constraint_type = 'PRIMARY KEY')
 );
 COMMENT ON TABLE sql_primary_key IS 'One table''s primary key, naming the constraint that is it. For example public.film, whose primary key is the constraint film_pkey.';
 COMMENT ON COLUMN sql_primary_key.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_primary_key.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_primary_key.table_name IS 'SQL table name';
 COMMENT ON COLUMN sql_primary_key.constraint_name IS 'the name of the PRIMARY KEY constraint in sql_constraint';
+COMMENT ON COLUMN sql_primary_key.constraint_type IS 'always PRIMARY KEY, and here only so the foreign key into sql_constraint carries the form: a row naming a unique key or a foreign key as a table''s primary key is refused by the database rather than found by a query. Defaulted, so no writer names it';
 COMMENT ON COLUMN sql_primary_key.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
 
 CREATE TABLE sql_name_matched_key_column (
