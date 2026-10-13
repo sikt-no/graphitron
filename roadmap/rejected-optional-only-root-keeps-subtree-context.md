@@ -1,7 +1,7 @@
 ---
 id: R1023
 title: "A rejected optional-only tenant root does not void its subtree tenant context"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 1
 theme: diagnostics
