@@ -83,6 +83,15 @@ All in the generator's unit tier (`TenantBindingClassificationTest`, `TenantFanO
 
 Acceptance beyond this repo: a sis rerun (`mvn -o clean install -P quick -pl :sis-graphql-spec,:fsapi-rest` on the sis upgrade branch, against this worktree's install) reports 23 author errors: the 22 optional-only root rejections plus the 1 that stood before `20e11d5af`, give or take any `@tenantFanOut` field the fan-out rung newly reaches. A count outside that is a finding to explain before In Review. sis is outside this repo, so the unit tests remain the evidence a reviewer can reproduce.
 
+## Implementation notes
+
+Landed as specified, in one commit on top of the prototype. Two points for the reviewer.
+
+- *The fall-through fixture differs from the suggested shape.* A root `@service` returning a global `@table` reads `Unbound`, not `Conditional`: `collectFromServiceCall` returns before collecting any slot when the reach holds a global table. The test (`TenantBindingClassificationTest.anOptionalOnlyRootThatNeedsNoTenantStillHandsDownNothing`) uses `rateFilm(in: RateFilmInput)` instead, a root service handed no connection with an empty reach, whose decoded node-id slot is optional under the nullable input. Its sibling `anOptionalOnlyConnectionServiceRejectsAloneAndItsSubtreeInherits` (the same input on `rateFilmWithDsl`) rejects with the optional-only detail, which pins that the shape reads `Conditional`, and covers the `connectionService` half of `needsTenant`.
+- *Mutation checks.* Each of the three parts was removed in turn against the two test classes: without the `siteDivinesTenant` rung, `markerUnderAnUnmarkedOptionalOnlyAncestorRejectsBesideIt` fails; without the marker exemption, the two narrowing tests throw the post-classification `IllegalStateException`, as the spec predicted; without `needsTenant` in the predicate, the fall-through test throws it too.
+
+sis acceptance (`sis/upgrade-graphitron`, `sis-graphql-spec` against this worktree's install): 22 author errors, every one a root "takes its tenant only from optional values" rejection, none on a child and none from the fan-out rung. The spec expected 23, counting the one error that stood before `20e11d5af`; the sis tree now carries the `eierOrganisasjonskode` argument on `Query.godkjenningssakstatuskoder`, which sis's own status notes record as the fix that took tenancy from 1 to 0, so 22 is the expected count for this tree. `fsapi-rest-spec` runs no graphitron goal.
+
 ## Other solutions we've considered
 
 - **Keep the cascade (the status quo).** It was pinned deliberately, on the reading that a rejected root hands its subtree nothing, so the subtree honestly has no tenant. That is true of the rejected build and of no build the author will ship: both fixes the rejection names hand a tenant down, so the child errors describe a state that disappears with the root's fix. They cost the author a search through ~700 consequential errors for the 22 that matter, and read as a regression in fields the author did not touch. The fold already takes the forward-looking reading for Guaranteed sites that reject on other grounds.
