@@ -88,3 +88,24 @@ Acceptance beyond this repo: a sis rerun (`mvn -o clean install -P quick -pl :si
 - **Suppress consequential errors at report time.** Keep the fold and filter child rejections whose cause is a rejected ancestor. That needs a causal link from each child rejection back to the ancestor that voided its context, which the every-path fold does not record, and it leaves the children classified `null` rather than `Inherited`, so later consumers of the binding (LSP hints, generated docs) still see the wrong answer. Fixing the fact is smaller and adds no second mechanism.
 - **Count every Conditional site, needing a tenant or not.** A simpler predicate, but a Conditional site that needs no tenant runs on the default source and genuinely hands its subtree nothing, so its tenant-scoped children would classify `Inherited` with no tenant at runtime. Unsound.
 - **Change only the every-path fold.** Leaves `siteDivinesTenant` on the old posture, so the two folds disagree on one reading and a `@tenantFanOut` child below a rejected optional-only root is accepted now and rejected after either fix: the same two-step error discovery this item removes, run in reverse.
+
+## Reviewer findings
+
+### Round 1 (Spec → Ready review): request revisions
+
+Reviewer: a fresh Claude Code session started by the user for this gate (its session ID is not exposed to it; the spec's commits carry no session trailer, so independence rests on the user's choice of session), 2026-10-13.
+
+Question 1 passes. When this lands, a field whose tenant arguments are all optional produces exactly one error, its own, and the fields below it classify as they will once either fix is applied. The roughly 700 knock-on errors on sis go away, and no build that fails today starts passing. Every symbol, test and commit the spec names exists as named, the account of `armOf`'s rung order matches the tree, and the prototype at `fd30be5ff` shows the every-path half working.
+
+Question 2 fails on one point: the predicate as specified, the second rung and the post-classification check do not fit together for `@tenantFanOut` fields.
+
+1. **A fan-out field that narrows by optional slots would trip the new check on a valid build.** The predicate is "reading is Conditional and the site needs a tenant", with no exemption for marked sites. In `Fold.siteEstablishesContext` that is harmless, because `edgeEstablishesContext` returns early on `fanMarked(edge)`, so a fanned site never reaches the rung. `Fold.siteDivinesTenant` has no such early return: `edgeDivinesTenant` calls it on every site. Fanned fields that pass the build fall squarely inside the predicate. Every one of them needs a tenant (`fanOutArmOf` rejects one that reaches no tenant-scoped table), and none reads `Guaranteed`, because `fanOutArmOf` rejects a required slot. So every fanned field with an optional narrowing slot is counted by the new `siteDivinesTenant` rung and ends `Arm(FanOut)`, which is not in the check's allowed set (`ParentRowBound`, `Inherited`, `Rejected`). The spec's own soundness argument says "an *unmarked* Conditional site" and "the marker paths are closed", but neither the predicate nor the check says so. Reproduction: `TenantFanOutClassificationTest.aNullableTenantSlotOnAMarkedFieldNarrowsTheFanOut` (`Query.filmsNarrowable(filmId: Int ...) @tenantFanOut`, expected `FanOut` with no rejections) would throw `IllegalStateException` once the second rung and the check land as written. The prototype does not show this because it has neither. `@globalData` sites are not affected: `globalDataArmOf` rejects any reading that is not `Unbound`, as the spec says.
+
+   Choosing the resolution belongs to the author. Each candidate changes something different:
+   - exclude marked sites from the shared predicate;
+   - give `edgeDivinesTenant` the same `fanMarked` early return that `edgeEstablishesContext` has;
+   - widen the check to accept `Arm(FanOut)` on a fanned site.
+
+   The first two change which types land in `belowBoundEdge` below a fanned field. Today `anyFannedAncestor` hides that difference, because it rejects a nested fan-out one rung before `anyBoundAncestor`. The spec should say which one it means, state the coupling it relies on, and add a test that pins a fanned Conditional root under the new check (the existing narrowing tests do this once the check exists, if the spec names them as the regression guard).
+
+Non-blocking: the spec says "~15" pinned "no ancestor established" assertions in `TenantBindingClassificationTest`; the tree has 14.
