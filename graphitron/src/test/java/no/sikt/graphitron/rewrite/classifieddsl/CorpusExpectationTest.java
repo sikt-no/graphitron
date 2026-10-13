@@ -207,6 +207,14 @@ class CorpusExpectationTest {
             .isEmpty();
     }
 
+    /** A document the toolchain refuses fails here, unless it states the problem it means. */
+    @Test
+    void everyDocumentTheToolchainRefusesSaysSo() {
+        assertThat(CorpusExpectations.unstatedProblems(dsl, blocks))
+            .as("problems capture recorded in a document that does not state graphql_schema_problem")
+            .isEmpty();
+    }
+
     /**
      * The class's store is its own. It is held across every case, so a borrow of the thread's
      * store by another case on this thread, which clears what it borrows, must not reach it.

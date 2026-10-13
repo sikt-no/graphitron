@@ -1683,13 +1683,15 @@ conversion frees one.
   type at two root slots went, the specification forbidding it; an input field of an output type
   became an input field of a `@table` input, the legal shape of the same guard; and the sibling-graph
   case is the harness's own, every document being its own graph checked alone.
-* **A document the toolchain refuses fails the runner** `open`. Capture never refuses a schema,
-  recording the problem in `graphql_schema_problem` instead, and nothing in the fact or corpus
-  runner reads it, so a document that redeclares a prelude type, `type Query` beside the prelude's,
-  loses that declaration and everything in it to the older one in silence: its rows are simply not
-  produced, and a case that asserts an absence passes for the wrong reason. A graph recording a
-  problem is a failure unless the document states `graphql_schema_problem` itself. No document
-  states one today.
+* **A document the toolchain refuses fails the runner** `done`. Capture never refuses a schema,
+  recording the problem in `graphql_schema_problem`, and neither runner read it, so a document that
+  redeclared a prelude type lost that declaration and everything in it to the older one in silence.
+  Both runners now fail on a recorded problem unless the document states the relation. It found
+  three documents losing what they wrote, all now fixed: `enum-value` and `federation-link` declared
+  `type Query` beside the prelude's at every instant, and `spelled-reference`'s `@mutation` used an
+  argument the directive no longer has on a `Mutation` nothing declared, so the spelling it claims
+  to show was never captured. Four state the problem they are about: `base-less-extension` and the
+  three `federation-key` documents.
 * **A fresh store per test stops being the only shape** `open`, and it is not tidiness: every
   `sql_` and `code_` relation is store-wide, so one store holds many graphs against one reading of
   the catalog and the classpath, and varying which SDL loads into a warm store is the only thing

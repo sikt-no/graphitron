@@ -209,6 +209,15 @@ class FactExpectationTest {
             .isEmpty();
     }
 
+    /** A document the toolchain refuses fails here, unless it states the problem it means. */
+    @Test
+    @DisplayName("every document is one the toolchain accepts, or it states the problem")
+    void everyDocumentTheToolchainRefusesSaysSo() {
+        assertThat(CorpusExpectations.unstatedProblems(captured.dsl(), blocks))
+            .as("problems capture recorded in a document that does not state graphql_schema_problem")
+            .isEmpty();
+    }
+
     /**
      * The defect model's totality gate over the fact examples' store: every output field has a
      * source, or an error defect says why it has none, written on the field or on the type it is

@@ -581,4 +581,29 @@ public final class CorpusExpectations {
         String text = comment == null ? "" : comment.toLowerCase(java.util.Locale.ROOT);
         return SILENCE_IS_STATED.stream().anyMatch(text::contains);
     }
+
+    /**
+     * Every problem capture recorded for a graph whose document does not state
+     * {@code graphql_schema_problem}, one line each. Capture never refuses a schema: it records the
+     * refusal and keeps what it could read, so a document that redeclares a prelude type loses the
+     * declaration, and everything written in it, to the older one without a word, and a block
+     * asserting an absence then passes for the wrong reason. A document meaning to state a problem
+     * states that relation, and its graph is the one place a problem is expected.
+     */
+    public static List<String> unstatedProblems(DSLContext dsl, List<Block> blocks) {
+        var p = no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
+        var stating = blocks.stream()
+            .filter(block -> block.relation().equalsIgnoreCase(p.getName()))
+            .map(Block::graph)
+            .collect(java.util.stream.Collectors.toSet());
+        return dsl
+            .select(p.GRAPH_NAME, p.STAGE, p.SOURCE_NAME, p.SOURCE_LINE, p.ERROR_CLASS, p.MESSAGE)
+            .from(p)
+            .where(p.GRAPH_NAME.notIn(stating))
+            .orderBy(p.GRAPH_NAME, p.STAGE, p.ORDINAL)
+            .fetch(r -> r.value1() + " " + r.value2() + " "
+                + (r.value3() == null ? ""
+                    : java.nio.file.Path.of(r.value3()).getFileName() + ":" + r.value4() + " ")
+                + r.value5() + ": " + r.value6().lines().findFirst().orElse(""));
+    }
 }
