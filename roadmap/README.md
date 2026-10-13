@@ -14,8 +14,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R1023` | A rejected optional-only tenant root does not void its subtree tenant context | In Progress | 2026-10-13 | [plan](rejected-optional-only-root-keeps-subtree-context.md) |
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-10-06 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
+| `R1023` | A rejected optional-only tenant root does not void its subtree tenant context | In Review | 2026-10-13 | [plan](rejected-optional-only-root-keeps-subtree-context.md) |
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |
 | `R923` | A grain declares its corpora, so a cross-corpus grain can say so | Spec | 2026-09-05 | [plan](grain-declares-its-corpora.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
@@ -457,7 +457,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### diagnostics
 
-- `R1023` [**A rejected optional-only tenant root does not void its subtree tenant context**](rejected-optional-only-root-keeps-subtree-context.md) — In Progress, bug
+- `R1023` [**A rejected optional-only tenant root does not void its subtree tenant context**](rejected-optional-only-root-keeps-subtree-context.md) — In Review, bug
 - `R411` [**Wire-coercion cast guard for @condition and @externalField (R261 Slice 2)**](reject-wire-coercion-nonservice-sites.md) — Backlog, architecture
 - `R1027` [**A rejected Declined or Unbound tenant root does not void its subtree tenant context**](rejected-declined-or-unbound-root-keeps-subtree-context.md) — Backlog, bug, blocked by [rejected-optional-only-root-keeps-subtree-context](rejected-optional-only-root-keeps-subtree-context.md)
 - `R817` [**AuthoredClaimConflicts.fieldGrain reads a recursive view once per conflict row**](authored-claim-conflicts-reads-a-recursive-view-per-row.md) — Backlog, bug
