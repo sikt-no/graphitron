@@ -56,6 +56,15 @@ Per-input-type, no per-consumer override. If two services consuming
 the same input type need different validation, the schema author
 splits into two input types.
 
+A column's declared length is not a candidate fourth source. A
+`@mutation` input type carries no table, so the column an input field
+writes, and its length, belong to the (mutation field, input field)
+binding rather than to the input type. R1025
+(`dml-write-checked-against-column-length`) classifies that bound on
+the DML write plan's cells and routes its violations through the same
+`VALIDATION` channel and `ConstraintViolations` wire shape this item's
+constraints will use.
+
 ## Architecture
 
 ```
