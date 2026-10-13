@@ -805,7 +805,9 @@ and the emitters read, and it goes when nothing reads what it builds.
         keyset paging and one select per participant of a polymorphic type are properties of it;
       * `_lookup`, the rows for an ordered list of keys, one position per key and null for a miss:
         `@lookupKey`, `node`, `nodes`, `_entities`, and the re-read after a write over the keys it
-        returned;
+        returned; `graphitron_type_reach.batched`, a node type or a type carrying `@key`, is this
+        fact read off reach, which counts authored edges only, and comes from these producers once
+        `node`, `nodes` and `_entities` are stated;
       * `_insert`, values only, no row identified, returning the keys the database made;
       * the identifying write, with `matches`, `ONE` or `MANY` as `multiRow` was written, `ONE` by
         default: one row per input, or a filter per input that may match several. `_update` carries
@@ -1782,10 +1784,14 @@ resolved one.
 * **Table types, nodes and node key columns are marked and swept** `open`, after the move. A binding
   that changed is deleted first, taking that type's node and key columns with it; the rest are
   upserted on their keys and swept, and an unchanged binding keeps everything hanging off it.
-* **"Is a node" is the resolved node** `open`. The readers of `graphitron_node_type`,
-  `graphitron_node_id_instruction_rule` and
-  `intent_node_container_member`, read `graphitron_node`, and the view goes. A `@node` on a type
-  without `@table` is the anti-join between the entry and the node, and is reported, not counted.
+* **"Is a node" is the resolved node** `open`. `graphitron_node_type` is `graphitron_node` and every
+  written `@node` besides, and the rows it adds are only ever wrong answers to its readers: a reach
+  marked batched, a `@nodeId` resolved to a node that does not exist. Its three readers,
+  `graphitron_type_reach_rule`, `graphitron_node_id_instruction_rule` and
+  `intent_node_container_member`, read `graphitron_node`, and the view goes.
+* **A `@node` on a type without `@table` is a defect** `done`. `NODE_WITHOUT_TABLE`, at the `@node`:
+  the anti-join between the entry and the node, a type with no table binding entry. A `@table` that
+  does not resolve is that directive's own defect and draws nothing here.
 * **The editor and the MCP read the resolved node** `open`. Completion of `typeName:`, the legality
   behind its squiggle, the hover and `SchemaQueries` read `graphitron_node` and
   `graphitron_node_keycolumn`, so a node through catalog metadata alone is completed, accepted and
@@ -1829,27 +1835,36 @@ fields one target, the interface's.
   the directive was there, and `node_type_ref` nullable, NULL on a bare one. Both entries' columns
   are `NOT NULL` today and the input-value one writes no row for a bare `@nodeId`, so the columns,
   both writers and that comment change.
-* **The target type of a `@nodeId` coordinate** `open`. A written name is a forced choice: the named
-  type is the target, the candidates play no part, and a name that is not a node type is a
-  `graphitron_entry_defect` row. Otherwise the target is inferred, and the candidates are a relation
-  of their own, `graphitron_node_id_candidate`, one row per coordinate and node type, keyed to
-  `graphql_element` and `graphitron_node`. It starts with the rules the manual documents, taken by
-  type where the manual takes them by table, and a table-bound type is authoritative wherever one
-  answers:
-  * at the `id` field a type declares for `Node`, that type where it is a node; only `Node.id` binds
-    to the type it is declared on, and any other output field binds to nothing by inference;
-  * at an argument, the field's return type where it is a node, and each node member where it is
-    an interface or a union, with or without `@reference`, the return type answering before any
-    path does; the manual's rule is the one node type over the return table, and moving it to the
-    type is a change to the manual, not only to the model.
-  Both are in, asserted by `facts/node-id-candidate.graphqls`.
+* **Measure the move from table to type** `open`, first. Today the walk's
+  `BuildContext.inferNodeTypeOverTable` and the instruction relation take every bare `@nodeId` as
+  the one node over a table: the return type's, the containing one, or `@mutation(table:)`'s. For
+  every bare `@nodeId` in the fixtures and in a tagged sis capture, the type answer below and the
+  table answer side by side, with every place an `id` is read as a node id by its name alone, so
+  the switch is known to be a fix or a break before it is made.
+* **The target type of a `@nodeId` coordinate is the entry's** `open`. Beside `node_type_ref`, what
+  was written, the entry carries the type the id names and how it came to:
+  * `WRITTEN`, the `typeName:` as written;
+  * `IMPLIED`, at a field implementing `Node.id`, which is a `@nodeId` whose `typeName` is the
+    implementing type whether or not the directive is written; a written one naming another type
+    is a defect;
+  * `RETURN_TYPE`, at an argument the field's return type, and at an input field the root field's
+    return type per occurrence, occurrences that disagree being a defect at the entry; an
+    interface or union return is the container, which a `typeName:` may name;
+  * `TABLE_NODE`, where no type answers: the one node over the table `@mutation(table:)` names, or
+    the table a `@reference` path lands on, written in the anchor after `graphitron_node`.
+  The first three read the `graphql_` family alone, which is anchored before the entry is written.
+  Nodehood plays no part in the inference: the type is joined to `graphitron_node` afterwards, and a
+  type that is no node is a defect, as for a written name. `graphitron_node_id_candidate`, which
+  filtered by nodehood and took a container's members, goes, and with it two readings the instruction
+  relation makes and the manual does not: any bare output field bound to the type declaring it, and
+  an `id` argument or input field read as a node id by its name. Only `Node.id` is implied.
   Every shape the manual refuses is a defect row rather than an absence, and a nested input field
   under an interface or union field is one of them today. Capture records such a schema and
   validation refuses it; it never fails capture, which is what the reproduction in the audit did.
 * **A bare node id with `@reference` takes the type its path lands on** `blocked`, on the forward
   walk being anchored, in the chain branch. Where no table-bound type answers, which is an output field
-  carrying `@reference` or an argument on a field whose return binds no table, the candidate is the
-  one node type over the table the path lands on, a path landing on a table and not a type. The
+  carrying `@reference` or an argument on a field whose return binds no table, the type is the
+  one node type over the table the path lands on, `TABLE_NODE`, a path landing on a table and not a type. The
   landing is read off the chain rather than resolved here, which would be a second model of a route
   beside it.
   Where a type does answer, a written name or a bound return, the target is authoritative and the
@@ -1857,28 +1872,16 @@ fields one target, the interface's.
 * **A node id under an interface or a union, everywhere** `open`, not first. An argument or an input
   field on a field whose type is an interface or a union can carry `@nodeId`, which means a
   `typeName:` may name an interface or a union at any such coordinate and not only where the value
-  reaches a `@service` slot. The candidates are then the container's node members, and the corpus
+  reaches a `@service` slot. The decode then switches over the container's node members, and the corpus
   grows by those shapes when this is taken.
-* **The candidates carry their provenance** `open`, not first. A row that says which rule produced
-  it can be marked and swept like any other relation, where without it the relation is cleared and
-  rewritten each pass.
-* **A named application has candidates too** `open`, not first. What the model infers at a
-  coordinate does not depend on whether the author also wrote a name, so `Query.named(id:)
-  @nodeId(typeName: "Film")` should have the candidates a bare application there would, though
-  nothing reads them while the written name is the forced choice. Their absence is the odd case.
-* **An implicit node id has candidates** `open`, not first. The id-name forms carry no `@nodeId`:
-  an `id` argument on a field returning a node, or an `id` input field consumed against a node,
-  reads as that node's ID by its name alone. The candidate relation is more useful with rows for
-  these as well, and whether the coordinate being a node id at all is a fact of its own is what this
-  node explores.
 * **An input field's use site** `open`. A use is a definition joined to its consumer, and the model
   holds it today only as an `intent_` view, so it is modelled here rather than read.
 * **The chain reaches the target type** `blocked`, on the forward walk being anchored and the
   argument and input-field grains in the chain branch. A `@nodeId` field returns `ID`, so its chain is the
   forward walk from its source. Where its target type is written or bound, the table the walk ends at
   is checked against it, keeps its losing readings and reports its route defects like any field's;
-  where it is bare, that table is what the candidate is read from. A multitable bare `@nodeId` is one chain per
-  candidate, to that member's own type.
+  where it is bare, that table is what its `TABLE_NODE` type is read from. A multitable bare
+  `@nodeId` is one chain per member, to that member's own type.
 * **Key forwarding over the chain** `blocked`, on the chain reaching the target. One row per key
   column of the target and position along the winning chain where a source column already
   carries it, so encoding reads the key from the earliest table that has it and decoding compares
