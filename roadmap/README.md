@@ -19,8 +19,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |
 | `R923` | A grain declares its corpora, so a cross-corpus grain can say so | Spec | 2026-09-05 | [plan](grain-declares-its-corpora.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
-| `R1024` | Node and entity dispatch hand no tenant down, so Inherited children of a node fail | Spec | 2026-10-13 | [plan](node-dispatch-hands-down-no-tenant.md) |
 | `R872` | The keys say what a source owns, and the gatherer decides how to refresh it | Spec | 2026-09-25 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
+| `R1024` | Node and entity dispatch hand no tenant down, so Inherited children of a node fail | Ready | 2026-10-13 | [plan](node-dispatch-hands-down-no-tenant.md) |
 | `R981` | Stop the thread store's clear paying almost a boot to reset statistics after a capture | In Progress | 2026-10-13 <sub>created 2026-09-28</sub> | [plan](thread-store-clear-pays-for-statistics.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R1026` | A nullable nesting wrapper whose columns are all null resolves to an object, not null | Spec | 2026-10-13 | [plan](nesting-wrapper-null-contract.md) |
@@ -590,7 +590,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### runtime-connection
 
-- `R1024` [**Node and entity dispatch hand no tenant down, so Inherited children of a node fail**](node-dispatch-hands-down-no-tenant.md) — Spec, bug
+- `R1024` [**Node and entity dispatch hand no tenant down, so Inherited children of a node fail**](node-dispatch-hands-down-no-tenant.md) — Ready, bug
 - `R664` [**A growth-proof staged builder over the generated ExecutionInput factory**](execution-input-staged-builder.md) — Backlog, dx
 - `R469` [**Enable @defer/incremental delivery on the owned-connection path**](defer-under-owned-connections.md) — Backlog, architecture
 - `R468` [**Oracle/RAS execution-tier coverage for session identity hooks**](oracle-ras-session-hook-execution-coverage.md) — Backlog, architecture
