@@ -22,6 +22,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R1024` | Node and entity dispatch hand no tenant down, so Inherited children of a node fail | In Review | 2026-10-13 | [plan](node-dispatch-hands-down-no-tenant.md) |
 | `R981` | Stop the thread store's clear paying almost a boot to reset statistics after a capture | In Review | 2026-10-13 <sub>created 2026-09-28</sub> | [plan](thread-store-clear-pays-for-statistics.md) |
+| `R1026` | A nullable nesting wrapper whose columns are all null resolves to an object, not null | Spec | 2026-10-13 | [plan](nesting-wrapper-null-contract.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R942` | A rule that evaluates an unregistered view once per driving row fails the build, whoever writes the next one | Spec | 2026-09-09 | [plan](per-row-view-naming-fails-the-build.md) |
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Spec | 2026-09-22 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
@@ -33,7 +34,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
-| `R1026` | A nullable nesting wrapper whose columns are all null resolves to an object, not null | In Review | 2026-10-13 | [plan](nesting-wrapper-null-contract.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -639,7 +639,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R756` [**The orphan sweep never visits four subpackages the generator emits into**](orphan-sweep-misses-emitted-subpackages.md) — Backlog, correctness
 - `R480` [**@oneOf definition augment defeated by descriptions quoting the definition; federated SDL fails Apollo composition**](oneof-augment-defeated-by-descriptions.md) — Backlog, bug
 - `R679` [**A child lookup is rejected for a positional contract it does not have**](child-lookup-positional-rationale.md) — Backlog, bug
-- `R1026` [**A nullable nesting wrapper whose columns are all null resolves to an object, not null**](nesting-wrapper-null-contract.md) — In Review, bug
+- `R1026` [**A nullable nesting wrapper whose columns are all null resolves to an object, not null**](nesting-wrapper-null-contract.md) — Spec, bug
 - `R677` [**Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see**](list-ordering-invariant-enforcement.md) — Spec, validation
 - `R935` [**Lower a client-supplied ordering onto an inline child list, or refuse the shape**](inline-child-list-orderby-argument-not-lowered.md) — Backlog, architecture
 - `R688` [**The emitter spells a nested backing class with its binary $ name, so generated fetchers for a nested result type do not compile**](nested-backing-class-binary-name-in-emit.md) — Backlog, bug

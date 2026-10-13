@@ -1,7 +1,7 @@
 ---
 id: R1026
 title: "A nullable nesting wrapper whose columns are all null resolves to an object, not null"
-status: In Review
+status: Spec
 bucket: bug
 priority: 3
 theme: codegen-correctness
@@ -30,20 +30,24 @@ type Emneundervisningsvarighet {
 
 For an emne with no duration, Graphitron 9 returns `"varighet": null`; Graphitron 10 returns `"varighet": {"antall": null, "tidsenhet": null}`. After this item both return `null`. A non-null `varighet: Emneundervisningsvarighet!` keeps resolving to an object, as it did in Graphitron 9. sis's `EmnerQueryIT.fetchEmnerQuery` (asserting every present `varighet.antall` is an `Integer`) and the `studieoppbygningQuery` approval (`maksimumsvekting: null` became `{verdi: null}`, `beskrivelseAlleSprak: null` became `{en: null, nb: null, nn: null}`) are the consumer-side reproductions.
 
-The rule is restored for the wrappers whose contents are columns of the parent row, which covers every shape sis reported. A wrapper that also contains a field fetched some other way (a `@reference` to another table, an `@externalField`, a `@splitQuery` child) always resolves to an object, and the migration guide names that as a divergence from Graphitron 9.
+The rule is restored for wrappers whose contents are columns of the parent row, or single references joined from columns of the parent row. That covers both reported sis wrappers: `tidsenhet` above joins from `EMNE.TIDSENHET_VARIGHET_UND`, and `maksimumsvekting.vektingstype` from `EMNEKOMBINASJON.VEKTTYPEKODE_MAX`. A wrapper that also contains a list, an `@externalField` or a `@splitQuery` child always resolves to an object, and the migration guide names that as a divergence from Graphitron 9.
 
 ## The contract
 
-Terms used below. The *wrapper* is the nesting type's value on one row. A *column leaf* is a wrapper field whose value is one or more columns of the parent row read as-is: a plain or `@field`-renamed column, an enum-mapped column, or a `@nodeId` field encoding key columns. The *presence leaves* of a wrapper are its column leaves plus, recursively, the column leaves of every nesting field inside it.
+Terms used below. The *wrapper* is the nesting type's value on one row. A *column leaf* is a wrapper field whose value is one or more columns of the parent row read as-is: a plain or `@field`-renamed column, an enum-mapped column, or a `@nodeId` field encoding key columns. A *reference leaf* is a wrapper field reached through a reference whose value is a single row or a single value (a `@reference` or implicit-FK object field, or a scalar read through `@reference`), and whose path's first join step pairs columns of the parent row with columns of the next table (an FK or name-matched key, not an authored `condition:` predicate). Its *join columns* are those parent-row columns. The *presence leaves* of a wrapper are its column leaves and reference leaves plus, recursively, those of every nesting field inside it.
 
-1. **Nullable wrapper, columns only.** A nullable nesting field whose wrapper (recursively) contains only column leaves and nesting fields resolves to `null` exactly when every presence leaf is null. A column leaf over one column is null when the column is; a `@nodeId` leaf is null when any of its key columns is, because the generated `NodeIdEncoder.encode` returns `null` on any null value. So "every leaf null" is evaluated per leaf, not per column.
+1. **Nullable wrapper, columns and parent-keyed references only.** A nullable nesting field whose wrapper (recursively) contains only column leaves, reference leaves and nesting fields resolves to `null` exactly when every presence leaf is null. A column leaf over one column is null when the column is; a `@nodeId` leaf is null when any of its key columns is, because the generated `NodeIdEncoder.encode` returns `null` on any null value. So "every leaf null" is evaluated per leaf, not per column. A reference leaf counts as null when any of its join columns is null: SQL equality never matches a null, so the first join finds no row and the reference resolves to `null` whatever the rest of its path. The check reads the parent row, never the reference's subquery.
 2. **Independent of the selection.** Presence is decided over all presence leaves, not the ones the query selects. `{ varighet { antall } }` and `{ varighet { tidsenhet } }` agree on whether `varighet` is null for the same row. A field's nullness that depends on its own sub-selection would corrupt normalized client caches and differ from Graphitron 9, which built the wrapper from all its fields.
 3. **Non-null wrapper.** A `T!` nesting field always resolves to an object. Its leaves still count toward an enclosing nullable wrapper's presence (rule 1 recurses through it), which matches Graphitron 9's treatment of an all-null non-null inner object as null-equivalent for the outer one.
-4. **Other children block the collapse.** A wrapper containing any field that is not a column leaf or a nesting field always resolves to an object: a `@reference` object or list (an inline correlated multiset), a correlated scalar `@reference` column, an `@externalField`, a `@splitQuery` child. Their values are either never null (a list, a batch key) or cost a subquery the client did not select, and dropping a non-null value to collapse the wrapper would lose data. A nesting field whose subtree contains such a child is itself blocked, and blocks every enclosing wrapper.
+4. **Other children block the collapse.** A wrapper containing any field that is not a column leaf, a reference leaf or a nesting field always resolves to an object. That covers a list reference, an interface or union reference, a reference whose first step joins on an authored predicate or laterally to a routine, an `@externalField`, and a `@splitQuery` child. Their values are either never null (a list, a batch key) or can only be known by running a subquery the client did not select, and dropping a non-null value to collapse the wrapper would lose data. A nesting field whose subtree contains such a child is itself blocked, and blocks every enclosing wrapper.
 
-Rule 4 is the divergence from Graphitron 9, which counted a single `@reference` object and a correlated subquery toward the collapse. sis's reported wrappers contain no such child.
+A reference leaf errs in one direction only. When its join columns are all non-null, the leaf counts as present even if the reference still resolves to `null`: a `condition:` on the reference or a later step filtered the row out, an unenforced FK has no target row, or the first step enters from the far end of an FK, so the join columns are the parent's own key. The wrapper then stays an object where Graphitron 9 returned `null`. It is never null where a value exists.
+
+The divergences from Graphitron 9 are rule 4 and the paragraph above. Graphitron 9 counted every single `@reference` object and every correlated subquery toward the collapse, by its actual value.
 
 ## Implementation
+
+The first round shipped at `a3cadd6c8` (the subsections below, through **Docs**) and covered column leaves only. Its review was cut short when the sis IT run showed both reported wrappers still pass through, because each holds a reference. The **Amendment** section that follows is the delta still to build on top of the shipped code.
 
 **Model, `ChildField.NestingField`.** Two derived methods, computed from the components the record already carries (`returnType().wrapper()` and `nestedFields()`), so classification and the fact store are untouched. Wrapper nullability and child classification are not in the store, and `ParentRowDemand.parentRowColumns()` is the precedent for a derived read on the leaf.
 
@@ -84,6 +88,25 @@ Update the stale `NestingField` javadoc while there: the record's says the fetch
 - `docs/manual/how-to/map-types-to-tables.adoc` gains a section, drafted below.
 - `docs/manual/how-to/migrating-from-legacy.adoc`: one line under "Things that didn't change" for the restored rule, and a short "Behavior divergence" entry for rule 4, modelled on the `@condition` cascade section.
 
+### Amendment: reference leaves
+
+**Model, `NestingField.subtreePresence()`.** Two new arms, ahead of the `default -> Blocked`:
+
+- `TableField tf` whose `returnType().wrapper()` is `FieldWrapper.Single` yields a reference leaf.
+- `ColumnBackedReferenceField crf` yields a reference leaf. It is single-valued by construction, and arity is a column count, not cardinality.
+
+Both read the join columns through one shared helper over `joinPath()`. When `joinPath().getFirst()` is a `JoinStep.Hop` whose `on()` is `On.ColumnPairs cp`, the leaf is `new PresenceLeaf(cp.sourceSideColumns())`. Otherwise the field answers `Blocked` with that child: an `On.Predicate` or `On.Lateral` first step, or an empty path. `PresenceLeaf` already means "present when every column is non-null", which is the reference-leaf rule, so the record does not change. `On.ColumnPairs.slots` are oriented at synthesis so that `sourceSide()` is on the hop's origin table, and hop 0's origin is the parent table, so the columns are parent-row columns whichever end of the FK the parent holds. Neither `Keying` arm needs a case: the null argument holds for any equality pairing. A list `TableField`, `TableInterfaceField`, the batched variants and `ParticipantColumnReferenceField` keep falling through to `Blocked`. Interface and participant references are left out because no reported shape needs them, not because they would be unsound.
+
+Two things follow without further code. `parentRowColumns()` already flattens the leaves, so the join columns ride `CallWrap.Splice.callerDemand` into the anchor's projection as base-name parent-table columns. `FetcherEmitter.nestingBody` already emits one `row.get(T.COL) != null` conjunction per leaf against the parent's table constants. Pin both in the pipeline tier (below) rather than assuming them, because these are the first leaves whose columns come from a `JoinStep` rather than from a column leaf's own `columns()`.
+
+**Shared nested types, `GraphitronSchemaValidator.compareNestedFieldsShape`.** An inner nesting field's fetcher is emitted once, on the shared nested type's `Fetchers` class, from the representative site's contract and table constants. Column leaves are already safe there because the comparison requires equal `sqlName`s. A reference child's `joinPath` is deliberately not compared (the `TableField` arm says why), so two anchors could reach the same inner coordinate with join columns of different names. In the `NestingField`-recursion arm, when either side's `nullContract()` is `CollapsesWhenAbsent`, require both sides to answer `CollapsesWhenAbsent` with equal leaf column `sqlName` lists, and reject structurally otherwise, naming both parents and both column lists. Outer nesting fields are per-parent coordinates with their own fetchers, so only the recursion arm needs the check.
+
+*Fork for the reviewer:* this is a new rejection for a shape that passes today (as an always-object wrapper): a nested type reused across `@table` parents whose *inner* nullable nesting type holds a reference joined from differently named columns. The alternative, emitting `return source;` for such a coordinate, needs the emitter to see every reuse site, and today it sees only the representative. I recommend the rejection, with a message that says to split the nested type. It is the same constraint the column-leaf comparison already imposes, and sis does not have the shape. Only 3 of its nesting types are reused across `@table` parents (`SpesialpensumTittel`, `EmnenavnAlleSprak`, `EmnenavnForkortetAlleSprak`), and all three are column-only.
+
+**Javadoc.** `subtreePresence()` and `PresenceLeaf` name the reference leaf and the one-directional error. Keep the record's first javadoc line unchanged, as round 1 did (it feeds `supported-schema-shapes.adoc`).
+
+**Docs.** Rewrite round 1's shipped text in `map-types-to-tables.adoc` and `migrating-from-legacy.adoc` to match the draft below. The shipped text says any `@reference` keeps the wrapper an object, which is no longer true. The migration divergence entry now names the blocked kinds (list, `@splitQuery`, `@externalField`, predicate-joined reference) plus the stays-an-object case for a conditioned or reverse-FK reference.
+
 ## User documentation (first-client check)
 
 Draft section for `map-types-to-tables.adoc`, after "Re-binding and the table-context cascade":
@@ -104,7 +127,9 @@ Draft section for `map-types-to-tables.adoc`, after "Re-binding and the table-co
 >
 > When the field is nullable and every field of the nested type would be null, the field resolves to `null` rather than to an object of nulls. This is decided over all the nested type's fields, whatever the query selects, so `release { year }` and `release { minutes }` agree on whether `release` is null. Declare the field non-null (`release: FilmRelease!`) to always get an object.
 >
-> A nested type that also holds a field fetched another way, such as an `@reference` to another table, an `@externalField`, or a `@splitQuery` field, always resolves to an object.
+> A field of the nested type that follows a reference to a single row of another table also counts, through the parent's columns it joins from: when any of those columns is null the reference is null too. A reference with a `condition:`, or one that enters from the far end of a foreign key, can still be null when those columns are not, and then the nested object stays an object.
+>
+> A nested type that also holds a list, an `@externalField`, a `@splitQuery` field, or a reference joined by a `condition:` predicate rather than a key always resolves to an object.
 
 ## Tests
 
@@ -116,7 +141,29 @@ Draft section for `map-types-to-tables.adoc`, after "Re-binding and the table-co
   - host 1 resolves `labels` to an object;
   - a host whose `nb` is non-null and `nn` null (seed a third row, or reuse one if the seed already has the shape) resolves `labels { nn }` to `{nn: null}`, the selection-independence case (rule 2).
 
+The cases above shipped in round 1. The amendment adds:
+
+- **Model unit test** (`NestingFieldNullContractTest`):
+  - A single `TableField` with an FK first step yields one leaf over `sourceSideColumns()`, and so does a composite FK, as one leaf over all its columns.
+  - A list `TableField` is `Blocked`, and so is a `TableField` whose first step is `On.Predicate`.
+  - A multi-hop `ColumnBackedReferenceField` yields a leaf over hop 0's source columns only.
+  - A reference leaf nested in an inner nesting field reaches the outer contract.
+  - `parentRowColumns()` includes the join columns.
+- **Pipeline tier** (`NestingFieldPipelineTest`): the round-1 test that pins a `@reference` (`TableField`) blocker uses a single FK reference, which now collapses, so repoint it at a list reference. New SDL cases:
+  - A nullable wrapper over a column and a single FK reference: the fetcher checks the FK column on the parent's table constants, and the parent's splice arm projects that FK column.
+  - A scalar through a two-hop `@reference`: the check reads only the first hop's parent column.
+  - A reference entering from the far end of an FK: the leaf is the parent's key column, and the wrapper never collapses.
+  - The shared-nested-type rejection, with differently named join columns at two anchors, plus its negative: same-named join columns at both anchors pass.
+- **Execution tier.** Add a nullable `language_id int REFERENCES language(language_id)` column to `pivot_nesting_host`, set on host 1 and null on hosts 2 and 3. Add a nesting type reached as `origin: HostOrigin` on `PivotNestingHost`, holding `language: Language` (implicit FK) and `languageName: String @field(name: "NAME") @reference(...)` (scalar through a reference). Then:
+  - host 2 resolves `origin` to `null`;
+  - host 1 resolves `origin` to an object with both fields set;
+  - `origin { languageName }` and `origin { language { name } }` agree on host 1 and host 2 (rule 2 through a reference leaf).
+
+  Keep `HostLabels` as it is so the round-1 cases stay column-only. Check that nothing reads `pivot_nesting_host` with `SELECT *` or by column position.
+
 ## Implementation notes
+
+### Round 1 (`a3cadd6c8`)
 
 Landed as specified. The contract types nest in `ChildField.NestingField` (`PresenceLeaf`, `SubtreePresence.{Leaves, Blocked}`, `NullContract.{CollapsesWhenAbsent, AlwaysObject}` with `Reason.{NonNull, BlockedBy, NotSingle}`). The splice component is `CallWrap.Splice.callerDemand`. Points for the reviewer:
 
@@ -129,3 +176,12 @@ Landed as specified. The contract types nest in `ChildField.NestingField` (`Pres
 ## Provenance
 
 Reported by the sis Oracle IT run (fs-plattform, branch `sis/upgrade-graphitron`, write-up in `sis/GRAPHITRON10_STATUS.md` § "Third IT run"), on a pre-R1019 snapshot not re-checked on trunk. No manual page states the null contract of a nesting field either way (checked at `1cb2e1b04`). Graphitron 9 (`FetchDBMethodGenerator.createMappingFunction` at tag `v9.3.0`) mapped every nested object with jOOQ's `Functions.nullOnAllNull`, over all the type's fields, and used a plain constructor for a non-null nested field.
+
+Round 1's spec claimed sis's reported wrappers held no reference. They both do (`Emneundervisningsvarighet.tidsenhet`, `MaksimumVektingForStudieoppbygningsdel.vektingstype`). The sis IT run against `a3cadd6c8` caught this: 207 sis wrappers got the presence check, but both reported ones still emitted `return source;`. A script over sis's generated fetchers, its SDL and its jOOQ `Keys.java` sized the amendment against the 113 wrappers still passing through:
+
+- 69 become collapsible. Every non-column field in them is a single reference whose first step is a forward FK from the parent row, with no hop-0 condition. 62 hold only object references, including both reported cases; 7 hold a scalar read through `@reference`, 5 of them multi-hop.
+- 30 are non-null, so nothing changes for them.
+- 13 stay blocked: 10 by `@splitQuery` and 3 by `@externalField`.
+- 1 (`Termin.studiesemesterPeriode`) has a reverse FK at hop 0 and stays an object.
+
+None of them holds a list reference.
