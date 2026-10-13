@@ -979,6 +979,49 @@ class TenantDivinedRoutingExecutionTest {
         assertThat(TENANT_2_OPENED.get()).as("the refused group takes no connection").isZero();
     }
 
+    // ===== Node dispatch hands each resolved node its decoded tenant =====
+
+    @Test
+    void node_inheritedChildOfTheResolvedNode_readsTheDecodedTenant() {
+        var node = (Map<String, Object>) data(execute("{ node(id: \"" + NodeIdEncoder.encodeFilm(1)
+            + "\") { ... on Film { inventories { inventoryId } } } }"), "node");
+        assertThat((List<?>) node.get("inventories"))
+            .as("the batched child reads tenant 1's rows through the tenant the decoded id names")
+            .hasSize(2);
+        assertThat(TENANT_2_OPENED.get())
+            .as("nothing in the operation touches the other tenant's database")
+            .isZero();
+    }
+
+    @Test
+    void nodes_batchSpanningTenants_eachNodesSubtreeReadsItsOwnTenant() {
+        // Each tenant's database holds only its own film's scenes (one for film 1, three for
+        // film 2), so a child batch shared between the two nodes, or run on the wrong tenant,
+        // would answer one of them with the wrong count.
+        var nodes = (List<Map<String, Object>>) data(execute("{ nodes(ids: [\""
+            + NodeIdEncoder.encodeFilm(1) + "\", \"" + NodeIdEncoder.encodeFilm(2) + "\"])"
+            + " { ... on Film { title stock { scenes { id } } } } }"), "nodes");
+        assertThat(nodes).hasSize(2);
+        assertThat(nodes.get(0).get("title")).isEqualTo("Tenant One Film");
+        assertThat((List<?>) ((Map<String, Object>) nodes.get(0).get("stock")).get("scenes"))
+            .as("tenant 1's batch").hasSize(1);
+        assertThat(nodes.get(1).get("title")).isEqualTo("Tenant Two Film");
+        assertThat((List<?>) ((Map<String, Object>) nodes.get(1).get("stock")).get("scenes"))
+            .as("tenant 2's batch").hasSize(3);
+    }
+
+    @Test
+    void nodes_refusedTenantsSlot_staysNullAndItsSubtreeNeverRuns() {
+        var nodes = (List<Map<String, Object>>) data(execute("{ nodes(ids: [\""
+            + NodeIdEncoder.encodeFilm(1) + "\", \"" + NodeIdEncoder.encodeFilm(2) + "\"])"
+            + " { ... on Film { inventories { inventoryId } } } }", List.of(1)), "nodes");
+        assertThat(nodes).hasSize(2);
+        assertThat((List<?>) nodes.get(0).get("inventories"))
+            .as("the permitted node's child resolves on its own tenant").hasSize(2);
+        assertThat(nodes.get(1)).as("the refused tenant's node answers null").isNull();
+        assertThat(TENANT_2_OPENED.get()).as("the refused node's subtree takes no connection").isZero();
+    }
+
     @Test
     void operationBuiltWithoutTheSet_failsBeforeAnyDatabaseIsOpened() {
         // An ExecutionInput assembled by hand rather than through the generated factory: no

@@ -41,10 +41,17 @@ import java.util.List;
  * inside the dispatched alternative resolve against the individual rep, not the outer
  * representations list.
  *
+ * <p>Slot contract of {@code resolveByReps}, one shape per build mode: a single-tenant build's
+ * resolved entries are jOOQ {@code Record}s; a multi-tenant build's are
+ * {@code DataFetcherResult<Record>}s, stamped with the tenant their group was routed on for a
+ * tenant-scoped entity (so an inherited child below the entity reads that tenant) and unstamped
+ * for a global one. {@code fetchEntities}, {@code Query.node} and {@code Query.nodes} pass the
+ * entries through as field values or list elements, which graphql-java unwraps one level each.
+ *
  * <p>{@code resolveType} is a separate static helper reading the synthetic {@code __typename}
- * column projected on every entity row. Consumers who override {@code fetchEntities} and return
- * a non-{@link org.jooq.Record} shape get {@code null} back; federation surfaces its own
- * resolution-failure error.
+ * column projected on every entity row (graphql-java has unwrapped any {@code DataFetcherResult}
+ * by then). Consumers who override {@code fetchEntities} and return a non-{@link org.jooq.Record}
+ * shape get {@code null} back; federation surfaces its own resolution-failure error.
  */
 public final class EntityFetcherDispatchClassGenerator {
 
@@ -105,7 +112,7 @@ public final class EntityFetcherDispatchClassGenerator {
                 + "{@link EntityFetcherDispatchClassGenerator} for emission semantics.\n")
             .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
             .addMethod(buildFetchEntitiesMethod())
-            .addMethod(buildResolveByRepsMethod(entities))
+            .addMethod(buildResolveByRepsMethod(entities, multiTenant))
             .addMethod(buildResolveTypeMethod())
             .addMethod(buildTypenameForTypeIdMethod(entities))
             .addMethod(buildContextHelper(graphitronContext));
@@ -145,7 +152,7 @@ public final class EntityFetcherDispatchClassGenerator {
             .build();
     }
 
-    private static MethodSpec buildResolveByRepsMethod(List<EntityResolution> entities) {
+    private static MethodSpec buildResolveByRepsMethod(List<EntityResolution> entities, boolean multiTenant) {
         var listOfMap = ParameterizedTypeName.get(LIST,
             ParameterizedTypeName.get(MAP, ClassName.get(String.class), ClassName.get(Object.class)));
         return MethodSpec.methodBuilder(RESOLVE_BY_REPS_METHOD)
@@ -157,8 +164,16 @@ public final class EntityFetcherDispatchClassGenerator {
                 + "(not via {@code DataFetchingEnvironment.getArgument}) so callers like\n"
                 + "{@code QueryNodeFetcher.rowsNodes} can synthesise reps from a list of\n"
                 + "Relay node ids and reuse the same SELECT path.\n"
-                + "Returns an {@code Object[]} sized to {@code reps.size()}; entries are\n"
-                + "jOOQ {@code Record}s for resolved reps or {@code null} for unresolved.\n")
+                + "Returns an {@code Object[]} sized to {@code reps.size()}; "
+                + (multiTenant
+                    ? "entries are\n"
+                        + "{@code DataFetcherResult<Record>}s for resolved reps or {@code null} for unresolved.\n"
+                        + "Each is the field value graphql-java completes for its rep: a tenant-scoped\n"
+                        + "entity's carries the tenant its rep names as {@code localContext}, so the\n"
+                        + "entity's subtree reads that tenant; a global entity's carries none. Return\n"
+                        + "entries as received; wrapping one again hides its row from type resolution.\n"
+                    : "entries are\n"
+                        + "jOOQ {@code Record}s for resolved reps or {@code null} for unresolved.\n"))
             .addCode(resolveByRepsBody(entities))
             .build();
     }

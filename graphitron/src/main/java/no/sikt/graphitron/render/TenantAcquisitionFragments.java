@@ -136,6 +136,18 @@ public final class TenantAcquisitionFragments {
         };
     }
 
+    /**
+     * The per-element hand-down a per-tenant dispatch group puts in each resolved slot:
+     * {@code row}, wrapped as its own field value carrying the tenant held in
+     * {@code tenantKeyLocal}, the key the group was routed on. graphql-java unwraps each element
+     * before completing it, so the row's subtree inherits exactly the tenant it was read from.
+     */
+    public static CodeBlock handDownRow(ClassName connections, CodeBlock row, String tenantKeyLocal) {
+        return CodeBlock.of("$T.$L($L, $L)", connections,
+            no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator.HAND_DOWN_METHOD,
+            row, tenantKeyLocal);
+    }
+
     private static ClassName className(no.sikt.graphitron.command.UnitRef unit) {
         return ClassName.get(unit.packageName(), unit.simpleName());
     }

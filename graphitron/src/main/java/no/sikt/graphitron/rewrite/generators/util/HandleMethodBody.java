@@ -35,6 +35,10 @@ import java.util.List;
  *       {@code TenantConnections.dslFor} for a bound entity, the default source for a global
  *       entity in a multi-tenant build, and the escape-hatch context read in single-tenant
  *       builds.</li>
+ *   <li>In a multi-tenant build, wrap each filled slot as a {@code DataFetcherResult<Record>}:
+ *       a per-tenant group's rows carry the tenant the group was routed on as
+ *       {@code localContext}, so the subtree below each row inherits it; a global entity's rows
+ *       carry none. Single-tenant builds leave bare {@code Record}s.</li>
  * </ol>
  *
  * <p>Order preservation: result positions come from the rep's original index in the outer
@@ -50,6 +54,8 @@ final class HandleMethodBody {
     private static final ClassName ENV             = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName ENV_IMPL        = ClassName.get("graphql.schema", "DataFetchingEnvironmentImpl");
     private static final ClassName DSL_CONTEXT     = ClassName.get("org.jooq", "DSLContext");
+    private static final ClassName RECORD          = ClassName.get("org.jooq", "Record");
+    private static final ClassName DATA_FETCHER_RESULT = ClassName.get("graphql.execution", "DataFetcherResult");
 
     private HandleMethodBody() {}
 
@@ -226,6 +232,10 @@ final class HandleMethodBody {
             b.addStatement("$T dsl = $T.dslFor(groupEnv, tenantKey)",
                 DSL_CONTEXT, routing.tenantConnections());
             emitAltSwitch(b, entity);
+            // Each filled slot carries the tenant its group was routed on, so the row's subtree
+            // (an Inherited child, a @splitQuery below it) reads that tenant back.
+            emitSlotWrap(b, no.sikt.graphitron.render.TenantAcquisitionFragments.handDownRow(
+                routing.tenantConnections(), CodeBlock.of("($T) result[slot]", RECORD), "tenantKey"));
             b.endControlFlow();
             b.endControlFlow();
             return;
@@ -247,6 +257,26 @@ final class HandleMethodBody {
             b.addStatement("$T dsl = graphitronContext(groupEnv).getDslContext(groupEnv)", DSL_CONTEXT);
         }
         emitAltSwitch(b, entity);
+        if (routing != null) {
+            // One slot shape per build mode: a multi-tenant build's slots are all envelopes. A
+            // global entity hands no tenant down; the classifier seeds it no-context, so nothing
+            // below reads one.
+            emitSlotWrap(b, CodeBlock.of("$T.<$T>newResult().data(($T) result[slot]).build()",
+                DATA_FETCHER_RESULT, RECORD, RECORD));
+        }
+        b.endControlFlow();
+    }
+
+    /**
+     * Replaces each slot the group's SELECT filled with {@code wrapped}, an expression over
+     * {@code result[slot]}. A slot the SELECT left {@code null} (no such row) stays {@code null}.
+     */
+    private static void emitSlotWrap(CodeBlock.Builder b, CodeBlock wrapped) {
+        b.beginControlFlow("for (Object[] binding : bindings)");
+        b.addStatement("int slot = (Integer) binding[0]");
+        b.beginControlFlow("if (result[slot] != null)");
+        b.addStatement("result[slot] = $L", wrapped);
+        b.endControlFlow();
         b.endControlFlow();
     }
 

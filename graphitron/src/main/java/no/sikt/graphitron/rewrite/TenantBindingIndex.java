@@ -2216,13 +2216,15 @@ public record TenantBindingIndex(
         }
 
         /**
-         * A dispatch surface that hands its type a tenant: a node type whose key embeds the
-         * tenant column, or an entity type with an {@link TenantBinding.EntityRepBound}.
+         * A dispatch surface that hands its type a tenant: a type with an
+         * {@link TenantBinding.EntityRepBound}, node types whose key embeds the tenant column
+         * included. This is the map the dispatcher routes and stamps each resolved row from
+         * ({@link no.sikt.graphitron.rewrite.generators.util.EntityFetcherDispatchClassGenerator}),
+         * so "the classifier says this surface hands a tenant down" and "the emitted dispatcher
+         * stamps this surface's rows" are one fact.
          */
         private boolean routableDispatchSurface(String typeName) {
-            return (types.get(typeName) instanceof GraphitronType.NodeType
-                    && nodePositions.containsKey(typeName))
-                || byEntityType.containsKey(typeName);
+            return byEntityType.containsKey(typeName);
         }
 
         /**

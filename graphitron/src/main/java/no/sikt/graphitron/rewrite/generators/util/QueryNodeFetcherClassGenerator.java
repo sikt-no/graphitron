@@ -1,9 +1,11 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
+import no.sikt.graphitron.javapoet.AnnotationSpec;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
@@ -65,6 +67,7 @@ public class QueryNodeFetcherClassGenerator {
     private static final ClassName DATA_LOADER_FACTORY    = ClassName.get("org.dataloader", "DataLoaderFactory");
     private static final ClassName BATCH_LOADER_ENV       = ClassName.get("org.dataloader", "BatchLoaderEnvironment");
     private static final ClassName CODE_REGISTRY_BLDR     = ClassName.get("graphql.schema", "GraphQLCodeRegistry", "Builder");
+    private static final ClassName DATA_FETCHER_RESULT    = ClassName.get("graphql.execution", "DataFetcherResult");
 
     public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
         var nodeTypes = schema.types().values().stream()
@@ -84,46 +87,71 @@ public class QueryNodeFetcherClassGenerator {
         var entityDispatch = ClassName.get(outputPackage + ".util",
             EntityFetcherDispatchClassGenerator.CLASS_NAME);
 
+        // A multi-tenant build's resolveByReps slots are DataFetcherResult<Record> envelopes, each
+        // carrying its row's tenant when its group was routed per tenant. node hands the envelope
+        // back as its field value and nodes keeps each one as a list element, so neither wraps a
+        // slot again (graphql-java unwraps one level per value). Single-tenant slots stay bare
+        // Records, and so does this emission.
+        boolean multiTenant = schema.tenantScopes()
+            instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured;
+        TypeName nodeResult = multiTenant ? ParameterizedTypeName.get(DATA_FETCHER_RESULT, RECORD) : RECORD;
+        TypeName rowType = multiTenant ? ClassName.get(Object.class) : RECORD;
+        CodeBlock noNode = multiTenant
+            ? CodeBlock.of("$T.<$T>newResult().build()", DATA_FETCHER_RESULT, RECORD)
+            : CodeBlock.of("null");
+
         // fetchById: synthesise a single rep from id, dispatch through the entity dispatcher,
-        // return the resolved Record (or null when typeId/decode/SELECT yields nothing).
-        // The dispatcher is the single SELECT path for Query.node, Query.nodes, and
-        // federation _entities.
+        // return the resolved slot (or no node when typeId/decode/SELECT yields nothing, or the
+        // id names a tenant outside the request's set). The dispatcher is the single SELECT path
+        // for Query.node, Query.nodes, and federation _entities.
         var fetchById = MethodSpec.methodBuilder("fetchById")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-            .returns(RECORD)
+            .returns(nodeResult)
             .addParameter(ENV, "env")
             .addParameter(String.class, "id")
             .addStatement("$T typeId = $T.peekTypeId(id)", String.class, nodeIdEncoder)
-            .addStatement("if (typeId == null) return null")
+            .addStatement("if (typeId == null) return $L", noNode)
             .addStatement("$T typename = $T.$L(typeId)", String.class, entityDispatch,
                 EntityFetcherDispatchClassGenerator.TYPENAME_FOR_TYPE_ID_METHOD)
-            .addStatement("if (typename == null) return null")
+            .addStatement("if (typename == null) return $L", noNode)
             .addStatement("Object[] result = $T.$L($T.of($T.of($S, typename, $S, id)), env)",
                 entityDispatch, EntityFetcherDispatchClassGenerator.RESOLVE_BY_REPS_METHOD,
-                LIST, MAP, "__typename", "id")
-            .addStatement("return ($T) result[0]", RECORD);
+                LIST, MAP, "__typename", "id");
+        if (multiTenant) {
+            fetchById
+                .addAnnotation(AnnotationSpec.builder(SuppressWarnings.class)
+                    .addMember("value", "$S", "unchecked").build())
+                .addComment("Every non-null slot of a multi-tenant resolveByReps is a DataFetcherResult<Record>.")
+                .addStatement("return result[0] == null ? $L : ($T) result[0]", noNode, nodeResult);
+        } else {
+            fetchById.addStatement("return ($T) result[0]", RECORD);
+        }
 
         var dispatch = MethodSpec.methodBuilder(DISPATCH_METHOD)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(RECORD)
+            .returns(nodeResult)
             .addParameter(ENV, "env")
             .addJavadoc("Dispatches a Relay {@code Query.node(id:)} call to the matching\n"
                 + "{@link no.sikt.graphitron.rewrite.model.GraphitronType.NodeType NodeType} table.\n"
-                + "Returns {@code null} for null/garbage/unknown IDs (Relay spec).\n")
+                + "Returns {@code null} for null/garbage/unknown IDs (Relay spec).\n"
+                + (multiTenant
+                    ? "In a multi-tenant build the node arrives as the field's {@code DataFetcherResult},\n"
+                        + "carrying the tenant its id names down to its subtree; no node is an empty one.\n"
+                    : ""))
             .addStatement("$T id = env.getArgument($S)", String.class, "id")
-            .addStatement("if (id == null) return null")
+            .addStatement("if (id == null) return $L", noNode)
             .addStatement("return fetchById(env, id)")
             .build();
 
         var STRING_CLASS    = ClassName.get(String.class);
         var INTEGER_CLASS   = ClassName.get(Integer.class);
         var listOfString    = ParameterizedTypeName.get(LIST, STRING_CLASS);
-        var listOfRecord    = ParameterizedTypeName.get(LIST, RECORD);
+        var listOfRecord    = ParameterizedTypeName.get(LIST, rowType);
         var listOfInteger   = ParameterizedTypeName.get(LIST, INTEGER_CLASS);
-        var cfRecord        = ParameterizedTypeName.get(COMPLETABLE_FUTURE, RECORD);
+        var cfRecord        = ParameterizedTypeName.get(COMPLETABLE_FUTURE, rowType);
         var cfListRecord    = ParameterizedTypeName.get(COMPLETABLE_FUTURE, listOfRecord);
         var listOfCfRecord  = ParameterizedTypeName.get(LIST, cfRecord);
-        var loaderType      = ParameterizedTypeName.get(DATA_LOADER, STRING_CLASS, RECORD);
+        var loaderType      = ParameterizedTypeName.get(DATA_LOADER, STRING_CLASS, rowType);
         var mapStrListInt   = ParameterizedTypeName.get(MAP, STRING_CLASS, listOfInteger);
         var mapStrListStr   = ParameterizedTypeName.get(MAP, STRING_CLASS, listOfString);
 
@@ -164,7 +192,7 @@ public class QueryNodeFetcherClassGenerator {
                     String.class, String.class, "/").build())
             .addCode("$T futures = ids.stream()\n", listOfCfRecord)
             .addCode("    .map(id -> {\n")
-            .addCode("        if (id == null) return $T.completedFuture(($T) null);\n", COMPLETABLE_FUTURE, RECORD)
+            .addCode("        if (id == null) return $T.completedFuture(($T) null);\n", COMPLETABLE_FUTURE, rowType)
             .addCode("        $T idEnv = $T.newDataFetchingEnvironment(env).arguments($T.of($S, id)).build();\n",
                 ENV, ENV_IMPL, MAP, "id")
             .addCode("        $T name = path;\n", String.class)
@@ -209,9 +237,12 @@ public class QueryNodeFetcherClassGenerator {
             .endControlFlow()
             .addStatement("Object[] result = $T.$L(reps, env)", entityDispatch,
                 EntityFetcherDispatchClassGenerator.RESOLVE_BY_REPS_METHOD)
-            .addStatement("$T<$T> out = new $T<>(result.length)", LIST, RECORD, ARRAY_LIST)
+            .addStatement("$T<$T> out = new $T<>(result.length)", LIST, rowType, ARRAY_LIST)
             .beginControlFlow("for (Object o : result)")
-                .addStatement("out.add(($T) o)", RECORD)
+                .addCode(multiTenant
+                    // Each element keeps its slot's envelope, so it hands its own tenant down.
+                    ? CodeBlock.builder().addStatement("out.add(o)").build()
+                    : CodeBlock.builder().addStatement("out.add(($T) o)", RECORD).build())
             .endControlFlow()
             .addStatement("return out");
 

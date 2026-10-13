@@ -5179,6 +5179,13 @@ public class TypeFetcherGenerator {
         return code.build();
     }
 
+    /** Whether this run generates a multi-tenant ({@code <tenantColumn>}) build. */
+    private static boolean multiTenant(TypeFetcherEmissionContext ctx) {
+        return ctx.graphitronSchema() != null
+            && ctx.graphitronSchema().tenantScopes()
+                instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured;
+    }
+
     private static MethodSpec buildQueryNodeFetcher(TypeFetcherEmissionContext ctx, QueryField.QueryNodeField field, String outputPackage) {
         var queryNodeFetcher = ClassName.get(outputPackage + ".fetchers",
             no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.CLASS_NAME);
@@ -5188,10 +5195,18 @@ public class TypeFetcherGenerator {
             .returns(syncResultType(valueType))
             .addParameter(ENV, "env");
         builder.beginControlFlow("try");
-        builder.addStatement("$T payload = $T.$L(env)",
-            valueType, queryNodeFetcher,
-            no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.DISPATCH_METHOD);
-        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        if (multiTenant(ctx)) {
+            // The dispatcher's envelope is the field value as is: it carries the node's tenant
+            // down to its subtree, and wrapping it again would nest one envelope in another,
+            // which graphql-java does not unwrap.
+            builder.addStatement("return $T.$L(env)", queryNodeFetcher,
+                no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.DISPATCH_METHOD);
+        } else {
+            builder.addStatement("$T payload = $T.$L(env)",
+                valueType, queryNodeFetcher,
+                no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.DISPATCH_METHOD);
+            builder.addCode(returnSyncSuccess(valueType, "payload"));
+        }
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
@@ -5201,7 +5216,10 @@ public class TypeFetcherGenerator {
     private static MethodSpec buildQueryNodesFetcher(TypeFetcherEmissionContext ctx, QueryField.QueryNodesField field, String outputPackage) {
         var queryNodeFetcher = ClassName.get(outputPackage + ".fetchers",
             no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.CLASS_NAME);
-        TypeName valueType = ParameterizedTypeName.get(LIST, RECORD);
+        // Multi-tenant elements are the dispatcher's per-node envelopes, each handing its own
+        // tenant down; the list itself is wrapped in the field's envelope as usual.
+        TypeName valueType = ParameterizedTypeName.get(LIST,
+            multiTenant(ctx) ? ClassName.get(Object.class) : RECORD);
         return MethodSpec.methodBuilder(field.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(asyncResultType(valueType))

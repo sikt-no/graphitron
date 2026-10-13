@@ -77,9 +77,9 @@ GraphQLSchema schema = Graphitron.buildSchema(
     fed -> fed.fetchEntities(myCustomFetcher));
 ----
 
-The federation builder arrives pre-configured with Graphitron's defaults; the customizer replaces what the lambda touches and leaves the rest. The default fetcher resolves Graphitron-classified entities by routing through the per-type batched SELECT; a custom fetcher composes with that path by either delegating back to the default (for representations whose `__typename` is classified) or returning its own results (for representations the default doesn't recognise).
+The federation builder arrives pre-configured with Graphitron's defaults; the customizer replaces what the lambda touches and leaves the rest. The default fetcher resolves Graphitron-classified entities by routing through the per-type batched SELECT; a custom fetcher composes with that path by either delegating back to the default (for representations whose `__typename` is classified) or returning its own results (for representations the default doesn't recognise). In a multi-tenant build the default's results arrive as `DataFetcherResult`s, each carrying its entity's tenant down to the fields below it; a delegating fetcher returns them as received.
 
-Custom fetchers must return entities the default `resolveEntityType` recognises, jOOQ `Record`s with a `__typename` column. Richer type-resolution shapes (return a domain object with no jOOQ backing) are not currently supported; the supported extension point is the row shape graphql-java's federation support already understands.
+Custom fetchers must return entities the default `resolveEntityType` recognises, jOOQ `Record`s with a `__typename` column, or a `DataFetcherResult` wrapping one. Richer type-resolution shapes (return a domain object with no jOOQ backing) are not currently supported; the supported extension point is the row shape graphql-java's federation support already understands.
 
 == The `<schemaInput tag>` flag
 
@@ -124,7 +124,7 @@ Keep `typeId` values unique across subgraphs. Composition checks neither that tw
 * The build-time opt-in is the SDL `@link`. `Graphitron.buildSchema(...)` returns a federation-wrapped schema *iff* one of your schema files declares the `@link`; without it, no federation surface gets wired.
 * Don't wrap the result in `Federation.transform(...)` yourself. Graphitron has already done it; a second wrap double-adds `_Service` / `_Entity` and breaks composition.
 * The `federation-graphql-java-support` dependency is compile-scope on the *consumer* module (not the plugin), the symbols appear in generated source the consumer compiles. xref:external-code.adoc[How-to: Wire external Java code] covers the plugin-scope dependency layout for the *other* external-code directives; federation is the exception.
-* Custom `fetchEntities` implementations must return entities the default `resolveEntityType` recognises (jOOQ `Record`s with a `__typename` column). Richer shapes (domain objects without jOOQ backing) are not currently supported.
+* Custom `fetchEntities` implementations must return entities the default `resolveEntityType` recognises (jOOQ `Record`s with a `__typename` column, or a `DataFetcherResult` wrapping one). Richer shapes (domain objects without jOOQ backing) are not currently supported.
 * `<schemaInput tag>` triggers an implicit `@link(import: ["@tag"])` synthesis when no `@link` is present, and a fatal build error when `@link` is present without `"@tag"` in `import:`. The error spells out the fix.
 * Mixing `@link` import and manual directive declaration on the same directive fails validation. Pick one per directive.
 * The `@link` URL pins the Federation 2 minor version (`v2.10` in the canonical example). Pick whichever version covers the directives you import; the generator delegates the version gate to `federation-graphql-java-support`.

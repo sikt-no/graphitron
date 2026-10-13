@@ -118,6 +118,11 @@ public final class ConnectionRuntimeClassGenerator {
     /** The per-operation tenant-keyed connection carrier. */
     public static final String TENANT_CONNECTIONS_CLASS_NAME = "TenantConnections";
     /**
+     * The carrier's per-element tenant stamp, {@code <T> DataFetcherResult<T> handDown(T row, K
+     * tenantKey)}, shared by the fan-out union and node and entity dispatch.
+     */
+    public static final String HAND_DOWN_METHOD = "handDown";
+    /**
      * The request-tenancy value the factory takes in {@code <tenantColumn>} builds: the request
      * tenant set and an optional default tenant that is a member of it.
      */
@@ -1387,6 +1392,7 @@ public final class ConnectionRuntimeClassGenerator {
                 .addMethod(fanOutDomain(self, tenantKey))
                 .addMethod(narrowedFanOutDomain(tenantKey))
                 .addMethod(namedTenants())
+                .addMethod(handDown(tenantKey))
                 .addMethod(fanOutRows(self, tenantKey))
                 .addMethod(fanOutBatchRows(self, tenantKey))
                 .addMethod(collapseFanOut(self))
@@ -1545,6 +1551,33 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
+     * {@code static <T> DataFetcherResult<T> handDown(T row, K tenantKey)}: the per-element tenant
+     * stamp. Wraps one row as the field value graphql-java completes for it, carrying the row's
+     * tenant as {@code localContext} so the subtree below that one element reads it back. Both
+     * per-row surfaces call it: the fan-out union ({@link #fanOutRows}, {@link #fanOutBatchRows})
+     * and the node and entity dispatcher's per-tenant groups. Typed on the build's tenant key so
+     * it is no general-purpose way into the slot.
+     */
+    private static MethodSpec handDown(TypeName tenantKey) {
+        var t = no.sikt.graphitron.javapoet.TypeVariableName.get("T");
+        return MethodSpec.methodBuilder(HAND_DOWN_METHOD)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addTypeVariable(t)
+            .returns(ParameterizedTypeName.get(DATA_FETCHER_RESULT, t))
+            .addParameter(t, "row")
+            .addParameter(tenantKey, "tenantKey")
+            .addStatement("return $T.<$T>newResult().data(row).localContext(tenantKey).build()",
+                DATA_FETCHER_RESULT, t)
+            .addJavadoc("Wraps one row as its own field value, handing {@code tenantKey} down to the\n"
+                + "row's subtree: the per-element tenant stamp of the fan-out union and of node and\n"
+                + "entity dispatch. graphql-java unwraps a list's elements one by one, so each element\n"
+                + "keeps its own tenant.\n"
+                + "@param row the resolved row\n"
+                + "@param tenantKey the tenant the row was read from\n")
+            .build();
+    }
+
+    /**
      * {@code static <R> List<Object> fanOutRows(env, perTenant)}: the root-field fan-out union.
      * Scatters the per-tenant statement over the domain, flattens each {@code Success} outcome's
      * rows into per-element {@code DataFetcherResult}s carrying that row's tenant as
@@ -1571,8 +1604,7 @@ public final class ConnectionRuntimeClassGenerator {
             .beginControlFlow("for ($T<$T> outcome : outcomes)", outcome, listOfR)
             .beginControlFlow("if (outcome instanceof Outcome.Success<$T> success)", listOfR)
             .beginControlFlow("for ($T row : success.value())", r)
-            .addStatement("elements.add($T.newResult().data(row).localContext(success.key()).build())",
-                DATA_FETCHER_RESULT)
+            .addStatement("elements.add($L(row, success.key()))", HAND_DOWN_METHOD)
             .endControlFlow()
             .endControlFlow()
             .endControlFlow()
@@ -1626,8 +1658,7 @@ public final class ConnectionRuntimeClassGenerator {
             .beginControlFlow("if (outcome instanceof Outcome.Success<$T> success)", listOfListOfR)
             .beginControlFlow("for (int i = 0; i < keyCount; i++)")
             .beginControlFlow("for ($T row : success.value().get(i))", r)
-            .addStatement("merged.get(i).add($T.newResult().data(row).localContext(success.key()).build())",
-                DATA_FETCHER_RESULT)
+            .addStatement("merged.get(i).add($L(row, success.key()))", HAND_DOWN_METHOD)
             .endControlFlow()
             .endControlFlow()
             .endControlFlow()
