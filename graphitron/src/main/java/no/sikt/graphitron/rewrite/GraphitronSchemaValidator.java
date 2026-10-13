@@ -5,6 +5,7 @@ import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.generators.FetcherEmitter;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.ChildField.NestingField.NullContract;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
@@ -1447,7 +1448,8 @@ public class GraphitronSchemaValidator {
      *       for the reference half, the {@code joinPath()} terminus, because the shared fetchers class
      *       carries one typed read per coordinate.</li>
      *   <li>{@link ChildField.NestingField}: recursion, so a divergent inner leaf cannot hide behind
-     *       the outer class-equality check.</li>
+     *       the outer class-equality check, plus the columns the inner field's presence check reads,
+     *       because its one fetcher reads the representative's.</li>
      * </ul>
      *
      * <p>A leaf whose address does not carry the anchor cannot be admitted by comparison alone; the
@@ -1497,6 +1499,46 @@ public class GraphitronSchemaValidator {
                     + "carrier agree on the row shape."),
                 location));
         });
+    }
+
+    /**
+     * An inner nesting field's fetcher is emitted once, on the shared nested type's fetchers class,
+     * from the representative site's {@link ChildField.NestingField#nullContract() null contract}.
+     * Column leaves already agree by name across sites; a reference leaf's join columns do not,
+     * because a reference's join path is per anchor. So when either site collapses an absent
+     * wrapper, both must, over the same column names per leaf.
+     */
+    private void comparePresenceColumns(ChildField.NestingField rep, ChildField.NestingField other,
+                                        String nestedTypeName, String repParent, String otherParent,
+                                        String coord, List<ValidationError> errors) {
+        var repLeaves = presenceColumnNames(rep.nullContract());
+        var otherLeaves = presenceColumnNames(other.nullContract());
+        if (repLeaves.equals(otherLeaves)) {
+            return;
+        }
+        errors.add(new ValidationError(
+            coord,
+            Rejection.structural("Nested type '" + nestedTypeName + "' shared across '" + repParent
+                + "' and '" + otherParent + "': field '" + rep.name() + "' decides whether it is null "
+                + "from columns " + describePresence(repLeaves) + " on the first but "
+                + describePresence(otherLeaves) + " on the second, and one generated fetcher serves "
+                + "every site. Split the nested type into one per parent, or make its references "
+                + "join from same-named columns"),
+            other.location()));
+    }
+
+    /** Per-leaf column names of a collapsing contract; empty for a wrapper that never collapses. */
+    private static List<List<String>> presenceColumnNames(NullContract contract) {
+        return switch (contract) {
+            case NullContract.CollapsesWhenAbsent c -> c.leaves().stream()
+                .map(l -> l.columns().stream().map(no.sikt.graphitron.model.jooq.ColumnRef::sqlName).toList())
+                .toList();
+            case NullContract.AlwaysObject ignored -> List.of();
+        };
+    }
+
+    private static String describePresence(List<List<String>> leaves) {
+        return leaves.isEmpty() ? "none (it is always an object)" : leaves.toString();
     }
 
     private void compareNestedFieldsShape(ChildField.NestingField rep, ChildField.NestingField other,
@@ -1590,7 +1632,9 @@ public class GraphitronSchemaValidator {
                 // is identical by construction. The FILTERS are not per-parent any more: one condition
                 // glue method per nested coordinate serves every reuse site, so the sites must agree
                 // on the filter list (the condition producer's dedup fails hard on the same fact; this
-                // is the build-boundary mirror that names the diverging parents).
+                // is the build-boundary mirror that names the diverging parents). A reference
+                // that counts toward an inner nesting field's presence check is the exception the
+                // NestingField arm below holds to the same columns at every site.
                 if (!rtf.filters().equals(otf.filters())) {
                     errors.add(new ValidationError(
                         coord,
@@ -1605,7 +1649,12 @@ public class GraphitronSchemaValidator {
                 // Two-level nesting: recurse so divergent inner columns don't slip past the
                 // outer class-equality check. Thread the outer @table parent names so inner
                 // errors still name the original tables, not the intermediate nested type.
+                int before = errors.size();
                 compareNestedFieldsShape(rnf, onf, repParent, otherParent, errors);
+                if (errors.size() == before) {
+                    // A divergent inner column already names the cause; this would restate it.
+                    comparePresenceColumns(rnf, onf, nestedTypeName, repParent, otherParent, coord, errors);
+                }
             } else if (rf instanceof ResultKeyAliasedField && !(rf instanceof ChildField.PivotField)) {
                 // MUST STAY BELOW THE TableField ARM. TableField is a ResultKeyAliasedField too, so
                 // an arm placed above it swallows it and its filters() comparison silently stops

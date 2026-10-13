@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
@@ -8,6 +9,7 @@ import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Map;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
@@ -188,12 +190,12 @@ class NestingFieldPipelineTest {
     }
 
     @Test
-    void referenceChild_blocksTheCollapse() {
+    void listReferenceChild_blocksTheCollapse() {
         var schema = TestSchemaHelper.buildSchema("""
-            type Language @table(name: "language") { name: String }
+            type Actor @table(name: "actor") { firstName: String @field(name: "FIRST_NAME") }
             type FilmInfo {
                 year: Int @field(name: "RELEASE_YEAR")
-                language: Language @reference(path: [{key: "film_language_id_fkey"}])
+                cast: [Actor!]! @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
             }
             type Film @table(name: "film") { info: FilmInfo }
             type Query { film: Film }
@@ -211,6 +213,100 @@ class NestingFieldPipelineTest {
         assertThat(nf.nullContract()).isInstanceOfSatisfying(NestingField.NullContract.AlwaysObject.class,
             c -> assertThat(c.reason()).isInstanceOfSatisfying(NestingField.NullContract.Reason.BlockedBy.class,
                 b -> assertThat(b.blocker()).isInstanceOf(ChildField.BatchedTableField.class)));
+    }
+
+    // ===== Reference leaves =====
+
+    private static final String FILM_TABLE = "no.sikt.graphitron.rewrite.test.jooq.public_.Tables.FILM";
+
+    @Test
+    void singleFkReference_fetcherChecksTheJoinColumnAndTheSpliceProjectsIt() {
+        var sdl = """
+            type Language @table(name: "language") { name: String }
+            type FilmInfo {
+                year: Int @field(name: "RELEASE_YEAR")
+                originalLanguage: Language @reference(path: [{key: "film_original_language_id_fkey"}])
+            }
+            type Film @table(name: "film") { info: FilmInfo }
+            type Query { film: Film }
+            """;
+        var nf = (NestingField) TestSchemaHelper.buildSchema(sdl).field("Film", "info");
+        assertThat(nf.nullContract()).isInstanceOf(NestingField.NullContract.CollapsesWhenAbsent.class);
+        assertThat(fetcherMethodBody("FilmFetchers", "info", sdl))
+            .contains("row.get(" + FILM_TABLE + ".RELEASE_YEAR) != null) return source;")
+            .contains("row.get(" + FILM_TABLE + ".ORIGINAL_LANGUAGE_ID) != null) return source;")
+            .endsWith("return null;\n");
+        var filmType = findType("Film", sdl);
+        assertThat(TypeSpecAssertions.armProjectsColumn(filmType, "info", "ORIGINAL_LANGUAGE_ID")).isTrue();
+    }
+
+    @Test
+    void twoHopScalarReference_checksOnlyTheFirstHopsParentColumn() {
+        var sdl = """
+            type AddressInfo {
+                country: String @field(name: "COUNTRY")
+                    @reference(path: [{key: "address_city_id_fkey"}, {key: "city_country_id_fkey"}])
+            }
+            type Address @table(name: "address") { info: AddressInfo }
+            type Query { address: Address }
+            """;
+        var nf = (NestingField) TestSchemaHelper.buildSchema(sdl).field("Address", "info");
+        assertThat(nf.nestedFields()).singleElement().isInstanceOf(ChildField.ColumnBackedReferenceField.class);
+        assertThat(nf.parentRowColumns()).extracting(c -> c.sqlName()).containsExactly("city_id");
+        assertThat(fetcherMethodBody("AddressFetchers", "info", sdl))
+            .isEqualTo("org.jooq.Record row = (org.jooq.Record) source;\n"
+                + "if (row.get(no.sikt.graphitron.rewrite.test.jooq.public_.Tables.ADDRESS.CITY_ID) != null) return source;\n"
+                + "return null;\n");
+    }
+
+    @Test
+    void reverseFkReference_leafIsTheParentsOwnKey() {
+        // Entering from the far end of the key, the join columns are the parent's primary key,
+        // never null on a fetched row: the wrapper stays an object, as the contract allows.
+        var sdl = """
+            type Film @table(name: "film") { title: String }
+            type LanguageInfo {
+                someFilm: Film @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Language @table(name: "language") { info: LanguageInfo }
+            type Query { language: Language }
+            """;
+        var nf = (NestingField) TestSchemaHelper.buildSchema(sdl).field("Language", "info");
+        assertThat(nf.parentRowColumns()).extracting(c -> c.sqlName()).containsExactly("language_id");
+    }
+
+    private static final String SHARED_INNER_REFERENCE_SDL = """
+        type Film @table(name: "film") { title: String }
+        type Inner { film: Film }
+        type Wrap { inner: Inner }
+        type %s @table(name: "%s") { wrap: Wrap }
+        type %s @table(name: "%s") { wrap: Wrap }
+        type Query { a: %s b: %s }
+        """;
+
+    private static List<String> sharedInnerReferenceErrors(String a, String aTable, String b, String bTable) {
+        var schema = TestSchemaHelper.buildSchema(SHARED_INNER_REFERENCE_SDL.formatted(a, aTable, b, bTable, a, b));
+        return new GraphitronSchemaValidator().validate(schema).stream()
+            .map(ValidationError::message)
+            .filter(m -> m.contains("shared across"))
+            .toList();
+    }
+
+    @Test
+    void sharedNestedType_innerReferenceJoinedFromDifferentlyNamedColumns_rejects() {
+        // One fetcher on the shared Wrap type serves Wrap.inner at both sites and reads the
+        // representative's join column, which the other site's row does not carry.
+        assertThat(sharedInnerReferenceErrors("Content", "content", "Endorsement", "film_endorsement"))
+            .singleElement().satisfies(m -> assertThat(m)
+                .contains("Nested type 'Wrap' shared across 'Content' and 'Endorsement'")
+                .contains("field 'inner'")
+                .contains("[[film_id]]", "[[endorsed_film]]")
+                .contains("Split the nested type"));
+    }
+
+    @Test
+    void sharedNestedType_innerReferenceJoinedFromSameNamedColumns_passes() {
+        assertThat(sharedInnerReferenceErrors("Content", "content", "Inventory", "inventory")).isEmpty();
     }
 
     // ===== Helpers =====

@@ -1817,12 +1817,15 @@ CREATE TABLE film_scene (
 
 -- A @table host whose columns are named like the projection type's slots, so the same plain
 -- projection type is also reachable as an ordinary nested object (the dual-use coexistence case).
+-- language_id is a nullable reference, so a nesting type holding a reference joined from it has
+-- a presence column that is null exactly when the reference is.
 CREATE TABLE pivot_nesting_host (
-    host_id  serial      PRIMARY KEY,
-    nn       varchar(50),
-    nb       varchar(50),
-    se       varchar(50),
-    en       varchar(50)
+    host_id      serial      PRIMARY KEY,
+    nn           varchar(50),
+    nb           varchar(50),
+    se           varchar(50),
+    en           varchar(50),
+    language_id  int         REFERENCES language(language_id)
 );
 
 -- Film 1: nob + nno populated, sme + eng absent (null slots). Film 3: only nob, and only the
@@ -1846,10 +1849,10 @@ INSERT INTO film_price (film_id, currency_code, amount) VALUES
 -- Host 1 stays first: PivotExecutionTest reads it by position. Hosts 2 and 3 serve the nesting
 -- null contract: every column null (a nullable wrapper resolves to null), and nb alone set (the
 -- wrapper's presence does not depend on which of its fields the query selects).
-INSERT INTO pivot_nesting_host (host_id, nn, nb, se, en) VALUES
-    (1, 'nn-vert', 'nb-vert', NULL, 'en-host'),
-    (2, NULL, NULL, NULL, NULL),
-    (3, NULL, 'nb-only', NULL, NULL);
+INSERT INTO pivot_nesting_host (host_id, nn, nb, se, en, language_id) VALUES
+    (1, 'nn-vert', 'nb-vert', NULL, 'en-host', 2),
+    (2, NULL, NULL, NULL, NULL, NULL),
+    (3, NULL, 'nb-only', NULL, NULL, NULL);
 
 -- Execution-tier fixture for the ordering contract on a @splitQuery child list whose target has
 -- NO PRIMARY KEY. A consumer reported this shape: a batched child list over a keyless relation,

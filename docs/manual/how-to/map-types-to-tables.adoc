@@ -173,7 +173,9 @@ type FilmRelease {
 
 When the field is nullable and every field of the nested type would be null, the field resolves to `null` rather than to an object of nulls. This is decided over all the nested type's fields, whatever the query selects, so `release { year }` and `release { minutes }` agree on whether `release` is null. Declare the field non-null (`release: FilmRelease!`) to always get an object.
 
-A nested type that also holds a field fetched another way, such as an xref:../reference/directives/reference.adoc[`@reference`] to another table, an xref:../reference/directives/externalField.adoc[`@externalField`], or a xref:../reference/directives/splitQuery.adoc[`@splitQuery`] field, always resolves to an object.
+A field of the nested type that follows a reference to a single row of another table also counts, through the parent's columns it joins from: when any of those columns is null the reference is null too. A reference with a `condition:`, or one that enters from the far end of a foreign key, can still be null when those columns are not, and then the nested object stays an object.
+
+A nested type that also holds a list, an xref:../reference/directives/externalField.adoc[`@externalField`], a xref:../reference/directives/splitQuery.adoc[`@splitQuery`] field, or a xref:../reference/directives/reference.adoc[`@reference`] joined by a `condition:` predicate rather than a key always resolves to an object.
 
 == Constraints and pitfalls
 

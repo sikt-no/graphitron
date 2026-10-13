@@ -954,11 +954,12 @@ public sealed interface ChildField extends OutputField
      * this field's own fetcher hands the parent's record down, or {@code null} when
      * {@link #nullContract()} collapses an absent wrapper.
      *
-     * <p>A nullable wrapper whose contents are all columns of the parent row resolves to
-     * {@code null} exactly when every {@link PresenceLeaf} is absent, decided over the whole
-     * subtree rather than the selection; a non-null wrapper, and one holding any child fetched
-     * another way, always resolves to an object. The collapse reads columns the query may not
-     * have selected, which is this field's {@link #parentRowColumns() parent-row demand}.
+     * <p>A nullable wrapper whose contents are columns of the parent row, or single references
+     * joined from columns of it, resolves to {@code null} exactly when every {@link PresenceLeaf}
+     * is absent, decided over the whole subtree rather than the selection; a non-null wrapper,
+     * and one holding any child fetched another way, always resolves to an object. The collapse
+     * reads columns the query may not have selected, which is this field's
+     * {@link #parentRowColumns() parent-row demand}.
      */
     record NestingField(
         String parentTypeName,
@@ -984,12 +985,35 @@ public sealed interface ChildField extends OutputField
          * The subtree's presence leaves, or the child that blocks the collapse. Ignores this
          * field's own nullability: a non-null inner nesting field still contributes its leaves
          * to an enclosing nullable wrapper, and a blocked inner one blocks every enclosing one.
+         *
+         * <p>A column child is a leaf over its own columns. A single-valued reference child is a
+         * leaf over its join columns, the parent-row columns its first hop pairs on: when any is
+         * null the join matches no row, so the reference is null whatever the rest of its path.
+         * The converse does not hold, since a filter, an unenforced foreign key or a hop entering
+         * from the far end of a key can still leave the reference null; the wrapper then stays an
+         * object, which errs toward keeping a value, never toward dropping one. A reference whose
+         * first hop joins on an authored predicate or laterally to a routine has no such columns
+         * and blocks the collapse.
          */
         public SubtreePresence subtreePresence() {
             var leaves = new java.util.ArrayList<PresenceLeaf>();
             for (var child : nestedFields) {
                 switch (child) {
                     case ColumnBackedField cbf -> leaves.add(new PresenceLeaf(cbf.columns()));
+                    case TableField tf when tf.returnType().wrapper() instanceof FieldWrapper.Single -> {
+                        var leaf = referenceLeaf(tf.joinPath());
+                        if (leaf.isEmpty()) {
+                            return new SubtreePresence.Blocked(child);
+                        }
+                        leaves.add(leaf.get());
+                    }
+                    case ColumnBackedReferenceField crf -> {
+                        var leaf = referenceLeaf(crf.joinPath());
+                        if (leaf.isEmpty()) {
+                            return new SubtreePresence.Blocked(child);
+                        }
+                        leaves.add(leaf.get());
+                    }
                     case NestingField inner -> {
                         switch (inner.subtreePresence()) {
                             case SubtreePresence.Leaves l -> leaves.addAll(l.leaves());
@@ -1004,6 +1028,21 @@ public sealed interface ChildField extends OutputField
                 }
             }
             return new SubtreePresence.Leaves(leaves);
+        }
+
+        /**
+         * A reference's presence leaf: its first hop's parent-side columns when that hop pairs
+         * columns, empty when it joins on a predicate or laterally. The pairs are oriented at
+         * synthesis so the source side is on the hop's origin, which for hop 0 is the parent
+         * table, whichever end of the key the parent holds.
+         */
+        private static java.util.Optional<PresenceLeaf> referenceLeaf(List<JoinStep> joinPath) {
+            if (!joinPath.isEmpty()
+                    && joinPath.getFirst() instanceof JoinStep.Hop hop
+                    && hop.on() instanceof On.ColumnPairs cp) {
+                return java.util.Optional.of(new PresenceLeaf(cp.sourceSideColumns()));
+            }
+            return java.util.Optional.empty();
         }
 
         /** The null contract of this field: whether an absent wrapper resolves to {@code null}. */
@@ -1036,9 +1075,12 @@ public sealed interface ChildField extends OutputField
         }
 
         /**
-         * One value the wrapper carries, over the parent-row columns it reads as-is: present when
-         * every column is non-null. A plain column leaf is one column; a {@code @nodeId} leaf is
-         * its key columns, since the node-id encoder answers {@code null} on any null key value.
+         * One value the wrapper carries, over parent-row columns: present when every column is
+         * non-null. A plain column leaf is one column; a {@code @nodeId} leaf is its key columns,
+         * since the node-id encoder answers {@code null} on any null key value. A reference leaf
+         * is the columns its first hop joins from, and errs one way only: absent columns prove
+         * the reference null, present ones do not prove it non-null (see
+         * {@link #subtreePresence()}).
          */
         public record PresenceLeaf(List<ColumnRef> columns) {
             public PresenceLeaf {
@@ -1051,13 +1093,13 @@ public sealed interface ChildField extends OutputField
 
         /** The outcome of {@link #subtreePresence()}. */
         public sealed interface SubtreePresence {
-            /** Every value in the subtree is a column leaf; the subtree is absent when all are. */
+            /** Every value in the subtree is a presence leaf; the subtree is absent when all are. */
             record Leaves(List<PresenceLeaf> leaves) implements SubtreePresence {
                 public Leaves {
                     leaves = List.copyOf(leaves);
                 }
             }
-            /** The subtree holds {@code blocker}, a child fetched some other way than a column read. */
+            /** The subtree holds {@code blocker}, a child whose absence no parent-row column decides. */
             record Blocked(ChildField blocker) implements SubtreePresence {
                 public Blocked {
                     java.util.Objects.requireNonNull(blocker, "blocker");
@@ -1067,7 +1109,7 @@ public sealed interface ChildField extends OutputField
 
         /** The outcome of {@link #nullContract()}. */
         public sealed interface NullContract {
-            /** A nullable wrapper over column leaves only: {@code null} when every leaf is absent. */
+            /** A nullable wrapper over presence leaves only: {@code null} when every leaf is absent. */
             record CollapsesWhenAbsent(List<PresenceLeaf> leaves) implements NullContract {
                 public CollapsesWhenAbsent {
                     leaves = List.copyOf(leaves);
@@ -1084,10 +1126,11 @@ public sealed interface ChildField extends OutputField
                 /** The field is declared non-null. */
                 record NonNull() implements Reason {}
                 /**
-                 * The subtree holds a child fetched another way (a {@code @reference}, an
-                 * {@code @externalField}, a {@code @splitQuery} child): its value is never null or
-                 * costs a subquery the client did not select. Graphitron 9 counted some of these
-                 * toward the collapse; this is a documented divergence.
+                 * The subtree holds a child fetched another way (a list or polymorphic reference,
+                 * a reference joined on an authored predicate, an {@code @externalField}, a
+                 * {@code @splitQuery} child): its value is never null or costs a subquery the
+                 * client did not select. Graphitron 9 counted some of these toward the collapse;
+                 * this is a documented divergence.
                  */
                 record BlockedBy(ChildField blocker) implements Reason {
                     public BlockedBy {

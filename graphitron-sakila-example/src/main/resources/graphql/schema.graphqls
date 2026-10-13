@@ -5127,6 +5127,7 @@ type PivotNestingHost @table(name: "pivot_nesting_host") {
     texts: TranslatedTexts
     labels: HostLabels
     labelsRequired: HostLabels!
+    origin: HostOrigin
 }
 
 # A plain nesting type over two of pivot_nesting_host's nullable columns, reached once nullable and
@@ -5135,4 +5136,13 @@ type PivotNestingHost @table(name: "pivot_nesting_host") {
 type HostLabels {
     nn: String
     nb: String
+}
+
+# A plain nesting type holding only references joined from pivot_nesting_host.language_id: an
+# object reference through the implicit foreign key and a scalar read through @reference. The
+# nullable field resolves to null when language_id is, whichever of the two the query selects.
+type HostOrigin {
+    language: Language
+    languageName: String @field(name: "NAME")
+        @reference(path: [{key: "pivot_nesting_host_language_id_fkey"}])
 }

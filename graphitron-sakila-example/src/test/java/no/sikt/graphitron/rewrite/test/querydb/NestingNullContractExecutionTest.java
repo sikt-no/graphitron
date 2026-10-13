@@ -22,7 +22,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * null, decided over all the type's fields whatever the query selects, and a non-null field
  * returning the same type always resolves to an object. Fixture: {@code PivotNestingHost.labels}
  * and {@code labelsRequired}, both {@code HostLabels} over {@code pivot_nesting_host.nn} and
- * {@code nb}; host 1 carries both columns, host 2 neither, host 3 only {@code nb}.
+ * {@code nb}; host 1 carries both columns, host 2 neither, host 3 only {@code nb}. A reference
+ * counts through the parent column it joins from: {@code PivotNestingHost.origin} is a
+ * {@code HostOrigin} holding only references from {@code pivot_nesting_host.language_id}, set on
+ * host 1 and null on hosts 2 and 3.
  */
 @ExecutionTier
 @SuppressWarnings("unchecked")
@@ -90,5 +93,29 @@ class NestingNullContractExecutionTest {
         var labels = (Map<String, Object>) hosts("labels { nn }").get(3).get("labels");
         assertThat(labels).isNotNull().containsEntry("nn", null);
         assertThat(hosts("labels { nn }").get(2)).containsEntry("labels", null);
+    }
+
+    @Test
+    void referenceOnlyWrapper_withItsJoinColumnNull_resolvesToNull() {
+        assertThat(hosts("origin { languageName language { name } }").get(2)).containsEntry("origin", null);
+    }
+
+    @Test
+    void referenceOnlyWrapper_withItsJoinColumnSet_resolvesToAnObject() {
+        var origin = (Map<String, Object>) hosts("origin { languageName language { name } }").get(1).get("origin");
+        assertThat(origin).containsEntry("languageName", "Italian");
+        assertThat((Map<String, Object>) origin.get("language")).containsEntry("name", "Italian");
+    }
+
+    @Test
+    void referencePresence_isDecidedOverEveryField_notTheSelection() {
+        // The scalar and the object reference share one join column, so selecting either agrees
+        // on whether origin is null.
+        var byScalar = hosts("origin { languageName }");
+        var byObject = hosts("origin { language { name } }");
+        assertThat(byScalar.get(1).get("origin")).isNotNull();
+        assertThat(byObject.get(1).get("origin")).isNotNull();
+        assertThat(byScalar.get(2)).containsEntry("origin", null);
+        assertThat(byObject.get(2)).containsEntry("origin", null);
     }
 }
