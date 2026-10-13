@@ -1,7 +1,7 @@
 ---
 id: R1025
 title: "A DML mutation write is not checked against the column length before the statement"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 4
 theme: mutation-write
@@ -241,3 +241,21 @@ Question 1 passes. The goal is clear: a payload-returning DML mutation whose err
    *Response:* (a) Because UPDATE's bound is now decided on the leaf carrier before `UpdateRowsWalker.wrap` adds the `NestedInputField`, a nested string cell keeps its `Length`. `writtenCells()` takes the UPDATE path from `NestedInputField.path()`, and test 7 now covers INSERT and UPDATE. (b) `ColumnBackedReferenceField` gets the component too. `Length` is reachable on it only for a plain `@reference` with an empty path (`Direct`, `Local`); every FK-target arm is NodeId-decoded and so `Unbounded` (test 5). Checking the code also showed that enum inputs arrive as `Direct`, so the enum exclusion now reads the field's GraphQL type rather than the extraction. The `setFields()` clause is gone, with the reason stated in place.
 
 Non-blocking: the lint-docs pointer is hedged, and rightly. No classifier advisory id (`splitquery-redundant-on-record-parent` included) is documented under `docs/manual/` today; `mojo-configuration.adoc` § "Silencing lint warnings" is the closest home.
+
+### Round 2: In Review → Ready, request rework (session_01HptWg369tKNVgq97zxWMZT, 2026-10-13)
+
+Question 1 passes. The delivered tree is the change the spec approved: `ColumnFacts.declaredLength` read with `lengthDefined()` and captured to `sql_column.declared_length` with its comment; `ColumnWriteBound` minted only in `BuildContext.writeBound` at every construction site of the two `SetField` permits, copied by `UpdateRowsWalker` into `SetColumn`, `Unbounded` from `keyColumnsAsSetGroups`; `Dml.writtenCells()` reading the existing partition; the derived `lengthCheck()` on both record carriers; the advisory at the INSERT and UPDATE carrier sites (DELETE is always `None`, and no classifier path builds an `Upsert` carrier today, so nothing is missed); the code-point pre-step ahead of `preGuard()` in both two-step builders; `sizeExceeded` sharing one private builder with `toGraphQLError`; the four doc surfaces. The deviations are recorded in Implementation notes and are sound (the `> 0` guard beside `lengthDefined()`, `hasValidationHandler` lifted onto `ErrorChannel`, test 9's second half argued through test 4).
+
+Question 2 fails on one approval precondition: **the delivery adds code-string assertions on generated method bodies**, which `development-principles.adoc` § "Behaviour is pinned at the pipeline tier and above" bans at every tier. In `ConstraintViolationsClassGeneratorTest`:
+
+- the new `sizeExceeded_sharesTheWireShapeWithToGraphQLError` is entirely body strings (`m.code().toString()` contains `validationError(env, argPath, "size must be between 0 and " + max, "Size")`, and `toGraphQLError`'s body contains `return validationError(env, argPath,`);
+- the two existing tests the refactor broke were re-pointed at the new private `validationError` body (`path.addAll(argPath)`, `extensions.put("constraint", constraint)`, `.extensions(extensions)`) rather than retired. That they broke on a refactor that changed no behaviour is the ban's stated reason.
+
+This bears on completeness, not only on hygiene. The user manual (`error-channel.adoc#column-length-check`) promises `extensions.constraint` set to `Size`, and the only evidence for that in the tree is the banned string `"Size"`; the four execution cases pin `__typename`, `message` and `path` but not the extension. "Length errors cannot drift from Jakarta errors" is likewise asserted only as text.
+
+What would satisfy it:
+
+1. Remove the body-string assertions this item added or re-pointed in `ConstraintViolationsClassGeneratorTest`. Signature checks (modifiers, parameter names, return type) are structural and may stay.
+2. Pin `sizeExceeded`'s wire shape behaviourally: for example a sakila test-tier case that calls the generated `ConstraintViolations.sizeExceeded` with a real `DataFetchingEnvironment` (built from a `ResultPath` via graphql-java's `ExecutionStepInfo`/`DataFetchingEnvironmentImpl` builders) and asserts the error's `message`, `path` (execution path + arg path) and `extensions` (`{"constraint": "Size"}`), or an execution case that observes `extensions.constraint` through the payload if an `@error` type can expose it. Either one pins the documented extension and the shared shape without reading generated text.
+
+Everything else holds; the rework is confined to that test file plus the behavioural pin. `mvn install -Plocal-db` is green on trunk at `43ae80d`, which carries this delivery, and R1025's four execution cases pass. A first run went red in `NestingNullContractExecutionTest` (R1026's fixture row, on a sandbox database seeded before that `init.sql` change; green after a re-seed) and in `GraphQLQueryTest.inputFieldCondition_customScalarDefaults_bindAsBigDecimalBounds` (a row `NestedInputDmlExecutionTest` renames to `renamed` leaks in under parallel test order; passes in isolation and on the re-run). Neither is this item's.
