@@ -173,6 +173,7 @@ Both shapes work with single and bulk DELETE; cardinality follows the carrier fi
 * Arbitrary non-PK columns of the deleted row. The row is gone; `RETURNING` is narrowed to primary-key columns. If you need the full pre-delete state, snapshot it in your application code before issuing the mutation.
 * A bare class-backed payload type. Use a NodeId echo or a `@table` projection.
 
+[#payload-with-an-errors-field]
 == Payload with an errors field
 
 A payload may declare an errors-shaped field beside its data field, a list of xref:error.adoc[`@error`] types; the xref:../../how-to/error-channel.adoc[errors-channel how-to] covers the types themselves. When the write raises an exception one of the handlers matches, the transaction rolls back and the field renders `{ films: null, errors: [<typed error>] }` with no field error. On success the data field carries the written rows and `errors` is `null`.
