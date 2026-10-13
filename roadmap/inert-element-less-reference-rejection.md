@@ -1,34 +1,63 @@
 ---
 id: R692
-title: "Decide whether an element-less @reference on an argument or input field is an author error"
+title: "An element-less @reference is an author error at every site"
 status: Backlog
 bucket: architecture
 priority: 7
 theme: diagnostics
 depends-on: []
 created: 2026-08-17
-last-updated: 2026-08-17
+last-updated: 2026-10-12
 ---
 
-# Decide whether an element-less @reference on an argument or input field is an author error
+# An element-less @reference is an author error at every site
 
-`@reference(path: [])` is legal SDL, and on a field definition the empty list is the documented "infer
-the foreign key" spelling: `BuildContext.parsePath` resolves the single FK between the field's start and
-target tables. On an *argument* or an *input field* there is no target table to infer against (both
-sites call `parsePath` with a null `targetSqlTableName`), so the empty path stays empty, the column
-resolves against the field's own table, and the carrier behaves exactly as if the author had written no
-directive at all. The directive is inert in those two positions.
+## Goal
 
-Today both sites accept it silently. That is deliberate as of the FK-target `@nodeId` translated-filter
-work, which fixed a crash on this shape by binding it `Local` on the argument side to match the
-input-field side, and explicitly left the question of whether it should be *accepted* alone. An inert
-directive is a small authoring trap: it looks like it constrains the filter and does nothing, and the
-neighbouring repeated-`@reference` case is already a structural rejection, so silence here is not
-obviously the house answer.
+`@reference(path: [])` is refused wherever it is written, so an application of the directive always
+states at least one hop. Implicit navigation is spelled by writing no directive; an application
+exists to state a path, and one stating none says nothing.
 
-The decision is one decision over both positions, not two: rejecting on the argument side alone would
-re-create the asymmetry that produced the original crash. If it goes to a rejection it needs the
-classifier arm, the mirror in `GraphitronSchemaValidator`, and a sentence in the `@reference` manual
-page saying where the empty-path inference spelling does and does not apply. Weigh that against the
-possibility that some consumer schema writes the empty path deliberately (for instance generated SDL
-that always emits the `path:` argument), for which a rejection is a breaking change.
+## Why
+
+A missing `path:` is already impossible: the directive declares `path: [ReferenceElement!]!`, so the
+schema validation graphql-java runs refuses it. The empty list is legal SDL, and no site gives it a
+meaning that leaving the directive out does not:
+
+- **On a field definition** it is the same as no directive. `BuildContext.parsePath` gathers the
+  elements of every `@reference` on the field, and an empty gathering is what triggers the inference
+  of the single foreign key between the field's start and target tables, whether it came from no
+  application or from one that wrote `[]`.
+- **On an argument or an input field** it is inert. There is no target table to infer against (both
+  sites call `parsePath` with a null `targetSqlTableName`), so the empty path stays empty, the column
+  resolves against the field's own table, and the carrier behaves as if the author had written no
+  directive. That is an authoring trap: it looks like it constrains the filter and does nothing.
+
+Two neighbouring cases already reject it. An element-less application inside a multi-application
+chain is a structural rejection ("an @reference application composing a table chain must carry at
+least one path element"), and `@referenceFor` refuses an element-less list outright, a
+`@referenceFor` application stating a complete path. The single-application `@reference` is the one
+place the empty list is still accepted.
+
+Acceptance today is deliberate as of the FK-target `@nodeId` translated-filter work, which fixed a
+crash on this shape by binding it `Local` on the argument side to match the input-field side and
+left the question of accepting it open. This item closes it.
+
+## Plan
+
+One rule over all three sites, not one per site: rejecting at the argument alone re-created the
+asymmetry that produced the original crash.
+
+- A classifier arm refusing an element-less `@reference` at a field, an argument and an input field,
+  and its mirror in `GraphitronSchemaValidator`.
+- The two pipeline cases in `ReferenceFilterRemoteColumnPipelineTest` that pin the inert binding
+  become rejection cases.
+- The `@reference` manual page (`join-with-references.adoc`) states the rule where it now says the
+  empty path is legal and inert, and says that inference is written by leaving the directive out.
+
+It is a breaking change for a schema that writes `path: []`, generated SDL that always emits the
+argument among them. No consumer schema we hold writes one, and such a schema gets a clear error
+rather than a directive that does nothing.
+
+Until this lands, the fact store treats `[]` as equivalent to no directive, which is what the
+generator does on a field definition and in effect on the other two sites.
