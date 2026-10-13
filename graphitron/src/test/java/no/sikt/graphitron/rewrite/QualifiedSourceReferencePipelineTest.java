@@ -15,6 +15,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.config.RunContext;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * Pipeline coverage for a {@code @reference} field on a type whose {@code @table(name:)} carries
@@ -41,18 +42,17 @@ import no.sikt.graphitron.model.config.RunContext;
 @PipelineTier
 class QualifiedSourceReferencePipelineTest {
 
-    private static final String MULTI_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
     private static final String MULTI_OUTPUT_PACKAGE = "fake.code.generated.multischema";
 
     private static final ClassName SIGNAL =
-        ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a.tables", "Signal");
+        ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_a.tables", "Signal");
     private static final ClassName WIDGET =
-        ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a.tables", "Widget");
+        ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_a.tables", "Widget");
 
     private static RunContext multiSchemaContext() {
         return new RunContext(
             List.of(), Path.of(""), "QualifiedSourceReferencePipelineTest", Path.of(""),
-            MULTI_OUTPUT_PACKAGE, MULTI_JOOQ_PACKAGE);
+            MULTI_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
     }
 
     /** A Signal type bound to a schema-qualified @table plus a Widget carrying its own @table, with

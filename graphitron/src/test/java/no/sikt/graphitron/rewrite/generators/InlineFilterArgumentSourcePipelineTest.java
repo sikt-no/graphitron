@@ -18,6 +18,7 @@ import java.util.List;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * An inline (non-{@code @splitQuery}) {@code @reference} list field serves its filter arguments
@@ -41,10 +42,9 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 @PipelineTier
 class InlineFilterArgumentSourcePipelineTest {
 
-    private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
     private static final RunContext FIXTURE_CTX = new RunContext(
         List.of(), Path.of(""), "InlineFilterArgumentSourcePipelineTest", Path.of(""),
-        DEFAULT_OUTPUT_PACKAGE, FIXTURE_JOOQ_PACKAGE
+        DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE
     );
 
     // A list-typed implicit column filter (bar.name IN (names)) — a GeneratedConditionFilter whose

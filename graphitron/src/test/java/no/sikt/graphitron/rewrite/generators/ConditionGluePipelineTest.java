@@ -12,6 +12,7 @@ import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * Pipeline-tier coverage for the condition glue's composite-key NodeId helper registry
@@ -34,10 +35,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class ConditionGluePipelineTest {
 
-    private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
     private static final RunContext FIXTURE_CTX = new RunContext(
         List.of(), Path.of(""), "ConditionGluePipelineTest", Path.of(""),
-        DEFAULT_OUTPUT_PACKAGE, FIXTURE_JOOQ_PACKAGE
+        DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE
     );
 
     @Test

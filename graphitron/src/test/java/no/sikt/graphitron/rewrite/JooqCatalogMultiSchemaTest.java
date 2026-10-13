@@ -16,6 +16,7 @@ import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.jooq.TableRef;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * Coverage for {@link JooqCatalog}'s strict-resolution multi-schema API:
@@ -31,10 +32,8 @@ import no.sikt.graphitron.model.jooq.TableRef;
 @UnitTier
 class JooqCatalogMultiSchemaTest {
 
-    private static final String MULTI_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
-
     private static JooqCatalog multi() {
-        return new JooqCatalog(MULTI_PACKAGE);
+        return new JooqCatalog(DEFAULT_JOOQ_PACKAGE);
     }
 
     /**
@@ -417,7 +416,7 @@ class JooqCatalogMultiSchemaTest {
         // the `__` separator and whose SQL name does not, so the two namespaces are distinguishable
         // in the (unranked) candidate list the rejection carries.
         var ctx = new BuildContext(null,
-            new JooqCatalog("no.sikt.graphitron.rewrite.test.jooq"), stubRunContext());
+            new JooqCatalog(DEFAULT_JOOQ_PACKAGE), stubRunContext());
 
         // Bare SQL-form attempt -> SQL-namespace candidates (no TABLE__CONSTRAINT separator).
         var sqlForm = (no.sikt.graphitron.model.diagnostics.Rejection.AuthorError.UnknownName)
@@ -466,7 +465,7 @@ class JooqCatalogMultiSchemaTest {
     void constructor_realCatalogWithAllTablesClassesSucceeds() {
         // Sanity check: the multischema fixture has Tables in every schema, so the constructor's
         // precondition pass over schemaStream() does not throw.
-        new JooqCatalog(MULTI_PACKAGE);
+        new JooqCatalog(DEFAULT_JOOQ_PACKAGE);
     }
 
     // ---- synthesizeFkJoin: FkJoinResolution sub-taxonomy ----
@@ -607,9 +606,9 @@ class JooqCatalogMultiSchemaTest {
         // "multischema_a.signal".equalsIgnoreCase("signal"), mis-orients the join, and
         // swaps origin/target so the slot pairing inverts.
         assertThat(CatalogRefs.tableClass(fkJoin.originTable()))
-            .isEqualTo(ClassName.get(MULTI_PACKAGE + ".multischema_a.tables", "Signal"));
+            .isEqualTo(ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_a.tables", "Signal"));
         assertThat(CatalogRefs.tableClass(fkJoin.targetTable()))
-            .isEqualTo(ClassName.get(MULTI_PACKAGE + ".multischema_a.tables", "Widget"));
+            .isEqualTo(ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_a.tables", "Widget"));
         // Slot orientation: source column sits on signal (widget_id), target on widget (widget_id).
         var pairs = (On.ColumnPairs) fkJoin.on();
         assertThat(pairs.sourceSideColumns()).extracting(c -> c.sqlName()).containsExactly("widget_id");
@@ -653,9 +652,9 @@ class JooqCatalogMultiSchemaTest {
         assertThat(result).isInstanceOf(BuildContext.FkJoinResolution.Resolved.class);
         var hop = ((BuildContext.FkJoinResolution.Resolved) result).hop();
         assertThat(CatalogRefs.tableClass(hop.targetTable()))
-            .isEqualTo(ClassName.get(MULTI_PACKAGE + ".multischema_a.tables", "Event"));
+            .isEqualTo(ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_a.tables", "Event"));
         assertThat(CatalogRefs.tableClass(hop.originTable()))
-            .isEqualTo(ClassName.get(MULTI_PACKAGE + ".multischema_a.tables", "Note"));
+            .isEqualTo(ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_a.tables", "Note"));
     }
 
     @Test
@@ -668,9 +667,9 @@ class JooqCatalogMultiSchemaTest {
         assertThat(result).isInstanceOf(BuildContext.FkJoinResolution.Resolved.class);
         var hop = ((BuildContext.FkJoinResolution.Resolved) result).hop();
         assertThat(CatalogRefs.tableClass(hop.targetTable()))
-            .isEqualTo(ClassName.get(MULTI_PACKAGE + ".multischema_b.tables", "Event"));
+            .isEqualTo(ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_b.tables", "Event"));
         assertThat(CatalogRefs.tableClass(hop.originTable()))
-            .isEqualTo(ClassName.get(MULTI_PACKAGE + ".multischema_b.tables", "Note"));
+            .isEqualTo(ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_b.tables", "Note"));
     }
 
     // D3: scoped name lookup disambiguates the colliding constraint name by source, and surfaces

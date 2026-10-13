@@ -11,6 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.diagnostics.RejectionKind;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * {@code @nodeId} is silently conditional. The SDL directive permits {@code @nodeId} on
@@ -39,7 +40,7 @@ class RejectNonIdNodeIdPipelineTest {
     // ChildField.ColumnBackedReferenceField with NodeIdEncodeKeys — exactly finding H's encoded-key shape.
     private static final RunContext FIXTURE_CTX = new RunContext(
         List.of(), Path.of(""), "RejectNonIdNodeIdPipelineTest", Path.of(""),
-        DEFAULT_OUTPUT_PACKAGE, "no.sikt.graphitron.rewrite.test.jooq"
+        DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE
     );
 
     // ===== Finding F: @nodeId on a non-ID input-object field =====

@@ -19,6 +19,7 @@ import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * Pipeline-tier coverage: a {@code @reference(path:)} filter whose terminal column lives on a
@@ -45,10 +46,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class ReferenceFilterRemoteColumnPipelineTest {
 
-    private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
     private static final RunContext FIXTURE_CTX = new RunContext(
         List.of(), Path.of(""), "ReferenceFilterRemoteColumnPipelineTest", Path.of(""),
-        DEFAULT_OUTPUT_PACKAGE, FIXTURE_JOOQ_PACKAGE);
+        DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
 
     private static final String STUB = "no.sikt.graphitron.rewrite.TestConditionStub";
 

@@ -14,6 +14,7 @@ import java.util.List;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_METADATA;
 import static org.assertj.core.api.Assertions.assertThat;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * What the catalog walk writes for the node-identity constants a generated table class publishes,
@@ -29,8 +30,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @PipelineTier
 class NodeMetadataCaptureTest {
-
-    private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
 
     private static final String SDL = """
         type Query {
@@ -101,7 +100,7 @@ class NodeMetadataCaptureTest {
     @Test
     @DisplayName("a second capture over the same source restates the rows rather than colliding")
     void aSecondCaptureRestatesTheRows(@TempDir Path tmp) {
-        var jooq = new JooqCatalog(FIXTURE_JOOQ_PACKAGE);
+        var jooq = new JooqCatalog(DEFAULT_JOOQ_PACKAGE);
         try (var store = CapturedStore.ofCatalog(tmp, SDL, jooq)) {
             int metadata = store.dsl().fetchCount(SQL_NODE_METADATA);
             int entries = store.dsl().fetchCount(SQL_NODE_KEY_COLUMN);
@@ -122,7 +121,7 @@ class NodeMetadataCaptureTest {
     }
 
     private static void withFixtureCatalog(Path tmp, java.util.function.Consumer<DSLContext> body) {
-        try (var store = CapturedStore.ofCatalog(tmp, SDL, new JooqCatalog(FIXTURE_JOOQ_PACKAGE))) {
+        try (var store = CapturedStore.ofCatalog(tmp, SDL, new JooqCatalog(DEFAULT_JOOQ_PACKAGE))) {
             body.accept(store.dsl());
         }
     }

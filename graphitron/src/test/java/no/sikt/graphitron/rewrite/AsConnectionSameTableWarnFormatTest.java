@@ -10,6 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.model.config.RunContext;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * Pins the user-facing warn-message format for {@code @asConnection} + required same-table
@@ -41,7 +42,7 @@ class AsConnectionSameTableWarnFormatTest {
         Path.of(""), "AsConnectionSameTableWarnFormatTest",
         Path.of(""),
         "fake.code.generated",
-        "no.sikt.graphitron.rewrite.test.jooq"
+        DEFAULT_JOOQ_PACKAGE
     );
 
     private static final String CONNECTION_DECLS = """

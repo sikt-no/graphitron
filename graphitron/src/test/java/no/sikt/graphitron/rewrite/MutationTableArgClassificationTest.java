@@ -20,6 +20,7 @@ import static no.sikt.graphitron.rewrite.DmlWriteReads.updateArgOf;
 import static no.sikt.graphitron.rewrite.DmlWriteReads.updateRowsOf;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * The field-relative DML write-target precedence. For DELETE it pins the {@code @mutation(table:)}
@@ -44,7 +45,7 @@ class MutationTableArgClassificationTest {
         Path.of(""), "MutationTableArgClassificationTest",
         Path.of(""),
         "fake.code.generated",
-        "no.sikt.graphitron.rewrite.test.jooq"
+        DEFAULT_JOOQ_PACKAGE
     );
 
     @Test

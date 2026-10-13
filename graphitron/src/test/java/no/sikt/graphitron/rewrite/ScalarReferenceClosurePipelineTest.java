@@ -19,6 +19,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.schema.AttributedRegistry;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * Coverage for {@code GraphitronSchemaBuilder.rejectUnregisteredScalarReferences}, the
@@ -106,7 +107,7 @@ class ScalarReferenceClosurePipelineTest {
 
     private static final RunContext FIXTURE_CTX = new RunContext(
         List.of(), Path.of(""), "ScalarReferenceClosurePipelineTest", Path.of(""),
-        DEFAULT_OUTPUT_PACKAGE, "no.sikt.graphitron.rewrite.test.jooq");
+        DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
 
     /**
      * The classified {@link BuildContext} after the type pass, the same seam

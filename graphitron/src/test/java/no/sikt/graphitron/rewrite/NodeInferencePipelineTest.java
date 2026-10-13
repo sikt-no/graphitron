@@ -23,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.grammar.NodeDeclaration;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * The inference gate: a {@code @table} object type that declares {@code implements Node} over a
@@ -50,9 +51,8 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
 @PipelineTier
 class NodeInferencePipelineTest {
 
-    private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
     private static final RunContext FIXTURE_CTX = new RunContext(
-        List.of(), Path.of(""), "NodeInferencePipelineTest", Path.of(""), DEFAULT_OUTPUT_PACKAGE, FIXTURE_JOOQ_PACKAGE);
+        List.of(), Path.of(""), "NodeInferencePipelineTest", Path.of(""), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
 
     private static GraphitronSchema schema(String sdl) {
         return TestSchemaHelper.buildSchema(sdl, FIXTURE_CTX);

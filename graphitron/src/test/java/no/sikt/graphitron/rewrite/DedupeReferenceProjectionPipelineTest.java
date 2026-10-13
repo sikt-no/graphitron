@@ -12,6 +12,7 @@ import java.util.List;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.config.RunContext;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * Regression coverage: a composite {@code @node(keyColumns: [...])} type with a sibling
@@ -28,10 +29,9 @@ import no.sikt.graphitron.model.config.RunContext;
 @PipelineTier
 class DedupeReferenceProjectionPipelineTest {
 
-    private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
     private static final RunContext FIXTURE_CTX = new RunContext(
         List.of(), Path.of(""), "DedupeReferenceProjectionPipelineTest", Path.of(""),
-        DEFAULT_OUTPUT_PACKAGE, FIXTURE_JOOQ_PACKAGE
+        DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE
     );
 
     private static final String OVERLAP_SDL = """

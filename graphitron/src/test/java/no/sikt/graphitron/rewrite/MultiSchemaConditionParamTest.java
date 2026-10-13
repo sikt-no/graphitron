@@ -10,6 +10,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.config.RunContext;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * The Check-2 concrete-condition-param check must match by jOOQ class identity, not by a
@@ -30,7 +31,6 @@ import no.sikt.graphitron.model.config.RunContext;
 class MultiSchemaConditionParamTest {
 
     private static final String STUB = "no.sikt.graphitron.rewrite.MultiSchemaConditionStub";
-    private static final String MULTI_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
     private static final String MULTI_OUTPUT_PACKAGE = "fake.code.generated.multischema";
 
     private static RunContext multiSchemaContext() {
@@ -39,7 +39,7 @@ class MultiSchemaConditionParamTest {
             Path.of(""), "MultiSchemaConditionParamTest",
             Path.of(""),
             MULTI_OUTPUT_PACKAGE,
-            MULTI_JOOQ_PACKAGE
+            DEFAULT_JOOQ_PACKAGE
         );
     }
 

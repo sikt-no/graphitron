@@ -19,6 +19,7 @@ import no.sikt.graphitron.model.diagnostics.DeleteRowsError;
 import no.sikt.graphitron.model.diagnostics.MatchedKey;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.diagnostics.UpdateRowsError;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * Phase 1 mutation classifier coverage that depends on KjerneJooqGenerator-synthesised NodeId
@@ -35,7 +36,7 @@ class MutationDmlNodeIdClassificationTest {
         Path.of(""), "MutationDmlNodeIdClassificationTest",
         Path.of(""),
         "fake.code.generated",
-        "no.sikt.graphitron.rewrite.test.jooq"
+        DEFAULT_JOOQ_PACKAGE
     );
 
     @Test

@@ -22,6 +22,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.schema.AttributedRegistry;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * Resolver-tier coverage for {@link NodeIdLeafResolver}: pins the variant choice itself,
@@ -41,10 +42,9 @@ import no.sikt.graphitron.model.schema.AttributedRegistry;
 @UnitTier
 class NodeIdLeafResolverTest {
 
-    private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
     private static final RunContext FIXTURE_CTX = new RunContext(
         List.of(), Path.of(""), "NodeIdLeafResolverTest", Path.of(""),
-        DEFAULT_OUTPUT_PACKAGE, FIXTURE_JOOQ_PACKAGE
+        DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE
     );
 
     /**

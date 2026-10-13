@@ -11,6 +11,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.config.RunContext;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * The deprecation window for {@code @table} on an {@code input} type. The directive is accepted,
@@ -49,7 +50,7 @@ class TableOnInputDeprecationWarningTest {
         Path.of(""), "TableOnInputDeprecationWarningTest",
         Path.of(""),
         "fake.code.generated",
-        "no.sikt.graphitron.rewrite.test.jooq"
+        DEFAULT_JOOQ_PACKAGE
     );
 
     @Test

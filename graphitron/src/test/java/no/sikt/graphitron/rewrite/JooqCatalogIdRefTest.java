@@ -17,7 +17,7 @@ import no.sikt.graphitron.model.jooq.JooqCatalog;
  * input-field classification ({@link no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField}
  * and {@link no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField}).
  *
- * <p>Sakila-catalog cases ({@code DEFAULT_JOOQ_PACKAGE}) exercise {@link JooqCatalog#findOutgoingFkToTable},
+ * <p>Fixture-catalog cases ({@code DEFAULT_JOOQ_PACKAGE}) exercise {@link JooqCatalog#findOutgoingFkToTable},
  * {@link JooqCatalog#buildQualifierMap}, and {@link JooqCatalog#qualifierForFk} against real FK
  * metadata. Static-helper cases ({@link JooqCatalog#generateRoleName}) use plain {@code List<String>}
  * inputs and need no catalog instance.
@@ -25,19 +25,8 @@ import no.sikt.graphitron.model.jooq.JooqCatalog;
 @UnitTier
 class JooqCatalogIdRefTest {
 
-    private static final String NODEID_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
-    private static final String IDREF_JOOQ_PACKAGE  = "no.sikt.graphitron.rewrite.test.jooq";
-
-    private static JooqCatalog sakila() {
+    private static JooqCatalog catalog() {
         return new JooqCatalog(DEFAULT_JOOQ_PACKAGE);
-    }
-
-    private static JooqCatalog nodeid() {
-        return new JooqCatalog(NODEID_JOOQ_PACKAGE);
-    }
-
-    private static JooqCatalog idref() {
-        return new JooqCatalog(IDREF_JOOQ_PACKAGE);
     }
 
     // --- findOutgoingFkToTable ---
@@ -45,7 +34,7 @@ class JooqCatalogIdRefTest {
     @Test
     void findOutgoingFkToTable_uniqueFk_returnsFkObject() {
         // Returns the resolved jOOQ ForeignKey object, not the bare constraint name.
-        var result = sakila().findOutgoingFkToTable("inventory", "film");
+        var result = catalog().findOutgoingFkToTable("inventory", "film");
         var unique = assertInstanceOf(JooqCatalog.OutgoingFkLookup.Unique.class, result);
         assertThat(unique.fk().getName()).isEqualToIgnoringCase("inventory_film_id_fkey");
     }
@@ -53,7 +42,7 @@ class JooqCatalogIdRefTest {
     @Test
     void findOutgoingFkToTable_multipleFks_namesEveryCandidate() {
         // film has two FKs to language: film_language_id_fkey and film_original_language_id_fkey
-        var result = sakila().findOutgoingFkToTable("film", "language");
+        var result = catalog().findOutgoingFkToTable("film", "language");
         var ambiguous = assertInstanceOf(JooqCatalog.OutgoingFkLookup.Ambiguous.class, result);
         assertThat(ambiguous.fkNames())
             .containsExactlyInAnyOrder("film_language_id_fkey", "film_original_language_id_fkey");
@@ -63,7 +52,7 @@ class JooqCatalogIdRefTest {
     void findOutgoingFkToTable_noFkEitherWay_namesNoReverseCandidate() {
         // actor and language are not connected by a foreign key in either direction, which is a
         // different fact from the directionality case below and the two used to be one empty.
-        var result = sakila().findOutgoingFkToTable("actor", "language");
+        var result = catalog().findOutgoingFkToTable("actor", "language");
         var none = assertInstanceOf(JooqCatalog.OutgoingFkLookup.NoneInDirection.class, result);
         assertThat(none.reverseFkNames()).isEmpty();
     }
@@ -72,7 +61,7 @@ class JooqCatalogIdRefTest {
     void findOutgoingFkToTable_directionality_namesTheTargetSideFk() {
         // film is the FK target of inventory; there is no FK from film to inventory, and the
         // constraint that does connect them is the one an author names to reach inventory.
-        var result = sakila().findOutgoingFkToTable("film", "inventory");
+        var result = catalog().findOutgoingFkToTable("film", "inventory");
         var none = assertInstanceOf(JooqCatalog.OutgoingFkLookup.NoneInDirection.class, result);
         assertThat(none.reverseFkNames()).containsExactly("inventory_film_id_fkey");
     }
@@ -82,27 +71,27 @@ class JooqCatalogIdRefTest {
     @Test
     void buildQualifierMap_containsRawQualifierKey() {
         // inventory_film_id_fkey: source=film_id, target=film_id → HAR role → raw key "film_id"
-        var map = sakila().buildQualifierMap("inventory");
+        var map = catalog().buildQualifierMap("inventory");
         assertThat(map).containsEntry("film_id", "inventory_film_id_fkey");
     }
 
     @Test
     void buildQualifierMap_containsCamelKey() {
         // qualifier "FilmId" → lowerFirst.toLowerCase() = "filmid"
-        var map = sakila().buildQualifierMap("inventory");
+        var map = catalog().buildQualifierMap("inventory");
         assertThat(map).containsEntry("filmid", "inventory_film_id_fkey");
     }
 
     @Test
     void buildQualifierMap_containsPluralCamelKey() {
         // plural form: "filmids"
-        var map = sakila().buildQualifierMap("inventory");
+        var map = catalog().buildQualifierMap("inventory");
         assertThat(map).containsEntry("filmids", "inventory_film_id_fkey");
     }
 
     @Test
     void buildQualifierMap_cachedInstanceIsSame() {
-        var catalog = sakila();
+        var catalog = catalog();
         var first = catalog.buildQualifierMap("inventory");
         var second = catalog.buildQualifierMap("inventory");
         assertThat(first).isSameAs(second);
@@ -110,14 +99,14 @@ class JooqCatalogIdRefTest {
 
     @Test
     void buildQualifierMap_unknownTable_returnsEmptyMap() {
-        var map = sakila().buildQualifierMap("no_such_table");
+        var map = catalog().buildQualifierMap("no_such_table");
         assertThat(map).isEmpty();
     }
 
     @Test
     void buildQualifierMap_nodeidFixture_barToBasQualifierKeys() {
         // bar_id_1_fkey: source=id_1, target=id → role="1" → qualifier "1BazId" → raw "1_baz_id"
-        var map = nodeid().buildQualifierMap("bar");
+        var map = catalog().buildQualifierMap("bar");
         assertThat(map).containsKey("1_baz_id");
         assertThat(map.get("1_baz_id")).isEqualTo("bar_id_1_fkey");
     }
@@ -126,26 +115,26 @@ class JooqCatalogIdRefTest {
 
     @Test
     void qualifierForFk_inventoryFilmFk_returnsFilmId() {
-        var result = sakila().qualifierForFk("inventory", "inventory_film_id_fkey");
+        var result = catalog().qualifierForFk("inventory", "inventory_film_id_fkey");
         assertThat(result).hasValue("FilmId");
     }
 
     @Test
     void qualifierForFk_filmLanguageFk_returnsLanguageId() {
-        var result = sakila().qualifierForFk("film", "film_language_id_fkey");
+        var result = catalog().qualifierForFk("film", "film_language_id_fkey");
         assertThat(result).hasValue("LanguageId");
     }
 
     @Test
     void qualifierForFk_wrongSourceTable_returnsEmpty() {
         // inventory_film_id_fkey belongs to inventory, not film
-        var result = sakila().qualifierForFk("film", "inventory_film_id_fkey");
+        var result = catalog().qualifierForFk("film", "inventory_film_id_fkey");
         assertThat(result).isEmpty();
     }
 
     @Test
     void qualifierForFk_nodeidFixture_barToBasReturns1BazId() {
-        var result = nodeid().qualifierForFk("bar", "bar_id_1_fkey");
+        var result = catalog().qualifierForFk("bar", "bar_id_1_fkey");
         assertThat(result).hasValue("1BazId");
     }
 
@@ -175,7 +164,7 @@ class JooqCatalogIdRefTest {
     @Test
     void qualifierForFk_idrefFixture_harRoleReturnsStudieprogramId() {
         // studierett.studieprogram_id → studieprogram.studieprogram_id: HAR role → qualifier "StudieprogramId"
-        var result = idref().qualifierForFk("studierett", "studierett_studieprogram_id_fkey");
+        var result = catalog().qualifierForFk("studierett", "studierett_studieprogram_id_fkey");
         assertThat(result).hasValue("StudieprogramId");
     }
 
@@ -184,13 +173,13 @@ class JooqCatalogIdRefTest {
         // studierett.registrar_studieprogram → studieprogram.studieprogram_id:
         // role = "registrar_studieprogram" (src and tgt are unrelated) →
         // qualifier "RegistrarStudieprogramStudieprogramId"
-        var result = idref().qualifierForFk("studierett", "studierett_registrar_studieprogram_fkey");
+        var result = catalog().qualifierForFk("studierett", "studierett_registrar_studieprogram_fkey");
         assertThat(result).hasValue("RegistrarStudieprogramStudieprogramId");
     }
 
     @Test
     void buildQualifierMap_idrefFixture_containsRawAndPluralKeys() {
-        var map = idref().buildQualifierMap("studierett");
+        var map = catalog().buildQualifierMap("studierett");
         // FK1 (HAR role): raw key = "studieprogram_id", plural camel = "studieprogramids"
         assertThat(map).containsEntry("studieprogram_id", "studierett_studieprogram_id_fkey");
         assertThat(map).containsEntry("studieprogramids", "studierett_studieprogram_id_fkey");

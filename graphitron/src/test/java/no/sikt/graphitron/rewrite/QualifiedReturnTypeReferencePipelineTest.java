@@ -13,6 +13,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.config.RunContext;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * Pipeline coverage for an {@code @reference} field whose <em>return</em> type carries a
@@ -38,13 +39,12 @@ import no.sikt.graphitron.model.config.RunContext;
 @PipelineTier
 class QualifiedReturnTypeReferencePipelineTest {
 
-    private static final String MULTI_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
     private static final String MULTI_OUTPUT_PACKAGE = "fake.code.generated.multischema";
 
     private static RunContext multiSchemaContext() {
         return new RunContext(
             List.of(), Path.of(""), "QualifiedReturnTypeReferencePipelineTest", Path.of(""),
-            MULTI_OUTPUT_PACKAGE, MULTI_JOOQ_PACKAGE);
+            MULTI_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
     }
 
     /**
@@ -93,7 +93,7 @@ class QualifiedReturnTypeReferencePipelineTest {
         var terminal = ((ChildField.TableField) widgetField).joinPath().getLast();
         assertThat(CatalogRefs.tableClass(TestFixtures.fkHop(terminal).targetTable()))
             .isEqualTo(no.sikt.graphitron.javapoet.ClassName.get(
-                MULTI_JOOQ_PACKAGE + ".multischema_a.tables", "Widget"));
+                DEFAULT_JOOQ_PACKAGE + ".multischema_a.tables", "Widget"));
     }
 
     @Test

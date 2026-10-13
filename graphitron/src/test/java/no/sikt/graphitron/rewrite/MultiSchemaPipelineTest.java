@@ -21,6 +21,7 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.config.RunContext;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * SDL → classified schema → generated {@code TypeSpec} pipeline coverage for the
@@ -44,7 +45,6 @@ import no.sikt.graphitron.model.config.RunContext;
 @PipelineTier
 class MultiSchemaPipelineTest {
 
-    private static final String MULTI_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
     private static final String MULTI_OUTPUT_PACKAGE = "fake.code.generated.multischema";
 
     private static final String SDL = """
@@ -77,7 +77,7 @@ class MultiSchemaPipelineTest {
             Path.of(""), "MultiSchemaPipelineTest",
             Path.of(""),
             MULTI_OUTPUT_PACKAGE,
-            MULTI_JOOQ_PACKAGE
+            DEFAULT_JOOQ_PACKAGE
         );
     }
 
@@ -92,11 +92,11 @@ class MultiSchemaPipelineTest {
         var schema = buildSchema();
         var widget = (GraphitronType.TableType) schema.type("Widget");
         assertThat(CatalogRefs.tableClass(widget.table()))
-            .isEqualTo(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a.tables", "Widget"));
+            .isEqualTo(ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_a.tables", "Widget"));
         assertThat(CatalogRefs.recordClass(widget.table()))
-            .isEqualTo(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a.tables.records", "WidgetRecord"));
+            .isEqualTo(ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_a.tables.records", "WidgetRecord"));
         assertThat(CatalogRefs.constantsClass(widget.table()))
-            .isEqualTo(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a", "Tables"));
+            .isEqualTo(ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_a", "Tables"));
     }
 
     @Test
@@ -106,9 +106,9 @@ class MultiSchemaPipelineTest {
         // Unqualified "event" is ambiguous (exists in both schemas); the qualified form
         // pins it to multischema_a.
         assertThat(CatalogRefs.tableClass(event.table()))
-            .isEqualTo(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a.tables", "Event"));
+            .isEqualTo(ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_a.tables", "Event"));
         assertThat(CatalogRefs.constantsClass(event.table()))
-            .isEqualTo(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a", "Tables"));
+            .isEqualTo(ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_a", "Tables"));
     }
 
     @Test
@@ -118,9 +118,9 @@ class MultiSchemaPipelineTest {
         // gadget is unique to multischema_b; the unqualified resolver lands on B without a
         // qualifier, so the FQN must follow the FK-holder's schema, not the default.
         assertThat(CatalogRefs.tableClass(gadget.table()))
-            .isEqualTo(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_b.tables", "Gadget"));
+            .isEqualTo(ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_b.tables", "Gadget"));
         assertThat(CatalogRefs.constantsClass(gadget.table()))
-            .isEqualTo(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_b", "Tables"));
+            .isEqualTo(ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_b", "Tables"));
     }
 
     // ---- Model-level: cross-schema FK routes to FK-holder Keys, target lands on FK-target schema ----
@@ -137,7 +137,7 @@ class MultiSchemaPipelineTest {
         // per-emit-site `ClassName.get(jooqPackage, "Keys")` compiling to root.Keys,
         // a class which does not exist under multi-schema codegen.
         assertThat(TestFixtures.fkRef(firstPairs).keysClassName())
-            .isEqualTo(MULTI_JOOQ_PACKAGE + ".multischema_b.Keys");
+            .isEqualTo(DEFAULT_JOOQ_PACKAGE + ".multischema_b.Keys");
         // Stock JavaGenerator names the constant <TABLE>__<FK_NAME> uppercased; pin the
         // upper-cased SQL constraint name as the suffix to avoid coupling to the table prefix.
         assertThat(TestFixtures.fkRef(firstPairs).constantName()).endsWith("GADGET_WIDGET_ID_FKEY");
@@ -146,7 +146,7 @@ class MultiSchemaPipelineTest {
         // to bind the joined-table alias; a regression that re-derives it from the bare
         // jooqPackage emits root.tables.Widget here.
         assertThat(CatalogRefs.tableClass(firstHop.targetTable()))
-            .isEqualTo(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a.tables", "Widget"));
+            .isEqualTo(ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_a.tables", "Widget"));
     }
 
     // ---- Typed-graph emit walk: every fixture-bound ClassName lives under a schema sub-package ----
@@ -157,7 +157,7 @@ class MultiSchemaPipelineTest {
 
         for (TypeSpec spec : allEmittedTypeSpecs(schema)) {
             for (ClassName cn : referencedClassNames(spec)) {
-                if (!cn.canonicalName().startsWith(MULTI_JOOQ_PACKAGE + ".")) continue;
+                if (!cn.canonicalName().startsWith(DEFAULT_JOOQ_PACKAGE + ".")) continue;
                 // Every multi-schema fixture reference must be under multischema_a.* or
                 // multischema_b.*; the bare-root forms (jooqPackage.tables.X, jooqPackage.Keys,
                 // jooqPackage.Tables) are exactly the bug shape and must never appear.
@@ -165,7 +165,7 @@ class MultiSchemaPipelineTest {
                     .as("ClassName %s in TypeSpec %s lives at %s; expected a multischema_a / "
                         + "multischema_b sub-package",
                         cn.canonicalName(), spec.name(), cn.packageName())
-                    .startsWith(MULTI_JOOQ_PACKAGE + ".multischema_");
+                    .startsWith(DEFAULT_JOOQ_PACKAGE + ".multischema_");
             }
         }
     }
@@ -179,11 +179,11 @@ class MultiSchemaPipelineTest {
         // JavaPoet imports it or inlines it (simple-name collision with the GraphQL type,
         // e.g. the Widget typeclass referencing the jOOQ Widget).
         assertThat(referencedClassNames(typeClass(schema, "Widget")))
-            .contains(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a.tables", "Widget"));
+            .contains(ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_a.tables", "Widget"));
         assertThat(referencedClassNames(typeClass(schema, "Event")))
-            .contains(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a.tables", "Event"));
+            .contains(ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_a.tables", "Event"));
         assertThat(referencedClassNames(typeClass(schema, "Gadget")))
-            .contains(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_b.tables", "Gadget"));
+            .contains(ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_b.tables", "Gadget"));
     }
 
     @Test
@@ -199,9 +199,9 @@ class MultiSchemaPipelineTest {
         // scanning, no JavaPoet import-vs-inline coin-flip).
         assertThat(referencedClassNames(queryConditions))
             .contains(
-                ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a.tables", "Widget"),
-                ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a.tables", "Event"),
-                ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_b.tables", "Gadget"));
+                ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_a.tables", "Widget"),
+                ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_a.tables", "Event"),
+                ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_b.tables", "Gadget"));
     }
 
     // ---- helpers ----

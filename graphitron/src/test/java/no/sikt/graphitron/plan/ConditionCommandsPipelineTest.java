@@ -24,6 +24,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import no.sikt.graphitron.model.jooq.ColumnRef;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * Pipeline-tier assertions on the condition command relation over classified fixture schemas:
@@ -45,7 +46,7 @@ class ConditionCommandsPipelineTest {
      */
     private static final RunContext NODE_ID_FIXTURE_CTX = new RunContext(
         List.of(), Path.of(""), "ConditionCommandsPipelineTest", Path.of(""),
-        DEFAULT_OUTPUT_PACKAGE, "no.sikt.graphitron.rewrite.test.jooq");
+        DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
 
     @Test
     void filteredRootCoordinate_producesOneRowCarryingBothArms() {

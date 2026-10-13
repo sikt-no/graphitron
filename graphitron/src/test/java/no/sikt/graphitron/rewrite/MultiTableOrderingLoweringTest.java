@@ -17,6 +17,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * An ordering on a root multitable interface / union query field is resolved per participant,
@@ -310,7 +311,7 @@ class MultiTableOrderingLoweringTest {
             Path.of(""), "MultiTableOrderingLoweringTest",
             Path.of(""),
             "fake.code.generated.multischema",
-            "no.sikt.graphitron.rewrite.test.jooq"
+            DEFAULT_JOOQ_PACKAGE
         );
     }
 }

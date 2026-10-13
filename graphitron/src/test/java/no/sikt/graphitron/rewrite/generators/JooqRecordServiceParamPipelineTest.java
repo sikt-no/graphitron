@@ -4,7 +4,6 @@ import no.sikt.graphitron.rewrite.TypeFetcherRenderTestSupport;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.render.CatalogRefs;
-import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
@@ -17,7 +16,6 @@ import no.sikt.graphitron.rewrite.model.ValueShape;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
@@ -348,14 +346,6 @@ class JooqRecordServiceParamPipelineTest {
     private static final String FILM_ENDORSEMENT_RECORD_FQN =
         "no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmEndorsementRecord";
 
-    private static RunContext fixtureCtx(String jooqPackage) {
-        return new RunContext(List.of(), Path.of(""), "JooqRecordServiceParamPipelineTest", Path.of(""),
-            DEFAULT_OUTPUT_PACKAGE, jooqPackage);
-    }
-
-    private static final RunContext NODEID_CTX = fixtureCtx("no.sikt.graphitron.rewrite.test.jooq");
-    private static final RunContext IDREF_CTX = fixtureCtx("no.sikt.graphitron.rewrite.test.jooq");
-
     private static final String PURE_FK_SDL = """
         type Film implements Node @table(name: "film") @node { id: ID! }
         type Actor implements Node @table(name: "actor") @node { id: ID! }
@@ -514,7 +504,7 @@ class JooqRecordServiceParamPipelineTest {
         // reordered_pk_parent (pk_b, pk_c, pk_a) while the node key is (pk_a, pk_b, pk_c). The decode's
         // targetColumns must align with node-key (decode) order [fk_a, fk_b, fk_c], NOT the FK
         // declaration order [fk_b, fk_c, fk_a] a positional zip would land on.
-        var jr = carrier(REORDERED_SDL, "assignReordered", false, NODEID_CTX);
+        var jr = carrier(REORDERED_SDL, "assignReordered", false);
         assertThat(jr.keyDecodes()).hasSize(1);
         assertThat(jr.keyDecodes().get(0).targetColumns())
             .extracting(c -> c.sqlName()).containsExactly("fk_a", "fk_b", "fk_c");
@@ -568,7 +558,7 @@ class JooqRecordServiceParamPipelineTest {
                     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyChildRef"})
             }
             """;
-        var field = TestSchemaHelper.buildSchema(sdl, NODEID_CTX).field("Query", "assignChildRef");
+        var field = TestSchemaHelper.buildSchema(sdl).field("Query", "assignChildRef");
         assertThat(field).isInstanceOf(UnclassifiedField.class);
         assertThat(((UnclassifiedField) field).reason())
             .contains("pk_id")
@@ -590,7 +580,7 @@ class JooqRecordServiceParamPipelineTest {
                     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyStudierett"})
             }
             """;
-        var jr = carrier(sdl, "assignStudierett", false, IDREF_CTX);
+        var jr = carrier(sdl, "assignStudierett", false);
         assertThat(jr.keyDecodes()).hasSize(1);
         assertThat(jr.keyDecodes().get(0).targetColumns())
             .as("@reference(key:) selects the renamed FK → its child column")
@@ -630,7 +620,7 @@ class JooqRecordServiceParamPipelineTest {
                     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyStudierett"})
             }
             """;
-        var field = TestSchemaHelper.buildSchema(sdl, IDREF_CTX).field("Query", "assignStudierettAmbig");
+        var field = TestSchemaHelper.buildSchema(sdl).field("Query", "assignStudierettAmbig");
         assertThat(field).isInstanceOf(UnclassifiedField.class);
         assertThat(((UnclassifiedField) field).reason())
             .contains("multiple foreign keys")
@@ -1402,12 +1392,6 @@ class JooqRecordServiceParamPipelineTest {
 
     private static CallSiteExtraction.JooqRecord carrier(String sdl, String queryField, boolean list) {
         return carrier(TestSchemaHelper.buildSchema(sdl).field("Query", queryField), list);
-    }
-
-    /** Variant against a fixture catalog (nodeidfixture / idreffixture) supplied as a custom context. */
-    private static CallSiteExtraction.JooqRecord carrier(String sdl, String queryField, boolean list,
-            RunContext ctx) {
-        return carrier(TestSchemaHelper.buildSchema(sdl, ctx).field("Query", queryField), list);
     }
 
     private static CallSiteExtraction.JooqRecord carrier(

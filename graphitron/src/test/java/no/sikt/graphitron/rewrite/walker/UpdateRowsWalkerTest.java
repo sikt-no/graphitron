@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>{@code public} ({@link #PUBLIC}): {@code film} (single PK {@code film_id}, no UK),
  *       {@code film_actor} (composite PK {@code (actor_id, film_id)}), {@code film_list}
  *       (keyless).</li>
- *   <li>{@code nodeidfixture} ({@link #NODE_FIXTURE}): {@code parent_node} (PK {@code pk_id} plus a
+ *   <li>{@code nodeidfixture} ({@link #DEFAULT_JOOQ_PACKAGE}): {@code parent_node} (PK {@code pk_id} plus a
  *       non-PK {@code UNIQUE} on {@code alt_key}), {@code bar} (composite PK
  *       {@code (id_1, id_2)}).</li>
  * </ul>
@@ -42,11 +42,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 @UnitTier
 class UpdateRowsWalkerTest {
 
-    private static final String NODE_FIXTURE = "no.sikt.graphitron.rewrite.test.jooq";
-
     private final UpdateRowsWalker walker = new UpdateRowsWalker();
     private final JooqCatalog PUBLIC = new JooqCatalog(DEFAULT_JOOQ_PACKAGE);
-    private final JooqCatalog NODE_FIXTURE_CATALOG = new JooqCatalog(NODE_FIXTURE);
+    private final JooqCatalog NODE_FIXTURE_CATALOG = new JooqCatalog(DEFAULT_JOOQ_PACKAGE);
 
     @Test
     void pkOnlyMatch_withExtraColumns_succeedsWithExtrasInSet() {

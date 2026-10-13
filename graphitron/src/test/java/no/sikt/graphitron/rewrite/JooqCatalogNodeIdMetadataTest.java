@@ -14,6 +14,7 @@ import java.util.function.Function;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * Coverage for {@link JooqCatalog#nodeIdMetadata(String)} — the synthesized-NodeId metadata probe.
@@ -28,10 +29,8 @@ import no.sikt.graphitron.model.jooq.JooqCatalog;
 @UnitTier
 class JooqCatalogNodeIdMetadataTest {
 
-    private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
-
     private JooqCatalog catalog() {
-        return new JooqCatalog(FIXTURE_JOOQ_PACKAGE);
+        return new JooqCatalog(DEFAULT_JOOQ_PACKAGE);
     }
 
     // --- Well-formed (fixture) ---

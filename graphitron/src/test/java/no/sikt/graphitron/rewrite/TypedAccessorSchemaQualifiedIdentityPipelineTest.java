@@ -15,6 +15,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.config.RunContext;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * The typed-accessor match on a free-form DTO payload parent must compare jOOQ table identity
@@ -34,12 +35,11 @@ import no.sikt.graphitron.model.config.RunContext;
 @PipelineTier
 class TypedAccessorSchemaQualifiedIdentityPipelineTest {
 
-    private static final String MULTI_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
     private static final String MULTI_OUTPUT_PACKAGE = "fake.code.generated.multischema";
     private static final String DUMMY_SERVICE = "no.sikt.graphitron.codereferences.dummyreferences.DummyService";
 
     private static final ClassName SCHEMA_A_EVENT =
-        ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a.tables", "Event");
+        ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_a.tables", "Event");
 
     private static RunContext multiSchemaContext() {
         return new RunContext(
@@ -47,7 +47,7 @@ class TypedAccessorSchemaQualifiedIdentityPipelineTest {
             Path.of(""), "TypedAccessorSchemaQualifiedIdentityPipelineTest",
             Path.of(""),
             MULTI_OUTPUT_PACKAGE,
-            MULTI_JOOQ_PACKAGE
+            DEFAULT_JOOQ_PACKAGE
         );
     }
 

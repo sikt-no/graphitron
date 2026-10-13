@@ -12,6 +12,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.diagnostics.RejectionKind;
 import no.sikt.graphitron.model.config.RunContext;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * Pipeline coverage: a participant cross-table {@code @reference} field whose single-hop FK
@@ -41,13 +42,12 @@ import no.sikt.graphitron.model.config.RunContext;
 @PipelineTier
 class QualifiedParticipantCrossTableReferencePipelineTest {
 
-    private static final String MULTI_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
     private static final String MULTI_OUTPUT_PACKAGE = "fake.code.generated.multischema";
 
     private static RunContext multiSchemaContext() {
         return new RunContext(
             List.of(), Path.of(""), "QualifiedParticipantCrossTableReferencePipelineTest", Path.of(""),
-            MULTI_OUTPUT_PACKAGE, MULTI_JOOQ_PACKAGE);
+            MULTI_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
     }
 
     /**

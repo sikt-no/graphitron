@@ -464,28 +464,15 @@ class EntryDefectTest {
     @Test
     @DisplayName("a @table naming a table two schemas declare is ambiguous until qualified")
     void aTableTwoSchemasDeclareIsAmbiguous(@TempDir Path tmp) {
-        withCatalogStore(tmp.resolve("bare"), MULTISCHEMA, """
+        withCatalogStore(tmp.resolve("bare"), """
             type Query { event: Event }
             type Event @table(name: "event") { id: ID }
             """, dsl -> assertThat(details(dsl, "TABLE_AMBIGUOUS"))
                 .containsExactly("Event event"));
-        withCatalogStore(tmp.resolve("qualified"), MULTISCHEMA, """
+        withCatalogStore(tmp.resolve("qualified"), """
             type Query { event: Event }
             type Event @table(name: "multischema_a.event") { id: ID }
             """, dsl -> assertThat(codes(dsl)).doesNotContain("TABLE_AMBIGUOUS", "TABLE_UNRESOLVED"));
-    }
-
-    /** A catalog whose two schemas each declare a table named {@code event}. */
-    private static final String MULTISCHEMA = "no.sikt.graphitron.rewrite.test.jooq";
-
-    /** {@link #withCatalogStore(Path, String, Consumer)} against another generated catalog. */
-    private static void withCatalogStore(Path directory, String jooqPackage, String sdl,
-                                         Consumer<DSLContext> body) {
-        var ctx = TestRunContext.of();
-        try (var store = CapturedStore.ownStoreOfCatalog(directory, sdl,
-                new JooqCatalog(jooqPackage, ctx.codegenLoader()))) {
-            body.accept(store.dsl());
-        }
     }
 
     /**

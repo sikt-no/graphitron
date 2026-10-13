@@ -15,6 +15,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.config.RunContext;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * Pipeline coverage for the schema-qualified {@code @reference(path: [{key: "schema.constraint"}])}
@@ -35,18 +36,17 @@ import no.sikt.graphitron.model.config.RunContext;
 @PipelineTier
 class QualifiedReferenceKeyPipelineTest {
 
-    private static final String MULTI_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
     private static final String MULTI_OUTPUT_PACKAGE = "fake.code.generated.multischema";
 
     private static final ClassName NOTE_A =
-        ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a.tables", "Note");
+        ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_a.tables", "Note");
     private static final ClassName EVENT_A =
-        ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a.tables", "Event");
+        ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_a.tables", "Event");
 
     private static RunContext multiSchemaContext() {
         return new RunContext(
             List.of(), Path.of(""), "QualifiedReferenceKeyPipelineTest", Path.of(""),
-            MULTI_OUTPUT_PACKAGE, MULTI_JOOQ_PACKAGE);
+            MULTI_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
     }
 
     /** A Note bound to multischema_a plus an Event carrying its own @table, with {@code fieldDecl}

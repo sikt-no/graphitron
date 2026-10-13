@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.config.RunContext;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * Drives {@link BuildContext#synthesizeFkJoin} against a real jOOQ catalog FK whose own
@@ -29,10 +30,8 @@ import no.sikt.graphitron.model.config.RunContext;
 @UnitTier
 class SynthesizeFkJoinReorderedKeysTest {
 
-    private static final String NODEID_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
-
     private static JooqCatalog nodeIdCatalog() {
-        return new JooqCatalog(NODEID_PACKAGE);
+        return new JooqCatalog(DEFAULT_JOOQ_PACKAGE);
     }
 
     @Test

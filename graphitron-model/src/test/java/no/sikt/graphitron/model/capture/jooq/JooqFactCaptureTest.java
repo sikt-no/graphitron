@@ -16,6 +16,7 @@ import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.assertj.core.api.Assertions.assertThat;
+import static no.sikt.graphitron.model.test.TestRunContext.JOOQ_PACKAGE;
 
 /**
  * The catalog gatherer, against the generated jOOQ classes rather than a hand-built stand-in.
@@ -27,7 +28,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class JooqFactCaptureTest {
 
-    private static final String JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
     private static final String GRAPH = "jooq-capture";
     private static final LocalDateTime FIRST = LocalDateTime.of(2026, 1, 1, 12, 0);
     private static final LocalDateTime SECOND = FIRST.plusMinutes(1);

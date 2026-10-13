@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * Pipeline tier for the cross-schema helper-name collision: two schemas each carry an {@code event}
@@ -37,7 +38,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class FetchersHelperNameCollisionPipelineTest {
 
-    private static final String MULTI_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
     private static final String MULTI_OUTPUT_PACKAGE = "fake.code.generated.multischema";
 
     private static final String SVC = "no.sikt.graphitron.rewrite.TestServiceStub";
@@ -148,7 +148,7 @@ class FetchersHelperNameCollisionPipelineTest {
 
     private static RunContext multiSchemaContext() {
         return new RunContext(List.of(), Path.of(""), "FetchersHelperNameCollisionPipelineTest", Path.of(""),
-            MULTI_OUTPUT_PACKAGE, MULTI_JOOQ_PACKAGE);
+            MULTI_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
     }
 
     private static TypeSpec findSpec(String className, String sdl) {

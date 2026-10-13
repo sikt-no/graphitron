@@ -29,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.schema.AttributedRegistry;
 import no.sikt.graphitron.model.grammar.ConnectionDefaults;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * Resolver-tier coverage for {@link ConnectionPromoter}: asserts that promotion synthesises
@@ -46,10 +47,9 @@ import no.sikt.graphitron.model.grammar.ConnectionDefaults;
 @UnitTier
 class ConnectionPromoterTest {
 
-    private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
     private static final RunContext FIXTURE_CTX = new RunContext(
         List.of(), Path.of(""), "ConnectionPromoterTest", Path.of(""),
-        DEFAULT_OUTPUT_PACKAGE, FIXTURE_JOOQ_PACKAGE
+        DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE
     );
 
     @Test

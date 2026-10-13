@@ -14,6 +14,7 @@ import java.util.List;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_SEPARATE_FETCH;
 import static org.assertj.core.api.Assertions.assertThat;
+import static no.sikt.graphitron.model.test.TestRunContext.JOOQ_PACKAGE;
 
 /**
  * A rule that reaches one coordinate by two routes answers once: what the separate-fetch relation
@@ -34,8 +35,6 @@ class SeparateFetchRuleTest {
 
     private static final String GRAPH = CapturedStore.GRAPH;
 
-    private static final String MULTISCHEMA = "no.sikt.graphitron.rewrite.test.jooq";
-
     private static final String SDL = """
         type Event @table(name: "event") { name: String }
 
@@ -54,7 +53,7 @@ class SeparateFetchRuleTest {
     @DisplayName("an ambiguously bound child of a handed parent splits once, not once per table")
     void aRuleThatReachesACoordinateTwiceStillAnswersOnce() {
         var ctx = TestRunContext.of();
-        var jooq = new JooqCatalog(MULTISCHEMA, ctx.codegenLoader());
+        var jooq = new JooqCatalog(JOOQ_PACKAGE, ctx.codegenLoader());
         try (var captured = CapturedStore.ofCatalogWith(tmp, GRAPH, SDL, jooq,
                 ClasspathCorpus.entries())) {
             var t = GRAPHITRON_SPELLED_TABLE;

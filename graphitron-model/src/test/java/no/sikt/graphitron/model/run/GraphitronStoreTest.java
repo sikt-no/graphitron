@@ -21,6 +21,7 @@ import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
+import static no.sikt.graphitron.model.test.TestRunContext.JOOQ_PACKAGE;
 
 /**
  * A run opens a store, fills it from its own configuration, and closes it.
@@ -34,9 +35,6 @@ class GraphitronStoreTest {
     /** This module's own compiled classes, which every tier has on disk by the time it runs. */
     private static final List<ClasspathEntry> CLASSPATH =
         List.of(ClasspathEntry.project(Path.of("target", "classes")));
-
-    /** The fixture module's generated jOOQ package, on this module's own test classpath. */
-    private static final String JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
 
     @Test
     @DisplayName("a run opens a store, captures its configured schema into it, and closes it")

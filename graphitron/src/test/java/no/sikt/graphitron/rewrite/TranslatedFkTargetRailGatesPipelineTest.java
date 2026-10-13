@@ -9,6 +9,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.config.RunContext;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
  * The four rails that refuse a translated FK-target {@code @nodeId} carrier, and the one cause they
@@ -49,7 +50,7 @@ class TranslatedFkTargetRailGatesPipelineTest {
         Path.of(""), "TranslatedFkTargetRailGatesPipelineTest",
         Path.of(""),
         "fake.code.generated",
-        "no.sikt.graphitron.rewrite.test.jooq"
+        DEFAULT_JOOQ_PACKAGE
     );
 
     /** The shared cause every rail reports, minted by {@code FilterBinding.remoteBindingUnsupported}. */
