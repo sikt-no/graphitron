@@ -66,7 +66,7 @@ The fact comes from a corpus, the jOOQ catalog. Capture records what the source 
 - `JooqCatalog.ColumnFacts` gains `Integer declaredLength`, read in `columnFactsOf` as `getDataType().hasLength() ? getDataType().length() : null`. There is no `isString()` filter: whether a length bounds a *string write* is the classifier's question, answered with `binding_type`, not capture's.
 - `sql_column` gains `declared_length INT` (nullable, `CHECK (declared_length > 0)`), written by `JooqFactCapture.columns` beside `sql_type`. Its `COMMENT ON COLUMN` (which `FactSchemaGateTest.commentCoverageIsTotal` requires) states the grain and the unit: "the length the column's type declares, as jOOQ reports it, for example 255 for film.title's varchar(255); in the dialect's own unit, characters on PostgreSQL and bytes or characters on Oracle by the column's length semantics, which the catalog does not say; null when the type declares no length".
 
-This is a column rather than a separate relation. It is one value per column, read by the same walk on the same cadence as `sql_type`, so it shares `sql_column`'s owner, grain and `touched_at` mark and sweep. It goes in the store because new facts must land there while both models are live, and in `ColumnFacts` because that is the one projection both the capture and `FieldBuilder.columnFacts` read, so the walk and the store cannot disagree on the value.
+This is a column rather than a separate relation. It is one value per column, read by the same walk on the same cadence as `sql_type`, so it shares `sql_column`'s owner, grain and `touched_at` mark and sweep. It goes in the store because new facts must land there while both models are live, and in `ColumnFacts` because that is the one projection both the capture and the classifier's column lookup read, so the walk and the store cannot disagree on the value. That lookup is `FieldBuilder.columnFacts` today, a private helper over `ctx.catalog`; it moves to `BuildContext.columnFacts`, where the input-field carriers are built (next section), and `FieldBuilder` calls it there.
 
 The unit gap is real and stays open. Oracle's `VARCHAR2` defaults to byte semantics, and sis stores Norwegian text, where `æ`, `ø` and `å` take two bytes in UTF-8. The check counts characters (see Emit), so on a byte-semantics column it under-rejects. A value that fits in characters but not in bytes still reaches the database and fails with `ORA-12899` as it does today. The check never rejects a value the column would accept, so the gap costs only coverage, never correctness.
 
@@ -74,17 +74,28 @@ The unit gap is real and stays open. Oracle's `VARCHAR2` defaults to byte semant
 
 A `@mutation` input type carries no table. The write target comes from the consuming field (its return's `@table`, or `@mutation(table:)`; see `docs/manual/reference/directives/mutation.adoc`), so one SDL input type can write `film.title` in one mutation and a differently sized column in another. A column bound reached through a consuming field's write target is therefore a *use-keyed* binding, a fact about one (mutation field, input field) pair, where R98's constraint set and the `<outputPackage>.inputs` class are *definition-keyed*, one per input type. Folding the bound into the per-input-type surface would mix the two keying axes, so it attaches where the classifier already resolves use-keyed bindings: the cells of the write plan.
 
-**The bound lives on the written cell.** The written-cell carriers already exist and are use-keyed: `SetColumn` for UPDATE's SET partition, and `InputField.ColumnBackedField` for INSERT and UPSERT values (it is also UPSERT's `SetField`). Each gains a component `ColumnWriteBound bound`, a sealed per-cell decision the classifier makes once:
+**The bound lives on the written cell, decided where the input field is resolved.** Every written value cell starts as one of the two `InputField.SetField` permits, `InputField.ColumnBackedField` and `InputField.ColumnBackedReferenceField`. Both are resolved per use in `BuildContext.classifyInputField`, which takes the consuming field's `resolvedTable`, so both are use-keyed. INSERT and UPSERT write them straight from `TableInputArg.fields()`. UPDATE's `SetColumn` rows are derived from them by `UpdateRowsWalker`. Each of the two permits gains a component `ColumnWriteBound bound`, a sealed per-cell decision:
 
-- `ColumnWriteBound.Length(int declaredLength)`: the cell writes the client's string straight into a column that declares a length. That is, its extraction is `CallSiteExtraction.Direct`, the column's binding type is `java.lang.String`, and `declaredLength` is non-null.
-- `ColumnWriteBound.Unbounded`: anything else. A NodeId-decoded value is not the client's text, an enum-mapped value comes from a closed set, and `text` or a non-string column has no length to check.
+- `ColumnWriteBound.Length(int declaredLength)`: the cell writes the client's text unchanged into a column that declares a length.
+- `ColumnWriteBound.Unbounded`: anything else.
 
-The emitter therefore never branches on extraction kind or binding type. `ColumnBackedField` also serves query-side lookups, where the component is carried and not read. That is harmless, and cheaper than a write-only twin of the carrier.
+The decision has one home, a private `BuildContext.writeBound(GraphQLInputObjectField field, TableRef table, List<ColumnRef> columns, CallSiteExtraction extraction)`, and every construction site of the two permits in `classifyInputFieldInternal` and `inputFieldFromNodeIdResolved` calls it. It answers `Length(n)` when all of these hold, and `Unbounded` otherwise:
+
+- the extraction is `CallSiteExtraction.Direct`. That excludes every NodeId arm (`ThrowOnMismatch` on the implicit, same-table and FK-target paths), whose wire value is an encoded id rather than the column's text;
+- the carrier has exactly one column (multi-column carriers are always NodeId-decoded today, which the constructors enforce);
+- the field's named GraphQL type is not an enum. Enum inputs also arrive as `Direct`, because graphql-java does the wire-to-runtime translation, so the extraction alone cannot tell them apart. Their values are authored constants from a closed set, not client text;
+- `columnFacts(table, column)` gives binding type `java.lang.String` and a non-null `declaredLength` (`n`).
+
+For a `ColumnBackedReferenceField` this makes `Length` reachable only on a plain `@reference` with an empty path, the one arm that is `Direct` and binds `FilterBinding.Local` on the consuming table's own column. Every FK-target arm is NodeId-decoded and therefore `Unbounded`, and a `Remote` carrier is never written (the write rails reject it).
+
+`SetColumn` gains the same component, but does not decide it. `UpdateRowsWalker` carries the walked carrier's `bound` on its private `Contribution` record into every `SetColumn` it mints from that carrier. The walker's `wrap` puts a `CallSiteExtraction.NestedInputField` around a nested leaf's extraction only after the decision was made on the leaf carrier, so a nested UPDATE string cell keeps its `Length`. The one other place a `SetColumn` is minted, `TypeFetcherGenerator.keyColumnsAsSetGroups`, projects WHERE-side `KeyColumn`s into the shared group shape for the agreement preamble; those are key cells, never written cells, and it passes `Unbounded`.
+
+The emitter therefore never branches on extraction kind, binding type or GraphQL type. Both permits also serve query-side filters and lookups, where the component is carried and not read. That is harmless, and cheaper than write-only twins of the carriers.
 
 **Which cells are written is stated once.** `OperationMember.Write.Dml` gains a `writtenCells()` default, the sibling of `whereKeyColumns()`. It returns one `WrittenCell(List<String> inputPath, ColumnRef column, ColumnWriteBound bound)` per written cell:
 
-- INSERT and UPSERT: the value leaves of `TableInputArg.fields()`, with `NestingField` leaves flattened and their nested path kept (`["address", "line1"]`), plus UPSERT's `setFields()`, de-duplicated by path.
-- UPDATE: `UpdateRows.setColumns()`.
+- INSERT and UPSERT: the `SetField` leaves of `TableInputArg.fields()`, with `NestingField` groups recursed into and their nested path kept (`["address", "line1"]`). `TableInputArg.setFields()` is not read: `TableInputArg.of` is its only producer and always leaves it empty. Were it populated, UPSERT's `DO UPDATE SET` binds each column to `EXCLUDED.<col>`, the value the insert arm's `fields()` cell already carried, so it would add no cell of its own.
+- UPDATE: `UpdateRows.setColumns()`, with the path taken from the extraction (`NestedInputField.path()` for a nested leaf, `[sdlFieldName]` otherwise). A composite NodeId carrier yields several `SetColumn` rows on one path; they are all `Unbounded` and collapse to one cell by path.
 - DELETE: the empty list, since it writes no values.
 
 Key and WHERE cells are not written cells. An over-long key matches no row rather than failing, so there is no database error to pre-empt. The partition is the one `TableInputArg` and `UpdateRows` already made; `writtenCells()` reads it rather than re-deciding it.
@@ -145,17 +156,18 @@ The lint rule's entry goes wherever the existing classifier advisories are docum
 
 ## Implementation
 
-- `graphitron-model`: `JooqCatalog.ColumnFacts` + `columnFactsOf`; `graphitron-model.sql` (`sql_column.declared_length` and its comment); `JooqFactCapture.columns`; every other `ColumnFacts` constructor call (the `FieldBuilder.columnFacts` fallback passes null); `LintRule.DML_WRITE_LENGTH_UNROUTED`.
+- `graphitron-model`: `JooqCatalog.ColumnFacts` + `columnFactsOf`; `graphitron-model.sql` (`sql_column.declared_length` and its comment); `JooqFactCapture.columns`; every other `ColumnFacts` constructor call (the `columnFacts` fallback, now in `BuildContext`, passes null); `LintRule.DML_WRITE_LENGTH_UNROUTED`.
 - `graphitron`:
   - New `model/ColumnWriteBound` (sealed: `Length`, `Unbounded`), `WrittenCell` and `LengthCheck` (sealed: `Checked`, `Unrouted`, `None`).
-  - The `bound` component on `SetColumn` and `InputField.ColumnBackedField`, resolved by `FieldBuilder` wherever it builds those carriers.
+  - The `bound` component on `InputField.ColumnBackedField` and `InputField.ColumnBackedReferenceField`, decided by `BuildContext.writeBound` at every construction site in `classifyInputFieldInternal` and `inputFieldFromNodeIdResolved`; `columnFacts` lifted from `FieldBuilder` into `BuildContext`; those are the only main-source construction sites of the two permits, and test fixtures that build them directly pass `Unbounded`.
+  - The `bound` component on `SetColumn`, carried through `UpdateRowsWalker.Contribution` from the walked carrier; `TypeFetcherGenerator.keyColumnsAsSetGroups` passes `Unbounded`.
   - `OperationMember.Write.Dml.writtenCells()`, and `lengthCheck()` on `MutationDmlRecordField` and `MutationBulkDmlRecordField`.
   - The advisory, raised where those variants are built (beside `detectStructuralDmlErrorChannel`).
   - The `TypeFetcherGenerator` emit in the two two-step builders, and `ConstraintViolationsClassGenerator.sizeExceeded` with the shared private builder.
 - `graphitron-sakila-example`: the fixture below.
 - The docs above.
 
-`@LoadBearingClassifierCheck` pairing: the classifier guarantees that `ColumnWriteBound.Length` appears only on a `Direct`, `String`-bound cell. The emitter relies on that when it emits an `instanceof String` test with no decode. Pin it with a producer key on the `FieldBuilder` resolution of `bound` and `@DependsOnClassifierCheck` on the emit site, following the existing pairs.
+The invariant the emitter relies on is that `ColumnWriteBound.Length` sits only on a cell whose raw map value is the column's text: it emits an `instanceof String` length test on that value with no decode. A NodeId cell wrongly marked `Length` would compare the encoded id against the column. The invariant is held by construction, not by convention: `Length` is minted in exactly one place (`BuildContext.writeBound`), `SetColumn` only copies a decided value, and `Length` carries no extraction for the emitter to second-guess. Pipeline tests 5, 7 and 9 below pin the decision on every arm that could get it wrong.
 
 ## Tests
 
@@ -165,10 +177,11 @@ The lint rule's entry goes wherever the existing classifier advisories are docum
   2. The same field without the member yields `Unrouted`, and exactly one `dml-write-length-unrouted` advisory at the field's coordinate.
   3. The same write on a payload with no errors field yields `None` and no advisory.
   4. An UPDATE carrier keyed on `filmId` and setting `title` has `title` in `writtenCells()` and `filmId` not in it.
-  5. A NodeId-decoded cell and an enum-mapped cell classify as `Unbounded`.
+  5. On a `varchar` column, each of these classifies as `Unbounded`: an implicit `id` NodeId cell, a same-table `@nodeId` cell, an FK-target `@nodeId` reference cell, and an enum-typed input field. A plain `@reference` with an empty path to a `varchar` column classifies as `Length`.
   6. A DELETE carrier has no written cells, so `None` and no advisory.
-  7. A `NestingField` leaf carries its nested path.
+  7. A `title` leaf under a `NestingField` is `Length(255)` and carries its nested path, on INSERT (from `fields()`) and on UPDATE (from the `SetColumn`'s `NestedInputField` extraction).
   8. A bulk carrier yields the same `lengthCheck()` as its single-row twin.
+  9. The UPDATE `SetColumn` for `title` carries the same `bound` as the `ColumnBackedField` it was derived from, and the key cells projected by `keyColumnsAsSetGroups` are `Unbounded`.
 - **Execution** (sakila): add `type FilmWriteInvalid @error(handlers: [{handler: VALIDATION}]) { path: [String!]! message: String! }` to `union FilmCreateError`, which `createFilmWithErrors`, `createFilmsWithErrors` and `updateFilmWithErrors` share. The existing tests for those three stay green unchanged. New cases:
   - `createFilmWithErrors` with a 256-character `title` returns one `FilmWriteInvalid` error with `message: "size must be between 0 and 255"` and `path: ["createFilmWithErrors", "in", "title"]`, and the `film` row count is unchanged.
   - `createFilmsWithErrors` with `title` too long on element 1 of 2 returns `path: ["createFilmsWithErrors", "in", "1", "title"]`, and neither row is inserted.
@@ -204,8 +217,14 @@ Question 1 passes. The goal is clear: a payload-returning DML mutation whose err
 
 1. **The invariant pin names a retired mechanism.** `@LoadBearingClassifierCheck` / `@DependsOnClassifierCheck` were deleted with their audit test (see `roadmap/changelog.md`, the entry retiring the annotation pair); nothing in the tree defines them. The invariant matters (a NodeId cell wrongly classified `Length` would length-check the base64 id against the column), so the plan needs to say how it is pinned under the layers that replaced the annotations: type narrowing at the producer, or a pipeline test. Pipeline test 5 may already be that pin; if so, say so and drop the annotation paragraph.
 
+   *Response:* Annotation paragraph replaced. The invariant is now held by construction: `Length` is minted only in `BuildContext.writeBound`, `SetColumn` copies a decided value, and `Length` carries no extraction for the emitter to re-decide. Pipeline tests 5, 7 and 9 pin it, and test 5 now names every arm that could get it wrong (implicit, same-table and FK-target NodeId, enum, plain `@reference`).
+
 2. **The carriers are not built where the plan resolves the bound.** `InputField.ColumnBackedField` is constructed in `BuildContext` (`classifyInputFieldInternal`, `inputFieldFromNodeIdResolved`), the input-field resolution that query-side filter arguments share, not in `FieldBuilder`. `SetColumn` is constructed in `UpdateRowsWalker` (two sites) and minted again at emit time from `KeyColumn` in `TypeFetcherGenerator.keyColumnsAsSetGroups`. `FieldBuilder.columnFacts` is private to `FieldBuilder`. The plan should name where the declared length is read at those sites (`classifyInputField` has the catalog and the `resolvedTable`), and what the emit-time `KeyColumn` projection passes for `bound`.
 
+   *Response:* The decision moved to `BuildContext.writeBound`, called at every construction site of the two `SetField` permits in `classifyInputFieldInternal` and `inputFieldFromNodeIdResolved` (the only main-source sites), with `columnFacts` lifted from `FieldBuilder` into `BuildContext`. `SetColumn` no longer decides: `UpdateRowsWalker` carries the walked carrier's bound on `Contribution` into every `SetColumn` it mints, and `keyColumnsAsSetGroups` passes `Unbounded` because key cells are never written. Implementation list updated to match.
+
 3. **The `Length` predicate and `writtenCells()` miss two carrier shapes in the tree.** (a) An UPDATE leaf under a `NestingField` carries `CallSiteExtraction.NestedInputField(..., leaf = Direct)` in `SetColumn.extraction()`, not `Direct`. As written, the predicate classifies every nested UPDATE string cell `Unbounded`, which defeats test 7. On UPDATE the nested path also has to come from that extraction, since `SetColumn` carries only `sdlFieldName`. (b) `InputField.ColumnBackedReferenceField` is the other `SetField` permit and is admitted as an INSERT value when its binding is `Local`. It gets no `bound` component, so `writtenCells()` has no stated answer for it. Say whether it is `Unbounded` and why, or give it the component. Relatedly, `TableInputArg.setFields()` is always empty today (`TableInputArg.of` is the only constructor call), so the clause "plus UPSERT's `setFields()`, de-duplicated by path" either needs a reason or should go.
+
+   *Response:* (a) Because UPDATE's bound is now decided on the leaf carrier before `UpdateRowsWalker.wrap` adds the `NestedInputField`, a nested string cell keeps its `Length`. `writtenCells()` takes the UPDATE path from `NestedInputField.path()`, and test 7 now covers INSERT and UPDATE. (b) `ColumnBackedReferenceField` gets the component too. `Length` is reachable on it only for a plain `@reference` with an empty path (`Direct`, `Local`); every FK-target arm is NodeId-decoded and so `Unbounded` (test 5). Checking the code also showed that enum inputs arrive as `Direct`, so the enum exclusion now reads the field's GraphQL type rather than the extraction. The `setFields()` clause is gone, with the reason stated in place.
 
 Non-blocking: the lint-docs pointer is hedged, and rightly. No classifier advisory id (`splitquery-redundant-on-record-parent` included) is documented under `docs/manual/` today; `mojo-configuration.adoc` § "Silencing lint warnings" is the closest home.
