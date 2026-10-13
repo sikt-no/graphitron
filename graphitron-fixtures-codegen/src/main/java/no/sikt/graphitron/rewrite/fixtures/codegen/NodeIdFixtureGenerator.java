@@ -54,6 +54,9 @@ public class NodeIdFixtureGenerator extends JavaGenerator {
         // column is not a key column: the encoded id is over KEY_X and `id` is reachable only
         // through @field.
         Map.entry("keyed_elsewhere", new Metadata("KeyedElsewhere", List.of("KEY_X"))),
+        // Keyed off a unique column beside the primary key, so the published tier and the primary
+        // key name different columns.
+        Map.entry("published_elsewhere", new Metadata("PublishedElsewhere", List.of("CODE"))),
         Map.entry("studieprogram", new Metadata("Studieprogram", List.of("STUDIEPROGRAM_ID"))),
         // The single-schema fixture's node table, the root-package counterpart of baz.
         Map.entry("solo_parent", new Metadata("SoloParent", List.of("PARENT_ID"))),

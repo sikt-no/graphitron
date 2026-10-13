@@ -2092,6 +2092,17 @@ conversion frees one.
   * **The rest convert by subject** `open`. Twenty-six classes with a production reader: nodes
     four, fields six, references four, claims three, arguments and input fields four, and five
     node-id classes that wait with the node-id subject.
+    * **Nodes** `done`. `NodesTest`, `NodeKeyColumnTest`, `NodeTypeTest` and
+      `ResolvedNodeKeyColumnTest`, 44 cases, are `facts/node-population.graphqls` and
+      `facts/node-key-columns.graphqls` over the fixture catalog, plus `NodeGraphScopeTest` for the
+      two claims a single graph cannot state: a sibling's pinned list does not answer here, and a
+      table in a catalog the graph did not read makes no node. The fixture catalog gains the shapes
+      the seeds invented: `nodeidfixture.published_elsewhere`, whose three tiers name three
+      columns, and `nodeidfixture.case_twins`, with columns `"Code"` and `"code"` that its codegen
+      tells apart by a matcher strategy, so a pinned spelling folding onto both is real. The
+      membership view's assertions were not carried over, the view going next. A `@node` over
+      `@table` without `implements Node` is a node answering to its own name, beside its
+      `NODE_WITHOUT_NODE_INTERFACE`, which the population document now states.
 * **There is no residue, and no partial conversion** `open`. A class converts whole or it has not
   converted, which is what the caller count measures and why it is the right count. A case that
   fabricates a state no capture reaches is not a case the fixture has to be kept for: it is either

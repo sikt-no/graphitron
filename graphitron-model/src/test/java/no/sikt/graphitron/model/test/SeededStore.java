@@ -87,9 +87,6 @@ import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_ENUM_BINDING;
-import static no.sikt.graphitron.model.Tables.SQL_NODE_KEY_COLUMN;
-import static no.sikt.graphitron.model.Tables.SQL_NODE_METADATA;
-import static no.sikt.graphitron.model.Tables.SQL_NODE_METADATA_UNREADABLE;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE_REFERENCE;
@@ -1796,42 +1793,6 @@ public final class SeededStore {
             .set(SQL_ENUM_BINDING.CLASS_FQN, classFqn)
             .set(SQL_ENUM_BINDING.TABLE_SCHEMA, tableSchema)
             .set(SQL_ENUM_BINDING.TYPE_NAME, typeName)
-            .execute();
-    }
-
-    /**
-     * Node metadata the catalog found usable on a table: a type id, with the key columns under it
-     * seeded by {@link #seedNodeKeyColumn}, each naming a column the table has.
-     */
-    public static void seedStatedNodeMetadata(DSLContext dsl, String sourceName, String tableSchema,
-                                              String tableName, String typeId) {
-        dsl.insertInto(SQL_NODE_METADATA)
-            .set(SQL_NODE_METADATA.SOURCE_NAME, sourceName)
-            .set(SQL_NODE_METADATA.TABLE_SCHEMA, tableSchema)
-            .set(SQL_NODE_METADATA.TABLE_NAME, tableName)
-            .set(SQL_NODE_METADATA.TYPE_ID, typeId)
-            .execute();
-    }
-
-    /** A table whose class declares node metadata the catalog could not use. */
-    public static void seedNodeMetadataUnreadable(DSLContext dsl, String sourceName,
-                                                  String tableSchema, String tableName) {
-        dsl.insertInto(SQL_NODE_METADATA_UNREADABLE)
-            .set(SQL_NODE_METADATA_UNREADABLE.SOURCE_NAME, sourceName)
-            .set(SQL_NODE_METADATA_UNREADABLE.TABLE_SCHEMA, tableSchema)
-            .set(SQL_NODE_METADATA_UNREADABLE.TABLE_NAME, tableName)
-            .execute();
-    }
-
-    /** One entry of usable node metadata's key-columns array, naming a column the table has. */
-    public static void seedNodeKeyColumn(DSLContext dsl, String sourceName, String tableSchema,
-                                         String tableName, int position, String columnName) {
-        dsl.insertInto(SQL_NODE_KEY_COLUMN)
-            .set(SQL_NODE_KEY_COLUMN.SOURCE_NAME, sourceName)
-            .set(SQL_NODE_KEY_COLUMN.TABLE_SCHEMA, tableSchema)
-            .set(SQL_NODE_KEY_COLUMN.TABLE_NAME, tableName)
-            .set(SQL_NODE_KEY_COLUMN.POSITION, position)
-            .set(SQL_NODE_KEY_COLUMN.COLUMN_NAME, columnName)
             .execute();
     }
 

@@ -1629,6 +1629,27 @@ CREATE TABLE nodeidfixture.lift_fail_c (
         FOREIGN KEY (fk_b) REFERENCES nodeidfixture.lift_fail_b (b_id)
 );
 
+-- Two columns whose quoted names differ only in case, which Postgres keeps apart and a
+-- case-insensitive match does not: an authored spelling that folds onto both answers to two
+-- columns, and resolving it to either would be a silent pick.
+CREATE TABLE nodeidfixture.case_twins (
+    id     varchar(20) PRIMARY KEY,
+    "Code" varchar(20) NOT NULL,
+    "code" varchar(20) NOT NULL UNIQUE,
+    -- Named, because Postgres would name it case_twins_Code_key beside case_twins_code_key, which
+    -- the default naming spells alike too.
+    CONSTRAINT case_twins_capital_code_key UNIQUE ("Code")
+);
+
+-- Node metadata keyed off a column that is not the primary key, with a third unique column an
+-- author can pin, so the three key-column tiers each name a different column and a precedence
+-- between them is visible rather than coincident.
+CREATE TABLE nodeidfixture.published_elsewhere (
+    id   varchar(20) PRIMARY KEY,
+    code varchar(20) NOT NULL UNIQUE,
+    alt  varchar(20) NOT NULL UNIQUE
+);
+
 -- ===========================
 -- idreffixture schema
 -- ===========================

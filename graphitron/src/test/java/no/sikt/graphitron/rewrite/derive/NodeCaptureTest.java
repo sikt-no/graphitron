@@ -19,11 +19,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * That the gatherer writes {@code graphitron_node} at all, over SDL an author could have
- * written. Its rules are pinned row by row in {@code NodesTest} against a seeded store; what
- * that test cannot reach is the wiring, because it calls the producer itself. A stage ordered
- * before the {@code @node} decode has flushed writes an empty relation and breaks nothing that
- * runs today, no reader having moved onto it yet, so the ordering needs a witness of its own
- * before it has one by accident.
+ * written. Its rules are pinned row by row in the {@code node-population} and
+ * {@code node-key-columns} fact documents, which run capture and so witness the stage order as
+ * well; this class goes with {@code graphitron_node_type}, which its second case still reads.
  *
  * <p>The second case is the correctness claim over real SDL rather than seeded rows: a
  * {@code @node} the parser accepted, on a type with no {@code @table}, is not a node. Both sides

@@ -1,0 +1,81 @@
+# Which types are nodes, and the type id each answers to. A node is a type that took effect as
+# one: @node over @table, or implements Node over a table whose class publishes node metadata. The
+# id comes from three tiers, the type id written on @node, the one the class publishes, and the
+# type's own name, and each case below removes the tier above the one it pins, so a precedence is
+# only claimed where the loser was there to lose. The types that are no node are as much the
+# example as the ones that are.
+
+interface Node { id: ID! }
+
+# @node over a table publishing nothing: the type's own name.
+type Lang implements Node @table(name: "language") @node { id: ID! }
+
+# Published metadata and no @node: a node by inference, answering to the published id.
+type BazNode implements Node @table(name: "baz") { id: ID! }
+
+# Both rules answer, and the type is still one row.
+type BarNode implements Node @table(name: "bar") @node { id: ID! }
+
+# A published id that is no type name.
+type Shared implements Node @table(name: "shared_node") @node { id: ID! }
+
+# A written type id beats the published one, which differs from it and from the type name.
+type Pinned implements Node @table(name: "published_elsewhere") @node(typeId: "pinned") { id: ID! }
+
+# No @table, so the @node has nothing to take effect on.
+type Floating implements Node @node { id: ID! }
+
+# Implements Node over a table that publishes nothing, with no @node: not inferred.
+type FilmPlain implements Node @table(name: "film") { id: ID! }
+
+# Bound over a table that publishes metadata, implementing nothing: a table binding is no nodehood.
+type Plain @table(name: "collide_a") { id: ID! }
+
+# Implements Node and binds no table.
+type Loose implements Node { id: ID! }
+
+# A bare name two schemas declare binds neither, so there is no node either.
+type Ev implements Node @table(name: "event") @node { id: ID! }
+
+# Metadata the catalog could not use infers nothing; with @node it would answer to its own name.
+type HalfInferred implements Node @table(name: "node_metadata_half") { id: ID! }
+
+# @node over @table without implements Node is a node, answering to its own name, and the missing
+# interface is NODE_WITHOUT_NODE_INTERFACE at the @node.
+type NoInterface @table(name: "plain_id") @node { id: ID! }
+
+extend type Query {
+  langs: [Lang!]!
+  bazNodes: [BazNode!]!
+  barNodes: [BarNode!]!
+  shareds: [Shared!]!
+  pinneds: [Pinned!]!
+  floatings: [Floating!]!
+  filmPlains: [FilmPlain!]!
+  plains: [Plain!]!
+  looses: [Loose!]!
+  evs: [Ev!]!
+  halfInferreds: [HalfInferred!]!
+  noInterfaces: [NoInterface!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_node", rows: """
+  type_name,   type_id,     type_id_origin
+  BarNode,     Bar,         JOOQ_METADATA
+  BazNode,     Baz,         JOOQ_METADATA
+  Lang,        Lang,        TYPE_NAME
+  NoInterface, NoInterface, TYPE_NAME
+  Pinned,      pinned,      SDL_DECLARED
+  Shared,      10154,       JOOQ_METADATA
+  """)
+
+# An inferred node is bound to the table its metadata came from.
+extend schema @assertContains(relation: "graphitron_tabletype", rows: """
+  type_name, table_schema,  table_name
+  BazNode,   nodeidfixture, baz
+  """)
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,                        type_name
+  NODE_WITHOUT_NODE_INTERFACE, NoInterface
+  """)

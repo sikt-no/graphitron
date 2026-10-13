@@ -1,0 +1,76 @@
+# Which columns carry a node's identity, in key order. Three tiers answer, the columns pinned on
+# @node(keyColumns:), the ones the class publishes, and the table's primary key, and one tier
+# answers for the whole list or none does. The cases that matter most are where a tier declines: a
+# pinned list that does not resolve yields nothing rather than falling through to the primary key,
+# which would publish a wire format nobody asked for and do it without saying so.
+#
+# published_elsewhere names a different column in each tier (alt pinned, code published, id the
+# primary key), and case_twins has "Code" and "code", which its codegen names CAPITAL_CODE and
+# CODE.
+
+interface Node { id: ID! }
+
+# Nothing pinned or published: the primary key, a composite one in the constraint's own order.
+type Lang implements Node @table(name: "language") @node { id: ID! }
+type PagedPk implements Node @table(name: "paged_a") @node { id: ID! }
+
+# A table with no primary key leaves the node with no key columns.
+type Unkeyed implements Node @table(name: "role_assignment") @node { id: ID! }
+
+# Published beats the primary key, on a node by inference.
+type Published implements Node @table(name: "published_elsewhere") { id: ID! }
+
+# Pinned beats both.
+type PublishedPinned implements Node @table(name: "published_elsewhere")
+  @node(typeId: "pinned", keyColumns: ["alt"]) { id: ID! }
+
+# A pinned generated name resolves to the column; a spelling two columns fold onto names neither.
+type GeneratedName implements Node @table(name: "case_twins") @node(keyColumns: ["CAPITAL_CODE"]) { id: ID! }
+type Folded implements Node @table(name: "case_twins") @node(keyColumns: ["code"]) { id: ID! }
+
+# A pinned column the table lacks resolves nothing, and one such position drops the whole list.
+type Missing implements Node @table(name: "language") @node(keyColumns: ["no_such_column"]) { id: ID! }
+type HalfMissing implements Node @table(name: "language")
+  @node(keyColumns: ["language_id", "no_such_column"]) { id: ID! }
+
+# The pinned order is the author's, and the winning list is taken whole, however short.
+type Reordered implements Node @table(name: "paged_b") @node(keyColumns: ["k2", "k1"]) { id: ID! }
+type Shorter implements Node @table(name: "paged_b") @node(keyColumns: ["k2"]) { id: ID! }
+
+# No node, no key columns: a @node with no @table, a bound type implementing nothing over a keyed
+# or a metadata-publishing table, and a binding two schemas share.
+type Floating implements Node @node(keyColumns: ["language_id"]) { id: ID! }
+type JustTable @table(name: "film") { id: ID! }
+type BoundOnly @table(name: "baz") { id: ID! }
+type Ev implements Node @table(name: "event") @node(keyColumns: ["event_id"]) { id: ID! }
+
+extend type Query {
+  langs: [Lang!]!
+  pagedPks: [PagedPk!]!
+  unkeyeds: [Unkeyed!]!
+  publisheds: [Published!]!
+  publishedPinneds: [PublishedPinned!]!
+  generatedNames: [GeneratedName!]!
+  foldeds: [Folded!]!
+  missings: [Missing!]!
+  halfMissings: [HalfMissing!]!
+  reordereds: [Reordered!]!
+  shorters: [Shorter!]!
+  floatings: [Floating!]!
+  justTables: [JustTable!]!
+  boundOnlys: [BoundOnly!]!
+  evs: [Ev!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_node_keycolumn", rows: """
+  type_name,       position, column_name, column_origin
+  GeneratedName,   0,        Code,        SDL_PINNED
+  Lang,            0,        language_id, CATALOG_PRIMARY_KEY
+  PagedPk,         0,        k1,          CATALOG_PRIMARY_KEY
+  PagedPk,         1,        k2,          CATALOG_PRIMARY_KEY
+  Published,       0,        code,        JOOQ_METADATA
+  PublishedPinned, 0,        alt,         SDL_PINNED
+  Reordered,       0,        k2,          SDL_PINNED
+  Reordered,       1,        k1,          SDL_PINNED
+  Shorter,         0,        k2,          SDL_PINNED
+  """)
