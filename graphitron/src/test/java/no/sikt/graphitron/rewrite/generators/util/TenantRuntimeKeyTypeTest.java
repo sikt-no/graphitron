@@ -323,7 +323,8 @@ class TenantRuntimeKeyTypeTest {
             .contains("static <R> java.util.List<java.lang.Object> fanOutRows(")
             .contains("elements.add(handDown(row, success.key()))")
             // The one per-element stamp, shared with node and entity dispatch, typed on the key.
-            .contains("static <T> graphql.execution.DataFetcherResult<T> handDown(T row, java.lang.Integer tenantKey)")
+            .contains("static <T> graphql.execution.DataFetcherResult<T> handDown(T row,")
+            .contains("java.lang.Integer tenantKey)")
             .contains(".localContext(tenantKey)")
             // The batched sibling: per-key merge across tenants, one scatter per parent batch.
             .contains("fanOutBatchRows(")
