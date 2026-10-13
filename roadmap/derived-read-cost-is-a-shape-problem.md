@@ -1835,29 +1835,42 @@ fields one target, the interface's.
   the directive was there, and `node_type_ref` nullable, NULL on a bare one. Both entries' columns
   are `NOT NULL` today and the input-value one writes no row for a bare `@nodeId`, so the columns,
   both writers and that comment change.
-* **Measure the move from table to type** `open`, first. Today the walk's
+* **Measure the move from table to type** `done`. Today the walk's
   `BuildContext.inferNodeTypeOverTable` and the instruction relation take every bare `@nodeId` as
   the one node over a table: the return type's, the containing one, or `@mutation(table:)`'s. For
   every bare `@nodeId` in the fixtures and in a tagged sis capture, the type answer below and the
   table answer side by side, with every place an `id` is read as a node id by its name alone, so
-  the switch is known to be a fix or a break before it is made.
+  the switch is known to be a fix or a break before it is made. Measured over the sakila
+  example, a sis store and opptak, 465 coordinates. Every bare output field is a `Node.id`; the type
+  and table answers differ only where a union return names its container rather than its members,
+  and where a payload-returning mutation leaves the table rung to answer, as it does today; and the
+  by-name `id` carries 83 mutation input fields in sis, as the reference documents.
 * **The target type of a `@nodeId` coordinate is the entry's** `open`. Beside `node_type_ref`, what
   was written, the entry carries the type the id names and how it came to:
   * `WRITTEN`, the `typeName:` as written;
   * `IMPLIED`, at a field implementing `Node.id`, which is a `@nodeId` whose `typeName` is the
     implementing type whether or not the directive is written; a written one naming another type
     is a defect;
+  * `BY_NAME`, at an input field or argument named `id` with no `@nodeId`, which the reference
+    documents as reading as the target node's ID; its type is inferred by the rungs below, as a
+    bare `@nodeId`'s is;
   * `RETURN_TYPE`, at an argument the field's return type, and at an input field the root field's
     return type per occurrence, occurrences that disagree being a defect at the entry; an
     interface or union return is the container, which a `typeName:` may name;
-  * `TABLE_NODE`, where no type answers: the one node over the table `@mutation(table:)` names, or
-    the table a `@reference` path lands on, written in the anchor after `graphitron_node`.
-  The first three read the `graphql_` family alone, which is anchored before the entry is written.
+  * `TABLE_NODE`, where no type answers: the one node over the table the value is consumed
+    against, the jOOQ record's, the one `@mutation(table:)` names or the one a `@reference` path
+    lands on, written in the anchor after `graphitron_node`; a table several node types share
+    infers nothing. An input field is this rung in practice, being consumed against a table.
+  The written, implied and return-type rungs read the `graphql_` family alone, which is anchored before the entry is written.
   Nodehood plays no part in the inference: the type is joined to `graphitron_node` afterwards, and a
   type that is no node is a defect, as for a written name. `graphitron_node_id_candidate`, which
-  filtered by nodehood and took a container's members, goes, and with it two readings the instruction
-  relation makes and the manual does not: any bare output field bound to the type declaring it, and
-  an `id` argument or input field read as a node id by its name. Only `Node.id` is implied.
+  filtered by nodehood and took a container's members, goes, and with it the binding of any bare
+  output field to the type declaring it: across the fixtures, sis and opptak every bare output field
+  is a `Node.id`, so the narrowing breaks nothing in use.
+  The reference changes with the flip, not before: its inference rule (a) narrows to `Node.id`;
+  rule (b) at an argument takes the return type first and the table only where no type answers,
+  which relaxes two node types over one return table from refused to answered; and the inference is
+  stated once, as this ladder, saying in so many words that a shared table infers nothing.
   Every shape the manual refuses is a defect row rather than an absence, and a nested input field
   under an interface or union field is one of them today. Capture records such a schema and
   validation refuses it; it never fails capture, which is what the reproduction in the audit did.
