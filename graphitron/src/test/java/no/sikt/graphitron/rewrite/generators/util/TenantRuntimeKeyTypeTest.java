@@ -321,11 +321,6 @@ class TenantRuntimeKeyTypeTest {
             .contains("hosted.contains(claimed)")
             // Union with per-element tenant stamping, failures appended after successful rows.
             .contains("static <R> java.util.List<java.lang.Object> fanOutRows(")
-            .contains("elements.add(handDown(row, success.key()))")
-            // The one per-element stamp, shared with node and entity dispatch, typed on the key.
-            .contains("static <T> graphql.execution.DataFetcherResult<T> handDown(T row,")
-            .contains("java.lang.Integer tenantKey)")
-            .contains(".localContext(tenantKey)")
             // The batched sibling: per-key merge across tenants, one scatter per parent batch.
             .contains("fanOutBatchRows(")
             // The collapse: null element + path-bearing redacted error with typed classification.
@@ -336,6 +331,14 @@ class TenantRuntimeKeyTypeTest {
             .contains("String FAILED = \"TenantFanOutFailed\"")
             .contains("String TIMED_OUT = \"TenantFanOutTimedOut\"")
             .contains("class FanOutFailure");
+
+        // The one per-element stamp, shared by the fan-out union and node and entity dispatch,
+        // typed on the build's tenant key so it is no general-purpose way into the slot.
+        var handDown = method(type(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME),
+            ConnectionRuntimeClassGenerator.HAND_DOWN_METHOD);
+        assertThat(handDown.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
+        assertThat(handDown.returnType().toString()).isEqualTo("graphql.execution.DataFetcherResult<T>");
+        assertThat(parameters(handDown)).containsExactly("T row", "java.lang.Integer tenantKey");
 
         var runtime = render(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
         assertThat(runtime)
