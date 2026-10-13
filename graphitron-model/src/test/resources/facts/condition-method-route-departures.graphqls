@@ -1,0 +1,33 @@
+# A condition whose departure names no generated table, by the wildcard or by a primitive, departs
+# from every table in the graph's sources and arrives where its second parameter says; the chain
+# narrows the departure. Every table is the whole catalog, so the rows below are a sample of the
+# departures and the arrivals they must not have, rather than the list.
+
+type Customer @table(name: "customer") { customerId: Int }
+
+extend type Query {
+  customers(
+    wildcard: String @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "anythingToAddress"}}])
+    primitive: String @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "intToAddress"}}])
+  ): [Customer!]!
+}
+
+# Departures no signature names, among them, every one arriving at address.
+extend schema @assertContains(relation: "graphitron_condition_method_route", rows: """
+  method,            from_table, to_table
+  anythingToAddress, actor,      address
+  anythingToAddress, address,    address
+  anythingToAddress, customer,   address
+  anythingToAddress, film,       address
+  anythingToAddress, film_actor, address
+  intToAddress,      actor,      address
+  intToAddress,      customer,   address
+  intToAddress,      film,       address
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_condition_method_route", rows: """
+  method,            from_table, to_table
+  anythingToAddress, customer,   customer
+  anythingToAddress, address,    customer
+  intToAddress,      customer,   customer
+  """)
