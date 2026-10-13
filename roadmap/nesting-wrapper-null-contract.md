@@ -1,7 +1,7 @@
 ---
 id: R1026
 title: "A nullable nesting wrapper whose columns are all null resolves to an object, not null"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 3
 theme: codegen-correctness
@@ -115,6 +115,16 @@ Draft section for `map-types-to-tables.adoc`, after "Re-binding and the table-co
   - host 2 resolves `labelsRequired` to `{nn: null, nb: null}`, the non-null control;
   - host 1 resolves `labels` to an object;
   - a host whose `nb` is non-null and `nn` null (seed a third row, or reuse one if the seed already has the shape) resolves `labels { nn }` to `{nn: null}`, the selection-independence case (rule 2).
+
+## Implementation notes
+
+Landed as specified. The contract types nest in `ChildField.NestingField` (`PresenceLeaf`, `SubtreePresence.{Leaves, Blocked}`, `NullContract.{CollapsesWhenAbsent, AlwaysObject}` with `Reason.{NonNull, BlockedBy, NotSingle}`). The splice component is `CallWrap.Splice.callerDemand`. Points for the reviewer:
+
+- *The fetcher switches over the contract rather than testing for one arm.* An `instanceof ChildField.NestingField.NullContract.CollapsesWhenAbsent` in `FetcherEmitter` tripped `CommandSeamRatchetTest.leafDispatchSitesInGenerators`, whose regex counts any `instanceof ChildField…` as leaf dispatch. That was a false positive: the line reads the contract and doesn't dispatch on which leaf the field is. `nestingBody` imports `NullContract` and switches exhaustively over it, so the pin is unchanged.
+- *The record's first javadoc line is unchanged*, ending in a period the leaf-coverage extractor strips, so `docs/manual/_generated/supported-schema-shapes.adoc` needs no regeneration.
+- *The blocking children are tested in two places.* The model unit test (`NestingFieldNullContractTest`) builds the `@externalField` blocker directly. The `@reference` (`TableField`) and `@splitQuery` (`BatchedTableField`) blockers are classified from SDL in `NestingFieldPipelineTest`, which also pins that a blocked wrapper's fetcher stays `return source;`.
+- *Existing nesting sites change behaviour.* `PivotNestingHost.texts` (nullable, four column leaves) now collapses too. Host 1 carries values and `PivotExecutionTest` reads only host 1, so nothing there moved. The new hosts 2 and 3 are seeded with explicit ids after it.
+- *Execution coverage* is `NestingNullContractExecutionTest` over `PivotNestingHost.labels` / `labelsRequired: HostLabels`, covering all four cases in the Tests section. In the web sandbox the local `rewrite_test` database has to be reseeded after this change (see `.claude/web-environment.md`). Without the reseed these tests fail on the missing host rows, and a stale DML row (film 85) also fails `GraphQLQueryTest.filmsByTitleBean_absentInput_buildsNoBeanAndLeavesTheFieldUnfiltered`.
 
 ## Provenance
 
