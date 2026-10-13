@@ -1644,14 +1644,15 @@ against its own corpus, filed here because the walk's fixtures were.
   `field-site-payloads.graphqls`. The connection provenance case was the named gate on the Edge
   name, which the promoter and the mint state twice; a one-sided change was run and fails
   `EmittedRegistryAgreementTest` and the execution tier without it.
-* **The catalog cases move to the jOOQ capture's test** `open`. Thirteen cases pin `sql_` against
-  jOOQ's own API: tables and columns, kinds, ordinals, Java types, `Keys` constants, constraints,
-  foreign-key pairing, node metadata, routines. That is capture's specification, and
-  `JooqFactCaptureTest` in `graphitron-model` already reaches both sakila catalogs; overlap
-  dedupes there.
-* **The source and membership cases move to their gatherers' tests** `done`, but for the partition
-  by schema package, which reads the multi-schema fixture as a catalog of its own and so moves
-  with the catalog cases. The stamp went to `GraphitronModelStoreTest`, the partition by classpath
+* **The catalog cases become fact documents** `open`. Thirteen cases pin `sql_` against jOOQ's
+  own API: tables and columns, kinds, ordinals, Java types, `Keys` constants, constraints,
+  foreign-key pairing, node metadata, routines. Each computes its expectation from jOOQ with the
+  calls the gatherer makes, so a fault the two share passes. A document over the fixture catalog
+  states the rows instead, captured by the real run, and names the shape each table is there for.
+  A case asserting something of jOOQ that no table can show is a question, not a loop kept.
+* **The source and membership cases move to their gatherers' tests** `done`. The partition by
+  schema package is the fact document `catalog-partition.graphqls`, over the fixture catalog's
+  package per schema and `event` in two of them. The stamp went to `GraphitronModelStoreTest`, the partition by classpath
   entry to `CodeCaptureTest` over the model's own classpath corpus, schema-file sources to
   `GraphQLSourceCaptureTest`, the per-coordinate directive application counts against the SDL to
   `GraphQLAnchorTest`, and per-graph membership to a test of its own, `ModelCaptureMembershipTest`,

@@ -63,7 +63,6 @@ import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
 import static no.sikt.graphitron.model.Tables.LINT_FINDING;
 import static no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR;
 import static no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.val;
@@ -1139,46 +1138,6 @@ class FactCaptureAgreementTest {
     /** One type reference as a comparable line; the root path renders as {@code @=}. */
     private static String render(String owner, String path, String referencedClass, String variance) {
         return owner + " @" + path + "= " + variance + " " + referencedClass;
-    }
-
-    /**
-     * The catalog is partitioned by the generated package its schema lives in, which is the
-     * granularity codegen rewrites. The classpath entry the classes came from would also be true of
-     * these rows and is the wrong unit: one jar carries every schema a codegen run produced, so
-     * invalidating the entry discards schemas nothing touched.
-     */
-    @Test
-    @DisplayName("the table census is partitioned by its schema's generated package")
-    void catalogIsPartitionedBySchemaPackage(@TempDir Path tmp) {
-        // The fixture catalog spreads its tables over a generated package per schema inside one
-        // jar, which is what tells a per-schema partition from a per-jar one.
-        var ctx = testContext();
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        try (var store = GraphitronModelStore.open()) {
-            capture(store, graph(tmp), jooq);
-
-            var expected = new LinkedHashSet<String>();
-            for (var entry : jooq.allTableEntries()) {
-                expected.add(entry.table().getSchema().getClass().getPackageName());
-            }
-            assertThat(expected).as("the fixture spans schemas, so this pins the granularity")
-                .hasSizeGreaterThan(1);
-
-            var sources = new LinkedHashSet<>(store.dsl()
-                .select(STORE_SOURCE.SOURCE_NAME)
-                .from(STORE_SOURCE)
-                .where(STORE_SOURCE.SOURCE_KIND.eq("JOOQ_SCHEMA"))
-                .fetch(STORE_SOURCE.SOURCE_NAME));
-            assertThat(sources).isEqualTo(expected);
-
-            // Every table reaches one, and reaches the one its own schema names.
-            var mismatched = store.dsl()
-                .select(SQL_TABLE.TABLE_NAME, SQL_TABLE.SOURCE_NAME)
-                .from(SQL_TABLE)
-                .where(SQL_TABLE.SOURCE_NAME.notIn(expected))
-                .fetch();
-            assertThat(mismatched).as("tables whose source is not their schema's package").isEmpty();
-        }
     }
 
     /** The classpath a fixture captures, the module's own output where the context names none. */

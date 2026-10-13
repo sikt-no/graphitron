@@ -1,0 +1,21 @@
+# The catalog is partitioned by the generated package a schema's classes live in, which is the unit
+# codegen rewrites. The classpath entry the classes came from would also be true of these rows and is
+# the wrong unit: one jar carries every schema a codegen run produced, so invalidating the entry
+# would discard schemas nothing touched.
+#
+# The fixture catalog is one codegen over several schemas, so its tables sit in a package per schema
+# inside one jar. event is declared in two of them, and each is its own row under its own source.
+
+extend schema @assertContains(relation: "store_source", rows: """
+  source_name,                                     source_kind
+  no.sikt.graphitron.rewrite.test.jooq.public_,       JOOQ_SCHEMA
+  no.sikt.graphitron.rewrite.test.jooq.multischema_a, JOOQ_SCHEMA
+  no.sikt.graphitron.rewrite.test.jooq.multischema_b, JOOQ_SCHEMA
+  """)
+
+extend schema @assertContains(relation: "sql_table", rows: """
+  table_schema,  table_name, source_name
+  public,        film,       no.sikt.graphitron.rewrite.test.jooq.public_
+  multischema_a, event,      no.sikt.graphitron.rewrite.test.jooq.multischema_a
+  multischema_b, event,      no.sikt.graphitron.rewrite.test.jooq.multischema_b
+  """)
