@@ -5,7 +5,7 @@ status: Backlog
 bucket: bug
 priority: 3
 theme: diagnostics
-depends-on: [rejected-optional-only-root-keeps-subtree-context]
+depends-on: []
 created: 2026-10-13
 last-updated: 2026-10-13
 ---
