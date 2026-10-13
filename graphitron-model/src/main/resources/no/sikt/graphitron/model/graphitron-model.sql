@@ -5866,6 +5866,36 @@ COMMENT ON COLUMN graphitron_field_chain_link.source_line IS 'the link''s source
 COMMENT ON COLUMN graphitron_field_chain_link.source_column IS 'the link''s source column; with the two columns above, the written position the link''s own facts are keyed by. A @routine link points at the FIELD_DIRECTIVE entry and a path element at the VALUE entry, and what each link joins on is those facts rather than anything carried here: this states that the chain has a link here and where to read it, and never what the link does';
 COMMENT ON COLUMN graphitron_field_chain_link.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
+CREATE TABLE graphitron_field_participant_path (
+  graph_name           VARCHAR NOT NULL,
+  type_name            VARCHAR NOT NULL,
+  field_name           VARCHAR NOT NULL,
+  participant_type_ref VARCHAR NOT NULL,
+  position             INT     NOT NULL,
+  source_name          VARCHAR NOT NULL,
+  source_line          INT     NOT NULL,
+  source_column        INT     NOT NULL,
+  touched_at           TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, participant_type_ref, position),
+  FOREIGN KEY (graph_name, type_name, field_name)
+    REFERENCES graphql_field_element (graph_name, type_name, field_name) ON DELETE CASCADE,
+  -- Where the element was written, which is what its facts are keyed by.
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+      ON DELETE CASCADE,
+  UNIQUE (graph_name, type_name, field_name, source_name, source_line, source_column)
+);
+COMMENT ON TABLE graphitron_field_participant_path IS 'One element of one participant''s own path, in the order it was written: one row per element of a @referenceFor application on a field returning a union or an interface. For example media: [Media!] @referenceFor(type: "Book", path: [{table: "book_shelf"}, {table: "book"}]) draws two elements for Book, at positions 0 and 1.';
+COMMENT ON COLUMN graphitron_field_participant_path.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_field_participant_path.type_name IS 'the type owning the field the path is written on';
+COMMENT ON COLUMN graphitron_field_participant_path.field_name IS 'the field the path is written on; with the column above a reference into graphql_field_element';
+COMMENT ON COLUMN graphitron_field_participant_path.participant_type_ref IS 'the participant the path is for, as the application names it in type:; one application per participant, so with the field this names one path';
+COMMENT ON COLUMN graphitron_field_participant_path.position IS 'the element''s place in its participant''s path, numbered from zero without a hole, ranked over the written order on graphitron_field_chain_link.position''s terms';
+COMMENT ON COLUMN graphitron_field_participant_path.source_name IS 'the file the element was written in, the first of the three columns naming its written position; a reference into graphql_ast_entry';
+COMMENT ON COLUMN graphitron_field_participant_path.source_line IS 'the element''s source line, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_field_participant_path.source_column IS 'the element''s source column; with the two columns above, the written position the element''s facts are keyed by, the same step twins a chain link''s are';
+COMMENT ON COLUMN graphitron_field_participant_path.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
+
 CREATE TABLE graphitron_field_routine (
   graph_name         VARCHAR NOT NULL,
   type_name          VARCHAR NOT NULL,
@@ -13855,6 +13885,9 @@ INSERT INTO meta_grain VALUES
   ('field-chain-link',
    'one link of the chain one field''s rows travel, in one graph',
    'graph_name, type_name, field_name, position', 'sdl'),
+  ('field-participant-path',
+   'one element of one participant''s own path at one field, in one graph',
+   'graph_name, type_name, field_name, participant_type_ref, position', 'sdl'),
   ('condition-method-route',
    'one route one condition method''s signature declares, departure to arrival, in one graph',
    'graph_name, class_name, method, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table', 'sdl'),
@@ -14723,6 +14756,10 @@ INSERT INTO meta_relation VALUES
    'One link of the chain a field''s rows travel, in the order it was written: one row per element of the composed @routine and @reference applications at one field.',
    'For example Query.hopped over @routine(name: "films_for_actor") then @reference(path: [{table: "film"}]) draws two links, the routine at position 0 and the table element at position 1.',
    'The chain between a field''s endpoints, which graphitron_field_table asks for by name and nothing held: readers wanting the endpoints outnumber readers wanting the hops, so the pair was stated first and the route left to be walked. The position is why this exists rather than a column elsewhere. A chain composes @routine and @reference applications in written order, and neither directive''s ordinal can express it: each numbers its own applications from zero, so a routine at ordinal 0 and a reference at ordinal 0 say nothing about which came first. That order survives only in the entry stratum, where a written position is the primary key, and it is ranked here rather than copied because the entry numbers a path element by its authored index and skips one it does not transcribe, where a chain wants its links counted. Keyed at the coordinate and not at the target: the order is the same for every table a field''s rows may come from, so keying by target would state one order once per participant. What varies by target is where each link departs and arrives, which is a resolution rather than a reading. What a link does is likewise not here; its facts are keyed by the written position this row points at, one relation per shape as the entry stratum states them, so this never grows a discriminator that would have to be single-valued where an element writing a table beside a condition is one link with two facts.'),
+  ('graphitron_field_participant_path', 'field-participant-path', 'graphitron',
+   'One element of one participant''s own path, in the order it was written: one row per element of a @referenceFor application on a field returning a union or an interface.',
+   'For example media: [Media!] @referenceFor(type: "Book", path: [{table: "book_shelf"}, {table: "book"}]) draws two elements for Book, at positions 0 and 1.',
+   'A @referenceFor application is one participant''s complete path, independent of the field''s chain and of every other participant''s, so its elements are numbered within the participant and never as links of graphitron_field_chain_link, which a coordinate''s @routine and @reference applications compose. The element grammar is the chain''s, so an element''s facts are the same step twins keyed by its written position, and the position is ranked over the written order on the chain''s terms.'),
   ('graphitron_condition_method_route', 'condition-method-route', 'graphitron',
    'How a condition method''s own signature routes a hop: the departing tables its first parameter admits, beside the table its second parameter names.',
    'For example a method taking a film table and an actor table routes film to actor, whatever element named it.',

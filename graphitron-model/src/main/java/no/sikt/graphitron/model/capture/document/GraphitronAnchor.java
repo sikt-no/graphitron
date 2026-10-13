@@ -3,6 +3,9 @@ package no.sikt.graphitron.model.capture.document;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
+import org.jooq.Record6;
+import org.jooq.Record8;
+import org.jooq.Select;
 import org.jooq.Table;
 
 import java.time.LocalDateTime;
@@ -10,6 +13,8 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CHAIN_LINK;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PARTICIPANT_PATH;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_ENTRY;
@@ -140,6 +145,7 @@ public final class GraphitronAnchor {
         defaultOrders(dsl, graph, touchedAt);
         defaultOrderFields(dsl, graph, touchedAt);
         chainLinks(dsl, graph, touchedAt);
+        participantPaths(dsl, graph, touchedAt);
         // The bound name in both habitats it can be written in. One relation rather than two,
         // because what a reader asks is which name a slot binds and not which kind of slot it is.
         fieldBindings(dsl, graph, touchedAt);
@@ -151,7 +157,9 @@ public final class GraphitronAnchor {
     }
 
     /**
-     * The chain a field's rows travel, one row per written element in written order.
+     * The chain a field's rows travel, one row per written element in written order. A
+     * {@code @referenceFor} path is a participant's own, not a link of this chain, and
+     * {@link #participantPaths} holds it.
      *
      * <p>Here and not with the endpoint relations, because the order is only in this stratum. A
      * chain composes {@code @routine} and {@code @reference} applications in the order they were
@@ -185,38 +193,10 @@ public final class GraphitronAnchor {
      * a table beside a condition is one link with two facts and no column here has to choose.
      */
     private static void chainLinks(DSLContext dsl, String graph, LocalDateTime touchedAt) {
-        var fd = GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
-        var e = GRAPHQL_AST_ENTRY;
-        var ef = GRAPHQL_ELEMENT_FIELD;
         var ra = GRAPHITRON_AST_ROUTINE_ENTRY;
-        var aa = GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
-        var v = GRAPHQL_AST_VALUE_ENTRY;
-        var pv = GRAPHQL_AST_VALUE_ENTRY.as("pv");
         var t = GRAPHITRON_FIELD_CHAIN_LINK;
 
-        // The coordinate is read off the declaration the application was written on, one hop up
-        // the tree the supertype holds, rather than climbed to through the
-        // field definition and the type declaration. Those two joins were here and one of them was
-        // wrong: the declaration was joined for its merge order, to order the directives of a field
-        // declared across several files, and a field coordinate is declared once, two declarations
-        // of one field being a duplicate-field error rather than an order to settle. So all of a
-        // field's directives sit in one definition in one file, the merge order answers a question
-        // that cannot arise, and joining a type's declarations matched every declaration of that
-        // type and multiplied each application by their number.
-        var ee = GRAPHQL_AST_ELEMENT_ENTRY;
-        var applications = dsl
-            .select(ef.TYPE_NAME.as(TYPE_NAME), ef.FIELD_NAME.as(FIELD_NAME),
-                fd.SOURCE_NAME.as(SITE_NAME), fd.SOURCE_LINE.as(SITE_LINE),
-                fd.SOURCE_COLUMN.as(SITE_COLUMN), fd.NAME.as("name"))
-            .from(fd)
-            .join(e).on(e.GRAPH_NAME.eq(fd.GRAPH_NAME), e.SOURCE_NAME.eq(fd.SOURCE_NAME),
-                e.SOURCE_LINE.eq(fd.SOURCE_LINE), e.SOURCE_COLUMN.eq(fd.SOURCE_COLUMN))
-            .join(ee).on(ee.GRAPH_NAME.eq(e.GRAPH_NAME), ee.SOURCE_NAME.eq(e.SOURCE_NAME),
-                ee.SOURCE_LINE.eq(e.PARENT_LINE), ee.SOURCE_COLUMN.eq(e.PARENT_COLUMN))
-            .join(ef).on(ef.GRAPH_NAME.eq(e.GRAPH_NAME), ef.COORDINATE.eq(ee.COORDINATE))
-            .where(fd.GRAPH_NAME.eq(graph))
-            .and(ef.ARGUMENT_NAME.isNull())
-            .asTable("applications");
+        var applications = fieldApplications(dsl, graph);
 
         var routines = dsl
             .select(applications.field(TYPE_NAME),
@@ -233,40 +213,7 @@ public final class GraphitronAnchor {
                 ra.SOURCE_LINE.eq(applications.field(SITE_LINE)),
                 ra.SOURCE_COLUMN.eq(applications.field(SITE_COLUMN)));
 
-        var steps = dsl
-            .select(applications.field(TYPE_NAME),
-                applications.field(FIELD_NAME),
-                applications.field(SITE_LINE),
-                applications.field(SITE_COLUMN),
-                // A lone value coerced into the list of one holds no position in an enclosing list,
-                // and index zero is what the coercion says it is.
-                coalesce(v.POSITION, inline(0)).as("authored"),
-                v.SOURCE_NAME.as("el_source"), v.SOURCE_LINE.as("el_line"),
-                v.SOURCE_COLUMN.as("el_column"))
-            .from(applications)
-            .join(aa).on(aa.GRAPH_NAME.eq(graph),
-                aa.SOURCE_NAME.eq(applications.field(SITE_NAME)),
-                aa.PARENT_LINE.eq(applications.field(SITE_LINE)),
-                aa.PARENT_COLUMN.eq(applications.field(SITE_COLUMN)),
-                aa.NAME.eq("path"))
-            // One join and not a walk down the value tree: the holder is repeated on every node of
-            // an expression, so every element of the list names the applied argument directly.
-            .join(v).on(v.GRAPH_NAME.eq(aa.GRAPH_NAME), v.SOURCE_NAME.eq(aa.SOURCE_NAME),
-                v.HOLDER_LINE.eq(aa.SOURCE_LINE), v.HOLDER_COLUMN.eq(aa.SOURCE_COLUMN),
-                v.KIND.eq("OBJECT"))
-            // An element is an object written directly in the path list, or the lone object the
-            // list was coerced around. Depth is what this states and what neither of the other two
-            // columns can: the holder is the same node for every value of the expression, so an
-            // object nested inside an element names it just as directly, and the schema ties a
-            // position to parenthood, so a nested object holds a position among its own object's
-            // fields exactly as an element holds one in the list. A @reference element carrying a
-            // condition is the shape that shows it, the condition's own argument object having
-            // read as a second link of the chain.
-            .and(v.PARENT_LINE.isNull().or(exists(selectOne().from(pv)
-                .where(pv.GRAPH_NAME.eq(v.GRAPH_NAME), pv.SOURCE_NAME.eq(v.SOURCE_NAME),
-                    pv.SOURCE_LINE.eq(v.PARENT_LINE), pv.SOURCE_COLUMN.eq(v.PARENT_COLUMN),
-                    pv.KIND.eq("LIST"), pv.PARENT_LINE.isNull()))))
-            .where(applications.field("name", String.class).in("reference", "referenceFor"));
+        var steps = pathElements(dsl, graph, applications, "reference");
 
         var elements = routines.unionAll(steps).asTable("elements");
         var d = GRAPHQL_AST_ENTRY;
@@ -315,6 +262,145 @@ public final class GraphitronAnchor {
             .execute();
     }
 
+    /**
+     * Every directive applied to an output field, at the field's coordinate: the type and the field,
+     * where the application was written, and its name. One hop up the tree the supertype holds, read
+     * off the declaration the application was written on rather than climbed to through the field
+     * definition and the type declaration.
+     */
+    private static Table<Record6<String, String, String, Integer, Integer, String>> fieldApplications(
+            DSLContext dsl, String graph) {
+        var fd = GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
+        var e = GRAPHQL_AST_ENTRY;
+        var ef = GRAPHQL_ELEMENT_FIELD;
+        var ee = GRAPHQL_AST_ELEMENT_ENTRY;
+        // No declaration is joined for a merge order. A field coordinate is declared once, two
+        // declarations of one field being a duplicate-field error, so all of a field's directives sit
+        // in one definition in one file, and joining a type's declarations would multiply each
+        // application by their number.
+        return dsl
+            .select(ef.TYPE_NAME.as(TYPE_NAME), ef.FIELD_NAME.as(FIELD_NAME),
+                fd.SOURCE_NAME.as(SITE_NAME), fd.SOURCE_LINE.as(SITE_LINE),
+                fd.SOURCE_COLUMN.as(SITE_COLUMN), fd.NAME.as("name"))
+            .from(fd)
+            .join(e).on(e.GRAPH_NAME.eq(fd.GRAPH_NAME), e.SOURCE_NAME.eq(fd.SOURCE_NAME),
+                e.SOURCE_LINE.eq(fd.SOURCE_LINE), e.SOURCE_COLUMN.eq(fd.SOURCE_COLUMN))
+            .join(ee).on(ee.GRAPH_NAME.eq(e.GRAPH_NAME), ee.SOURCE_NAME.eq(e.SOURCE_NAME),
+                ee.SOURCE_LINE.eq(e.PARENT_LINE), ee.SOURCE_COLUMN.eq(e.PARENT_COLUMN))
+            .join(ef).on(ef.GRAPH_NAME.eq(e.GRAPH_NAME), ef.COORDINATE.eq(ee.COORDINATE))
+            .where(fd.GRAPH_NAME.eq(graph))
+            .and(ef.ARGUMENT_NAME.isNull())
+            .asTable("applications");
+    }
+
+    /**
+     * The elements of every path one directive's applications write, one row per element: the
+     * application it belongs to and the element's authored index, which orders the elements of one
+     * {@code path:} against each other.
+     */
+    private static Select<Record8<String, String, Integer, Integer, Integer, String, Integer, Integer>>
+            pathElements(DSLContext dsl, String graph,
+                         Table<Record6<String, String, String, Integer, Integer, String>> applications,
+                         String directiveName) {
+        var aa = GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
+        var v = GRAPHQL_AST_VALUE_ENTRY;
+        var pv = GRAPHQL_AST_VALUE_ENTRY.as("pv");
+        return dsl
+            .select(applications.field(TYPE_NAME),
+                applications.field(FIELD_NAME),
+                applications.field(SITE_LINE),
+                applications.field(SITE_COLUMN),
+                // A lone value coerced into the list of one holds no position in an enclosing list,
+                // and index zero is what the coercion says it is.
+                coalesce(v.POSITION, inline(0)).as("authored"),
+                v.SOURCE_NAME.as("el_source"), v.SOURCE_LINE.as("el_line"),
+                v.SOURCE_COLUMN.as("el_column"))
+            .from(applications)
+            .join(aa).on(aa.GRAPH_NAME.eq(graph),
+                aa.SOURCE_NAME.eq(applications.field(SITE_NAME)),
+                aa.PARENT_LINE.eq(applications.field(SITE_LINE)),
+                aa.PARENT_COLUMN.eq(applications.field(SITE_COLUMN)),
+                aa.NAME.eq("path"))
+            // One join and not a walk down the value tree: the holder is repeated on every node of
+            // an expression, so every element of the list names the applied argument directly.
+            .join(v).on(v.GRAPH_NAME.eq(aa.GRAPH_NAME), v.SOURCE_NAME.eq(aa.SOURCE_NAME),
+                v.HOLDER_LINE.eq(aa.SOURCE_LINE), v.HOLDER_COLUMN.eq(aa.SOURCE_COLUMN),
+                v.KIND.eq("OBJECT"))
+            // An element is an object written directly in the path list, or the lone object the
+            // list was coerced around. Depth is what this states and what neither of the other two
+            // columns can: the holder is the same node for every value of the expression, so an
+            // object nested inside an element names it just as directly, and the schema ties a
+            // position to parenthood, so a nested object holds a position among its own object's
+            // fields exactly as an element holds one in the list. A @reference element carrying a
+            // condition is the shape that shows it, the condition's own argument object having
+            // read as a second link of the chain.
+            .and(v.PARENT_LINE.isNull().or(exists(selectOne().from(pv)
+                .where(pv.GRAPH_NAME.eq(v.GRAPH_NAME), pv.SOURCE_NAME.eq(v.SOURCE_NAME),
+                    pv.SOURCE_LINE.eq(v.PARENT_LINE), pv.SOURCE_COLUMN.eq(v.PARENT_COLUMN),
+                    pv.KIND.eq("LIST"), pv.PARENT_LINE.isNull()))))
+            .where(applications.field("name", String.class).eq(directiveName));
+    }
+
+    /**
+     * Each participant's own path, one row per written element in written order. A
+     * {@code @referenceFor} application is one participant's complete path, independent of the
+     * field's chain and of every other participant's, so its elements are numbered within the
+     * participant and none of them is a link of {@link #chainLinks}'s chain.
+     */
+    private static void participantPaths(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var rf = GRAPHITRON_AST_FIELD_REFERENCE_FOR_ENTRY;
+        var d = GRAPHQL_AST_ENTRY;
+        var t = GRAPHITRON_FIELD_PARTICIPANT_PATH;
+        var elements = pathElements(dsl, graph, fieldApplications(dsl, graph), "referenceFor")
+            .asTable("elements");
+        var participant = rf.PARTICIPANT_TYPE_REF;
+        var ranked = dsl
+            .select(elements.field(TYPE_NAME),
+                elements.field(FIELD_NAME),
+                participant,
+                elements.field("el_source", String.class),
+                elements.field("el_line", Integer.class),
+                elements.field("el_column", Integer.class),
+                rowNumber().over(partitionBy(elements.field(TYPE_NAME),
+                        elements.field(FIELD_NAME), participant)
+                    .orderBy(elements.field(SITE_LINE).asc(),
+                        elements.field(SITE_COLUMN).asc(),
+                        elements.field("authored", Integer.class).asc()))
+                    .minus(inline(1)).as("position"))
+            .from(elements)
+            // The participant the application names, which is the application's own decode.
+            .join(rf).on(rf.GRAPH_NAME.eq(graph),
+                rf.SOURCE_NAME.eq(elements.field("el_source", String.class)),
+                rf.SOURCE_LINE.eq(elements.field(SITE_LINE)),
+                rf.SOURCE_COLUMN.eq(elements.field(SITE_COLUMN)))
+            // Joined because it is referenced, before the rank, on chainLinks' terms.
+            .join(d).on(d.GRAPH_NAME.eq(graph),
+                d.SOURCE_NAME.eq(elements.field("el_source", String.class)),
+                d.SOURCE_LINE.eq(elements.field("el_line", Integer.class)),
+                d.SOURCE_COLUMN.eq(elements.field("el_column", Integer.class)))
+            .asTable("ranked");
+
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.PARTICIPANT_TYPE_REF, t.POSITION,
+                t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.TOUCHED_AT)
+            .select(dsl
+                .select(val(graph, t.GRAPH_NAME), ranked.field(TYPE_NAME),
+                    ranked.field(FIELD_NAME),
+                    ranked.field(participant.getName(), String.class),
+                    ranked.field("position", Integer.class),
+                    ranked.field("el_source", String.class),
+                    ranked.field("el_line", Integer.class),
+                    ranked.field("el_column", Integer.class),
+                    val(touchedAt, t.TOUCHED_AT))
+                .from(ranked))
+            .onDuplicateKeyUpdate()
+            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
+            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
+            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+    }
+
     /** What the sweep deletes from, children before parents, listed rather than found by prefix. */
     private static final List<Table<?>> TABLES_TO_SWEEP =
         List.of(GRAPHITRON_DEPRECATED, GRAPHITRON_TABLE_ENTRY,
@@ -324,7 +410,7 @@ public final class GraphitronAnchor {
             GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY, GRAPHITRON_DEFAULT_ORDER_ENTRY,
             GRAPHITRON_NODE_KEYCOLUMN_ENTRY, GRAPHITRON_NODE_ENTRY,
             GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY, GRAPHITRON_ROUTINE_ENTRY,
-            GRAPHITRON_FIELD_CHAIN_LINK,
+            GRAPHITRON_FIELD_CHAIN_LINK, GRAPHITRON_FIELD_PARTICIPANT_PATH,
             GRAPHITRON_FACET_ENTRY, GRAPHITRON_FIELD_BINDING_ENTRY);
 
     /**

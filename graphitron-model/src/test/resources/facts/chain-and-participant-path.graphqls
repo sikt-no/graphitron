@@ -1,0 +1,48 @@
+# A field's chain and a participant's path are two groupings of the same element grammar. Repeated
+# @reference applications compose, with @routine, one running chain for the field; each @referenceFor
+# application is one participant's complete path, and a participant not named keeps discovery. So
+# a @referenceFor element is never a link of the chain, and each participant's path is numbered on
+# its own.
+
+type Actor @table(name: "actor") {
+  firstName: String @field(name: "first_name")
+}
+
+type Customer @table(name: "customer") {
+  firstName: String @field(name: "first_name")
+}
+
+type Staff @table(name: "staff") {
+  firstName: String @field(name: "first_name")
+}
+
+union Person = Actor | Customer | Staff
+
+type Film @table(name: "film") {
+  title: String
+  # Two participants with paths of their own; Customer is left to discovery.
+  people: [Person!]!
+    @referenceFor(type: "Actor", path: [{table: "film_actor"}, {table: "actor"}])
+    @referenceFor(type: "Staff", path: [{table: "staff"}])
+  # A chain of two applications, concatenated in written order.
+  actors: [Actor!]!
+    @reference(path: [{table: "film_actor"}])
+    @reference(path: [{table: "actor"}])
+}
+
+extend type Query {
+  films: [Film!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_field_chain_link", rows: """
+  type_name, field_name, position
+  Film,      actors,     0
+  Film,      actors,     1
+  """)
+
+extend schema @expectEquals(relation: "graphitron_field_participant_path", rows: """
+  type_name, field_name, participant_type_ref, position
+  Film,      people,     Actor,                0
+  Film,      people,     Actor,                1
+  Film,      people,     Staff,                0
+  """)

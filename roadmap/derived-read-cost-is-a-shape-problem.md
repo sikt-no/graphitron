@@ -192,6 +192,34 @@ The field grain resolves where it was written and says why when it cannot, which
 What remains is the other two grains, a second resolution of the same elements still standing beside
 this one, and the read-time relations neither of them has displaced yet.
 
+`@reference` and `@referenceFor` share an element grammar and nothing else. Repeated `@reference`
+applications concatenate, with `@routine`, into one running chain for a coordinate. Repeated
+`@referenceFor` applications are independent, one per participant of a union- or interface-typed
+coordinate, each its participant's complete path; a participant not named keeps auto-discovery. So
+the model has one reading of an element, where it departs and where it arrives, keyed by where it was
+written whichever directive wrote it, and two groupings of elements with the grain the vocabulary
+gives each: a coordinate's chain keyed by the coordinate and a position, and a participant's path
+keyed by the coordinate, the participant and a position. A target is read along its participant's
+path where it has one, along the coordinate's chain where the coordinate writes one, and is
+auto-discovered otherwise, and that choice is made once rather than by each reader. Writing both
+directives at one coordinate is an error in the vocabulary, so no relation mixes their elements
+either. The same holds at all three grains, a participant's path at an argument or an input field
+running from the participant's table toward a `@nodeId` target in key hops alone.
+
+* **A coordinate's chain and a participant's path are two relations** `done`, the field grain.
+  `graphitron_field_chain_link` holds `@routine` and `@reference`, and
+  `graphitron_field_participant_path` one element of one participant's path, keyed by the field, the
+  participant and a position, both read off the same path elements by the graphitron anchor and
+  marked and swept with it. `chain-and-participant-path` states a field with two participants'
+  paths and one left to discovery beside a `@reference` chain. On the sakila store the ten
+  chain-break defects on `@referenceFor` fields are gone and the other thirteen are unchanged. The
+  path is read once a target is keyed by its target type, under "A field's targets are its target
+  types": the reading then keys by the field and the target type, and takes the participant's path
+  for its own target and the coordinate's chain for the rest.
+* **Writing `@reference` and `@referenceFor` at one coordinate is a defect** `open`, as is a
+  `@referenceFor` on a coordinate whose type is neither a union nor an interface. Both are rejections
+  the vocabulary states; as codes they are where the editor learns of them.
+
 * **A routine resolving to nothing says so** `open`. `CHAIN_WITHOUT_TARGET` declines that case on
   purpose, a `@reference`-only chain taking its target from the return binding where a routine chain
   takes it from the catalog, so the same silence means two different faults and only one has an arm.
@@ -204,7 +232,7 @@ this one, and the read-time relations neither of them has displaced yet.
   can be read against the catalog, which depends on what was written and on the catalog and not on
   the chain it ends up in: the readings by key, by table, by name match and by condition join the
   spelling by its written position and nothing else, the target only carried along from `link`. So the reading is
-  keyed by the step entry, written once for every `@reference` element at a field, an argument or an
+  keyed by the step entry, written once for every element of either directive at a field, an argument or an
   input field alike, and the input-value step entries gain their first reader. The routine reading is
   the exception, reading `graphitron_field_routine` per target, and whether its resolution can be
   stated at the entry grain with the target check moving into the walk is the first question.
@@ -215,8 +243,9 @@ this one, and the read-time relations neither of them has displaced yet.
   `@reference` reads and what a bare `@nodeId` with `@reference` takes its type from. A producer
   with neither a departure nor a target has nothing to run, which is the defect
   `CHAIN_WITHOUT_TARGET` narrows to.
-* **The chain is stated at the argument and input-field grains** `open`. `@reference` is written at
-  three coordinates and only the field grain has a chain relation.
+* **The chain is stated at the argument and input-field grains** `open`, after the two relations at
+  the field grain. `@reference` and `@referenceFor` are written at three coordinates and only the
+  field grain has a chain relation; both groupings are stated at the other two.
 * **One resolution of an authored element stands, not two** `blocked`, on the two grains above.
   `graphitron_field_reference_step_hop` resolves the same elements as
   `graphitron_field_chain_link_reading` from a decode its own comment calls deprecated; measured on a
@@ -465,10 +494,11 @@ entry is written by the capture phase alone. Counted in `roadmap/audits/2026-09-
       argument's `@referenceFor` is found as well. `graphitron_reference_for_step_entry` and
       `graphitron_argument_reference_for_step_entry` then had no reader and went; the registry
       decode still writes their method references and spellings.
-    * **The field-site shape is read off the chain links** `open`. Whether a field has a path, how
-      many steps it has and where its last one is, for the node-id instruction, column-scope and
-      landing rules and `intent_field_column_table`, read off `graphitron_field_chain_link` and
-      `graphitron_field_chain_application`.
+    * **Whether a coordinate carries a path is read off its applications** `open`. The node-id
+      instruction and column-scope rules and `intent_field_column_table` ask only that, at fields,
+      input fields and arguments alike, which `graphql_directive_application` answers. Where a
+      path's last step lands and how many steps an application has are asked only to find a hop's
+      target, and move with the hops.
     * **The argument-site shape follows the argument chain** `blocked`, on "The chain is stated at
       the argument and input-field grains".
 * **The untwinned ones get an ast entry first** `open`, and are the longer half.
@@ -598,6 +628,27 @@ and the emitters read, and it goes when nothing reads what it builds.
         test compiles where the case is the classpath.
       * **Two backings for one type is a defect** `open`. What `intent_type_backing_conflict`
         reports, as a code at the type's declaration.
+    * **A field's targets are its target types** `open`. A field has a target type, and a target
+      type is what is bound to a table. `graphitron_field_target` holds one row per field and
+      target type: the type the field navigates as, or each participant of a union or interface it
+      returns, with the rule that answered. No table stands beside it; a target's table is its
+      type's binding, one join to `graphitron_resolved_type_binding`, so two participants bound to
+      one table are two targets and a target with no table is a row saying so. The participant
+      grain is the one `intent_field_participant_scope_table` keys by, here owned, marked and swept.
+    * **The duplicate statements of a field's tables dissolve** `blocked`, on the node above and on
+      "The departure is stated". A field's target and its departure are each stated several times
+      at several grains, and each statement goes when its readers have moved:
+      * `graphitron_field_table`, its target half to the target types and their bindings, its
+        `from_` half to the departure;
+      * `intent_field_participant_scope_table`, to the target types;
+      * `graphitron_field_scope_table`, the table a field's SQL binds against, checked against the
+        departure and the targets it restates;
+      * `graphitron_field_column_scope` and `intent_field_chain_terminus`, which state a path's or a
+        routine chain's arrival, to the chain read toward a target;
+      * `intent_bound_table`, to `graphitron_resolved_type_binding`.
+
+      Each is measured old against new on sakila and sis before it goes, the rules reading it keep
+      their answers, and its readers are named on the commit that moves them.
     * **The source's shape and the target's shape** `blocked`, on the node above. A record is a
       class-backed type, and a column read differs from a field read by the source's shape.
     * **The departure is stated** `open`, after the producers. The consume phase: which keys a
