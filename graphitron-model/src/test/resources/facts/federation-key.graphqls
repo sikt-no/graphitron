@@ -93,3 +93,11 @@ extend schema @assertContains(relation: "graphitron_directive_application", rows
   Store,      key,            0,       AUTHORED
   Store,      key,            1,       AUTHORED
   """)
+
+# The second federation link is one the toolchain refuses, so the rewrite that would declare @key
+# does not run and every @key is undeclared to it; capture records both and keeps reading.
+extend schema @expectEquals(relation: "graphql_schema_problem", rows: """
+  stage,    error_class
+  REWRITE,  MultipleFederationLinks
+  ASSEMBLY, DirectiveUndeclaredError
+  """)

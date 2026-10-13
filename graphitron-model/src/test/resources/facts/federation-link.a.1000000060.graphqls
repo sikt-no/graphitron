@@ -1,7 +1,7 @@
 # The second reading keeps the link and imports @key alone. The import that stands is written again
 # under this reading's mark, and the one the author dropped is swept while its link stands.
 
-type Query { film: String }
+extend type Query { film: String }
 
 extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
 

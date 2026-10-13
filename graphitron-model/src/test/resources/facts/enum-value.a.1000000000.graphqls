@@ -2,7 +2,7 @@
 # of an authored enum at its coordinate, with its position and the docstring its author wrote.
 # Containment, the bundled directive vocabulary declaring enums of its own.
 
-type Query { rated: Rating }
+extend type Query { rated: Rating }
 
 enum Rating {
   G

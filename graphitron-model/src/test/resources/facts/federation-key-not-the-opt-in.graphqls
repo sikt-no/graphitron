@@ -35,3 +35,9 @@ extend schema @assertAbsent(relation: "graphitron_directive_application", rows: 
   coordinate, directive_name, origin
   Language,   key,            MINTED
   """)
+
+# A link that is not federation's declares no @key, which the toolchain refuses and capture records.
+extend schema @expectEquals(relation: "graphql_schema_problem", rows: """
+  stage,    error_class
+  ASSEMBLY, DirectiveUndeclaredError
+  """)

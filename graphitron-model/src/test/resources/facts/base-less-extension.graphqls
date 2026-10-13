@@ -15,3 +15,9 @@ extend schema @assertContains(relation: "graphql_field", rows: """
   type_name, field_name
   Phantom,   ghost
   """)
+
+# The toolchain refuses the extension, and capture records that rather than refusing the document.
+extend schema @expectEquals(relation: "graphql_schema_problem", rows: """
+  stage,    error_class
+  ASSEMBLY, TypeExtensionMissingBaseTypeError
+  """)

@@ -1,7 +1,7 @@
 # The third reading drops the link, so the graph is no longer federated: the sweep takes the opt-in
 # and its import with it.
 
-type Query { film: String }
+extend type Query { film: String }
 
 extend schema @assertAbsent(relation: "graphitron_ast_federation_link_entry", rows: """
   version
