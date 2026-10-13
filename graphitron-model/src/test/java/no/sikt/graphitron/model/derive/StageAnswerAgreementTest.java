@@ -54,8 +54,8 @@ class StageAnswerAgreementTest {
      */
     private static final List<Stage> STAGES = List.of(
         new Stage("graphql_ast_element_declaration", "graphql_ast_element_declaration_rule"),
-        new Stage("graphitron_field_chain_link_resolution",
-            "graphitron_field_chain_link_resolution_rule"),
+        new Stage("graphitron_field_path_resolution",
+            "graphitron_field_path_resolution_rule"),
         new Stage("graphitron_type_backing", "graphitron_type_backing_rule"),
         new Stage("graphitron_configured_tag", "graphitron_configured_tag_rule"),
         new Stage("graphitron_minted_coinage", "graphitron_minted_coinage_rule"),
@@ -219,11 +219,11 @@ class StageAnswerAgreementTest {
      * shapes, and the constraints each table states, were written to at all.
      */
     @Test
-    @DisplayName("the fixtures reach all three arms of the chain-link resolution")
-    void theFixturesReachEveryArmOfTheChainLinkResolution() {
-        var arms = List.of("graphitron_field_chain_link_resolution_keyed",
-            "graphitron_field_chain_link_resolution_keyless",
-            "graphitron_field_chain_link_resolution_open");
+    @DisplayName("the fixtures reach all three arms of the path resolution")
+    void theFixturesReachEveryArmOfThePathResolution() {
+        var arms = List.of("graphitron_field_path_resolution_keyed",
+            "graphitron_field_path_resolution_keyless",
+            "graphitron_field_path_resolution_open");
         var populated = new java.util.HashSet<String>();
         for (var fixture : Fixture.values()) {
             withCapturedStore(fixture, dsl -> arms.forEach(arm -> {

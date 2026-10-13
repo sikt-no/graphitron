@@ -32,10 +32,10 @@ overwrites a different row. R998 converts the two hot sites the sis profile name
     take R998's shape: convert to the primary key and add `CHECK (coordinate = <spelling of the key>)`,
     which makes the coordinate a function of the key. This covers the family members R998 left
     alone: `graphql_directive_argument_element`, and the coordinate column of
-    `graphitron_field_chain_application`. Weigh `GENERATED ALWAYS AS` for the coordinate against
+    `graphitron_field_path_application`. Weigh `GENERATED ALWAYS AS` for the coordinate against
     the `CHECK` here, family-wide, including whether H2 accepts a foreign key into
     `graphql_element` on a generated column.
-  * `graphitron_field_chain_link`, `graphitron_field_chain_application` and `meta_gatherer` have
+  * `graphitron_field_path`, `graphitron_field_path_application` and `meta_gatherer` have
     second keys that are independent of the primary key. A collision there is reachable. Each needs
     a decision about which key is the identity and what a collision on the other one means.
 * The guard is the deliverable that enforces the rule. It reads each table's keys from the jOOQ

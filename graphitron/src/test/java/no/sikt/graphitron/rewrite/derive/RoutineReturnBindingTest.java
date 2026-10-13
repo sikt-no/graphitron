@@ -30,7 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code graphitron_resolved_type_binding}: which catalog table stands for a type when the author never
  * wrote {@code @table} on it, and what happens where both populations answer.
  *
- * <p>Every case captures real SDL against the test catalog, on {@code ChainTerminusTest}'s reason:
+ * <p>Every case captures real SDL against the test catalog, on {@code PathTerminusTest}'s reason:
  * the binding is a resolution against a real catalog reached through a chain walk, and a hand-seeded
  * row would describe a landing the catalog cannot make. The fixtures use {@code films_for_actor},
  * whose result exposes {@code film_id} and {@code title}, so its rows name-match {@code film} and

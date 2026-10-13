@@ -2,7 +2,7 @@ package no.sikt.graphitron.model.derive;
 
 import org.jooq.DSLContext;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CHAIN_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static org.jooq.impl.DSL.inline;
@@ -37,16 +37,16 @@ import static org.jooq.impl.DSL.rowNumber;
  * it reads the transcription alone and everything downstream that wants an ordered chain wants it
  * before its own rule runs.
  */
-public final class FieldChainApplications {
+public final class FieldPathApplications {
 
-    private FieldChainApplications() {}
+    private FieldPathApplications() {}
 
     /** Clears and re-derives the graph's chain applications; see the class javadoc. */
     public static void derive(DSLContext dsl, String graphName) {
         // Safe to clear where the anchors are not: nothing keys into this relation, so emptying it
         // takes nothing with it, and a chain an edit reordered has to stop being the old order.
-        dsl.deleteFrom(GRAPHITRON_FIELD_CHAIN_APPLICATION)
-            .where(GRAPHITRON_FIELD_CHAIN_APPLICATION.GRAPH_NAME.eq(graphName)).execute();
+        dsl.deleteFrom(GRAPHITRON_FIELD_PATH_APPLICATION)
+            .where(GRAPHITRON_FIELD_PATH_APPLICATION.GRAPH_NAME.eq(graphName)).execute();
 
         var d = GRAPHQL_DIRECTIVE_APPLICATION;
         // One relation holds every site's applications now, and a field's coordinate is what
@@ -62,14 +62,14 @@ public final class FieldChainApplications {
                     d.DIRECTIVE_NAME.asc(), d.ORDINAL.asc()))
             .minus(inline(1));
 
-        dsl.insertInto(GRAPHITRON_FIELD_CHAIN_APPLICATION)
-            .columns(GRAPHITRON_FIELD_CHAIN_APPLICATION.GRAPH_NAME,
-                GRAPHITRON_FIELD_CHAIN_APPLICATION.TYPE_NAME,
-                GRAPHITRON_FIELD_CHAIN_APPLICATION.FIELD_NAME,
-                GRAPHITRON_FIELD_CHAIN_APPLICATION.CHAIN_POSITION,
-                GRAPHITRON_FIELD_CHAIN_APPLICATION.COORDINATE,
-                GRAPHITRON_FIELD_CHAIN_APPLICATION.DIRECTIVE_NAME,
-                GRAPHITRON_FIELD_CHAIN_APPLICATION.ORDINAL)
+        dsl.insertInto(GRAPHITRON_FIELD_PATH_APPLICATION)
+            .columns(GRAPHITRON_FIELD_PATH_APPLICATION.GRAPH_NAME,
+                GRAPHITRON_FIELD_PATH_APPLICATION.TYPE_NAME,
+                GRAPHITRON_FIELD_PATH_APPLICATION.FIELD_NAME,
+                GRAPHITRON_FIELD_PATH_APPLICATION.CHAIN_POSITION,
+                GRAPHITRON_FIELD_PATH_APPLICATION.COORDINATE,
+                GRAPHITRON_FIELD_PATH_APPLICATION.DIRECTIVE_NAME,
+                GRAPHITRON_FIELD_PATH_APPLICATION.ORDINAL)
             .select(dsl
                 .select(d.GRAPH_NAME, e.TYPE_NAME, e.FIELD_NAME, position, d.COORDINATE,
                     d.DIRECTIVE_NAME, d.ORDINAL)

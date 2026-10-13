@@ -152,9 +152,9 @@ class DetectionReadReachGateTest {
             "intent_bound_table",
             "intent_carrier_routine_hop",
             "graphitron_connection_element_type",
-            "intent_field_chain_node",
-            "intent_field_chain_start",
-            "intent_field_chain_terminus",
+            "intent_field_path_node",
+            "intent_field_path_start",
+            "intent_field_path_terminus",
             "intent_field_navigated_type",
             "intent_field_participant_scope_table",
             // Arrived when the reference-step hop became two keyed tables under a union view

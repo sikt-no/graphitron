@@ -92,12 +92,12 @@ the decode hop, which changes the inner-side population and leaves this one alon
 | `intent_condition_param_extraction` | `intent_java_enum_class` (CORRELATED) |
 | `intent_condition_table_parameter` | `intent_jvm_ancestor` (CORRELATED) |
 | `intent_errors_field` | `intent_poly_member` (CORRELATED) |
-| `intent_field_chain_node` | `intent_field_chain_start` (RECURSIVE) |
+| `intent_field_path_node` | `intent_field_path_start` (RECURSIVE) |
 | `intent_field_error_channel` | `intent_errors_field` (CORRELATED), `intent_type_backing` (CORRELATED) |
 | `intent_field_reference_step_hop_live` | `intent_name_matched_key_pair` (CORRELATED) |
 | `intent_field_separate_fetch` | `intent_bound_table` (CORRELATED) |
 | `intent_inferred_node_type` | `intent_node_metadata_defect` (CORRELATED) |
-| `intent_mutation_routine_seat` | `intent_bound_table` (CORRELATED), `intent_carrier_routine_hop` (CORRELATED), `intent_connection_element_type` (CORRELATED), `intent_field_chain_node` (CORRELATED), `intent_field_chain_start` (CORRELATED), `intent_field_chain_terminus` (CORRELATED), `intent_name_matched_key_pair` (CORRELATED) |
+| `intent_mutation_routine_seat` | `intent_bound_table` (CORRELATED), `intent_carrier_routine_hop` (CORRELATED), `intent_connection_element_type` (CORRELATED), `intent_field_path_node` (CORRELATED), `intent_field_path_start` (CORRELATED), `intent_field_path_terminus` (CORRELATED), `intent_name_matched_key_pair` (CORRELATED) |
 | `intent_node_container_member` | `intent_node_type` (CORRELATED) |
 | `intent_node_id_candidate_node_type` | `intent_node_type` (CORRELATED) |
 | `intent_node_id_decode` | `intent_node_id_candidate_node_type` (CORRELATED), `intent_node_id_decode_slot` (CORRELATED), `intent_record_slot_assignable` (CORRELATED) |

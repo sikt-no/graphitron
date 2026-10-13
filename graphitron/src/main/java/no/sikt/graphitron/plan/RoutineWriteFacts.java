@@ -28,7 +28,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_EN
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CARRIER_DATA_FIELD;
 import static no.sikt.graphitron.model.Tables.INTENT_CARRIER_ROUTINE_HOP;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_CHAIN_NODE;
+import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PATH_NODE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_ROUTINE_METHOD;
 import static no.sikt.graphitron.model.Tables.INTENT_FOREIGN_KEY_COLUMN_PAIR;
 import static no.sikt.graphitron.model.Tables.INTENT_MUTATION_ROUTINE_SEAT;
@@ -69,7 +69,7 @@ import static org.jooq.impl.DSL.when;
  * with neither the emit library nor a live catalog, which is the property the plan tier is shaped
  * around.
  *
- * <p><b>Cost.</b> The hop {@code MULTISET} correlates {@code intent_field_chain_node}, a recursive
+ * <p><b>Cost.</b> The hop {@code MULTISET} correlates {@code intent_field_path_node}, a recursive
  * walk, once per admitted coordinate. That population is the graph's routine-writing mutation
  * fields, which is small by construction; a reader tempted to hang a second correlation of that
  * relation off a wider driving row should read the derived-reads rule in
@@ -356,7 +356,7 @@ public final class RoutineWriteFacts {
      * minted rather than emitted as a reference to a constant that does not exist.
      */
     private static Field<List<RawHop>> hops(IntentMutationRoutineSeat s) {
-        var n = INTENT_FIELD_CHAIN_NODE;
+        var n = INTENT_FIELD_PATH_NODE;
         var t = SQL_TABLE.as("hop_target");
         var ts = SQL_SCHEMA.as("hop_target_schema");
         var k = SQL_CONSTRAINT.as("hop_key");
@@ -386,9 +386,9 @@ public final class RoutineWriteFacts {
     }
 
     private static RawHop rawHop(Record row) {
-        return new RawHop(row.get(INTENT_FIELD_CHAIN_NODE.SEQ), row.get(INTENT_FIELD_CHAIN_NODE.STEP_VIA),
-            ReservedAliases.chainHop(row.get(INTENT_FIELD_CHAIN_NODE.FIELD_NAME),
-                row.get(INTENT_FIELD_CHAIN_NODE.SEQ)),
+        return new RawHop(row.get(INTENT_FIELD_PATH_NODE.SEQ), row.get(INTENT_FIELD_PATH_NODE.STEP_VIA),
+            ReservedAliases.chainHop(row.get(INTENT_FIELD_PATH_NODE.FIELD_NAME),
+                row.get(INTENT_FIELD_PATH_NODE.SEQ)),
             new CatalogTable(row.get(2, String.class), row.get(3, String.class),
                 row.get(4, String.class), row.get(5, String.class)),
             row.get(6, String.class), row.get(7, String.class),
@@ -420,7 +420,7 @@ public final class RoutineWriteFacts {
      * {@code fk_on_from} the key constant is reached through.
      */
     private static Map<HopKey, List<KeyPair>> hopPairs(StoreHandle store) {
-        var n = INTENT_FIELD_CHAIN_NODE;
+        var n = INTENT_FIELD_PATH_NODE;
         var fk = INTENT_FOREIGN_KEY_COLUMN_PAIR;
         var nm = SQL_NAME_MATCHED_KEY_COLUMN;
         var src = SQL_COLUMN.as("source_column");

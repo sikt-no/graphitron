@@ -153,12 +153,12 @@ are gone.
     the 2026-10-06 `graphitron:dev` profile put the hops and the resolution together at about 25 s
     before it, the resolution alone about 23 s.
   * **The reading is stored, so the walk reads it once** `open`. The resolution rule names
-    `graphitron_field_chain_link_reading` four times, each walk's seed and step, and the entry
+    `graphitron_field_path_reading` four times, each walk's seed and step, and the entry
     defect rule a fifth, and H2 evaluates a view at every naming. Storing the reading alone took a
     reader of the walk from 30 s to 0.08 s in the storage audit, so the stage's cost is the
     reading's evaluations and not the walk. Convert it the cheap way: the view keeps its text as
-    `graphitron_field_chain_link_reading_rule`, a table takes the name both readers spell, and a
-    clear-and-insert stage fills it ahead of `FieldChainLinkResolutions`. Two readers, so the write
+    `graphitron_field_path_reading_rule`, a table takes the name both readers spell, and a
+    clear-and-insert stage fills it ahead of `FieldPathResolutions`. Two readers, so the write
     is earned; time the stage on the sis store before and after, the KEY arm change above first.
   * **The defects agree with the generator on a consumer schema** `open`. On sis the four chain
     codes report 161 coordinates the generator accepts. Each child is a reading that is wrong
@@ -186,36 +186,36 @@ are gone.
       none; a `Field<Boolean>` return is admitted beside it, read off the signature's type
       argument. The manual still documents `Condition` alone, deliberately.
 
-### The chain replaces the walk it was built to retire
+### The path replaces the walk it was built to retire
 
 The field grain resolves where it was written and says why when it cannot, which is the node above.
 What remains is the other two grains, a second resolution of the same elements still standing beside
 this one, and the read-time relations neither of them has displaced yet.
 
 `@reference` and `@referenceFor` share an element grammar and nothing else. Repeated `@reference`
-applications concatenate, with `@routine`, into one running chain for a coordinate. Repeated
+applications concatenate, with `@routine`, into one path for a coordinate. Repeated
 `@referenceFor` applications are independent, one per participant of a union- or interface-typed
 coordinate, each its participant's complete path; a participant not named keeps auto-discovery. So
 the model has one reading of an element, where it departs and where it arrives, keyed by where it was
 written whichever directive wrote it, and two groupings of elements with the grain the vocabulary
-gives each: a coordinate's chain keyed by the coordinate and a position, and a participant's path
+gives each: a coordinate's path keyed by the coordinate and a position, and a participant's path
 keyed by the coordinate, the participant and a position. A target is read along its participant's
-path where it has one, along the coordinate's chain where the coordinate writes one, and is
+path where it has one, along the coordinate's path where the coordinate writes one, and is
 auto-discovered otherwise, and that choice is made once rather than by each reader. Writing both
 directives at one coordinate is an error in the vocabulary, so no relation mixes their elements
 either. The same holds at all three grains, a participant's path at an argument or an input field
 running from the participant's table toward a `@nodeId` target in key hops alone.
 
-* **A coordinate's chain and a participant's path are two relations** `done`, the field grain.
-  `graphitron_field_chain_link` holds `@routine` and `@reference`, and
+* **A coordinate's path and a participant's path are two relations** `done`, the field grain.
+  `graphitron_field_path` holds `@routine` and `@reference`, and
   `graphitron_field_participant_path` one element of one participant's path, keyed by the field, the
   participant and a position, both read off the same path elements by the graphitron anchor and
-  marked and swept with it. `chain-and-participant-path` states a field with two participants'
+  marked and swept with it. `field-path-and-participant-path` states a field with two participants'
   paths and one left to discovery beside a `@reference` chain. On the sakila store the ten
   chain-break defects on `@referenceFor` fields are gone and the other thirteen are unchanged. The
   path is read once a target is keyed by its target type, under "A field's targets are its target
   types": the reading then keys by the field and the target type, and takes the participant's path
-  for its own target and the coordinate's chain for the rest.
+  for its own target and the coordinate's path for the rest.
 * **Writing `@reference` and `@referenceFor` at one coordinate is a defect** `open`, as is a
   `@referenceFor` on a coordinate whose type is neither a union nor an interface. Both are rejections
   the vocabulary states; as codes they are where the editor learns of them.
@@ -243,22 +243,22 @@ running from the participant's table toward a `@nodeId` target in key hops alone
   `@reference` reads and what a bare `@nodeId` with `@reference` takes its type from. A producer
   with neither a departure nor a target has nothing to run, which is the defect
   `CHAIN_WITHOUT_TARGET` narrows to.
-* **The chain is stated at the argument and input-field grains** `open`, after the two relations at
+* **The path is stated at the argument and input-field grains** `open`, after the two relations at
   the field grain. `@reference` and `@referenceFor` are written at three coordinates and only the
   field grain has a chain relation; both groupings are stated at the other two.
 * **One resolution of an authored element stands, not two** `blocked`, on the two grains above.
   `graphitron_field_reference_step_hop` resolves the same elements as
-  `graphitron_field_chain_link_reading` from a decode its own comment calls deprecated; measured on a
+  `graphitron_field_path_reading` from a decode its own comment calls deprecated; measured on a
   fixture reaching every arm the two agree exactly, so what is left is choosing which survives. The
   stored resolution is keyed in the hop's own arm shapes and adds the routine arm and the target
   grain the hop lacks, which is a vote for retiring the hop. A condition step's departure and
-  arrival tables then come from the chain link's reading alone, which states them per written
+  arrival tables then come from the field path's reading alone, which states them per written
   element off the method's signature, so `graphitron_condition_method_route`, keyed by the class and
   method as spelled and read only by the two hops, dissolves with them. Two things move into the
   reading first: the route keeps a step only where every overload's second parameter names one
   table, and the method is the one `graphitron_code_reference` settled rather than a name match.
-* **The read-time chain relations are gone** `blocked`, on the node above. `intent_field_chain_start`,
-  `_node` and `_terminus` retire as one and `graphitron_field_chain_application` falls out with them,
+* **The read-time path relations are gone** `blocked`, on the node above. `intent_field_path_start`,
+  `_node` and `_terminus` retire as one and `graphitron_field_path_application` falls out with them,
   its only reader being `_node`.
 * **The assembly pass is inside the stage-order gate** `blocked`, on R969. `StageOrderGateTest` models
   the derivation stratum only, so the three chain stages run in a hand-kept order nothing checks.
@@ -499,7 +499,7 @@ entry is written by the capture phase alone. Counted in `roadmap/audits/2026-09-
       input fields and arguments alike, which `graphql_directive_application` answers. Where a
       path's last step lands and how many steps an application has are asked only to find a hop's
       target, and move with the hops.
-    * **The argument-site shape follows the argument chain** `blocked`, on "The chain is stated at
+    * **The argument-site shape follows the argument path** `blocked`, on "The path is stated at
       the argument and input-field grains".
 * **The untwinned ones get an ast entry first** `open`, and are the longer half.
 * **The supertype roster becomes shrink-only** `open`. It already records the duplication and only
@@ -643,8 +643,8 @@ and the emitters read, and it goes when nothing reads what it builds.
       * `intent_field_participant_scope_table`, to the target types;
       * `graphitron_field_scope_table`, the table a field's SQL binds against, checked against the
         departure and the targets it restates;
-      * `graphitron_field_column_scope` and `intent_field_chain_terminus`, which state a path's or a
-        routine chain's arrival, to the chain read toward a target;
+      * `graphitron_field_column_scope` and `intent_field_path_terminus`, which state a path's or a
+        routine's arrival, to the path read toward a target;
       * `intent_bound_table`, to `graphitron_resolved_type_binding`.
 
       Each is measured old against new on sakila and sis before it goes, the rules reading it keep
@@ -1639,7 +1639,16 @@ decode's condition relations, their readers having moved to `graphql_directive_a
 `graphitron_ast_` twins: `graphitron_field_condition_entry`, `graphitron_argument_condition_entry`,
 `graphitron_field_condition_context_arg_entry` and `graphitron_argument_condition_context_arg_entry`.
 The two `@referenceFor` step relations, their one reader having moved to the step twins:
-`graphitron_reference_for_step_entry` and `graphitron_argument_reference_for_step_entry`. The type-backing
+`graphitron_reference_for_step_entry` and `graphitron_argument_reference_for_step_entry`.
+
+**Renamed, chain to path.** `graphitron_field_chain_link` (now `graphitron_field_path`),
+`graphitron_field_chain_link_reading`, `graphitron_field_chain_link_resolution` and its `_rule`,
+`_keyed`, `_keyless` and `_open`, `graphitron_field_chain_application`, `intent_field_chain_start`,
+`intent_field_chain_node` and `intent_field_chain_terminus`, each now `_path` where it said
+`_chain_link` or `_chain`; the grains `field-chain-link`, `field-chain-link-reading`,
+`field-chain-link-reach` and its `keyed`, `keyless` and `open` siblings, and
+`field-chain-application`; the classes `FieldChainLinkResolutions` and `FieldChainApplications`, now
+`FieldPathResolutions` and `FieldPathApplications`. The type-backing
 cluster, into `graphitron_type_backing`: `intent_type_backing_seed`, `intent_type_backing_class`,
 `intent_type_backing` and `intent_field_accessor_hop`, with the grain `type-backing-class` and the
 value `BACKING_CLOSURE` (now `PRODUCER` and `ACCESSOR`).
@@ -1736,7 +1745,7 @@ rather than left in a transcript.
 * **Nothing checks that a declared grain is the right grain.** The key gate compares
   `meta_grain.key_shape` against the actual primary key, which is two authored strings agreeing with
   each other, and it excludes views. A relation whose key and whose declaration state the same wrong
-  grain passes. The view exclusion is not hypothetical: `graphitron_field_chain_link_reading`
+  grain passes. The view exclusion is not hypothetical: `graphitron_field_path_reading`
   arrived declaring a grain that did not identify a row, naming the constraint by its own name
   alone where that name is unique per table, and omitting the endpoints entirely, which are all
   that tells apart the two arms carrying no constraint. It was found by reading and fixed by

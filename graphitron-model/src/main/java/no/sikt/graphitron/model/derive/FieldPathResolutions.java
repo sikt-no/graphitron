@@ -1,16 +1,16 @@
 package no.sikt.graphitron.model.derive;
 
-import no.sikt.graphitron.model.tables.records.GraphitronFieldChainLinkResolutionRuleRecord;
+import no.sikt.graphitron.model.tables.records.GraphitronFieldPathResolutionRuleRecord;
 import org.jooq.DSLContext;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CHAIN_LINK_RESOLUTION_KEYED;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CHAIN_LINK_RESOLUTION_KEYLESS;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CHAIN_LINK_RESOLUTION_OPEN;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CHAIN_LINK_RESOLUTION_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_RESOLUTION_KEYED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_RESOLUTION_KEYLESS;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_RESOLUTION_OPEN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_RESOLUTION_RULE;
 import static org.jooq.impl.DSL.excluded;
 
 /**
@@ -18,13 +18,13 @@ import static org.jooq.impl.DSL.excluded;
  * written chain link that either walk reaches, and which of them does.
  *
  * <p>Three relations and not one, because the readings have three key shapes.
- * {@code graphitron_field_chain_link_resolution_keyed} holds the readings a foreign key identifies,
- * {@code graphitron_field_chain_link_resolution_keyless} the table pairs none identifies, and
- * {@code graphitron_field_chain_link_resolution_open} the readings that state no departure of their
+ * {@code graphitron_field_path_resolution_keyed} holds the readings a foreign key identifies,
+ * {@code graphitron_field_path_resolution_keyless} the table pairs none identifies, and
+ * {@code graphitron_field_path_resolution_open} the readings that state no departure of their
  * own. The view over the three carries the canonical name every reader spells, and what each column
  * means is documented there.
  *
- * <p>The rule is {@code graphitron_field_chain_link_resolution_rule}, and unlike the hop relations'
+ * <p>The rule is {@code graphitron_field_path_resolution_rule}, and unlike the hop relations'
  * arms it cannot be split three ways: one chain mixes arms, a routine heading it and a key link
  * after, so each walk crosses all three shapes. This stage therefore evaluates the rule once and
  * files each row under its shape, which is the whole of what it adds to the rule. The {@code EXCEPT}
@@ -37,13 +37,13 @@ import static org.jooq.impl.DSL.excluded;
  * <p>Marked and swept, on {@link FieldTableLinks}' terms: every row this capture wrote carries its
  * instant, and a row still carrying an earlier one is a reading the corpus no longer has.
  */
-public final class FieldChainLinkResolutions {
+public final class FieldPathResolutions {
 
-    private FieldChainLinkResolutions() {}
+    private FieldPathResolutions() {}
 
     /** Re-derives the graph's chain-link resolution; see the class javadoc. */
     public static void derive(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
-        var r = GRAPHITRON_FIELD_CHAIN_LINK_RESOLUTION_RULE;
+        var r = GRAPHITRON_FIELD_PATH_RESOLUTION_RULE;
         var rows = dsl.selectFrom(r).where(r.GRAPH_NAME.eq(graphName)).fetch();
         keyed(dsl, rows.stream().filter(row -> row.getConstraintName() != null).toList(), touchedAt);
         keyless(dsl, rows.stream()
@@ -53,23 +53,23 @@ public final class FieldChainLinkResolutions {
             .filter(row -> row.getConstraintName() == null && row.getFromSourceName() == null)
             .toList(), touchedAt);
 
-        var keyed = GRAPHITRON_FIELD_CHAIN_LINK_RESOLUTION_KEYED;
+        var keyed = GRAPHITRON_FIELD_PATH_RESOLUTION_KEYED;
         dsl.deleteFrom(keyed)
             .where(keyed.GRAPH_NAME.eq(graphName)).and(keyed.TOUCHED_AT.ne(touchedAt)).execute();
-        var keyless = GRAPHITRON_FIELD_CHAIN_LINK_RESOLUTION_KEYLESS;
+        var keyless = GRAPHITRON_FIELD_PATH_RESOLUTION_KEYLESS;
         dsl.deleteFrom(keyless)
             .where(keyless.GRAPH_NAME.eq(graphName)).and(keyless.TOUCHED_AT.ne(touchedAt)).execute();
-        var open = GRAPHITRON_FIELD_CHAIN_LINK_RESOLUTION_OPEN;
+        var open = GRAPHITRON_FIELD_PATH_RESOLUTION_OPEN;
         dsl.deleteFrom(open)
             .where(open.GRAPH_NAME.eq(graphName)).and(open.TOUCHED_AT.ne(touchedAt)).execute();
     }
 
-    private static void keyed(DSLContext dsl, List<GraphitronFieldChainLinkResolutionRuleRecord> rows,
+    private static void keyed(DSLContext dsl, List<GraphitronFieldPathResolutionRuleRecord> rows,
                               LocalDateTime touchedAt) {
         if (rows.isEmpty()) {
             return;
         }
-        var t = GRAPHITRON_FIELD_CHAIN_LINK_RESOLUTION_KEYED;
+        var t = GRAPHITRON_FIELD_PATH_RESOLUTION_KEYED;
         var batch = dsl.batch(dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME,
                 t.TARGET_SOURCE_NAME, t.TARGET_SCHEMA, t.TARGET_TABLE, t.POSITION,
@@ -105,12 +105,12 @@ public final class FieldChainLinkResolutions {
         batch.execute();
     }
 
-    private static void keyless(DSLContext dsl, List<GraphitronFieldChainLinkResolutionRuleRecord> rows,
+    private static void keyless(DSLContext dsl, List<GraphitronFieldPathResolutionRuleRecord> rows,
                                 LocalDateTime touchedAt) {
         if (rows.isEmpty()) {
             return;
         }
-        var t = GRAPHITRON_FIELD_CHAIN_LINK_RESOLUTION_KEYLESS;
+        var t = GRAPHITRON_FIELD_PATH_RESOLUTION_KEYLESS;
         var batch = dsl.batch(dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME,
                 t.TARGET_SOURCE_NAME, t.TARGET_SCHEMA, t.TARGET_TABLE, t.POSITION, t.VIA,
@@ -134,12 +134,12 @@ public final class FieldChainLinkResolutions {
         batch.execute();
     }
 
-    private static void open(DSLContext dsl, List<GraphitronFieldChainLinkResolutionRuleRecord> rows,
+    private static void open(DSLContext dsl, List<GraphitronFieldPathResolutionRuleRecord> rows,
                              LocalDateTime touchedAt) {
         if (rows.isEmpty()) {
             return;
         }
-        var t = GRAPHITRON_FIELD_CHAIN_LINK_RESOLUTION_OPEN;
+        var t = GRAPHITRON_FIELD_PATH_RESOLUTION_OPEN;
         var batch = dsl.batch(dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME,
                 t.TARGET_SOURCE_NAME, t.TARGET_SCHEMA, t.TARGET_TABLE, t.POSITION, t.VIA,

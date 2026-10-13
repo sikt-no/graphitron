@@ -42,7 +42,7 @@ The 107 in plan bodies are 48 distinct identifiers across 21 items, and a plan b
 relation for three legitimate reasons that its prose does not distinguish. It records history the
 item itself made, as R876's landed table naming `intent_expanded_type` and `intent_expanded_field`
 among the relations it deleted. It proposes a relation that does not exist yet, as the same item's
-`graphitron_field_chain_application_entry`. Or it is simply stale, its premise fixed or falsified by
+`graphitron_field_path_application_entry`. Or it is simply stale, its premise fixed or falsified by
 work that landed since. Three sampled at random were all stale in the third sense, each a
 present-tense claim about a retired relation: `intent_argmapping_binding_leaf` "carries that case",
 `graphitron_field_synthesis` "carries the macro's replacement", and an item whose entire subject is

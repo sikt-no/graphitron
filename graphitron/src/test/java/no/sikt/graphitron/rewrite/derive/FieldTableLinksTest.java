@@ -361,7 +361,7 @@ class FieldTableLinksTest {
 
     /** Every written chain link, which is what a reading is a reading of. */
     private static List<String> chainLinks(DSLContext dsl) {
-        var l = no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CHAIN_LINK;
+        var l = no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH;
         return dsl.select(l.TYPE_NAME, l.FIELD_NAME, l.POSITION, l.SOURCE_LINE, l.SOURCE_COLUMN)
             .from(l).where(l.GRAPH_NAME.eq(CapturedStore.GRAPH))
             .orderBy(l.TYPE_NAME, l.FIELD_NAME, l.POSITION)
@@ -373,7 +373,7 @@ class FieldTableLinksTest {
      * dropped has either no reading here or several, and the difference is the whole question.
      */
     private static List<String> readings(DSLContext dsl) {
-        var r = no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CHAIN_LINK_READING;
+        var r = no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_READING;
         return dsl.select(r.TYPE_NAME, r.FIELD_NAME, r.TARGET_TABLE, r.POSITION, r.LAST_POSITION,
                 r.VIA, r.CONSTRAINT_NAME, r.FK_ON_FROM, r.FROM_TABLE, r.TO_TABLE)
             .from(r).where(r.GRAPH_NAME.eq(CapturedStore.GRAPH))

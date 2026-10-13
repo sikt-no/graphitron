@@ -210,8 +210,8 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       ({@code graphitron_node_id_decode_hop_column}) that the lift walks over), one case per shape
  *       the lift either carries or drops, the absent local column being the claim rather than the
  *       present one;
- *       {@code no.sikt.graphitron.rewrite.derive.ChainTerminusTest} binds
- *       {@code intent_field_chain_terminus}, where a {@code @routine} chain lands and what kind of
+ *       {@code no.sikt.graphitron.rewrite.derive.PathTerminusTest} binds
+ *       {@code intent_field_path_terminus}, where a {@code @routine} chain lands and what kind of
  *       table that is, and with it the hop view's name-matched arm, which only a chain departing a
  *       function result reaches;
  *       {@code no.sikt.graphitron.rewrite.derive.ReferenceDiscoveryTest} binds

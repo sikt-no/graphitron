@@ -1768,7 +1768,7 @@ note in the same move.
 Finding 6 is answered and the enabling change really landed. `GraphitronFactCapture.decodingInto`
 exists, `SdlFactCapture` holds the decoder and drives it at all five directive-application sites
 (schema, type, field, argument, enum value), and `GraphitronFactCapture.capture` now retains only
-resolving stages (`FieldChainApplications`, `TableTypes`, `Nodes`, `NodeKeyColumns`, `ElementAnchors`,
+resolving stages (`FieldPathApplications`, `TableTypes`, `Nodes`, `NodeKeyColumns`, `ElementAnchors`,
 `FieldEndpoints`). So the 40 owned `graphitron_` relations are written per document and one walk of
 one source does rewrite what the cascade deleted, for all 52.
 
@@ -1868,7 +1868,7 @@ the four `*_element` relations and `graphql_type`, and 3 of them declare a casca
 `graphql_element`, all from R876's own minting arc. The other 39 sit on 39 distinct relations and
 declare nothing, so the default is `NO ACTION`. The whole file holds 16 `ON DELETE CASCADE` and 4 of
 them run from `graphitron_` into `graphql_`, the fourth being
-`graphitron_field_chain_application` into `graphql_field_directive`.
+`graphitron_field_path_application` into `graphql_field_directive`.
 
 The comment the sentence appeals to appears to be `graphitron_tabletype.table_name`'s, which is
 about a different edge: the crossing into `sql_table`, which does cascade and whose comment argues

@@ -88,7 +88,7 @@ leaves are all green and whose subtraction leaf is open is not a finished branch
 dangerous state the method has, because it looks finished. Two live instances are in R876 right
 now: `RoutineWriteFacts` still reads `intent_mutation_routine_seat` while `graphitron_entry_defect`
 states the same refusals, and `graphitron_field_reference_step_hop` still resolves the elements
-`graphitron_field_chain_link_reading` resolves, measured to agree exactly on a fixture reaching
+`graphitron_field_path_reading` resolves, measured to agree exactly on a fixture reaching
 every arm. Both are flips that landed and subtractions that did not.
 
 This is why the QC triggers below are not optional bookkeeping. A subtraction node open across more

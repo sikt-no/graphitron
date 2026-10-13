@@ -14,7 +14,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_RULE;
  *
  * <p><b>Stored because it is read interactively and costs a walk.</b> Most of the rule is cheap,
  * the write arms reading entries the gatherer already anchored. The chain arms are not: they reach
- * {@code graphitron_field_chain_link_resolution}, whose two recursive walks run over every chain in
+ * {@code graphitron_field_path_resolution}, whose two recursive walks run over every chain in
  * the graph, and a per-file predicate cannot push into a recursion behind a view boundary. As a
  * view the whole thing was re-walked on every read, and the read that matters is the editor's, one
  * file's diagnostics on the interactive path. The LSP's scan-count gate is what caught it, and
@@ -22,7 +22,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_RULE;
  * being a number that moves.
  *
  * <p>The deciding argument is not the number, though, and would hold at a smaller one: the walk
- * already runs once per capture. {@link FieldChainLinkResolutions} stores every reading either walk
+ * already runs once per capture. {@link FieldPathResolutions} stores every reading either walk
  * reaches, {@link FieldTableLinks} keeps the ones that survive, and a chain defect is the rest.
  * Computing them again per read is a second evaluation of a rule the capture has already run, which
  * is the shape this whole arc exists to remove rather than a cost to be weighed. The same holds

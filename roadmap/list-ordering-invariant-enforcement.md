@@ -202,7 +202,7 @@ At the fact grain there is no carve-out to be outside of, because there is no ca
 Every ingredient is already captured: `graphql_field.is_list` for list-shapedness,
 `graphitron_default_order_entry` and `graphitron_default_order_field_entry` and
 `graphitron_order_by_entry` for the authored ordering, `intent_bound_table` joined to
-`sql_primary_key` for the fallback, `intent_field_chain_terminus` for the routine terminus that has
+`sql_primary_key` for the fallback, `intent_field_path_terminus` for the routine terminus that has
 no primary key to fall back on, and `intent_mutation_routine_seat` for the write shapes, whose
 population is every mutation-root field carrying `@routine` and whose `verdict` column already sorts
 its values into the ones an author fixes and the ones the generator owes an emitter. The polymorphic
@@ -374,7 +374,7 @@ absence is not the complement's claim (see the section of that name above):
 
 The population is "list-shaped read coordinate": `graphql_field.is_list`, in `intent_type_domain`, with
 a row in `intent_field_scope_table` (any basis) or a routine terminus in
-`intent_field_chain_terminus`. Note what that population does **not** need: membership in a capability
+`intent_field_path_terminus`. Note what that population does **not** need: membership in a capability
 interface. That is the whole point of the track: `SqlGeneratingField` stops being the gate, so a
 list-shaped read that resolves against no single table is inside the rule rather than invisible to it.
 
@@ -433,7 +433,7 @@ inside it that has not been separated out, and the cut is made by expanding thro
 relation the rule names until only captured relations are left. Phase 3's population is a crossing
 read by that test, naming `graphitron_default_order_entry` and `graphitron_order_by_entry` in
 `graphitron_`, `sql_primary_key` in `sql_`, and `intent_type_domain`, `intent_field_scope_table`,
-`intent_bound_table` and `intent_field_chain_terminus` in the family being dissolved. So the phase's
+`intent_bound_table` and `intent_field_path_terminus` in the family being dissolved. So the phase's
 one piece of genuine modelling work is precisely the work whose filing rule changed underneath it.
 
 Two precisions, so the re-spec is not argued against a stronger claim than the tree supports:

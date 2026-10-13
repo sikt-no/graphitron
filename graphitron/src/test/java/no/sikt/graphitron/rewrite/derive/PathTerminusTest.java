@@ -16,13 +16,13 @@ import java.util.Locale;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CHAIN_APPLICATION;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_CHAIN_TERMINUS;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_APPLICATION;
+import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PATH_TERMINUS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_HOP;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The anchor for {@code intent_field_chain_terminus} and for the name-matched arm of
+ * The anchor for {@code intent_field_path_terminus} and for the name-matched arm of
  * {@code graphitron_field_reference_step_hop} it stands on: where a {@code @routine} chain lands, and
  * whether the landing is a table-valued function's result.
  *
@@ -35,11 +35,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>The name-matched hop is asserted through the chain wherever the chain can see it, which is the
  * hop relation's own doctrine. The one case reading that relation directly is the one about the
  * columns a terminus does not carry, a terminus being a place and not a route. Those columns are no
- * longer lost on the way, {@code intent_field_chain_node} carrying the route into every node it
+ * longer lost on the way, {@code intent_field_path_node} carrying the route into every node it
  * walks; what the terminus omits it omits because a landing has no use for it.
  */
 @PipelineTier
-class ChainTerminusTest {
+class PathTerminusTest {
 
     @TempDir
     Path tmp;
@@ -67,13 +67,13 @@ class ChainTerminusTest {
             var rows = termini(dsl);
             assertThat(rows).hasSize(1);
             var row = rows.getFirst();
-            assertThat(row.get(INTENT_FIELD_CHAIN_TERMINUS.VIA)).isEqualTo("ROUTINE");
+            assertThat(row.get(INTENT_FIELD_PATH_TERMINUS.VIA)).isEqualTo("ROUTINE");
             assertThat(table(row)).isEqualTo("tilganger_for_feidebruker_med_fs_fiktivt_fnr");
-            assertThat(row.get(INTENT_FIELD_CHAIN_TERMINUS.TABLE_TYPE)).isEqualTo("FUNCTION");
-            assertThat(row.get(INTENT_FIELD_CHAIN_TERMINUS.POSITION))
+            assertThat(row.get(INTENT_FIELD_PATH_TERMINUS.TABLE_TYPE)).isEqualTo("FUNCTION");
+            assertThat(row.get(INTENT_FIELD_PATH_TERMINUS.POSITION))
                 .as("a routine application has no path elements")
                 .isNull();
-            assertThat(row.get(INTENT_FIELD_CHAIN_TERMINUS.CANDIDATES)).isEqualTo(1);
+            assertThat(row.get(INTENT_FIELD_PATH_TERMINUS.CANDIDATES)).isEqualTo(1);
         });
     }
 
@@ -88,13 +88,13 @@ class ChainTerminusTest {
             var rows = termini(dsl);
             assertThat(rows).hasSize(1);
             var row = rows.getFirst();
-            assertThat(row.get(INTENT_FIELD_CHAIN_TERMINUS.VIA)).isEqualTo("REFERENCE");
+            assertThat(row.get(INTENT_FIELD_PATH_TERMINUS.VIA)).isEqualTo("REFERENCE");
             assertThat(table(row)).isEqualTo("film");
-            assertThat(row.get(INTENT_FIELD_CHAIN_TERMINUS.TABLE_TYPE))
+            assertThat(row.get(INTENT_FIELD_PATH_TERMINUS.TABLE_TYPE))
                 .as("the terminus is a stored table, so an ordering there has a key to fall back on")
                 .isEqualTo("TABLE");
-            assertThat(row.get(INTENT_FIELD_CHAIN_TERMINUS.POSITION)).isZero();
-            assertThat(row.get(INTENT_FIELD_CHAIN_TERMINUS.ORDINAL))
+            assertThat(row.get(INTENT_FIELD_PATH_TERMINUS.POSITION)).isZero();
+            assertThat(row.get(INTENT_FIELD_PATH_TERMINUS.ORDINAL))
                 .as("the terminating @reference application's own ordinal")
                 .isZero();
         });
@@ -111,7 +111,7 @@ class ChainTerminusTest {
             var rows = termini(dsl);
             assertThat(rows).hasSize(1);
             assertThat(table(rows.getFirst())).isEqualTo("film_translation");
-            assertThat(rows.getFirst().get(INTENT_FIELD_CHAIN_TERMINUS.POSITION)).isEqualTo(1);
+            assertThat(rows.getFirst().get(INTENT_FIELD_PATH_TERMINUS.POSITION)).isEqualTo(1);
         });
     }
 
@@ -130,7 +130,7 @@ class ChainTerminusTest {
             var rows = termini(dsl);
             assertThat(rows).hasSize(1);
             assertThat(table(rows.getFirst())).isEqualTo("language");
-            assertThat(rows.getFirst().get(INTENT_FIELD_CHAIN_TERMINUS.CANDIDATES)).isEqualTo(1);
+            assertThat(rows.getFirst().get(INTENT_FIELD_PATH_TERMINUS.CANDIDATES)).isEqualTo(1);
         });
     }
 
@@ -198,7 +198,7 @@ class ChainTerminusTest {
             """, dsl -> {
             var rows = termini(dsl);
             assertThat(rows).hasSize(1);
-            assertThat(rows.getFirst().get(INTENT_FIELD_CHAIN_TERMINUS.VIA)).isEqualTo("ROUTINE");
+            assertThat(rows.getFirst().get(INTENT_FIELD_PATH_TERMINUS.VIA)).isEqualTo("ROUTINE");
             assertThat(table(rows.getFirst())).isEqualTo("films_for_actor");
         });
     }
@@ -226,12 +226,12 @@ class ChainTerminusTest {
             type Film @table(name: "film") { title: String }
             type Query { actors: [Actor] }
             """, dsl -> assertThat(dsl
-                .select(GRAPHITRON_FIELD_CHAIN_APPLICATION.CHAIN_POSITION,
-                    GRAPHITRON_FIELD_CHAIN_APPLICATION.DIRECTIVE_NAME,
-                    GRAPHITRON_FIELD_CHAIN_APPLICATION.ORDINAL)
-                .from(GRAPHITRON_FIELD_CHAIN_APPLICATION)
-                .where(GRAPHITRON_FIELD_CHAIN_APPLICATION.FIELD_NAME.eq("castRecentFilms"))
-                .orderBy(GRAPHITRON_FIELD_CHAIN_APPLICATION.CHAIN_POSITION)
+                .select(GRAPHITRON_FIELD_PATH_APPLICATION.CHAIN_POSITION,
+                    GRAPHITRON_FIELD_PATH_APPLICATION.DIRECTIVE_NAME,
+                    GRAPHITRON_FIELD_PATH_APPLICATION.ORDINAL)
+                .from(GRAPHITRON_FIELD_PATH_APPLICATION)
+                .where(GRAPHITRON_FIELD_PATH_APPLICATION.FIELD_NAME.eq("castRecentFilms"))
+                .orderBy(GRAPHITRON_FIELD_PATH_APPLICATION.CHAIN_POSITION)
                 .fetch(r -> r.value1() + ":@" + r.value2() + "#" + r.value3()))
                 .as("dense from zero in the order the author wrote them, across both directives")
                 .containsExactly("0:@reference#0", "1:@routine#0", "2:@reference#1"));
@@ -249,7 +249,7 @@ class ChainTerminusTest {
             interface Media @table(name: "film") { id: ID }
             type Film implements Media @table(name: "film") { id: ID }
             type Actor implements Media @table(name: "actor") { id: ID }
-            """, dsl -> assertThat(dsl.fetchCount(GRAPHITRON_FIELD_CHAIN_APPLICATION))
+            """, dsl -> assertThat(dsl.fetchCount(GRAPHITRON_FIELD_PATH_APPLICATION))
                 .as("no @reference and no @routine, so no chain")
                 .isZero());
     }
@@ -268,7 +268,7 @@ class ChainTerminusTest {
         withCaptured(filmHop("[{table: \"film\"}]"), dsl -> {
             var rows = hops(dsl, "NAME_MATCH");
             assertThat(rows.map(r -> r.get(GRAPHITRON_FIELD_REFERENCE_STEP_HOP.FROM_TABLE))
-                .stream().map(ChainTerminusTest::lower).toList())
+                .stream().map(PathTerminusTest::lower).toList())
                 .as("every function result in the graph's sources exposing film_id is a candidate")
                 .containsExactlyInAnyOrder("films_for_actor", "films_for_actor_or_all");
             assertThat(rows).allSatisfy(row -> {
@@ -317,13 +317,13 @@ class ChainTerminusTest {
 
     private static Result<Record6<String, String, Integer, Integer, Integer, String>>
             termini(DSLContext dsl) {
-        return dsl.select(INTENT_FIELD_CHAIN_TERMINUS.VIA, INTENT_FIELD_CHAIN_TERMINUS.TABLE_TYPE,
-            INTENT_FIELD_CHAIN_TERMINUS.POSITION, INTENT_FIELD_CHAIN_TERMINUS.CANDIDATES,
-            INTENT_FIELD_CHAIN_TERMINUS.ORDINAL, INTENT_FIELD_CHAIN_TERMINUS.TABLE_NAME)
-            .from(INTENT_FIELD_CHAIN_TERMINUS)
-            .where(INTENT_FIELD_CHAIN_TERMINUS.GRAPH_NAME.eq(CapturedStore.GRAPH))
-            .orderBy(INTENT_FIELD_CHAIN_TERMINUS.TYPE_NAME, INTENT_FIELD_CHAIN_TERMINUS.FIELD_NAME,
-                INTENT_FIELD_CHAIN_TERMINUS.TABLE_SCHEMA, INTENT_FIELD_CHAIN_TERMINUS.TABLE_NAME)
+        return dsl.select(INTENT_FIELD_PATH_TERMINUS.VIA, INTENT_FIELD_PATH_TERMINUS.TABLE_TYPE,
+            INTENT_FIELD_PATH_TERMINUS.POSITION, INTENT_FIELD_PATH_TERMINUS.CANDIDATES,
+            INTENT_FIELD_PATH_TERMINUS.ORDINAL, INTENT_FIELD_PATH_TERMINUS.TABLE_NAME)
+            .from(INTENT_FIELD_PATH_TERMINUS)
+            .where(INTENT_FIELD_PATH_TERMINUS.GRAPH_NAME.eq(CapturedStore.GRAPH))
+            .orderBy(INTENT_FIELD_PATH_TERMINUS.TYPE_NAME, INTENT_FIELD_PATH_TERMINUS.FIELD_NAME,
+                INTENT_FIELD_PATH_TERMINUS.TABLE_SCHEMA, INTENT_FIELD_PATH_TERMINUS.TABLE_NAME)
             .fetch();
     }
 
@@ -345,7 +345,7 @@ class ChainTerminusTest {
 
     /** The landing's SQL name, lowercased: the catalog's case is not what any case here is about. */
     private static String table(Record row) {
-        return lower(row.get(INTENT_FIELD_CHAIN_TERMINUS.TABLE_NAME));
+        return lower(row.get(INTENT_FIELD_PATH_TERMINUS.TABLE_NAME));
     }
 
     private static String lower(String value) {

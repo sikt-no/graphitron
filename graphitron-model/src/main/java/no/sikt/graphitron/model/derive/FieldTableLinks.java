@@ -18,7 +18,7 @@ import static org.jooq.impl.DSL.val;
  * the {@code EXCEPT} between the view and this table stays runnable for as long as both exist, and
  * {@code FieldTableLinksTest} runs it.
  *
- * <p>Called as a stage of the graphitron gatherer after {@link FieldChainLinkResolutions}, whose
+ * <p>Called as a stage of the graphitron gatherer after {@link FieldPathResolutions}, whose
  * stored walk the rule narrows, and so after {@link FieldEndpoints} and {@link FieldRoutines}, whose
  * rows that walk reads. Neither the stage nor the rule filters those on this reading's instant, and
  * neither needs to: each of those stages sweeps its own stale rows before this one runs, so what the

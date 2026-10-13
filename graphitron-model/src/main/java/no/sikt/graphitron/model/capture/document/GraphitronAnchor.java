@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CHAIN_LINK;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PARTICIPANT_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
@@ -144,7 +144,7 @@ public final class GraphitronAnchor {
         // The ordering before the fields it orders by, which reference it.
         defaultOrders(dsl, graph, touchedAt);
         defaultOrderFields(dsl, graph, touchedAt);
-        chainLinks(dsl, graph, touchedAt);
+        fieldPaths(dsl, graph, touchedAt);
         participantPaths(dsl, graph, touchedAt);
         // The bound name in both habitats it can be written in. One relation rather than two,
         // because what a reader asks is which name a slot binds and not which kind of slot it is.
@@ -157,8 +157,8 @@ public final class GraphitronAnchor {
     }
 
     /**
-     * The chain a field's rows travel, one row per written element in written order. A
-     * {@code @referenceFor} path is a participant's own, not a link of this chain, and
+     * The path a field's rows travel, one row per written element in written order. A
+     * {@code @referenceFor} path is a participant's own, not a step of this one, and
      * {@link #participantPaths} holds it.
      *
      * <p>Here and not with the endpoint relations, because the order is only in this stratum. A
@@ -192,9 +192,9 @@ public final class GraphitronAnchor {
      * points at, one relation per shape as this stratum already states them, so an element writing
      * a table beside a condition is one link with two facts and no column here has to choose.
      */
-    private static void chainLinks(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+    private static void fieldPaths(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var ra = GRAPHITRON_AST_ROUTINE_ENTRY;
-        var t = GRAPHITRON_FIELD_CHAIN_LINK;
+        var t = GRAPHITRON_FIELD_PATH;
 
         var applications = fieldApplications(dsl, graph);
 
@@ -344,8 +344,8 @@ public final class GraphitronAnchor {
     /**
      * Each participant's own path, one row per written element in written order. A
      * {@code @referenceFor} application is one participant's complete path, independent of the
-     * field's chain and of every other participant's, so its elements are numbered within the
-     * participant and none of them is a link of {@link #chainLinks}'s chain.
+     * field's path and of every other participant's, so its elements are numbered within the
+     * participant and none of them is a step of {@link #fieldPaths}'s path.
      */
     private static void participantPaths(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var rf = GRAPHITRON_AST_FIELD_REFERENCE_FOR_ENTRY;
@@ -373,7 +373,7 @@ public final class GraphitronAnchor {
                 rf.SOURCE_NAME.eq(elements.field("el_source", String.class)),
                 rf.SOURCE_LINE.eq(elements.field(SITE_LINE)),
                 rf.SOURCE_COLUMN.eq(elements.field(SITE_COLUMN)))
-            // Joined because it is referenced, before the rank, on chainLinks' terms.
+            // Joined because it is referenced, before the rank, on fieldPaths' terms.
             .join(d).on(d.GRAPH_NAME.eq(graph),
                 d.SOURCE_NAME.eq(elements.field("el_source", String.class)),
                 d.SOURCE_LINE.eq(elements.field("el_line", Integer.class)),
@@ -410,7 +410,7 @@ public final class GraphitronAnchor {
             GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY, GRAPHITRON_DEFAULT_ORDER_ENTRY,
             GRAPHITRON_NODE_KEYCOLUMN_ENTRY, GRAPHITRON_NODE_ENTRY,
             GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY, GRAPHITRON_ROUTINE_ENTRY,
-            GRAPHITRON_FIELD_CHAIN_LINK, GRAPHITRON_FIELD_PARTICIPANT_PATH,
+            GRAPHITRON_FIELD_PATH, GRAPHITRON_FIELD_PARTICIPANT_PATH,
             GRAPHITRON_FACET_ENTRY, GRAPHITRON_FIELD_BINDING_ENTRY);
 
     /**
@@ -847,7 +847,7 @@ public final class GraphitronAnchor {
      * declared once, two declarations of one field being a duplicate-field error rather than an
      * order to settle, so all of a field's applications sit in one definition in one file and their
      * written positions already order them. The coordinate comes off the entry stratum's own index
-     * instead, as {@link #chainLinks} takes it.
+     * instead, as {@link #fieldPaths} takes it.
      *
      * <p>Numbered over the applications and joined to the decode afterwards, which is what keeps the
      * ordinals agreeing with the walk this replaces: {@code routine_ref} is NOT NULL, so an

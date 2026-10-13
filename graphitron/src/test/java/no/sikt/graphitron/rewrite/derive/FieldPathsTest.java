@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CHAIN_LINK;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -32,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * resolved per target elsewhere.
  */
 @PipelineTier
-class FieldChainLinksTest {
+class FieldPathsTest {
 
     @TempDir
     Path tmp;
@@ -96,7 +96,7 @@ class FieldChainLinksTest {
     @DisplayName("every link names the written element it is")
     void everyLinkNamesItsElement() {
         withCaptured(dsl -> {
-            var t = GRAPHITRON_FIELD_CHAIN_LINK;
+            var t = GRAPHITRON_FIELD_PATH;
             assertThat(dsl.select(t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN)
                     .from(t).where(t.GRAPH_NAME.eq(CapturedStore.GRAPH)).fetch())
                 .isNotEmpty()
@@ -109,7 +109,7 @@ class FieldChainLinksTest {
     }
 
     private static List<String> links(DSLContext dsl, String fieldName) {
-        var t = GRAPHITRON_FIELD_CHAIN_LINK;
+        var t = GRAPHITRON_FIELD_PATH;
         return dsl.select(t.POSITION)
             .from(t)
             .where(t.GRAPH_NAME.eq(CapturedStore.GRAPH))

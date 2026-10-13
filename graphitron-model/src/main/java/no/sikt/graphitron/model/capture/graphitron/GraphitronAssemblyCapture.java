@@ -1,8 +1,8 @@
 package no.sikt.graphitron.model.capture.graphitron;
 
 import no.sikt.graphitron.model.sink.Progress;
-import no.sikt.graphitron.model.derive.FieldChainApplications;
-import no.sikt.graphitron.model.derive.FieldChainLinkResolutions;
+import no.sikt.graphitron.model.derive.FieldPathApplications;
+import no.sikt.graphitron.model.derive.FieldPathResolutions;
 import no.sikt.graphitron.model.derive.FieldEndpoints;
 import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
 import no.sikt.graphitron.model.derive.FieldReferenceStepTargets;
@@ -75,7 +75,7 @@ public final class GraphitronAssemblyCapture {
     private static void gather(DSLContext dsl, String graph, LocalDateTime readAt) {
         // First of the stages: it reads the transcription alone, and the written order of a field's
         // applications is what everything below that walks a chain wants.
-        FieldChainApplications.derive(dsl, graph);
+        FieldPathApplications.derive(dsl, graph);
         // Over the nodes the anchor settled.
         NodeKeyColumns.derive(dsl, graph);
         // How many objects reach each field: the reach the authored schema states, the arrival
@@ -110,7 +110,7 @@ public final class GraphitronAssemblyCapture {
         // is the previous link's arrival, and a routine link's arrival is what the line above
         // resolved. Stored rather than left a view because two readers walk it, the line below and
         // the entry defects at the tail of the derivation stratum.
-        FieldChainLinkResolutions.derive(dsl, graph, readAt);
+        FieldPathResolutions.derive(dsl, graph, readAt);
         // Last of all, keeping the one reading per link that both walks reach.
         FieldTableLinks.derive(dsl, graph, readAt);
     }

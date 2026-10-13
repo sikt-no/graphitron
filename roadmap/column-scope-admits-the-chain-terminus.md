@@ -35,7 +35,7 @@ all of them. The `PATH_TERMINAL` rule walks from the enclosing type's binding, w
 not depart from; the `NAMED_TYPE_TABLE` rule now answers a child-position single-node routine field
 for free, its named type being bound by the return derivation, but it cannot answer the root
 position, whose root-parent guard masks it, nor a routine-then-hops chain, whose landing is not its
-named type's binding. A fourth rule reading `intent_field_chain_terminus` answers both.
+named type's binding. A fourth rule reading `intent_field_path_terminus` answers both.
 
 **`PATH_TERMINAL` is missing a guard.** It walks from the *enclosing* type's binding, so on a child
 field carrying `@routine` plus `@reference` it resolves the written elements out of the parent's

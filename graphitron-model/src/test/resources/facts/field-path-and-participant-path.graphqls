@@ -1,8 +1,8 @@
-# A field's chain and a participant's path are two groupings of the same element grammar. Repeated
-# @reference applications compose, with @routine, one running chain for the field; each @referenceFor
+# A field's path and a participant's path are two groupings of the same element grammar. Repeated
+# @reference applications compose, with @routine, one path for the field; each @referenceFor
 # application is one participant's complete path, and a participant not named keeps discovery. So
-# a @referenceFor element is never a link of the chain, and each participant's path is numbered on
-# its own.
+# a @referenceFor element is never a step of the field's path, and each participant's path is
+# numbered on its own.
 
 type Actor @table(name: "actor") {
   firstName: String @field(name: "first_name")
@@ -24,7 +24,7 @@ type Film @table(name: "film") {
   people: [Person!]!
     @referenceFor(type: "Actor", path: [{table: "film_actor"}, {table: "actor"}])
     @referenceFor(type: "Staff", path: [{table: "staff"}])
-  # A chain of two applications, concatenated in written order.
+  # A path of two applications, concatenated in written order.
   actors: [Actor!]!
     @reference(path: [{table: "film_actor"}])
     @reference(path: [{table: "actor"}])
@@ -34,7 +34,7 @@ extend type Query {
   films: [Film!]!
 }
 
-extend schema @expectEquals(relation: "graphitron_field_chain_link", rows: """
+extend schema @expectEquals(relation: "graphitron_field_path", rows: """
   type_name, field_name, position
   Film,      actors,     0
   Film,      actors,     1
