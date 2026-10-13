@@ -1,13 +1,13 @@
 ---
 id: R1015
 title: "The lookup launcher joins its input rows with ON, not USING"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 6
 theme: codegen-correctness
 depends-on: []
 created: 2026-10-12
-last-updated: 2026-10-12
+last-updated: 2026-10-13
 ---
 
 # The lookup launcher joins its input rows with ON, not USING
@@ -69,6 +69,12 @@ At the five sites that already use `ON`, only the emitted Java changes: `"t"."co
 - **Execution, the SQL baselines.** Thirteen pinned strings across four files carry the launcher's `using (...)` today. They are re-pinned to jOOQ's actual `on ...` rendering: `BatchedChildSqlBaselineTest` (6), `ConditionSqlBaselineTest` (5), `RootLauncherSqlBaselineTest` (1), and `CompositeKeyLookupQueryTest.compositeKeyLookup_emitsTwoColumnJoinOnFilmIdAndActorId`. In the last one, the assertion and its comment ("jOOQ renders it as a USING clause") change to require both `film_id` and `actor_id` equalities in the `ON`. These run against PostgreSQL and also check that every result is unchanged, so they are the evidence that the new join returns the same rows. The baselines for the inline, batched, dispatcher and reentry sites must **not** move. Moving one means the migration changed SQL it should only have re-spelled.
 - **What the suite cannot show.** Neither failure reproduces in this repo's execution tier. The tests run on PostgreSQL, which accepts a qualified `USING` column. And the open-source jOOQ the fixtures build with declares client-side computed columns (`DataType.computedOnClientVirtual()`) but does not render their expressions; that substitution ships only in jOOQ's commercial editions. So the Sakila catalog cannot carry a key column that renders as an expression. The structural pin above covers both halves (no `USING` is emitted), and the sis run below is the acceptance evidence.
 - **Acceptance, sis on Oracle.** Rerun the sis IT suite against Oracle with a jar built from the implementing commits, and record the run under `roadmap/audits/`, in the shape of `roadmap/audits/2026-10-05-r985-sis-acceptance.md`. The named cases are `studieprogramGittStudieprogramkoder` (ORA-25154), `studenterGittFodselsnumre` (ORA-03077) and `studenterGittFeideBrukere` (ORA-00907). The audit reports how many of the roughly 45 USING-attributed failures clear, and lists any that now fail for a different reason under the item that owns that reason.
+
+## Implementation status
+
+Shipped at `6f813aa87` as specified. One addition the spec did not name: a `CodeBlock`-table overload of `ColumnComparison.equalityAgainstField`, which the `ValuesJoinRowBuilder.onCondition` `CodeBlock tableExpr` overload needs to route its equality through the comparison mint. `CompositeKeyLookupQueryTest` pins jOOQ's parenthesised two-column form, `on (… and …)`.
+
+Acceptance recorded in `roadmap/audits/2026-10-13-r1015-sis-acceptance.md`: ORA-25154, ORA-03077 and ORA-00907 go from 210, 24 and 12 to zero; 28 ITs clear and none regress. Four previously USING-masked outputs now fail on U4 (R1018, R1019), two of them at sites the sis status document had not listed.
 
 ## Retired vocabulary
 
