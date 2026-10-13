@@ -1,7 +1,7 @@
 ---
 id: R1024
 title: "Node and entity dispatch hand no tenant down, so Inherited children of a node fail"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 2
 theme: runtime-connection
