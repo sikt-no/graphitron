@@ -1,0 +1,28 @@
+# What the catalog reading says of each table it finds, over the fixture catalog's several schemas.
+#
+# A table is found in every schema the codegen read, and the same name in two schemas is two tables:
+# event is declared in multischema_a and multischema_b. The kind is what the generated class says
+# it is, and a table-valued function is a kind of its own, the one the routine-backed read stands on.
+# The table class and the record class are two names because a codegen configuration decides what a
+# record is called, so one is not a function of the other; a table generated without a record class
+# reads as jOOQ's own Record, which recordless_note shows.
+
+extend schema @assertContains(relation: "sql_table", rows: """
+  table_schema,  table_name,      table_type, jooq_name,       class_fqn,                                                           record_class_fqn
+  public,        film,            TABLE,      FILM,            no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film,             no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord
+  public,        films_for_actor, FUNCTION,   FILMS_FOR_ACTOR, no.sikt.graphitron.rewrite.test.jooq.public_.tables.FilmsForActor,    no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmsForActorRecord
+  public,        recordless_note, TABLE,      RECORDLESS_NOTE, no.sikt.graphitron.rewrite.test.jooq.public_.tables.RecordlessNote,   org.jooq.Record
+  multischema_a, event,           TABLE,      EVENT,           no.sikt.graphitron.rewrite.test.jooq.multischema_a.tables.Event,     no.sikt.graphitron.rewrite.test.jooq.multischema_a.tables.records.EventRecord
+  multischema_b, event,           TABLE,      EVENT,           no.sikt.graphitron.rewrite.test.jooq.multischema_b.tables.Event,     no.sikt.graphitron.rewrite.test.jooq.multischema_b.tables.records.EventRecord
+  idreffixture,  studieprogram,   TABLE,      STUDIEPROGRAM,   no.sikt.graphitron.rewrite.test.jooq.idreffixture.tables.Studieprogram, no.sikt.graphitron.rewrite.test.jooq.idreffixture.tables.records.StudieprogramRecord
+  """)
+
+# The Keys and Tables classes are a schema's, not a table's, so they sit once on the schema. Each
+# lives in its own schema's package: a name concatenated from one configured package would report
+# the same class for both multischema schemas.
+extend schema @assertContains(relation: "sql_schema", rows: """
+  table_schema,  keys_class_fqn,                                          tables_class_fqn
+  public,        no.sikt.graphitron.rewrite.test.jooq.public_.Keys,       no.sikt.graphitron.rewrite.test.jooq.public_.Tables
+  multischema_a, no.sikt.graphitron.rewrite.test.jooq.multischema_a.Keys, no.sikt.graphitron.rewrite.test.jooq.multischema_a.Tables
+  multischema_b, no.sikt.graphitron.rewrite.test.jooq.multischema_b.Keys, no.sikt.graphitron.rewrite.test.jooq.multischema_b.Tables
+  """)

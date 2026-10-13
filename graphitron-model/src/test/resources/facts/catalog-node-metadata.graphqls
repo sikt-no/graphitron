@@ -1,0 +1,25 @@
+# A table's node metadata as the catalog reading records it: the type id and the key columns a
+# generated class declares as a usable pair. film_actor declares both, its key two columns long,
+# and reordered_pk_parent a key of three, each in the order the class declares it. A table
+# declaring neither has no row at all, which film shows; a table declaring half the pair is an
+# attempt that failed, stated in node-metadata-unreadable.
+
+extend schema @assertContains(relation: "sql_node_metadata", rows: """
+  table_schema,  table_name,          type_id
+  public,        film_actor,          FilmActor
+  nodeidfixture, reordered_pk_parent, ReorderedPkParent
+  """)
+
+extend schema @assertContains(relation: "sql_node_key_column", rows: """
+  table_schema,  table_name,          position, column_name
+  public,        film_actor,          0,        actor_id
+  public,        film_actor,          1,        film_id
+  nodeidfixture, reordered_pk_parent, 0,        pk_a
+  nodeidfixture, reordered_pk_parent, 1,        pk_b
+  nodeidfixture, reordered_pk_parent, 2,        pk_c
+  """)
+
+extend schema @assertAbsent(relation: "sql_node_metadata", rows: """
+  table_schema, table_name
+  public,       film
+  """)

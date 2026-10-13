@@ -1,0 +1,30 @@
+# A column's position and its two types, as the catalog reading writes them.
+#
+# The ordinal is the table definition's order. The reflective walk the jOOQ names come from returns
+# fields in no particular order, so an ordinal taken from it would be a JVM detail rather than a fact
+# about the database; language is stated whole so the order is the claim.
+#
+# A column carries two types. The SQL type is what the database declares; the binding type is the
+# Java class jOOQ maps it to, which is the generator's configured binding rather than a rule over
+# the SQL type, so neither can be read off the other. film's columns are chosen for the bindings
+# they reach: a numeric to BigDecimal, a smallint to Short, a timestamp to LocalDateTime and a
+# database enum to its generated enum class.
+
+extend schema @assertContains(relation: "sql_column", rows: """
+  table_schema, table_name, ordinal, column_name, sql_type,           binding_type
+  public,       language,   0,       language_id, integer,            java.lang.Integer
+  public,       language,   1,       name,        char,               java.lang.String
+  public,       language,   2,       last_update, timestamp,          java.time.LocalDateTime
+  public,       film,       0,       film_id,     integer,            java.lang.Integer
+  public,       film,       1,       title,       varchar,            java.lang.String
+  public,       film,       6,       rental_duration, smallint,       java.lang.Short
+  public,       film,       7,       rental_rate, numeric,            java.math.BigDecimal
+  public,       film,       10,      rating,      public.mpaa_rating, no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating
+  public,       film,       12,      last_update, timestamp,          java.time.LocalDateTime
+  """)
+
+# language has three columns and no more: stating it whole is what makes its order the claim.
+extend schema @assertAbsent(relation: "sql_column", rows: """
+  table_schema, table_name, ordinal
+  public,       language,   3
+  """)

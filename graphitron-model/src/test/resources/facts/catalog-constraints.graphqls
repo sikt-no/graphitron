@@ -1,0 +1,65 @@
+# The keys the catalog reading writes, and how a foreign key reaches what it references.
+#
+# Every constraint is a row of its own form, the primary key and a unique key both: parent_node's
+# alt_key unique sits beside its primary key rather than being folded into it. Each carries the
+# Keys constant an author writes in @reference(key:), resolved by identity against the generated
+# Keys class rather than by a formula over the constraint name, so the constant is stated here as
+# the generated class spells it.
+
+extend schema @assertContains(relation: "sql_constraint", rows: """
+  table_schema,  table_name,         constraint_name,                 constraint_type, jooq_name
+  public,        film,               film_pkey,                       PRIMARY KEY,     FILM_PKEY
+  public,        film,               film_language_id_fkey,           FOREIGN KEY,     FILM__FILM_LANGUAGE_ID_FKEY
+  public,        film,               film_original_language_id_fkey,  FOREIGN KEY,     FILM__FILM_ORIGINAL_LANGUAGE_ID_FKEY
+  nodeidfixture, parent_node,        parent_node_pkey,                PRIMARY KEY,     PARENT_NODE_PKEY
+  nodeidfixture, parent_node,        parent_node_alt_key_key,         UNIQUE,          PARENT_NODE_ALT_KEY_KEY
+  multischema_b, gadget,             gadget_widget_id_fkey,           FOREIGN KEY,     GADGET__GADGET_WIDGET_ID_FKEY
+  """)
+
+# A table's primary key names the constraint that is it, and that constraint is of the primary-key
+# form.
+extend schema @assertContains(relation: "sql_primary_key", rows: """
+  table_schema, table_name, constraint_name
+  public,       film,       film_pkey
+  """)
+
+# A foreign key names the constraint it references, in whichever schema that is: gadget's key
+# crosses from multischema_b to multischema_a.
+extend schema @assertContains(relation: "sql_referential_constraint", rows: """
+  table_schema,  table_name,         constraint_name,                referenced_schema, referenced_table,    referenced_constraint_name
+  public,        film,               film_language_id_fkey,          public,            language,            language_pkey
+  public,        category,           category_parent_category_id_fkey, public,          category,            category_pkey
+  multischema_b, gadget,             gadget_widget_id_fkey,          multischema_a,     widget,              widget_pkey
+  nodeidfixture, reordered_fk_child, reordered_fk_child_parent_fkey, nodeidfixture,     reordered_pk_parent, reordered_pk_parent_pkey
+  """)
+
+# A foreign key's target columns are the referenced constraint's own, matched on position, never
+# copied onto the referencing row. reordered_fk_child declares its key's columns in another order
+# than the parent's key, so the Nth of one pairs with the Nth of the other and not with the column
+# of the same letter: fk_b with pk_a, fk_c with pk_b, fk_a with pk_c.
+extend schema @assertContains(relation: "sql_constraint_column", rows: """
+  table_schema,  table_name,          constraint_name,                position, column_name
+  nodeidfixture, reordered_fk_child,  reordered_fk_child_parent_fkey, 0,        fk_b
+  nodeidfixture, reordered_fk_child,  reordered_fk_child_parent_fkey, 1,        fk_c
+  nodeidfixture, reordered_fk_child,  reordered_fk_child_parent_fkey, 2,        fk_a
+  nodeidfixture, reordered_pk_parent, reordered_pk_parent_pkey,       0,        pk_a
+  nodeidfixture, reordered_pk_parent, reordered_pk_parent_pkey,       1,        pk_b
+  nodeidfixture, reordered_pk_parent, reordered_pk_parent_pkey,       2,        pk_c
+  """)
+
+# The pair a route-discovering reader asks for, at the grain it asks at: one row per ordered pair of
+# tables, counting the keys connecting them. film names language twice, once for its language and
+# once for its original one; a self-referential key is one row with both ends the same table; a key
+# across schemas is a pair like any other.
+extend schema @assertContains(relation: "sql_table_reference", rows: """
+  table_schema,  table_name, referenced_schema, referenced_table, constraints
+  public,        film,       public,            language,         2
+  public,        category,   public,            category,         1
+  multischema_b, gadget,     multischema_a,     widget,           1
+  """)
+
+# A pair no key connects has no row: actor reaches film only through film_actor.
+extend schema @assertAbsent(relation: "sql_table_reference", rows: """
+  table_schema, table_name, referenced_schema, referenced_table
+  public,       actor,      public,            film
+  """)

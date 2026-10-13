@@ -1,0 +1,28 @@
+# The callables the catalog holds and the call surface their parameters belong to.
+#
+# A table-valued function is a routine as well as a table, and the routine names the method jOOQ
+# generates for calling it on the schema's Routines class: one of the overloads jOOQ writes per
+# routine, the one taking plain values rather than fields. A plain table is no routine.
+#
+# The parameter names are the database's own, camelCased, rather than arg0: the store records a
+# reflected name, so the fixture module compiling its jOOQ output with -parameters is load-bearing,
+# and losing that flag fails here.
+
+extend schema @assertContains(relation: "sql_routine", rows: """
+  table_schema, routine_name,       routines_class_fqn,                                    routines_method_name, routine_type
+  public,       films_for_actor,    no.sikt.graphitron.rewrite.test.jooq.public_.Routines, filmsForActor,        FUNCTION
+  public,       create_secure_note, no.sikt.graphitron.rewrite.test.jooq.public_.Routines, createSecureNote,     FUNCTION
+  """)
+
+extend schema @assertContains(relation: "sql_routine_parameter", rows: """
+  table_schema, routine_name,       position, jooq_name,  binding_type
+  public,       films_for_actor,    0,        pActorId,   java.lang.Integer
+  public,       films_for_actor,    1,        pMinLength, java.lang.Integer
+  public,       create_secure_note, 0,        pOwner,     java.lang.String
+  public,       create_secure_note, 1,        pNote,      java.lang.String
+  """)
+
+extend schema @assertAbsent(relation: "sql_routine", rows: """
+  table_schema, routine_name
+  public,       film
+  """)

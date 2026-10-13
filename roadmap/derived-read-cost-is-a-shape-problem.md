@@ -1788,12 +1788,16 @@ against its own corpus, filed here because the walk's fixtures were.
   `field-site-payloads.graphqls`. The connection provenance case was the named gate on the Edge
   name, which the promoter and the mint state twice; a one-sided change was run and fails
   `EmittedRegistryAgreementTest` and the execution tier without it.
-* **The catalog cases become fact documents** `open`. Thirteen cases pin `sql_` against jOOQ's
-  own API: tables and columns, kinds, ordinals, Java types, `Keys` constants, constraints,
-  foreign-key pairing, node metadata, routines. Each computes its expectation from jOOQ with the
-  calls the gatherer makes, so a fault the two share passes. A document over the fixture catalog
-  states the rows instead, captured by the real run, and names the shape each table is there for.
-  A case asserting something of jOOQ that no table can show is a question, not a loop kept.
+* **The catalog cases become fact documents** `done`. Thirteen cases pinned `sql_` against jOOQ's
+  own API, each computing its expectation with the calls the gatherer makes, so a fault the two
+  shared passed. Five documents over the fixture catalog state the rows instead, captured by the
+  real run, each naming the shape a table is there for: `catalog-tables` (kinds, class names, the
+  per-schema `Keys` and `Tables` classes), `catalog-columns` (ordinals, SQL and binding types),
+  `catalog-constraints` (forms, `Keys` constants, a cross-schema key, positional pairing on a
+  reordered composite key, table pairs), `catalog-routines` (call surface, reflected parameter
+  names) and `catalog-node-metadata`. A broken row in each was run and fails. The fixture catalog
+  has no constraint without a `Keys` constant, so the null case the old one named was never
+  exercised and is not stated.
 * **The source and membership cases move to their gatherers' tests** `done`. The partition by
   schema package is the fact document `catalog-partition.graphqls`, over the fixture catalog's
   package per schema and `event` in two of them. The stamp went to `GraphitronModelStoreTest`, the partition by classpath
