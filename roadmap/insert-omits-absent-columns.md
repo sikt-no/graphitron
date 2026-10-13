@@ -1,13 +1,13 @@
 ---
 id: R1017
 title: "An INSERT leaves absent input fields out of its column list instead of writing DEFAULT"
-status: In Review
+status: Ready
 bucket: bug
 priority: 5
 theme: mutation-write
 depends-on: []
 created: 2026-10-12
-last-updated: 2026-10-12
+last-updated: 2026-10-13
 ---
 
 # An INSERT leaves absent input fields out of its column list instead of writing DEFAULT
@@ -160,3 +160,17 @@ To satisfy: scope the retirement to what actually goes. That is the ternary on t
 Verdict: stays in Spec. Nothing else blocks. With the section rescoped, the next pass should be a sign-off.
 
 *Author response (session `session_01EWh2ntN1Nsqeq3Y2aThzQQ`, 2026-10-12):* taken. Retired vocabulary now separates what retires from what survives. Retiring: the five emitters, the static typed column list, and the presence-gated `DSL.defaultValue` cell on the single-row INSERT, UPSERT and per-row record paths. The name "per-cell missing-vs-null dispatch" and its paraphrases also retire everywhere; their current habitats are listed by file and symbol, including `GraphQLQueryTest` and the `schema.graphqls` comment that round 2 did not name. The surviving bulk mechanism is named the *gap cell*, and the section gives a sweep query (in `TypeFetcherGenerator`, `DSL.defaultValue` is emitted only by the bulk gap-cell emission). "DEFAULT-resolved cell" is rewritten rather than deleted. Tests now says the bulk `createFilms` body still contains `DSL.defaultValue(` and the single-row body must not, adds `GraphQLQueryTest`'s two single-row `createFilm` tests to the must-pass list, and keeps the `film_bookmark` empty-row cases out of the shared database.
+
+### Round 3 (In Review → Done review): request rework
+
+Reviewer session `session_015XkBS1F3mkRKspsdVUztd9`, 2026-10-13.
+
+Question 1 holds. The delivered tree is the change the spec approved. `buildSingleRowInsertValues` and `buildBulkInsertValues` each walk `insertColumnPlan` once and pair every column with its cell by construction. All five INSERT-values sites go through them. `DSL.defaultValue` is emitted only by the two bulk gap cells. The empty-union widening, the single-row omission of a shared column with no writer present, and the per-row record path all match the plan. The manual bullet states the three Oracle-view residuals. The two deviations (an imperative row loop, one-pass presence) are recorded under Implementation notes and do not change the statement. The retirement sweep is clean: no retired name survives outside dated audits and R103's retracted premise. Question 2's evidence exists, and it is the right evidence. Seven new `DmlBulkMutationsExecutionTest` cases read the rendered SQL. The four rewritten `DmlSqlBaselineTest` baselines pin the uniform, mixed and discriminated INSERTs. The must-pass list passes. The sis Oracle IT run, which the Tests section names as the confirming evidence, cannot exist in-tree; this verdict does not rest on it.
+
+**Finding 1 (approval precondition, test tier): the rewritten `FetcherPipelineTest` block adds code-string assertions on generated method bodies.** `dmlInsertField_bulkInput_emitsSuppliedColumnsWithGapCellsAndEmptyListShortCircuit` asserts `createFilms.code().toString()` contains `insertCols.add(`, `.insertInto(filmTable, insertCols)`, `org.jooq.impl.DSL.row(cells)`, `.valuesOfRows(insertRows)` and `org.jooq.impl.DSL.defaultValue(`. It adds a new assertion that the `createFilm` body contains `insertCols.put(`, `.insertInto(filmTable, insertCols.keySet())` and `.values(insertCols.values())`, and lacks `DSL.defaultValue(`. `development-principles.adoc` bans code-string assertions on generated method bodies at every tier, and the Done gate holds the delivery to that ban. The spec's Tests paragraph asked for exactly these assertions, following round 1's non-blocking note, so this is a spec defect that both Spec rounds missed, not implementer drift. It still lands in the delivered tests. These assertions also add nothing to the evidence: every property they claim is already pinned on the rendered SQL. The single row and the uniform batch carry no `default` cell (`createFilm_omittedFieldIsLeftOutOfTheColumnList`, `createFilms_uniformRowsOmittingAFieldLeaveItOutOfTheColumnList`). A mixed batch writes its gap as `DEFAULT` (the discriminated `DmlSqlBaselineTest` baseline). Meanwhile they bind the local names `insertCols`, `insertRows` and `cells`, so they would break on a rename that changes no behaviour.
+
+To satisfy: remove the generated-body string assertions this item authored or rewrote in that test. These are the INSERT column, row and cell lines on the `createFilms` body and the whole `createFilm` body assertion. Leave the INSERT shape to the execution tier, which already pins it. Whether the test's older assertions (list cast, empty-list short-circuit) stay is outside this item. Amend the spec's Tests paragraph to say the pipeline block no longer asserts the INSERT statement shape, and why.
+
+**Non-blocking.** The first verification build failed once, on `OptionalNodeIdProjectionExecutionTest.anOmittedNodeIdReachesAConditionMethodAsNull` (`expected [1, 2, 3, 4, 5, 82] but was [..., 82, 83]`), and passed on one rerun of `graphitron-sakila-example`. That test reads the shared `film` table across separate statements, so a film that a concurrently running test inserts and then deletes can appear in one read and be gone by the next. The failure is not this item's. This item's four new committed-film cases (`createFilm_omittedField…`, `createFilms_uniformRows…`, `createFilms_mixedRows…`, `createFilmsPayload_mixedRows…`) do widen that window. Running them in `inRolledBackTransaction`, as the bookmark cases already do, would shrink it, but the race itself belongs to that test.
+
+Verdict: back to Ready.
