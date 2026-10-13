@@ -151,7 +151,7 @@ class TenantFanOutClassificationTest {
     }
 
     @Test
-    void anUnmarkedOptionalOnlyParentRejectsAndHandsItsChildrenNoTenant() {
+    void anUnmarkedOptionalOnlyParentRejectsAloneAndItsChildrenInherit() {
         var schema = build("""
             type Film @table(name: "film") {
                 title: String
@@ -161,15 +161,16 @@ class TenantFanOutClassificationTest {
             type Query { films(filmId: Int @field(name: "film_id")): [Film!]! }
             """);
 
+        // Either fix the rejection offers makes Query.films establish a tenant, so the child is
+        // judged as under it and does not repeat the root's error.
         assertThat(schema.tenantBindingOf("Query", "films")).isNull();
-        assertThat(schema.tenantBindingOf("Film", "inventories")).isNull();
+        assertThat(schema.tenantBindingOf("Film", "inventories"))
+            .isEqualTo(new TenantBinding.Inherited("Film"));
         assertThat(schema.tenantBindings().rejections())
-            .anyMatch(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding r
+            .singleElement()
+            .matches(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding r
                 && r.coordinate().equals("Query.films")
-                && r.detail().contains("takes its tenant only from optional values (filmId)"))
-            .anyMatch(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding r
-                && r.coordinate().equals("Film.inventories")
-                && r.detail().contains("no ancestor established a tenant context"));
+                && r.detail().contains("takes its tenant only from optional values (filmId)"));
     }
 
     // ===== The rejection ladder =====

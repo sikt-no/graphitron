@@ -2826,4 +2826,29 @@ class TenantBindingClassificationTest {
         assertInherited(schema, "FilmStock", "byFilmId");
         assertThat(schema.tenantBindings().rejections()).isEmpty();
     }
+
+    // ===== A rejected optional-only root rejects alone =====
+
+    @Test
+    void aRejectedOptionalOnlyRootLeavesItsSubtreeInheritingFromTheOtherRoots() {
+        // Both repairs the rejection offers (non-null, or @tenantFanOut) make the root establish
+        // a tenant, so its subtree is judged as if it already did and only the root itself rejects.
+        var schema = build("""
+            type Film @table(name: "film") {
+                title: String
+                inventories: [Inventory!]! @splitQuery
+                inventoriesBy(filmId: Int @field(name: "film_id")): [Inventory!]! @splitQuery
+            }
+            type Inventory @table(name: "inventory") { inventoryId: Int }
+            type Query {
+                films(filmId: Int! @field(name: "film_id")): [Film!]!
+                filmsMaybe(filmId: Int @field(name: "film_id")): [Film!]!
+            }
+            """);
+
+        assertRejectsOptionalOnly(schema, "Query.filmsMaybe", "filmId", true);
+        assertInherited(schema, "Film", "inventories");
+        assertInherited(schema, "Film", "inventoriesBy");
+        assertThat(schema.tenantBindings().rejections()).hasSize(1);
+    }
 }

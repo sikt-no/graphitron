@@ -713,13 +713,8 @@ public record TenantBindingIndex(
             }
             var members = site.members();
             var direct = directBinding(site);
-            // A root service handed a connection runs its own SQL on that connection, and that SQL
-            // is opaque, so it needs a tenant whatever graphitron's own reach says. Not where the
-            // reach holds a global table: graphitron re-reads that return on the same connection,
-            // and a global service runs on the default source, so the structure decides the field.
-            boolean connectionService = roots.contains(coord.getTypeName())
-                && out instanceof ServiceField && bindsConnection(out) && !anyGlobal;
-            boolean needsTenant = anyTenant || connectionService;
+            boolean connectionService = connectionService(site, anyGlobal);
+            boolean needsTenant = needsTenant(site, reach);
             // The parent decides first, ahead of the field's own arguments: a parent that already
             // supplies a tenant, named by its row or handed down from above, is the tenant the
             // child runs on, and an argument that names the tenant column only filters inside it.
@@ -861,6 +856,28 @@ public record TenantBindingIndex(
          */
         private boolean acceptsFanOut(Site site) {
             return !site.nested() && fanOutArmOf(site) instanceof Verdict.Arm;
+        }
+
+        /**
+         * Whether the field's own statement needs a tenant: {@code reach} (its
+         * {@link #reachedTables}) holds a tenant-scoped table, or it is a
+         * {@link #connectionService}. A function of the site alone, so the ancestor fold can ask it
+         * before any arm is assigned.
+         */
+        private boolean needsTenant(Site site, List<TableRef> reach) {
+            return reach.stream().anyMatch(this::tenantScoped)
+                || connectionService(site, reach.stream().anyMatch(t -> !tenantScoped(t)));
+        }
+
+        /**
+         * A root service handed a connection runs its own SQL on that connection, and that SQL is
+         * opaque, so it needs a tenant whatever graphitron's own reach says. Not where the reach
+         * holds a global table: graphitron re-reads that return on the same connection, and a
+         * global service runs on the default source, so the structure decides the field.
+         */
+        private boolean connectionService(Site site, boolean anyGlobal) {
+            return roots.contains(site.coord().getTypeName())
+                && site.field() instanceof ServiceField && bindsConnection(site.field()) && !anyGlobal;
         }
 
         // ===== The parent-row binding =====
@@ -2168,10 +2185,20 @@ public record TenantBindingIndex(
         }
 
         private boolean siteEstablishesContext(Site site) {
-            // Only a guaranteed binding names a tenant on every request; an optional-only field
-            // either rejects or inherits a tenant an upstream edge already counted.
-            if (directBinding(site).reading() instanceof Reading.Guaranteed) {
-                return true;
+            // A guaranteed binding names a tenant on every request. An optional-only field that
+            // needs a tenant either inherits one or rejects, and both fixes its rejection offers
+            // (a non-null slot, @tenantFanOut) establish a tenant here, so the subtree is judged as
+            // if one did: the field rejects alone rather than voiding the context of every type it
+            // reaches. One that needs none falls through to the default source, and its subtree
+            // has no tenant.
+            switch (directBinding(site).reading()) {
+                case Reading.Guaranteed ignored -> {
+                    return true;
+                }
+                case Reading.Conditional ignored when needsTenant(site, reachedTables(site.field())) -> {
+                    return true;
+                }
+                default -> { }
             }
             if (hasKind(site.members(), OperationMember.Kind.NODE_RESOLVE)) {
                 return nodeDispatchRoutable;
