@@ -46,7 +46,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
-| `R1015` | The lookup launcher joins its input rows with ON, not USING | In Review | 2026-10-13 <sub>created 2026-10-12</sub> | [plan](lookup-launcher-joins-on-not-using.md) |
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-08-06 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-08-06 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
@@ -649,7 +648,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R708` [**The $project selection gate fires on names selected at any depth below its unit**](projection-selection-gate-depth-leak.md) — Backlog, correctness
 - `R754` [**A String-typed field over a jOOQ-enum column reads the Java constant name, not the database literal**](string-field-over-enum-column-reads-java-constant.md) — Backlog, bug
 - `R752` [**JoinedTableReprojection dedupes same-named participant terms first-wins, silently dropping a divergent projection**](joined-table-reprojection-first-wins-drop.md) — Backlog, bug
-- `R1015` [**The lookup launcher joins its input rows with ON, not USING**](lookup-launcher-joins-on-not-using.md) — In Review, bug
 - `R1022` [**A bean-typed @condition parameter on an interface or union field is built, not refused**](multitable-condition-bean-parameter.md) — Backlog, feature
 - `R412` [**Nested backing class emits $-qualified names at the no-Class-in-hand emit sites (backingClassOf, recordColumnReadArgs, FetcherEmitter, ChildField)**](nested-backing-class-emitter-lift.md) — Backlog, bug
 - `R1011` [**An input class is emitted for every reachable input type, though only a validated field reads one**](input-classes-emitted-without-a-reader.md) — Backlog, cleanup
