@@ -1,7 +1,7 @@
 ---
 id: R981
 title: "Stop the thread store's clear paying almost a boot to reset statistics after a capture"
-status: Ready
+status: In Progress
 bucket: dx
 priority: 2
 theme: tooling
