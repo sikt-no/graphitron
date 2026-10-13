@@ -1,7 +1,7 @@
 ---
 id: R1025
 title: "A DML mutation write is not checked against the column length before the statement"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 4
 theme: mutation-write
@@ -63,7 +63,7 @@ What is missing is the fact and its producer. A column's declared length is nowh
 
 The fact comes from a corpus, the jOOQ catalog. Capture records what the source says, not one consumer's question about it:
 
-- `JooqCatalog.ColumnFacts` gains `Integer declaredLength`, read in `columnFactsOf` as `getDataType().hasLength() ? getDataType().length() : null`. There is no `isString()` filter: whether a length bounds a *string write* is the classifier's question, answered with `binding_type`, not capture's.
+- `JooqCatalog.ColumnFacts` gains `Integer declaredLength`, read in `columnFactsOf` as `getDataType().lengthDefined() ? getDataType().length() : null` (not `hasLength()`, which jOOQ answers true with `length()` 0 for `SQLDataType.CLOB`, PostgreSQL's `text`, and for an unbounded `varchar`). There is no `isString()` filter: whether a length bounds a *string write* is the classifier's question, answered with `binding_type`, not capture's.
 - `sql_column` gains `declared_length INT` (nullable, `CHECK (declared_length > 0)`), written by `JooqFactCapture.columns` beside `sql_type`. Its `COMMENT ON COLUMN` (which `FactSchemaGateTest.commentCoverageIsTotal` requires) states the grain and the unit: "the length the column's type declares, as jOOQ reports it, for example 255 for film.title's varchar(255); in the dialect's own unit, characters on PostgreSQL and bytes or characters on Oracle by the column's length semantics, which the catalog does not say; null when the type declares no length".
 
 This is a column rather than a separate relation. It is one value per column, read by the same walk on the same cadence as `sql_type`, so it shares `sql_column`'s owner, grain and `touched_at` mark and sweep. It goes in the store because new facts must land there while both models are live, and in `ColumnFacts` because that is the one projection both the capture and the classifier's column lookup read, so the walk and the store cannot disagree on the value. That lookup is `FieldBuilder.columnFacts` today, a private helper over `ctx.catalog`; it moves to `BuildContext.columnFacts`, where the input-field carriers are built (next section), and `FieldBuilder` calls it there.

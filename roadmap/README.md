@@ -35,10 +35,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R1026` | A nullable nesting wrapper whose columns are all null resolves to an object, not null | In Progress | 2026-10-13 | [plan](nesting-wrapper-null-contract.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
-| `R1025` | A DML mutation write is not checked against the column length before the statement | Spec | 2026-10-13 | [plan](dml-write-checked-against-column-length.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
+| `R1025` | A DML mutation write is not checked against the column length before the statement | Ready | 2026-10-13 | [plan](dml-write-checked-against-column-length.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -554,7 +554,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R820` [**An authored index on the field census named-type coordinate**](graphql-field-named-type-index.md) — Backlog, store
 - `R829` [**The payload-returning UPDATE arms cross-partition agreement check has no compile or execution coverage**](payload-update-straddle-execution-coverage.md) — Backlog, bug
 - `R821` [**The payload-returning UPDATE arms emit no within-SET value-agreement check**](payload-update-within-set-agreement.md) — Backlog, bug
-- `R1025` [**A DML mutation write is not checked against the column length before the statement**](dml-write-checked-against-column-length.md) — Spec, architecture
+- `R1025` [**A DML mutation write is not checked against the column length before the statement**](dml-write-checked-against-column-length.md) — Ready, architecture
 - `R882` [**A nullable input field can be the sole supplier of a matched-key column on UPDATE, and an omitted value then has no diagnostic**](nullable-carrier-as-sole-row-identity.md) — Backlog, validation
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
 - `R881` [**No write carrier reads column nullability, so a clear or a write into a NOT NULL column is only the database's to refuse**](write-carriers-never-read-column-nullability.md) — Backlog, validation
