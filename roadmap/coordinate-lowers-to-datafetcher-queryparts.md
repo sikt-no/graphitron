@@ -124,7 +124,7 @@ erDiagram
         bool tableBound
     }
     ACCESSOR {
-        locator locator "sealed read mechanism: typed jOOQ field | by-name field | record/getter | passthrough | localContext"
+        locator locator "sealed read mechanism: typed jOOQ field | by-name field | record/getter | passthrough | Outcome.ErrorList arm"
     }
     NODE {
         string type
@@ -139,7 +139,7 @@ erDiagram
         enum signal "row {RecordClass | DiscriminatorColumn} or exception {ExceptionClass | SqlState | VendorCode | Validation}"
     }
     ERROR_GUARD {
-        enum channel "Outcome | PayloadClass | LocalContext"
+        enum channel "Outcome | PayloadClass"
         ref handlerSet "interned partition"
     }
     CAPABILITY_TAG {
@@ -1013,7 +1013,7 @@ worked through after the locator arms below.
   nesting-reuse case).
 - **whole-object passthrough** (`env -> env.getSource()`): the value *is* the source object (the
   `NestingField` identity read).
-- **localContext** / **`Outcome.ErrorList` arm**: where an errors list lives (today's `ErrorsField.Transport`).
+- **`Outcome.ErrorList` arm** / **payload accessor**: where an errors list lives (today's `ErrorsField.Transport`, `WrapperArm | PayloadAccessor`). The `localContext` transport retired with R1016; graphql-java's `localContext` slot now carries only the routed tenant, so it is not an errors locator.
 
 **There is no transform fact; what looked like one dissolves into facts that already exist.** Earlier drafts
 paired the locator with a *transform* (`Direct` / `NodeIdEncode` / `EnumValueOf` / `JooqConvert`), copied

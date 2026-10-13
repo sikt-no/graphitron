@@ -55,8 +55,9 @@ relationships. The PassthroughInfo record lifts to a sealed sub-taxonomy
 arm carries one data field as today; a `Compound` arm carries the parent
 descriptor plus a list of child descriptors with FK column bindings.
 
-The slots concern (R75 Phase 2's `localContext` mechanism) composes with
-compound mutations: a compound payload may also carry non-data slot
+The slots concern composes with compound mutations (R75 Phase 2 planned
+it as a `localContext` mechanism; since R1016 that slot carries only the
+routed tenant, and a payload's non-data fields ride its `Outcome`): a compound payload may also carry non-data slot
 fields (errors, affected-row counts, warnings). The `SlotCarrier` capability
 on mutation-field carriers extends to `MutationCompoundInsertField` (the
 new sealed permit on `DmlTableField`) without modification.
@@ -140,8 +141,8 @@ The questions that remain Spec-stage work for R122:
   inserts is the obvious default; is there ever a reason to split?
 - **Error semantics.** If a child INSERT fails after the parent INSERT
   succeeds, do we roll back the whole transaction (yes, default) or
-  surface a per-child error in the localContext slots (only after R75
-  Phase 2's slot-population mechanism lands)?
+  surface a per-child error on the payload's `Outcome` error list (never
+  the `localContext` slot, which carries only the routed tenant)?
 
 ## Out of scope (R122-internal)
 

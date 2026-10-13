@@ -13,9 +13,8 @@ last-updated: 2026-08-21
 # Re-source the @error union TypeResolver ladder onto ErrorRouter.Mapping[]
 
 "Does handler H fire on throwable T" has two spellings in the tree. The
-`ErrorRouter.Mapping.match` family is the load-bearing one: all three dispatch arms
-(`ErrorRouter.dispatch`, `ErrorRouter.dispatchToLocalContext`, and `ChannelCatchArmEmitter`,
-which inlines the loop) go through it, and the `@error` type's `message:` fetcher now walks it
+`ErrorRouter.Mapping.match` family is the load-bearing one: both dispatch arms
+(`ErrorRouter.dispatch`, and `ChannelCatchArmEmitter`, which inlines the loop) go through it, and the `@error` type's `message:` fetcher now walks it
 too. The second is a hand-rolled `instanceof` ladder in
 `GraphitronSchemaClassGenerator.buildErrorPolymorphicResolver`, which re-implements the same
 three discriminators in emitter code to pick a union member by source class.
