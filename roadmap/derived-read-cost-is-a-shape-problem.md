@@ -114,11 +114,28 @@ are gone.
   * A fact document states an absence and a reading at a stated instant `done`. A redeclaration
     that wins is a row that must not be there, and what a later reading kept is a row still carrying
     an earlier reading's mark.
-* **An application is identified by where its `@` was written** `open`. The ordinal is a second
-  numbering that the SDL decode and the anchor compute apart and must agree on; keyed by position,
-  the anchor is a projection, and the enclosing-declaration walk and the position index on
-  `graphql_type_declaration` lose their only reader;
+* **An application is identified by where its `@` was written** `blocked`, on the three below. The
+  ordinal is matched against numberings other writers compute apart, and agrees only because a field
+  is declared once; keyed by position, the anchor is a projection, and the enclosing-declaration walk
+  and the position index on `graphql_type_declaration` lose their only reader;
   `roadmap/audits/2026-10-11-directive-application-anchor.md`.
+  * **A routine's argMapping finds its site by position** `blocked`, on the two below. Matching
+    there and in `intent_argmapping_bound_parameter_type` is a column swap, but the site's ordinal
+    flows on through `graphitron_argmapping_match` into the projection relations and their defects.
+    * **The argMapping projections carry the application's position** `open`.
+      `graphitron_argmapping_match`, `intent_argmapping_key_column_candidate`,
+      `intent_argmapping_projection_defect` and `intent_resolved_node_key_projection` pass the
+      ordinal on; three of the four are `intent_` and dissolving.
+    * **A use site is identified by position** `blocked`, on "No `graphitron_*_entry` survives". A
+      routine's use site is spelled `Type.field#ordinal`, by the decode from its own count and by
+      `ArgmappingProjectionDefects` from the anchor's, and that spelling keys
+      `graphitron_method_reference_entry` and the node-id relations.
+  * **The path stops matching a step to its application by ordinal** `blocked`, on "The read-time
+    path relations are gone": the match is in `intent_field_path_node`, which retires with
+    `graphitron_field_path_application`.
+  * **The emitted applications number their own** `open`. A configured or minted application has
+    no position, so `graphitron_directive_application` keeps an ordinal, and its authored arm ranks
+    by position rather than copying one.
 
 ### The classpath family affords what its readers ask `done`
 
@@ -496,9 +513,32 @@ entry is written by the capture phase alone. Counted in `roadmap/audits/2026-09-
       decode still writes their method references and spellings.
     * **Whether a coordinate carries a path is read off its applications** `open`. The node-id
       instruction and column-scope rules and `intent_field_column_table` ask only that, at fields,
-      input fields and arguments alike, which `graphql_directive_application` answers. Where a
-      path's last step lands and how many steps an application has are asked only to find a hop's
-      target, and move with the hops.
+      input fields and arguments alike, which `graphql_directive_application` answers once an
+      application states a hop: `@reference(path: [])` is the same as no directive, as the
+      generator reads it on a field and in effect on an input value, and writes no step, so until
+      R692 makes the empty path an author error the question is whether the applications state at
+      least one element. Where a path's last step lands and how many steps an application has are
+      asked only to find a hop's target, and move with the hops.
+    * **The field-site step resolution gives way to the path resolution** `open`. Two derivations
+      resolve one path: `graphitron_field_reference_step_hop` and `_target`, from the decoded steps
+      per application and element, and `graphitron_field_path_resolution`, from the transcription
+      per coordinate. Their readers ask for the first application's terminal hop, where the path
+      resolution concatenates every `@routine` and `@reference` on the field, which is what the
+      generator does, so each reader says which it meant as it moves: the column scope rule, the
+      node-id instruction rule, `intent_field_reference_step_fanout`, `ClaimFacts`, `SchemaQueries`
+      and `RoutineWriteFacts`. Then the old one goes, six tables, two views and two writers, with
+      the seeded classes pinning it, their cases restated against the path resolution in
+      `FieldTableLinksTest` where it does not state them already.
+      * **A path resolves where the field names no table** `open`. The path resolution is keyed by
+        the field's target, which `graphitron_field_table` takes from the navigated type's table, a
+        participant's or a routine result, and its reading joins that relation inner. A scalar or
+        enum field reading a column through a path has no target, so its path is never resolved,
+        and that field is what the column scope rule's `PATH_TERMINAL` arm and the node-id
+        instruction rule's output arm exist for: the terminal is where the path arrives, found by
+        walking it forward from the departure, which the head walk already does once it has a path
+        to walk.
+    * **The path's own readers** wait on "The read-time path relations are gone":
+      `intent_field_path_node` and `intent_mutation_routine_seat` match a step by ordinal.
     * **The argument-site shape follows the argument path** `blocked`, on "The path is stated at
       the argument and input-field grains".
 * **The untwinned ones get an ast entry first** `open`, and are the longer half.
@@ -1522,12 +1562,41 @@ conversion frees one.
   the clearest instance and was not one: every state it seeded is SDL, and it is the fact document
   `carrier-data-field.graphqls`, its four cases one expectation over the whole graph. A class is
   read for what it fabricates before it is called residue.
+* **The reference-step subject converts** `open`, and it blocks the reference-step entries' flip.
+  Five classes build `@reference` paths by seeding decoded steps through `seedFieldReferenceCall`,
+  `seedArgumentReferenceCall` and the element variants: `ConditionMethodRouteTest`,
+  `ReferenceStepTargetTest`, `ArgumentReferenceStepTargetTest`, `ReferenceStepFanoutTest` and
+  `ReferenceStepHopArmConstraintTest`. They pin the readers the flip moves, and a seeded step writes
+  no ast row, so a reader moved to the transcription reads nothing under them.
+  * **`ConditionMethodRouteTest` is two fact documents** `done`. `condition-method-route` and
+    `condition-method-route-departures` write each case as a condition-only path element naming a
+    method of `ConditionMethodRouteFixtures` in the sakila service, a real signature per case. A
+    wildcard departure reaches the whole catalog, so its document states a sample and the arrivals
+    it must not have rather than the list; the sibling-graph case is the harness's own.
+  * **The old resolution's tests go with it** `open`. `ReferenceStepHopArmConstraintTest`,
+    `ReferenceStepTargetTest` and `ReferenceStepFanoutTest` pin the step hop, the step target and the
+    fanout, which the flip deletes rather than moves; they convert by going, each case
+    `FieldTableLinksTest` does not already state against the path resolution added there,
+    captured. Its seventeen cases cover the key directions, the namespaces, table discovery, the
+    condition routes and a broken path already.
+  * **The spelled table's cases convert on their own** `open`. Seven cases in
+    `ReferenceStepTargetTest` pin `graphitron_spelled_table` over seeded spellings, a relation the
+    flip keeps.
+  * **`ArgumentReferenceStepTargetTest`** waits on "The path is stated at the argument and
+    input-field grains".
 * **The code-reference subject's conversions so far** `open`. `CarrierDataFieldPopulationTest` and
   `SeparateFetchRuleTest` are fact documents; the second keeps one Java case, a contested binding
   that needs the multischema catalog, which no document can vary. Of what no capture reaches, one
   type at two root slots went, the specification forbidding it; an input field of an output type
   became an input field of a `@table` input, the legal shape of the same guard; and the sibling-graph
   case is the harness's own, every document being its own graph checked alone.
+* **A document the toolchain refuses fails the runner** `open`. Capture never refuses a schema,
+  recording the problem in `graphql_schema_problem` instead, and nothing in the fact or corpus
+  runner reads it, so a document that redeclares a prelude type, `type Query` beside the prelude's,
+  loses that declaration and everything in it to the older one in silence: its rows are simply not
+  produced, and a case that asserts an absence passes for the wrong reason. A graph recording a
+  problem is a failure unless the document states `graphql_schema_problem` itself. No document
+  states one today.
 * **A fresh store per test stops being the only shape** `open`, and it is not tidiness: every
   `sql_` and `code_` relation is store-wide, so one store holds many graphs against one reading of
   the catalog and the classpath, and varying which SDL loads into a warm store is the only thing

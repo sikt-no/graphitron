@@ -40,9 +40,15 @@ statistics could only make the scan's neighbours slower.
 The ordinal is in the application's key, and two relations hold a foreign key on it. Its order is
 read by the deprecated `intent_authored_*_claim` views alone; the field chain, the one order the
 manual calls load-bearing, ranks by source position and keeps the ordinal as a tie-break it says
-never fires. What makes the merge order necessary is agreement: the SDL decode numbers repeats by
-walking the merged registry and writes that number into the `graphitron_` decoded rows, and the
-anchor must compute the same number in SQL for those rows to find their application.
+never fires. What makes it matter is agreement with numberings computed elsewhere. Two joins match
+it against one: `RoutineWriteFacts` joins `graphitron_argmapping_site`'s ordinal, copied from this
+relation, to the routine seat's, which `GraphitronAnchor` ranks over written positions; and
+`intent_field_chain_node` joins `graphitron_field_chain_application`'s to
+`graphitron_field_reference_step_entry`'s, which the SDL decode counts walking the merged registry.
+Both are on field coordinates, and a field is declared once, so every application on one sits in
+one definition and written position already orders it. The climb to the enclosing declaration's
+merge ordinal is needed only where a coordinate has several declarations, a type or the schema
+block, and no join reaches those.
 
 On sis one application of 6,892 has an ordinal above zero, and none lacks a position.
 
