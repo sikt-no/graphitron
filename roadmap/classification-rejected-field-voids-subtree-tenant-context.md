@@ -18,4 +18,4 @@ In a database-per-tenant build, a field that classification rejects outright (it
 
 R1027 makes tenant rejections (`Reading.Declined`, `Reading.Unbound` and the dispatch entries) judge their subtree as every offered fix leaves it. That argument rests on the rejected site's model: its reach, its reading, and the fixes its rejection text offers. A classification-rejected field has none of those, so the same posture needs its own argument, which is why the case left R1027. The open question for the Spec is what such an edge hands down: nothing (today), a context (the `Node` case, where the fixed field is a node lookup that routes), or a judgment from the SDL return type alone (does its closure hold a tenant-scoped `@table` type). Whatever the answer, a passing build has no `UnclassifiedField`, so it cannot change; the risk is only masking a child's real error until the next build, which R1027 refused for `@globalData`.
 
-The missing rejection message for the sis field is a separate defect, R1030.
+The rejection message for the sis field was not missing: R1030 reproduced every variant on trunk and each reported it, so the cascade buried it, and R1030 was discarded.
