@@ -11,7 +11,7 @@ import static org.jooq.impl.DSL.val;
 
 /**
  * The capture-cadence writer of {@code graphitron_field_target_table}: the types whose tables a
- * field's statements land on. One statement over the rule view beside the target.
+ * field's statements land on. One statement over the rule view beside the table it fills.
  *
  * <p>Called as a stage of the graphitron gatherer after the target and the type bindings it reads.
  * Marked and swept, on {@link FieldEndpoints}' terms.

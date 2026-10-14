@@ -203,7 +203,9 @@ are gone.
     * **A chain arrives where its field says** `done`. The eight sakila coordinates reporting
       `NO_ROUTE_TO_TARGET` report nothing on the 2026-10-14 stores, nor does sis; which change
       cleared them was not traced.
-    * **A departure is inherited through a type with no table of its own** `open`. The endpoints
+    * **A departure is inherited through a type with no table of its own** `done`, by
+      `graphitron_field_source_table` under "The departure is stated"; 0 on sis and 3 on sakila
+      left, which are "A class-backed parent's departure is stated". The endpoints
       take the departure from the enclosing type's own binding only, so a nested type departs from
       nowhere and its chains report `NO_ROUTE_FROM_DEPARTURE`: 99 rows over 60 types on sis, 11
       over 5 on sakila (`FilmDetails`, `FilmInfo`, `FilmInlineBundle` among them). A nested type
@@ -212,7 +214,7 @@ are gone.
       stated", recursive through the types with no table, and the chain rules reading it.
     * **A scalar `@reference` has a target** `open`. The path's last table is where a column read
       through a chain arrives, and with no target basis for it `CHAIN_WITHOUT_TARGET` fires: all 48
-      on sis and 13 on sakila. The rule reads `graphitron_field_target` and
+      on sis and 14 on sakila. The rule reads `graphitron_field_target` and
       `graphitron_field_target_table` instead of `graphitron_field_table`, and judges only a target
       that could bind a table, an object, an interface or a union, at a field carrying no `@routine`
       and no `@pivot`. Shares its question with "a routine resolving to nothing says so" below.
@@ -742,7 +744,8 @@ and the emitters read, and it goes when nothing reads what it builds.
       departure are each stated several times at several grains, and each statement goes when its
       readers have moved:
       * `graphitron_field_table` `blocked`, its target half to the arrival of the field's path,
-        written or implied, its `from_` half to "The departure is stated". The path family
+        written or implied, its `from_` half to `graphitron_field_source_table`, which has taken
+        over the departure's one reader. The path family
         references it by foreign key on the arriving table (`graphitron_field_routine`,
         `graphitron_field_table_link` and the path resolution's keyed, keyless and open tables), so
         it goes once that family is keyed by the target. Its participant rows read `graphitron_tabletype` with no ambiguity guard, where every
@@ -784,6 +787,26 @@ and the emitters read, and it goes when nothing reads what it builds.
       rows re-read by key, and neither step sorts, so the target's primary key orders nothing. The
       one case is graphitron's own example schema, which is why it was a held verdict rather than a
       defect. It becomes a defect, or the re-read sorts, and the example builds either way.
+    * **The source's shape and the target's shape** `blocked`, on the node above. A record is a
+      class-backed type, and a column read differs from a field read by the source's shape.
+    * **The departure is stated** `open`. The consume phase: which keys a producer reads from its
+      parent's source object and which table they match, one row per field and table with the rule
+      that answered: the source type's table; the keys a write returned; or, below a type
+      `graphitron_type_backing` backs with a class, a `TableRecord` member, members matching the
+      primary key of the first link's table, or `@sourceRow`, which is a forced choice. A root field
+      has none.
+      * **A field departs from its parent's table, or its parent's departures** `done`.
+        `graphitron_field_source_table`, keyed by the field and the departing table: `SOURCE_TYPE`
+        where the parent type binds a table, `INHERITED` through object types with no table of their
+        own, from each field reaching them that wrote no path, walked at the type grain with a cycle
+        guard. The head walk seeds from it, its only reader of a departure, so
+        `graphitron_field_table.from_*` has none left. Every departure that relation held is here,
+        and `NO_ROUTE_FROM_DEPARTURE` went from 99 to 0 on sis and from 11 to 3 on sakila. The cases
+        are `field-source-table`.
+      * **A class-backed parent's departure is stated** `open`. The three sakila rows left,
+        `CustomerAddressSummary.address` through `@sourceRow` and `FilmDetailsCarrier.language` and
+        `.actorsByLookup` under a `@service` returning a record-backed carrier: the `TableRecord`
+        member, the key-matching members and `@sourceRow` rules, and the keys a write returned.
   * **The candidates are one family** `open`. What a coordinate could have named, asked by the
     build error's message, the language server's completion and the MCP server, and answered today
     in as many shapes as there are askers: two stored relations, a jOOQ query, and completions in

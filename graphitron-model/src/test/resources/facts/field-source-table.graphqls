@@ -1,0 +1,58 @@
+# The tables a field's read departs from: its parent type's table, or where the parent type has
+# none, wherever each field returning it departs, through any number of such types. A type reached
+# from parents on two tables departs from both, and a path written on one of its fields is read
+# from where the read stands rather than refused.
+
+type Film @table(name: "film") {
+  title: String
+  details: FilmDetails
+}
+
+type Customer @table(name: "customer") {
+  details: FilmDetails
+}
+
+# No table of its own: read on the table of whichever field reached it.
+type FilmDetails {
+  summary: String
+  language: Language @reference(path: [{key: "film_language_id_fkey"}])
+  more: MoreDetails
+}
+
+# Two levels down, still on the table the outer field departs from. A field returning its own
+# type stops the walk rather than recursing.
+type MoreDetails {
+  note: String
+  again: MoreDetails
+}
+
+type Language @table(name: "language") { name: String }
+
+extend type Query {
+  film: Film
+}
+
+extend schema @assertContains(relation: "graphitron_field_source_table", rows: """
+  type_name,   field_name, from_table, basis
+  Film,        title,      film,       SOURCE_TYPE
+  Film,        details,    film,       SOURCE_TYPE
+  FilmDetails, summary,    film,       INHERITED
+  FilmDetails, summary,    customer,   INHERITED
+  FilmDetails, language,   film,       INHERITED
+  FilmDetails, more,       film,       INHERITED
+  MoreDetails, note,       film,       INHERITED
+  MoreDetails, note,       customer,   INHERITED
+  MoreDetails, again,      film,       INHERITED
+  Language,    name,       language,   SOURCE_TYPE
+  """)
+
+# A root field departs from nothing.
+extend schema @assertAbsent(relation: "graphitron_field_source_table", rows: """
+  type_name, field_name
+  Query,     film
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,                    coordinate
+  NO_ROUTE_FROM_DEPARTURE, FilmDetails.language
+  """)

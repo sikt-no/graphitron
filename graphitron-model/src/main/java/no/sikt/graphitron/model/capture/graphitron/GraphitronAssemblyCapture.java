@@ -4,6 +4,7 @@ import no.sikt.graphitron.model.sink.Progress;
 import no.sikt.graphitron.model.derive.FieldPathApplications;
 import no.sikt.graphitron.model.derive.FieldPathResolutions;
 import no.sikt.graphitron.model.derive.FieldEndpoints;
+import no.sikt.graphitron.model.derive.FieldSourceTables;
 import no.sikt.graphitron.model.derive.FieldTargetTables;
 import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
 import no.sikt.graphitron.model.derive.FieldReferenceStepTargets;
@@ -101,6 +102,8 @@ public final class GraphitronAssemblyCapture {
         FieldReferenceStepTargets.derive(dsl, graph);
         // The types whose tables each field's statements land on, off the targets and bindings above.
         FieldTargetTables.derive(dsl, graph, readAt);
+        // And the tables their reads depart from, off the same bindings and the targets.
+        FieldSourceTables.derive(dsl, graph, readAt);
         // Then the endpoints, because their target rule reads the targets above and their
         // departure reads the bindings above that.
         FieldEndpoints.derive(dsl, graph, readAt);

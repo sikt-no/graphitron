@@ -64,6 +64,7 @@ class StageAnswerAgreementTest {
         new Stage("graphitron_carrier_directive", "graphitron_carrier_directive_rule"),
         new Stage("graphitron_field_target", "graphitron_field_target_rule"),
         new Stage("graphitron_field_target_table", "graphitron_field_target_table_rule"),
+        new Stage("graphitron_field_source_table", "graphitron_field_source_table_rule"),
         new Stage("graphitron_type_reach", "graphitron_type_reach_rule"),
         new Stage("graphitron_type_arrival", "graphitron_type_arrival_rule"),
         new Stage("graphitron_field_source", "graphitron_field_source_rule"),

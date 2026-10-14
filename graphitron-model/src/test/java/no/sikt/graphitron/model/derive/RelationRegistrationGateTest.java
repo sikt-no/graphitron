@@ -425,6 +425,8 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_field_target_rule", Arm.DERIVED);
         registrations.put("graphitron_field_target_table", Arm.DERIVED);
         registrations.put("graphitron_field_target_table_rule", Arm.DERIVED);
+        registrations.put("graphitron_field_source_table", Arm.DERIVED);
+        registrations.put("graphitron_field_source_table_rule", Arm.DERIVED);
         registrations.put("graphitron_type_arrival", Arm.DERIVED);
         registrations.put("graphitron_type_arrival_rule", Arm.DERIVED);
         registrations.put("graphitron_field_source", Arm.DERIVED);
