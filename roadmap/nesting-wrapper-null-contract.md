@@ -1,7 +1,7 @@
 ---
 id: R1026
 title: "A nullable nesting wrapper whose columns are all null resolves to an object, not null"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 theme: codegen-correctness
