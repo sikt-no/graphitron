@@ -1,7 +1,7 @@
 ---
 id: R1031
 title: "A field rejected at classification voids its subtree tenant context"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 4
 theme: diagnostics
@@ -101,6 +101,15 @@ No pipeline, compilation or execution test changes: they run passing builds, whi
 - **Judge the stopped-at type's children one by one.** Match the fixed build on both kinds of child: below a rejected field's non-table target, treat each site-less child edge as counted when its own SDL reach holds a tenant-scoped table, the way R1027 would count it once it classifies. That removes the under-count without the over-count, but it needs a failing-build-only marker for those shadow edges, or it changes passing builds (site-less wrapper and facet edges must keep passing context on). The probes show the shadow types absent from `types`, which may be that marker; nobody has shown that every in-domain type outside the wrapper and facet kinds is classified in a passing build, and this item does not take that on. A follow-up can, if the under-count proves to matter in practice.
 - **Suppress consequential errors after the fact** (drop every "no ancestor established" error traced to a classification-rejected edge). Needs a provenance trail the fold does not have, and leaves the `@tenantFanOut` ladder judged against a context that will not exist; R1027 rejected the same alternative for the same reason.
 - **Leave it.** sis cleared its instance by removing the directive. But any classification error on a root returning `Node` or a widely reached type reproduces the cascade, and the field's own error is the one buried.
+
+## Implementation notes
+
+Implemented as specified, in one commit, all in `TenantBindingIndex` and `TenantBindingClassificationTest`. What the reviewer should know beyond the plan:
+
+- **One read for "rejected" and "has a site".** `sitesOf` takes the set it fills with classification-rejected coordinates (`classificationRejected`) as a parameter, so both come out of the one pass over `fields`. The counted set is `countedRejectedEdges`, filled in `run` right after `countedSites`; its javadoc carries the step 5 content (the SDL-reach proxy, failing builds only, the cost both ways, the counterfactual arms and their consumers).
+- **The result-type fixture** uses `@notGenerated` on `Query.report`, the second of the two options the plan names, so all eight fixtures share one rejection.
+- **The tests discriminate.** Against the pre-change fold, exactly the four tests the item changes fail (the `Node` root, the list root, the declared connection, the fan-out below); the four pins of unchanged behaviour (result type, nesting type, global reach, `@globalData`) pass on both.
+- **No other test moved.** The full build is green with no edit outside the new tests, so no existing unit fixture carried a classification-rejected field whose consequential errors it asserted, and the pipeline, compilation and execution tiers are untouched, consistent with "no passing build has an `UnclassifiedField`".
 
 ## Reviewer findings
 
