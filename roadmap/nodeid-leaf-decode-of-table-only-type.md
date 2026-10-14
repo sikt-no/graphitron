@@ -165,11 +165,10 @@ Each asserts the field classifies and that the generated `NodeIdEncoder` declare
 
 ## Implementation notes
 
-Implemented as specified, in one commit. What the reviewer should know beyond the plan:
+Implemented as specified, shipped at `88ac530`, with the round 2 rework (a test-only change, below) on top. What the reviewer should know beyond the plan:
 
 - **The `TargetKeys` arm test** sits in `NodeIdLeafResolverTest` (`targetKeys_recordWhichSourceAnswered`), which already builds a `BuildContext` through `buildContextForTests`; no separate `BuildContext`-level class was added.
 - **Filter positions in `TableOnlyNodeIdLeafPipelineTest` name their foreign key.** `studierett`'s two foreign keys to `studieprogram` make auto-discovery ambiguous for filters too, so the scalar filter field, the list filter field and the top-level argument each carry `@reference(path: [{key: ...}])`. Auto-discovery is covered by the permuted-key `UPDATE` case over `reordered_fk_child`, which asserts its SET columns land in key order (`fk_a`, `fk_b`, `fk_c`).
-- **The `UPDATE` pipeline case** also checks the rendered `MutationFetchers` calls `NodeIdEncoder.decodeStudieprogram(`, beside the model-level assertion that both foreign keys land in the SET partition and only `studierett_id` in the key partition.
 - **Execution tier.** `study_level` / `level_interval` sit beside the `xlat_*` fixture in `init.sql`, with a `NodeIdFixtureGenerator.METADATA` entry (`StudyLevel`, key `CODE`). No field returns `StudyLevel`, so its decode helper exists only because a leaf names it, which is the registry path end to end. The filter is the input-field form (`levelIntervals(filter: {fromLevelIds: [...]})`). `TableOnlyNodeIdLeafExecutionTest` covers the update, the filter, and a wrong-type id on each. **One deviation from the plan's assertion:** on the filter a wrong-type id fails with the generated "Invalid node id ... expected a StudyLevel id" client error, but on the UPDATE it fails with a redacted "An error occurred. Reference: ...", because the UPDATE rail's decode check throws a plain `GraphqlErrorException` that `ErrorRouter` does not surface. Node-type references on UPDATE inputs share that emitter (`StraddlingReferenceUpdateExecutionTest` asserts only non-empty errors for the same reason), so it predates this item; the update case asserts the call fails and writes nothing, and the redaction is filed as R1036.
 - **User manual.** `nodeId.adoc`'s constraint "The named or inferred type must be a node type" now admits a `@table` type over a metadata table at the positions this item opens (and at a jOOQ-record `@service` parameter, which already accepted it), and says the scalar key slot still needs a node type. The plan did not list a docs change; the old sentence became false.
 - **Retirement sweep.** Clean: no source outside `roadmap/` names `nodeTypeOf`, `HelperRef.Decode.nodeTypeName()`, the record-shaped `TargetKeys`, or the retired phrases. The remaining `nodeTypeName` identifiers belong to other records (`NodeIdDecodeCoverageFacts.Instruction`, key-projection rows, record-decode locals).
@@ -256,3 +255,12 @@ encoder-method check; the compilation tier; and
 What would satisfy it: delete that assertion, the `fetchersSource` helper and the imports it alone uses
 (`DEFAULT_OUTPUT_PACKAGE`). Drop the implementation-notes bullet that names the rendered-source check.
 Nothing else is asked; the next In Review pass can be confined to that diff.
+
+> Response (implementer, rework session 01JPUMbZDK7exAUewHwA3Pfb): done as asked. The
+> rendered-source assertion, the `fetchersSource` helper and the `DEFAULT_OUTPUT_PACKAGE` import are
+> gone from `TableOnlyNodeIdLeafPipelineTest`, and the implementation-notes bullet that described the
+> check is dropped. The UPDATE case now rests on its model-level assertions (both foreign keys in the
+> SET partition, each a `NodeIdDecodeKeys` on `decodeStudieprogram`, only `studierett_id` in the key
+> partition) and on `assertDecodeOnly`, with the compilation and execution tiers behind them. No
+> production code changed. This session reviewed round 2 and wrote the rework, so it may not run the
+> next In Review -> Done gate.

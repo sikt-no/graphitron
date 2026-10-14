@@ -10,7 +10,6 @@ import no.sikt.graphitron.rewrite.model.UpdateRows;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static no.sikt.graphitron.rewrite.DmlWriteReads.updateRowsOf;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -61,7 +60,6 @@ class TableOnlyNodeIdLeafPipelineTest {
             .isInstanceOfSatisfying(CallSiteExtraction.NodeIdDecodeKeys.class,
                 keys -> assertThat(keys.decodeMethod().methodName()).isEqualTo("decodeStudieprogram")));
 
-        assertThat(fetchersSource(schema, "MutationFetchers")).contains("NodeIdEncoder.decodeStudieprogram(");
         assertDecodeOnly(schema, "Studieprogram");
     }
 
@@ -158,13 +156,5 @@ class TableOnlyNodeIdLeafPipelineTest {
     private static java.util.List<String> encoderMethodNames(GraphitronSchema schema) {
         TypeSpec encoder = NodeIdEncoderClassGenerator.generate(schema).getFirst();
         return encoder.methodSpecs().stream().map(MethodSpec::name).toList();
-    }
-
-    private static String fetchersSource(GraphitronSchema schema, String className) {
-        return TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
-            .filter(t -> t.name().equals(className))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("Class not found: " + className))
-            .toString();
     }
 }
