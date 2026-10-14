@@ -23,36 +23,21 @@ import java.util.LinkedHashSet;
 import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
-import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ELEMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_MINTED;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_MINTED;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MINTED;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.JAVAC_DIAGNOSTIC;
 import static no.sikt.graphitron.model.Tables.BUILD_WARNING_NO_RULE;
 import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
 import static no.sikt.graphitron.model.Tables.LINT_FINDING;
 import static no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR;
 import static no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static org.jooq.impl.DSL.inline;
-import static org.jooq.impl.DSL.val;
-import static org.jooq.impl.DSL.when;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENUM_VALUE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_ELEMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_ELEMENT;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
@@ -279,189 +264,6 @@ class FactCaptureAgreementTest {
 
 
 
-
-    /**
-     * A directive-driven carrier and a plain list, so the expansion has something to skip. The
-     * carrier takes an input-object argument it does not otherwise need, so that the element kinds
-     * this fixture reaches are all four the emitted family holds: without it the argument anchor is
-     * empty and the field kind has one branch, and every claim about either passes on a population
-     * of nothing.
-     */
-    private static final String CONNECTION_FIXTURE = """
-        type Query {
-          films(filter: FilmFilter): [Film!]! @asConnection
-          languages: [Language!]!
-        }
-
-        type Film @table(name: "film") {
-          id: ID! @field(name: "film_id")
-          title: String
-        }
-
-        type Language @table(name: "language") {
-          name: String @field(name: "name")
-        }
-
-        input FilmFilter { title: String = "any" }
-        """;
-
-    /**
-     * A federated slice with one of each outcome: an authored key alternative that the derivation
-     * still fires beside, a node with no key at all, and an authored id key that stands the
-     * derivation down. The {@code @link} is the author's; the {@code @key} declaration arrives
-     * through the pipeline's own federation import, which is the point of running this fixture
-     * through the pipeline.
-     */
-    private static final String FEDERATED_FIXTURE = """
-        extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
-
-        type Query { film: Film, language: Language, actor: Actor }
-
-        interface Node { id: ID! }
-
-        type Film implements Node @node @key(fields: "title") {
-          id: ID!
-          title: String
-        }
-
-        type Language implements Node @node {
-          id: ID!
-          name: String
-        }
-
-        type Actor implements Node @node @key(fields: "id", resolvable: false) {
-          id: ID!
-          name: String
-        }
-        """;
-
-    /**
-     * The element family the generator emits, against the two populations it is the union of. Every
-     * relation here is filled by an insert-select over relations this class already pins, so what
-     * this adds is that the union was taken and that it was taken at every grain: an arm dropped
-     * from one of the four statements empties nothing and fails nothing else, the anchors being
-     * total by construction and read by consumers that cannot tell a short population from a small
-     * schema.
-     *
-     * <p>The last two assertions are the ones that keep the rest from being vacuous. A fixture with
-     * no macro application makes every union a copy of its first arm, so the mint has to be shown to
-     * happen: a type no author declared, and a coordinate where the expression the generator reads
-     * differs from the one the author wrote.
-     */
-    @Test
-    @DisplayName("the emitted element family is the transcription unioned with what expansion minted")
-    void theEmittedElementFamilyIsTheUnion(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, CONNECTION_FIXTURE)) {
-            var dsl = store.dsl();
-            // The fixture has no collision, so at every grain the emitted population is the
-            // transcription and the mint with nothing removed. That is what makes these plain
-            // unions the right statement here and the emitted anchor's own test the place the precedence rules
-            // are pinned: a collision case belongs beside the expansion that creates it.
-            assertThat(dsl.select(GRAPHITRON_TYPE.TYPE_NAME).from(GRAPHITRON_TYPE).fetch())
-                .as("the emitted type anchor against the transcription and the mint")
-                .containsExactlyInAnyOrderElementsOf(
-                    dsl.select(GRAPHQL_TYPE.TYPE_NAME).from(GRAPHQL_TYPE)
-                        .unionAll(dsl.selectDistinct(GRAPHITRON_TYPE_MINTED.TYPE_NAME)
-                            .from(GRAPHITRON_TYPE_MINTED))
-                        .fetch());
-            assertThat(dsl.select(GRAPHITRON_FIELD.TYPE_NAME, GRAPHITRON_FIELD.FIELD_NAME)
-                .from(GRAPHITRON_FIELD).fetch())
-                .as("the emitted field anchor against the transcription and the mint,"
-                    + " a rewritten carrier counting once because its mint is at its own coordinate")
-                .containsExactlyInAnyOrderElementsOf(
-                    dsl.select(GRAPHQL_FIELD.TYPE_NAME, GRAPHQL_FIELD.FIELD_NAME)
-                        .from(GRAPHQL_FIELD)
-                        .unionAll(dsl.selectDistinct(GRAPHITRON_FIELD_MINTED.TYPE_NAME,
-                                GRAPHITRON_FIELD_MINTED.FIELD_NAME)
-                            .from(GRAPHITRON_FIELD_MINTED)
-                            .where(GRAPHITRON_FIELD_MINTED.COORDINATE.notIn(
-                                dsl.select(GRAPHQL_FIELD.TYPE_NAME.concat(".")
-                                        .concat(GRAPHQL_FIELD.FIELD_NAME))
-                                    .from(GRAPHQL_FIELD))))
-                        .fetch());
-            assertThat(dsl.select(GRAPHITRON_ARGUMENT.TYPE_NAME, GRAPHITRON_ARGUMENT.FIELD_NAME,
-                    GRAPHITRON_ARGUMENT.ARGUMENT_NAME).from(GRAPHITRON_ARGUMENT).fetch())
-                .as("the emitted argument anchor against the transcription and the mint")
-                .containsExactlyInAnyOrderElementsOf(
-                    dsl.select(GRAPHQL_ARGUMENT.TYPE_NAME, GRAPHQL_ARGUMENT.FIELD_NAME,
-                        GRAPHQL_ARGUMENT.ARGUMENT_NAME).from(GRAPHQL_ARGUMENT)
-                        .unionAll(dsl.selectDistinct(GRAPHITRON_ARGUMENT_MINTED.TYPE_NAME,
-                                GRAPHITRON_ARGUMENT_MINTED.FIELD_NAME,
-                                GRAPHITRON_ARGUMENT_MINTED.ARGUMENT_NAME)
-                            .from(GRAPHITRON_ARGUMENT_MINTED))
-                        .fetch());
-            // The supertype against the three under it, on the transcription family's terms: a
-            // foreign key refuses an anchor with no supertype row and nothing refuses a supertype
-            // row no anchor claimed. The field arm derives its kind from the declaring type rather
-            // than asserting a literal, exactly as the transcription's own does.
-            assertThat(dsl.select(GRAPHITRON_ELEMENT.COORDINATE, GRAPHITRON_ELEMENT.ELEMENT_KIND)
-                .from(GRAPHITRON_ELEMENT).fetch())
-                .as("the emitted element supertype against its four anchors")
-                .containsExactlyInAnyOrderElementsOf(
-                    dsl.select(GRAPHITRON_TYPE.COORDINATE, val("NAMED_TYPE")).from(GRAPHITRON_TYPE)
-                    .unionAll(dsl.select(GRAPHITRON_FIELD.COORDINATE,
-                            when(GRAPHITRON_TYPE.KIND.eq("INPUT_OBJECT"), val("INPUT_FIELD"))
-                                .otherwise(val("FIELD")))
-                        .from(GRAPHITRON_FIELD)
-                        .join(GRAPHITRON_TYPE)
-                        .on(GRAPHITRON_TYPE.GRAPH_NAME.eq(GRAPHITRON_FIELD.GRAPH_NAME))
-                        .and(GRAPHITRON_TYPE.TYPE_NAME.eq(GRAPHITRON_FIELD.TYPE_NAME)))
-                    .unionAll(dsl.select(GRAPHITRON_ARGUMENT.COORDINATE, val("FIELD_ARGUMENT"))
-                        .from(GRAPHITRON_ARGUMENT))
-                    .unionAll(dsl.select(GRAPHITRON_ENUM_VALUE.COORDINATE, val("ENUM_VALUE"))
-                        .from(GRAPHITRON_ENUM_VALUE))
-                    .fetch());
-            assertThat(dsl.select(GRAPHITRON_ELEMENT.ELEMENT_KIND).from(GRAPHITRON_ELEMENT)
-                .fetchSet(GRAPHITRON_ELEMENT.ELEMENT_KIND))
-                .as("the fixture has to reach every kind this family holds, or the supertype"
-                    + " equality above is partly vacuous")
-                .containsExactlyInAnyOrder("NAMED_TYPE", "FIELD", "INPUT_FIELD", "ENUM_VALUE",
-                    "FIELD_ARGUMENT");
-            assertThat(dsl.select(GRAPHITRON_TYPE_MINTED.TYPE_NAME).from(GRAPHITRON_TYPE_MINTED)
-                .fetch(0, String.class))
-                .as("the fixture has to mint a type, or every union above is a copy of one arm")
-                .isNotEmpty();
-            assertThat(dsl.select(GRAPHITRON_FIELD.TYPE_NAME, GRAPHITRON_FIELD.FIELD_NAME)
-                .from(GRAPHITRON_FIELD)
-                .join(GRAPHQL_FIELD)
-                .on(GRAPHQL_FIELD.GRAPH_NAME.eq(GRAPHITRON_FIELD.GRAPH_NAME))
-                .and(GRAPHQL_FIELD.TYPE_NAME.eq(GRAPHITRON_FIELD.TYPE_NAME))
-                .and(GRAPHQL_FIELD.FIELD_NAME.eq(GRAPHITRON_FIELD.FIELD_NAME))
-                .where(GRAPHQL_FIELD.TYPE_SDL.ne(GRAPHITRON_FIELD.TYPE_SDL))
-                .fetch())
-                .as("the fixture has to rewrite a carrier, or the field anchor's expression is"
-                    + " the author's everywhere and the rewrite it carries is untested")
-                .isNotEmpty();
-        }
-    }
-
-    /**
-     * A federated schema the generator accepts reads as sound in the store, and the derivations
-     * that need a schema get one. The fixture declares nothing its {@code @link} imports, which is
-     * the shape a consumer writes: before the store composed the corpus as the generator does, this
-     * fixture reported its {@code @link} and every {@code @key} as undeclared, so freshness read as
-     * stale and the classification domain was empty whatever the schema held.
-     */
-    @Test
-    @DisplayName("a federated schema the generator accepts records no problem and has a domain")
-    void aFederatedSchemaReadsAsSound(@TempDir Path tmp) {
-        try (var store = CapturedStore.ofCatalog(tmp, FEDERATED_FIXTURE, CatalogInput.of(testContext()))) {
-            assertThat(store.dsl()
-                    .select(GRAPHQL_SCHEMA_PROBLEM.STAGE, GRAPHQL_SCHEMA_PROBLEM.MESSAGE)
-                    .from(GRAPHQL_SCHEMA_PROBLEM)
-                    .where(GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq(CapturedStore.GRAPH))
-                    .fetch())
-                .as("no problem rows, which is what freshness reads as current")
-                .isEmpty();
-            assertThat(store.dsl()
-                    .select(INTENT_TYPE_DOMAIN.TYPE_NAME)
-                    .from(INTENT_TYPE_DOMAIN)
-                    .where(INTENT_TYPE_DOMAIN.GRAPH_NAME.eq(CapturedStore.GRAPH))
-                    .fetch(INTENT_TYPE_DOMAIN.TYPE_NAME))
-                .as("the assembly handed the derivations a schema, so the domain is populated")
-                .contains("Query", "Film", "Language", "Actor");
-        }
-    }
 
     /**
      * One capture of {@code graph}, by the pass that owns it, with every input named.

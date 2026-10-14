@@ -81,9 +81,9 @@ public final class CorpusExpectations {
     public static final String ABSENT_DIRECTIVE = "assertAbsent";
 
     /**
-     * The emptiness directive's name: the relation holds no row for the document's graph. Takes no
-     * rows, so it reads as what it claims rather than as an equality block with nothing in it, and
-     * it speaks only for a relation carrying the document's identity.
+     * The emptiness directive's name: the relation holds no row, for the document's graph where the
+     * relation carries one and in the store where it does not, the rule every mode shares. Takes no
+     * rows, so it reads as what it claims rather than as an equality block with nothing in it.
      */
     public static final String EMPTY_DIRECTIVE = "assertEmpty";
 
@@ -98,7 +98,7 @@ public final class CorpusExpectations {
         CONTAINS,
         /** None of the declared rows is among the relation's. */
         ABSENT,
-        /** The relation holds no row for the document's graph. */
+        /** The relation holds no row, in the document's graph or, for a relation with none, the store. */
         EMPTY
     }
 
@@ -134,17 +134,24 @@ public final class CorpusExpectations {
     }
 
     /**
-     * One {@code @expectEquals} application: the graph that wrote it, its relation, its header and its
-     * rows, plus any line whose cell count disagrees with the header. A ragged line is carried rather
-     * than thrown on, so the well-formedness floor reports it as the defect it is.
+     * One assertion application: the graph that wrote it, its relation, its header and its rows, plus
+     * any line whose cell count disagrees with the header, the mode its directive names, and the
+     * {@code where} that narrows the relation, or none. A ragged line is carried rather than thrown
+     * on, so the well-formedness floor reports it as the defect it is.
      */
     public record Block(String graph, String relation, List<String> columns, List<List<String>> rows,
-                        List<String> raggedLines, Mode mode) {
+                        List<String> raggedLines, Mode mode, String where) {
 
         /** A block in the equality mode, which is what every caller predating containment wants. */
         public Block(String graph, String relation, List<String> columns, List<List<String>> rows,
                      List<String> raggedLines) {
             this(graph, relation, columns, rows, raggedLines, Mode.EQUALS);
+        }
+
+        /** A block over the whole relation, which is every block that states no {@code where}. */
+        public Block(String graph, String relation, List<String> columns, List<List<String>> rows,
+                     List<String> raggedLines, Mode mode) {
+            this(graph, relation, columns, rows, raggedLines, mode, null);
         }
     }
 
@@ -227,8 +234,9 @@ public final class CorpusExpectations {
         var blocks = new ArrayList<Block>();
         for (var entry : byApplication.entrySet()) {
             String relation = entry.getValue().get("relation");
+            String where = entry.getValue().get("where");
             if (EMPTY_DIRECTIVE.equals(entry.getKey().directive())) {
-                blocks.add(empty(entry.getKey().graph(), relation));
+                blocks.add(empty(entry.getKey().graph(), relation, where));
                 continue;
             }
             String csv = entry.getValue().get("rows");
@@ -239,7 +247,7 @@ public final class CorpusExpectations {
             }
             var block = decode(dsl, entry.getKey().graph(), relation.strip(), csv);
             blocks.add(new Block(block.graph(), block.relation(), block.columns(), block.rows(),
-                block.raggedLines(), mode(entry.getKey().directive())));
+                block.raggedLines(), mode(entry.getKey().directive()), predicate(where)));
         }
         return List.copyOf(blocks);
     }
@@ -254,13 +262,19 @@ public final class CorpusExpectations {
         };
     }
 
-    /** An {@code @assertEmpty} block, which has a relation and nothing else. */
-    private static Block empty(String graph, String relation) {
+    /** An {@code @assertEmpty} block, which has a relation and at most a predicate. */
+    private static Block empty(String graph, String relation, String where) {
         if (relation == null) {
             throw new AssertionError("document " + graph + " applies @" + EMPTY_DIRECTIVE
                 + " without a relation, which the directive's own signature makes impossible");
         }
-        return new Block(graph, relation.strip(), List.of(), List.of(), List.of(), Mode.EMPTY);
+        return new Block(graph, relation.strip(), List.of(), List.of(), List.of(), Mode.EMPTY,
+            predicate(where));
+    }
+
+    /** A {@code where} as the condition it states, or none where it states none. */
+    private static String predicate(String where) {
+        return where == null || where.isBlank() ? null : where.strip();
     }
 
     /**
@@ -284,25 +298,27 @@ public final class CorpusExpectations {
     public static List<Block> declaredBlocks(DSLContext csvReader, String graph, String sdl) {
         var blocks = new ArrayList<Block>();
         for (var extension : new SchemaParser().parse(sdl).getSchemaExtensionDefinitions()) {
-            for (var directive : extension.getDirectives(DIRECTIVE)) {
-                blocks.add(decode(csvReader, graph,
-                    stringArgument(directive, "relation").strip(),
-                    stringArgument(directive, "rows")));
-            }
             for (var directive : extension.getDirectives(EMPTY_DIRECTIVE)) {
-                blocks.add(empty(graph, stringArgument(directive, "relation")));
+                blocks.add(empty(graph, stringArgument(directive, "relation"),
+                    optionalStringArgument(directive, "where")));
             }
-            for (var name : List.of(CONTAINS_DIRECTIVE, ABSENT_DIRECTIVE)) {
+            for (var name : List.of(DIRECTIVE, CONTAINS_DIRECTIVE, ABSENT_DIRECTIVE)) {
                 for (var directive : extension.getDirectives(name)) {
                     var block = decode(csvReader, graph,
                         stringArgument(directive, "relation").strip(),
                         stringArgument(directive, "rows"));
                     blocks.add(new Block(block.graph(), block.relation(), block.columns(),
-                        block.rows(), block.raggedLines(), mode(name)));
+                        block.rows(), block.raggedLines(), mode(name),
+                        predicate(optionalStringArgument(directive, "where"))));
                 }
             }
         }
         return List.copyOf(blocks);
+    }
+
+    /** One string-valued argument a parsed directive application may leave out. */
+    private static String optionalStringArgument(graphql.language.Directive directive, String name) {
+        return directive.getArgument(name) == null ? null : stringArgument(directive, name);
     }
 
     /** One string-valued argument of a parsed directive application. */
@@ -323,16 +339,17 @@ public final class CorpusExpectations {
         // Grouped by mode as well as by relation and columns, because the two modes are two
         // different questions about one relation and folding them would let a containment block
         // widen an equality block's declared set.
-        record Group(String relation, List<String> columns, Mode mode) {}
+        record Group(String relation, List<String> columns, Mode mode, String where) {}
         var grouped = new LinkedHashMap<Group, List<Block>>();
         for (Block block : blocks) {
-            grouped.computeIfAbsent(new Group(block.relation(), block.columns(), block.mode()),
+            grouped.computeIfAbsent(
+                new Group(block.relation(), block.columns(), block.mode(), block.where()),
                 k -> new ArrayList<>()).add(block);
         }
         var divergences = new ArrayList<Divergence>();
         for (var entry : grouped.entrySet()) {
             divergences.addAll(compare(dsl, entry.getKey().relation(), entry.getKey().columns(),
-                entry.getKey().mode(), entry.getValue()));
+                entry.getKey().mode(), entry.getKey().where(), entry.getValue()));
         }
         return List.copyOf(divergences);
     }
@@ -354,14 +371,14 @@ public final class CorpusExpectations {
     }
 
     private static List<Divergence> compare(DSLContext dsl, String relation, List<String> columns,
-                                            Mode mode, List<Block> blocks) {
+                                            Mode mode, String where, List<Block> blocks) {
         // Whether the document's identity is a column of this relation at all. Every graphql_ and
         // graphitron_ relation carries one; nothing read from the classpath or the catalog does,
         // those corpora being the store's rather than any graph's. Asked of the catalog, because a
         // list kept here would be a second answer to a question the schema already settles.
         boolean partitioned = partitioned(dsl, relation);
         if (mode == Mode.EMPTY) {
-            return emptyDivergences(dsl, relation, partitioned, blocks);
+            return emptyDivergences(dsl, relation, where, partitioned, blocks);
         }
         var graphs = new LinkedHashSet<String>();
         var expectedRows = new LinkedHashSet<List<String>>();
@@ -383,7 +400,7 @@ public final class CorpusExpectations {
         }
         allColumns.addAll(columns);
 
-        Table<Record> produced = DSL.table(id(relation)).as("PRODUCED");
+        Table<Record> produced = produced(relation, where);
         var instants = timestampColumns(dsl, relation);
         List<Field<String>> producedFields = allColumns.stream()
             .map(column -> instants.contains(column.toUpperCase(java.util.Locale.ROOT))
@@ -439,26 +456,44 @@ public final class CorpusExpectations {
     }
 
     /**
-     * The rows a relation holds for graphs that said it holds none, each reported as undeclared. A
-     * relation carrying no graph is the store's rather than a document's, so no document can say it
-     * is empty for itself.
+     * The rows a relation holds where documents said it holds none, each reported as undeclared:
+     * within those documents' graphs for a relation carrying one, and across the store for a relation
+     * carrying none, as every other mode ranges.
      */
-    private static List<Divergence> emptyDivergences(DSLContext dsl, String relation,
+    private static List<Divergence> emptyDivergences(DSLContext dsl, String relation, String where,
                                                      boolean partitioned, List<Block> blocks) {
-        if (!partitioned) {
-            throw new AssertionError("@" + EMPTY_DIRECTIVE + " speaks for the document's graph, and "
-                + relation + " carries none");
-        }
         var graphs = blocks.stream().map(Block::graph)
             .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        if (!partitioned) {
+            int rows = dsl.fetchCount(produced(relation, where));
+            return rows == 0 ? List.of() : graphs.stream()
+                .map(graph -> new Divergence(relation, graph, Divergence.Side.NOT_DECLARED,
+                    List.of(rows + " rows in the store")))
+                .toList();
+        }
         var graph = DSL.field(id("produced", GRAPH_COLUMN), String.class);
         return dsl.select(graph, DSL.count().cast(String.class))
-            .from(DSL.table(id(relation)).as("PRODUCED"))
+            .from(produced(relation, where))
             .where(graph.in(graphs))
             .groupBy(graph)
             .fetch()
             .map(row -> new Divergence(relation, row.value1(), Divergence.Side.NOT_DECLARED,
                 List.of(row.value2() + " rows")));
+    }
+
+    /**
+     * The relation a block compares against: the whole of it, or the rows its {@code where} keeps.
+     * The predicate is SQL over the relation's own columns and is applied as written, inside a
+     * derived table so its names resolve against the relation and never against the expected rows
+     * the comparison correlates with.
+     */
+    private static Table<Record> produced(String relation, String where) {
+        if (where == null) {
+            return DSL.table(id(relation)).as("PRODUCED");
+        }
+        return DSL.select(DSL.asterisk()).from(DSL.table(id(relation)))
+            .where(DSL.condition(where))
+            .asTable("PRODUCED");
     }
 
     /**

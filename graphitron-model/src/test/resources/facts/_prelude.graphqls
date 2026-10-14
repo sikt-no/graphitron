@@ -23,11 +23,15 @@
 # how a document tells what a reading swept, what it kept and what it wrote again. The prelude is
 # the stepped graph's own file, written at its first epoch.
 
-directive @expectEquals(relation: String!, rows: String!) repeatable on SCHEMA
-directive @assertContains(relation: String!, rows: String!) repeatable on SCHEMA
-directive @assertAbsent(relation: String!, rows: String!) repeatable on SCHEMA
-# The relation holds no row for this document's graph.
-directive @assertEmpty(relation: String!) repeatable on SCHEMA
+# Each assertion may narrow its relation with where: a SQL condition over the relation's own
+# columns, applied as written before the comparison, so an equality can be stated over part of a
+# relation that holds every element of the graph.
+directive @expectEquals(relation: String!, where: String, rows: String!) repeatable on SCHEMA
+directive @assertContains(relation: String!, where: String, rows: String!) repeatable on SCHEMA
+directive @assertAbsent(relation: String!, where: String, rows: String!) repeatable on SCHEMA
+# The relation holds no row: in this document's graph where the relation carries one, and in the
+# store where it does not, as every assertion ranges.
+directive @assertEmpty(relation: String!, where: String) repeatable on SCHEMA
 
 # The configuration a graph is captured under, as a build would have handed it to the run: read by
 # the fact harness off the document's text before the capture, since a reading is told its

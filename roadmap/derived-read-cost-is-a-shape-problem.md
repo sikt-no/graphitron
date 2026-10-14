@@ -1828,8 +1828,14 @@ against its own corpus, filed here because the walk's fixtures were.
   being a claim about the whole run's read-set.
 * **The configuration cases move beside the configuration gatherer** `done`, as fact documents
   rather than as cases: see "The configuration family is pinned by fact documents".
-* **The emitted family's union moves beside `EmittedRegistry`** `open`, with the federated
-  schema that records no problem.
+* **The emitted family's union moves beside `EmittedRegistry`** `done`, as fact documents rather
+  than beside it. `emitted-anchors` states the type, field, argument and element anchors holding
+  both the authored rows and the ones one `@asConnection` mints, the carrier once with its
+  rewritten expression; `federation-sound` states a federated schema that imports `@key` without
+  declaring it recording no problem and handing the derivations a domain. An assertion now takes a
+  `where`, a SQL condition over the relation's own columns applied as written before the
+  comparison, so an equality can be stated over part of a relation that holds every element of the
+  graph. A broken row in each was run and fails.
 * **The oracle writers' lifecycle cases stay with their writers** `open`. The javac partition and
   the loaded diagnostics are the generator's writes, so they stay in `graphitron`, in a test named
   for what it pins.

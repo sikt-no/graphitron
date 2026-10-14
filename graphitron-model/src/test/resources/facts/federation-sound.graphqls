@@ -1,0 +1,37 @@
+# A federated schema the generator accepts reads as sound in the store, and the derivations that
+# need a schema get one. It declares nothing its @link imports, which is the shape a consumer
+# writes: the store composes the corpus as the generator does, so the imported @key is declared by
+# the composition rather than reported as undeclared, and freshness reads the graph as current.
+# One of each key outcome: an authored alternative the derivation fires beside, a node with no key,
+# and an authored id key that stands the derivation down.
+
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+
+extend type Query { film: Film, language: Language, actor: Actor }
+
+interface Node { id: ID! }
+
+type Film implements Node @node @key(fields: "title") {
+  id: ID!
+  title: String
+}
+
+type Language implements Node @node {
+  id: ID!
+  name: String
+}
+
+type Actor implements Node @node @key(fields: "id", resolvable: false) {
+  id: ID!
+  name: String
+}
+
+extend schema @assertEmpty(relation: "graphql_schema_problem")
+
+extend schema @assertContains(relation: "intent_type_domain", rows: """
+  type_name
+  Query
+  Film
+  Language
+  Actor
+  """)

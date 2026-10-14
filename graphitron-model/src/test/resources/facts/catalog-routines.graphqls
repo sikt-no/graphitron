@@ -22,7 +22,6 @@ extend schema @assertContains(relation: "sql_routine_parameter", rows: """
   public,       create_secure_note, 1,        pNote,      java.lang.String
   """)
 
-extend schema @assertAbsent(relation: "sql_routine", rows: """
-  table_schema, routine_name
-  public,       film
+extend schema @assertEmpty(relation: "sql_routine", where: """
+  table_schema = 'public' AND routine_name = 'film'
   """)

@@ -86,7 +86,7 @@ directive @synthesises(mints: [Mint!]!) on FIELD_DEFINITION
 # capture pipeline, so a document cannot state a shape capture never produces. A plan_ relation is a
 # planner's output, landed by the reader that asserts it rather than captured, and it stays a
 # separate population for exactly that reason. CorpusExpectationTest holds the three apart.
-directive @expectEquals(relation: String!, rows: String!) repeatable on SCHEMA
+directive @expectEquals(relation: String!, where: String, rows: String!) repeatable on SCHEMA
 
 interface Node { id: ID! }
 

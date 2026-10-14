@@ -1,0 +1,76 @@
+# The element family the generator emits is the author's elements and the ones macro expansion
+# minted, at every grain: a type, a field, an argument and the element supertype each hold both.
+# One @asConnection application mints a connection, its edge, the shared page info, their fields
+# and the pagination arguments, and rewrites the carrier, so every arm of each union is reached
+# beside the authored rows it is unioned with. The carrier counts once, at its own coordinate,
+# with the expression the generator reads rather than the one the author wrote.
+
+type Film @table(name: "film") { id: ID title: String }
+
+input FilmFilter { title: String }
+
+enum Rating { G }
+
+extend type Query { films(filter: FilmFilter): [Film!]! @asConnection, rating: Rating }
+
+extend schema @expectEquals(relation: "graphitron_type", where: """
+  type_name IN ('Film', 'FilmFilter', 'Rating', 'QueryFilmsConnection', 'QueryFilmsConnectionEdge', 'PageInfo')
+  """, rows: """
+  type_name,                kind
+  Film,                     OBJECT
+  FilmFilter,               INPUT_OBJECT
+  Rating,                   ENUM
+  QueryFilmsConnection,     OBJECT
+  QueryFilmsConnectionEdge, OBJECT
+  PageInfo,                 OBJECT
+  """)
+
+extend schema @expectEquals(relation: "graphitron_field", where: """
+  type_name IN ('Query', 'Film', 'FilmFilter', 'QueryFilmsConnection', 'QueryFilmsConnectionEdge', 'PageInfo')
+  """, rows: """
+  type_name,                field_name,      type_sdl
+  Query,                    ping,            String
+  Query,                    films,           QueryFilmsConnection!
+  Query,                    rating,          Rating
+  Film,                     id,              ID
+  Film,                     title,           String
+  FilmFilter,               title,           String
+  QueryFilmsConnection,     edges,           [QueryFilmsConnectionEdge!]!
+  QueryFilmsConnection,     nodes,           [Film!]!
+  QueryFilmsConnection,     pageInfo,        PageInfo!
+  QueryFilmsConnection,     totalCount,      Int
+  QueryFilmsConnectionEdge, cursor,          String!
+  QueryFilmsConnectionEdge, node,            Film!
+  PageInfo,                 hasNextPage,     Boolean!
+  PageInfo,                 hasPreviousPage, Boolean!
+  PageInfo,                 startCursor,     String
+  PageInfo,                 endCursor,       String
+  """)
+
+# The author wrote the carrier as a list of Film; the field anchor holds the rewrite.
+extend schema @assertContains(relation: "graphql_field", rows: """
+  type_name, field_name, type_sdl
+  Query,     films,      [Film!]!
+  """)
+
+extend schema @expectEquals(relation: "graphitron_argument", where: """
+  type_name = 'Query' AND field_name = 'films'
+  """, rows: """
+  argument_name, type_sdl
+  filter,        FilmFilter
+  first,         Int
+  after,         String
+  """)
+
+extend schema @expectEquals(relation: "graphitron_element", where: """
+  coordinate IN ('Film', 'Film.title', 'FilmFilter.title', 'Query.films(filter:)', 'Query.films(first:)', 'Rating.G', 'QueryFilmsConnection')
+  """, rows: """
+  coordinate,           element_kind
+  Film,                 NAMED_TYPE
+  Film.title,           FIELD
+  FilmFilter.title,     INPUT_FIELD
+  Query.films(filter:), FIELD_ARGUMENT
+  Query.films(first:),  FIELD_ARGUMENT
+  Rating.G,             ENUM_VALUE
+  QueryFilmsConnection, NAMED_TYPE
+  """)
