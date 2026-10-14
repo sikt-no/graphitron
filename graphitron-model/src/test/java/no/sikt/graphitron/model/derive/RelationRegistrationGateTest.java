@@ -367,7 +367,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_type_backing", Arm.DERIVED);
         registrations.put("graphitron_type_backing_rule", Arm.DERIVED);
         registrations.put("intent_resolved_node_key_shape", Arm.DERIVED);
-        registrations.put("intent_field_participant_scope_table", Arm.DERIVED);
         registrations.put("graphitron_field_scope_table", Arm.DERIVED);
         registrations.put("graphitron_argument_scope_table", Arm.DERIVED);
         registrations.put("graphitron_input_field_resolving_table", Arm.DERIVED);
@@ -457,14 +456,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_entry_defect", Arm.UNSHADOWED);
         registrations.put("graphitron_defect_type", Arm.UNSHADOWED);
         registrations.put("intent_authored_claim_rejection", Arm.DERIVED);
-        // The never-unsorted honesty rule and its post-capture mint, on the claim-conflict pair's
-        // terms exactly: there is no walk-side answer to agree with, the walk having no rule that
-        // compares an available ordering against the ordering a read shape delivers, and what the
-        // rule returns given rows is the relation's own algebra, stated in the module whose DDL
-        // declares it (FieldUnlowerableOrderingTest) with the decode's own report pinned above it
-        // (no.sikt.graphitron.rewrite.derive.UnlowerableOrderingsTest).
-        registrations.put("intent_field_unlowerable_ordering", Arm.DERIVED);
-        registrations.put("intent_field_unlowerable_ordering_rejection", Arm.DERIVED);
         // The diagnostics union view is a pure re-projection of its five arms, so its agreement
         // is vacuous by construction; the arm-specific derived columns are pinned by
         // DiagnosticFactsTest against their Java spellings.

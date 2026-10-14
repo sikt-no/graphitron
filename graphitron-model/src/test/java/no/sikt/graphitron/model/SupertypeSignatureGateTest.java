@@ -408,6 +408,10 @@ class SupertypeSignatureGateTest {
         // a spelling an author wrote at that site, and coalescing them is the precedence between
         // the two questions rather than a supertype nobody wrote.
         "graphitron_field_scope_table_rule|graphitron_resolved_type_binding,graphitron_spelled_table",
+        // The ordering defect asking the scope rule's two questions for the same reason: whether the
+        // target's members bind tables, and whether a @mutation(table:) spelling roots the
+        // statement instead.
+        "graphitron_entry_defect_rule|graphitron_resolved_type_binding,graphitron_spelled_table",
         // The condition membership fold, which reads both scope relations at the grain each is
         // keyed at: a @condition on a field with no arguments has a table to filter and no argument
         // to carry it, so the fold names the field-site relation, and one with arguments names the

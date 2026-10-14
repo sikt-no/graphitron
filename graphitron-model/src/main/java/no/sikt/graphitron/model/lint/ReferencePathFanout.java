@@ -26,8 +26,8 @@ import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP_FANOUT
  * {@code AuthoredClaimConflicts}' division of labour and has a second consequence worth stating:
  * the relations this rule reads are the view's own declared reads, inside the declaration
  * machinery the store's gates walk, rather than a set this class could name incompletely. The
- * verdict decode is total over the view's vocabulary with no {@code default} and a drift throw,
- * modelled on {@code UnlowerableOrderings.Verdict.of}; two of its four arms deliberately mint
+ * verdict decode is total over the view's vocabulary with no {@code default} and a drift throw;
+ * two of its four arms deliberately mint
  * nothing, being the view's way of saying it declined to judge rather than that it found nothing.
  *
  * <p>A producer rather than a lint visitor, and the read shape is what decides it. The view it

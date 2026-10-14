@@ -1,0 +1,81 @@
+# An ordering declared on a field read once per participant is not applied: the branches are
+# combined on a synthetic key and rows arrive in participant primary-key order. Each declaring
+# directive is its own defect. A list-shaped query root that reaches the multitable read lowers the
+# declaration onto every branch, and is excluded.
+
+type Film @table(name: "film") { title: String }
+type Actor @table(name: "actor") { title: String }
+type Language @table(name: "language") { name: String }
+union Document = Film | Actor | Language
+
+interface Searchable { title: String }
+type Book implements Searchable @table(name: "film") { title: String }
+type Author implements Searchable @table(name: "actor") { title: String }
+
+# One statement over its own table, so its ordering is applied.
+interface MediaItem @table(name: "film") { title: String }
+type Clip implements MediaItem @table(name: "film") { title: String }
+
+interface Node { id: ID! }
+type FilmNode implements Node @table(name: "film") { id: ID! }
+type ActorNode implements Node @table(name: "actor") { id: ID! }
+
+input DocumentOrder { title: String }
+
+type DocumentPage { edges: [DocumentEdge!]! pageInfo: PageInfo }
+type DocumentEdge { node: Document cursor: String }
+type PageInfo { hasNextPage: Boolean }
+
+type Holder @table(name: "language") {
+  documents: [Document!]! @defaultOrder(primaryKey: true)
+  sorted(order: DocumentOrder @orderBy): [Document!]!
+  both(order: DocumentOrder @orderBy): [Document!]! @defaultOrder(primaryKey: true)
+  twice(a: DocumentOrder @orderBy, b: DocumentOrder @orderBy): [Document!]!
+  search: [Searchable!]! @defaultOrder(primaryKey: true)
+  media: [MediaItem!]! @defaultOrder(primaryKey: true)
+  plain: [Document!]!
+  films: [Film!]! @defaultOrder(primaryKey: true)
+}
+
+extend type Query {
+  holder: Holder
+  # Lowered: a list, an @asConnection, an authored connection, and a Node connection, whose named
+  # type is the connection's rather than Node.
+  listed: [Document!]! @defaultOrder(primaryKey: true)
+  paged: [Document!]! @asConnection @defaultOrder(primaryKey: true)
+  authored: DocumentPage @defaultOrder(primaryKey: true)
+  nodePage: [Node!]! @asConnection @defaultOrder(primaryKey: true)
+  # Not lowered: a single value, and the routes the classifier takes ahead of the multitable read.
+  document: Document @defaultOrder(primaryKey: true)
+  serviced: [Document!]! @service(service: {className: "example.Ref", method: "m"}) @defaultOrder(primaryKey: true)
+  byKey(id: ID @lookupKey): [Document!]! @defaultOrder(primaryKey: true)
+  viaRoutine: [Document!]! @routine(name: "rent_film") @defaultOrder(primaryKey: true)
+  nodes: [Node!]! @defaultOrder(primaryKey: true)
+}
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,                         coordinate,             detail
+  ORDERING_ACROSS_PARTICIPANTS, Holder.documents,       defaultOrder
+  ORDERING_ACROSS_PARTICIPANTS, Holder.sorted(order:),  orderBy
+  ORDERING_ACROSS_PARTICIPANTS, Holder.both,            defaultOrder
+  ORDERING_ACROSS_PARTICIPANTS, Holder.both(order:),    orderBy
+  ORDERING_ACROSS_PARTICIPANTS, Holder.twice(a:),       orderBy
+  ORDERING_ACROSS_PARTICIPANTS, Holder.twice(b:),       orderBy
+  ORDERING_ACROSS_PARTICIPANTS, Holder.search,          defaultOrder
+  ORDERING_ACROSS_PARTICIPANTS, Query.document,         defaultOrder
+  ORDERING_ACROSS_PARTICIPANTS, Query.serviced,         defaultOrder
+  ORDERING_ACROSS_PARTICIPANTS, Query.byKey,            defaultOrder
+  ORDERING_ACROSS_PARTICIPANTS, Query.viaRoutine,       defaultOrder
+  ORDERING_ACROSS_PARTICIPANTS, Query.nodes,            defaultOrder
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,                         coordinate
+  ORDERING_ACROSS_PARTICIPANTS, Holder.media
+  ORDERING_ACROSS_PARTICIPANTS, Holder.plain
+  ORDERING_ACROSS_PARTICIPANTS, Holder.films
+  ORDERING_ACROSS_PARTICIPANTS, Query.listed
+  ORDERING_ACROSS_PARTICIPANTS, Query.paged
+  ORDERING_ACROSS_PARTICIPANTS, Query.authored
+  ORDERING_ACROSS_PARTICIPANTS, Query.nodePage
+  """)

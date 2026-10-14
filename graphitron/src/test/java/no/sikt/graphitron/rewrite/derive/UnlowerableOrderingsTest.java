@@ -3,7 +3,6 @@ package no.sikt.graphitron.rewrite.derive;
 import no.sikt.graphitron.model.test.CatalogInput;
 
 import no.sikt.graphitron.model.derive.UnlowerableOrderings;
-import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.model.diagnostics.RejectionKind;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.test.CapturedStore;
@@ -18,23 +17,16 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.testCont
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The store-backed home of the never-unsorted invariant's honesty half: real SDL captured into a
- * fact store, and the violations {@link UnlowerableOrderings} projects from
- * {@code intent_field_unlowerable_ordering}. This is the tier that says an author's schema reaches
- * the relation in the shape the rule reads, and that the report a consumer meets is minted from what
- * it finds.
- *
- * <p>What the view returns given rows is not asked here. That is the relation's own algebra, its two
- * verdicts, its three availability routes and the absences between them, and it lives in the module
- * whose DDL declares it, in
- * {@code no.sikt.graphitron.model.intent.FieldUnlowerableOrderingTest}, against a store seeded row by
- * row. What stands here is the decode: which {@link Rejection} arm each verdict becomes, the prose it
- * carries, the location it points at, and the one arm whose rejection is deliberately held.
+ * The build error for {@code ORDERING_ACROSS_PARTICIPANTS}: real SDL captured into a fact store,
+ * and the violations {@link UnlowerableOrderings} mints from the stored entry defects. Which
+ * declarations are defects is the fact document {@code ordering-across-participants}; what stands
+ * here is the decode: the prose each one carries, the location it points at, and the population
+ * the build asks about.
  *
  * <p>A declared ordering on a child multitable read is refused rather than accepted and dropped:
  * the read is one statement per participant, and no branch carries the declaration. A list-shaped
- * root that reaches the classifier's multitable arm lowers the same declaration onto every branch
- * and draws no row.
+ * root that reaches the classifier's multitable read lowers the same declaration onto every branch
+ * and is no defect.
  */
 @PipelineTier
 class UnlowerableOrderingsTest {
@@ -197,45 +189,13 @@ class UnlowerableOrderingsTest {
 
     // ===== The write arm, whose row is minted and whose rejection is held =====
 
-    /**
-     * The list-returning {@code @routine} write: the routine's returned keys are captured and the
-     * rows re-read by key, and neither step sorts, so the target table's primary key orders nothing
-     * here even though it is available. The view says so, and the decode deliberately mints no
-     * error: the only live instance of the shape is in graphitron's own example schema, so wording
-     * the rejection reddens this reactor's verification build until that write's second step carries
-     * an order to deliver.
-     *
-     * <p>This case is the pair of assertions the lowering flips: the row exists, so a lowering
-     * landing upstream shows up here as a failing test rather than as a quietly empty population,
-     * and no violation is minted, which is the half that becomes a message.
-     */
-    @Test
-    void aListReturningRoutineWriteMintsARowAndHoldsItsRejection() {
-        String sdl = """
-            type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
-            type Query { rentals: [Rental] }
-            type Mutation {
-              rentFilm(inventoryId: Int!, customerId: Int!): [Rental!]!
-                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
-                @reference(path: [{table: "rental"}])
-            }
-            """;
-
-        assertThat(population(sdl))
-            .as("the coordinate sits in a cell that can reject it, on the fallback route")
-            .containsExactly("Mutation.rentFilm KEY_CAPTURE_SCATTER PRIMARY_KEY_FALLBACK");
-        assertThat(detect(sdl))
-            .as("and the rejection is held until the write has an order to deliver")
-            .isEmpty();
-    }
-
     // ===== The population the build-error consumer asks about =====
 
     /**
      * The domain narrowing, which is this consumer's own and not the relation's: a violating
      * coordinate on a type the generator's traversal never reaches costs no emitted source, so it
-     * fails no build. The view keeps its row, because the editor's diagnostic arm reads these rows
-     * ungated and a type no field reaches is where an author most needs the signal.
+     * fails no build. The defect stays, because the editor reads it ungated and a type no field
+     * reaches is where an author most needs the signal.
      */
     @Test
     void aViolationOutsideTheClassificationDomainMintsNoBuildError() {
@@ -247,7 +207,7 @@ class UnlowerableOrderingsTest {
             """;
 
         assertThat(population(sdl))
-            .containsExactly("Unreached.documents PARTICIPANT_FAN_OUT DEFAULT_ORDER");
+            .containsExactly("Unreached.documents DEFAULT_ORDER");
         assertThat(detect(sdl)).isEmpty();
     }
 
@@ -270,9 +230,9 @@ class UnlowerableOrderingsTest {
         return violations.stream().map(ValidationError::message).toList();
     }
 
-    /** {@code Type.field verdict available_via}, the shape a case about the population reads. */
+    /** {@code Type.field available_via}, the shape a case about the population reads. */
     private static String render(UnlowerableOrderings.Unlowered row) {
-        return row.coordinate() + " " + row.verdict() + " " + row.availableVia();
+        return row.coordinate() + " " + row.availableVia();
     }
 
     /** Captures {@code sdl} against the catalog and runs the build-error consumer's detection. */
@@ -283,8 +243,8 @@ class UnlowerableOrderingsTest {
     }
 
     /**
-     * The whole view over the captured store, ungated and rendered: what a case about the
-     * population reads, where {@link #detect} reads what a build fails on.
+     * The defects over the captured store, ungated and rendered: what a case about the population
+     * reads, where {@link #detect} reads what a build fails on.
      */
     private List<String> population(String sdl) {
         try (var store = CapturedStore.ofCatalog(tmp, sdl, jooq())) {

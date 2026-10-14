@@ -116,8 +116,8 @@ class DetectionReadReachGateTest {
             // from this component's reach: a captured relation counts once and truncates the tree
             // for every rule above it, where the derivation re-evaluated the chain per naming.
             "graphitron_node_type",
-            // Also read by the carrier data-channel stage's rule and by
-            // graphitron_field_scope_table_rule's stage; expanded here once per container by memberNames.
+            // Also read by the carrier data-channel stage's rule; expanded here once per container
+            // by memberNames.
             "intent_poly_member",
             "intent_record_slot_assignable",
             "intent_resolved_node_key_shape"));
@@ -132,44 +132,26 @@ class DetectionReadReachGateTest {
         // intent_node_id_decode_endpoint stays, read live by the verdict's own judged CTE rather
         // than through the hop, and it is known rather than unpriced: 14 ms on the population that
         // exposed the defect, whose whole subtree answers in single-digit milliseconds.
+        //
+        // graphql_poly_member is the participants of a field's target, read beside the stored target
+        // and binding. It is the union intent_poly_member was over the same two tables, and the
+        // reference-for application that reaches it answers no slower than it did through the
+        // participant view on the sakila and sis stores.
         REACH.put("NodeIdLandingDefects", Set.of(
-            "intent_field_navigated_type",
-            "intent_field_participant_scope_table",
+            "graphql_poly_member",
             "intent_node_id_decode_endpoint",
             "intent_node_id_decode_landing_defect",
-            "intent_poly_member",
             "intent_reference_for_application"));
 
         REACH.put("ReferenceForParticipantDefects", Set.of(
-            "intent_field_navigated_type",
-            // Also read by graphitron_field_scope_table_rule's stage, and expanded here once per
-            // consumer of an application row by participantsOf.
-            "intent_field_participant_scope_table",
-            "intent_poly_member",
+            "graphql_poly_member",
             "intent_reference_for_application"));
 
+        // Eleven relations while this component evaluated the unlowerable-ordering view; it reads
+        // the stored ORDERING_ACROSS_PARTICIPANTS defects now, and only the container's members are
+        // a view.
         REACH.put("UnlowerableOrderings", Set.of(
-            "intent_bound_table",
-            "intent_carrier_routine_hop",
-            "graphitron_connection_element_type",
-            "intent_field_path_node",
-            "intent_field_path_start",
-            "intent_field_path_terminus",
-            "intent_field_navigated_type",
-            "intent_field_participant_scope_table",
-            // Arrived when the reference-step hop became two keyed tables under a union view
-            // keeping the canonical name. This component reaches that name through the chain
-            // relations above it, and the walk used to stop there, the name being a registered
-            // target; it is a view now, so the body is expanded, and what it expands to is a
-            // UNION ALL of two table reads with no rule under either. Priced rather than
-            // assumed: the two arms are stage-written tables and the walk stops at each, so this
-            // row costs a concatenation of two seeks and not a derivation. What would take it
-            // out again is storing the union view itself as a table, which nothing has argued for
-            // and which this figure is the instrument for arguing on.
-            "graphitron_field_reference_step_hop",
-            "intent_field_unlowerable_ordering",
-            "intent_mutation_routine_seat",
-            "intent_poly_member"));
+            "graphql_poly_member"));
 
         // The decode-coverage rule's store operand. Its census side costs nothing here: every
         // relation it reads there is a stored table (the instruction census, the

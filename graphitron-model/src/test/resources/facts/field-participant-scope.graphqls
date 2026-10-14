@@ -1,0 +1,82 @@
+# A field whose target binds no table and has members is read once per table-bound member, each
+# rooted in that member's table: the target, its members and their bindings, each a join away. The
+# scope relation is distinct on the table, so two members over one table are one root.
+
+type Film @table(name: "film") { title: String }
+type Actor @table(name: "actor") { title: String }
+type Reel @table(name: "film") { title: String }
+type DatePeriod { from: String }
+# event is declared in two schemas, so this binding is ambiguous.
+type Event @table(name: "event") { title: String }
+
+union Document = Film | Actor
+union Reels = Film | Reel
+union Partial = Film | DatePeriod
+union Uncertain = Film | Event
+
+interface Searchable { title: String }
+type Book implements Searchable @table(name: "film") { title: String }
+type Author implements Searchable @table(name: "actor") { title: String }
+
+# An interface bound to a table of its own is one statement, answered by its own table.
+interface MediaItem @table(name: "film") { title: String }
+type Clip implements MediaItem @table(name: "actor") { title: String }
+
+type Language @table(name: "language") { documents: [Document!]! }
+
+extend type Query {
+  documents(name: String): [Document!]!
+  search: [Searchable!]!
+  media: [MediaItem!]!
+  reels: [Reels!]!
+  partial: [Partial!]!
+  uncertain: [Uncertain!]!
+  paged: [Document!]! @asConnection
+  language: Language
+}
+
+# A @mutation(table:) names where the statement is rooted, so its members root nothing.
+type Mutation {
+  deleteDocument(title: String): Document @mutation(typeName: DELETE, table: "actor")
+}
+
+extend schema @assertContains(relation: "graphitron_field_scope_table", rows: """
+  type_name,                 field_name,     basis,             table_name
+  Query,                     documents,      PARTICIPANT_TABLE, actor
+  Query,                     documents,      PARTICIPANT_TABLE, film
+  Query,                     search,         PARTICIPANT_TABLE, actor
+  Query,                     search,         PARTICIPANT_TABLE, film
+  Query,                     media,          NAMED_TYPE_TABLE,  film
+  Query,                     reels,          PARTICIPANT_TABLE, film
+  Query,                     partial,        PARTICIPANT_TABLE, film
+  Query,                     uncertain,      PARTICIPANT_TABLE, film
+  Query,                     paged,          PARTICIPANT_TABLE, actor
+  Query,                     paged,          PARTICIPANT_TABLE, film
+  QueryPagedConnection,      nodes,          PARTICIPANT_TABLE, actor
+  QueryPagedConnection,      nodes,          PARTICIPANT_TABLE, film
+  QueryPagedConnectionEdge,  node,           PARTICIPANT_TABLE, actor
+  QueryPagedConnectionEdge,  node,           PARTICIPANT_TABLE, film
+  Language,                  documents,      PARTICIPANT_TABLE, actor
+  Language,                  documents,      PARTICIPANT_TABLE, film
+  Mutation,                  deleteDocument, MUTATION_TABLE,    actor
+  """)
+
+# The declines: a target bound to its own table, a field naming its table, an unbound member and an
+# ambiguous one each root no participant statement.
+extend schema @assertAbsent(relation: "graphitron_field_scope_table", rows: """
+  type_name, field_name,     basis
+  Query,     media,          PARTICIPANT_TABLE
+  Mutation,  deleteDocument, PARTICIPANT_TABLE
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_field_scope_table", rows: """
+  type_name, field_name, table_name
+  Query,     uncertain,  event
+  """)
+
+# Each argument is read against each member's table.
+extend schema @assertContains(relation: "graphitron_argument_scope_table", rows: """
+  type_name, field_name, argument_name, basis,             table_name
+  Query,     documents,  name,          PARTICIPANT_TABLE, actor
+  Query,     documents,  name,          PARTICIPANT_TABLE, film
+  """)

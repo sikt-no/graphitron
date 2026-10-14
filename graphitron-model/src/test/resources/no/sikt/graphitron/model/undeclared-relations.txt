@@ -65,7 +65,6 @@ intent_field_path_terminus
 intent_field_column_table
 intent_field_error_channel
 intent_field_navigated_type
-intent_field_participant_scope_table
 intent_field_payload_producer
 intent_field_producer_method
 intent_field_producer_reference

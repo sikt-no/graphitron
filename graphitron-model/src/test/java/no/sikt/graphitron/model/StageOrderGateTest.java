@@ -89,11 +89,6 @@ class StageOrderGateTest {
      * the producers write has to run after the producer that writes it, and a rule bottoming out in
      * captured facts alone may run first, where later steps can read its rows. The gate below is
      * what says which of those each stage actually is.
-     *
-     * <p>{@code UnlowerableOrderingRejectionRows} sits last because it renders a view reading the
-     * field-site scope table, so it runs once that table's stage has written it; this producer
-     * being jOOQ with no parsed read set, that placement is a rationale the gate cannot check, and
-     * it is stated here so a later move has to answer it.
      */
     private static final List<Step> STRATUM = List.of(
         new Step("FieldColumnScopes", "graphitron_field_column_scope_rule",
@@ -129,8 +124,6 @@ class StageOrderGateTest {
             Set.of("graphitron_node_id_decode_hop_column")),
         new Step("NodeIdDecodeColumns", "graphitron_node_id_decode_column_rule",
             Set.of("graphitron_node_id_decode_column")),
-        new Step("UnlowerableOrderingRejectionRows", null,
-            Set.of("intent_field_unlowerable_ordering_rejection")),
         new Step("EntryDefects", "graphitron_entry_defect_rule",
             Set.of("graphitron_entry_defect")));
 

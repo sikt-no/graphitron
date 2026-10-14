@@ -406,14 +406,10 @@ class DiagnosticFactsTest {
     /**
      * The file axis is a path wherever it is stored and wherever the view projects one, so nothing
      * in this stratum computes a spelling and the two wires that name a document by URI render one
-     * at their own boundary. Stated over rows in six of the seven arms, which takes three
-     * fixtures rather than one build: the three loaders share a store, while the pilot arm and the
-     * SDL toolchain's arm each need their own capture (a capture clears the graph's partition on
-     * the way in), and no one build both refuses a source at the parser and reaches javac with it.
-     * The seventh, the unlowerable-ordering arm, projects a captured directive's own source name
-     * like the pilot beside it and is stated at its own tier
-     * ({@code UnlowerableOrderingRejectionPipelineTest}), whose fixture needs a catalog this one
-     * has no arm for.
+     * at their own boundary. Stated over rows, which takes three fixtures rather
+     * than one build: the three loaders share a store, while the pilot arm and the SDL toolchain's
+     * arm each need their own capture (a capture clears the graph's partition on the way in), and no
+     * one build both refuses a source at the parser and reaches javac with it.
      */
     @Test
     @DisplayName("the entry arm carries the defect type's severity, code and statement to the surface")

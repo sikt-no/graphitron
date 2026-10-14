@@ -11,8 +11,10 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_ENTRY;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PARTICIPANT_SCOPE_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESOLVED_TYPE_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH;
 import static no.sikt.graphitron.model.Tables.INTENT_REFERENCE_FOR_APPLICATION;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
@@ -74,12 +76,11 @@ public final class ReferenceForParticipantDefects {
     /**
      * Every relation this component's statements name. {@code intent_reference_for_application} is
      * the driving read; {@code consumersOf} then runs once per application row and
-     * {@code participantsOf} once per consumer of one, so
-     * {@code intent_field_participant_scope_table}'s body is expanded per row with no SQL text to
-     * notice it in.
+     * {@code participantsOf} once per consumer of one, reading the consumer's target and its
+     * table-bound members.
      */
-    public static final Set<Table<?>> READS = Set.of(INTENT_FIELD_PARTICIPANT_SCOPE_TABLE,
-        INTENT_INPUT_OCCURRENCE_PATH, INTENT_REFERENCE_FOR_APPLICATION, INTENT_TYPE_DOMAIN,
+    public static final Set<Table<?>> READS = Set.of(GRAPHITRON_FIELD_TARGET,
+        GRAPHQL_POLY_MEMBER, GRAPHITRON_RESOLVED_TYPE_BINDING, INTENT_INPUT_OCCURRENCE_PATH, INTENT_REFERENCE_FOR_APPLICATION, INTENT_TYPE_DOMAIN,
         GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY, GRAPHITRON_REFERENCE_FOR_ENTRY);
 
     /**
@@ -202,11 +203,19 @@ public final class ReferenceForParticipantDefects {
     /** The table-bound participant names of one field's polymorphic return type, in container order. */
     private static List<String> participantsOf(DSLContext dsl, String graphName,
                                                String typeName, String fieldName) {
-        var ps = INTENT_FIELD_PARTICIPANT_SCOPE_TABLE;
-        return dsl.selectDistinct(ps.MEMBER_TYPE_NAME)
-            .from(ps)
-            .where(ps.GRAPH_NAME.eq(graphName), ps.TYPE_NAME.eq(typeName), ps.FIELD_NAME.eq(fieldName))
-            .orderBy(ps.MEMBER_TYPE_NAME)
+        var ft = GRAPHITRON_FIELD_TARGET;
+        var m = GRAPHQL_POLY_MEMBER;
+        var bt = GRAPHITRON_RESOLVED_TYPE_BINDING;
+        var cb = GRAPHITRON_RESOLVED_TYPE_BINDING.as("cb");
+        return dsl.selectDistinct(m.MEMBER_TYPE_NAME)
+            .from(ft)
+            .join(m).on(m.GRAPH_NAME.eq(ft.GRAPH_NAME), m.CONTAINER_NAME.eq(ft.TARGET_TYPE_NAME))
+            .join(bt).on(bt.GRAPH_NAME.eq(m.GRAPH_NAME), bt.TYPE_NAME.eq(m.MEMBER_TYPE_NAME),
+                bt.CANDIDATES.eq(1))
+            .where(ft.GRAPH_NAME.eq(graphName), ft.TYPE_NAME.eq(typeName), ft.FIELD_NAME.eq(fieldName))
+            .andNotExists(selectOne().from(cb)
+                .where(cb.GRAPH_NAME.eq(ft.GRAPH_NAME), cb.TYPE_NAME.eq(ft.TARGET_TYPE_NAME)))
+            .orderBy(m.MEMBER_TYPE_NAME)
             .fetch(org.jooq.Record1::value1);
     }
 

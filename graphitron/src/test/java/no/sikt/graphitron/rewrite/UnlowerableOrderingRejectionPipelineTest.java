@@ -37,8 +37,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * on the {@code diagnostic} read surface. A rule that fails no build is a rule nobody is subject to,
  * and a rejection an editor cannot see is a build error with no editor behind it.
  *
- * <p>The view's exclusion and the classifier's lowering have to name one population: a coordinate
- * the view stops rejecting and the classifier does not lower would accept a declaration and drop it.
+ * <p>The defect's exclusion and the classifier's lowering have to name one population: a coordinate
+ * the defect stops naming and the classifier does not lower would accept a declaration and drop it.
  * So each list-shaped root form the classifier lowers (a list, an authored connection type, an
  * {@code @asConnection} expansion) is a case that builds, and the shapes it does not lower (a child
  * multitable field, a single-valued root) are cases that still fail, each negative beside its
@@ -182,23 +182,23 @@ class UnlowerableOrderingRejectionPipelineTest {
     }
 
     /**
-     * What the editor reads. The rejection is stored with kind {@code DEFERRED}, so the
-     * {@code diagnostic} view derives {@code actionable = FALSE}: the schema is well formed and the
-     * remedy is a workaround rather than a fix, which is exactly how an editor should triage a
-     * declaration waiting on a lowering.
+     * What the editor reads. Each declaring directive is an {@code ORDERING_ACROSS_PARTICIPANTS}
+     * entry defect resting on {@code UNSUPPORTED}, so the {@code diagnostic} view derives
+     * {@code actionable = FALSE}: the schema is well formed and the remedy is a workaround rather
+     * than a fix, which is how an editor should triage a declaration waiting on a lowering.
      */
     @Test
-    void theStoredRejectionReachesTheDiagnosticSurfaceAsNotActionable(@TempDir Path tmp) {
+    void theStoredDefectReachesTheDiagnosticSurfaceAsNotActionable(@TempDir Path tmp) {
         try (var store = CapturedStore.ofCatalog(tmp, CHILD, jooq())) {
             var rows = store.dsl().selectFrom(DIAGNOSTIC)
                 .where(DIAGNOSTIC.GRAPH_NAME.eq(CapturedStore.GRAPH),
-                    DIAGNOSTIC.COORDINATE.eq("Store.occupants"),
-                    DIAGNOSTIC.KIND.eq("DEFERRED"))
+                    DIAGNOSTIC.TYPE_NAME.eq("Store"), DIAGNOSTIC.FIELD_NAME.eq("occupants"),
+                    DIAGNOSTIC.LSP_CODE.eq("GRAPHITRON_ORDERING_ACROSS_PARTICIPANTS"))
                 .orderBy(DIAGNOSTIC.MESSAGE)
                 .fetch();
 
             assertThat(rows)
-                .as("one diagnostic row per rejected availability route")
+                .as("one diagnostic row per declaring directive")
                 .hasSize(2);
             assertThat(rows).allSatisfy(row -> {
                 assertThat(row.getSeverity()).isEqualTo("error");
@@ -206,17 +206,14 @@ class UnlowerableOrderingRejectionPipelineTest {
                     .as("recognised but not yet generator-supported, a workaround rather than a"
                         + " schema fix")
                     .isFalse();
-                assertThat(row.getVariant())
-                    .as("the variant is minted from the rejection's own class, not spelled in SQL")
-                    .isEqualTo("Rejection.Deferred");
                 assertThat(row.getSourceLine())
                     .as("the declaring directive's own position, so an editor underlines what the"
                         + " author wrote")
                     .isNotNull();
             });
             assertThat(rows).extracting(row -> row.getMessage())
-                .anyMatch(m -> m.contains("@defaultOrder declares an ordering"))
-                .anyMatch(m -> m.contains("argument 'order' carries @orderBy"));
+                .anyMatch(m -> m.endsWith("(defaultOrder)"))
+                .anyMatch(m -> m.endsWith("(orderBy)"));
         }
     }
 

@@ -253,10 +253,10 @@ running from the participant's table toward a `@nodeId` target in key hops alone
   purpose, a `@reference`-only chain taking its target from the return binding where a routine chain
   takes it from the catalog, so the same silence means two different faults and only one has an arm.
 * **The seat keeps its predicate and loses its vocabulary** `open`, waits on the arm above. Every
-  production reader filters to `ADMITTED`, three sites in `RoutineWriteFacts` and one arm of
-  `intent_field_unlowerable_ordering`, so the thirteen refusals have no consumer and one moved to
-  `graphitron_entry_defect` gains a reader rather than changing one; its `MutationRoutineSeatTest`
-  case travels with it, being the only cover those thirteen have.
+  production reader filters to `ADMITTED`, three sites in `RoutineWriteFacts`, so the thirteen
+  refusals have no consumer and one moved to `graphitron_entry_defect` gains a reader rather than
+  changing one; its `MutationRoutineSeatTest` case travels with it, being the only cover those
+  thirteen have.
 * **Readings are stated at the entry grain** `open`. A reading is one way a written path element
   can be read against the catalog, which depends on what was written and on the catalog and not on
   the chain it ends up in: the readings by key, by table, by name match and by condition join the
@@ -589,8 +589,8 @@ new one.
   it marks what it wrote and sweeps what it did not, in the anchor phase of the gatherer that owns
   its table. One child per step, grown as each is tried.
 * **The `intent_` writers go to a family or go** `open`. `ClassificationDomainCapture`,
-  `InputOccurrencePaths`, `TypeBackingRows`, `AuthoredClaimRejectionRows` and
-  `UnlowerableOrderingRejectionRows` write `intent_` tables, so each moves to the family whose facts
+  `InputOccurrencePaths`, `TypeBackingRows` and `AuthoredClaimRejectionRows` write `intent_`
+  tables, so each moves to the family whose facts
   it reads, or goes with its readers.
 * **The step that reads an executable schema reads a captured fact** `open`.
   `ClassificationDomainCapture` derives `intent_type_domain` from the assembled `GraphQLSchema`, which
@@ -702,7 +702,7 @@ and the emitters read, and it goes when nothing reads what it builds.
         test compiles where the case is the classpath.
       * **Two backings for one type is a defect** `open`. What `intent_type_backing_conflict`
         reports, as a code at the type's declaration.
-    * **A field's target is its target type** `open`. A field has a target type, and a target type
+    * **A field's target is its target type** `done`. A field has a target type, and a target type
       is what is bound to a table. `graphitron_field_target` holds one row per field: the target
       type unwrapped, the element where the field returns a connection and the named type
       otherwise, scalars included, with the connection it was unwrapped from beside it. List and
@@ -714,29 +714,77 @@ and the emitters read, and it goes when nothing reads what it builds.
       in one commit with its readers. A mutation's target is its payload type. The refetch a
       mutation does is the carrier's own fact, `graphitron_carrier_data_field`, whose data field
       has a target of its own; it is not folded in here.
-    * **The duplicate statements of a field's tables dissolve** `blocked`, on the node above and on
-      "The departure is stated". A field's target and its departure are each stated several times
-      at several grains, and each statement goes when its readers have moved:
-      * `graphitron_field_table`, its target half to the arrival of the field's path, written or
-        implied, its `from_` half to the departure;
-      * `intent_field_participant_scope_table`, to the target and its participants;
+    * **The duplicate statements of a field's tables dissolve** `open`. A field's target and its
+      departure are each stated several times at several grains, and each statement goes when its
+      readers have moved:
+      * `graphitron_field_table` `blocked`, its target half to the arrival of the field's path,
+        written or implied, its `from_` half to "The departure is stated". The path family
+        references it by foreign key on the arriving table (`graphitron_field_routine`,
+        `graphitron_field_table_link` and the path resolution's keyed, keyless and open tables), so
+        it goes once that family is keyed by the target. Its participant rows read `graphitron_tabletype` with no ambiguity guard, where every
+        other participant reading takes the resolved binding with `candidates = 1`; the two are to be
+        compared when it goes;
+      * `intent_field_participant_scope_table` `done`, to the target and its participants. The scope
+        rule's participant rows, `intent_reference_for_application`, `ReferenceForParticipantDefects`
+        and `UnlowerableOrderings` read `graphitron_field_target`, `graphql_poly_member` and
+        `graphitron_resolved_type_binding`; the `@mutation(table:)` exclusion stays with the scope
+        rule, the one reader it separates rows for. Equal both ways on sakila (188 rows) and sis (533)
+        with or without that exclusion. The seeded cases are `field-participant-scope`;
+      * `intent_reference_for_application` `open`. Whether a `@referenceFor` applies at a consumer
+        is whether the participant it names is a member of the consumer's target, one join to
+        `graphql_poly_member`, and its table is the member's binding. What is left is the input-field
+        pairing through `intent_input_occurrence_path`, which goes with the `@referenceFor` entries;
       * `graphitron_field_scope_table`, the table a field's SQL binds against, checked against the
-        departure and the targets it restates;
+        departure and the targets it restates. Its participant rows go with the move to the source
+        and the target;
       * `graphitron_field_column_scope` and `intent_field_path_terminus`, which state a path's or a
         routine's arrival, to the path read toward a target;
       * `intent_bound_table`, to `graphitron_resolved_type_binding`.
 
       Each is measured old against new on sakila and sis before it goes, the rules reading it keep
       their answers, and its readers are named on the commit that moves them.
-    * **The source's shape and the target's shape** `blocked`, on the node above. A record is a
-      class-backed type, and a column read differs from a field read by the source's shape.
-    * **The departure is stated** `open`, after the producers. The consume phase: which keys a
-      producer reads from its parent's source object and which table they match, one row per field
-      and table with the rule that answered: the source type's table; the keys a write returned; or,
-      below a type `graphitron_type_backing` backs with a class, a `TableRecord` member, members
-      matching the primary key of the first link's table, or `@sourceRow`, which is a forced choice.
-      A root field has none. The `from_` columns of `graphitron_field_table` are the first rule
-      stated per target.
+    * **The unlowerable ordering is a defect** `done`. A declared `@defaultOrder` or `@orderBy` on
+      a field read once per participant is `ORDERING_ACROSS_PARTICIPANTS`, resting on `UNSUPPORTED`,
+      at the declaring directive, in `graphitron_entry_defect_rule`. The unstored
+      `intent_field_unlowerable_ordering` was evaluated four times a round at 45 to 80 ms on sakila;
+      the rule is evaluated once per capture, at 2 to 3 ms on both stores, where both have no row.
+      `UnlowerableOrderings.detect` mints the build error from the stored rows until entry defects
+      fail the build, naming the target's members, and the editor reads the defect through the
+      `diagnostic` view, so the rejection rows and their stage go. The primary-key fallback route
+      went with the view, inert on a fan-out. The clause restating the classifier's precedence
+      (`@service`, `Node`, `@lookupKey`, `@routine`, the query root, the list shape) moved with the
+      rule; which route classifies a field is the fetcher's fact under "Every field has one
+      fetcher", and the rule reads it from there once it is stated. The seeded cases are
+      `ordering-across-participants`.
+    * **A list `@routine` write delivers its order** `open`. Its returned keys are captured and its
+      rows re-read by key, and neither step sorts, so the target's primary key orders nothing. The
+      one case is graphitron's own example schema, which is why it was a held verdict rather than a
+      defect. It becomes a defect, or the re-read sorts, and the example builds either way.
+  * **The candidates are one family** `open`. What a coordinate could have named, asked by the
+    build error's message, the language server's completion and the MCP server, and answered today
+    in as many shapes as there are askers: two stored relations, a jOOQ query, and completions in
+    the language server that work their candidates out themselves. A candidate is one shape: the
+    coordinate, what it could name, and the rule that offers it, stated as a rule view and read by
+    every asker. Not to be confused with the `candidates` columns elsewhere, which count how many
+    resolutions a spelling has.
+    * **A `@referenceFor`'s valid participants are a rule view** `open`. The members of each
+      consumer's target with a table, which `ReferenceForParticipantDefects.participantsOf` queries
+      in jOOQ once per consumer to list in its rejection.
+    * **`graphitron_argmapping_candidate` takes the shape** `open`. Every writable path under a
+      directive's coordinate, read by `graphitron_argmapping_match`. The language server's
+      `ArgMappingCompletions` reads the field's arguments syntactically instead and offers no dotted
+      path; reading the relation gives it the paths.
+    * **`graphitron_node_id_candidate` takes the shape** `open`. The node types a bare `@nodeId` may
+      name, with no reader yet; the rules are the `@nodeId` target node's under "A node id is a
+      target type, read as its ID". The language server's `NodeTypeCompletions` reads
+      `graphitron_node_entry` and `intent_node_container_member` instead.
+    * **The catalog's names are candidates too** `open`. What `@table(name:)` and a path element's
+      `table:` and `key:` may name, which `TableCompletions` and `ReferenceCompletions` read off the
+      census and the bound tables. Whether these join the family or stay census reads is decided
+      here.
+    * **The askers read the family** `blocked`, on the nodes above: the rejections' lists of valid
+      names, the language server's completions and an MCP surface for them, each named on the
+      commit that moves it.
   * **The hand-built model tests dissolve** `open`. About fifty-five classes build the walk's
     classified model by hand through `TestFixtures`' made-up table and key refs, a `TableType` over
     `filmTable()` holding a `ColumnBackedField`, and run the walk's validator, renderers or plan
@@ -1846,6 +1894,15 @@ The two `@referenceFor` step relations, their one reader having moved to the ste
 `field-chain-link-reach` and its `keyed`, `keyless` and `open` siblings, and
 `field-chain-application`; the classes `FieldChainLinkResolutions` and `FieldChainApplications`, now
 `FieldPathResolutions` and `FieldPathApplications`.
+
+**Dissolved into a defect.** `intent_field_unlowerable_ordering`, its verdicts
+`PARTICIPANT_FAN_OUT` and `KEY_CAPTURE_SCATTER` and its route `PRIMARY_KEY_FALLBACK`,
+`intent_field_unlowerable_ordering_rejection`, `UnlowerableOrderingRejectionRows`,
+`UnlowerableOrderings.Verdict`, the grains `unlowerable-ordering-route` and
+`unlowerable-ordering-rejection`, and the seeded `FieldUnlowerableOrderingTest`.
+
+**Dissolved into the target and its joins.** `intent_field_participant_scope_table` and its
+seeded `FieldParticipantScopeTableTest`.
 
 **Renamed, navigation to target.** `graphitron_field_navigation` (now `graphitron_field_target`),
 its columns `navigated_type_name` (now `target_type_name`) and `basis` with its values

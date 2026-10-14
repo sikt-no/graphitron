@@ -106,8 +106,6 @@ public final class DerivationStratum {
                 NodeIdDecodeHopColumns::derive),
             step("NodeIdDecodeColumns", "graphitron_node_id_decode_column",
                 NodeIdDecodeColumns::derive),
-            step("UnlowerableOrderingRejectionRows", "intent_field_unlowerable_ordering_rejection",
-                UnlowerableOrderingRejectionRows::derive),
             step("EntryDefects", "graphitron_entry_defect", EntryDefects::derive));
     }
 
