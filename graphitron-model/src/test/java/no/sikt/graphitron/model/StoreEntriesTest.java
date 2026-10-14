@@ -38,13 +38,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
 /**
- * The configuration transcription, on the two things a run cannot say for itself: what it was
- * configured with, and that it stopped being configured with something.
+ * The recipe and the classpath halves of the configuration transcription: what a run was told to
+ * read, and that it stopped being told to read something.
  *
- * <p>The first half is ordinary and every case below states one relation's worth of it. The second
- * is what the mark and sweep is for and is the half a writer gets wrong: an author deleting an
- * element from the build file produces no row to overwrite, so a store that only ever upserts keeps
- * answering with the configuration of a run that has exited.
+ * <p>The rest of the family is stated by fact documents, captured through the real run under the
+ * configuration each states with {@code @withConfiguration}: {@code configuration},
+ * {@code configuration-none} and the stepped {@code configuration-sweep}. The recipe and the
+ * classpath stay here because a document's are the harness's own, its own files and the classpath
+ * corpus, so no document can state another. So does the one case about a sibling graph, the
+ * documents being checked one graph at a time.
+ *
+ * <p>The sweep is the half a writer gets wrong: an entry deleted from the build file produces no
+ * row to overwrite, so a store that only ever upserts keeps answering with the configuration of a
+ * run that has exited.
  */
 class StoreEntriesTest {
 
@@ -54,8 +60,8 @@ class StoreEntriesTest {
     private static final LocalDateTime SECOND = FIRST.plusMinutes(1);
 
     @Test
-    @DisplayName("every configured parameter lands as the run held it")
-    void transcribesTheWholeSubject() {
+    @DisplayName("the recipe lands as the run held it")
+    void transcribesTheRecipe() {
         withSeededStore(dsl -> {
             seedGraph(dsl, GRAPH);
             StoreEntries.write(dsl, GRAPH, everything(), classpath(), FIRST);
@@ -81,53 +87,6 @@ class StoreEntriesTest {
                 .fetch(0, String.class))
                 .containsExactly(".graphqls", ".graphql");
 
-            assertThat(dsl.select(STORE_GRAPH_SUPERGRAPH.SUPERGRAPH_NAME)
-                .from(STORE_GRAPH_SUPERGRAPH)
-                .where(STORE_GRAPH_SUPERGRAPH.GRAPH_NAME.eq(GRAPH))
-                .fetchOne(0, String.class))
-                .isEqualTo("catalogue");
-
-            assertThat(dsl.select(STORE_GRAPH_OUTPUT.OUTPUT_PACKAGE, STORE_GRAPH_OUTPUT.JOOQ_PACKAGE,
-                    STORE_GRAPH_OUTPUT.OUTPUT_DIRECTORY)
-                .from(STORE_GRAPH_OUTPUT)
-                .where(STORE_GRAPH_OUTPUT.GRAPH_NAME.eq(GRAPH))
-                .fetch(row -> tuple(row.value1(), row.value2(), row.value3())))
-                .as("the three coordinates travel together and are written together")
-                .containsExactly(tuple("com.example.generated", "com.example.jooq",
-                    Path.of("/build/generated").toString()));
-
-            assertThat(dsl.select(STORE_GRAPH_TENANT_COLUMN.COLUMN_NAME)
-                .from(STORE_GRAPH_TENANT_COLUMN)
-                .where(STORE_GRAPH_TENANT_COLUMN.GRAPH_NAME.eq(GRAPH))
-                .fetchOne(0, String.class))
-                .isEqualTo("tenant_id");
-
-            assertThat(dsl.select(STORE_GRAPH_LINT_DISABLED_RULE.RULE_ID)
-                .from(STORE_GRAPH_LINT_DISABLED_RULE)
-                .where(STORE_GRAPH_LINT_DISABLED_RULE.GRAPH_NAME.eq(GRAPH))
-                .fetch(0, String.class))
-                .as("a set, so the rows carry no position for a reader to mistake for one")
-                .containsExactlyInAnyOrder("no-typename-prefix", "field-names-camel-case");
-
-            assertThat(dsl.select(STORE_GRAPH_LINT_EXCLUDED_TYPE.TYPE_PATTERN)
-                .from(STORE_GRAPH_LINT_EXCLUDED_TYPE)
-                .where(STORE_GRAPH_LINT_EXCLUDED_TYPE.GRAPH_NAME.eq(GRAPH))
-                .orderBy(STORE_GRAPH_LINT_EXCLUDED_TYPE.ORDINAL)
-                .fetch(0, String.class))
-                .as("a list, so the author's order is the row order")
-                .containsExactly("Legacy*", "*Internal");
-
-            assertThat(dsl.select(STORE_GRAPH_SESSION_MOUNT.MOUNT_METHOD)
-                .from(STORE_GRAPH_SESSION_MOUNT)
-                .where(STORE_GRAPH_SESSION_MOUNT.GRAPH_NAME.eq(GRAPH))
-                .fetchOne(0, String.class))
-                .isEqualTo("com.example.Identity#mount");
-
-            assertThat(dsl.select(STORE_GRAPH_SESSION_UNMOUNT.UNMOUNT_METHOD)
-                .from(STORE_GRAPH_SESSION_UNMOUNT)
-                .where(STORE_GRAPH_SESSION_UNMOUNT.GRAPH_NAME.eq(GRAPH))
-                .fetchOne(0, String.class))
-                .isEqualTo("com.example.Identity#unmount");
         });
     }
 
@@ -153,13 +112,13 @@ class StoreEntriesTest {
     }
 
     @Test
-    @DisplayName("a subject that declared nothing writes nothing, rather than writing blanks")
+    @DisplayName("no recipe and no classpath write no rows, rather than empty ones")
     void absenceIsAMissingRow() {
         withSeededStore(dsl -> {
             seedGraph(dsl, GRAPH);
             StoreEntries.write(dsl, GRAPH, SubjectConfig.none(), List.of(), FIRST);
 
-            assertThat(census(dsl, GRAPH).values())
+            assertThat(census(dsl, GRAPH, HELD).values())
                 .as("no row anywhere; a synthesised value here is a fact that can disagree with "
                     + "the run it claims to describe")
                 .allMatch(count -> count == 0);
@@ -167,43 +126,16 @@ class StoreEntriesTest {
     }
 
     @Test
-    @DisplayName("a parameter the author removed loses its row on the next reading")
-    void sweepsWhatTheRunNoLongerDeclares() {
+    @DisplayName("a dependency the build stopped declaring loses its row on the next reading")
+    void sweepsADependencyTheRunNoLongerDeclares() {
         withSeededStore(dsl -> {
             seedGraph(dsl, GRAPH);
             StoreEntries.write(dsl, GRAPH, everything(), classpath(), FIRST);
 
-            // The same build file with four elements taken out: the tenant column, the unmount
-            // beside the mount, one lint rule and one dependency. Each is a different way of going
-            // away, and none of the four produces an incoming row for an upsert to land on.
-            StoreEntries.write(dsl, GRAPH, new SubjectConfig(
-                Optional.of(recipe()), Optional.of("com.example.jooq"), Optional.of("catalogue"),
-                Optional.of(output()), Optional.empty(),
-                LintConfig.validated(Set.of("field-names-camel-case"), List.of("Legacy*", "*Internal")),
-                new SessionStateConfig.MethodHooks(
-                    new SessionStateConfig.HookRef("com.example.Identity", "mount"),
-                    Optional.empty())),
-                classpath().subList(0, 2), SECOND);
+            // The same build with its snapshot dependency taken out, which produces no incoming
+            // row for an upsert to land on.
+            StoreEntries.write(dsl, GRAPH, everything(), classpath().subList(0, 2), SECOND);
 
-            assertThat(dsl.fetchCount(STORE_GRAPH_TENANT_COLUMN,
-                STORE_GRAPH_TENANT_COLUMN.GRAPH_NAME.eq(GRAPH)))
-                .as("a single-valued parameter that went away is a graph with no row, which is "
-                    + "the same state a graph that never had one is in")
-                .isZero();
-            assertThat(dsl.fetchCount(STORE_GRAPH_SESSION_UNMOUNT,
-                STORE_GRAPH_SESSION_UNMOUNT.GRAPH_NAME.eq(GRAPH)))
-                .as("the unmount goes and the mount stays, which is the supported mount-only "
-                    + "configuration rather than a foreign key violation")
-                .isZero();
-            assertThat(dsl.fetchCount(STORE_GRAPH_SESSION_MOUNT,
-                STORE_GRAPH_SESSION_MOUNT.GRAPH_NAME.eq(GRAPH)))
-                .isOne();
-            assertThat(dsl.select(STORE_GRAPH_LINT_DISABLED_RULE.RULE_ID)
-                .from(STORE_GRAPH_LINT_DISABLED_RULE)
-                .where(STORE_GRAPH_LINT_DISABLED_RULE.GRAPH_NAME.eq(GRAPH))
-                .fetch(0, String.class))
-                .as("a value-keyed row the reading did not touch, rather than one it overwrote")
-                .containsExactly("field-names-camel-case");
             assertThat(dsl.select(STORE_GRAPH_DEPENDENCY.SOURCE_NAME)
                 .from(STORE_GRAPH_DEPENDENCY)
                 .where(STORE_GRAPH_DEPENDENCY.GRAPH_NAME.eq(GRAPH))
@@ -262,12 +194,12 @@ class StoreEntriesTest {
     }
 
     @Test
-    @DisplayName("reading the same configuration twice leaves the same rows, restamped")
+    @DisplayName("reading the same recipe and classpath twice leaves the same rows, restamped")
     void writingTwiceRestampsRatherThanDuplicating() {
         withSeededStore(dsl -> {
             seedGraph(dsl, GRAPH);
             StoreEntries.write(dsl, GRAPH, everything(), classpath(), FIRST);
-            var afterFirst = census(dsl, GRAPH);
+            var afterFirst = census(dsl, GRAPH, HELD);
 
             // A second reading of an unchanged configuration, which is where a sweep predicate
             // that is wrong on the second pass shows it: rows deleted, duplicated, or left
@@ -275,7 +207,7 @@ class StoreEntriesTest {
             // to sweep.
             StoreEntries.write(dsl, GRAPH, everything(), classpath(), SECOND);
 
-            assertThat(census(dsl, GRAPH))
+            assertThat(census(dsl, GRAPH, HELD))
                 .as("the same configuration transcribes to the same rows however often it is read")
                 .isEqualTo(afterFirst);
             assertThat(stamps(dsl, SECOND))
@@ -296,7 +228,7 @@ class StoreEntriesTest {
             // predicate that ignores the partition would empty the sibling here.
             StoreEntries.write(dsl, GRAPH, SubjectConfig.none(), List.of(), SECOND);
 
-            assertThat(census(dsl, SIBLING).values())
+            assertThat(census(dsl, SIBLING, FAMILY).values())
                 .as("a shared store holds several modules, and a module's reading speaks for one")
                 .allMatch(count -> count > 0);
         });
@@ -345,31 +277,35 @@ class StoreEntriesTest {
             Path.of("/build/generated"));
     }
 
+    /** The recipe's and the classpath's relations, which are this class's subject. */
+    private static final List<Table<?>> HELD = List.of(
+        STORE_GRAPH_SCHEMA_INPUT, STORE_GRAPH_SCHEMA_EXTENSION, STORE_GRAPH_DEPENDENCY);
+
     /**
-     * The relations the transcription writes, listed rather than found by prefix: two relations
+     * Every relation the transcription writes, listed rather than found by prefix: two relations
      * share the prefix and are not this gatherer's, and a relation missing from the list is one
-     * these cases would pass without having looked at.
+     * the sibling case would pass without having looked at.
      */
-    private static final List<Table<?>> TRANSCRIBED = List.of(
+    private static final List<Table<?>> FAMILY = List.of(
         STORE_GRAPH_SCHEMA_INPUT, STORE_GRAPH_SCHEMA_EXTENSION, STORE_GRAPH_SUPERGRAPH,
         STORE_GRAPH_OUTPUT, STORE_GRAPH_TENANT_COLUMN, STORE_GRAPH_LINT_DISABLED_RULE,
         STORE_GRAPH_LINT_EXCLUDED_TYPE, STORE_GRAPH_SESSION_MOUNT, STORE_GRAPH_SESSION_UNMOUNT,
         STORE_GRAPH_DEPENDENCY);
 
-    /** How many rows each relation holds for one graph. */
-    private static Map<String, Integer> census(DSLContext dsl, String graph) {
+    /** How many rows each of {@code relations} holds for one graph. */
+    private static Map<String, Integer> census(DSLContext dsl, String graph, List<Table<?>> relations) {
         var counts = new LinkedHashMap<String, Integer>();
-        for (Table<?> table : TRANSCRIBED) {
+        for (Table<?> table : relations) {
             counts.put(table.getName(), dsl.fetchCount(table,
                 table.field(STORE_GRAPH_SCHEMA_INPUT.GRAPH_NAME).eq(graph)));
         }
         return counts;
     }
 
-    /** Rows across the family carrying one reading's instant. */
+    /** Rows across this class's relations carrying one reading's instant. */
     private static int stamps(DSLContext dsl, LocalDateTime touchedAt) {
         int total = 0;
-        for (Table<?> table : TRANSCRIBED) {
+        for (Table<?> table : HELD) {
             total += dsl.fetchCount(table,
                 table.field(STORE_GRAPH_SCHEMA_INPUT.GRAPH_NAME).eq(GRAPH)
                     .and(table.field(STORE_GRAPH_SCHEMA_INPUT.TOUCHED_AT).eq(touchedAt)));

@@ -1,0 +1,16 @@
+# The third reading changes another file and not the configuration. An unchanged configuration
+# transcribes to the same rows however often it is read, and every one of them carries the reading
+# that just ran: a sweep predicate wrong on a second pass shows here, as rows deleted, duplicated or
+# left with the older mark.
+
+type Unrelated { note: String }
+
+extend schema @expectEquals(relation: "store_graph_session_mount", rows: """
+  mount_method,               touched_at
+  com.example.Identity#mount, 1000000120
+  """)
+
+extend schema @expectEquals(relation: "store_graph_lint_disabled_rule", rows: """
+  rule_id,                touched_at
+  field-names-camel-case, 1000000120
+  """)

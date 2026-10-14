@@ -1018,6 +1018,23 @@ reads nothing off the classpath that capture has already read, and builds no sch
 * **Its inputs are values** `open`. A `StoreHandle`, the `CapturedSchema` and the run's
   configuration; not `CapturedGraph`, which owns the store and its lifetime, so the constructor that
   takes one goes.
+* **The configuration is read from the store** `open`. Capture transcribes the run's configuration
+  into the `store_graph_` relations, and that was the add; the flip never happened. The generator
+  still reads the tenant column (`BuildContext`), the lint configuration and the session-state
+  methods (`GraphQLRewriteGenerator`) and the output coordinates off `RunContext`, and the supergraph
+  name is read by nothing. Only `store_graph_lint_excluded_type` has a reader in the store, the lint
+  view. The relations without one are held, not dropped: they wait for this flip.
+  * **The readers move onto the store** `open`, one setting at a time.
+  * **`RunContext` stops carrying what the store states** `blocked`, on the readers.
+  * **The configuration family is pinned by fact documents** `done`. A document states the
+    configuration it is captured under with `@withConfiguration`, which the fact harness reads off
+    its text before the capture, a stepped graph's reading taking it from the files as they then
+    stand. `configuration` states every parameter landing, `configuration-none` a run that
+    declared nothing, and `configuration-sweep` three readings: parameters taken out are swept,
+    and an unchanged configuration is restamped. `@assertEmpty` is how a document says a relation
+    holds no row for its graph. `StoreEntriesTest` keeps the recipe, which a document cannot state,
+    its recipe being the harness's own, and the sibling-graph case. A broken row in each document
+    was run and fails.
 * **Configured tags have one producer** `done`. `TagApplier` put them into the written composition
   in Java while `graphitron_configured_tag` stated the same rule in SQL for inheritance to read, so a
   carrier's own tags and the ones its minted types inherit came from two rules nothing compared.
@@ -1809,8 +1826,8 @@ against its own corpus, filed here because the walk's fixtures were.
   `GraphQLSourceCaptureTest`, the per-coordinate directive application counts against the SDL to
   `GraphQLAnchorTest`, and per-graph membership to a test of its own, `ModelCaptureMembershipTest`,
   being a claim about the whole run's read-set.
-* **The configuration cases move beside the configuration gatherer** `open`. The recipe
-  round-trips and the configuration family against the run's resolved configuration.
+* **The configuration cases move beside the configuration gatherer** `done`, as fact documents
+  rather than as cases: see "The configuration family is pinned by fact documents".
 * **The emitted family's union moves beside `EmittedRegistry`** `open`, with the federated
   schema that records no problem.
 * **The oracle writers' lifecycle cases stay with their writers** `open`. The javac partition and

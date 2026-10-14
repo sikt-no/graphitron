@@ -1,0 +1,19 @@
+# The first reading: a run configured with a tenant column, a mount and an unmount, and two disabled
+# lint rules.
+
+extend schema @withConfiguration(
+  tenantColumn: "tenant_id",
+  lintDisabledRules: ["no-typename-prefix", "field-names-camel-case"],
+  mount: "com.example.Identity#mount",
+  unmount: "com.example.Identity#unmount"
+)
+
+extend schema @expectEquals(relation: "store_graph_tenant_column", rows: """
+  column_name, touched_at
+  tenant_id,   1000000000
+  """)
+
+extend schema @expectEquals(relation: "store_graph_session_unmount", rows: """
+  unmount_method,               touched_at
+  com.example.Identity#unmount, 1000000000
+  """)

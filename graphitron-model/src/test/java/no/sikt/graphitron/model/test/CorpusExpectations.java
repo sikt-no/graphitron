@@ -80,14 +80,26 @@ public final class CorpusExpectations {
      */
     public static final String ABSENT_DIRECTIVE = "assertAbsent";
 
-    /** What a block claims about the relation: all of its rows, some of them, or none of them. */
+    /**
+     * The emptiness directive's name: the relation holds no row for the document's graph. Takes no
+     * rows, so it reads as what it claims rather than as an equality block with nothing in it, and
+     * it speaks only for a relation carrying the document's identity.
+     */
+    public static final String EMPTY_DIRECTIVE = "assertEmpty";
+
+    /**
+     * What a block claims about the relation: all of its rows, some of them, none of them, or that it
+     * holds none at all.
+     */
     public enum Mode {
         /** The relation's rows are exactly the declared ones. */
         EQUALS,
         /** The declared rows are among the relation's, which may hold others. */
         CONTAINS,
         /** None of the declared rows is among the relation's. */
-        ABSENT
+        ABSENT,
+        /** The relation holds no row for the document's graph. */
+        EMPTY
     }
 
     /** The column every expectation carries and no document spells: the document's own identity. */
@@ -198,7 +210,7 @@ public final class CorpusExpectations {
             .where(DSL.field(id("d", "coordinate"), String.class)
                 .eq(SchemaCoordinateSyntax.ofSchema()))
             .and(DSL.field(id("d", "directive_name"), String.class)
-                .in(DIRECTIVE, CONTAINS_DIRECTIVE, ABSENT_DIRECTIVE))
+                .in(DIRECTIVE, CONTAINS_DIRECTIVE, ABSENT_DIRECTIVE, EMPTY_DIRECTIVE))
             .and(written)
             .orderBy(DSL.field(id("d", "graph_name")), DSL.field(id("d", "ordinal")))
             .fetch();
@@ -215,6 +227,10 @@ public final class CorpusExpectations {
         var blocks = new ArrayList<Block>();
         for (var entry : byApplication.entrySet()) {
             String relation = entry.getValue().get("relation");
+            if (EMPTY_DIRECTIVE.equals(entry.getKey().directive())) {
+                blocks.add(empty(entry.getKey().graph(), relation));
+                continue;
+            }
             String csv = entry.getValue().get("rows");
             if (relation == null || csv == null) {
                 throw new AssertionError("document " + entry.getKey().graph() + " applies @"
@@ -233,8 +249,18 @@ public final class CorpusExpectations {
         return switch (directive) {
             case CONTAINS_DIRECTIVE -> Mode.CONTAINS;
             case ABSENT_DIRECTIVE -> Mode.ABSENT;
+            case EMPTY_DIRECTIVE -> Mode.EMPTY;
             default -> Mode.EQUALS;
         };
+    }
+
+    /** An {@code @assertEmpty} block, which has a relation and nothing else. */
+    private static Block empty(String graph, String relation) {
+        if (relation == null) {
+            throw new AssertionError("document " + graph + " applies @" + EMPTY_DIRECTIVE
+                + " without a relation, which the directive's own signature makes impossible");
+        }
+        return new Block(graph, relation.strip(), List.of(), List.of(), List.of(), Mode.EMPTY);
     }
 
     /**
@@ -262,6 +288,9 @@ public final class CorpusExpectations {
                 blocks.add(decode(csvReader, graph,
                     stringArgument(directive, "relation").strip(),
                     stringArgument(directive, "rows")));
+            }
+            for (var directive : extension.getDirectives(EMPTY_DIRECTIVE)) {
+                blocks.add(empty(graph, stringArgument(directive, "relation")));
             }
             for (var name : List.of(CONTAINS_DIRECTIVE, ABSENT_DIRECTIVE)) {
                 for (var directive : extension.getDirectives(name)) {
@@ -331,6 +360,9 @@ public final class CorpusExpectations {
         // those corpora being the store's rather than any graph's. Asked of the catalog, because a
         // list kept here would be a second answer to a question the schema already settles.
         boolean partitioned = partitioned(dsl, relation);
+        if (mode == Mode.EMPTY) {
+            return emptyDivergences(dsl, relation, partitioned, blocks);
+        }
         var graphs = new LinkedHashSet<String>();
         var expectedRows = new LinkedHashSet<List<String>>();
         for (Block block : blocks) {
@@ -404,6 +436,29 @@ public final class CorpusExpectations {
                 .forEach(row -> divergences.add(divergence(relation, row, Divergence.Side.NOT_DECLARED)));
         }
         return divergences;
+    }
+
+    /**
+     * The rows a relation holds for graphs that said it holds none, each reported as undeclared. A
+     * relation carrying no graph is the store's rather than a document's, so no document can say it
+     * is empty for itself.
+     */
+    private static List<Divergence> emptyDivergences(DSLContext dsl, String relation,
+                                                     boolean partitioned, List<Block> blocks) {
+        if (!partitioned) {
+            throw new AssertionError("@" + EMPTY_DIRECTIVE + " speaks for the document's graph, and "
+                + relation + " carries none");
+        }
+        var graphs = blocks.stream().map(Block::graph)
+            .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        var graph = DSL.field(id("produced", GRAPH_COLUMN), String.class);
+        return dsl.select(graph, DSL.count().cast(String.class))
+            .from(DSL.table(id(relation)).as("PRODUCED"))
+            .where(graph.in(graphs))
+            .groupBy(graph)
+            .fetch()
+            .map(row -> new Divergence(relation, row.value1(), Divergence.Side.NOT_DECLARED,
+                List.of(row.value2() + " rows")));
     }
 
     /**

@@ -349,6 +349,22 @@ public final class CapturedStore implements AutoCloseable {
     }
 
     /**
+     * The same under a configuration the caller states. The recipe is still this fixture's, the
+     * graph's own file; the rest of {@code configuration} is what the reading is told the run was
+     * configured with.
+     */
+    public static CapturedStore ofCatalogWith(Path directory, String graphName, String sdl,
+                                              CatalogInput jooq, List<ClasspathEntry> classpath,
+                                              SubjectConfig configuration) {
+        Path file = write(directory, graphName, sdl);
+        var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
+        var store = ThreadConfinedStore.borrow();
+        var schemas = captureFiles(store.dsl(), List.of(file), directory, graphName,
+            Objects.requireNonNull(jooq, "jooq"), false, classpath, LocalDateTime.now(), configuration);
+        return new CapturedStore(store, graphName, directory, file, registry, schemas);
+    }
+
+    /**
      * A graph whose only source refused: {@code refusedSdl} is spelled so a stage objects to it, and
      * nothing else was read. The shape for a case about what an editor shows in the file the author
      * has just broken, where there is no surviving document to fall back on.
@@ -449,6 +465,20 @@ public final class CapturedStore implements AutoCloseable {
     }
 
     /**
+     * The same under a configuration the caller states. The recipe is still this fixture's, the
+     * graph's own file; the rest of {@code configuration} is what the reading is told the run was
+     * configured with.
+     */
+    public CapturedStore andCatalogGraphWith(String otherGraph, String sdl, CatalogInput jooq,
+                                            List<ClasspathEntry> classpath,
+                                            SubjectConfig configuration) {
+        Path other = write(directory, otherGraph, sdl);
+        captureFiles(store.dsl(), List.of(other), directory, otherGraph,
+            Objects.requireNonNull(jooq, "jooq"), false, classpath, LocalDateTime.now(), configuration);
+        return this;
+    }
+
+    /**
      * The same with a class root, which is what a store holding several graphs over one reactor is:
      * the classpath does not vary by graph, and the families read out of it carry no graph at all,
      * so the second graph's reading of it is the first graph's reading again.
@@ -477,6 +507,15 @@ public final class CapturedStore implements AutoCloseable {
                                                      java.util.Collection<String> files,
                                                      Instant at, CatalogInput jooq,
                                                      List<ClasspathEntry> classpath) {
+        return andCatalogGraphReadAt(graph, written, files, at, jooq, classpath, SubjectConfig.none());
+    }
+
+    /** {@link #andCatalogGraphReadAt} under a configuration the caller states for this reading. */
+    public Map<String, String> andCatalogGraphReadAt(String graph, Map<String, String> written,
+                                                     java.util.Collection<String> files,
+                                                     Instant at, CatalogInput jooq,
+                                                     List<ClasspathEntry> classpath,
+                                                     SubjectConfig configuration) {
         for (var file : written.entrySet()) {
             Path path = write(directory, graph + "." + file.getKey(), file.getValue());
             try {
@@ -489,7 +528,7 @@ public final class CapturedStore implements AutoCloseable {
             .map(name -> fixtureFile(directory, graph + "." + name))
             .toList();
         captureFiles(store.dsl(), paths, directory, graph, jooq, false, classpath,
-            LocalDateTime.ofEpochSecond(at.getEpochSecond(), 0, ZoneOffset.UTC));
+            LocalDateTime.ofEpochSecond(at.getEpochSecond(), 0, ZoneOffset.UTC), configuration);
         var sourceNames = new java.util.LinkedHashMap<String, String>();
         files.forEach(name -> sourceNames.put(name,
             SchemaSource.file(fixtureFile(directory, graph + "." + name)).sourceName()));
@@ -567,13 +606,30 @@ public final class CapturedStore implements AutoCloseable {
     private static CapturedSchema captureFiles(DSLContext dsl, List<Path> files, Path directory,
                                                String graphName, CatalogInput jooq, boolean warm,
                                                List<ClasspathEntry> classpath, LocalDateTime readAt) {
+        return captureFiles(dsl, files, directory, graphName, jooq, warm, classpath, readAt,
+            SubjectConfig.none());
+    }
+
+    /**
+     * The same under a stated configuration. The recipe is always the files this capture was given,
+     * whatever {@code configuration} carries, so a fixture states what the run was configured with
+     * and never which documents it read.
+     */
+    private static CapturedSchema captureFiles(DSLContext dsl, List<Path> files, Path directory,
+                                               String graphName, CatalogInput jooq, boolean warm,
+                                               List<ClasspathEntry> classpath, LocalDateTime readAt,
+                                               SubjectConfig configuration) {
         FactStores.countCapture();
         ModelCapture.writeGraph(dsl, new GraphIdentity(graphName, directory), readAt);
         // The pass, and the whole of the capture: it writes the graph row, the catalog, the
         // classpath families where there is a classpath, every document stratum, and runs the
         // derivations at its tail.
+        var corpus = corpusOf(files, directory);
+        var subject = new SubjectConfig(corpus.recipe(), configuration.jooqPackage(),
+            configuration.supergraph(), configuration.output(), configuration.tenantColumn(),
+            configuration.lint(), configuration.sessionState());
         return ModelCapture.capture(dsl, new GraphIdentity(graphName, directory),
-            withCatalog(corpusOf(files, directory), jooq), classpath, loaderOf(jooq), readAt);
+            withCatalog(subject, jooq), classpath, loaderOf(jooq), readAt);
     }
 
     /**

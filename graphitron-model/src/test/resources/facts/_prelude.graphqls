@@ -26,5 +26,24 @@
 directive @expectEquals(relation: String!, rows: String!) repeatable on SCHEMA
 directive @assertContains(relation: String!, rows: String!) repeatable on SCHEMA
 directive @assertAbsent(relation: String!, rows: String!) repeatable on SCHEMA
+# The relation holds no row for this document's graph.
+directive @assertEmpty(relation: String!) repeatable on SCHEMA
+
+# The configuration a graph is captured under, as a build would have handed it to the run: read by
+# the fact harness off the document's text before the capture, since a reading is told its
+# configuration rather than finding it. A document without it is a run that declared nothing. The
+# output coordinates travel together, all three or none; the schema files are always the document's
+# own. In a graph read in steps, a reading takes it from the files as they then stand.
+directive @withConfiguration(
+  supergraph: String,
+  tenantColumn: String,
+  outputPackage: String,
+  outputJooqPackage: String,
+  outputDirectory: String,
+  lintDisabledRules: [String!],
+  lintExcludedTypes: [String!],
+  mount: String,
+  unmount: String
+) on SCHEMA
 
 type Query { ping: String }

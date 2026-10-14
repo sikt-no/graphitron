@@ -1,0 +1,55 @@
+# Every parameter of the run's configuration lands as the run held it, one relation per parameter
+# grouped by what is present together and means one thing. The output coordinates are three columns
+# of one row because they travel together. The disabled lint rules are a set, so their rows carry no
+# position; the excluded types are a list, so the author's order is the row order. The session
+# methods are the authored strings, the reflected signature being a fact about the model rather
+# than the configuration.
+
+extend schema @withConfiguration(
+  supergraph: "catalogue",
+  tenantColumn: "tenant_id",
+  outputPackage: "com.example.generated",
+  outputJooqPackage: "com.example.jooq",
+  outputDirectory: "/build/generated",
+  lintDisabledRules: ["no-typename-prefix", "field-names-camel-case"],
+  lintExcludedTypes: ["Legacy*", "*Internal"],
+  mount: "com.example.Identity#mount",
+  unmount: "com.example.Identity#unmount"
+)
+
+extend schema @expectEquals(relation: "store_graph_supergraph", rows: """
+  supergraph_name
+  catalogue
+  """)
+
+extend schema @expectEquals(relation: "store_graph_output", rows: """
+  output_package,        jooq_package,     output_directory
+  com.example.generated, com.example.jooq, /build/generated
+  """)
+
+extend schema @expectEquals(relation: "store_graph_tenant_column", rows: """
+  column_name
+  tenant_id
+  """)
+
+extend schema @expectEquals(relation: "store_graph_lint_disabled_rule", rows: """
+  rule_id
+  no-typename-prefix
+  field-names-camel-case
+  """)
+
+extend schema @expectEquals(relation: "store_graph_lint_excluded_type", rows: """
+  ordinal, type_pattern
+  0,       Legacy*
+  1,       *Internal
+  """)
+
+extend schema @expectEquals(relation: "store_graph_session_mount", rows: """
+  mount_method
+  com.example.Identity#mount
+  """)
+
+extend schema @expectEquals(relation: "store_graph_session_unmount", rows: """
+  unmount_method
+  com.example.Identity#unmount
+  """)

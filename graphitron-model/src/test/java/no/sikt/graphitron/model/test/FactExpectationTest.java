@@ -1,5 +1,15 @@
 package no.sikt.graphitron.model.test;
 
+import graphql.language.ArrayValue;
+import graphql.language.Directive;
+import graphql.language.SchemaDefinition;
+import graphql.language.StringValue;
+import graphql.language.Value;
+import graphql.parser.Parser;
+import no.sikt.graphitron.model.config.SessionStateConfig;
+import no.sikt.graphitron.model.lint.LintConfig;
+import no.sikt.graphitron.model.run.OutputCoordinates;
+import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.test.CorpusExpectations.Block;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterAll;
@@ -15,6 +25,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.TreeMap;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -41,6 +52,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * store a first one left, so it is written as the sequence that produces it; and each reading runs
  * at its own instant, so a mark column says which reading last wrote a row, which is what tells a
  * row the sweep kept from one a later reading wrote again.
+ *
+ * <p>A document states the configuration its graph is captured under with {@code @withConfiguration},
+ * which this class reads off the document's own text before the capture, since the configuration is
+ * an input to the reading rather than something it finds. A stepped graph's reading takes it from
+ * the files as they then stand, so a later version of a file without it is a run that stopped being
+ * configured with it.
  */
 class FactExpectationTest {
 
@@ -130,11 +147,13 @@ class FactExpectationTest {
         var allDivergences = new ArrayList<String>();
 
         for (var document : graphs.plain().entrySet()) {
+            var configuration = StatedConfiguration.of(List.of(document.getValue().sdl()));
             if (captured == null) {
                 captured = CapturedStore.ofCatalogWith(tmp, document.getKey(),
-                    full(document.getValue()), jooq, corpus);
+                    full(document.getValue()), jooq, corpus, configuration);
             } else {
-                captured.andCatalogGraphWith(document.getKey(), full(document.getValue()), jooq, corpus);
+                captured.andCatalogGraphWith(document.getKey(), full(document.getValue()), jooq, corpus,
+                    configuration);
             }
         }
         var plainBlocks = CorpusExpectations.blocks(captured.dsl()).stream()
@@ -151,6 +170,7 @@ class FactExpectationTest {
         for (var graph : graphs.stepped().entrySet()) {
             var files = new LinkedHashSet<String>();
             files.add(PRELUDE_FILE);
+            var standing = new LinkedHashMap<String, String>();
             boolean first = true;
             for (long instant : Graphs.instants(graph.getValue())) {
                 var written = new LinkedHashMap<String, String>();
@@ -162,11 +182,13 @@ class FactExpectationTest {
                     var version = versions.get(instant);
                     if (version != null) {
                         written.put(file, version.sdl());
+                        standing.put(file, version.sdl());
                         files.add(file);
                     }
                 });
                 var sourceNames = captured.andCatalogGraphReadAt(graph.getKey(), written, files,
-                    Instant.ofEpochSecond(instant), jooq, corpus);
+                    Instant.ofEpochSecond(instant), jooq, corpus,
+                    StatedConfiguration.of(List.copyOf(standing.values())));
                 var writtenNow = written.keySet().stream()
                     .filter(file -> !PRELUDE_FILE.equals(file))
                     .map(sourceNames::get)
@@ -192,6 +214,86 @@ class FactExpectationTest {
     static void closeTheStore() {
         if (captured != null) {
             captured.close();
+        }
+    }
+
+    /**
+     * The configuration a graph's documents state with {@code @withConfiguration}, as the run
+     * configuration a build would have handed the reading. At most one of the texts may carry it; none
+     * is a run that declared nothing. The recipe is the harness's own whatever this says.
+     */
+    static final class StatedConfiguration {
+
+        private static final String DIRECTIVE = "withConfiguration";
+
+        static SubjectConfig of(List<String> texts) {
+            var applications = texts.stream()
+                .flatMap(text -> new Parser().parseDocument(text).getDefinitions().stream())
+                .flatMap(definition -> definition instanceof SchemaDefinition schema
+                    ? schema.getDirectives(DIRECTIVE).stream() : java.util.stream.Stream.empty())
+                .toList();
+            if (applications.isEmpty()) {
+                return SubjectConfig.none();
+            }
+            if (applications.size() > 1) {
+                throw new AssertionError("a graph states its configuration once; found "
+                    + applications.size() + " @" + DIRECTIVE + " applications");
+            }
+            return decode(applications.getFirst());
+        }
+
+        private static SubjectConfig decode(Directive directive) {
+            var outputPackage = string(directive, "outputPackage");
+            var outputJooqPackage = string(directive, "outputJooqPackage");
+            var outputDirectory = string(directive, "outputDirectory");
+            Optional<OutputCoordinates> output = Optional.empty();
+            if (outputPackage.isPresent() || outputJooqPackage.isPresent() || outputDirectory.isPresent()) {
+                if (outputPackage.isEmpty() || outputJooqPackage.isEmpty() || outputDirectory.isEmpty()) {
+                    throw new AssertionError("@" + DIRECTIVE + " states the output coordinates "
+                        + "together, outputPackage, outputJooqPackage and outputDirectory, or none");
+                }
+                output = Optional.of(new OutputCoordinates(outputPackage.get(),
+                    outputJooqPackage.get(), Path.of(outputDirectory.get())));
+            }
+            var disabled = strings(directive, "lintDisabledRules");
+            var excluded = strings(directive, "lintExcludedTypes");
+            var lint = disabled.isEmpty() && excluded.isEmpty()
+                ? LintConfig.empty()
+                : LintConfig.validated(new LinkedHashSet<>(disabled), excluded);
+            var mount = string(directive, "mount");
+            var unmount = string(directive, "unmount");
+            var session = mount.isEmpty() && unmount.isEmpty()
+                ? SessionStateConfig.none()
+                : SessionStateConfig.from(mount.orElse(null), unmount.orElse(null));
+            return new SubjectConfig(Optional.empty(), Optional.empty(),
+                string(directive, "supergraph"), output, string(directive, "tenantColumn"), lint,
+                session);
+        }
+
+        private static Optional<String> string(Directive directive, String name) {
+            var argument = directive.getArgument(name);
+            if (argument == null) {
+                return Optional.empty();
+            }
+            return Optional.of(text(argument.getValue(), name));
+        }
+
+        private static List<String> strings(Directive directive, String name) {
+            var argument = directive.getArgument(name);
+            if (argument == null) {
+                return List.of();
+            }
+            if (!(argument.getValue() instanceof ArrayValue list)) {
+                throw new AssertionError("@" + DIRECTIVE + "(" + name + ":) is a list of strings");
+            }
+            return list.getValues().stream().map(value -> text(value, name)).toList();
+        }
+
+        private static String text(Value<?> value, String name) {
+            if (!(value instanceof StringValue string)) {
+                throw new AssertionError("@" + DIRECTIVE + "(" + name + ":) takes strings");
+            }
+            return string.getValue();
         }
     }
 
@@ -264,9 +366,12 @@ class FactExpectationTest {
         assertThat(blocks)
             .as("a fact folder that declares nothing passes every sweep over it")
             .isNotEmpty();
-        assertThat(blocks).allSatisfy(block -> assertThat(block.rows())
-            .as("a block declaring no rows asserts nothing, in either mode")
-            .isNotEmpty());
+        assertThat(blocks)
+            .filteredOn(block -> block.mode() != CorpusExpectations.Mode.EMPTY)
+            .allSatisfy(block -> assertThat(block.rows())
+                .as("a block declaring no rows asserts nothing; @assertEmpty is how a document says "
+                    + "a relation holds none")
+                .isNotEmpty());
     }
 
     /**

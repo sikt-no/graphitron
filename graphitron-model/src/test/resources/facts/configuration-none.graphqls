@@ -1,0 +1,19 @@
+# A run that declared nothing writes nothing, rather than writing blanks: each parameter's absence is
+# the missing row, and a synthesised value would be a fact that can disagree with the run it claims
+# to describe. No declaration means standalone, no output coordinates means a run that generates
+# nothing, and no mount means no session-state configuration at all.
+#
+# The excluded lint types are not asserted empty here: that relation's own comment does not say
+# what its silence means.
+
+extend schema @assertEmpty(relation: "store_graph_supergraph")
+
+extend schema @assertEmpty(relation: "store_graph_output")
+
+extend schema @assertEmpty(relation: "store_graph_tenant_column")
+
+extend schema @assertEmpty(relation: "store_graph_lint_disabled_rule")
+
+extend schema @assertEmpty(relation: "store_graph_session_mount")
+
+extend schema @assertEmpty(relation: "store_graph_session_unmount")
