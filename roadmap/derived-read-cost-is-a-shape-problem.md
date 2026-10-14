@@ -114,6 +114,17 @@ are gone.
   * A fact document states an absence and a reading at a stated instant `done`. A redeclaration
     that wins is a row that must not be there, and what a later reading kept is a row still carrying
     an earlier reading's mark.
+  * **A redeclared `@skip` or `@include` loses to the specification, and says so** `open`. The
+    oldest declaration wins a directive's name, which matches the schema graphql-java builds for
+    every built-in but two: it keeps an authored `@deprecated`, `@oneOf` or `@specifiedBy`, and
+    discards a redeclared `@skip` or `@include` for its own, which its executor implements, without
+    refusing it, so no `graphql_schema_problem` row is written. `redeclared-built-in-directive`
+    pins the authored `@include(if: Boolean) on FIELD` as the one holding the name, where the
+    schema holds `@include(if: Boolean!)` on `FIELD`, `FRAGMENT_SPREAD` and `INLINE_FRAGMENT`, so
+    the store answers where `@include` may go with what graphql-java contradicts. The anchor takes
+    the specification's declaration for those two whatever a document says, a redeclaration that
+    is discarded is a defect at its own position, as a `type Query` lost to the prelude is, and the
+    document's `@include` rows assert the built-in at every instant.
 * **An application is identified by where its `@` was written** `blocked`, on the three below. The
   ordinal is matched against numberings other writers compute apart, and agrees only because a field
   is declared once; keyed by position, the anchor is a projection, and the enclosing-declaration walk
@@ -254,6 +265,15 @@ running from the participant's table toward a `@nodeId` target in key hops alone
   input field alike, and the input-value step entries gain their first reader. The routine reading is
   the exception, reading `graphitron_field_routine` per target, and whether its resolution can be
   stated at the entry grain with the target check moving into the walk is the first question.
+  * **A self-referencing key is oriented by the walk, not by the reading**, and how it is
+    oriented is R1037's. A key element has two readings, its constraint ridden from the table
+    declaring it and against, and keeps both, the cardinality of the field being the second thing
+    after the routine that ties a reading to its field today. Between two tables the walk takes the
+    one departing where the path stands. A self-reference departs and arrives at one table, so the
+    walk takes it from the field's cardinality as the generator does until R1037 gives the key
+    element `inverse:`, a self-reference riding forward unless it says so, and changes both; it
+    also brings the `@reference` reference page's account of keys up to date. Nothing in R876 waits
+    on it; `roadmap/audits/2026-10-14-reference-keys-in-consumer-schemas.md`.
 * **Both walks are anchored** `blocked`, on the departure, under "`source` and `target` are stated
   for every coordinate", and on readings stated at the entry grain above. The forward reach per field
   from the departure, the backward reach per target from `graphitron_field_table`, the chain where
@@ -261,6 +281,13 @@ running from the participant's table toward a `@nodeId` target in key hops alone
   `@reference` reads and what a bare `@nodeId` with `@reference` takes its type from. A producer
   with neither a departure nor a target has nothing to run, which is the defect
   `CHAIN_WITHOUT_TARGET` narrows to.
+* **Every field has a path, the written one or the one discovery implies** `open`, after both
+  walks are anchored. A table-backed field's path is the `@routine` and `@reference` elements it
+  wrote, or where it wrote none the key discovery finds between its departure and its target type's
+  table, or nothing at all for a leaf read on its departure's own table. Stated as links like the
+  written ones, so the target table is always the arrival of a path and no reader falls back to
+  discovery for itself. The target type's binding is then the anchor discovery reads, and for a
+  written path a check: a written path arriving anywhere else is a defect.
 * **The path is stated at the argument and input-field grains** `open`, after the two relations at
   the field grain. `@reference` and `@referenceFor` are written at three coordinates and only the
   field grain has a chain relation; both groupings are stated at the other two.
@@ -526,7 +553,10 @@ entry is written by the capture phase alone. Counted in `roadmap/audits/2026-09-
       R692 makes the empty path an author error the question is whether the applications state at
       least one element. Where a path's last step lands and how many steps an application has are
       asked only to find a hop's target, and move with the hops.
-    * **The field-site step resolution gives way to the path resolution** `open`. Two derivations
+    * **The field-site step resolution gives way to the path resolution** `blocked`, for the column
+      scope rule and the node-id instruction rule, on "Both walks are anchored": a scalar read
+      through a path has no table its target type binds, so the path resolution, keyed by that
+      table, never walks it. Two derivations
       resolve one path: `graphitron_field_reference_step_hop` and `_target`, from the decoded steps
       per application and element, and `graphitron_field_path_resolution`, from the transcription
       per coordinate. Their readers ask for the first application's terminal hop, where the path
@@ -536,14 +566,6 @@ entry is written by the capture phase alone. Counted in `roadmap/audits/2026-09-
       and `RoutineWriteFacts`. Then the old one goes, six tables, two views and two writers, with
       the seeded classes pinning it, their cases restated against the path resolution in
       `FieldTableLinksTest` where it does not state them already.
-      * **A path resolves where the field names no table** `open`. The path resolution is keyed by
-        the field's target, which `graphitron_field_table` takes from the navigated type's table, a
-        participant's or a routine result, and its reading joins that relation inner. A scalar or
-        enum field reading a column through a path has no target, so its path is never resolved,
-        and that field is what the column scope rule's `PATH_TERMINAL` arm and the node-id
-        instruction rule's output arm exist for: the terminal is where the path arrives, found by
-        walking it forward from the departure, which the head walk already does once it has a path
-        to walk.
     * **The path's own readers** wait on "The read-time path relations are gone":
       `intent_field_path_node` and `intent_mutation_routine_seat` match a step by ordinal.
     * **The argument-site shape follows the argument path** `blocked`, on "The path is stated at
@@ -695,8 +717,8 @@ and the emitters read, and it goes when nothing reads what it builds.
     * **The duplicate statements of a field's tables dissolve** `blocked`, on the node above and on
       "The departure is stated". A field's target and its departure are each stated several times
       at several grains, and each statement goes when its readers have moved:
-      * `graphitron_field_table`, its target half to the target types and their bindings, its
-        `from_` half to the departure;
+      * `graphitron_field_table`, its target half to the arrival of the field's path, written or
+        implied, its `from_` half to the departure;
       * `intent_field_participant_scope_table`, to the target and its participants;
       * `graphitron_field_scope_table`, the table a field's SQL binds against, checked against the
         departure and the targets it restates;
