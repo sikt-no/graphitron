@@ -32,8 +32,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
-| `R1027` | A rejected Declined or Unbound tenant root does not void its subtree tenant context | In Review | 2026-10-14 <sub>created 2026-10-13</sub> | [plan](rejected-declined-or-unbound-root-keeps-subtree-context.md) |
-| `R1031` | A field rejected at classification voids its subtree tenant context <sub>blocked by: [rejected-declined-or-unbound-root-keeps-subtree-context](rejected-declined-or-unbound-root-keeps-subtree-context.md)</sub> | Spec | 2026-10-14 | [plan](classification-rejected-field-voids-subtree-tenant-context.md) |
+| `R1031` | A field rejected at classification voids its subtree tenant context | Spec | 2026-10-14 | [plan](classification-rejected-field-voids-subtree-tenant-context.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -458,7 +457,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### diagnostics
 
 - `R411` [**Wire-coercion cast guard for @condition and @externalField (R261 Slice 2)**](reject-wire-coercion-nonservice-sites.md) — Backlog, architecture
-- `R1027` [**A rejected Declined or Unbound tenant root does not void its subtree tenant context**](rejected-declined-or-unbound-root-keeps-subtree-context.md) — In Review, bug
 - `R817` [**AuthoredClaimConflicts.fieldGrain reads a recursive view once per conflict row**](authored-claim-conflicts-reads-a-recursive-view-per-row.md) — Backlog, bug
 - `R625` [**Honour coercing argMapping leaf extractions on routine bindings**](routine-coercing-arg-extractions.md) — Backlog, validation
 - `R670` [**Root @lookupKey plus @asConnection reports a @table error the author cannot act on**](root-lookup-connection-diagnostic.md) — Backlog, bug
@@ -466,7 +464,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R601` [**The diagnostic stream unifies**](unified-diagnostic-stream.md) — Backlog, structural
 - `R936` [**The federation library is reported in graphitron's voice, not thrown in the library's**](federation-library-is-reported-not-thrown.md) — Backlog, dx
 - `R891` [**The projection address collision splices a folded name that exists nowhere**](projection-collision-typed-arm.md) — Backlog, bug
-- `R1031` [**A field rejected at classification voids its subtree tenant context**](classification-rejected-field-voids-subtree-tenant-context.md) — Spec, bug, blocked by [rejected-declined-or-unbound-root-keeps-subtree-context](rejected-declined-or-unbound-root-keeps-subtree-context.md)
+- `R1031` [**A field rejected at classification voids its subtree tenant context**](classification-rejected-field-voids-subtree-tenant-context.md) — Spec, bug
 - `R654` [**Coordinate-level verdicts masked by reflection and binding rejections outside the @service seat**](resolver-coordinate-verdict-precedence-sweep.md) — Backlog, bug
 - `R602` [**Decide the INPUT_OBJECT locations of @record and @table: narrow or retired-location convention**](input-object-directive-locations.md) — Backlog, cleanup
 - `R931` [**Reject a synthesised Connection or Edge name that exactly collides with another registered type**](synthesised-type-exact-name-collision.md) — Backlog, bug

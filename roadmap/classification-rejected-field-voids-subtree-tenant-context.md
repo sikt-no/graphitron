@@ -5,7 +5,7 @@ status: Spec
 bucket: bug
 priority: 4
 theme: diagnostics
-depends-on: [rejected-declined-or-unbound-root-keeps-subtree-context]
+depends-on: []
 created: 2026-10-14
 last-updated: 2026-10-14
 ---
