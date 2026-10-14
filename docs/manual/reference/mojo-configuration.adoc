@@ -157,6 +157,12 @@ blocks are overridden by environment variables instead, named in their own rows.
 | `graphitron.dev.skipInitial`
 | Skip the initial generator pass at startup. Useful when the consumer has just run `mvn graphitron:generate` and the generated sources are already on disk; the dev loop still re-runs on every subsequent save.
 
+| `compileModule`
+| `boolean`
+| `true`
+| `graphitron.dev.compileModule`
+| Run the module's own build through `process-classes` before the first round, so its classes are current when the dev loop reads them. The first round takes the place of the module's bound `graphitron:generate`, so the module generates once. A goal that fails is reported as a warning and the dev loop starts anyway. Skipped when the same Maven run already compiled the module, for example `mvn compile graphitron:dev`. Turn off when the IDE compiles the module. Sibling modules are never compiled.
+
 | `compile`
 | `boolean`
 | `true`

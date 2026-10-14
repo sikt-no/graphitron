@@ -1434,15 +1434,16 @@ Reading a jar is safe for a release and dangerous for a snapshot, and Maven sett
       refused as the build's own undeclared module, the opptak symptom told wrongly. The same case
       now states the replacement: the sibling's classes in the jar's place, `REACTOR`, and the
       added class nameable.
-  * **The dev goal runs its module's plan through compile** `open`. Before the first round the goal
-    executes its own module's bound goals from `validate` through `process-classes`, the way
-    `quarkus:dev` does, skipping any the session already ran. A consumer binds `graphitron:generate`
-    there and the module's code cannot compile without it, so the plan includes it, and the dev
-    loop's first round starts from what that generation wrote rather than generating again.
-  * **The manual says where a sibling's classes come from** `open`, lands with the nodes above.
-    `dev-loop-internals.adoc` § Multi-module projects and the classpath paragraph of
-    `mojo-configuration.adoc` say every goal reads a sibling's output before the repository and
-    compiles no sibling, and that the dev goal compiles its own module first.
+  * **The dev goal runs its module's plan through compile** `done`. Before its first round the goal
+    asks Maven for its own module's plan through `process-classes` and runs it, the first round
+    taking the place of the module's `graphitron:generate`, or running before the first `compile`
+    goal where none is bound, so the module generates once and compiles what the round wrote
+    (`ModulePlan`). A session that already compiled runs the round alone, and so does
+    `graphitron.dev.compileModule` off. A goal that fails is a warning and the loop starts anyway,
+    the loop being what shows the developer what is wrong.
+  * **The manual says where a sibling's classes come from** `done`. `dev-loop-internals.adoc`
+    § Multi-module projects and the codegen classpath section and `compileModule` row of
+    `mojo-configuration.adoc`.
 * **A reactor entry is never a release** `done`. A workspace module's entry takes its kind from the
   path the run reads, a directory or a snapshot jar, whatever version it builds at; release is
   trusted only for a jar a repository resolved.
@@ -2030,6 +2031,11 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   `target`, in the place Maven put the module on the classpath, and falls back to the installed copy
   only where the sibling has no output. A class added to a sibling since its last install is no
   longer refused as being in a module the project does not declare.
+* **Changed: `graphitron:dev` compiles its own module before it starts** ("the dev goal compiles its
+  module first"). It runs the module's build through `process-classes`, its first round taking the
+  place of the module's `graphitron:generate`, and reports a goal that fails as a warning rather
+  than stopping. `-Dgraphitron.dev.compileModule=false` turns it off; sibling modules are never
+  compiled.
 
 ## Retired vocabulary
 

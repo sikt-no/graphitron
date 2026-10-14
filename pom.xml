@@ -268,6 +268,12 @@
                 <artifactId>maven-plugin-annotations</artifactId>
                 <version>3.15.2</version>
             </dependency>
+            <!-- JSR-330, which Maven supplies at runtime: how a mojo is handed Maven's components. -->
+            <dependency>
+                <groupId>javax.inject</groupId>
+                <artifactId>javax.inject</artifactId>
+                <version>1</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 

@@ -39,6 +39,11 @@ import no.sikt.graphitron.rewrite.maven.watch.RecentChanges;
 import no.sikt.graphitron.rewrite.maven.watch.SchemaWatcher;
 import no.sikt.graphitron.rewrite.maven.watch.WatchedCorpus;
 import no.sikt.graphitron.rewrite.maven.watch.WatchErrorFormatter;
+import javax.inject.Inject;
+import org.apache.maven.lifecycle.LifecycleExecutor;
+import org.apache.maven.model.Resource;
+import org.apache.maven.plugin.BuildPluginManager;
+import org.apache.maven.plugin.MojoExecution;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
@@ -233,6 +238,31 @@ public class DevMojo extends AbstractRewriteMojo {
     boolean skipInitial;
 
     /**
+     * Whether {@code graphitron:dev} runs the module's own build through {@code process-classes}
+     * before its first round, the round taking the place of the module's {@code graphitron:generate}
+     * so the module generates once. On by default; off for a developer whose IDE compiles the module.
+     */
+    @Parameter(property = "graphitron.dev.compileModule", defaultValue = "true")
+    boolean compileModule;
+
+    // What plans and runs the module's build before the first round; null where the goal was built
+    // without them, which runs the round alone.
+    private final LifecycleExecutor lifecycleExecutor;
+    private final BuildPluginManager pluginManager;
+
+    /** The goal as Maven builds it, handed the components that run the module's build. */
+    @Inject
+    public DevMojo(LifecycleExecutor lifecycleExecutor, BuildPluginManager pluginManager) {
+        this.lifecycleExecutor = lifecycleExecutor;
+        this.pluginManager = pluginManager;
+    }
+
+    /** The goal without them, for a caller that runs no module build. */
+    DevMojo() {
+        this(null, null);
+    }
+
+    /**
      * Whether {@code graphitron:dev} compiles the generated sources into
      * {@code target/graphitron-classes} (in-process, incrementally). On by default: the compiled tree is
      * what the in-process MCP query tools execute against. Set {@code -Dgraphitron.dev.compile=false} to
@@ -418,8 +448,9 @@ public class DevMojo extends AbstractRewriteMojo {
         var initialCtxHolder = new AtomicReference<RunContext>();
         var initialHolder = new AtomicReference<InitialOutput>();
         try {
-            withCodegenScope(ctx -> {
+            runModulePlan(() -> withCodegenScope(ctx -> {
                 initialCtxHolder.set(ctx);
+                registerGeneratedRoots(ctx);
                 if (skipInitial) {
                     // Nothing is emitted this startup by design, so the editor's products come from
                     // the reporting-only entry point rather than from a pass.
@@ -428,7 +459,7 @@ public class DevMojo extends AbstractRewriteMojo {
                     getLog().info(banner("initial run"));
                     initialHolder.set(InitialOutput.of(runGeneratorPass(ctx, "initial run")));
                 }
-            });
+            }));
         } catch (MojoExecutionException | RuntimeException e) {
             // The store is open this early now, and the shutdown hook that would give it back is
             // not registered until the watchers are up. A startup that fails here (a module whose
@@ -1139,6 +1170,78 @@ public class DevMojo extends AbstractRewriteMojo {
                     + " result nothing can be read back from.");
         }
         return GraphitronModelStore.openAt(ctx.storeDirectory());
+    }
+
+    /** The dev loop's first round, which {@link #runModulePlan} runs in generation's place. */
+    @FunctionalInterface
+    interface FirstRound {
+        void run() throws MojoExecutionException;
+    }
+
+    /**
+     * Runs the module's build through {@code process-classes} with {@code round} in the place of its
+     * {@code graphitron:generate}; see {@link ModulePlan}. A goal that fails is said and the rest of
+     * the build is left out, the loop starting anyway: it is what shows the developer what is wrong,
+     * and a class that does not compile is often the one being edited.
+     */
+    void runModulePlan(FirstRound round) throws MojoExecutionException {
+        var goals = session == null || session.getGoals() == null ? List.<String>of() : session.getGoals();
+        runSteps(ModulePlan.of(boundGoals(), goals, compileModule), round);
+    }
+
+    /** {@code steps} in order, a goal that fails ending the goals but not the round. */
+    void runSteps(List<ModulePlan.Step<MojoExecution>> steps, FirstRound round)
+            throws MojoExecutionException {
+        boolean failed = false;
+        for (var step : steps) {
+            if (step instanceof ModulePlan.Step.Run<MojoExecution> run) {
+                if (failed) {
+                    continue;
+                }
+                var bound = run.bound();
+                try {
+                    pluginManager.executeMojo(session, bound.execution());
+                } catch (Exception e) {
+                    failed = true;
+                    getLog().warn("graphitron:dev: " + bound.plugin() + ":" + bound.goal()
+                        + " failed while compiling " + project.getArtifactId()
+                        + ", so its own classes may be out of date; continuing without the rest"
+                        + " of its build: " + e.getMessage());
+                }
+            } else {
+                round.run();
+            }
+        }
+    }
+
+    /** Maven's plan for this module through {@code process-classes}, or none where it cannot plan. */
+    private List<ModulePlan.Bound<MojoExecution>> boundGoals() {
+        if (!compileModule || lifecycleExecutor == null || pluginManager == null || session == null) {
+            return List.of();
+        }
+        try {
+            return lifecycleExecutor.calculateExecutionPlan(session, true, "process-classes")
+                .getMojoExecutions().stream()
+                .map(execution -> new ModulePlan.Bound<>(
+                    execution.getGroupId() + ":" + execution.getArtifactId(),
+                    execution.getGoal(), execution.getLifecyclePhase(), execution))
+                .toList();
+        } catch (Exception e) {
+            getLog().warn("graphitron:dev: could not plan " + project.getArtifactId()
+                + "'s build, so it is not compiled before the first round: " + e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * The generated sources and resources as the module's build sees them, which is what
+     * {@code graphitron:generate} registers and what the compile after the first round compiles.
+     */
+    private void registerGeneratedRoots(RunContext ctx) {
+        project.addCompileSourceRoot(ctx.outputDirectory().toString());
+        var resource = new Resource();
+        resource.setDirectory(ctx.outputResourcesDirectory().toString());
+        project.addResource(resource);
     }
 
     /**

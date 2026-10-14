@@ -63,6 +63,10 @@ sources; graphitron puts the sibling's own output in that copy's place on the
 classpath, so a class added since the last install resolves. Every graphitron
 goal does this, not only `graphitron:dev`.
 
+The module you started from is compiled first: the dev goal runs that module's
+own build through `process-classes`, its first round taking the place of the
+module's `graphitron:generate` (`graphitron.dev.compileModule`, on by default).
+
 The caveat: `graphitron:dev` does not compile siblings. A sibling with no
 `target/classes` and no jar in `target` is read from its installed copy, and
 one with no installed copy either fails Maven's own dependency resolution before
