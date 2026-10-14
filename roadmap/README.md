@@ -31,8 +31,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R1027` | A rejected Declined or Unbound tenant root does not void its subtree tenant context | In Progress | 2026-10-14 <sub>created 2026-10-13</sub> | [plan](rejected-declined-or-unbound-root-keeps-subtree-context.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
+| `R1027` | A rejected Declined or Unbound tenant root does not void its subtree tenant context | In Review | 2026-10-14 <sub>created 2026-10-13</sub> | [plan](rejected-declined-or-unbound-root-keeps-subtree-context.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -458,7 +458,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R1029` [**The tenant fold crashes on a @nodeId(typeName:) decode whose target is a @table-only type**](tenant-fold-nodeid-on-table-only-type.md) — In Review, bug
 - `R411` [**Wire-coercion cast guard for @condition and @externalField (R261 Slice 2)**](reject-wire-coercion-nonservice-sites.md) — Backlog, architecture
-- `R1027` [**A rejected Declined or Unbound tenant root does not void its subtree tenant context**](rejected-declined-or-unbound-root-keeps-subtree-context.md) — In Progress, bug
+- `R1027` [**A rejected Declined or Unbound tenant root does not void its subtree tenant context**](rejected-declined-or-unbound-root-keeps-subtree-context.md) — In Review, bug
 - `R817` [**AuthoredClaimConflicts.fieldGrain reads a recursive view once per conflict row**](authored-claim-conflicts-reads-a-recursive-view-per-row.md) — Backlog, bug
 - `R625` [**Honour coercing argMapping leaf extractions on routine bindings**](routine-coercing-arg-extractions.md) — Backlog, validation
 - `R670` [**Root @lookupKey plus @asConnection reports a @table error the author cannot act on**](root-lookup-connection-diagnostic.md) — Backlog, bug
