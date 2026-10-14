@@ -32,14 +32,18 @@ import java.util.stream.Collectors;
  * {@code null} when any value is {@code null}, so the GraphQL field resolves to {@code null}
  * rather than emitting a malformed ID.
  *
- * <p>For each {@code @node} type the generator emits static {@code encode<TypeName>} /
- * {@code decode<TypeName>} helpers; the typeId is baked into the helper name, so call sites pass
+ * <p>For each node type the generator emits static {@code encode<TypeName>} /
+ * {@code decode<TypeName>} helpers, and a {@code decode<TypeName>} alone for each {@code @table}
+ * type a {@code @nodeId} leaf decodes from catalog node metadata
+ * ({@link GraphitronSchema#catalogNodeDecodes()}): nothing encodes such a type's id, because its
+ * output side has no node id. The typeId is baked into the helper name, so call sites pass
  * typed key values, not the wire string. {@code decode<TypeName>} returns {@code null} uniformly
  * on malformed input or typeId mismatch; carrier consumers wrap that null through the
  * {@code CallSiteExtraction.NodeIdDecodeKeys} arms. Call sites resolve the helpers through
  * {@link HelperRef} references pre-computed on {@link NodeType#encodeMethod()} /
- * {@link NodeType#decodeMethod()}, so the encoder generator and the call-site emitters cannot
- * drift on naming.
+ * {@link NodeType#decodeMethod()} or minted with the catalog decode, and each decode is emitted
+ * from the very reference its call sites hold, so the encoder generator and the call-site emitters
+ * cannot drift on naming.
  *
  * <p>The generated class is {@code final} with a private constructor and only static methods, so
  * consumers cannot override the encoding: a single canonical wire format across every generated
@@ -62,19 +66,23 @@ public class NodeIdEncoderClassGenerator {
      * goes through {@link #generate(GraphitronSchema)}.
      */
     public static List<TypeSpec> generate() {
-        return generate(List.of());
+        return generate(List.of(), List.of());
     }
 
-    /** Emits the encoder class with per-Node {@code encode<TypeName>} / {@code decode<TypeName>} helpers. */
+    /**
+     * Emits the encoder class with per-Node {@code encode<TypeName>} / {@code decode<TypeName>}
+     * helpers, then a {@code decode<TypeName>} for each catalog decode.
+     */
     public static List<TypeSpec> generate(GraphitronSchema schema) {
         var nodeTypes = schema.types().values().stream()
             .filter(t -> t instanceof NodeType)
             .map(t -> (NodeType) t)
             .collect(Collectors.toUnmodifiableList());
-        return generate(nodeTypes);
+        return generate(nodeTypes, schema.catalogNodeDecodes());
     }
 
-    private static List<TypeSpec> generate(List<NodeType> nodeTypes) {
+    private static List<TypeSpec> generate(List<NodeType> nodeTypes,
+                                           List<HelperRef.Decode> catalogNodeDecodes) {
         var privateCtor = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PRIVATE)
             .build();
@@ -157,9 +165,10 @@ public class NodeIdEncoderClassGenerator {
 
         for (NodeType nt : nodeTypes) {
             classBuilder.addMethod(buildPerTypeEncode(nt));
-            // Each decode method references its own table's Tables class, so multi-schema codegen
-            // layouts get schema-segmented references.
-            classBuilder.addMethod(buildPerTypeDecode(nt, CatalogRefs.constantsClass(nt.table())));
+            classBuilder.addMethod(buildPerTypeDecode(nt.decodeMethod()));
+        }
+        for (HelperRef.Decode decode : catalogNodeDecodes) {
+            classBuilder.addMethod(buildPerTypeDecode(decode));
         }
 
         return List.of(classBuilder.build());
@@ -214,19 +223,23 @@ public class NodeIdEncoderClassGenerator {
     /**
      * Emits {@code static RecordN<T1..TN> decode<TypeName>(String base64Id)}, returning
      * {@code null} on malformed input or typeId mismatch and otherwise materialising a typed
-     * {@link org.jooq.Record} populated from the table's {@link org.jooq.Field} references.
+     * {@link org.jooq.Record} populated from the table's {@link org.jooq.Field} references. Every
+     * fact the body needs is on the reference: the method name, the output shape, the wire type id
+     * and the table.
      */
-    private static MethodSpec buildPerTypeDecode(NodeType nt, ClassName tablesClass) {
-        HelperRef.Decode ref = nt.decodeMethod();
+    private static MethodSpec buildPerTypeDecode(HelperRef.Decode ref) {
         TypeName recordType = ref.returnType();
         int n = ref.outputColumnShape().size();
-        String tableField = nt.table().javaFieldName();
+        String tableField = ref.table().javaFieldName();
+        // Each decode method references its own table's Tables class, so multi-schema codegen
+        // layouts get schema-segmented references.
+        ClassName tablesClass = CatalogRefs.constantsClass(ref.table());
 
         var b = MethodSpec.methodBuilder(ref.methodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(recordType)
             .addParameter(String.class, "base64Id")
-            .addStatement("$T values = decodeValues($S, base64Id)", String[].class, nt.typeId())
+            .addStatement("$T values = decodeValues($S, base64Id)", String[].class, ref.typeId())
             .addStatement("if (values == null || values.length != $L) return null", n);
 
         StringBuilder fieldsList = new StringBuilder();

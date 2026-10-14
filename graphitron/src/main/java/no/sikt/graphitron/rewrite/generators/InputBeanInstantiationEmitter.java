@@ -95,7 +95,7 @@ final class InputBeanInstantiationEmitter {
             names.decodeSingular(rec.typeName()),
             new no.sikt.graphitron.rewrite.model.HelperRef.Decode(
                 rec.encoderClass(), names.decodeSingular(rec.typeName()), rec.keyColumns(),
-                rec.typeId()),
+                rec.typeId(), rec.table()),
             rec.table());
     }
 

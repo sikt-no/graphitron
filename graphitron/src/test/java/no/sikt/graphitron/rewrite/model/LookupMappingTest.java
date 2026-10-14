@@ -29,7 +29,8 @@ class LookupMappingTest {
         ClassName.bestGuess("com.example.NodeIdEncoder"),
         "decodeFilmActor",
         List.of(FILM_ID, ACTOR_ID),
-        "FilmActor");
+        "FilmActor",
+        no.sikt.graphitron.rewrite.TestFixtures.tableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of()));
 
     @Test
     void mapInput_withEmptyBindings_throws() {

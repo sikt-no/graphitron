@@ -1924,9 +1924,12 @@ public record TenantBindingIndex(
                     var shape = keys.decodeMethod().outputColumnShape();
                     int slot = tenantIndex(shape);
                     if (slot < 0) {
-                        var node = nodeTypeOf(keys.decodeMethod());
-                        if (tenantScoped(node.table())) {
-                            collector.evidence(node.name() + " id at " + slotNameOf(path));
+                        // The decode carries the table it reads, so the evidence needs no type
+                        // lookup; the target may be a node type or a @table type decoded from
+                        // catalog node metadata.
+                        var decode = keys.decodeMethod();
+                        if (tenantScoped(decode.table())) {
+                            collector.evidence(decode.targetTypeName() + " id at " + slotNameOf(path));
                         }
                         return;
                     }
@@ -1968,8 +1971,11 @@ public record TenantBindingIndex(
          * Where a record-shaped {@code @nodeId(typeName:)} decode reads the tenant, or empty when
          * the target's key tuple {@code keyColumns} has no tenant column. A target that is a node
          * type reads the tenant off its {@code decode<TypeName>} helper at the tenant column's
-         * position; a {@code @table} type that is not a node type has no such helper, so a key
-         * carrying the tenant column declines. Looked up by {@code typeName}, not by type id: two
+         * position. A {@code @table} type that is not a node type declines when its key carries the
+         * tenant column: the record carriers hold no {@link HelperRef.Decode}, so a record decode of
+         * such a type does not route the statement on its tenant. That is a scope decision rather
+         * than a missing helper; a leaf naming the same type does route, through the catalog decode
+         * it carries. Looked up by {@code typeName}, not by type id: two
          * types can back one table, and a {@code @table}-only type's catalog type id can coincide
          * with a node type's.
          */
@@ -1985,21 +1991,10 @@ public record TenantBindingIndex(
             }
             return Optional.of(new SlotAccess.Declined("the tenant is reached through @nodeId(typeName: '"
                 + typeName + "') at " + slotName + ", whose key carries tenant column '"
-                + scopes.columnName() + "', but '" + typeName + "' is not a node type: there is no"
-                + " node id decode helper to route on. Make '" + typeName + "' a node type, or bind"
-                + " the tenant through a field mapping to tenant column '" + scopes.columnName() + "'."));
-        }
-
-        /**
-         * The node type a decode helper answers for. Every {@link HelperRef.Decode} is minted from
-         * a {@link GraphitronType.NodeType}, so a miss is a classifier bug.
-         */
-        private GraphitronType.NodeType nodeTypeOf(HelperRef.Decode decode) {
-            if (types.get(decode.nodeTypeName()) instanceof GraphitronType.NodeType nt) {
-                return nt;
-            }
-            throw new IllegalStateException("no node type answers for decode helper '"
-                + decode.methodName() + "'");
+                + scopes.columnName() + "', but '" + typeName + "' is not a node type, and a record"
+                + " decode of a @table-only type does not route the statement on its tenant. Make '"
+                + typeName + "' a node type, or bind the tenant through a field mapping to tenant"
+                + " column '" + scopes.columnName() + "'."));
         }
 
         /** An argument path as its SDL names: the argument, then each input field below it. */

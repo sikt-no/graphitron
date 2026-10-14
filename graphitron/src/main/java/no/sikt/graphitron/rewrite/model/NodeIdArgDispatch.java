@@ -24,7 +24,7 @@ import java.util.SequencedMap;
  *
  * <p>The decoders are the {@link HelperRef.Decode} references the branches themselves consume, never
  * a restated (typeName, typeId) pair: both are reachable through the reference
- * ({@link HelperRef.Decode#nodeTypeName()} / {@link HelperRef.Decode#typeId()}), and a copy could
+ * ({@link HelperRef.Decode#targetTypeName()} / {@link HelperRef.Decode#typeId()}), and a copy could
  * drift from the branch it claims to describe with nothing failing at build time.
  *
  * @param argName              the top-level SDL argument name
@@ -56,6 +56,6 @@ public record NodeIdArgDispatch(
 
     /** The candidate node types this argument accepts an id of, in participant order. */
     public java.util.List<String> candidateNodeTypeNames() {
-        return decodeByParticipant.values().stream().map(HelperRef.Decode::nodeTypeName).toList();
+        return decodeByParticipant.values().stream().map(HelperRef.Decode::targetTypeName).toList();
     }
 }

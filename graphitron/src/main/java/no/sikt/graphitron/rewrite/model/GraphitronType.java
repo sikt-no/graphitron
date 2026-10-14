@@ -77,6 +77,9 @@ public sealed interface GraphitronType
      * {@link no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator}. Emitters
      * consume them through {@link HelperRef} rather than reconstructing class + method strings
      * from the typeId, so the encoder generator and the call-site emitters cannot drift on naming.
+     * A node type is not the only source of a {@link HelperRef.Decode}: a {@code @nodeId} leaf
+     * naming a {@code @table} type over a table with catalog node metadata carries one minted from
+     * that metadata, with no {@code encode<TypeName>} beside it.
      *
      * <p>A {@code @node} type with an unresolvable key column is classified as
      * {@link UnclassifiedType} instead.

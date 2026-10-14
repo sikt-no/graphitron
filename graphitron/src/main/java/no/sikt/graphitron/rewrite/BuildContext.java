@@ -3321,19 +3321,21 @@ class BuildContext {
     }
 
     /**
-     * Resolves the {@code decode<TypeName>} helper for a call site that <em>names</em> its target
-     * type, either through {@code @nodeId(typeName:)} or through an inference that already
-     * produced a unique name. The name is the author's own answer to "which NodeType", so the
+     * Resolves the {@code decode<TypeName>} helper of the node type a call site <em>names</em>,
+     * either through {@code @nodeId(typeName:)} or through an inference that already produced a
+     * unique name. The name is the author's own answer to "which NodeType", so the
      * {@link NodeIndex} by-name view answers it directly; how many other node types happen to
      * share the backing table is irrelevant.
      *
-     * <p>Empty when no NodeType carries that name. There is no table-keyed fallback any more: the
-     * arm that reverse-mapped a table to a decode helper existed for the synthesis shims and for
-     * the orphan case of a {@code @table}-only type over a metadata-carrying table, and with the
-     * shims retired a directive-less {@code ID} is an ordinary scalar rather than an orphaned node
-     * id. Coordinates that legitimately hold only a table resolve through {@link NodeIndex#forTable}
-     * at their own site, where an ambiguous table is a rejection naming {@code typeName:} rather
-     * than a silent pick.
+     * <p>Empty when no NodeType carries that name, including for a {@code @table}-only type over a
+     * table with catalog node metadata, on purpose. The one caller is {@link ServiceCatalog}'s
+     * named-parameter key slot, a {@code @service} parameter that takes a decoded key, and that slot
+     * leaves the check of its Java parameter type against the key to the fact store, whose views read
+     * node types only; a {@code @table}-only target there would reach the Java compiler unchecked. A
+     * {@code @nodeId} leaf classifies itself entirely in the walk and mints its catalog decode
+     * through {@link #catalogNodeDecode} instead. Coordinates that legitimately hold only a table
+     * resolve through {@link NodeIndex#forTable} at their own site, where an ambiguous table is a
+     * rejection naming {@code typeName:} rather than a silent pick.
      */
     Optional<no.sikt.graphitron.rewrite.model.HelperRef.Decode> resolveDecodeHelperForType(String refTypeName) {
         return nodes.forName(refTypeName)
@@ -3341,20 +3343,96 @@ class BuildContext {
     }
 
     /**
-     * Resolved NodeType key metadata for a {@code @nodeId(typeName:)} target: the wire-format
-     * {@code typeId} plus the key {@link ColumnRef} list, or an {@code error} message when none of
-     * the three resolution sources (catalog metadata, the {@link NodeIndex} entry,
-     * or {@code @node} on the SDL with PK columns from the catalog) produce a usable
-     * pair. Shared shape: both {@link NodeIdLeafResolver#resolve} and
-     * {@link #resolveNodeIdRecordDecode} read their key columns through {@link #resolveTargetKeys},
-     * so the {@code @node(keyColumns:)} fallback lives in exactly one place.
+     * The {@code decode<TypeName>} helpers {@link #catalogNodeDecode} minted for {@code @table}-only
+     * {@code @nodeId(typeName:)} targets, keyed by type name. Written once per name: a mint is a
+     * pure function of the type name and the catalog, so a repeat is a no-op and the content does
+     * not depend on walk order. Every {@link no.sikt.graphitron.rewrite.model.HelperRef.Decode} a
+     * carrier holds came from a {@link NodeType} or from here, and {@code NodeIdEncoder} emits both,
+     * which is what makes "every decode a carrier calls exists" hold by construction.
      */
-    record TargetKeys(String typeId, List<ColumnRef> keyColumns, String error) {}
+    private final Map<String, no.sikt.graphitron.rewrite.model.HelperRef.Decode> catalogNodeDecodes =
+        new HashMap<>();
 
     /**
-     * Resolves the target table's NodeType metadata: prefers the {@link NodeIndex} entry, falls back
-     * to catalog metadata, then to {@code @node} on the SDL with PK columns from the catalog. Returns
-     * an error message when none of those produce a usable {@code typeId} + {@code keyColumns} pair.
+     * Mints, and registers for emission, the {@code decode<TypeName>} helper of a {@code @table}
+     * type over a table with catalog node metadata, for a {@code @nodeId(typeName:)} leaf that names
+     * it. The method name is the authored type name, as for a node type; two {@code @table} types over
+     * one metadata table get two helpers with the same body, and a {@code @table} type cannot collide
+     * with a node type because GraphQL type names are unique.
+     */
+    no.sikt.graphitron.rewrite.model.HelperRef.Decode catalogNodeDecode(
+            String refTypeName, TableRef targetTable, TargetKeys.OfCatalog keys) {
+        var encoderClass = no.sikt.graphitron.javapoet.ClassName.get(
+            ctx.outputPackage() + ".util",
+            no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator.CLASS_NAME);
+        var decode = new no.sikt.graphitron.rewrite.model.HelperRef.Decode(
+            encoderClass, "decode" + refTypeName, keys.keyColumns(), keys.typeId(), targetTable);
+        var prior = catalogNodeDecodes.putIfAbsent(refTypeName, decode);
+        return prior != null ? prior : decode;
+    }
+
+    /**
+     * The catalog decodes minted during the walk, sorted by type name so the emitted helper order
+     * does not depend on walk order. Read once, by {@link GraphitronSchemaBuilder}, after the walk.
+     */
+    List<no.sikt.graphitron.rewrite.model.HelperRef.Decode> catalogNodeDecodes() {
+        return catalogNodeDecodes.entrySet().stream()
+            .sorted(Map.Entry.comparingByKey())
+            .map(Map.Entry::getValue)
+            .toList();
+    }
+
+    /**
+     * Resolved key metadata for a {@code @nodeId(typeName:)} target, sealed over which source
+     * answered: the wire-format {@code typeId} plus the key {@link ColumnRef} list on the three
+     * {@link Resolved} arms, or a {@link Rejected} message when none of the three resolution sources
+     * (the {@link NodeIndex} entry, catalog metadata, or {@code @node} on the SDL with PK columns from
+     * the catalog) produce a usable pair. Shared shape: both {@link NodeIdLeafResolver#resolve} and
+     * {@link #resolveNodeIdRecordDecode} read their key columns through {@link #resolveTargetKeys},
+     * so the {@code @node(keyColumns:)} fallback lives in exactly one place. The record path reads
+     * only {@link Resolved}; the leaf reads the source too, because it decides where the decode
+     * helper comes from.
+     */
+    sealed interface TargetKeys {
+
+        /** The answered arms: what the decode body needs, whichever source supplied it. */
+        sealed interface Resolved extends TargetKeys {
+            String typeId();
+            List<ColumnRef> keyColumns();
+        }
+
+        /** The name-first arm: a {@link NodeType} carries the name, and its reconciled answer wins. */
+        record OfNode(NodeType node) implements Resolved {
+            @Override public String typeId() { return node.typeId(); }
+            @Override public List<ColumnRef> keyColumns() { return node.nodeKeyColumns(); }
+        }
+
+        /** No {@link NodeType} under the name, and the target table carries catalog node metadata. */
+        record OfCatalog(String typeId, List<ColumnRef> keyColumns) implements Resolved {
+            public OfCatalog {
+                keyColumns = List.copyOf(keyColumns);
+            }
+        }
+
+        /**
+         * The target carries {@code @node} on the SDL but did not classify as a {@link NodeType},
+         * over a table without catalog node metadata: the type id and the primary key columns.
+         */
+        record OfDeclaredNode(String typeId, List<ColumnRef> keyColumns) implements Resolved {
+            public OfDeclaredNode {
+                keyColumns = List.copyOf(keyColumns);
+            }
+        }
+
+        /** None of the sources answered; {@code message} is ready for a rejection. */
+        record Rejected(String message) implements TargetKeys {}
+    }
+
+    /**
+     * Resolves the target table's key metadata: prefers the {@link NodeIndex} entry, falls back to
+     * catalog metadata, then to {@code @node} on the SDL with PK columns from the catalog. Returns
+     * {@link TargetKeys.Rejected} when none of those produce a usable {@code typeId} +
+     * {@code keyColumns} pair.
      *
      * <p>The third arm is unreachable for a node whose {@code @node} was inferred, and stays a
      * {@code @node}-only read for that reason: inference requires catalog metadata, so the second arm
@@ -3376,13 +3454,13 @@ class BuildContext {
         // types.get: the node may not be registered yet during the walk.
         var ntOpt = nodes.forName(refTypeName);
         if (ntOpt.isPresent()) {
-            return new TargetKeys(ntOpt.get().typeId(), ntOpt.get().nodeKeyColumns(), null);
+            return new TargetKeys.OfNode(ntOpt.get());
         }
         // No NodeType under that name: the target is a @table-only type (or failed classification)
         // over a metadata-carrying table. The table fact is the only source left.
         var meta = catalog.nodeIdMetadata(targetTableName);
         if (meta.isPresent()) {
-            return new TargetKeys(meta.get().typeId(), meta.get().keyColumns(), null);
+            return new TargetKeys.OfCatalog(meta.get().typeId(), meta.get().keyColumns());
         }
         if (targetObj.hasAppliedDirective(DIR_NODE)) {
             String typeId = argString(targetObj, DIR_NODE, ARG_TYPE_ID).orElse(refTypeName);
@@ -3390,14 +3468,14 @@ class BuildContext {
                 .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()))
                 .toList();
             if (pkCols.isEmpty()) {
-                return new TargetKeys(null, null,
+                return new TargetKeys.Rejected(
                     "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTableName
                     + "' which has @node but no resolvable key columns (no catalog metadata, "
                     + "no @node(keyColumns:), no primary key)");
             }
-            return new TargetKeys(typeId, pkCols, null);
+            return new TargetKeys.OfDeclaredNode(typeId, pkCols);
         }
-        return new TargetKeys(null, null,
+        return new TargetKeys.Rejected(
             "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTableName
             + "' which is not a @node type (no NodeId catalog metadata, no @node directive)"
             + " — annotate the target type with @node or surface the metadata via KjerneJooqGenerator");
@@ -3510,9 +3588,12 @@ class BuildContext {
     private NodeIdRecordDecode resolveOneRecordDecode(GraphQLObjectType targetObj, String typeName) {
         String targetTableName = argString(targetObj, DIR_TABLE, ARG_NAME)
             .orElse(typeName.toLowerCase());
-        var keys = resolveTargetKeys(targetObj, typeName, targetTableName);
-        if (keys.error() != null) {
-            return new NodeIdRecordDecode.Rejected(keys.error());
+        TargetKeys.Resolved keys;
+        switch (resolveTargetKeys(targetObj, typeName, targetTableName)) {
+            case TargetKeys.Resolved resolved -> keys = resolved;
+            case TargetKeys.Rejected rejected -> {
+                return new NodeIdRecordDecode.Rejected(rejected.message());
+            }
         }
         var tableEntry = catalog.findTable(targetTableName).asEntry();
         if (tableEntry.isEmpty()) {

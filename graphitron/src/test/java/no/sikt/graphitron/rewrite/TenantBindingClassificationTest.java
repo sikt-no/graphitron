@@ -1717,12 +1717,17 @@ class TenantBindingClassificationTest {
         assertRejects(schema, "Mutation.pickFilmForFilmActor",
             "Make 'FilmActorCode' a node type, or bind the tenant through a field mapping to tenant"
                 + " column 'film_id'.");
+        // The reason is a scope decision, not a missing helper: a leaf naming the same type gets a
+        // catalog decode helper and routes on it.
+        assertRejects(schema, "Mutation.pickFilmForFilmActor",
+            "a record decode of a @table-only type does not route the statement on its tenant");
     }
 
     @Test
-    void aScalarArgumentOrFilterFieldNamingATableOnlyTypeRejectsInTheClassifier() {
-        // The third decode carrier only ever names a node type: the classifier refuses the
-        // table-only target before the fold sees it, so the fold has nothing to look up.
+    void aScalarArgumentOrFilterFieldNamingATableOnlyTypeDecodesFromCatalogMetadata() {
+        // A leaf naming a @table-only type over a metadata table decodes against that metadata,
+        // through a decode helper minted under the type's own name. baz is global, so neither
+        // field binds a tenant slot.
         var schema = build(TABLE_ONLY_BAZ + """
             input BazFilter { id: ID @nodeId(typeName: "Baz") }
             type Query {
@@ -1731,17 +1736,57 @@ class TenantBindingClassificationTest {
             }
             """);
 
-        assertThat(schema.field("Query", "baz"))
-            .isInstanceOfSatisfying(GraphitronField.UnclassifiedField.class,
-                unclassified -> assertThat(unclassified.reason()).contains("'Baz' is not a node type"));
-        // A filter input field's cause is minted on the input field; the consuming field states
-        // the consequence.
-        assertThat(schema.field("Query", "bazes"))
-            .isInstanceOfSatisfying(GraphitronField.UnclassifiedField.class,
-                unclassified -> assertThat(unclassified.reason()).contains("1 input field could not be resolved"));
-        assertThat(TestSchemaHelper.diagnosticMessages(schema))
-            .contains("Input field 'BazFilter.id'")
-            .contains("'Baz' is not a node type");
+        for (var field : List.of("baz", "bazes")) {
+            assertThat(schema.field("Query", field)).as(field)
+                .isNotInstanceOf(GraphitronField.UnclassifiedField.class);
+            assertThat(schema.tenantBindingOf("Query", field)).as(field)
+                .isNotInstanceOf(TenantBinding.ArgumentBound.class);
+            assertThat(schema.tenantBindings().rejections())
+                .noneMatch(e -> e.coordinate().equals("Query." + field));
+        }
+        assertThat(TestSchemaHelper.diagnosticMessages(schema)).doesNotContain("'Baz' is not a node type");
+        assertThat(schema.catalogNodeDecodes()).singleElement()
+            .satisfies(decode -> assertThat(decode.methodName()).isEqualTo("decodeBaz"));
+    }
+
+    @Test
+    void aFilterFieldNamingATableOnlyTypeWithTheTenantInItsKeyRoutesOnTheCatalogDecode() {
+        // The node-type twin is nodeIdFilterInputFieldDivinesTheDecodedSlot: same table, same key,
+        // and the catalog decode helper routes exactly as the node type's does.
+        var schema = build("""
+            type FilmActorCode @table(name: "film_actor") { actorId: Int @field(name: "actor_id") }
+            input FilmActorCodeFilter { id: ID! @nodeId(typeName: "FilmActorCode") }
+            type Query { filmActorCodes(filter: FilmActorCodeFilter!): [FilmActorCode!]! }
+            """);
+
+        var slot = onlySlot(schema, "filmActorCodes");
+        assertThat(slot.slotName()).isEqualTo("id");
+        assertThat(slot.read()).isEqualTo(new TenantBinding.SlotRead.NestedInput("filter", List.of("id")));
+        assertThat(slot.projection())
+            .isInstanceOfSatisfying(TenantBinding.SlotProjection.DecodedKeySlot.class, decoded -> {
+                assertThat(decoded.slot()).isEqualTo(1);
+                assertThat(decoded.decode().methodName()).isEqualTo("decodeFilmActorCode");
+            });
+    }
+
+    @Test
+    void aKeySlotOfANodeTypeWhoseKeyMissesTheTenantIsEvidenceOffTheDecodesTable() {
+        // A root @service scalar slot taking the decoded key value: inventory carries the tenant
+        // column, its key inventory_id does not, so the slot reads no tenant and the fold names it
+        // as evidence, reading the table off the decode itself.
+        var schema = build("""
+            interface Node { id: ID! }
+            type Inventory implements Node @table(name: "inventory") @node {
+                id: ID! @nodeId
+            }
+            type Query { x: String }
+            type Mutation {
+                pickInventoryOnConnection(inventoryId: ID! @nodeId(typeName: "Inventory")): String %s
+            }
+            """.formatted(service("pickInventoryOnConnection")));
+
+        var rejection = assertUnroutedWithoutDeclines(schema, "Mutation.pickInventoryOnConnection");
+        assertThat(rejection.evidence()).containsExactly("Inventory id at inventoryId");
     }
 
     @Test

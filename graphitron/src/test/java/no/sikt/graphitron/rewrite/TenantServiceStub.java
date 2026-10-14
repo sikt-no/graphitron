@@ -211,4 +211,9 @@ class TenantServiceStub {
     public static FilmRecord pickFilmForFilmActor(FilmActorRecord in) {
         throw new UnsupportedOperationException();
     }
+
+    /** A connection-handed root taking a node type's decoded key value, whose key holds no tenant. */
+    public static String pickInventoryOnConnection(DSLContext dsl, Integer inventoryId) {
+        throw new UnsupportedOperationException();
+    }
 }

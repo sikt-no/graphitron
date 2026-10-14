@@ -281,12 +281,12 @@ public final class CompositeDecodeHelperRegistry {
      */
     private CodeBlock decodeFailureThrow(HelperRef.Decode decode, String peekArg, String msgVar) {
         return NodeIdDecodeFailure.throwStatement(outputPackage, decode.encoderClass(),
-            decode.typeId(), decode.nodeTypeName(), peekArg, msgVar);
+            decode.typeId(), decode.targetTypeName(), peekArg, msgVar);
     }
 
     /**
      * The node type name behind a {@code decode<TypeName>} method name. Mirrors
-     * {@link HelperRef.Decode#nodeTypeName()}, which the model exposes for the same convention;
+     * {@link HelperRef.Decode#targetTypeName()}, which the model exposes for the same convention;
      * this overload exists because {@link #helperName} is handed the bare method name.
      */
     private static String strippedTypeName(String decodeMethod) {

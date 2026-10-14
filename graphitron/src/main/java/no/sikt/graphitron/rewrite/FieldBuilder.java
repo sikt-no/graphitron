@@ -1027,7 +1027,7 @@ class FieldBuilder {
             var arg = fieldDef.getArgument(entry.getKey());
             if (arg == null || ctx.readConditionDirective(arg) == null) continue;
             var perParticipant = byParticipant.entrySet().stream()
-                .map(e -> e.getKey() + " resolves '" + e.getValue().nodeTypeName() + "'")
+                .map(e -> e.getKey() + " resolves '" + e.getValue().targetTypeName() + "'")
                 .collect(Collectors.joining(", "));
             return Rejection.structural(
                 "@nodeId argument '" + entry.getKey() + "': a @condition method binds this argument,"
@@ -1193,7 +1193,7 @@ class FieldBuilder {
             var byParticipant = decodesOf(entry.getValue());
             if (Set.copyOf(byParticipant.values()).size() < 2) continue;
             var perParticipant = byParticipant.entrySet().stream()
-                .map(e -> e.getKey() + " resolves '" + e.getValue().nodeTypeName() + "'")
+                .map(e -> e.getKey() + " resolves '" + e.getValue().targetTypeName() + "'")
                 .collect(Collectors.joining(", "));
             return Rejection.structural(
                 "input field '" + entry.getKey() + "': a bare @nodeId on a nested filter input of a"

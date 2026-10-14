@@ -115,7 +115,8 @@ final class NodeIdLeafResolver {
          * {@code PruneOnMismatch} on the one shape where it means "another branch owns this id".
          *
          * @param refTypeName  the resolved (or inferred) GraphQL type name of {@code T}
-         * @param decodeMethod {@code decode<TypeName>} helper resolved on the target NodeType
+         * @param decodeMethod {@code decode<TypeName>} helper of the target: a node type's own, or
+         *                     one minted from catalog node metadata for a {@code @table} type
          * @param keyColumns   {@code T}'s key columns (PK or {@code @node(keyColumns:)})
          */
         record SameTable(
@@ -176,7 +177,8 @@ final class NodeIdLeafResolver {
              *
              * @param refTypeName          the resolved (or inferred) GraphQL type name of {@code T}
              * @param targetTable          resolved {@link TableRef} for {@code T.table()}
-             * @param decodeMethod         {@code decode<TypeName>} helper resolved on the target NodeType
+             * @param decodeMethod         {@code decode<TypeName>} helper of the target: a node type's own, or
+             *                             one minted from catalog node metadata for a {@code @table} type
              * @param keyColumns           {@code T}'s key columns
              * @param fkSourceColumns      first hop's source-side columns (legacy slot)
              * @param liftedSourceColumns  where each key position landed, on the parent's own table,
@@ -219,7 +221,8 @@ final class NodeIdLeafResolver {
              *
              * @param refTypeName  the resolved (or inferred) GraphQL type name of {@code T}
              * @param targetTable  resolved {@link TableRef} for {@code T.table()}
-             * @param decodeMethod {@code decode<TypeName>} helper resolved on the target NodeType
+             * @param decodeMethod {@code decode<TypeName>} helper of the target: a node type's own, or
+             *                     one minted from catalog node metadata for a {@code @table} type
              * @param keyColumns   {@code T}'s key columns
              * @param joinPath     the FK path from the containing table to {@code T.table()}
              */
@@ -255,7 +258,8 @@ final class NodeIdLeafResolver {
          * the author <em>stated</em> and got wrong: naming a foreign key asks the build to check it.
          *
          * @param refTypeName    the resolved (or inferred) GraphQL type name of {@code T}
-         * @param decodeMethod   {@code decode<TypeName>} helper resolved on the target NodeType, the
+         * @param decodeMethod   {@code decode<TypeName>} helper of the target: a node type's own, or
+         *                       one minted from catalog node metadata for a {@code @table} type, the
          *                       same reference the routed arms carry
          * @param unresolvedPath the route refusal the ownership supersedes, kept so a caller that
          *                       finds the ownership inadmissible (the mixed-contract enforcer) can
@@ -333,9 +337,10 @@ final class NodeIdLeafResolver {
         String targetTableName = argString(targetObj, DIR_TABLE, ARG_NAME)
             .orElse(refTypeName.toLowerCase());
 
-        var keys = ctx.resolveTargetKeys(targetObj, refTypeName, targetTableName);
-        if (keys.error() != null) {
-            return new Resolved.Rejected(Rejection.structural(keys.error()));
+        var targetKeys = ctx.resolveTargetKeys(targetObj, refTypeName, targetTableName);
+        if (!(targetKeys instanceof BuildContext.TargetKeys.Resolved keys)) {
+            return new Resolved.Rejected(Rejection.structural(
+                ((BuildContext.TargetKeys.Rejected) targetKeys).message()));
         }
         // jOOQ's typed Record/Row tops out at arity 22 (Record22 / Row22). A NodeType with more
         // than 22 key columns cannot be expressed as a typed Record<N>, so the decode helper's
@@ -350,18 +355,36 @@ final class NodeIdLeafResolver {
                 + " jOOQ's typed Row22 cap. Reduce key arity or expose components as separate"
                 + " scalar arguments."));
         }
-        // Resolution keys on refTypeName, not on targetTableName. By this point the type name is
-        // settled, either authored as @nodeId(typeName:) or inferred only where inference was
-        // unambiguous, so several node types sharing the backing table is not this leaf's problem.
-        // A name carrying no NodeType is now simply not a node: the table-keyed fallback that used
-        // to answer here belonged to the synthesis shims and went with them.
-        var decodeMethodOpt = ctx.resolveDecodeHelperForType(refTypeName);
-        if (decodeMethodOpt.isEmpty()) {
-            return new Resolved.Rejected(Rejection.structural("@nodeId(typeName: '" + refTypeName + "') on leaf '" + leafName
-                + "': '" + refTypeName + "' is not a node type."
-                + " Annotate '" + refTypeName + "' with @node."));
+        // Resolve the target TableRef ahead of every arm: a catalog decode is minted onto it, and
+        // resolveFkJoinPath's parsePath call passes ref and name together, letting the
+        // terminal-target verdict compare jOOQ table-class identity rather than the
+        // schema-qualified @table echo. An unresolvable @table is UnclassifiedType upstream and
+        // never reaches this leaf.
+        var targetTableResolution = ctx.catalog.findTable(targetTableName);
+        if (!(targetTableResolution instanceof JooqCatalog.TableResolution.Resolved targetTableResolved)) {
+            return new Resolved.Rejected(ctx.unknownTableRejection(targetTableResolution, targetTableName));
         }
-        var decodeMethod = decodeMethodOpt.get();
+        TableRef targetTable = targetTableResolved.entry().toTableRef(targetTableName);
+        // Where the decode helper comes from follows from which source answered the key, and keys
+        // on refTypeName, not on targetTableName: by this point the type name is settled, either
+        // authored as @nodeId(typeName:) or inferred only where inference was unambiguous, so
+        // several types sharing the backing table is not this leaf's problem. A node type carries
+        // its own helper. A @table-only type over a table with catalog node metadata gets one minted
+        // under its own name, reading only its own table, so no table is ever mapped back to a type.
+        // A type carrying @node that did not classify as a node has no helper, and the reason is
+        // the error already reported on that type.
+        HelperRef.Decode decodeMethod;
+        switch (keys) {
+            case BuildContext.TargetKeys.OfNode ofNode -> decodeMethod = ofNode.node().decodeMethod();
+            case BuildContext.TargetKeys.OfCatalog ofCatalog ->
+                decodeMethod = ctx.catalogNodeDecode(refTypeName, targetTable, ofCatalog);
+            case BuildContext.TargetKeys.OfDeclaredNode ignored -> {
+                return new Resolved.Rejected(Rejection.structural("@nodeId(typeName: '" + refTypeName
+                    + "') on leaf '" + leafName + "': '" + refTypeName + "' carries @node but did not"
+                    + " classify as a node type, so there is no decode helper to install here. See the"
+                    + " error reported on '" + refTypeName + "' itself."));
+            }
+        }
 
         // The route is chosen before the same-table short-circuit because the short-circuit's own
         // condition is "no route was stated". A leaf-local contradiction (@reference alongside
@@ -385,15 +408,6 @@ final class NodeIdLeafResolver {
             return new Resolved.SameTable(refTypeName, decodeMethod, keys.keyColumns());
         }
 
-        // Resolve the target TableRef before resolveFkJoinPath so its parsePath call can pass
-        // ref and name together, letting the terminal-target verdict compare jOOQ table-class
-        // identity rather than the schema-qualified @table echo. An unresolvable @table is
-        // UnclassifiedType upstream and never reaches this leaf.
-        var targetTableResolution = ctx.catalog.findTable(targetTableName);
-        if (!(targetTableResolution instanceof JooqCatalog.TableResolution.Resolved targetTableResolved)) {
-            return new Resolved.Rejected(ctx.unknownTableRejection(targetTableResolution, targetTableName));
-        }
-        TableRef targetTable = targetTableResolved.entry().toTableRef(targetTableName);
         var walk = resolveFkJoinPath(route, leaf, leafName, containingTable, targetTableName,
             targetTable, keys.keyColumns(), participant);
         if (walk instanceof PathResolution.Refused refused) {

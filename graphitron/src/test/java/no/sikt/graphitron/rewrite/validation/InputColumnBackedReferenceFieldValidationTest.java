@@ -86,7 +86,8 @@ class InputColumnBackedReferenceFieldValidationTest {
         var decode = new CallSiteExtraction.ThrowOnMismatch(
             new no.sikt.graphitron.rewrite.model.HelperRef.Decode(
                 ClassName.bestGuess("com.example.NodeIds"), "decodeLanguage",
-                List.of(LANGUAGE_ID, NAME), "Language"));
+                List.of(LANGUAGE_ID, NAME), "Language",
+                TestFixtures.languageTable()));
         var errors = validate(carrier(List.of(LANGUAGE_ID, NAME), stubCondition(), decode));
         assertThat(errors).hasSize(1);
         assertThat(errors.get(0).message()).contains("composite-key FK-target @nodeId field");

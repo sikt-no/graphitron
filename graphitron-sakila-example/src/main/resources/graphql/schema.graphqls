@@ -644,6 +644,9 @@ type Query {
     xlatChildByParentId(parentId: ID @nodeId(typeName: "XlatParent")): [XlatChild!]!
     xlatChildrenByFilter(filter: XlatChildFilter): [XlatChild!]!
     xlatCompChildrenByParentIds(parentIds: [ID!] @nodeId(typeName: "XlatCompParent")): [XlatCompChild!]!
+    # A @nodeId filter naming a @table type that is not a node type: StudyLevel's table carries
+    # catalog node metadata, and the id decodes against it. See the `study_level` fixtures below.
+    levelIntervals(filter: LevelIntervalFilter): [LevelInterval!]! @defaultOrder(primaryKey: true)
     # Junction chains: the parent reaches the node type through a table that pairs them, so the
     # first hop is traversed against its foreign key's direction and no parent column holds the
     # node's key. Nothing in the chain renames a column and the terminal hop arrives on the node
@@ -2996,6 +2999,36 @@ input XlatChildFilter {
     parentIds: [ID!] @nodeId(typeName: "XlatParent")
 }
 
+# ===== @nodeId leaves decoding a @table-only type from catalog node metadata =====
+# Paired with `levelIntervals`, `updateLevelInterval` and the `study_level` tables in `init.sql`.
+# StudyLevel is a @table type without `implements Node`, the shape of a federation stub owned by
+# another subgraph, over a table whose catalog metadata publishes type id StudyLevel and key `code`.
+# No field returns it: the decode helper a @nodeId leaf names is emitted because a leaf names it.
+
+type StudyLevel @table(name: "study_level") {
+    code: String! @field(name: "code")
+    name: String!
+}
+
+type LevelInterval @table(name: "level_interval") {
+    intervalId: Int! @field(name: "interval_id")
+    fromLevel: String @field(name: "from_level")
+    toLevel: String @field(name: "to_level")
+}
+
+input LevelIntervalFilter {
+    fromLevelIds: [ID!] @nodeId(typeName: "StudyLevel")
+        @reference(path: [{key: "level_interval_from_level_fkey"}])
+}
+
+input LevelIntervalUpdateInput {
+    intervalId: Int! @field(name: "interval_id")
+    fromLevelId: ID @nodeId(typeName: "StudyLevel")
+        @reference(path: [{key: "level_interval_from_level_fkey"}])
+    toLevelId: ID @nodeId(typeName: "StudyLevel")
+        @reference(path: [{key: "level_interval_to_level_fkey"}])
+}
+
 # The input-field form of the junction chain (paired with `actorsByFilmFilter`). The carrier reaches
 # the classifier through BuildContext's input-field walk rather than FieldBuilder's argument walk,
 # and both must lower to the same two-hop correlated EXISTS.
@@ -4503,6 +4536,8 @@ type Mutation {
     # R22 Phase 4: UPDATE emitter with TableBoundReturnType return. The fetcher emits
     # `dsl.update(film).set(title, val).where(film_id.eq(val)).returningResult(<$project>).fetchOne(r -> r)`.
     updateFilm(in: FilmUpdateInput!): Film @mutation(typeName: UPDATE)
+    # Both foreign keys of a level interval set from StudyLevel ids, decoded from catalog metadata.
+    updateLevelInterval(in: LevelIntervalUpdateInput!): LevelInterval @mutation(typeName: UPDATE)
     # Field-relative UPDATE write target: the input carries no `@table`, so the write target
     # is derived from the `Film` return type. Same emitted UPDATE as `updateFilm`, exercised at
     # the execution tier to prove an UPDATE round-trips with `@table` dropped from the input.

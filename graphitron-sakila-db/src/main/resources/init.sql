@@ -844,6 +844,33 @@ INSERT INTO xlat_comp_child (child_id, fk_a, fk_b, note) VALUES
     ('CC2', 'X1', 'Y1', 'second of A1/B1'),
     ('CC3', 'X2', 'Y2', 'only child of A2/B2');
 
+-- A code table carrying node metadata with no node type over it in the execution schema:
+-- `StudyLevel` is a @table type without `implements Node`, the shape of a federation stub whose
+-- owning subgraph publishes the node. `level_interval` points at it twice through non-key foreign
+-- keys (`level_interval_from_level_fkey`, `level_interval_to_level_fkey`), so a @nodeId leaf naming
+-- `StudyLevel` decodes from the table's catalog metadata. Seeds give BA two intervals starting at
+-- it and MA one, so a filter by level ids has an asymmetric expected result.
+CREATE TABLE study_level (
+    code varchar(10) PRIMARY KEY,
+    name varchar(50) NOT NULL
+);
+
+CREATE TABLE level_interval (
+    interval_id integer PRIMARY KEY,
+    from_level  varchar(10) REFERENCES study_level(code),
+    to_level    varchar(10) REFERENCES study_level(code)
+);
+
+INSERT INTO study_level (code, name) VALUES
+    ('BA', 'bachelor'),
+    ('MA', 'master'),
+    ('PHD', 'doctorate');
+
+INSERT INTO level_interval (interval_id, from_level, to_level) VALUES
+    (1, 'BA', 'MA'),
+    (2, 'BA', 'PHD'),
+    (3, 'MA', 'PHD');
+
 -- R300 routine fixture: the driving table-valued read function. A side-effect-free
 -- PostgreSQL function with three TEXT IN parameters and RETURNS TABLE(...), the shape
 -- @routine binds day-one. jOOQ generates this as a table-valued-function Table class in

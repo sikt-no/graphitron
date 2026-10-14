@@ -74,6 +74,11 @@ public class NodeIdFixtureGenerator extends JavaGenerator {
         // constraint. Table definitions and seed rows are in `init.sql`.
         Map.entry("xlat_parent", new Metadata("XlatParent", List.of("PK_ID"))),
         Map.entry("xlat_comp_parent", new Metadata("XlatCompParent", List.of("PK_A", "PK_B"))),
+        // A code table in the `public` schema with metadata and no node type over it in the
+        // execution schema, where a @table-only type names it: the execution-tier surface for a
+        // @nodeId leaf decoding from catalog metadata. Table definitions and seed rows are in
+        // `init.sql`.
+        Map.entry("study_level", new Metadata("StudyLevel", List.of("CODE"))),
         // Arity > 22 rejection fixture. NodeIdLeafResolver.resolve rejects any
         // NodeType with > 22 key columns (jOOQ's typed Record/Row caps at Row22); this
         // 23-column composite-PK table is the smallest case that exercises that guard.

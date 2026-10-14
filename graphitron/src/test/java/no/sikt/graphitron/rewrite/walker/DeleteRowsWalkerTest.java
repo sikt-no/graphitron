@@ -283,7 +283,8 @@ class DeleteRowsWalkerTest {
 
     private static CallSiteExtraction.NodeIdDecodeKeys dummyDecode(List<ColumnRef> columns) {
         return new CallSiteExtraction.NodeIdDecodeKeys.ThrowOnMismatch(
-            new HelperRef.Decode(ClassName.bestGuess("fixture.Enc"), "decode", columns, "Type"));
+            new HelperRef.Decode(ClassName.bestGuess("fixture.Enc"), "decode", columns, "Type",
+                table("type")));
     }
 
     private static SourceLocation loc() {

@@ -7,6 +7,7 @@ import no.sikt.graphitron.javapoet.TypeName;
 import java.util.List;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * A resolved reference to a stateless generated helper method.
@@ -67,7 +68,9 @@ public sealed interface HelperRef {
     }
 
     /**
-     * Per-Node decoder helper. The Java parameter list is fixed: {@code decode<TypeName>(String base64Id)}.
+     * Decoder helper for one {@code @nodeId(typeName:)} target: a node type, or a {@code @table}
+     * type over a table with catalog node metadata. The Java parameter list is fixed:
+     * {@code decode<TypeName>(String base64Id)}.
      * {@code outputColumnShape} describes the columns of the returned {@code RecordN<T1..TN>}; it is
      * NOT the call-site Java parameter list.
      *
@@ -77,12 +80,17 @@ public sealed interface HelperRef {
      * {@code ThrowOnMismatch} message-builder compares it against {@code NodeIdEncoder.peekTypeId}
      * to fold the right-type-wrong-arity sub-case into the "malformed" branch rather than
      * mis-reporting it as "wrong type". It is a generation-time constant, never read at runtime.
+     *
+     * <p>{@code table} is the table the decoded key belongs to, the one the generated body reads
+     * its {@code Tables.<table>.<column>} constants off. Carried on the reference so the reference
+     * alone is enough to emit the helper and to answer which table a decode reaches.
      */
     record Decode(
         ClassName encoderClass,
         String methodName,
         List<ColumnRef> outputColumnShape,
-        String typeId
+        String typeId,
+        TableRef table
     ) implements HelperRef {
 
         public Decode {
@@ -90,11 +98,12 @@ public sealed interface HelperRef {
         }
 
         /**
-         * The GraphQL node type this decoder answers for: {@link #methodName()} with its
-         * {@code decode} prefix stripped. Every emitter that names the type in a message or a
+         * The {@code @nodeId(typeName:)} target this decoder answers for, a node type or a
+         * {@code @table} type over a table with catalog node metadata: {@link #methodName()} with
+         * its {@code decode} prefix stripped. Every emitter that names the type in a message or a
          * derived helper name reads it here, so the prefix convention has one home.
          */
-        public String nodeTypeName() {
+        public String targetTypeName() {
             return methodName.startsWith("decode") ? methodName.substring("decode".length()) : methodName;
         }
 
@@ -110,7 +119,7 @@ public sealed interface HelperRef {
         }
 
         /**
-         * The Java type a <em>decoded key</em> of this node type takes where a call site binds one:
+         * The Java type a <em>decoded key</em> of this target type takes where a call site binds one:
          * the single key column's type at arity 1, the typed {@code Row<N><T1..TN>} above, wrapped in
          * {@code List} on the list axis. Distinct from {@link #returnType()}, which is the raw
          * {@code Record<N>} the generated {@code decode<TypeName>} hands back before projection.

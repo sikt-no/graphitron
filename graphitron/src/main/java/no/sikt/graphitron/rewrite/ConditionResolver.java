@@ -244,7 +244,7 @@ final class ConditionResolver {
                 // WireCoercionResolver.checkScalar applies, so no second assignability derivation
                 // grows here.
                 return new DecodeInstall.Rejected(new WireCoercionError.NodeIdDecodedType(
-                    decode.nodeTypeName(), required.toString(), typed.javaType().toString(),
+                    decode.targetTypeName(), required.toString(), typed.javaType().toString(),
                     coordinate + ": parameter '" + typed.name() + "' of condition method '"
                         + filter.methodName() + "'"));
             }

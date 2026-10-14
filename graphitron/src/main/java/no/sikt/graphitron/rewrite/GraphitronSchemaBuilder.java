@@ -387,7 +387,7 @@ public class GraphitronSchemaBuilder {
             ctx.types, Collections.unmodifiableMap(dedupedFields), entitiesByType, ctx.warnings(),
             ctx.diagnostics(), arrivals, reachableSourceShapes, ctx.tenantScopes, tenantBindings,
             connectionSynthesis, operationMembers, deliveryFacts,
-            sessionHookResolution.hooks());
+            sessionHookResolution.hooks(), ctx.catalogNodeDecodes());
         return new BuildResult(model, rebuiltAssembled);
     }
 

@@ -32,7 +32,8 @@ class CompositeDecodeHelperRegistryTest {
             List.of(
                 new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"),
                 new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")),
-            "FilmActor");
+            "FilmActor",
+            no.sikt.graphitron.rewrite.TestFixtures.tableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of()));
     }
 
     @Test
@@ -119,7 +120,8 @@ class CompositeDecodeHelperRegistryTest {
         return new HelperRef.Decode(
             ENCODER, "decodeFilm",
             List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")),
-            "Film");
+            "Film",
+            no.sikt.graphitron.rewrite.TestFixtures.filmTable());
     }
 
     @Test

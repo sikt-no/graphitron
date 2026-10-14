@@ -516,6 +516,180 @@ class NodeIdLeafResolverTest {
             .isEqualTo(direct.liftedSourceColumns().stream().map(c -> c.sqlName()).toList());
     }
 
+    // ===== A @table-only target over a metadata table decodes from its catalog node metadata =====
+
+    /** The leaf's decode is minted from the target table's catalog metadata, under the type's name. */
+    private static void assertCatalogDecode(no.sikt.graphitron.rewrite.model.HelperRef.Decode decode,
+                                            String typeName, String typeId, String table, String... keys) {
+        assertThat(decode.methodName()).isEqualTo("decode" + typeName);
+        assertThat(decode.targetTypeName()).isEqualTo(typeName);
+        assertThat(decode.typeId()).isEqualTo(typeId);
+        assertThat(decode.outputColumnShape()).extracting(c -> c.sqlName()).containsExactly(keys);
+        assertThat(decode.table().tableName()).isEqualToIgnoringCase(table);
+    }
+
+    @Test
+    void tableOnlyTarget_sameTable_decodesFromCatalogMetadata() {
+        String sdl = """
+            type Baz @table(name: "baz") { code: String @field(name: "id") }
+            type Query {
+                bazesByIds(ids: [ID!]! @nodeId(typeName: "Baz")): [Baz!]!
+            }
+            """;
+        var bctx = buildBuildContext(sdl);
+        var arg = ((GraphQLObjectType) bctx.schema.getType("Query"))
+            .getFieldDefinition("bazesByIds").getArgument("ids");
+
+        var resolved = bctx.nodeIdLeafResolver().resolve(arg, "ids", bctx.resolveTable("baz").orElseThrow(),
+            /*participant=*/null, /*authorOwnedPredicate=*/false);
+
+        assertThat(resolved).isInstanceOfSatisfying(NodeIdLeafResolver.Resolved.SameTable.class,
+            sameTable -> assertCatalogDecode(sameTable.decodeMethod(), "Baz", "Baz", "baz", "id"));
+        assertThat(bctx.catalogNodeDecodes()).extracting(d -> d.methodName()).containsExactly("decodeBaz");
+    }
+
+    @Test
+    void tableOnlyTarget_directFk_decodesFromCatalogMetadata() {
+        String sdl = """
+            type Bar @table(name: "bar") { name: String }
+            type Baz @table(name: "baz") { code: String @field(name: "id") }
+            type Query {
+                barsByBaz(bazIds: [ID!]! @nodeId(typeName: "Baz")): [Bar!]!
+            }
+            """;
+        var bctx = buildBuildContext(sdl);
+        var arg = ((GraphQLObjectType) bctx.schema.getType("Query"))
+            .getFieldDefinition("barsByBaz").getArgument("bazIds");
+
+        var resolved = bctx.nodeIdLeafResolver().resolve(arg, "bazIds", bctx.resolveTable("bar").orElseThrow(),
+            /*participant=*/null, /*authorOwnedPredicate=*/false);
+
+        assertThat(resolved).isInstanceOfSatisfying(NodeIdLeafResolver.Resolved.FkTarget.DirectFk.class, direct -> {
+            assertCatalogDecode(direct.decodeMethod(), "Baz", "Baz", "baz", "id");
+            assertThat(direct.liftedSourceColumns()).extracting(c -> c.sqlName()).containsExactly("id_1");
+        });
+    }
+
+    @Test
+    void tableOnlyTarget_translatedFk_decodesFromCatalogMetadata() {
+        String sdl = """
+            type ParentNode @table(name: "parent_node") { altKey: String @field(name: "alt_key") }
+            type ChildRef @table(name: "child_ref") {
+                childId: String! @field(name: "child_id")
+            }
+            type Query {
+                childRefsByParent(parentIds: [ID!]! @nodeId(typeName: "ParentNode")): [ChildRef!]!
+            }
+            """;
+        var bctx = buildBuildContext(sdl);
+        var arg = ((GraphQLObjectType) bctx.schema.getType("Query"))
+            .getFieldDefinition("childRefsByParent").getArgument("parentIds");
+
+        var resolved = bctx.nodeIdLeafResolver().resolve(arg, "parentIds",
+            bctx.resolveTable("child_ref").orElseThrow(), /*participant=*/null, /*authorOwnedPredicate=*/false);
+
+        assertThat(resolved).isInstanceOfSatisfying(NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk.class,
+            translated -> assertCatalogDecode(translated.decodeMethod(), "ParentNode", "ParentNode",
+                "parent_node", "pk_id"));
+    }
+
+    @Test
+    void tableOnlyTarget_authorOwnedPredicate_decodesFromCatalogMetadata() {
+        // qux has no foreign key to baz, so no route resolves; the leaf's own override owns the
+        // predicate, and the decode is still the generator's.
+        String sdl = """
+            type Qux @table(name: "qux") { name: String }
+            type Baz @table(name: "baz") { code: String @field(name: "id") }
+            type Query {
+                quxesByBaz(bazIds: [ID!]! @nodeId(typeName: "Baz")): [Qux!]!
+            }
+            """;
+        var bctx = buildBuildContext(sdl);
+        var arg = ((GraphQLObjectType) bctx.schema.getType("Query"))
+            .getFieldDefinition("quxesByBaz").getArgument("bazIds");
+
+        var resolved = bctx.nodeIdLeafResolver().resolve(arg, "bazIds", bctx.resolveTable("qux").orElseThrow(),
+            /*participant=*/null, /*authorOwnedPredicate=*/true);
+
+        assertThat(resolved).isInstanceOfSatisfying(NodeIdLeafResolver.Resolved.AuthorOwnedPredicate.class,
+            owned -> assertCatalogDecode(owned.decodeMethod(), "Baz", "Baz", "baz", "id"));
+    }
+
+    @Test
+    void tableOnlyTarget_withoutMetadata_rejectsNamingBothRemedies() {
+        String sdl = """
+            type Qux @table(name: "qux") { name: String }
+            type Query {
+                quxesByIds(ids: [ID!]! @nodeId(typeName: "Qux")): [Qux!]!
+            }
+            """;
+        var bctx = buildBuildContext(sdl);
+        var arg = ((GraphQLObjectType) bctx.schema.getType("Query"))
+            .getFieldDefinition("quxesByIds").getArgument("ids");
+
+        var resolved = bctx.nodeIdLeafResolver().resolve(arg, "ids", bctx.resolveTable("qux").orElseThrow(),
+            /*participant=*/null, /*authorOwnedPredicate=*/false);
+
+        assertThat(resolved).isInstanceOfSatisfying(NodeIdLeafResolver.Resolved.Rejected.class,
+            rejected -> assertThat(rejected.message())
+                .contains("not a @node type (no NodeId catalog metadata, no @node directive)"));
+        assertThat(bctx.catalogNodeDecodes()).isEmpty();
+    }
+
+    @Test
+    void declaredNodeThatDidNotClassify_rejectsPointingAtItsOwnError() {
+        // @node without implements Node: the type carries @node but is not a node type, so there
+        // is no decode helper to install, and adding @node is not the remedy.
+        String sdl = """
+            type Qux @table(name: "qux") @node { name: String }
+            type Query {
+                quxesByIds(ids: [ID!]! @nodeId(typeName: "Qux")): [Qux!]!
+            }
+            """;
+        var bctx = buildBuildContext(sdl);
+        var arg = ((GraphQLObjectType) bctx.schema.getType("Query"))
+            .getFieldDefinition("quxesByIds").getArgument("ids");
+
+        var resolved = bctx.nodeIdLeafResolver().resolve(arg, "ids", bctx.resolveTable("qux").orElseThrow(),
+            /*participant=*/null, /*authorOwnedPredicate=*/false);
+
+        assertThat(resolved).isInstanceOfSatisfying(NodeIdLeafResolver.Resolved.Rejected.class,
+            rejected -> assertThat(rejected.message())
+                .contains("'Qux' carries @node but did not classify as a node type")
+                .doesNotContain("Annotate"));
+    }
+
+    @Test
+    void targetKeys_recordWhichSourceAnswered() {
+        String sdl = """
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
+            type Bar @table(name: "bar") { name: String }
+            type Qux @table(name: "qux") @node { name: String }
+            type Query { x: String }
+            """;
+        var bctx = buildBuildContext(sdl);
+
+        assertThat(targetKeys(bctx, "Baz", "baz"))
+            .isInstanceOfSatisfying(BuildContext.TargetKeys.OfNode.class, ofNode -> {
+                assertThat(ofNode.node().name()).isEqualTo("Baz");
+                assertThat(ofNode.typeId()).isEqualTo("Baz");
+            });
+        assertThat(targetKeys(bctx, "Bar", "bar"))
+            .isInstanceOfSatisfying(BuildContext.TargetKeys.OfCatalog.class, ofCatalog -> {
+                assertThat(ofCatalog.typeId()).isEqualTo("Bar");
+                assertThat(ofCatalog.keyColumns()).extracting(c -> c.sqlName()).containsExactly("id_1", "id_2");
+            });
+        assertThat(targetKeys(bctx, "Qux", "qux"))
+            .isInstanceOfSatisfying(BuildContext.TargetKeys.OfDeclaredNode.class, declared -> {
+                assertThat(declared.typeId()).isEqualTo("Qux");
+                assertThat(declared.keyColumns()).extracting(c -> c.sqlName()).containsExactly("name");
+            });
+    }
+
+    private static BuildContext.TargetKeys targetKeys(BuildContext bctx, String typeName, String table) {
+        return bctx.resolveTargetKeys((GraphQLObjectType) bctx.schema.getType(typeName), typeName, table);
+    }
+
     private static BuildContext buildBuildContext(String sdl) {
         return buildBuildContext(sdl, FIXTURE_CTX);
     }

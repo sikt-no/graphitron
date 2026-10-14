@@ -381,7 +381,7 @@ class MultiTableFilterLoweringTest {
             assertThat(callParam.extraction())
                 .as("participant '" + pf.participant().typeName() + "' prunes rather than throws")
                 .isInstanceOf(CallSiteExtraction.PruneOnMismatch.class);
-            assertThat(((CallSiteExtraction.PruneOnMismatch) callParam.extraction()).decodeMethod().nodeTypeName())
+            assertThat(((CallSiteExtraction.PruneOnMismatch) callParam.extraction()).decodeMethod().targetTypeName())
                 .as("and it decodes its own node type, not a sibling's")
                 .isEqualTo(pf.participant().typeName());
         }

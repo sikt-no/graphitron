@@ -30,7 +30,8 @@ class InputColumnBackedFieldInvariantTest {
 
     private static CallSiteExtraction.NodeIdDecodeKeys decode(List<ColumnRef> columns) {
         return new CallSiteExtraction.ThrowOnMismatch(
-            new HelperRef.Decode(ClassName.get("fixture", "Enc"), "decodeBar", columns, "Bar"));
+            new HelperRef.Decode(ClassName.get("fixture", "Enc"), "decodeBar", columns, "Bar",
+                no.sikt.graphitron.rewrite.TestFixtures.filmTable()));
     }
 
     @Test

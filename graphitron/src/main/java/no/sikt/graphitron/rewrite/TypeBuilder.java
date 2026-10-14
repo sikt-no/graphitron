@@ -1645,7 +1645,8 @@ class TypeBuilder {
             ctx.ctx.outputPackage() + ".util",
             NodeIdEncoderClassGenerator.CLASS_NAME);
         var encodeMethod = new HelperRef.Encode(encoderClass, "encode" + name, keyColumns);
-        var decodeMethod = new HelperRef.Decode(encoderClass, "decode" + name, keyColumns, typeId);
+        var decodeMethod = new HelperRef.Decode(encoderClass, "decode" + name, keyColumns, typeId,
+            tableRef);
         return new NodeType(name, location, tableRef, typeId, keyColumns, encodeMethod, decodeMethod,
             provenance);
     }
