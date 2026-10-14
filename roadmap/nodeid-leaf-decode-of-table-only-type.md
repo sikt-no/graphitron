@@ -1,7 +1,7 @@
 ---
 id: R1032
 title: "A @nodeId leaf on a DML or filter input decodes a @table-only type from its catalog node metadata"
-status: In Review
+status: Ready
 bucket: bug
 priority: 2
 theme: classification-model
@@ -224,3 +224,35 @@ entry if the method stays.
 > (`Inventory`, key without the tenant column, at a `@service` scalar slot), which SDL reaches today
 > and no test pins. The `@table`-only form moved to R1033's scope notes. The false "today this case
 > throws" claim is gone; `nodeTypeOf` stays in Retired vocabulary.
+
+### Round 2 (2026-10-14, In Review -> Done, reviewer session 01JPUMbZDK7exAUewHwA3Pfb)
+
+Verdict: rework, on one approval precondition, which bears on question two. Everything else holds.
+Question one is answered: the delivered tree is the change the spec approved. `TargetKeys` is sealed
+over its source with the arms and order the plan names. `HelperRef.Decode` carries its `TableRef`, and
+`nodeTypeName()` is now `targetTypeName()`. `catalogNodeDecode` mints at the one site and registers
+with `putIfAbsent`. The 22-column cap runs before the mint, so no `Record23` can be registered.
+`NodeIdEncoderClassGenerator` emits node decodes, then the sorted catalog decodes, with no `encode<T>`.
+`nodeTypeOf` is gone, the decline is reworded, and `resolveDecodeHelperForType` stays node-only. The
+two departures from the plan, the `nodeId.adoc` constraint rewrite and the UPDATE rail's redacted
+wrong-type error, are recorded in the implementation notes, and the second is filed as R1036. The
+retirement sweep is clean. `mvn install -Plocal-db` passes on `dba356b` plus this item, with
+`NodeIdLeafResolverTest`, `TenantBindingClassificationTest`, `TableOnlyNodeIdLeafPipelineTest` and
+`TableOnlyNodeIdLeafExecutionTest` green.
+
+**Finding 1 (precondition: a code-string assertion on generated method bodies).**
+`TableOnlyNodeIdLeafPipelineTest.dmlUpdate_twoReferencesToOneCodeTable_setBothForeignKeysFromTheCatalogDecode`
+asserts `fetchersSource(schema, "MutationFetchers")).contains("NodeIdEncoder.decodeStudieprogram(")`.
+That line renders the whole `MutationFetchers` `TypeSpec` to source, method bodies included, and
+substring-matches it. The test-tier rule bans exactly this ("Behaviour is pinned at the pipeline tier
+and above" in `development-principles.adoc`; "Banned: code-string body matching" in `testing.adoc`).
+The rule applies at every tier and to every delivered test, and it does not matter that the tree
+already has older violations. The assertion also adds no evidence: four other checks already pin the
+same fact. Those are the model-level assertion on the same test, that every SET column's extraction is
+a `NodeIdDecodeKeys` whose `decodeMethod()` is `decodeStudieprogram`; the `assertDecodeOnly`
+encoder-method check; the compilation tier; and
+`TableOnlyNodeIdLeafExecutionTest.update_setsBothForeignKeysFromDecodedIds`.
+
+What would satisfy it: delete that assertion, the `fetchersSource` helper and the imports it alone uses
+(`DEFAULT_OUTPUT_PACKAGE`). Drop the implementation-notes bullet that names the rendered-source check.
+Nothing else is asked; the next In Review pass can be confined to that diff.
