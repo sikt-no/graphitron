@@ -173,6 +173,17 @@ Landed as specified. The contract types nest in `ChildField.NestingField` (`Pres
 - *Existing nesting sites change behaviour.* `PivotNestingHost.texts` (nullable, four column leaves) now collapses too. Host 1 carries values and `PivotExecutionTest` reads only host 1, so nothing there moved. The new hosts 2 and 3 are seeded with explicit ids after it.
 - *Execution coverage* is `NestingNullContractExecutionTest` over `PivotNestingHost.labels` / `labelsRequired: HostLabels`, covering all four cases in the Tests section. In the web sandbox the local `rewrite_test` database has to be reseeded after this change (see `.claude/web-environment.md`). Without the reseed these tests fail on the missing host rows, and a stale DML row (film 85) also fails `GraphQLQueryTest.filmsByTitleBean_absentInput_buildsNoBeanAndLeavesTheFieldUnfiltered`.
 
+### Round 2: reference leaves
+
+Landed as the Amendment specifies. Points for the reviewer:
+
+- *One helper, two arms.* `NestingField.subtreePresence()` gains a `TableField` arm guarded on `FieldWrapper.Single` and a `ColumnBackedReferenceField` arm, both through the private `referenceLeaf(joinPath)`. An empty path, `On.Predicate` and `On.Lateral` first hops answer `Blocked` with that child. `Hop.filter()` is deliberately not read: a hop-0 `condition:` is the stays-an-object case, not a blocker.
+- *No emitter or projection change.* `parentRowColumns()` and `FetcherEmitter.nestingBody` picked the join columns up as they were. The pipeline tier pins both for an FK reference (`singleFkReference_fetcherChecksTheJoinColumnAndTheSpliceProjectsIt`) and pins the exact fetcher body for a two-hop scalar `@reference`, which reads only `ADDRESS.CITY_ID`.
+- *The validator fork took the recommended branch.* `compareNestedFieldsShape`'s `NestingField` arm now calls `comparePresenceColumns`, which rejects structurally when the two sites' per-leaf `sqlName` lists differ, and says to split the nested type. It runs only when the recursion added no error, so a divergent inner column is not reported twice. The fixture is `content.film_id` against `film_endorsement.endorsed_film` through an implicit FK; `content` against `inventory` (both `film_id`) is the passing negative.
+- *Round-1 test repointed.* `referenceChild_blocksTheCollapse` became `listReferenceChild_blocksTheCollapse`, over `[Actor!]!` through `film_actor`.
+- *Reverse FK.* `reverseFkReference_leafIsTheParentsOwnKey` asserts only that the leaf is `language.language_id`; the wrapper therefore never collapses on a fetched row, which the contract allows.
+- *Execution coverage.* `pivot_nesting_host.language_id` (host 1 = 2, Italian; hosts 2 and 3 null) and `PivotNestingHost.origin: HostOrigin` holding `language: Language` and `languageName` through `pivot_nesting_host_language_id_fkey`. Three new cases in `NestingNullContractExecutionTest`. Nothing reads `pivot_nesting_host` by position or with `SELECT *`. In the web sandbox, reseed `rewrite_test` as for round 1.
+
 ## Provenance
 
 Reported by the sis Oracle IT run (fs-plattform, branch `sis/upgrade-graphitron`, write-up in `sis/GRAPHITRON10_STATUS.md` § "Third IT run"), on a pre-R1019 snapshot not re-checked on trunk. No manual page states the null contract of a nesting field either way (checked at `1cb2e1b04`). Graphitron 9 (`FetchDBMethodGenerator.createMappingFunction` at tag `v9.3.0`) mapped every nested object with jOOQ's `Functions.nullOnAllNull`, over all the type's fields, and used a plain constructor for a non-null nested field.

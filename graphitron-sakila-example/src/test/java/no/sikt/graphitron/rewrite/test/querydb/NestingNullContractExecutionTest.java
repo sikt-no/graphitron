@@ -103,8 +103,9 @@ class NestingNullContractExecutionTest {
     @Test
     void referenceOnlyWrapper_withItsJoinColumnSet_resolvesToAnObject() {
         var origin = (Map<String, Object>) hosts("origin { languageName language { name } }").get(1).get("origin");
-        assertThat(origin).containsEntry("languageName", "Italian");
-        assertThat((Map<String, Object>) origin.get("language")).containsEntry("name", "Italian");
+        // language.name is char(20), so the value arrives space-padded.
+        assertThat(((String) origin.get("languageName")).trim()).isEqualTo("Italian");
+        assertThat(((String) ((Map<String, Object>) origin.get("language")).get("name")).trim()).isEqualTo("Italian");
     }
 
     @Test
