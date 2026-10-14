@@ -96,6 +96,8 @@ The registry is the set of decodes the walk minted, not a reading of the classif
 
 **`TenantBindingIndex.Fold`.** The `NodeIdDecodeKeys` arm of `collectFromServiceLeaf` looks the node type up by `nodeTypeOf(keys.decodeMethod())` on its slot-miss branch, the branch that reports tenant evidence, and throws on a miss. It reads `keys.decodeMethod().table()` instead, and `nodeTypeOf` goes. The evidence names the decode's target type, `decode.nodeTypeName()` (renamed `targetTypeName()`, below), where it named `node.name()`; for a node type that is the same string.
 
+No carrier this item opens reaches that branch. `collectFromServiceLeaf` reads only a root `@service` call's arguments, whose `NodeIdDecodeKeys` come from `ServiceCatalog.nodeIdSlotExtraction` and so from `resolveDecodeHelperForType`, which stays node-only (above); a non-record input-bean member with `@nodeId` is refused by `InputBeanResolver.singleValuedMemberDeferral`. The leaves this item opens enter the fold through `accessOf`, which never looked a node type up. The change belongs here anyway because it follows from the reference carrying its table: the lookup answers a question the carrier now answers itself, and it is the lookup that would throw the day R1033 widens the named-parameter slot. Removing it in the change that puts the table on the reference keeps one source for "which table does this decode read".
+
 When the tenant column is in a catalog decode's key, the leaf **routes** and does not decline. `accessOf` already mints `DecodedKeySlot(nid.decodeMethod(), slot)` for every `NodeIdDecodeKeys` leaf, and the tenant routing helper `CompositeDecodeHelperRegistry` registers calls `decode<T>`, which now exists. `DecodedKeySlot`'s promise, one generated helper and one failure message shared with the carrier's own predicate, holds as it does for a node type, so routing costs no code.
 
 **R1029's record-carrier decline is reworded, not moved.** `decodedSlotAccess` declines a record-shaped decode (`RecordKeyDecode`, `NodeIdDecodeRecord`) of a `@table`-only target whose key carries the tenant column. Its detail gives the reason as "there is no node id decode helper to route on". After this item that can be false: `decode<T>` exists whenever some leaf names `T`. The decline is a scope decision: the record carriers hold no `HelperRef.Decode`, and no consumer has the shape. The text says so: "...but 'T' is not a node type, and a record decode of a `@table`-only type does not route the statement on its tenant. Make 'T' a node type, or bind the tenant through a field mapping to tenant column 'c'." The two assertions in `aJooqRecordParameterDecodingATableOnlyTypeWithTheTenantInItsKeyDeclines` anchor on the prefix and the remedy, and both survive.
@@ -120,7 +122,7 @@ When the tenant column is in a catalog decode's key, the leaf **routes** and doe
 
 - **Tenant in the key routes.** `type FilmActorCode @table(name: "film_actor")` (metadata key `ACTOR_ID, FILM_ID`) named by a filter input field under the `film_id` tenant column. Asserts `DecodedKeySlot` at slot 1 whose `decode` is `decodeFilmActorCode`. `nodeIdFilterInputFieldDivinesTheDecodedSlot` is its node-type twin and keeps passing unchanged.
 - **The record decline's new reason.** `aJooqRecordParameterDecodingATableOnlyTypeWithTheTenantInItsKeyDeclines` keeps its two assertions and gains one on the reworded reason.
-- **Slot miss reports evidence without throwing.** A `NodeIdDecodeKeys` leaf in a `@service` argument (`collectFromServiceLeaf`) naming `Baz`, which has no tenant column. The fold completes and reads the target table off `decode.table()`. Today this case throws in `nodeTypeOf`.
+- **Slot miss reports evidence off the decode's table.** The node-type case of the rewritten `collectFromServiceLeaf` branch, which no test pins today: a root `@service` with a scalar slot `inventoryId: ID! @nodeId(typeName: "Inventory")` whose Java parameter takes the key value (`ThrowOnMismatch`), over `type Inventory implements Node @table(name: "inventory")`. `inventory` carries the `film_id` tenant column but its key `inventory_id` does not, so the branch reads `inventory` off `decode.table()` and the unrouted-service rejection's evidence contains `Inventory id at inventoryId`. The `@table`-only form of this case cannot be written from SDL until the named-parameter slot widens, so it is R1033's to add.
 
 In `NodeIdLeafResolverTest`, one case per arm with a `@table`-only target, asserting the arm and that its `decodeMethod()` is `decode<T>` with the metadata's type id and key columns: `SameTable`, `DirectFk`, `TranslatedFk` (`nodeidfixture.parent_node` / `child_ref`) and `AuthorOwnedPredicate`. Plus the two remaining rejections. A `@table`-only type over `nodeidfixture.qux`, which has no metadata, rejects with `resolveTargetKeys`' existing "not a @node type (no NodeId catalog metadata, no @node directive)" text. A type carrying `@node` without `implements Node`, over `qux`, rejects with the `OfDeclaredNode` text and no longer advises adding `@node`. A `BuildContext`-level case pins `TargetKeys`' arm per source: node, catalog and declared node.
 
@@ -201,3 +203,13 @@ can exist. What would satisfy it, the author's choice:
 
 Either way, correct "Today this case throws in `nodeTypeOf`" and the matching `Retired vocabulary`
 entry if the method stays.
+
+> Response (author): took the first option, with a reachable test in place of a constructed one.
+> The `TenantBindingIndex.Fold` paragraph now says no carrier this item opens reaches the slot-miss
+> branch and why the change still belongs here (the reference carries its table, and the lookup is
+> what would throw once R1033 widens the named-parameter slot). `Fold` is private and built only
+> through `TenantBindingIndex`, so a fold-level test constructing the carrier would need scaffolding
+> the tier does not have; the Tests entry is instead the node-type case of the same branch
+> (`Inventory`, key without the tenant column, at a `@service` scalar slot), which SDL reaches today
+> and no test pins. The `@table`-only form moved to R1033's scope notes. The false "today this case
+> throws" claim is gone; `nodeTypeOf` stays in Retired vocabulary.
