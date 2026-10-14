@@ -19,7 +19,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R923` | A grain declares its corpora, so a cross-corpus grain can say so | Spec | 2026-09-05 | [plan](grain-declares-its-corpora.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R872` | The keys say what a source owns, and the gatherer decides how to refresh it | Spec | 2026-09-25 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
-| `R1029` | The tenant fold crashes on a @nodeId(typeName:) decode whose target is a @table-only type | Spec | 2026-10-14 | [plan](tenant-fold-nodeid-on-table-only-type.md) |
+| `R1029` | The tenant fold crashes on a @nodeId(typeName:) decode whose target is a @table-only type | Ready | 2026-10-14 | [plan](tenant-fold-nodeid-on-table-only-type.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R1027` | A rejected Declined or Unbound tenant root does not void its subtree tenant context | Spec | 2026-10-14 <sub>created 2026-10-13</sub> | [plan](rejected-declined-or-unbound-root-keeps-subtree-context.md) |
@@ -454,7 +454,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### diagnostics
 
-- `R1029` [**The tenant fold crashes on a @nodeId(typeName:) decode whose target is a @table-only type**](tenant-fold-nodeid-on-table-only-type.md) — Spec, bug
+- `R1029` [**The tenant fold crashes on a @nodeId(typeName:) decode whose target is a @table-only type**](tenant-fold-nodeid-on-table-only-type.md) — Ready, bug
 - `R411` [**Wire-coercion cast guard for @condition and @externalField (R261 Slice 2)**](reject-wire-coercion-nonservice-sites.md) — Backlog, architecture
 - `R1027` [**A rejected Declined or Unbound tenant root does not void its subtree tenant context**](rejected-declined-or-unbound-root-keeps-subtree-context.md) — Spec, bug
 - `R817` [**AuthoredClaimConflicts.fieldGrain reads a recursive view once per conflict row**](authored-claim-conflicts-reads-a-recursive-view-per-row.md) — Backlog, bug

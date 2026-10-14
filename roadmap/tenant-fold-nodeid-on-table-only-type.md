@@ -1,7 +1,7 @@
 ---
 id: R1029
 title: "The tenant fold crashes on a @nodeId(typeName:) decode whose target is a @table-only type"
-status: Spec
+status: Ready
 bucket: bug
 priority: 2
 theme: diagnostics
