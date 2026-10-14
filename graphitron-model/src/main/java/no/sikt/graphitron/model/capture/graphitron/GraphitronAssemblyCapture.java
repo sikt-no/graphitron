@@ -8,7 +8,6 @@ import no.sikt.graphitron.model.derive.FieldSourceTables;
 import no.sikt.graphitron.model.derive.FieldTargetTables;
 import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
 import no.sikt.graphitron.model.derive.FieldReferenceStepTargets;
-import no.sikt.graphitron.model.derive.FieldRoutines;
 import no.sikt.graphitron.model.derive.FieldSources;
 import no.sikt.graphitron.model.derive.FieldTableLinks;
 import no.sikt.graphitron.model.derive.NodeIdCandidates;
@@ -107,12 +106,10 @@ public final class GraphitronAssemblyCapture {
         // Then the endpoints, because their target rule reads the targets above and their
         // departure reads the bindings above that.
         FieldEndpoints.derive(dsl, graph, readAt);
-        // After it, the applications being keyed by the chain the line above establishes.
-        FieldRoutines.derive(dsl, graph, readAt);
-        // Then walking the links of each chain against the two stages above it: a link's departure
-        // is the previous link's arrival, and a routine link's arrival is what the line above
-        // resolved. Stored rather than left a view because two readers walk it, the line below and
-        // the entry defects at the tail of the derivation stratum.
+        // Then walking the links of each chain against the stages above: a link's departure is the
+        // previous link's arrival, and a routine link's arrival is the function its name resolves
+        // to. Stored rather than left a view because two readers walk it, the line below and the
+        // entry defects at the tail of the derivation stratum.
         FieldPathResolutions.derive(dsl, graph, readAt);
         // Last of all, keeping the one reading per link that both walks reach.
         FieldTableLinks.derive(dsl, graph, readAt);

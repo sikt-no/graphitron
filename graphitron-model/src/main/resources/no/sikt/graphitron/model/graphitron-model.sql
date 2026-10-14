@@ -5967,45 +5967,6 @@ COMMENT ON COLUMN graphitron_field_source_table.from_table IS 'the departing tab
 COMMENT ON COLUMN graphitron_field_source_table.basis IS 'which rule named the table, a closed vocabulary of two. SOURCE_TYPE: the parent type binds the table. INHERITED: the parent type binds none, so the field departs from wherever each field returning it does, through any number of such types. A root field has no row, a field whose path begins with a @routine departing from its result';
 COMMENT ON COLUMN graphitron_field_source_table.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
-CREATE TABLE graphitron_field_routine (
-  graph_name         VARCHAR NOT NULL,
-  type_name          VARCHAR NOT NULL,
-  field_name         VARCHAR NOT NULL,
-  to_source_name     VARCHAR NOT NULL,
-  to_schema          VARCHAR NOT NULL,
-  to_table           VARCHAR NOT NULL,
-  ordinal            INT     NOT NULL,
-  result_source_name VARCHAR NOT NULL,
-  result_schema      VARCHAR NOT NULL,
-  result_table       VARCHAR NOT NULL,
-  touched_at         TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name,
-               to_source_name, to_schema, to_table, ordinal),
-  -- The chain this application stands in, so the two cannot disagree about which target the path
-  -- it belongs to leads to. graphitron_field_table's own rationale names this relation.
-  FOREIGN KEY (graph_name, type_name, field_name, to_source_name, to_schema, to_table)
-    REFERENCES graphitron_field_table
-      (graph_name, type_name, field_name, to_source_name, to_schema, to_table) ON DELETE CASCADE,
-  -- The application whose spelling resolved, so a row cannot outlive the writing it is about.
-  FOREIGN KEY (graph_name, type_name, field_name, ordinal)
-    REFERENCES graphitron_routine_entry (graph_name, type_name, field_name, ordinal)
-      ON DELETE CASCADE,
-  FOREIGN KEY (result_source_name, result_schema, result_table)
-    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_field_routine IS 'The catalog table one @routine application resolved to, at the chain it stands in: one row per application of one field''s chain toward one target. For example Mutation.rentFilm over @routine(name: "rent_film") draws a row naming the rent_film function result, which is what the chain leaving that field departs from.';
-COMMENT ON COLUMN graphitron_field_routine.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_field_routine.type_name IS 'the type owning the field the application was written on';
-COMMENT ON COLUMN graphitron_field_routine.field_name IS 'the field the application was written on';
-COMMENT ON COLUMN graphitron_field_routine.to_source_name IS 'the target table''s catalog partition, carried from graphitron_field_table; the first of the three columns naming which of a field''s chains this application stands in';
-COMMENT ON COLUMN graphitron_field_routine.to_schema IS 'the target table''s SQL schema, carried from graphitron_field_table';
-COMMENT ON COLUMN graphitron_field_routine.to_table IS 'the target table''s SQL name, carried from graphitron_field_table. A field returning a multi-table interface has a chain per participant, so one application draws a row per participant and each is that participant''s own chain, which is why the target is in the key rather than beside it';
-COMMENT ON COLUMN graphitron_field_routine.ordinal IS 'the application''s position in document order, carried from graphitron_routine_entry, and what tells two applications on one field apart. @routine is repeatable and composes with @reference into one chain in written order, so a field can carry several and each resolves on its own terms; the ordinal is the chain''s order and not a count, the reference applications being numbered in the same sequence';
-COMMENT ON COLUMN graphitron_field_routine.result_source_name IS 'the catalog partition of the table the routine''s result is, the first of the three columns naming it. Carried rather than derived, on graphitron_tabletype''s terms: the reference is a foreign key the engine checks and cascades, so a recrawled source takes the resolutions that named it';
-COMMENT ON COLUMN graphitron_field_routine.result_schema IS 'the result table''s schema as the catalog spells it, which is the catalog''s spelling and not the author''s: the match folds case on both sides and neither authored spelling survives into the row';
-COMMENT ON COLUMN graphitron_field_routine.result_table IS 'the result table''s own name as the catalog spells it; with the two columns above, a foreign key into sql_table. A routine result is a catalog table of type FUNCTION, which is the whole of what makes this resolvable and is why the departure of a chain leaving a field with no table of its own can be named at all';
-COMMENT ON COLUMN graphitron_field_routine.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total. An application this reading no longer resolves leaves and the rest stay';
-
 CREATE TABLE graphitron_field_table_link (
   graph_name             VARCHAR NOT NULL,
   type_name              VARCHAR NOT NULL,
@@ -6454,7 +6415,8 @@ link (graph_name, type_name, field_name, position, last_position,
 -- exception is a self-referencing key, whose two hops depart and arrive at one table so that no
 -- walk can choose between them; both arms riding a key keep the one link.single_valued names.
   -- A @routine application arrives at its result and departs from nothing, whatever its position:
-  -- a function result is where a chain's rows begin.
+  -- a function result is where a chain's rows begin. Read at the element, the target playing no
+  -- part in what the name resolves to.
   SELECT l.graph_name, l.type_name, l.field_name,
          l.target_source_name, l.target_schema, l.target_table,
          l.position, l.last_position, 'ROUTINE', CAST(NULL AS VARCHAR),
@@ -6465,15 +6427,24 @@ link (graph_name, type_name, field_name, position, last_position,
          CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
          CAST(NULL AS VARCHAR)
     FROM link l
-    JOIN graphitron_routine_entry r
-      ON r.graph_name = l.graph_name AND r.type_name = l.type_name
-     AND r.field_name = l.field_name AND r.source_name = l.source_name
-     AND r.source_line = l.source_line AND r.source_column = l.source_column
-    JOIN graphitron_field_routine fr
-      ON fr.graph_name = l.graph_name AND fr.type_name = l.type_name
-     AND fr.field_name = l.field_name AND fr.ordinal = r.ordinal
-     AND fr.to_source_name = l.target_source_name AND fr.to_schema = l.target_schema
-     AND fr.to_table = l.target_table
+    -- The function the name written at this position resolves to: its parts folded against the
+    -- graph's catalog sources, an unqualified name admitted in any schema, and one candidate only,
+    -- a name two schemas answer being no reading.
+    JOIN (SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
+                 st.source_name AS result_source_name, st.table_schema AS result_schema,
+                 st.table_name AS result_table,
+                 COUNT(*) OVER (PARTITION BY e.graph_name, e.source_name, e.source_line,
+                                             e.source_column) AS candidates
+            FROM graphitron_ast_routine_entry e
+            JOIN store_graph_source gs ON gs.graph_name = e.graph_name
+            JOIN sql_table st
+              ON st.source_name = gs.source_name AND st.table_type = 'FUNCTION'
+             AND st.table_name_upper = UPPER(e.routine_ref_name_part)
+             AND (e.routine_ref_namespace_part IS NULL
+                  OR st.table_schema_upper = UPPER(e.routine_ref_namespace_part))) fr
+      ON fr.graph_name = l.graph_name AND fr.source_name = l.source_name
+     AND fr.source_line = l.source_line AND fr.source_column = l.source_column
+     AND fr.candidates = 1
   UNION ALL
   -- An element naming a key is a route, and the catalog says a key is two hops, so this is two
   -- readings. Which one the author meant is the one the chain reaches, and the walk below decides.
@@ -14120,9 +14091,6 @@ INSERT INTO meta_grain VALUES
    'one link of one field''s chain toward one target, resolved, in one graph',
    'graph_name, type_name, field_name, target_source_name, target_schema, target_table, position',
    'sdl'),
-  ('field-routine-result',
-   'one @routine application of one field''s chain toward one target, in one graph',
-   'graph_name, type_name, field_name, to_source_name, to_schema, to_table, ordinal', 'catalog'),
   ('argmapping-candidate',
    'one right-hand side an argMapping may write at a coordinate, named by the path that reaches it',
    'graph_name, coordinate, path', 'sdl'),
@@ -15016,10 +14984,6 @@ INSERT INTO meta_relation VALUES
    'Where one link of a field''s chain departs and where it arrives, toward one of the field''s targets: one row per written link per target, with the constraint it joins through where it joins through one.',
    'For example Actor.films over @reference(path: [{key: "film_actor_actor_id_fkey"}, {key: "film_actor_film_id_fkey"}]) draws two rows toward the film target, actor to film_actor and then film_actor to film.',
    'Where every link of a chain departs and arrives, which graphitron_field_table asks for by name and no relation held: the whole chain''s endpoints were stated first because more readers want the pair than want the hops, and the route was left to be walked at read time. Two views walked it, one seeded from a type''s binding and one from a @routine result, and neither could answer for the other''s shape. Keyed per target because that is what varies: graphitron_field_path states the order once at the coordinate, the order being the same whichever table a field''s rows come from, and where each link stands is a resolution that begins at the enclosing type''s binding and so belongs to one target. Resolved sequentially, each link departing where the one before it arrived, which is what collapses the candidacy the read-time rule carried: a named foreign key is a hop in either direction and which one an element means is only answerable where the chain stands, so both were rows and a walk narrowed them. Here the departure is known and the orientation follows. The constraint travels with the endpoints rather than being dropped, which is the complaint the read-time relation makes about itself: two foreign keys may join one pair of tables, so the endpoints do not name the constraint. via discriminates honestly, a link having one route however many facts the element states: a condition beside a key filters that hop rather than routing it.'),
-  ('graphitron_field_routine', 'field-routine-result', 'graphitron',
-   'The catalog table one @routine application resolved to, at the chain it stands in: one row per application of one field''s chain toward one target.',
-   'For example Mutation.rentFilm over @routine(name: "rent_film") draws a row naming the rent_film function result, which is what the chain leaving that field departs from.',
-   'The resolution of a @routine spelling, anchored where it is used rather than performed again by every reader that needs it. A routine result is a catalog table of type FUNCTION, so the authored name resolves against sql_table the way @table(name:) does, and until now nothing held the answer: one derivation folded the spelling to name a field''s target and kept only the last application, and a second reader folded the same spelling a different way, whole rather than in parts, so one question had two implementations that can disagree on a qualified name. Keyed by graphitron_field_table''s key plus the ordinal, which is the same key the route between the endpoints takes, so an application and the links around it agree about which chain they are in without joining through the field. Every application resolves and not only the last: @routine is repeatable and composes with @reference into one chain in written order, so a function can stand anywhere in it and a relation keeping one of them can only answer for chains of length one. Matching folds case on both sides and admits an unqualified spelling against any schema the graph''s sources carry. A spelling two schemas both answer resolves to two candidates and to no row, on graphitron_tabletype''s terms, and is found by anti-join against the entry the author wrote; that absence is all this says about failure, what an author must change being a fact at the coordinate.'),
   ('graphitron_spelled_table', 'spelled-table-candidate', 'graphitron',
    'How a written table name resolves against the catalog census: one row per candidate table, keyed on the spelling itself rather than on any one site that wrote it.',
    'For example a schema writing @table(name: "film") and a @reference path element naming film draws one row between them, and a name two schemas both declare draws two rows saying two candidates.',

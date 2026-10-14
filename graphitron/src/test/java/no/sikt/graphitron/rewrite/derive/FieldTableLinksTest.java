@@ -22,9 +22,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Where each link of a field's chain departs and arrives, toward each of the field's targets.
  *
- * <p>Captured for real rather than seeded, on {@code FieldRoutinesTest}'s terms: the claim is that
- * an authored key name met a live catalog and that the chain's own order decided which way the key
- * was traversed, so a seeded row would describe a resolution nothing performed.
+ * <p>Captured for real rather than seeded: the claim is that an authored key name met a live
+ * catalog and that the chain's own order decided which way the key was traversed, so a seeded row
+ * would describe a resolution nothing performed.
  *
  * <p>The claim worth testing is the one the read-time rule could not make. A foreign key is a hop in
  * either direction, and the fixture writes the same key at two coordinates that traverse it opposite

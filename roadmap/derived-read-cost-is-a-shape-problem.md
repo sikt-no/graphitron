@@ -596,6 +596,22 @@ entry is written by the capture phase alone. Counted in `roadmap/audits/2026-09-
       `intent_field_path_node` and `intent_mutation_routine_seat` match a step by ordinal.
     * **The argument-site shape follows the argument path** `blocked`, on "The path is stated at
       the argument and input-field grains".
+  * **The routine entries are gone** `open`. `graphitron_routine_entry` is
+    `graphitron_ast_routine_entry` copied row for row and keyed by the field and an ordinal, which is
+    a coordinate and a count rather than where the `@` was written; the coordinate and the ordinal
+    are `graphql_directive_application`'s, and a routine's place in its field's path is
+    `graphitron_field_path`'s. Four of its readers ask for the last application by `MAX(ordinal)`,
+    which is the `@routine` latest in the path.
+    * **The registry decode stops writing routine entries** `open`. Two writers fill the relation,
+      `GraphitronAnchor.routines` from the twin and the registry decode through
+      `GraphitronFactCapture` and `FactWrites`, so the decode's is redundant and goes first.
+    * **The readers move to the twin, the path and the applications** `open`, each measured:
+      `graphitron_routine_column_mapping_pair_entry`'s key, `graphitron_field_path_reading`,
+      `intent_authored_field_claim`, `intent_field_path_start`, `intent_field_routine_method`,
+      `intent_field_payload_producer`, `intent_carrier_routine_hop`,
+      `intent_mutation_routine_seat`, three rules of `graphitron_entry_defect_rule`,
+      `AuthoredClaimConflicts` and the language server's `ClaimFacts`. Then the relation and the
+      anchor's writer go.
 * **The untwinned ones get an ast entry first** `open`, and are the longer half.
 * **The supertype roster becomes shrink-only** `open`. It already records the duplication and only
   ever gains rows, so making it a ratchet turns the record into the gate rather than adding one.

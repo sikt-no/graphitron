@@ -16,7 +16,6 @@ import no.sikt.graphitron.model.derive.FieldPathApplications;
 import no.sikt.graphitron.model.derive.FieldEndpoints;
 import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
 import no.sikt.graphitron.model.derive.FieldReferenceStepTargets;
-import no.sikt.graphitron.model.derive.FieldRoutines;
 import no.sikt.graphitron.model.derive.FieldTableLinks;
 import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.ResolvedTypeBindings;

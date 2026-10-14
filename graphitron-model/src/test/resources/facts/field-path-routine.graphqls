@@ -1,0 +1,27 @@
+# A @routine element is read at the position it was written: it departs from nothing and arrives at
+# the function its name resolves to, folded against the catalog in parts, a qualified name in its
+# own schema. The chain it stands in plays no part, so one routine ending a chain and one followed
+# by a hop resolve alike.
+
+type Film @table(name: "film") { title: String }
+type Row { title: String }
+
+extend type Query {
+  films: [Film!]!
+  rows(actorId: Int!, minLength: Int!): [Row!]!
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+  hopped(actorId: Int!, minLength: Int!): [Film!]!
+    @routine(name: "public.films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @reference(path: [{table: "film"}])
+}
+
+extend schema @assertContains(relation: "graphitron_field_path_reading", rows: """
+  type_name, field_name, position, via,     to_schema, to_table
+  Query,     rows,       0,        ROUTINE, public,    films_for_actor
+  Query,     hopped,     0,        ROUTINE, public,    films_for_actor
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_field_path_reading", rows: """
+  type_name, field_name
+  Query,     films
+  """)
