@@ -230,9 +230,10 @@ running from the participant's table toward a `@nodeId` target in key hops alone
   marked and swept with it. `field-path-and-participant-path` states a field with two participants'
   paths and one left to discovery beside a `@reference` chain. On the sakila store the ten
   chain-break defects on `@referenceFor` fields are gone and the other thirteen are unchanged. The
-  path is read once a target is keyed by its target type, under "A field's targets are its target
-  types": the reading then keys by the field and the target type, and takes the participant's path
-  for its own target and the coordinate's path for the rest.
+  path is read once a field's target is its target type, under "A field's target is its target
+  type": a participant is then a member of the field's target, one join to `graphql_poly_member`,
+  and the reading takes the participant's path for that participant and the coordinate's path for
+  the rest.
 * **Writing `@reference` and `@referenceFor` at one coordinate is a defect** `open`, as is a
   `@referenceFor` on a coordinate whose type is neither a union nor an interface. Both are rejections
   the vocabulary states; as codes they are where the editor learns of them.
@@ -679,19 +680,24 @@ and the emitters read, and it goes when nothing reads what it builds.
         test compiles where the case is the classpath.
       * **Two backings for one type is a defect** `open`. What `intent_type_backing_conflict`
         reports, as a code at the type's declaration.
-    * **A field's targets are its target types** `open`. A field has a target type, and a target
-      type is what is bound to a table. `graphitron_field_target` holds one row per field and
-      target type: the type the field navigates as, or each participant of a union or interface it
-      returns, with the rule that answered. No table stands beside it; a target's table is its
-      type's binding, one join to `graphitron_resolved_type_binding`, so two participants bound to
-      one table are two targets and a target with no table is a row saying so. The participant
-      grain is the one `intent_field_participant_scope_table` keys by, here owned, marked and swept.
+    * **A field's target is its target type** `open`. A field has a target type, and a target type
+      is what is bound to a table. `graphitron_field_target` holds one row per field: the target
+      type unwrapped, the element where the field returns a connection and the named type
+      otherwise, scalars included, with the connection it was unwrapped from beside it. List and
+      non-null wrapping are cardinality and stay on `graphql_field`. Everything else is a join on
+      the target type: its kind to `graphql_type`, its participants to `graphql_poly_member`, its
+      table to `graphitron_resolved_type_binding`, so two participants bound to one table are two
+      rows of that join and a target with no table is a row with none. It is
+      `graphitron_field_navigation` renamed, the wrapper's name in place of the two-value basis,
+      in one commit with its readers. A mutation's target is its payload type. The refetch a
+      mutation does is the carrier's own fact, `graphitron_carrier_data_field`, whose data field
+      has a target of its own; it is not folded in here.
     * **The duplicate statements of a field's tables dissolve** `blocked`, on the node above and on
       "The departure is stated". A field's target and its departure are each stated several times
       at several grains, and each statement goes when its readers have moved:
       * `graphitron_field_table`, its target half to the target types and their bindings, its
         `from_` half to the departure;
-      * `intent_field_participant_scope_table`, to the target types;
+      * `intent_field_participant_scope_table`, to the target and its participants;
       * `graphitron_field_scope_table`, the table a field's SQL binds against, checked against the
         departure and the targets it restates;
       * `graphitron_field_column_scope` and `intent_field_path_terminus`, which state a path's or a
@@ -1815,7 +1821,15 @@ The two `@referenceFor` step relations, their one reader having moved to the ste
 `_chain_link` or `_chain`; the grains `field-chain-link`, `field-chain-link-reading`,
 `field-chain-link-reach` and its `keyed`, `keyless` and `open` siblings, and
 `field-chain-application`; the classes `FieldChainLinkResolutions` and `FieldChainApplications`, now
-`FieldPathResolutions` and `FieldPathApplications`. The type-backing
+`FieldPathResolutions` and `FieldPathApplications`.
+
+**Renamed, navigation to target.** `graphitron_field_navigation` (now `graphitron_field_target`),
+its columns `navigated_type_name` (now `target_type_name`) and `basis` with its values
+`CONNECTION_ELEMENT` and `NAMED_TYPE` (now `wrapper_type_name`, the connection's name or null), the
+index `graphitron_field_navigation_type_ix`, and the fact document `field-navigation`.
+`intent_field_navigated_type` keeps its columns, projected from the target.
+
+The type-backing
 cluster, into `graphitron_type_backing`: `intent_type_backing_seed`, `intent_type_backing_class`,
 `intent_type_backing` and `intent_field_accessor_hop`, with the grain `type-backing-class` and the
 value `BACKING_CLOSURE` (now `PRODUCER` and `ACCESSOR`).
@@ -1918,11 +1932,6 @@ rather than left in a transcript.
   alone where that name is unique per table, and omitting the endpoints entirely, which are all
   that tells apart the two arms carrying no constraint. It was found by reading and fixed by
   reading, which is the part that does not scale.
-* **`graphitron_field_navigation` is a stored derivation with no rule view.** Its grain is
-  `graphitron_field`'s, unchanged, and it is stored so a reader meets an indexed column. That is a
-  real reason, but the rule is stated once in jOOQ with nothing to diff it against, where
-  `FieldColumnScopes` ten lines away keeps its rule in a view so an `EXCEPT` against the target stays
-  runnable. Worth an item.
 * **`SchemaIdentifierDriftCheck` can report findings the source no longer holds.** It reads the store
   prose out of a booted H2 store, so the DDL it sees is the compiled resource rather than the file it
   names, and it labels every finding with the `src/main/resources` path. On an incremental build that

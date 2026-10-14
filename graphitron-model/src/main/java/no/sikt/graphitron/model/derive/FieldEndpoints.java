@@ -9,7 +9,7 @@ import org.jooq.Select;
 import java.time.LocalDateTime;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TABLE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NAVIGATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
@@ -30,7 +30,7 @@ import static org.jooq.impl.DSL.val;
  * The capture-cadence writer of {@code graphitron_field_table}: where a field's rows come from, and where
  * the field departs from to reach them.
  *
- * <p>Called as a stage of the graphitron gatherer after the navigation it stands on, and everything
+ * <p>Called as a stage of the graphitron gatherer after the targets it stands on, and everything
  * else it reads has flushed by then: the table bindings are that gatherer's own earlier stage, the
  * polymorphic membership is the SDL crawler's, and the routine carries its own spelling, which this
  * resolves where it was written. No rule here reads a derivation.
@@ -41,7 +41,7 @@ import static org.jooq.impl.DSL.val;
  * than a gap, while every row a field returns still comes from somewhere.
  *
  * <p>Three rules name a target and they are disjoint by construction rather than ranked. The
- * navigated type binds a table, or it is a polymorphic container binding none of its own and each
+ * target type binds a table, or it is a polymorphic container binding none of its own and each
  * table-bound participant is a target, or the field's chain ends on a {@code @routine} whose result
  * binds the return. The second and third each demand that the first did not answer, so no window
  * function is needed and a reader never has to know which rule to prefer.
@@ -100,12 +100,12 @@ public final class FieldEndpoints {
             .execute();
     }
 
-    /** The ordinary case: the field's navigated type binds a table and that is where its rows are. */
+    /** The ordinary case: the field's target type binds a table and that is where its rows are. */
     private static Select<? extends Record11<
             String, String, String, String, String, String, String, String, String, String,
             LocalDateTime>>
             namedType(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
-        var nv = GRAPHITRON_FIELD_NAVIGATION;
+        var nv = GRAPHITRON_FIELD_TARGET;
         var tgt = GRAPHITRON_TABLETYPE.as("target");
         var src = GRAPHITRON_TABLETYPE.as("source");
         return dsl.select(nv.GRAPH_NAME, nv.TYPE_NAME, nv.FIELD_NAME,
@@ -114,7 +114,7 @@ public final class FieldEndpoints {
                 val("NAMED_TYPE_TABLE"), val(touchedAt, GRAPHITRON_FIELD_TABLE.TOUCHED_AT))
             .from(nv)
             .join(tgt).on(tgt.GRAPH_NAME.eq(nv.GRAPH_NAME),
-                tgt.TYPE_NAME.eq(nv.NAVIGATED_TYPE_NAME))
+                tgt.TYPE_NAME.eq(nv.TARGET_TYPE_NAME))
             .leftJoin(src).on(src.GRAPH_NAME.eq(nv.GRAPH_NAME), src.TYPE_NAME.eq(nv.TYPE_NAME))
             .where(nv.GRAPH_NAME.eq(graphName));
     }
@@ -128,7 +128,7 @@ public final class FieldEndpoints {
             String, String, String, String, String, String, String, String, String, String,
             LocalDateTime>>
             participants(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
-        var nv = GRAPHITRON_FIELD_NAVIGATION;
+        var nv = GRAPHITRON_FIELD_TARGET;
         var m = GRAPHQL_POLY_MEMBER;
         var tgt = GRAPHITRON_TABLETYPE.as("target");
         var src = GRAPHITRON_TABLETYPE.as("source");
@@ -138,16 +138,16 @@ public final class FieldEndpoints {
                 val("PARTICIPANT_TABLE"), val(touchedAt, GRAPHITRON_FIELD_TABLE.TOUCHED_AT))
             .from(nv)
             .join(m).on(m.GRAPH_NAME.eq(nv.GRAPH_NAME),
-                m.CONTAINER_NAME.eq(nv.NAVIGATED_TYPE_NAME))
+                m.CONTAINER_NAME.eq(nv.TARGET_TYPE_NAME))
             .join(tgt).on(tgt.GRAPH_NAME.eq(m.GRAPH_NAME), tgt.TYPE_NAME.eq(m.MEMBER_TYPE_NAME))
             .leftJoin(src).on(src.GRAPH_NAME.eq(nv.GRAPH_NAME), src.TYPE_NAME.eq(nv.TYPE_NAME))
             .where(nv.GRAPH_NAME.eq(graphName))
-            .and(containerBindsNothing(nv.GRAPH_NAME, nv.NAVIGATED_TYPE_NAME));
+            .and(containerBindsNothing(nv.GRAPH_NAME, nv.TARGET_TYPE_NAME));
     }
 
     /**
      * The chain ends on a routine, so the routine's result binds the return and is the target. The
-     * precondition is exactly that the navigated type binds nothing: where a {@code @reference} hop
+     * precondition is exactly that the target type binds nothing: where a {@code @reference} hop
      * follows the routine the return must be {@code @table} bound, and the first rule answers there,
      * so the written order needs no comparison here.
      *
@@ -164,7 +164,7 @@ public final class FieldEndpoints {
         var later = GRAPHITRON_ROUTINE_ENTRY.as("later");
         var gs = STORE_GRAPH_SOURCE;
         var st = SQL_TABLE;
-        var nv = GRAPHITRON_FIELD_NAVIGATION;
+        var nv = GRAPHITRON_FIELD_TARGET;
         var src = GRAPHITRON_TABLETYPE.as("source");
 
         var resolved = dsl.select(r.GRAPH_NAME, r.TYPE_NAME, r.FIELD_NAME,
@@ -199,14 +199,14 @@ public final class FieldEndpoints {
                 nv.FIELD_NAME.eq(resolved.field(r.FIELD_NAME)))
             .leftJoin(src).on(src.GRAPH_NAME.eq(nv.GRAPH_NAME), src.TYPE_NAME.eq(nv.TYPE_NAME))
             .where(field(name("resolved", "candidates"), Integer.class).eq(1))
-            .and(containerBindsNothing(nv.GRAPH_NAME, nv.NAVIGATED_TYPE_NAME))
+            .and(containerBindsNothing(nv.GRAPH_NAME, nv.TARGET_TYPE_NAME))
             .andNotExists(selectOne().from(GRAPHQL_POLY_MEMBER)
                 .where(GRAPHQL_POLY_MEMBER.GRAPH_NAME.eq(nv.GRAPH_NAME),
-                    GRAPHQL_POLY_MEMBER.CONTAINER_NAME.eq(nv.NAVIGATED_TYPE_NAME)));
+                    GRAPHQL_POLY_MEMBER.CONTAINER_NAME.eq(nv.TARGET_TYPE_NAME)));
     }
 
     /**
-     * The precondition both lower rules share, stated once: the navigated type binds no table of
+     * The precondition both lower rules share, stated once: the target type binds no table of
      * its own, so the first rule found no target and this one is not contending with it.
      */
     private static Condition containerBindsNothing(Field<String> graph,

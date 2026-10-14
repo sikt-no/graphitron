@@ -26,7 +26,7 @@ import static org.jooq.impl.DSL.rowNumber;
  * and admitting only applications that follow it, so on the manual's own sandwich example it reports
  * two nodes where the manual describes four.
  *
- * <p>Stored rather than left to each reader on {@code graphitron_field_navigation}'s terms: a reader
+ * <p>Stored rather than left to each reader on {@code graphitron_field_target}'s terms: a reader
  * joins on the answer, and a rank over source positions is not a column an index can lead with.
  *
  * <p>Two directives contribute and {@code @referenceFor} is deliberately not one of them. It states

@@ -1,0 +1,42 @@
+# A field's target type, unwrapped from a connection where it returns one, with the connection beside
+# it. Kind, participants and table are joins on the target's name, so a union is the target itself.
+
+type Film @table(name: "film") { title: String }
+type Note { text: String }
+union Media = Film | Note
+
+# The macro rewrote this field's type to a connection it minted, so the field's named type is the
+# wrapper and the target is the element.
+extend type Query { films: [Film!]! @asConnection }
+
+# The author declared the wrapper, and its edges-then-node shape is what makes it one.
+extend type Query { pages: FilmPage }
+type FilmPage { edges: [FilmPageEdge!]! pageInfo: PageInfo }
+type FilmPageEdge { node: Film cursor: String }
+type PageInfo { hasNextPage: Boolean }
+
+# A field returning what it names, a union and a scalar among them: the relation is total.
+extend type Query { firstFilm: Film media: [Media!]! }
+
+# A mutation's target is its payload; the refetch is the payload's data field's own target.
+type Mutation { addFilm(title: String): AddFilmPayload }
+type AddFilmPayload { film: Film }
+
+extend schema @assertContains(relation: "graphitron_field_target", rows: """
+  type_name,      field_name, target_type_name, wrapper_type_name
+  Query,          films,      Film,             QueryFilmsConnection
+  Query,          pages,      Film,             FilmPage
+  Query,          firstFilm,  Film,
+  Query,          media,      Media,
+  Query,          ping,       String,
+  Film,           title,      String,
+  Mutation,       addFilm,    AddFilmPayload,
+  AddFilmPayload, film,       Film,
+  """)
+
+# The wrapper the macro minted is made of fields too, with targets like any other.
+extend schema @assertContains(relation: "graphitron_field_target", rows: """
+  type_name,                 field_name, target_type_name, wrapper_type_name
+  QueryFilmsConnection,      nodes,      Film,
+  QueryFilmsConnectionEdge,  node,       Film,
+  """)

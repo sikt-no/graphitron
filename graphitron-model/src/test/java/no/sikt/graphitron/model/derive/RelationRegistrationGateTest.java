@@ -99,7 +99,7 @@ class RelationRegistrationGateTest {
             "graphitron_method_reference_entry",
             // Written beside the field row in the same walk, so the field coordinate's claim
             // covers it exactly as it covers the field's own attributes.
-            "graphitron_field_navigation")) {
+            "graphitron_field_target")) {
             registrations.put(relation, Arm.CONTAINMENT);
         }
         for (String relation : List.of(
@@ -423,6 +423,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_field_column_scope", Arm.DERIVED);
         registrations.put("graphitron_type_reach", Arm.DERIVED);
         registrations.put("graphitron_type_reach_rule", Arm.DERIVED);
+        registrations.put("graphitron_field_target_rule", Arm.DERIVED);
         registrations.put("graphitron_type_arrival", Arm.DERIVED);
         registrations.put("graphitron_type_arrival_rule", Arm.DERIVED);
         registrations.put("graphitron_field_source", Arm.DERIVED);

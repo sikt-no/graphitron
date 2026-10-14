@@ -307,17 +307,13 @@ public final class SeededStore {
               SELECT graph_name, routine_ref, routine_ref_namespace_part, routine_ref_name_part
                 FROM graphitron_routine_entry) spellings
             """);
-        dsl.execute("DELETE FROM graphitron_field_navigation");
+        dsl.execute("DELETE FROM graphitron_field_target");
         dsl.execute("""
-            INSERT INTO graphitron_field_navigation
-              (graph_name, type_name, field_name, basis, navigated_type_name, touched_at)
-            SELECT f.graph_name, f.type_name, f.field_name,
-                   CASE WHEN ce.type_name IS NULL THEN 'NAMED_TYPE' ELSE 'CONNECTION_ELEMENT' END,
-                   COALESCE(ce.element_type_name, f.named_type),
+            INSERT INTO graphitron_field_target
+              (graph_name, type_name, field_name, target_type_name, wrapper_type_name, touched_at)
+            SELECT graph_name, type_name, field_name, target_type_name, wrapper_type_name,
                    CURRENT_TIMESTAMP
-              FROM graphitron_field f
-              LEFT JOIN graphitron_connection_element_type ce
-                ON ce.graph_name = f.graph_name AND ce.type_name = f.named_type
+              FROM graphitron_field_target_rule
             """);
         dsl.execute("DELETE FROM graphitron_method_reference_entry");
         dsl.execute("""
