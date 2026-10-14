@@ -1,0 +1,47 @@
+# The types whose tables a field's statements land on: the target where it binds a table, and each
+# table-bound participant where it does not. A name and not a table, so two participants on one
+# table are two rows, and a member that binds nothing, or binds ambiguously, lands nowhere.
+
+type Film @table(name: "film") { title: String }
+type Reel @table(name: "film") { title: String }
+type Actor @table(name: "actor") { title: String }
+type Note { text: String }
+# event is declared in two schemas, so this binding is ambiguous.
+type Event @table(name: "event") { title: String }
+
+union Reels = Film | Reel
+union Mixed = Actor | Note | Event
+
+interface Credited @table(name: "actor") { title: String }
+type Clip implements Credited @table(name: "actor") { title: String }
+
+extend type Query {
+  film: Film
+  reels: [Reels!]!
+  mixed: [Mixed!]!
+  credited: [Credited!]!
+  note: Note
+  films: [Film!]! @asConnection
+}
+
+extend schema @assertContains(relation: "graphitron_field_target_table", rows: """
+  type_name,                 field_name, arriving_type_name, basis
+  Query,                     film,       Film,               TARGET
+  Query,                     reels,      Film,               PARTICIPANT
+  Query,                     reels,      Reel,               PARTICIPANT
+  Query,                     mixed,      Actor,              PARTICIPANT
+  Query,                     credited,   Credited,           TARGET
+  Query,                     films,      Film,               TARGET
+  QueryFilmsConnection,      nodes,      Film,               TARGET
+  QueryFilmsConnectionEdge,  node,       Film,               TARGET
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_field_target_table", rows: """
+  type_name, field_name, arriving_type_name
+  Query,     mixed,      Note
+  Query,     mixed,      Event
+  Query,     credited,   Clip
+  Query,     note,       Note
+  Query,     ping,       String
+  Film,      title,      String
+  """)

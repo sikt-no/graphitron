@@ -183,7 +183,11 @@ class SupertypeSignatureGateTest {
         // null on half its rows, and neither reader could key into it. They became visible together
         // the way the pair above did, when a conversion took both out of the register and made them
         // tables this gate's scan reaches.
-        Set.of("graphitron_argument_scope_table", "graphitron_field_scope_table"),
+        // graphitron_field_target_table is the third: a basis naming which rule answered, keyed by the
+        // arriving type rather than the table. The scope relations' PARTICIPANT_TABLE rows are its
+        // tables, and they dissolve into it.
+        Set.of("graphitron_argument_scope_table", "graphitron_field_scope_table",
+            "graphitron_field_target_table"),
         // Where a @reference path element lands, under the three keys the three sites ask it by:
         // a field's own coordinate, an argument's, and an input field's with the resolving table
         // it was handed. One set per arm of the split, because the split is on key shape and the

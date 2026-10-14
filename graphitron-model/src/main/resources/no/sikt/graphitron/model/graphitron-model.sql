@@ -5245,6 +5245,26 @@ COMMENT ON COLUMN graphitron_field_target.target_type_name IS 'the target type''
 COMMENT ON COLUMN graphitron_field_target.wrapper_type_name IS 'the connection type the target was unwrapped from, which is the field''s named type; null where the field returns its target directly. List and non-null wrapping are cardinality rather than a wrapper, and stay on graphitron_field';
 COMMENT ON COLUMN graphitron_field_target.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the coordinates a rewriting moved off; a field the author removed takes its row with it through the cascade above, so the two together are what let a second reading of one store land on the first''s rows rather than meeting them on the key';
 
+CREATE TABLE graphitron_field_target_table (
+  graph_name         VARCHAR NOT NULL,
+  type_name          VARCHAR NOT NULL,
+  field_name         VARCHAR NOT NULL,
+  arriving_type_name VARCHAR NOT NULL,
+  basis              VARCHAR NOT NULL,
+  touched_at         TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, arriving_type_name),
+  FOREIGN KEY (graph_name, type_name, field_name)
+    REFERENCES graphitron_field_target (graph_name, type_name, field_name) ON DELETE CASCADE,
+  CHECK (basis IN ('TARGET', 'PARTICIPANT'))
+);
+COMMENT ON TABLE graphitron_field_target_table IS 'A type whose table one of a field''s statements lands on: one row per field and arriving type, the target where it binds a table and each table-bound participant where it does not. For example Actor.films lands on Film, and a field returning a union of Book and Movie, which binds no table, lands on Book and on Movie.';
+COMMENT ON COLUMN graphitron_field_target_table.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_field_target_table.type_name IS 'the type owning the field';
+COMMENT ON COLUMN graphitron_field_target_table.field_name IS 'the field; with the column above a reference into graphitron_field_target';
+COMMENT ON COLUMN graphitron_field_target_table.arriving_type_name IS 'the type whose table the statement lands on: the target, or one of its participants. A name and not a table: the table is graphitron_resolved_type_binding''s answer for it, unambiguous by this relation''s rule';
+COMMENT ON COLUMN graphitron_field_target_table.basis IS 'which rule named the type, a closed vocabulary of two. TARGET: the target binds a table, a routine result''s binding included. PARTICIPANT: the target binds none, so each member that binds one is a statement of its own. Disjoint by construction';
+COMMENT ON COLUMN graphitron_field_target_table.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
+
 CREATE TABLE graphitron_method_reference_entry (
   graph_name    VARCHAR NOT NULL,
   site          VARCHAR NOT NULL,
@@ -8774,6 +8794,30 @@ COMMENT ON COLUMN graphitron_resolved_type_binding.candidates IS 'how many disti
 CREATE INDEX ix_resolved_type_binding_type ON graphitron_resolved_type_binding
   (graph_name, type_name);
 COMMENT ON INDEX ix_resolved_type_binding_type IS 'Serves the type probe every reader of this relation makes: a rule holding a type name and asking which table stands for it. The registration shipped without one, which cost nothing while every reader spelled its type expression inline, H2 pushing that expression down into the probe. It stopped costing nothing the moment intent_field_navigated_type projected the expression into a column of its own: a join onto a projected column is a join the planner is free to satisfy by scanning, and its readers, graphitron_field_scope_table_rule among them, each began visiting more rows through this table than through the view it replaced. That is the same mirror the condition family met on graphitron_field_scope_table, arriving on a third relation: an inlined view can be evaluated restricted where a table can only be scanned, so an unkeyed target is not a faster shape but a differently shaped one, and which of the two wins depends on what the reader has in hand. The index is what makes the table probeable on the key its readers actually hold, and with it the projection costs no reader anything.';
+
+CREATE VIEW graphitron_field_target_table_rule
+  (graph_name, type_name, field_name, arriving_type_name, basis) AS
+SELECT ft.graph_name, ft.type_name, ft.field_name, ft.target_type_name, 'TARGET'
+  FROM graphitron_field_target ft
+  JOIN graphitron_resolved_type_binding b
+    ON b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name
+   AND b.candidates = 1
+UNION ALL
+SELECT DISTINCT ft.graph_name, ft.type_name, ft.field_name, m.member_type_name, 'PARTICIPANT'
+  FROM graphitron_field_target ft
+  JOIN graphql_poly_member m
+    ON m.graph_name = ft.graph_name AND m.container_name = ft.target_type_name
+  JOIN graphitron_resolved_type_binding b
+    ON b.graph_name = m.graph_name AND b.type_name = m.member_type_name
+   AND b.candidates = 1
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding cb
+                    WHERE cb.graph_name = ft.graph_name AND cb.type_name = ft.target_type_name);
+COMMENT ON VIEW graphitron_field_target_table_rule IS 'One row the field target-table rule computes, in the shape graphitron_field_target_table stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_field_target_table, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
+COMMENT ON COLUMN graphitron_field_target_table_rule.graph_name IS 'the owning graph''s partition, carried from graphitron_field_target';
+COMMENT ON COLUMN graphitron_field_target_table_rule.type_name IS 'the type owning the field';
+COMMENT ON COLUMN graphitron_field_target_table_rule.field_name IS 'the field';
+COMMENT ON COLUMN graphitron_field_target_table_rule.arriving_type_name IS 'the target where it binds a table unambiguously, or each member binding one where the target binds none';
+COMMENT ON COLUMN graphitron_field_target_table_rule.basis IS 'TARGET or PARTICIPANT, as graphitron_field_target_table.basis states';
 
 CREATE VIEW intent_poly_member
   (graph_name, container_name, container_kind, member_type_name, position) AS
@@ -13950,6 +13994,9 @@ INSERT INTO meta_grain VALUES
   ('node-key-position',
    'one position of one node type''s key tuple, in one graph',
    'graph_name, type_name, position', 'catalog'),
+  ('field-arriving-type',
+   'one type whose table one of a field''s statements lands on, at one field, in one graph',
+   'graph_name, type_name, field_name, arriving_type_name', 'sdl'),
   ('field-target-table',
    'one table a field''s rows come from, at one field, in one graph',
    'graph_name, type_name, field_name, to_source_name, to_schema, to_table', 'catalog'),
@@ -14912,6 +14959,14 @@ INSERT INTO meta_relation VALUES
    'One row the field-source rule computes, in the shape graphitron_field_source stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_field_source, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_field_scope_table_rule''s terms. A plain derivation from the root operations and graphitron_type_arrival, stored by its stage so readers of the fact join a table.'),
+  ('graphitron_field_target_table', 'field-arriving-type', 'graphitron',
+   'A type whose table one of a field''s statements lands on: one row per field and arriving type, the target where it binds a table and each table-bound participant where it does not.',
+   'For example Actor.films lands on Film, and a field returning a union of Book and Movie, which binds no table, lands on Book and on Movie.',
+   'The table side of a field''s target, at the grain a statement is: a polymorphic target with no table of its own is read once per table-bound participant, and the path family is resolved per statement. graphitron_field_table stated the same thing by table, distinct on the table, so two participants on one table were one row, and with no ambiguity guard on a participant''s binding. A name and not a table, so the table is stated once, in graphitron_resolved_type_binding, and two participants on one table stay two statements.'),
+  ('graphitron_field_target_table_rule', 'field-arriving-type', 'graphitron',
+   'One row the field target-table rule computes, in the shape graphitron_field_target_table stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a capture inserts this view''s rows for one graph into graphitron_field_target_table, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the target and this view stays runnable for as long as both exist.'),
   ('graphitron_field_target', 'graph-field', 'graphitron',
    'A field''s target type, unwrapped from a connection where the field returns one, with the connection beside it: one row per field.',
    'For example films: [Film!]! @asConnection has the target Film and the wrapper the macro minted, and title: String has the target String and no wrapper.',
