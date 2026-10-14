@@ -9,6 +9,7 @@ The rewrite generator declares and supports the following directives. Each is do
 * `@asFacet`
 * `@condition`
 * `@defaultOrder`
+* `@defaultTenant`
 * `@discriminate`
 * `@discriminator`
 * `@enum`

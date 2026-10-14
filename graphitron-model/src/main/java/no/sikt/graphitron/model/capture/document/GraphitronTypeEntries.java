@@ -54,6 +54,8 @@ import static org.jooq.impl.DSL.val;
  * would say what the applied-directive row already says. Its handlers have one relation per kind,
  * because the kind decides which of the input's six fields mean anything: GENERIC matches by class
  * identity, DATABASE by one of two SQL discriminators, and VALIDATION carries nothing at all.
+ * {@code @defaultTenant} reaches this site too and gets no relation for the same reason: it
+ * declares no argument, so its applied-directive row is the whole fact.
  *
  * @see GraphitronAstEntries for what every site's decode holds in common
  */

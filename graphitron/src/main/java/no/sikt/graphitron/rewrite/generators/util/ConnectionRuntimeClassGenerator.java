@@ -1404,6 +1404,7 @@ public final class ConnectionRuntimeClassGenerator {
                 .addMethod(tenantKeyOf(tenantKey))
                 .addMethod(divinedTenantAgree(clientException))
                 .addMethod(permits(self, tenantKey))
+                .addMethod(staticDefaultTenant(tenantKey))
                 .addMethod(tenantSlot())
                 .addMethod(loaderName())
                 .addMethod(tenantLoaderName())
@@ -1547,6 +1548,23 @@ public final class ConnectionRuntimeClassGenerator {
                 + "with {@code null} exactly as it answers an id that does not exist.\n"
                 + "@param env the field's {@code DataFetchingEnvironment}\n"
                 + "@param tenantKey the divined tenant value\n")
+            .build();
+    }
+
+    /**
+     * {@code static Optional<K> defaultTenant(DataFetchingEnvironment env)}: the request's default
+     * tenant, as the carrier holds it. Read by the entity dispatcher for a {@code @defaultTenant}
+     * type, whose representations group on it; empty when the request names none.
+     */
+    private static MethodSpec staticDefaultTenant(TypeName tenantKey) {
+        return MethodSpec.methodBuilder("defaultTenant")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(ParameterizedTypeName.get(OPTIONAL, tenantKey))
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addStatement("return of(env).defaultTenant")
+            .addJavadoc("The request's default tenant, or empty when the request names none. The entity\n"
+                + "dispatcher resolves a {@code @defaultTenant} type's representations on it.\n"
+                + "@param env the field's {@code DataFetchingEnvironment}\n")
             .build();
     }
 

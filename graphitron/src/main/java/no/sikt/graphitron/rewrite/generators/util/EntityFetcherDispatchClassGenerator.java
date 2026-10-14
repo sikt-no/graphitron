@@ -11,6 +11,7 @@ import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.KeyAlternative;
+import no.sikt.graphitron.rewrite.model.TenantBinding;
 
 import javax.lang.model.element.Modifier;
 import java.util.Comparator;
@@ -98,7 +99,7 @@ public final class EntityFetcherDispatchClassGenerator {
         var graphitronContext = ClassName.get(outputPackage + ".schema", "GraphitronContext");
         var nodeIdEncoder = ClassName.get(outputPackage + ".util", NodeIdEncoderClassGenerator.CLASS_NAME);
         // Multi-tenant routing for the dispatch surface: each tenant-scoped entity's grouping
-        // widens per tenant at its classified decoded positions; global entities read the
+        // widens per tenant at its classified tenant sources; global entities read the
         // default source. Null in single-tenant builds (byte-identical emission).
         boolean multiTenant = schema.tenantScopes()
             instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured;
@@ -124,10 +125,12 @@ public final class EntityFetcherDispatchClassGenerator {
                     schema.requestTenantKeyType().orElseThrow())
                 : null;
             spec.addMethod(buildHandleMethod(entity, outputPackage, nodeIdEncoder, routing));
+            var bound = routing == null ? null : routing.bound();
             for (int i = 0; i < entity.alternatives().size(); i++) {
                 var alt = entity.alternatives().get(i);
                 if (!alt.resolvable()) continue;
-                spec.addMethod(buildSelectMethod(entity, alt, i, outputPackage));
+                var source = bound == null ? null : HandleMethodBody.tenantSource(entity, bound, i);
+                spec.addMethod(buildSelectMethod(entity, alt, i, outputPackage, source));
             }
         }
 
@@ -272,9 +275,9 @@ public final class EntityFetcherDispatchClassGenerator {
 
     private static MethodSpec buildSelectMethod(
         EntityResolution entity, KeyAlternative alt, int altIndex,
-        String outputPackage
+        String outputPackage, TenantBinding.EntityRepBound.TenantSource source
     ) {
-        return new SelectMethodEmitter(entity, alt, altIndex, outputPackage).build();
+        return new SelectMethodEmitter(entity, alt, altIndex, outputPackage, source).build();
     }
 
     // ----- Inner emitter classes -----
@@ -316,17 +319,19 @@ public final class EntityFetcherDispatchClassGenerator {
         final KeyAlternative alt;
         final int altIndex;
         final String outputPackage;
+        final TenantBinding.EntityRepBound.TenantSource source;
 
         SelectMethodEmitter(EntityResolution entity, KeyAlternative alt, int altIndex,
-                            String outputPackage) {
+                            String outputPackage, TenantBinding.EntityRepBound.TenantSource source) {
             this.entity = entity;
             this.alt = alt;
             this.altIndex = altIndex;
             this.outputPackage = outputPackage;
+            this.source = source;
         }
 
         MethodSpec build() {
-            return SelectMethodBody.buildMethod(entity, alt, altIndex, outputPackage);
+            return SelectMethodBody.buildMethod(entity, alt, altIndex, outputPackage, source);
         }
     }
 }

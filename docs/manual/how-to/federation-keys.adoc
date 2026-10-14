@@ -116,6 +116,10 @@ Two distinct uses:
 
 `resolvable: false` is also legal on `@node` types via the synthesised path: `@node @key(fields: "id", resolvable: false)` declares the type as a reference-only entity even though `@node` would normally make it resolvable.
 
+== Keys without the tenant column
+
+In a database-per-tenant build (`<tenantColumn>`), `_entities` reads each representation's tenant out of its key, so a resolvable `@key` on a tenant-scoped type must include the tenant column. When the key cannot carry it, mark the type xref:../reference/directives/defaultTenant.adoc[`@defaultTenant`] to resolve its representations on the request's default tenant instead.
+
 == Wiring federation: `@link`, `<schemaInput tag>`, custom fetchers
 
 Three wiring concerns surface once `@key` is in play. xref:apollo-federation.adoc[How-to: Apollo Federation transport] covers them in full; the operational summary:

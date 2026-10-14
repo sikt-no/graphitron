@@ -435,6 +435,24 @@ class TenantFanOutClassificationTest {
     }
 
     @Test
+    void markerOnAnEntityRoutedByTheRequestDefaultRejects() {
+        // _entities resolves every Film representation on the request's default tenant, so a
+        // Film row has one tenant here too.
+        var schema = build(KEY_DIRECTIVE + """
+            type Film @table(name: "film") @key(fields: "title") @defaultTenant {
+                title: String
+                inventories: [Inventory!]! @tenantFanOut
+            }
+            type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
+            type Query { x: String }
+            """);
+
+        assertFanOutRejection(schema, "Film.inventories",
+            "sits under a tenant-bound ancestor", "tenantFanOut");
+        assertThat(schema.tenantBindings().rejections()).hasSize(1);
+    }
+
+    @Test
     void markerBelowAnInheritingFieldOfARoutedEntityRejects() {
         var schema = build(KEY_DIRECTIVE + """
             type Film @table(name: "film") @key(fields: "filmId") {

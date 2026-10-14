@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
@@ -14,11 +15,12 @@ import no.sikt.graphitron.model.jooq.TableRef;
  * tables, and they differ only in whether the request's default tenant may serve them.
  *
  * <p>{@link NodeIdBound} and {@link EntityRepBound} form the per-row family: a single batch
- * spans tenants, so their consumers partition per tenant rather than hand one value down. The
- * two arms share the "positional slot in a decoded key" shape deliberately: node ids and
- * federation representations both decode at the DataFetcher boundary, and the model carries
- * the decoded position, never a reference into the raw id string or representation map (wire
- * format stays a boundary concern).
+ * spans tenants, so their consumers partition per tenant rather than hand one value down. Where a
+ * representation names its tenant, the model carries the tenant column's position in the decoded
+ * key, never a reference into the raw id string or representation map (wire format stays a
+ * boundary concern): node ids and federation representations both decode at the DataFetcher
+ * boundary. An entity alternative whose key cannot name the tenant reads it from the request
+ * instead ({@link EntityRepBound.TenantSource.RequestDefault}).
  *
  * <p>{@link ParentRowBound} reads the tenant off the parent row: the field's first join hop
  * lands on the tenant column, so the paired parent column names the tenant that holds the child
@@ -156,20 +158,22 @@ public sealed interface TenantBinding {
 
     /**
      * The field resolves by node id: each id in a batch carries its own tenant, and the batch
-     * partitions per decoded tenant at the dispatch surface. The arm is the verdict alone; the
-     * per-type decoded positions the dispatcher reads live on the entity-side facts
+     * partitions per decoded tenant at the dispatch surface. The arm is the verdict alone; where
+     * the dispatcher reads each type's tenant lives on the entity-side facts
      * ({@link EntityRepBound}, keyed by type in the binding index), because node dispatch
-     * synthesises representations and resolves through the same surface.
+     * synthesises representations and resolves through the same surface. A node id alternative
+     * always reads it at a decoded position ({@link EntityRepBound.TenantSource.KeyColumn}).
      */
     record NodeIdBound() implements TenantBinding {
         public static final NodeIdBound INSTANCE = new NodeIdBound();
     }
 
     /**
-     * The field resolves {@code _entities} representations; the tenant is a decoded-column
-     * position of the batch key, carried per resolvable key alternative
-     * ({@code alternativeIndex} is the alternative's position in
-     * {@link EntityResolution#alternatives()}). Each representation carries its own tenant.
+     * The field resolves {@code _entities} representations; where each representation's tenant
+     * comes from is carried per resolvable key alternative ({@code alternativeIndex} is the
+     * alternative's position in {@link EntityResolution#alternatives()}). A batch still spans
+     * tenants, since a type's alternatives may read the tenant from different sources and a key
+     * that names its tenant names one per representation.
      */
     record EntityRepBound(List<AlternativeSlot> alternatives) implements TenantBinding {
         public EntityRepBound {
@@ -179,8 +183,46 @@ public sealed interface TenantBinding {
             alternatives = List.copyOf(alternatives);
         }
 
-        /** The tenant column's position within one key alternative's decoded column tuple. */
-        public record AlternativeSlot(int alternativeIndex, int decodedPosition) {}
+        /**
+         * The tenant source of the alternative at {@code alternativeIndex}, or empty when no slot
+         * names it (a non-resolvable alternative).
+         */
+        public java.util.Optional<TenantSource> sourceOf(int alternativeIndex) {
+            return alternatives.stream()
+                .filter(slot -> slot.alternativeIndex() == alternativeIndex)
+                .map(AlternativeSlot::source)
+                .findFirst();
+        }
+
+        /** Where one key alternative's representations read their tenant. */
+        public record AlternativeSlot(int alternativeIndex, TenantSource source) {
+            public AlternativeSlot {
+                java.util.Objects.requireNonNull(source, "source");
+            }
+        }
+
+        /** The source of one key alternative's tenant. Sealed; the dispatch emitter switches on it. */
+        public sealed interface TenantSource {
+
+            /**
+             * The key carries the tenant column: the tenant is the value at {@code decodedPosition}
+             * of the alternative's decoded column tuple, so each representation names its own.
+             */
+            record KeyColumn(int decodedPosition) implements TenantSource {}
+
+            /**
+             * The key cannot carry the tenant column and the type is marked
+             * {@code @defaultTenant}: every representation resolves on the request's default
+             * tenant, and the lookup also matches {@code tenantColumn} (the tenant column of the
+             * type's table) against it, so a representation resolves exactly as if its key had
+             * named that tenant. A request naming no default tenant resolves none of them.
+             */
+            record RequestDefault(ColumnRef tenantColumn) implements TenantSource {
+                public RequestDefault {
+                    java.util.Objects.requireNonNull(tenantColumn, "tenantColumn");
+                }
+            }
+        }
     }
 
     /**

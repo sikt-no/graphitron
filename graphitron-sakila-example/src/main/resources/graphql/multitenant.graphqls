@@ -6,6 +6,10 @@
 # reference data, or the request's default tenant's when it names one. Kept deliberately slim: one
 # field per arm, nothing else.
 
+# Federation, for the @defaultTenant entity below: _entities dispatches every @key and @node type,
+# routing each representation on the tenant its key names, or on the request's default tenant.
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+
 interface Node { id: ID! }
 
 # @node with the tenant column as its whole key: decoding one of its ids yields the tenant
@@ -60,8 +64,12 @@ type FilmStock {
 
 input FilmSceneFilter { scene: ID @nodeId(typeName: "FilmScene") }
 
-type Inventory @table(name: "inventory") {
+# A federation entity whose key cannot name the tenant (inventory_id is unique within one tenant's
+# database only), so _entities resolves it on the request's default tenant, matching only rows whose
+# film_id is that tenant. film is a tenant-scoped batched child the resolved row hands its tenant.
+type Inventory @table(name: "inventory") @key(fields: "inventoryId") @defaultTenant {
     inventoryId: Int @field(name: "inventory_id")
+    film: Film @splitQuery @reference(path: [{key: "inventory_film_id_fkey"}])
     # Global-read batched child of a tenant-scoped parent: store is global, so its batch runs on
     # the request's default tenant, else the default source, whatever tenant the inventory came from.
     store: Store @splitQuery @reference(path: [{key: "inventory_store_id_fkey"}])

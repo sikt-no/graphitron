@@ -19,7 +19,7 @@ class SchemaDirectiveRegistryTest {
     @Test
     void generatorOnlySet_pinsTheDeclaredDirectiveNames() {
         assertThat(SchemaDirectiveRegistry.GENERATOR_ONLY_DIRECTIVES).containsExactlyInAnyOrder(
-            "asConnection", "asFacet", "condition", "defaultOrder", "discriminate",
+            "asConnection", "asFacet", "condition", "defaultOrder", "defaultTenant", "discriminate",
             "discriminator", "enum", "error", "experimental_constructType", "externalField",
             "field", "globalData", "index", "lookupKey", "multitableReference", "mutation", "node",
             "nodeId", "notGenerated", "order", "orderBy", "pivot", "record", "reference",

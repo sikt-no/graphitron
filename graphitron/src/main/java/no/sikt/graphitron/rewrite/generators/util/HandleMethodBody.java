@@ -28,8 +28,11 @@ import java.util.List;
  *   <li>Group bindings by alternative-index into a {@link java.util.LinkedHashMap}. In a
  *       multi-tenant build over a tenant-scoped entity ({@link TenantRouting#bound()}), the
  *       grouping widens to {@code Map<Integer, Map<Object, List<Object[]>>>}: each rep's
- *       tenant is read at its alternative's classified decoded position, so one batch spanning
- *       tenants splits into tenant-homogeneous groups instead of erroring or leaking.</li>
+ *       tenant is read from its alternative's classified source, the decoded key at the tenant
+ *       column's position or the request's default tenant, so one batch spanning tenants splits
+ *       into tenant-homogeneous groups instead of erroring or leaking. A rep whose alternative
+ *       reads the default tenant, in a request naming none, is not grouped: its slot stays
+ *       {@code null}.</li>
  *   <li>For each group, dispatch to {@code select<TypeName>Alt<N>(bindings, groupEnv, dsl, result)}
  *       with the group's own {@code DSLContext}: per-tenant acquisition through
  *       {@code TenantConnections.dslFor} for a bound entity, the default source for a global
@@ -61,10 +64,10 @@ final class HandleMethodBody {
 
     /**
      * The dispatch surface's tenant routing for one entity type. {@code null} for a
-     * single-tenant build. {@code bound} carries the per-alternative decoded tenant
-     * positions for a tenant-scoped entity, or {@code null} for a global entity (a global
-     * read, acquired through {@code dslGlobal}). {@code tenantKey} is the boxed tenant column type, the type
-     * each tenant group's decoded key is held in.
+     * single-tenant build. {@code bound} carries the per-alternative tenant sources for a
+     * tenant-scoped entity, or {@code null} for a global entity (a global read, acquired through
+     * {@code dslGlobal}). {@code tenantKey} is the boxed tenant column type, the type each tenant
+     * group's key is held in.
      */
     record TenantRouting(ClassName tenantConnections, TenantBinding.EntityRepBound bound, TypeName tenantKey) {}
 
@@ -77,6 +80,12 @@ final class HandleMethodBody {
         var b = CodeBlock.builder();
         boolean perTenant = routing != null && routing.bound() != null;
         emitGroupingMaps(b, perTenant);
+        if (perTenant && routing.bound().alternatives().stream()
+                .anyMatch(slot -> slot.source() instanceof TenantBinding.EntityRepBound.TenantSource.RequestDefault)) {
+            // Read once per call: every rep of an alternative routed by the request groups on it.
+            b.addStatement("$T defaultTenant = $T.defaultTenant(env).orElse(null)",
+                routing.tenantKey(), routing.tenantConnections());
+        }
         emitPerRepLoop(b, entity, nodeIdEncoder, routing);
         emitGroupDispatch(b, entity, routing);
         return b.build();
@@ -137,10 +146,19 @@ final class HandleMethodBody {
         CodeBlock.Builder b, EntityResolution entity, KeyAlternative alt, int altIndex,
         ClassName nodeIdEncoder, TenantRouting routing
     ) {
+        TenantBinding.EntityRepBound.TenantSource source = routing != null && routing.bound() != null
+            ? tenantSource(entity, routing.bound(), altIndex)
+            : null;
         // Exhaustive sealed switch with no default arm: a future third key shape is a compile
         // error at this fork rather than a silent runtime gap.
         switch (alt) {
             case KeyAlternative.NodeId nodeId -> {
+                if (source instanceof TenantBinding.EntityRepBound.TenantSource.RequestDefault) {
+                    throw new IllegalStateException("Entity '" + entity.typeName() + "' routes its"
+                        + " node id alternative #" + altIndex + " by the request's default tenant;"
+                        + " node ids route by the tenant inside the id, so classification and"
+                        + " emission disagree.");
+                }
                 // expectedTypeId: the resolved wire prefix (NodeType.typeId(), defaulted to the
                 // type name at classify time; differs only when the consumer set an explicit
                 // typeId). The builder resolved it; passing the raw typename here would silently
@@ -160,9 +178,21 @@ final class HandleMethodBody {
             }
             case KeyAlternative.Direct direct -> {
                 var bindings = direct.bindings();
-                b.addStatement("Object[] cols = new Object[$L]", bindings.size());
+                boolean requestDefault =
+                    source instanceof TenantBinding.EntityRepBound.TenantSource.RequestDefault;
+                if (requestDefault) {
+                    // No default tenant: the rep is left ungrouped, so its slot stays null and
+                    // no connection is taken for it.
+                    b.addStatement("if (defaultTenant == null) continue");
+                }
+                // A rep routed by the request carries the default tenant as one more cell, which
+                // select<Type>Alt<N> joins against the tenant column like a key column.
+                b.addStatement("Object[] cols = new Object[$L]", bindings.size() + (requestDefault ? 1 : 0));
                 for (int i = 0; i < bindings.size(); i++) {
                     b.addStatement("cols[$L] = rep.get($S)", i, bindings.get(i).repField());
+                }
+                if (requestDefault) {
+                    b.addStatement("cols[$L] = defaultTenant", bindings.size());
                 }
             }
         }
@@ -171,13 +201,20 @@ final class HandleMethodBody {
         // rep map is the one the dispatched fetcher's env sees.
         b.addStatement("$T repEnv = $T.newDataFetchingEnvironment(env).arguments(rep).build()",
             ENV, ENV_IMPL);
-        if (routing != null && routing.bound() != null) {
-            // Each rep carries its own tenant at the alternative's classified decoded position;
-            // grouping per (alternative, tenant) keeps every dispatched SELECT tenant-homogeneous.
+        if (source != null) {
+            // Each rep's tenant comes from the alternative's classified source: its own decoded
+            // key, or the request's default tenant. Grouping per (alternative, tenant) keeps every
+            // dispatched SELECT tenant-homogeneous.
+            CodeBlock tenantOfRep = switch (source) {
+                case TenantBinding.EntityRepBound.TenantSource.KeyColumn key ->
+                    CodeBlock.of("cols[$L]", key.decodedPosition());
+                case TenantBinding.EntityRepBound.TenantSource.RequestDefault ignored ->
+                    CodeBlock.of("defaultTenant");
+            };
             b.addStatement("groups.computeIfAbsent($L, k -> new $T<>())"
-                + ".computeIfAbsent(cols[$L], k -> new $T<>())"
+                + ".computeIfAbsent($L, k -> new $T<>())"
                 + ".add(new Object[]{idx, cols, repEnv})",
-                altIndex, LINKED_HASH_MAP, tenantPosition(entity, routing.bound(), altIndex), ARRAY_LIST);
+                altIndex, LINKED_HASH_MAP, tenantOfRep, ARRAY_LIST);
         } else {
             b.addStatement("groups.computeIfAbsent($L, k -> new $T<>())"
                 + ".add(new Object[]{idx, cols, repEnv})",
@@ -185,18 +222,14 @@ final class HandleMethodBody {
         }
     }
 
-    /** The tenant column's decoded position within {@code altIndex}'s column tuple. */
-    private static int tenantPosition(EntityResolution entity, TenantBinding.EntityRepBound bound, int altIndex) {
-        for (var slot : bound.alternatives()) {
-            if (slot.alternativeIndex() == altIndex) {
-                return slot.decodedPosition();
-            }
-        }
+    /** Where {@code altIndex}'s representations read their tenant. */
+    static TenantBinding.EntityRepBound.TenantSource tenantSource(
+            EntityResolution entity, TenantBinding.EntityRepBound bound, int altIndex) {
         // Classification admits an EntityRepBound only when every resolvable alternative carries
         // a tenant slot, so a miss here means the classifier and this emitter disagree.
-        throw new IllegalStateException(
+        return bound.sourceOf(altIndex).orElseThrow(() -> new IllegalStateException(
             "Entity '" + entity.typeName() + "' is tenant-bound but key alternative #" + altIndex
-                + " carries no decoded tenant position; classification and emission disagree.");
+                + " carries no tenant source; classification and emission disagree."));
     }
 
     private static void emitGroupDispatch(CodeBlock.Builder b, EntityResolution entity, TenantRouting routing) {

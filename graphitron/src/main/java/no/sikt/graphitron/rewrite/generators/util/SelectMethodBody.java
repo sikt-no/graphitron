@@ -13,6 +13,7 @@ import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.KeyAlternative;
+import no.sikt.graphitron.rewrite.model.TenantBinding;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
@@ -52,9 +53,14 @@ final class SelectMethodBody {
 
     private SelectMethodBody() {}
 
+    /**
+     * {@code source} is where the alternative's representations read their tenant, or
+     * {@code null} when the entity is not tenant-routed (a single-tenant build, or a global
+     * entity).
+     */
     static MethodSpec buildMethod(
         EntityResolution entity, KeyAlternative alt, int altIndex,
-        String outputPackage
+        String outputPackage, TenantBinding.EntityRepBound.TenantSource source
     ) {
         String methodName = "select" + entity.typeName() + "Alt" + altIndex;
         var listOfBindings = ParameterizedTypeName.get(LIST,
@@ -65,19 +71,30 @@ final class SelectMethodBody {
             .addParameter(ENV, "env")
             .addParameter(DSL_CONTEXT, "dsl")
             .addParameter(ArrayTypeName.of(ClassName.get(Object.class)), "result")
-            .addCode(body(entity, alt, altIndex, outputPackage))
+            .addCode(body(entity, alt, altIndex, outputPackage, source))
             .build();
     }
 
     private static CodeBlock body(
         EntityResolution entity, KeyAlternative alt, int altIndex,
-        String outputPackage
+        String outputPackage, TenantBinding.EntityRepBound.TenantSource source
     ) {
         var jooqTableClass = CatalogRefs.tableClass(entity.table());
         var typeClass = ClassName.get(outputPackage + ".types", entity.typeName());
         String tableLocal = "t";
         String inputAlias = decap(entity.typeName()) + "Alt" + altIndex + "Input";
-        List<ColumnRef> columns = alt.columns();
+        List<ColumnRef> columns = switch (source) {
+            case null -> alt.columns();
+            case TenantBinding.EntityRepBound.TenantSource.KeyColumn ignored -> alt.columns();
+            // The key names no tenant, so the dispatcher appends the routed tenant as one more
+            // cell of each binding, and the join matches it against the tenant column: the
+            // lookup resolves exactly as a key carrying the tenant would.
+            case TenantBinding.EntityRepBound.TenantSource.RequestDefault requestDefault -> {
+                var withTenant = new java.util.ArrayList<>(alt.columns());
+                withTenant.add(requestDefault.tenantColumn());
+                yield List.copyOf(withTenant);
+            }
+        };
         Function<ColumnRef, ColumnRef> column = Function.identity();
 
         var b = CodeBlock.builder();

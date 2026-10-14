@@ -67,6 +67,11 @@ class TenantDivinedRoutingExecutionTest {
     static final String ROUTED_BOOKMARK_NOTE = "parent-row tenant fixture (routed)";
     /** A bookmark of no film, whose reference names no tenant. */
     static final String UNSET_BOOKMARK_NOTE = "parent-row tenant fixture (unset)";
+    /**
+     * The id of an inventory row in tenant 1's database that names film 2, standing in for a
+     * shared database holding another tenant's row.
+     */
+    static int foreignInventoryId;
 
     @BeforeAll
     static void startDatabase() {
@@ -116,6 +121,8 @@ class TenantDivinedRoutingExecutionTest {
         try (var t1 = DSL.using(tenantUrl("tenant_1"), jdbcUser, jdbcPassword)) {
             t1.execute("insert into film values (1, 'Tenant One Film')");
             t1.execute("insert into inventory (film_id, store_id) values (1, 1), (1, 2)");
+            foreignInventoryId = t1.fetchSingle(
+                "insert into inventory (film_id, store_id) values (2, 1) returning inventory_id").get(0, Integer.class);
             t1.execute("insert into film_actor values (10, 1)");
             t1.execute("insert into film_scene (film_id, scene_no) values (1, 1)");
             t1.execute("insert into language (language_id, name) values (1, 'tenant_1')");
@@ -1320,6 +1327,66 @@ class TenantDivinedRoutingExecutionTest {
         assertThat(TENANT_1_OPENED.get()).isZero();
         assertThat(tenant2SceneParent(2)).isEqualTo(1);
         assertThat(tenant2SceneParent(3)).isEqualTo(1);
+    }
+
+    // ===== @defaultTenant: an entity whose key names no tenant resolves on the request default =====
+
+    private static final String INVENTORY_ENTITIES = "query Q($reps: [_Any!]!) {"
+        + " _entities(representations: $reps) { __typename"
+        + " ... on Inventory { inventoryId film { title } }"
+        + " ... on FilmActor { actorId } } }";
+
+    private static Map<String, Object> inventoryRep(int inventoryId) {
+        return Map.of("__typename", "Inventory", "inventoryId", inventoryId);
+    }
+
+    private static List<Map<String, Object>> entities(RequestTenants tenants, List<Map<String, Object>> reps) {
+        var result = graphql.execute(Graphitron.newOwnedExecutionInput(tenants, "{\"sub\":\"test-user\"}")
+            .query(INVENTORY_ENTITIES).variables(Map.of("reps", reps)).build());
+        return (List<Map<String, Object>>) data(result, "_entities");
+    }
+
+    @Test
+    void defaultTenantEntity_resolvesOnlyTheDefaultTenantsOwnRows_andItsSubtreeReadsThere() {
+        var entities = entities(RequestTenants.withDefault(List.of(1, 2), 1),
+            List.of(inventoryRep(1), inventoryRep(foreignInventoryId), inventoryRep(999)));
+        assertThat(entities).hasSize(3);
+        assertThat(entities.get(0)).containsEntry("inventoryId", 1);
+        assertThat((Map<String, Object>) entities.get(0).get("film"))
+            .as("the batched child reads tenant 1's film through the tenant the entity was resolved on")
+            .containsEntry("title", "Tenant One Film");
+        assertThat(entities.get(1))
+            .as("tenant 1's database holds the row, but it names film 2, so it is not tenant 1's")
+            .isNull();
+        assertThat(entities.get(2)).as("an unknown id").isNull();
+        assertThat(TENANT_1_OPENED.get()).as("one connection serves the entities and the film").isEqualTo(1);
+        assertThat(TENANT_2_OPENED.get() + DEFAULT_OPENED.get()).isZero();
+    }
+
+    @Test
+    void defaultTenantEntity_withNoDefaultTenant_answersNull_andTheRestOfTheBatchResolves() {
+        var entities = entities(RequestTenants.of(List.of(1, 2)), List.of(
+            inventoryRep(1),
+            Map.of("__typename", "FilmActor", "id", NodeIdEncoder.encodeFilmActor(20, 2)),
+            inventoryRep(2)));
+        assertThat(entities).hasSize(3);
+        assertThat(entities.get(0)).as("no default tenant names a database to look in").isNull();
+        assertThat(entities.get(1))
+            .as("a key-routed representation resolves on the tenant its key names")
+            .containsEntry("actorId", 20);
+        assertThat(entities.get(2)).isNull();
+        assertThat(TENANT_2_OPENED.get()).isEqualTo(1);
+        assertThat(TENANT_1_OPENED.get() + DEFAULT_OPENED.get())
+            .as("no connection is taken for the unresolvable inventories")
+            .isZero();
+    }
+
+    @Test
+    void defaultTenantEntity_anotherTenantsIdUnderTheDefault_answersNull() {
+        var entities = entities(RequestTenants.withDefault(List.of(1, 2), 2), List.of(inventoryRep(1)));
+        assertThat(entities).singleElement().as("inventory 1 lives in tenant 1's database").isNull();
+        assertThat(TENANT_2_OPENED.get()).isEqualTo(1);
+        assertThat(TENANT_1_OPENED.get() + DEFAULT_OPENED.get()).isZero();
     }
 
     // ===== helpers =====

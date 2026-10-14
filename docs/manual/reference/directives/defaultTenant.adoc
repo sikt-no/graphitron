@@ -1,0 +1,40 @@
+= @defaultTenant
+:description: Resolve a federation entity on the request's default tenant when its key cannot name a tenant.
+:!toc:
+
+*`@defaultTenant`* resolves a federation entity on the request's default tenant when its key cannot name a tenant, in a build with database-per-tenant routing (`<tenantColumn>`).
+
+== SDL signature
+
+[source,graphql]
+----
+directive @defaultTenant on OBJECT
+----
+
+The directive carries no arguments.
+
+== What it does
+
+In a database-per-tenant build, `_entities` normally reads the tenant out of each representation: a key that includes the tenant column names the database to look in. Some keys cannot include it. A username that is unique only within one institution, sent by a router that knows nothing of institutions, is the typical case, and such a type is a build error unless you mark it:
+
+[source,graphql]
+----
+type FeideBruker @table(name: "PERSON") @key(fields: "brukernavn") @defaultTenant {
+  brukernavn: String
+  personProfil: PersonProfil @splitQuery
+}
+----
+
+Each representation of the type is then looked up on the request's default tenant (see xref:../../how-to/tenant-scoping.adoc[Tenant scoping], "Reading global tables from a tenant database", for how a request names one). The lookup matches only rows whose tenant column holds the default tenant, so `{__typename: "FeideBruker", brukernavn: "ola"}` resolves to Ola's row in the default tenant, or to `null` when that tenant has no such row. Fields below the entity read from the same tenant, as they do below an entity whose key names its tenant.
+
+A request that names no default tenant answers every representation of a marked type with `null`, without an error, and resolves the rest of the batch normally; no tenant connection is opened for the type. A request whose default tenant this runtime has no `DataSource` for fails before any field runs, as every request naming such a default does.
+
+The marker applies to each resolvable `@key` of the type that does not include the tenant column; a key that does include it keeps routing by its own value. It does not apply to node ids: on a `@node` type, `node`, `nodes` and the id key of `_entities` still route by the tenant inside the id, so the node key must still include the tenant column.
+
+== Build-time rejections
+
+The build rejects the marker where it decides nothing: in a build without `<tenantColumn>`, on a type whose table has no tenant column (`_entities` already reads such types from the default tenant), on a type with no resolvable key, and on a type whose every resolvable `@key` includes the tenant column.
+
+See xref:../../how-to/federation-keys.adoc[How-to: Federation key fields] for keys in general.
+
+xref:index.adoc[← Directives index]

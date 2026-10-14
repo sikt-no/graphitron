@@ -130,12 +130,16 @@ public record TenantBindingIndex(
     }
 
     /**
-     * A field-level tenancy marker, with the two texts its completeness sweep rejects with: one
-     * for a single-tenant build, where the marker decides nothing, and one for a coordinate that
-     * never reached the marker's ladder in {@link Fold#armOf}. Reaching the ladder is the
-     * marker's verdict, since every ladder ends in an arm or a marker-specific rejection.
+     * A tenancy marker, with the two texts its completeness sweep rejects with: one for a
+     * single-tenant build, where the marker decides nothing, and one for a coordinate that never
+     * reached the marker's ladder. Reaching the ladder is the marker's verdict, since every ladder
+     * ends in an arm or a marker-specific rejection. {@code typeSite} says where the marker is
+     * applied: on an object type, whose coordinate is the type name and whose ladder runs in
+     * {@link Fold#classifyEntityDispatch}, or on a field definition, whose coordinate is
+     * {@code "Type.field"} and whose ladder runs in {@link Fold#armOf}.
      */
     private record TenancyMarker(String directive,
+                                 boolean typeSite,
                                  java.util.function.UnaryOperator<String> withoutTenancy,
                                  java.util.function.UnaryOperator<String> unreached) {}
 
@@ -146,7 +150,7 @@ public record TenantBindingIndex(
     private record TenantMarkerUse(FieldCoordinates field, String definition) {}
 
     private static final List<TenancyMarker> TENANCY_MARKERS = List.of(
-        new TenancyMarker(BuildContext.DIR_TENANT_FAN_OUT,
+        new TenancyMarker(BuildContext.DIR_TENANT_FAN_OUT, false,
             coordinate -> "'" + coordinate + "' declares @tenantFanOut, but this build configures no"
                 + " <tenantColumn>: there are no tenants to fan out over. Configure"
                 + " database-per-tenant routing or remove the directive.",
@@ -156,7 +160,7 @@ public record TenantBindingIndex(
                 + " class-, record-, or nesting-backed type, where the fanned"
                 + " fetcher boundary is deferred in v1. Move the field to a root or"
                 + " @table-backed parent, or remove the directive."),
-        new TenancyMarker(BuildContext.DIR_GLOBAL_DATA,
+        new TenancyMarker(BuildContext.DIR_GLOBAL_DATA, false,
             coordinate -> "'" + coordinate + "' declares @globalData, but this build configures no"
                 + " <tenantColumn>: every field already runs on the one database. Remove the"
                 + " directive.",
@@ -164,12 +168,21 @@ public record TenantBindingIndex(
                 + " reached the tenant-binding classification: either the field failed"
                 + " classification on its own (see its error), or it is an interface field or a"
                 + " field of a nesting type. @globalData is supported on root @service fields"
-                + " only; remove the directive."));
+                + " only; remove the directive."),
+        new TenancyMarker(BuildContext.DIR_DEFAULT_TENANT, true,
+            coordinate -> "'" + coordinate + "' declares @defaultTenant, but this build configures"
+                + " no <tenantColumn>: every entity already resolves on the one database. Remove"
+                + " the directive.",
+            // The ladder runs for every resolvable entity, so a marked type misses it only when
+            // _entities never dispatches it: no @key, or every @key resolvable: false.
+            coordinate -> "'" + coordinate + "' declares @defaultTenant, but it has no resolvable"
+                + " key, so _entities never resolves it. Remove the directive."));
 
     /**
-     * Every tenancy marker application, as {@code (marker, "Type.field")}. Walks every
-     * {@link graphql.schema.GraphQLFieldsContainer}, objects <em>and</em> interfaces: the markers
-     * are legal on interface field definitions, graphql-java does not copy interface-field
+     * Every tenancy marker application, as {@code (marker, "Type")} for a type-site marker on an
+     * object type and {@code (marker, "Type.field")} for a field-site one. Walks every
+     * {@link graphql.schema.GraphQLFieldsContainer}, objects <em>and</em> interfaces: the field
+     * markers are legal on interface field definitions, graphql-java does not copy interface-field
      * directives onto implementors, and field classification only models object coordinates, so
      * an interface marker reaches a verdict through no other route.
      */
@@ -178,9 +191,16 @@ public record TenantBindingIndex(
         for (var type : sdl.getAllTypesAsList()) {
             if (type.getName().startsWith("__")
                     || !(type instanceof graphql.schema.GraphQLFieldsContainer container)) continue;
+            if (container instanceof GraphQLObjectType object) {
+                for (TenancyMarker marker : TENANCY_MARKERS) {
+                    if (marker.typeSite() && object.hasAppliedDirective(marker.directive())) {
+                        action.accept(marker, object.getName());
+                    }
+                }
+            }
             for (GraphQLFieldDefinition field : container.getFieldDefinitions()) {
                 for (TenancyMarker marker : TENANCY_MARKERS) {
-                    if (field.hasAppliedDirective(marker.directive())) {
+                    if (!marker.typeSite() && field.hasAppliedDirective(marker.directive())) {
                         action.accept(marker, container.getName() + "." + field.getName());
                     }
                 }
@@ -2113,7 +2133,10 @@ public record TenantBindingIndex(
          */
         private sealed interface DispatchFact {
 
-            /** The entry routes each representation by its tenant column. */
+            /**
+             * The entry routes each representation by its alternative's tenant source: the tenant
+             * column of its key, or the request's default tenant for a {@code @defaultTenant} type.
+             */
             record Routed(TenantBinding.EntityRepBound binding) implements DispatchFact {}
 
             /**
@@ -2196,15 +2219,20 @@ public record TenantBindingIndex(
 
         /**
          * Decides every resolvable entity's {@link DispatchFact}: global, routed by the tenant
-         * column of every resolvable alternative, or rejected and routed once fixed. A
+         * source of every resolvable alternative, or rejected and routed once fixed. A
          * {@link KeyAlternative.NodeId} alternative of a node type
-         * {@link #classifyNodeDispatch} already rejected is not rejected twice.
+         * {@link #classifyNodeDispatch} already rejected is not rejected twice. A
+         * {@link KeyAlternative.Direct} alternative lacking the tenant column routes by the
+         * request's default tenant when the type is marked {@code @defaultTenant} and
+         * {@link #defaultTenantVerdict} accepts the marker; that is still {@link DispatchFact.Routed},
+         * since the entry hands its subtree a tenant either way.
          */
         private void classifyEntityDispatch() {
             for (var entry : entitiesByType.entrySet()) {
                 String typeName = entry.getKey();
                 EntityResolution res = entry.getValue();
                 if (!res.resolvable()) continue;
+                boolean byDefault = defaultTenantVerdict(typeName, res);
                 if (!tenantScoped(res.table())) {
                     dispatchFacts.put(typeName, DispatchFact.ServedUntenanted.INSTANCE);
                     continue;
@@ -2218,8 +2246,14 @@ public record TenantBindingIndex(
                     if (!alt.resolvable()) continue;
                     int position = tenantIndex(alt.columns());
                     if (position >= 0) {
-                        alternatives.add(
-                            new TenantBinding.EntityRepBound.AlternativeSlot(i, position));
+                        alternatives.add(new TenantBinding.EntityRepBound.AlternativeSlot(i,
+                            new TenantBinding.EntityRepBound.TenantSource.KeyColumn(position)));
+                        continue;
+                    }
+                    if (byDefault && alt instanceof KeyAlternative.Direct) {
+                        alternatives.add(new TenantBinding.EntityRepBound.AlternativeSlot(i,
+                            new TenantBinding.EntityRepBound.TenantSource.RequestDefault(
+                                tenantColumnOf(res.table()))));
                         continue;
                     }
                     routable = false;
@@ -2236,14 +2270,71 @@ public record TenantBindingIndex(
                                     ? "Add tenant column '" + scopes.columnName()
                                         + "' to @node(keyColumns:)."
                                     : "Add a field mapped to tenant column '" + scopes.columnName()
-                                        + "' to the key's fields, or mark the alternative"
-                                        + " resolvable: false.")),
+                                        + "' to the key's fields, mark the alternative"
+                                        + " resolvable: false, or mark the type @defaultTenant"
+                                        + " to resolve it on the request's default tenant.")),
                         graphql.language.SourceLocation.EMPTY));
                 }
                 dispatchFacts.put(typeName, routable
                     ? new DispatchFact.Routed(new TenantBinding.EntityRepBound(alternatives))
                     : DispatchFact.RoutedOnceFixed.INSTANCE);
             }
+        }
+
+        // ===== The @defaultTenant ladder =====
+
+        /** Whether the type's SDL declaration carries the {@code @defaultTenant} marker. */
+        private boolean defaultTenantMarked(String typeName) {
+            return sdl.getType(typeName) instanceof GraphQLObjectType object
+                && object.hasAppliedDirective(BuildContext.DIR_DEFAULT_TENANT);
+        }
+
+        /**
+         * The {@code @defaultTenant} ladder for one resolvable entity: whether its tenant-less
+         * {@link KeyAlternative.Direct} alternatives route by the request's default tenant. False
+         * for an unmarked type. A marked type records its verdict and either is accepted or
+         * rejects at the first rung that applies, and a rejected type classifies as if unmarked:
+         * <ol>
+         *   <li>its table has no tenant column, so {@code _entities} already reads it from the
+         *       request's default tenant;</li>
+         *   <li>no resolvable {@code Direct} alternative lacks the tenant column, so every key the
+         *       marker could apply to names its tenant. A node id alternative is not one: the
+         *       marker never routes node ids, so a type whose only tenant-less key is its node id
+         *       lands here and keeps {@link #classifyNodeDispatch}'s rejection.</li>
+         * </ol>
+         * The rungs mirror the "does not carry tenant column" fix text, which offers the marker
+         * exactly where this ladder accepts it.
+         */
+        private boolean defaultTenantVerdict(String typeName, EntityResolution res) {
+            if (!defaultTenantMarked(typeName)) {
+                return false;
+            }
+            recordMarkerVerdict(BuildContext.DIR_DEFAULT_TENANT, typeName);
+            String reason;
+            if (!tenantScoped(res.table())) {
+                reason = "its table '" + res.table().tableName() + "' has no tenant column '"
+                    + scopes.columnName() + "', and _entities already reads global types from the"
+                    + " request's default tenant. Remove the directive.";
+            } else if (res.alternatives().stream().noneMatch(alt -> alt.resolvable()
+                    && alt instanceof KeyAlternative.Direct
+                    && tenantIndex(alt.columns()) < 0)) {
+                reason = "every key names its tenant: no resolvable @key lacks tenant column '"
+                    + scopes.columnName() + "', so each representation routes by its own value"
+                    + " (the marker does not apply to node ids, which route by the tenant inside"
+                    + " the id). Remove the directive.";
+            } else {
+                return true;
+            }
+            rejections.add(markerRejection(List.of(BuildContext.DIR_DEFAULT_TENANT), typeName,
+                "'" + typeName + "' declares @defaultTenant, but " + reason));
+            return false;
+        }
+
+        /** The tenant column of a tenant-scoped table, as the catalog resolves it. */
+        private ColumnRef tenantColumnOf(TableRef table) {
+            return table.column(scopes.columnName()).orElseThrow(() -> new IllegalStateException(
+                "Generator bug: table '" + table.tableName() + "' was judged tenant-scoped but has"
+                    + " no tenant column '" + scopes.columnName() + "'."));
         }
 
         // ===== Ancestor tenant context =====
