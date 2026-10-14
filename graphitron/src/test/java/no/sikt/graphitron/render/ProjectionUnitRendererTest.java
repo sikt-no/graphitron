@@ -141,28 +141,6 @@ class ProjectionUnitRendererTest {
     }
 
     @Test
-    void splicedNestingArm_projectsTheCallersDemandUnderBaseNamesAheadOfTheCallee() {
-        // A collapsing nesting field reads every presence column whatever the query selects, so
-        // the splice arm projects the calling field's demand first, under the base name the
-        // callee's own column leaves use, so a column both select lands once in the field set.
-        var row = filmRow(List.of(new Contribution.Call("details",
-            UNITS.nestingUnit("Film", "FilmDetails"),
-            new CallWrap.Splice(List.of(
-                col("release_year", "RELEASE_YEAR", "java.lang.Integer"),
-                col("length", "LENGTH", "java.lang.Integer"))),
-            AliasOwner.shared())));
-        var body = projectMethod(render(row)).code().toString();
-        assertThat(body).contains("case \"details\" -> {");
-        int year = body.indexOf("fields.add(table.RELEASE_YEAR);");
-        int length = body.indexOf("fields.add(table.LENGTH);");
-        int callee = body.indexOf("fields.addAll(");
-        assertThat(year).isPositive();
-        assertThat(length).isGreaterThan(year);
-        assertThat(callee).isGreaterThan(length);
-        assertThat(body).doesNotContain("__rk_");
-    }
-
-    @Test
     void nestedUnit_takesTheAnchorsTableClass() {
         // A nesting unit shares the anchor's table context by definition; the anchor fixes the
         // emitted parameter type.

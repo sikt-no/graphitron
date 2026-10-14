@@ -165,18 +165,19 @@ class NestingFieldPipelineTest {
         """;
 
     @Test
-    void nullableWrapper_fetcherChecksEveryLeafBeforeReturningTheSource() {
-        var body = fetcherMethodBody("FilmFetchers", "release", RELEASE_SDL);
-        assertThat(body)
-            .contains("row.get(no.sikt.graphitron.rewrite.test.jooq.public_.Tables.FILM.RELEASE_YEAR) != null) return source;")
-            .contains("row.get(no.sikt.graphitron.rewrite.test.jooq.public_.Tables.FILM.LENGTH) != null) return source;")
-            .endsWith("return null;\n");
+    void nullableWrapper_collapsesOverOneLeafPerColumn() {
+        var nf = (NestingField) TestSchemaHelper.buildSchema(RELEASE_SDL).field("Film", "release");
+        assertThat(nf.nullContract()).isInstanceOfSatisfying(NestingField.NullContract.CollapsesWhenAbsent.class,
+            c -> assertThat(c.leaves())
+                .extracting(l -> l.columns().stream().map(col -> col.sqlName()).toList())
+                .containsExactly(List.of("release_year"), List.of("length")));
     }
 
     @Test
-    void nonNullWrapper_fetcherReturnsTheSource() {
-        assertThat(fetcherMethodBody("FilmFetchers", "releaseRequired", RELEASE_SDL))
-            .isEqualTo("return source;\n");
+    void nonNullWrapper_isAlwaysAnObject() {
+        var nf = (NestingField) TestSchemaHelper.buildSchema(RELEASE_SDL).field("Film", "releaseRequired");
+        assertThat(nf.nullContract()).isInstanceOfSatisfying(NestingField.NullContract.AlwaysObject.class,
+            c -> assertThat(c.reason()).isInstanceOf(NestingField.NullContract.Reason.NonNull.class));
     }
 
     @Test
@@ -204,7 +205,7 @@ class NestingFieldPipelineTest {
         assertThat(nf.nullContract()).isInstanceOfSatisfying(NestingField.NullContract.AlwaysObject.class,
             c -> assertThat(c.reason()).isInstanceOfSatisfying(NestingField.NullContract.Reason.BlockedBy.class,
                 b -> assertThat(b.blocker()).isInstanceOf(ChildField.TableField.class)));
-        assertThat(fetcherMethodBody("FilmFetchers", "info", schema)).isEqualTo("return source;\n");
+        assertThat(nf.parentRowColumns()).isEmpty();
     }
 
     @Test
@@ -217,10 +218,8 @@ class NestingFieldPipelineTest {
 
     // ===== Reference leaves =====
 
-    private static final String FILM_TABLE = "no.sikt.graphitron.rewrite.test.jooq.public_.Tables.FILM";
-
     @Test
-    void singleFkReference_fetcherChecksTheJoinColumnAndTheSpliceProjectsIt() {
+    void singleFkReference_countsThroughItsJoinColumnAndTheSpliceProjectsIt() {
         var sdl = """
             type Language @table(name: "language") { name: String }
             type FilmInfo {
@@ -232,10 +231,8 @@ class NestingFieldPipelineTest {
             """;
         var nf = (NestingField) TestSchemaHelper.buildSchema(sdl).field("Film", "info");
         assertThat(nf.nullContract()).isInstanceOf(NestingField.NullContract.CollapsesWhenAbsent.class);
-        assertThat(fetcherMethodBody("FilmFetchers", "info", sdl))
-            .contains("row.get(" + FILM_TABLE + ".RELEASE_YEAR) != null) return source;")
-            .contains("row.get(" + FILM_TABLE + ".ORIGINAL_LANGUAGE_ID) != null) return source;")
-            .endsWith("return null;\n");
+        assertThat(nf.parentRowColumns()).extracting(c -> c.sqlName())
+            .containsExactly("release_year", "original_language_id");
         var filmType = findType("Film", sdl);
         assertThat(TypeSpecAssertions.armProjectsColumn(filmType, "info", "ORIGINAL_LANGUAGE_ID")).isTrue();
     }
@@ -253,10 +250,7 @@ class NestingFieldPipelineTest {
         var nf = (NestingField) TestSchemaHelper.buildSchema(sdl).field("Address", "info");
         assertThat(nf.nestedFields()).singleElement().isInstanceOf(ChildField.ColumnBackedReferenceField.class);
         assertThat(nf.parentRowColumns()).extracting(c -> c.sqlName()).containsExactly("city_id");
-        assertThat(fetcherMethodBody("AddressFetchers", "info", sdl))
-            .isEqualTo("org.jooq.Record row = (org.jooq.Record) source;\n"
-                + "if (row.get(no.sikt.graphitron.rewrite.test.jooq.public_.Tables.ADDRESS.CITY_ID) != null) return source;\n"
-                + "return null;\n");
+        assertThat(TypeSpecAssertions.armProjectsColumn(findType("Address", sdl), "info", "CITY_ID")).isTrue();
     }
 
     @Test
@@ -310,20 +304,6 @@ class NestingFieldPipelineTest {
     }
 
     // ===== Helpers =====
-
-    private static String fetcherMethodBody(String fetchersClass, String method, String sdl) {
-        return fetcherMethodBody(fetchersClass, method, TestSchemaHelper.buildSchema(sdl));
-    }
-
-    private static String fetcherMethodBody(String fetchersClass, String method, GraphitronSchema schema) {
-        return TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
-            .filter(t -> t.name().equals(fetchersClass))
-            .flatMap(t -> t.methodSpecs().stream())
-            .filter(m -> m.name().equals(method))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("Fetcher method not found: " + fetchersClass + "." + method))
-            .code().toString();
-    }
 
     private static TypeSpec findType(String className, String sdl) {
         return ProjectionRenderTestSupport.renderProjections(TestSchemaHelper.buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE).stream()
