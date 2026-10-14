@@ -1,13 +1,13 @@
 ---
 id: R1025
 title: "A DML mutation write is not checked against the column length before the statement"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 4
 theme: mutation-write
 depends-on: []
 created: 2026-10-13
-last-updated: 2026-10-13
+last-updated: 2026-10-14
 ---
 
 # A DML mutation write is not checked against the column length before the statement
