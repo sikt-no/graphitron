@@ -3356,4 +3356,139 @@ class TenantBindingClassificationTest {
             .containsExactly(new TenantBinding.EntityRepBound.AlternativeSlot(0,
                 new TenantBinding.EntityRepBound.TenantSource.KeyColumn(0)));
     }
+
+    // ===== A classification-rejected field is judged by its SDL reach =====
+
+    /**
+     * {@code Film} with a split {@code inventories} child below it; {@code %s} is the rest of the
+     * schema, holding the classification-rejected field under test.
+     */
+    private static final String FILM_WITH_INVENTORIES = """
+        type Film @table(name: "film") {
+            title: String
+            inventories: [Inventory!]! @splitQuery%s
+        }
+        type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
+        """;
+
+    private static GraphitronSchema withRejectedField(String coordinate, String inventoriesDirectives,
+                                                      String rest) {
+        var schema = build(FILM_WITH_INVENTORIES.formatted(inventoriesDirectives) + rest);
+        var parts = coordinate.split("\\.");
+        assertThat(schema.field(parts[0], parts[1]))
+            .isInstanceOf(GraphitronField.UnclassifiedField.class);
+        return schema;
+    }
+
+    @Test
+    void aRejectedNodeRootBesideQueryNodeLeavesNodeTypesTheirContext() {
+        // The sis shape: one rejected root returning Node used to void every node type's context.
+        var schema = build("""
+            type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+                id: ID! @nodeId
+                inventories: [Inventory!]! @splitQuery
+            }
+            type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
+            type Query {
+                node(id: ID!): Node
+                legacyNode(id: ID!): Node @notGenerated
+            }
+            """);
+
+        assertThat(schema.field("Query", "legacyNode")).isInstanceOf(GraphitronField.UnclassifiedField.class);
+        assertInherited(schema, "Film", "inventories");
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aRejectedListRootOverATenantScopedTableRejectsAlone() {
+        var schema = withRejectedField("Query.films", "", """
+            type Query { films: [Film!]! @notGenerated }
+            """);
+
+        assertInherited(schema, "Film", "inventories");
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aRejectedRootReachesItsTableThroughADeclaredConnection() {
+        // The walk passes through both wrapper kinds; their site-less edges keep passing on the
+        // context the rejected root is judged to establish.
+        var schema = withRejectedField("Query.films", "", """
+            type FilmConnection { edges: [FilmEdge!]! nodes: [Film!]! pageInfo: PageInfo! }
+            type FilmEdge { node: Film! cursor: String! }
+            type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
+            type Query { films: FilmConnection @notGenerated }
+            """);
+
+        assertInherited(schema, "Film", "inventories");
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aRejectedRootReturningAResultTypeKeepsItsSubtreeErrorsAsAKnownUnderCount() {
+        // Pins the stop, not the fixed build's answer: once the root classifies, Report.films is
+        // a site that needs a tenant and is counted, so Film.inventories inherits. The error is
+        // consequential and kept because the walk does not pass through result types.
+        var schema = withRejectedField("Query.report", "", """
+            type Report { films: [Film!]! }
+            type Query { report: Report @notGenerated }
+            """);
+
+        assertRejects(schema, "Film.inventories", "no ancestor established a tenant context");
+    }
+
+    @Test
+    void aRejectedRootOverAGlobalTableStillDeniesItsSubtreeAContext() {
+        // Fixing the root leaves a global read that hands nothing down, so the error is real.
+        var schema = withRejectedField("Query.languages", "", """
+            type Language @table(name: "language") {
+                name: String
+                films: [Film!]! @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Query { languages: [Language!]! @notGenerated }
+            """);
+
+        assertRejects(schema, "Language.films", "no ancestor established a tenant context");
+    }
+
+    @Test
+    void aRejectedGlobalDataRootStillDeniesItsSubtreeAContext() {
+        // A marked field takes its verdict from the marker's ladder once it classifies, and one
+        // that runs on the default source hands nothing down.
+        var schema = withRejectedField("Query.films", "", """
+            type Query { films: [Film!]! @notGenerated @globalData }
+            """);
+
+        assertRejects(schema, "Film.inventories", "no ancestor established a tenant context");
+    }
+
+    @Test
+    void aFanOutBelowARejectedTenantScopedRootSitsUnderABoundAncestor() {
+        // Once the root classifies it binds a tenant, so the marker below it rejects then too.
+        var schema = withRejectedField("Query.films", " @tenantFanOut", """
+            type Query { films: [Film!]! @notGenerated }
+            """);
+
+        assertFanOutRejects(schema, "Film.inventories", "sits under a tenant-bound ancestor");
+    }
+
+    @Test
+    void aRejectedNestingFieldKeepsItsSubtreeErrorsAsAKnownUnderCount() {
+        // The @notGenerated child makes Language.nest the rejected field, so Nest.films has no
+        // site and only a field below Film can discriminate. Pins the stop, not the fixed build's
+        // answer: with bad removed, Language.nest classifies as a nesting field, Nest.films
+        // rejects on its own and Film.inventories inherits. The error is consequential and kept
+        // because the walk does not pass through nesting types.
+        var schema = withRejectedField("Language.nest", "", """
+            type Language @table(name: "language") { nest: Nest }
+            type Nest {
+                bad: String @notGenerated
+                films: [Film!]! @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Query { languages: [Language!]! }
+            """);
+
+        assertRejects(schema, "Film.inventories", "no ancestor established a tenant context");
+    }
 }

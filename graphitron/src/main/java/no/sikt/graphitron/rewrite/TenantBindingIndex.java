@@ -376,6 +376,44 @@ public record TenantBindingIndex(
          */
         private final Set<Site> countedSites =
             java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        /**
+         * The coordinates classification rejected outright: each holds a
+         * {@link GraphitronField.UnclassifiedField}, so it has an edge and no {@link Site}. Read
+         * in the same pass over the classified fields as {@link #sites}. Flat only: a rejection
+         * inside a nesting type lands at the embedding field's coordinate.
+         */
+        private final Set<FieldCoordinates> classificationRejected = new HashSet<>();
+        /**
+         * The classification-rejected edges both ancestor folds count as handing a tenant down,
+         * computed once in {@link #run} beside {@link #countedSites}: an in-domain
+         * {@link #classificationRejected} edge that is not {@code @globalData}-marked and whose
+         * {@link #sdlReachesTenantTable SDL reach} holds a tenant-scoped table. The edge-level
+         * sibling of {@link #handsDownAsIfFixed}: a rejected field has no site, so no reach,
+         * reading or offered fix to argue from, but its SDL return type still answers whether its
+         * own statement will need a tenant once it classifies. If it will, the fixed field either
+         * hands a tenant down or is itself a tenant rejection {@link #handsDownAsIfFixed} counts,
+         * so its subtree's "no ancestor established" errors are consequential and the field
+         * reports its own error alone. A {@code @tenantFanOut} edge needs no entry here:
+         * {@link #edgeEstablishesContext} and {@link #belowFannedEdge} already read the marker.
+         *
+         * <p>Only failing builds see it: {@link GraphitronSchemaValidator} reports every
+         * {@link GraphitronField.UnclassifiedField}, so a passing build has none. The proxy errs
+         * both ways, at a bounded cost. It over-counts a field whose fix needs no tenant although
+         * its return type leads straight, or through a connection, to tenant-scoped rows: a real
+         * error below it is hidden, and a {@code @tenantFanOut} child is rejected as sitting under
+         * a tenant-bound ancestor, until the field classifies and the ordinary rules judge its
+         * site. It under-counts below a result, nesting or payload type, where the walk stops:
+         * that subtree keeps today's consequential errors rather than risk hiding real ones below
+         * a global child of the stopped-at type.
+         *
+         * <p>The arms children get below a counted edge are counterfactual and reach no consumer.
+         * The validator reads only {@link TenantBindingIndex#rejections()}; the emit-side readers,
+         * {@link no.sikt.graphitron.rewrite.generators.util.EntityFetcherDispatchClassGenerator}
+         * and the per-field seam {@link GraphitronSchema#tenantBindingOf} (read by the launcher,
+         * routine-write and tenant DSL emitters), run only once the error list is empty. A
+         * diagnostics consumer that shows arms of a failing build must revisit this.
+         */
+        private final Set<FieldCoordinates> countedRejectedEdges = new HashSet<>();
 
         private final Map<FieldCoordinates, TenantBinding> byCoordinate = new LinkedHashMap<>();
         private final List<ValidationError> rejections = new ArrayList<>();
@@ -420,7 +458,7 @@ public record TenantBindingIndex(
                     "tenant-binding fold requires the walk-minted column-binding ledger");
             }
             this.columnBindings = columnBindings;
-            this.sites = sitesOf(fields, operationMembers);
+            this.sites = sitesOf(fields, operationMembers, classificationRejected);
             this.mutationRootName = sdl.getMutationType() == null ? null : sdl.getMutationType().getName();
             this.tenantMarked = tenantMarkedDefinitions(sdl);
             recordRoot(sdl.getQueryType());
@@ -460,13 +498,21 @@ public record TenantBindingIndex(
             }
         }
 
+        /**
+         * The sites of every classified coordinate; the coordinates classification rejected are
+         * collected into {@code rejected} in the same pass, so "rejected" and "has a site" come
+         * from one read.
+         */
         private static Map<FieldCoordinates, List<Site>> sitesOf(
-                Map<FieldCoordinates, GraphitronField> fields, OperationMemberRelation operationMembers) {
+                Map<FieldCoordinates, GraphitronField> fields, OperationMemberRelation operationMembers,
+                Set<FieldCoordinates> rejected) {
             var sites = new LinkedHashMap<FieldCoordinates, List<Site>>();
             for (var entry : fields.entrySet()) {
                 if (entry.getValue() instanceof OutputField out) {
                     sites.computeIfAbsent(entry.getKey(), k -> new ArrayList<>()).add(
                         new Site(entry.getKey(), out, operationMembers.membersOf(entry.getKey()), false));
+                } else if (entry.getValue() instanceof GraphitronField.UnclassifiedField) {
+                    rejected.add(entry.getKey());
                 }
             }
             for (var field : fields.values()) {
@@ -503,8 +549,14 @@ public record TenantBindingIndex(
                     }
                 }
             }
-            // The ancestor facts read the dispatch facts and the counted sites just filled, and
-            // armOf reads them.
+            for (FieldCoordinates coord : classificationRejected) {
+                if (edgeTargets.containsKey(coord) && !globalMarked(coord)
+                        && sdlReachesTenantTable(coord)) {
+                    countedRejectedEdges.add(coord);
+                }
+            }
+            // The ancestor facts read the dispatch facts and the counted sites and edges just
+            // filled, and armOf reads them.
             foldAncestorContexts();
             for (var entry : sites.entrySet()) {
                 var arm = combine(entry.getValue().stream().map(this::checkedArmOf).toList());
@@ -1012,6 +1064,30 @@ public record TenantBindingIndex(
             return !site.nested() && globalDataArmOf(site) instanceof Verdict.Arm;
         }
 
+        /**
+         * Whether the tables a classification-rejected edge's own statement would select from,
+         * read off the SDL, hold a tenant-scoped one: from the edge's targets (interfaces and
+         * unions already expanded), a {@link GraphitronType.TableBackedType} contributes its
+         * table, a {@link GraphitronType.ConnectionType} or {@link GraphitronType.EdgeType} is
+         * walked through along its own edges, and every other type contributes nothing and stops
+         * the walk. The wrappers are the only pass-through types because their fields are never
+         * classified on their own: their edges are the returning field's statement seen through
+         * the wrapper. Every other type's fields are sites of their own once the build passes.
+         * A type with no {@code types} entry stops the walk too; in a failing build a non-table
+         * type reached only through a rejected field is never classified. Reads only the SDL
+         * edges and the classified types, never ancestor context, so it runs before the folds.
+         */
+        private boolean sdlReachesTenantTable(FieldCoordinates edge) {
+            return closeForward(edgeTargets.get(edge), e -> passesThrough(e.getTypeName())).stream()
+                .anyMatch(typeName -> types.get(typeName) instanceof GraphitronType.TableBackedType tb
+                    && tenantScoped(tb.table()));
+        }
+
+        private boolean passesThrough(String typeName) {
+            return types.get(typeName) instanceof GraphitronType.ConnectionType
+                || types.get(typeName) instanceof GraphitronType.EdgeType;
+        }
+
         // ===== The parent-row binding =====
 
         /**
@@ -1321,10 +1397,13 @@ public record TenantBindingIndex(
         /**
          * Whether the edge's own field divines a tenant: the direct-binding, routable
          * node-dispatch and parent-row facts behind {@link #anyBoundAncestor}. True when any site
-         * of the edge divines, since the fact it feeds is an any-path rejection fact.
+         * of the edge divines, since the fact it feeds is an any-path rejection fact. A
+         * classification-rejected edge in {@link #countedRejectedEdges} divines too, so every type
+         * with a context still lies below a divining edge, a fanned edge, or a routed entry.
          */
         private boolean edgeDivinesTenant(FieldCoordinates edge) {
-            return sitesAt(edge).stream().anyMatch(this::siteDivinesTenant);
+            return countedRejectedEdges.contains(edge)
+                || sitesAt(edge).stream().anyMatch(this::siteDivinesTenant);
         }
 
         private boolean siteDivinesTenant(Site site) {
@@ -2376,7 +2455,10 @@ public record TenantBindingIndex(
          * now or once fixed, since a routed entity row has a fixed tenant just as a divining
          * field's rows do. With that seed every type with a context lies below a divining edge,
          * a fanned edge, or a routed entry, which is what lets {@link #siteDivinesTenant} count a
-         * {@link #handsDownAsIfFixed} site without asking whether it inherits.
+         * {@link #handsDownAsIfFixed} site without asking whether it inherits. A
+         * classification-rejected edge has no site; one in {@link #countedRejectedEdges} both
+         * establishes and divines, so it reports its own error alone rather than voiding its
+         * subtree's context.
          */
         private void foldAncestorContexts() {
             var unbound = new HashSet<String>(roots);
@@ -2470,7 +2552,9 @@ public record TenantBindingIndex(
 
         /**
          * Whether the edge itself hands its subtree a tenant; an edge that does not passes on
-         * its parent's context, which {@link #foldAncestorContexts} propagates.
+         * its parent's context, which {@link #foldAncestorContexts} propagates. A
+         * classification-rejected edge has no site and so passes its parent's context on, unless
+         * it is in {@link #countedRejectedEdges}, which judges it as its fix will leave it.
          */
         private boolean edgeEstablishesContext(FieldCoordinates edge) {
             if (fanMarked(edge)) {
@@ -2478,6 +2562,9 @@ public record TenantBindingIndex(
                 // its subtree is tenant-homogeneous per element: the edge establishes context and
                 // children below it classify Inherited (a @splitQuery child then partitions per
                 // tenant through the loader-name seam, exactly as under an ArgumentBound root).
+                return true;
+            }
+            if (countedRejectedEdges.contains(edge)) {
                 return true;
             }
             // Every site, since the fact it feeds is the every-path context fact: an edge one of
