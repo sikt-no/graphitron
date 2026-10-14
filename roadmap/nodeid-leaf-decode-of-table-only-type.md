@@ -160,3 +160,44 @@ Each asserts the field classifies and that the generated `NodeIdEncoder` declare
 **A separate registry record beside the reference**, `CatalogNodeDecode(typeName, TableRef, HelperRef.Decode)`, leaving `HelperRef.Decode` as it is. The generator and the fold would then each need a second, name-keyed source to answer which table a `decode<T>` reads, and the fold would consult a `NodeType` or the registry to answer one question. With the table on the reference, every reader asks the carrier.
 
 **Collect the catalog decodes from the classified carriers after the walk**, instead of registering at the mint. `NodeIdDecodeKeys` is held by input fields, arguments, lookup mappings and condition parameters, so the collector would be a walk over all of them that must keep up with every new holder. The mint is one site, and an entry it leaves behind for a leaf that later rejects is never emitted.
+
+## Reviewer findings
+
+### Round 1 (2026-10-14, Spec -> Ready, reviewer session 01975EwYBfH2AidWiqEK9uuo)
+
+Verdict: withhold. One finding, on question one, and cheap to resolve. The goal reads on its own:
+a `@nodeId(typeName: T)` on a DML input, a filter input or a filter argument stops rejecting when
+`T` is a `@table`-only type over a table with catalog node metadata, and decodes the way the record
+path already does. The plan extends the shape in the tree (one `HelperRef.Decode` per target,
+emitted by `NodeIdEncoderClassGenerator`) rather than standing a second decode beside it, and I
+would hand the minting, registry, emission and naming sections to an implementer as written.
+
+**Finding 1 (question one: a claim about the tree does not hold). The "slot miss reports evidence
+without throwing" test cannot be built from SDL, and "today this case throws in `nodeTypeOf`" is
+not what happens today.**
+
+`TenantBindingIndex.Fold.collectFromServiceLeaf` is reached only through `collectFromValueShape`
+from a root `@service` call's structured arguments. Every `NodeIdDecodeKeys` there comes from
+`ServiceCatalog.nodeIdSlotExtraction`, whose non-record arm ends at
+`BuildContext.resolveDecodeHelperForType`; an input-bean member that is not a jOOQ record is
+refused by `InputBeanResolver.singleValuedMemberDeferral`. The spec keeps
+`resolveDecodeHelperForType` node-only on purpose (its "stays node-only" section). So a `@service`
+argument naming `Baz` with a non-record Java parameter is refused in `ServiceCatalog` with "names no
+@node type, so no decode helper exists", today and after this item alike; it never reaches the fold.
+No carrier this item opens reaches the `nodeTypeOf` branch: the leaves it opens enter the fold
+through `accessOf`, which does not call `nodeTypeOf`. R1029's own test comment in
+`aScalarArgumentOrFilterFieldNamingATableOnlyTypeRejectsInTheClassifier` says the same.
+
+That leaves the fold section's motivation and its test out of step with the code. The change itself
+(the fold reads `decode.table()`, `nodeTypeOf` goes) is sound and follows from the reference
+carrying its table; what is missing is a true statement of why it is in this item and a test that
+can exist. What would satisfy it, the author's choice:
+
+- Keep the change, say it is preparation for the named-parameter slot widening under R1033 (no
+  carrier in this item reaches the branch), and either pin it with a fold-level test that constructs
+  the `NodeIdDecodeKeys` carrier directly, or move the test to R1033, where SDL first reaches it.
+- Or leave `nodeTypeOf` in place, drop the test, and record in R1033 that widening the slot must
+  retire it.
+
+Either way, correct "Today this case throws in `nodeTypeOf`" and the matching `Retired vocabulary`
+entry if the method stays.
