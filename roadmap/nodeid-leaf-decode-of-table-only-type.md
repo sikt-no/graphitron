@@ -1,7 +1,7 @@
 ---
 id: R1032
 title: "A @nodeId leaf on a DML or filter input decodes a @table-only type from its catalog node metadata"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 2
 theme: classification-model
