@@ -1,7 +1,7 @@
 ---
 id: R1031
 title: "A field rejected at classification voids its subtree tenant context"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 4
 theme: diagnostics

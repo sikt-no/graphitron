@@ -35,7 +35,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
-| `R1031` | A field rejected at classification voids its subtree tenant context | Ready | 2026-10-14 | [plan](classification-rejected-field-voids-subtree-tenant-context.md) |
+| `R1031` | A field rejected at classification voids its subtree tenant context | In Progress | 2026-10-14 | [plan](classification-rejected-field-voids-subtree-tenant-context.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -466,7 +466,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R601` [**The diagnostic stream unifies**](unified-diagnostic-stream.md) — Backlog, structural
 - `R936` [**The federation library is reported in graphitron's voice, not thrown in the library's**](federation-library-is-reported-not-thrown.md) — Backlog, dx
 - `R891` [**The projection address collision splices a folded name that exists nowhere**](projection-collision-typed-arm.md) — Backlog, bug
-- `R1031` [**A field rejected at classification voids its subtree tenant context**](classification-rejected-field-voids-subtree-tenant-context.md) — Ready, bug
+- `R1031` [**A field rejected at classification voids its subtree tenant context**](classification-rejected-field-voids-subtree-tenant-context.md) — In Progress, bug
 - `R654` [**Coordinate-level verdicts masked by reflection and binding rejections outside the @service seat**](resolver-coordinate-verdict-precedence-sweep.md) — Backlog, bug
 - `R602` [**Decide the INPUT_OBJECT locations of @record and @table: narrow or retired-location convention**](input-object-directive-locations.md) — Backlog, cleanup
 - `R931` [**Reject a synthesised Connection or Edge name that exactly collides with another registered type**](synthesised-type-exact-name-collision.md) — Backlog, bug
