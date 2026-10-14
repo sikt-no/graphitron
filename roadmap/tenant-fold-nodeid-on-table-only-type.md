@@ -26,7 +26,7 @@ type Studieniva @table @key(fields: "kode") {
 }
 ```
 
-sis still accepts the v9-encoded ids of these types in 15 input fields, including `studienivaId: ID @nodeId(typeName: "Studieniva")` on a `@service` input (`EndreStudieprogramInput`). Clients still send those ids. The generator stops with:
+sis still accepts the v9-encoded ids of these types in 19 input fields. The crash came from the ones on `@service` inputs (for example `LeggTilBegrensningerForEmnevalgStudienivaIntervallInput.fraStudienivaId`, under `BegrensningerForEmnevalgService.leggTilBegrensninger`); the other 17 sit on `@mutation(typeName: UPDATE)` and filter inputs such as `EndreStudieprogramInput.studienivaId`, which this item does not cover (see R1032). Clients still send those ids. The generator stops with:
 
 ```
 IllegalStateException: no node type carries type id '104'
