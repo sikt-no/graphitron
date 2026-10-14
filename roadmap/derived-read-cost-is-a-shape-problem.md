@@ -2120,6 +2120,16 @@ conversion frees one.
       membership view's assertions were not carried over, the view going next. A `@node` over
       `@table` without `implements Node` is a node answering to its own name, beside its
       `NODE_WITHOUT_NODE_INTERFACE`, which the population document now states.
+    * **Fields** `done`. `FieldScopeTableTest`, `FieldNavigatedTypeTest`, `FieldColumnTableTest`
+      and `FieldRoutineMethodTest`, 62 cases, are `facts/field-scope-table.graphqls`,
+      `facts/field-navigated-type.graphqls`, `facts/field-column-table.graphqls` and
+      `facts/field-routine-method.graphqls`, plus `FieldGraphScopeTest` for the graph partition.
+      "Every field has exactly one navigation" is a gate over every document's capture beside
+      "every output field has a source". The fixture catalog gains `ms_ping()` in both
+      multischema schemas, a routine name two schemas declare and one taking no parameters. One
+      case did not convert: a table-valued function whose generated model exposes no call
+      surface, which jOOQ does not produce for any fixture the catalog can hold; capture's null
+      reading for it stands untested.
 * **There is no residue, and no partial conversion** `open`. A class converts whole or it has not
   converted, which is what the caller count measures and why it is the right count. A case that
   fabricates a state no capture reaches is not a case the fixture has to be kept for: it is either

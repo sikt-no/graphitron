@@ -172,15 +172,11 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       SDL against that same catalog and the test classes' own census, half its cases pinning the
  *       payload shapes that name nothing because a carrier's boundary is most of what the relation
  *       claims;
- *       {@code no.sikt.graphitron.model.intent.FieldColumnTableTest} binds
- *       {@code intent_field_column_table}, the override a column name's site resolves through, half
- *       its cases pinning the coordinates that produce no row because the boundary of an override
- *       is what the relation claims, together with {@code graphitron_field_column_scope}, the
- *       navigation the override reads and the column-match classifier reads with it, whose own
- *       cases are the third rule the override drops and the precedence between the three; it reads
- *       both seeded in the module whose DDL declares them, several of the states a boundary case
- *       needs (a macro-rewritten type expression, a contested coordinate, a spelling two schemas
- *       both answer) being ones a fixture states in a line and a capture arranges in a schema;
+ *       the fact document {@code field-column-table.graphqls} binds
+ *       {@code intent_field_column_table}, the override a column name's site resolves through, and
+ *       {@code graphitron_field_column_scope}, the navigation it reads, over real SDL and the real
+ *       catalog, the coordinates that produce no override row being as much its claim as the ones
+ *       that do;
  *       the member names a backing class offers are no longer a derivation at all, the reading
  *       writing them down as {@code code_read_slot}, so the rule is pinned once rather than twice
  *       and where the reading lives: {@code no.sikt.graphitron.model.capture.code.CodeCaptureTest}
@@ -193,12 +189,11 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       against being names and nothing else; half its cases pin what the resolution refuses to
  *       decide (an overloaded name is rows and an arity, never a pick) and two pin what survives it,
  *       a reference the census matched nothing for still being a reference;
- *       {@code no.sikt.graphitron.model.intent.FieldRoutineMethodTest} binds
+ *       the fact document {@code field-routine-method.graphqls} binds
  *       {@code intent_field_routine_method}, the generated call surface a {@code @routine}
- *       application resolves to, in the same module and on the same terms: a spelling and a census
- *       are names, so a fixture states both sides and half its cases pin the three causes of absence
- *       apart (a name matching no catalog object, one matching a stored table rather than a
- *       callable, and a callable the generated model exposes no call surface for);
+ *       application resolves to, over the real catalog, with the two causes of absence a catalog
+ *       can produce told apart by the spelling (a name matching no catalog object, and one
+ *       matching a stored table rather than a callable);
  *       {@code graphitron_type_backing}, which class backs a type and by which population, is
  *       bound by the fact documents {@code type-backing.graphqls},
  *       {@code type-backing-conflict.graphqls} and

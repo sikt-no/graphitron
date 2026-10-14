@@ -1796,6 +1796,11 @@ CREATE INDEX event_order_idx ON multischema_b.event (code, event_id);
 CREATE INDEX note_order_idx ON multischema_a.note (event_id);
 CREATE INDEX note_order_idx ON multischema_b.note (note_id);
 
+-- One table-valued function name in both schemas, taking no parameters: a routine spelled bare is
+-- ambiguous between them, a qualified spelling picks one, and the call surface has arity zero.
+CREATE FUNCTION multischema_a.ms_ping() RETURNS TABLE(n integer) LANGUAGE sql STABLE AS $$ SELECT 1 $$;
+CREATE FUNCTION multischema_b.ms_ping() RETURNS TABLE(n integer) LANGUAGE sql STABLE AS $$ SELECT 2 $$;
+
 -- R512: within-schema duplicate constraint name. 'gizmo' plus two holder tables (dup_one, dup_two)
 -- in the SAME schema (multischema_a), each carrying an FK named 'dup_gizmo_fk' into 'gizmo'. Postgres
 -- scopes constraint names per table, so two tables in one schema reusing a name is legal. This is the

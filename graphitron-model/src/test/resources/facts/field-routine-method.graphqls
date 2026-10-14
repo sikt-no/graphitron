@@ -1,0 +1,35 @@
+# What a @routine application resolves to: the generated call surface the catalog holds for the
+# routine its name spells, one row per application. Absence is as much the claim as presence: a
+# name matching no catalog object, and one matching a stored table rather than a callable, both
+# resolve to nothing, and which of the two happened is the spelling's own answer. A name two schemas
+# declare is two rows that say so, and a qualified name picks its schema.
+
+extend type Query {
+  films: [String] @routine(name: "films_for_actor")
+  chained: [String] @routine(name: "films_for_actor") @routine(name: "rent_film")
+  missing: [String] @routine(name: "no_such_routine")
+  notCallable: [String] @routine(name: "film")
+  ambiguous: [String] @routine(name: "ms_ping")
+  qualified: [String] @routine(name: "multischema_b.ms_ping")
+}
+
+extend schema @expectEquals(relation: "intent_field_routine_method", rows: """
+  field_name, ordinal, table_schema,  routine_name,    class_name,                                               method_name,   parameters, candidates
+  ambiguous,  0,       multischema_a, ms_ping,         no.sikt.graphitron.rewrite.test.jooq.multischema_a.Routines, msPing,        0,          2
+  ambiguous,  0,       multischema_b, ms_ping,         no.sikt.graphitron.rewrite.test.jooq.multischema_b.Routines, msPing,        0,          2
+  chained,    0,       public,        films_for_actor, no.sikt.graphitron.rewrite.test.jooq.public_.Routines,       filmsForActor, 2,          1
+  chained,    1,       public,        rent_film,       no.sikt.graphitron.rewrite.test.jooq.public_.Routines,       rentFilm,      2,          1
+  films,      0,       public,        films_for_actor, no.sikt.graphitron.rewrite.test.jooq.public_.Routines,       filmsForActor, 2,          1
+  qualified,  0,       multischema_b, ms_ping,         no.sikt.graphitron.rewrite.test.jooq.multischema_b.Routines, msPing,        0,          1
+  """)
+
+# The two absences, told apart by the spelling: film names a catalog object, no_such_routine none.
+extend schema @assertContains(relation: "graphitron_spelled_table", rows: """
+  spelling, table_name
+  film,     film
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_spelled_table", rows: """
+  spelling
+  no_such_routine
+  """)

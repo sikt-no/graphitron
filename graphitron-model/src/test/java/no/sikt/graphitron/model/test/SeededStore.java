@@ -906,25 +906,6 @@ public final class SeededStore {
     }
 
     /**
-     * A {@code @pivot} application on a field: the two column names the projection turns on, as the
-     * author wrote them and resolved against nothing.
-     */
-    public static void seedPivot(DSLContext dsl, String graphName, String typeName, String fieldName,
-                                 String onColumn, String valueColumn) {
-        dsl.insertInto(GRAPHITRON_PIVOT_ENTRY)
-            .set(GRAPHITRON_PIVOT_ENTRY.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_PIVOT_ENTRY.TYPE_NAME, typeName)
-            .set(GRAPHITRON_PIVOT_ENTRY.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_PIVOT_ENTRY.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_PIVOT_ENTRY.SOURCE_LINE, 2)
-            .set(GRAPHITRON_PIVOT_ENTRY.SOURCE_COLUMN, 3)
-            .set(GRAPHITRON_PIVOT_ENTRY.ON_COLUMN, onColumn)
-            .set(GRAPHITRON_PIVOT_ENTRY.VALUE_COLUMN, valueColumn)
-            .set(GRAPHITRON_PIVOT_ENTRY.TOUCHED_AT, SEEDED_READING)
-            .execute();
-    }
-
-    /**
      * A {@code @reference} application on a field: the path's own row, which its steps hang off.
      * The field has to exist already, the application being keyed by the coordinate.
      */
@@ -1449,24 +1430,6 @@ public final class SeededStore {
     }
 
     /**
-     * A connection marker on a field: that the author asked for the pagination expansion here. The
-     * page size and the connection's chosen name are left unstated, a relation reading either being
-     * a different subject from one reading that the promotion fires at all.
-     */
-    public static void seedConnection(DSLContext dsl, String graphName, String typeName,
-                                      String fieldName) {
-        dsl.insertInto(GRAPHITRON_CONNECTION_ENTRY)
-            .set(GRAPHITRON_CONNECTION_ENTRY.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_CONNECTION_ENTRY.TYPE_NAME, typeName)
-            .set(GRAPHITRON_CONNECTION_ENTRY.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_CONNECTION_ENTRY.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_CONNECTION_ENTRY.SOURCE_LINE, 2)
-            .set(GRAPHITRON_CONNECTION_ENTRY.SOURCE_COLUMN, 3)
-            .set(GRAPHITRON_CONNECTION_ENTRY.TOUCHED_AT, SEEDED_READING)
-            .execute();
-    }
-
-    /**
      * An {@code @orderBy} application on an argument: presence, which is the whole of what the
      * directive states at this coordinate. What the argument orders by lives on the input type it
      * names, so a case whose subject is the ordering itself seeds that too.
@@ -1694,57 +1657,6 @@ public final class SeededStore {
                 .set(SQL_TABLE_RECORD_SUPERTYPE.SUPERTYPE_NAME, supertype)
                 .execute();
         }
-    }
-
-    /**
-     * The callable behind a catalog object, with the generated call surface an emitted FROM clause
-     * calls. Named for the catalog rather than for the directive, {@link #seedRoutine} being the
-     * {@code @routine} application that names one of these. Both generated names are nullable
-     * together in the census, so the overload below states the shape where the model exposes none.
-     */
-    public static void seedCatalogRoutine(DSLContext dsl, String sourceName, String tableSchema,
-                                          String routineName, String routinesClassFqn,
-                                          String methodName) {
-        seedSchema(dsl, sourceName, tableSchema);
-        dsl.insertInto(SQL_ROUTINE)
-            .set(SQL_ROUTINE.SOURCE_NAME, sourceName)
-            .set(SQL_ROUTINE.TABLE_SCHEMA, tableSchema)
-            .set(SQL_ROUTINE.ROUTINE_NAME, routineName)
-            .set(SQL_ROUTINE.ROUTINE_TYPE, "FUNCTION")
-            .set(SQL_ROUTINE.ROUTINES_CLASS_FQN, routinesClassFqn)
-            .set(SQL_ROUTINE.ROUTINES_METHOD_NAME, methodName)
-            .execute();
-    }
-
-    /** The same row with no call surface, which is the two generated names null together. */
-    public static void seedCatalogRoutine(DSLContext dsl, String sourceName, String tableSchema,
-                                          String routineName) {
-        seedCatalogRoutine(dsl, sourceName, tableSchema, routineName, null, null);
-    }
-
-    /** One IN parameter of a routine's call surface, at its 0-based position. */
-    public static void seedRoutineParameter(DSLContext dsl, String sourceName, String tableSchema,
-                                            String routineName, int position, String jooqName) {
-        seedRoutineParameter(dsl, sourceName, tableSchema, routineName, position, jooqName,
-            "java.lang.Integer");
-    }
-
-    /**
-     * The same parameter with its Java type stated. A case comparing this type against something,
-     * a projected key column's binding type being the one that does, states both sides rather than
-     * relying on two defaults happening to agree.
-     */
-    public static void seedRoutineParameter(DSLContext dsl, String sourceName, String tableSchema,
-                                            String routineName, int position, String jooqName,
-                                            String bindingType) {
-        dsl.insertInto(SQL_ROUTINE_PARAMETER)
-            .set(SQL_ROUTINE_PARAMETER.SOURCE_NAME, sourceName)
-            .set(SQL_ROUTINE_PARAMETER.TABLE_SCHEMA, tableSchema)
-            .set(SQL_ROUTINE_PARAMETER.ROUTINE_NAME, routineName)
-            .set(SQL_ROUTINE_PARAMETER.POSITION, position)
-            .set(SQL_ROUTINE_PARAMETER.JOOQ_NAME, jooqName)
-            .set(SQL_ROUTINE_PARAMETER.BINDING_TYPE, bindingType)
-            .execute();
     }
 
     /**

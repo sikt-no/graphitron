@@ -1,0 +1,97 @@
+# Which table a column name written at a field's site resolves against. graphitron_field_column_scope
+# is the navigation: a written @reference path's terminal, else the table a field's object type
+# binds, else, for a leaf, its parent's own binding. intent_field_column_table is the override over
+# it, the rows where the answer is not the parent's own table: absence there means the parent's
+# scope stands. A path reaching nothing, or reaching two tables, is a silence and never the parent
+# standing in; so is a coordinate whose claims disagree, which the navigation still resolves.
+
+type Film @table(name: "film") {
+  title: String
+  # film declares two keys to language, one destination.
+  languageName: String @reference(path: [{table: "language"}])
+  actorName: String @reference(path: [{table: "film_actor"}, {table: "actor"}])
+  # The first application answers.
+  twice: String @reference(path: [{table: "language"}]) @reference(path: [{table: "film_actor"}])
+  # The path outranks the named type.
+  credits: Actor @reference(path: [{table: "film_actor"}])
+  nowhere: String @reference(path: [{table: "no_such_table"}])
+  twoTerminals: String @reference(path: [{table: "event"}])
+  languages: [Language]
+  pagedLanguages: [Language] @asConnection
+  languageConnection: LanguageConnection
+  related: Media
+  serviced: [Language] @service(service: {className: "no.example.Svc", method: "langs"})
+  pivoted: [Language] @pivot(on: "kind", value: "value")
+  venues: [Venue]
+  # Contested: two claims that exclude each other.
+  contested: String @reference(path: [{table: "language"}])
+    @service(service: {className: "no.example.Svc", method: "get"})
+    @externalField(reference: {className: "no.example.Fields", method: "rating"})
+  contestedNowhere: String @reference(path: [{table: "no_such_table"}])
+    @service(service: {className: "no.example.Svc", method: "get"})
+    @externalField(reference: {className: "no.example.Fields", method: "rating"})
+  contestedTitle: String
+    @service(service: {className: "no.example.Svc", method: "get"})
+    @externalField(reference: {className: "no.example.Fields", method: "rating"})
+}
+
+type Language @table(name: "language") { name: String }
+type Actor @table(name: "actor") { name: String @field(name: "first_name") }
+
+# Bound to a bare name two schemas declare, so it binds nothing.
+type Venue @table(name: "event") { name: String }
+
+type LanguageConnection { edges: [LanguageEdge] }
+type LanguageEdge { node: Language }
+
+# A table-bound interface is one table per participant, not one table.
+interface Media @table(name: "film") { title: String }
+
+type Note { text: String }
+
+# @table and @error contest the type: a type-grain conflict, which is no site here.
+type Errored @table(name: "film") @error(handlers: [{handler: DATABASE}]) { title: String }
+
+extend type Query {
+  films: [Film]
+  notes: [Note]
+  erroreds: [Errored]
+}
+
+extend schema @expectEquals(relation: "intent_field_column_table", rows: """
+  type_name,                        field_name,         disposition, basis,            table_name
+  Film,                             actorName,          RESOLVE,     PATH_TERMINAL,    actor
+  Film,                             contested,          SILENT,      CONFLICTED,
+  Film,                             contestedNowhere,   SILENT,      CONFLICTED,
+  Film,                             contestedTitle,     SILENT,      CONFLICTED,
+  Film,                             credits,            RESOLVE,     PATH_TERMINAL,    film_actor
+  Film,                             languageConnection, RESOLVE,     NAMED_TYPE_TABLE, language
+  Film,                             languageName,       RESOLVE,     PATH_TERMINAL,    language
+  Film,                             languages,          RESOLVE,     NAMED_TYPE_TABLE, language
+  Film,                             nowhere,            SILENT,      UNRESOLVED_PATH,
+  Film,                             pagedLanguages,     RESOLVE,     NAMED_TYPE_TABLE, language
+  Film,                             twice,              RESOLVE,     PATH_TERMINAL,    language
+  Film,                             twoTerminals,       SILENT,      UNRESOLVED_PATH,
+  FilmPagedLanguagesConnection,     nodes,              RESOLVE,     NAMED_TYPE_TABLE, language
+  FilmPagedLanguagesConnectionEdge, node,               RESOLVE,     NAMED_TYPE_TABLE, language
+  LanguageEdge,                     node,               RESOLVE,     NAMED_TYPE_TABLE, language
+  """)
+
+extend schema @assertContains(relation: "graphitron_field_column_scope", rows: """
+  type_name, field_name,         basis,            table_name
+  Film,      title,              PARENT_BINDING,   film
+  Film,      contestedTitle,     PARENT_BINDING,   film
+  Film,      languageName,       PATH_TERMINAL,    language
+  Film,      credits,            PATH_TERMINAL,    film_actor
+  Film,      languages,          NAMED_TYPE_TABLE, language
+  Film,      languageConnection, NAMED_TYPE_TABLE, language
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_field_column_scope", rows: """
+  type_name, field_name
+  Film,      nowhere
+  Film,      twoTerminals
+  Film,      venues
+  Venue,     name
+  Note,      text
+  """)

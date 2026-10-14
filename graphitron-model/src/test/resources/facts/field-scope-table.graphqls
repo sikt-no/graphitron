@@ -1,0 +1,74 @@
+# The table a field's own SQL is rooted in, which is where a predicate written at the coordinate
+# correlates and where a path departing it starts. Three rules answer in order: the table the
+# field's named type binds, then the data channel of a carrier payload a write returns, then the
+# table @mutation(table:) names. A field with no arguments resolves a scope too, which is the grain
+# this relation exists for; the argument-grain relation is it fanned over the arguments. A scalar
+# leaf resolves none, being a projection off its parent's row rather than a read of its own.
+
+type Film @table(name: "film") {
+  title: String
+  actors: [Actor]
+}
+
+type Actor @table(name: "actor") { name: String @field(name: "first_name") }
+
+# Bound to a bare name two schemas declare, so it binds nothing.
+type Venue @table(name: "event") { name: String }
+
+type Report { text: String }
+
+type FilmsConnection { edges: [FilmsEdge] }
+type FilmsEdge { node: Film }
+
+type FilmPayload { film: Film }
+type FilmActorPayload { film: Film, actor: Actor }
+
+extend type Query {
+  allFilms: [Film]
+  films(inActor: ID, title: String): [Film]
+  pagedFilms: [Film] @asConnection
+  filmsConnection: FilmsConnection
+  venues: [Venue]
+  report: Report
+}
+
+type Mutation {
+  createFilm(title: String): Film @mutation(typeName: INSERT, table: "actor")
+  createVenue(name: String): Venue @mutation(typeName: INSERT, table: "film")
+  deleteFilm(title: String): Boolean @mutation(typeName: DELETE, table: "film")
+  updateFilm(title: String): FilmPayload @mutation(typeName: UPDATE)
+  updateFilmOver(title: String): FilmPayload @mutation(typeName: UPDATE, table: "actor")
+  deleteFilmPayload(title: String): FilmPayload @mutation(typeName: DELETE)
+  updateBoth(title: String): FilmActorPayload @mutation(typeName: UPDATE)
+}
+
+extend schema @expectEquals(relation: "graphitron_field_scope_table", rows: """
+  type_name,                 field_name,      basis,            table_name
+  FilmActorPayload,          actor,           NAMED_TYPE_TABLE, actor
+  FilmActorPayload,          film,            NAMED_TYPE_TABLE, film
+  FilmPayload,               film,            NAMED_TYPE_TABLE, film
+  FilmsEdge,                 node,            NAMED_TYPE_TABLE, film
+  Film,                      actors,          NAMED_TYPE_TABLE, actor
+  Mutation,                  createFilm,      NAMED_TYPE_TABLE, film
+  Mutation,                  createVenue,     MUTATION_TABLE,   film
+  Mutation,                  deleteFilm,      MUTATION_TABLE,   film
+  Mutation,                  updateFilm,      PAYLOAD_TABLE,    film
+  Mutation,                  updateFilmOver,  PAYLOAD_TABLE,    film
+  Query,                     allFilms,        NAMED_TYPE_TABLE, film
+  Query,                     films,           NAMED_TYPE_TABLE, film
+  Query,                     filmsConnection, NAMED_TYPE_TABLE, film
+  Query,                     pagedFilms,      NAMED_TYPE_TABLE, film
+  QueryPagedFilmsConnection, nodes,           NAMED_TYPE_TABLE, film
+  QueryPagedFilmsConnectionEdge, node,        NAMED_TYPE_TABLE, film
+  """)
+
+extend schema @expectEquals(relation: "graphitron_argument_scope_table", rows: """
+  type_name, field_name,     argument_name, basis,            table_name
+  Mutation,  createFilm,     title,         NAMED_TYPE_TABLE, film
+  Mutation,  createVenue,    name,          MUTATION_TABLE,   film
+  Mutation,  deleteFilm,     title,         MUTATION_TABLE,   film
+  Mutation,  updateFilm,     title,         PAYLOAD_TABLE,    film
+  Mutation,  updateFilmOver, title,         PAYLOAD_TABLE,    film
+  Query,     films,          inActor,       NAMED_TYPE_TABLE, film
+  Query,     films,          title,         NAMED_TYPE_TABLE, film
+  """)

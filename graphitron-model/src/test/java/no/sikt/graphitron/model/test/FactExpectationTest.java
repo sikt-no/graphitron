@@ -356,6 +356,33 @@ class FactExpectationTest {
     }
 
     /**
+     * Navigation is total and single-valued over every field the examples capture: each field
+     * navigates as exactly one type, which is what lets a reader join the relation rather than
+     * left-join it. Counted against the emitted fields rather than the written ones, a minted field
+     * navigating like any other.
+     */
+    @Test
+    @DisplayName("every field navigates as exactly one type")
+    void everyFieldNavigatesAsExactlyOneType() {
+        var f = no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
+        var nav = no.sikt.graphitron.model.Tables.INTENT_FIELD_NAVIGATED_TYPE;
+        var dsl = captured.dsl();
+        var count = dsl.selectCount().from(nav)
+            .where(nav.GRAPH_NAME.eq(f.GRAPH_NAME), nav.TYPE_NAME.eq(f.TYPE_NAME),
+                nav.FIELD_NAME.eq(f.FIELD_NAME))
+            .<Integer>asField("navigations");
+        var offenders = dsl.select(f.GRAPH_NAME, f.TYPE_NAME, f.FIELD_NAME, count)
+            .from(f)
+            .fetch()
+            .stream()
+            .filter(r -> r.value4() != 1)
+            .map(r -> r.value1() + " " + r.value2() + "." + r.value3() + " navigates " + r.value4())
+            .toList();
+        assertThat(offenders).as("fields navigating as no type or as several").isEmpty();
+        assertThat(dsl.fetchCount(f)).as("a store with no fields passes by having none").isPositive();
+    }
+
+    /**
      * The floor that makes an empty read loud. Every other assertion here passes over a folder that
      * has stopped resolving, a glob that has stopped matching, or a document whose blocks were all
      * deleted, so the one that cannot is worth stating separately.

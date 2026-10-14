@@ -1,0 +1,59 @@
+# Which type a field's own SQL reads the facts of, as against the type its signature names. The two
+# differ where a wrapper stands between the field and what it delivers: a connection navigates as
+# the element it paginates, whether the author wrote it out or @asConnection built it, and every
+# other field as its own named type, a union included, which is navigated as rather than through.
+# A type is a connection by its shape: a field named edges whose element object declares a field
+# named node. Half the shape, a node reached some other way, or an interface edge, is no connection.
+
+type Film @table(name: "film") {
+  title: String
+}
+
+type FilmsConnection { edges: [FilmsEdge] }
+type FilmsEdge { node: Film, cursor: String }
+
+# An edge with no node.
+type CursorOnlyConnection { edges: [CursorOnlyEdge] }
+type CursorOnlyEdge { cursor: String }
+
+# A node not reached through edges.
+type NodeOnly { node: Film }
+
+# An interface edge element.
+type InterfaceEdgeConnection { edges: [InterfaceEdge] }
+interface InterfaceEdge { node: Film }
+
+union Document = Film
+
+extend type Query {
+  film: Film
+  filmsConnection: FilmsConnection
+  films: [Film] @asConnection
+  documents: [Document]
+  cursorOnly: CursorOnlyConnection
+  nodeOnly: NodeOnly
+  interfaceEdges: InterfaceEdgeConnection
+}
+
+extend schema @assertContains(relation: "graphitron_connection_element_type", rows: """
+  type_name,            element_type_name
+  FilmsConnection,      Film
+  QueryFilmsConnection, Film
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_connection_element_type", rows: """
+  type_name
+  CursorOnlyConnection
+  NodeOnly
+  InterfaceEdgeConnection
+  """)
+
+extend schema @assertContains(relation: "intent_field_navigated_type", rows: """
+  type_name, field_name,      basis,              navigated_type_name
+  Film,      title,           NAMED_TYPE,         String
+  Query,     film,            NAMED_TYPE,         Film
+  Query,     filmsConnection, CONNECTION_ELEMENT, Film
+  Query,     films,           CONNECTION_ELEMENT, Film
+  Query,     documents,       NAMED_TYPE,         Document
+  Query,     cursorOnly,      NAMED_TYPE,         CursorOnlyConnection
+  """)
