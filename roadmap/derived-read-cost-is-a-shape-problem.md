@@ -1838,6 +1838,16 @@ against its own corpus, filed here because the walk's fixtures were.
   with nothing behind it once the comparisons go. The arms become what an anchor stands on:
   corpus, derivation, oracle writer. A relation the rename leaves with no anchor is a finding,
   not a silent loss. This is R740's gate half.
+* **A relation is closed-world within its scope, so any of them can be asserted empty** `open`.
+  The corpus refuses an empty block on a relation whose comment does not say what its silence
+  means, found by matching phrases like "no row" in the comment, so that "not reached" is never
+  read as "resolves to nothing". In a relational store that distinction belongs in the data: where
+  knowledge is incomplete the store states it as a fact a reader joins to, an attempt that failed
+  (`sql_node_metadata_unreadable`, the defect relations), a reading that stopped part way
+  (`store_graph_progress`) or a corpus never read (`store_graph_source`), and every relation is
+  read as complete for its graph, source or reading. The silence check goes from the corpus;
+  `@assertEmpty` applies to any relation that carries the graph. A relation a document trips over
+  is a finding against that relation, the dissolving `intent_` views being the likely ones.
 * **The fact model cites what pins it** `blocked`, on the registration. `fact-model.adoc` names the
   class six times, and already credits it with `everyRelationIsRegistered`, which moved.
 * **`FactCaptureAgreementTest` is gone** `blocked`, on all above.
