@@ -1,7 +1,7 @@
 ---
 id: R1026
 title: "A nullable nesting wrapper whose columns are all null resolves to an object, not null"
-status: In Review
+status: Ready
 bucket: bug
 priority: 3
 theme: codegen-correctness
@@ -183,6 +183,16 @@ Landed as the Amendment specifies. Points for the reviewer:
 - *Round-1 test repointed.* `referenceChild_blocksTheCollapse` became `listReferenceChild_blocksTheCollapse`, over `[Actor!]!` through `film_actor`.
 - *Reverse FK.* `reverseFkReference_leafIsTheParentsOwnKey` asserts only that the leaf is `language.language_id`; the wrapper therefore never collapses on a fetched row, which the contract allows.
 - *Execution coverage.* `pivot_nesting_host.language_id` (host 1 = 2, Italian; hosts 2 and 3 null) and `PivotNestingHost.origin: HostOrigin` holding `language: Language` and `languageName` through `pivot_nesting_host_language_id_fkey`. Three new cases in `NestingNullContractExecutionTest`. Nothing reads `pivot_nesting_host` by position or with `SELECT *`. In the web sandbox, reseed `rewrite_test` as for round 1.
+
+## Reviewer findings
+
+### In Review → Ready, round 2 (reviewed at `9e6f1fa49`)
+
+The delivery matches the amended contract and the verification build passes; the execution tier demonstrates the goal on sakila. Rework is for the test tier and the spec body only.
+
+- *Code-string assertions on generated method bodies.* `NestingFieldPipelineTest.fetcherMethodBody` reads `MethodSpec.code().toString()`, and five tests assert on it (one with an exact `isEqualTo` over the whole body); `ProjectionUnitRendererTest.splicedNestingArm_projectsTheCallersDemandUnderBaseNamesAheadOfTheCallee` does the same with `indexOf`. `development-principles.adoc` bans this at every tier. The model assertions in those tests (`nullContract()`, `parentRowColumns()`, the blocker class), `TypeSpecAssertions.armProjectsColumn` and `NestingNullContractExecutionTest` already carry what the pins claimed, so they can go without replacement. The spec's own Tests wording asked for the pins; reword it so the next pass is not told to write them.
+- *Spec body is stale.* `## Implementation` still calls the Amendment "the delta still to build". Collapse the shipped plan sections to "shipped at" notes.
+- *Non-blocking, for the next Done gate.* The goal is defined by sis's `EmnerQueryIT.fetchEmnerQuery` and `studieoppbygningQuery` approval, and sis has not run against round 2. A sis IT run on the delivered tree is the strongest evidence the next reviewer can ask for.
 
 ## Provenance
 
