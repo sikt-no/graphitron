@@ -1451,7 +1451,8 @@ Reading a jar is safe for a release and dangerous for a snapshot, and Maven sett
   module's own output, which was false twice, and the lie was load-bearing: it removed the reactor
   limit the `@service` arm leans on.
 * The store records which repository answered `done`, by consequence.
-* **The version is carried** `open`. `store_graph_dependency.coordinate`
+* **The version is carried** `blocked`, on a workspace module being a configuration row, which
+  is the coordinate-keyed half arriving first with a reader. `store_graph_dependency.coordinate`
   is `groupId:artifactId` by design, for naming a module in a refusal, and stops one field short of
   the identity question. The version is a fact the build declares, so it arrives with the dependency
   rather than as another column on the entry. That is also where the dependency stops being keyed
@@ -1470,14 +1471,26 @@ Reading a jar is safe for a release and dangerous for a snapshot, and Maven sett
   and `diagnostics` answers and as an LSP diagnostic; the "could not be resolved" diagnostics it
   explains point back to it, so 98 read as one cause; a warning that never blocks generation, a
   false positive costing one line. Absorbed R987.
-  * **A workspace module with no output is a stale input** `open`. It
-    falls back to the repository, which is the stale read the old resolution made silently.
-  * **What stale compares is decided** `open`. A module's newest source against its newest output,
-    where the `java_file` stamps the source census already holds may answer without a new walk; a
-    snapshot the repository answered against the version the reactor would build; the catalog
-    against the migrations or DDL it was generated from, which means knowing where it came from. A
-    sound approximation is enough. Open with it: whether a rebuild while dev runs clears the warning
-    live.
+  * **What stale compares is decided** `done`. The unit is a workspace module, and it is stale when
+    the run read its installed copy because it has no output, or when its newest source is newer than
+    the newest output the run reads: its `target/classes` class files, or its jar. Sources are its
+    Java sources. The output half is captured already, every class file's
+    time in `store_class_file`; the module and its sources are not, so the rule waits on the two
+    nodes below. Whether a rebuild while dev runs clears the warning live is the parent's to settle.
+    * **A workspace module is a configuration row** `done`. `store_graph_module`, one row per
+      workspace module the run reads, keyed by graph and coordinate, with where it lives and where
+      its build writes; `store_graph_module_entry`, which classpath entry is a form of which module,
+      so neither relation carries a column empty on most rows. Written by the configuration gatherer
+      from the entries, each `ClasspathEntry` carrying the `WorkspaceModule` the plugin resolved it
+      to, the project's own output included.
+    * **A module's newest source is captured** `open`. Per module and not per file, the question
+      being only whether anything changed since the compile. Java sources only, read by the
+      `java-source` gatherer from the roots it walks: the names behind a "not found" are classes,
+      methods and tables, and a change to a resource alone is the rare miss an advisory warning
+      can afford.
+  * **A catalog is compared with what generated it** `open`. The catalog module's sources are
+    generated, so a stale catalog shows only against the migrations or DDL its codegen read, which
+    only the codegen configuration names. Its own fact first, then a condition beside the module's.
 * **A directory's stamp covers what the reading reads** `open`. The stamp walks every file under the
   directory, the generated jOOQ files included, so where services share a module with the catalog a
   migration regenerating jOOQ moves the stamp and every service class is read again though none

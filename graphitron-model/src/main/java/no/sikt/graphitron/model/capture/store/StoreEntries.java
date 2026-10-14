@@ -3,6 +3,7 @@ package no.sikt.graphitron.model.capture.store;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.sink.Progress;
 import no.sikt.graphitron.model.config.SessionStateConfig;
+import no.sikt.graphitron.model.config.WorkspaceModule;
 import no.sikt.graphitron.model.lint.LintConfig;
 import no.sikt.graphitron.model.run.OutputCoordinates;
 import no.sikt.graphitron.model.run.SubjectConfig;
@@ -19,6 +20,8 @@ import java.util.List;
 import java.util.stream.IntStream;
 
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_DEPENDENCY;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_MODULE;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_MODULE_ENTRY;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_DISABLED_RULE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_EXCLUDED_TYPE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_OUTPUT;
@@ -32,7 +35,7 @@ import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
 
 /**
- * Writes what the run was configured with, as configured. Ten relations and nine methods, one per
+ * Writes what the run was configured with, as configured. Twelve relations and ten methods, one per
  * parameter or per group of parameters that arrive together, so a method is changed alone; the
  * mount and the unmount share theirs because one sealed value carries both.
  *
@@ -80,7 +83,7 @@ public final class StoreEntries {
     /**
      * Makes {@code graph}'s configuration rows be exactly what {@code config} declares.
      *
-     * <p>The instant is the caller's, the ten relations having to agree on which reading is
+     * <p>The instant is the caller's, the twelve relations having to agree on which reading is
      * current, and the graph is a parameter rather than read off the configuration: a run that
      * declared nothing at all still has rows to sweep and nothing left to say whose they were.
      *
@@ -110,6 +113,7 @@ public final class StoreEntries {
         lintExcludedTypes(dsl, graph, config.lint(), touchedAt);
         sessionState(dsl, graph, config.sessionState(), touchedAt);
         dependencies(dsl, graph, classpath, touchedAt);
+        modules(dsl, graph, classpath, touchedAt);
         sweep(dsl, graph, touchedAt);
     }
 
@@ -125,7 +129,7 @@ public final class StoreEntries {
         STORE_GRAPH_SCHEMA_INPUT, STORE_GRAPH_SCHEMA_EXTENSION, STORE_GRAPH_SUPERGRAPH,
         STORE_GRAPH_OUTPUT, STORE_GRAPH_TENANT_COLUMN, STORE_GRAPH_LINT_DISABLED_RULE,
         STORE_GRAPH_LINT_EXCLUDED_TYPE, STORE_GRAPH_SESSION_MOUNT, STORE_GRAPH_SESSION_UNMOUNT,
-        STORE_GRAPH_DEPENDENCY);
+        STORE_GRAPH_DEPENDENCY, STORE_GRAPH_MODULE, STORE_GRAPH_MODULE_ENTRY);
 
     /**
      * Deletes this graph's rows that this reading did not touch, which are the parameters the run
@@ -134,7 +138,7 @@ public final class StoreEntries {
      */
     private static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         // Table.field(Field) is a lookup by name returning the loop's own typed column, so one
-        // relation's two name them on all ten.
+        // relation's two name them on all twelve.
         var named = STORE_GRAPH_SCHEMA_INPUT;
         for (Table<?> table : TABLES_TO_SWEEP.reversed()) {
             dsl.deleteFrom(table)
@@ -294,6 +298,50 @@ public final class StoreEntries {
                 .set(t.ORIGIN, excluded(t.ORIGIN))
                 .set(t.COORDINATE, excluded(t.COORDINATE))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+    }
+
+    /**
+     * The workspace modules the classpath's entries are forms of, and which entry each one is. A
+     * module two entries are forms of is one row, the first saying where it lives.
+     */
+    private static void modules(DSLContext dsl, String graph, List<ClasspathEntry> classpath,
+                                LocalDateTime touchedAt) {
+        var modules = new LinkedHashMap<String, WorkspaceModule>();
+        var entries = new LinkedHashMap<String, String>();
+        for (ClasspathEntry entry : classpath) {
+            if (entry.module() == null) continue;
+            modules.putIfAbsent(entry.module().coordinate(), entry.module());
+            entries.putIfAbsent(entry.path().toString(), entry.module().coordinate());
+        }
+        var m = STORE_GRAPH_MODULE;
+        var moduleRows = modules.values().stream().collect(Rows.toRowList(
+            module -> val(graph, m.GRAPH_NAME),
+            module -> val(module.coordinate(), m.COORDINATE),
+            module -> val(module.baseDirectory().toString(), m.BASE_DIRECTORY),
+            module -> val(module.classesDirectory().toString(), m.CLASSES_DIRECTORY),
+            module -> val(module.buildDirectory().toString(), m.BUILD_DIRECTORY),
+            module -> val(touchedAt, m.TOUCHED_AT)));
+        BindBatch.execute(dsl, moduleRows, markers ->
+            dsl.insertInto(m, m.GRAPH_NAME, m.COORDINATE, m.BASE_DIRECTORY, m.CLASSES_DIRECTORY,
+                    m.BUILD_DIRECTORY, m.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(m.BASE_DIRECTORY, excluded(m.BASE_DIRECTORY))
+                .set(m.CLASSES_DIRECTORY, excluded(m.CLASSES_DIRECTORY))
+                .set(m.BUILD_DIRECTORY, excluded(m.BUILD_DIRECTORY))
+                .set(m.TOUCHED_AT, excluded(m.TOUCHED_AT)));
+        var e = STORE_GRAPH_MODULE_ENTRY;
+        var entryRows = entries.entrySet().stream().collect(Rows.toRowList(
+            entry -> val(graph, e.GRAPH_NAME),
+            entry -> val(entry.getKey(), e.SOURCE_NAME),
+            entry -> val(entry.getValue(), e.COORDINATE),
+            entry -> val(touchedAt, e.TOUCHED_AT)));
+        BindBatch.execute(dsl, entryRows, markers ->
+            dsl.insertInto(e, e.GRAPH_NAME, e.SOURCE_NAME, e.COORDINATE, e.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(e.COORDINATE, excluded(e.COORDINATE))
+                .set(e.TOUCHED_AT, excluded(e.TOUCHED_AT)));
     }
 
     /**

@@ -40,8 +40,9 @@ class ClasspathClassificationDecodeTest {
     }
 
     /** A workspace module whose classes directory is {@code classes}, its build directory the parent. */
-    private static AbstractRewriteMojo.WorkspaceModule module(String coordinate, Path classes) {
-        return new AbstractRewriteMojo.WorkspaceModule(coordinate, classes, classes.getParent());
+    private static no.sikt.graphitron.model.config.WorkspaceModule module(String coordinate, Path classes) {
+        return new no.sikt.graphitron.model.config.WorkspaceModule(coordinate, classes.getParent().getParent(),
+            classes, classes.getParent());
     }
 
     private static Dependency declared(String groupId, String artifactId) {

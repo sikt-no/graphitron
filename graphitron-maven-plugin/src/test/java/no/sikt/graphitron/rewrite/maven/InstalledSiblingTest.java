@@ -35,7 +35,7 @@ class InstalledSiblingTest {
 
         assertThat(AbstractRewriteMojo.workspaceRoot(layout.b())).isEqualTo(tmp.toAbsolutePath().normalize());
         assertThat(AbstractRewriteMojo.workspaceModules(tmp))
-            .extracting(AbstractRewriteMojo.WorkspaceModule::coordinate)
+            .extracting(no.sikt.graphitron.model.config.WorkspaceModule::coordinate)
             .as("in declared order, depth first, the nested aggregator itself no module and its "
                 + "module's groupId inherited from its parent")
             .containsExactly("ex:a", "ex:c", "ex:b");
@@ -54,6 +54,16 @@ class InstalledSiblingTest {
                 tuple(layout.ownClasses(), Origin.PROJECT, null, ClasspathEntry.Kind.DIRECTORY),
                 tuple(layout.siblingClasses(), Origin.REACTOR, "ex:a", ClasspathEntry.Kind.DIRECTORY),
                 tuple(layout.nestedClasses(), Origin.SIBLING, "ex:c", ClasspathEntry.Kind.DIRECTORY));
+    }
+
+    @Test
+    void eachWorkspaceEntryCarriesItsModule(@TempDir Path tmp) throws IOException {
+        var layout = Layout.of(tmp);
+
+        assertThat(layout.classpath())
+            .extracting(entry -> entry.module() == null ? null : entry.module().coordinate())
+            .as("the project's own output is its module too")
+            .containsExactly("ex:b", "ex:a", "ex:c");
     }
 
     @Test

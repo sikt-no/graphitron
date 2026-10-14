@@ -3,6 +3,7 @@ package no.sikt.graphitron.model;
 import no.sikt.graphitron.model.capture.config.StoredRecipe;
 import no.sikt.graphitron.model.capture.store.StoreEntries;
 import no.sikt.graphitron.model.config.ClasspathEntry;
+import no.sikt.graphitron.model.config.WorkspaceModule;
 import no.sikt.graphitron.model.config.SessionStateConfig;
 import no.sikt.graphitron.model.lint.LintConfig;
 import no.sikt.graphitron.model.run.OutputCoordinates;
@@ -23,6 +24,8 @@ import java.util.Optional;
 import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_DEPENDENCY;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_MODULE;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_MODULE_ENTRY;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_DISABLED_RULE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_EXCLUDED_TYPE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_OUTPUT;
@@ -142,6 +145,12 @@ class StoreEntriesTest {
                 .fetch(0, String.class))
                 .as("a dependency the build stopped declaring")
                 .containsExactlyInAnyOrder("/build/target/classes", "/repo/jooq-3.20.11.jar");
+            assertThat(dsl.select(STORE_GRAPH_MODULE.COORDINATE)
+                .from(STORE_GRAPH_MODULE)
+                .where(STORE_GRAPH_MODULE.GRAPH_NAME.eq(GRAPH))
+                .fetch(0, String.class))
+                .as("and the module only it provided")
+                .containsExactly("com.example:own");
         });
     }
 
@@ -163,6 +172,35 @@ class StoreEntriesTest {
                     List.of("/repo/jooq-3.20.11.jar", "RELEASE", "DECLARED", "org.jooq:jooq"),
                     List.of("/repo/model-1.0-SNAPSHOT.jar", "SNAPSHOT", "REACTOR",
                         "com.example:model"));
+        });
+    }
+
+    @Test
+    @DisplayName("each workspace module the classpath reads is a row, and each entry names its module")
+    void transcribesTheModulesTheClasspathReads() {
+        withSeededStore(dsl -> {
+            seedGraph(dsl, GRAPH);
+            StoreEntries.write(dsl, GRAPH, SubjectConfig.none(), classpath(), FIRST);
+
+            assertThat(dsl.select(STORE_GRAPH_MODULE.COORDINATE, STORE_GRAPH_MODULE.BASE_DIRECTORY,
+                    STORE_GRAPH_MODULE.CLASSES_DIRECTORY)
+                .from(STORE_GRAPH_MODULE)
+                .where(STORE_GRAPH_MODULE.GRAPH_NAME.eq(GRAPH))
+                .orderBy(STORE_GRAPH_MODULE.COORDINATE)
+                .fetch(r -> List.of(r.value1(), r.value2(), r.value3())))
+                .as("the third-party jar is no module's")
+                .containsExactly(
+                    List.of("com.example:model", "/work/model", "/work/model/target/classes"),
+                    List.of("com.example:own", "/build", "/build/target/classes"));
+            assertThat(dsl.select(STORE_GRAPH_MODULE_ENTRY.SOURCE_NAME, STORE_GRAPH_MODULE_ENTRY.COORDINATE)
+                .from(STORE_GRAPH_MODULE_ENTRY)
+                .where(STORE_GRAPH_MODULE_ENTRY.GRAPH_NAME.eq(GRAPH))
+                .orderBy(STORE_GRAPH_MODULE_ENTRY.SOURCE_NAME)
+                .fetch(r -> List.of(r.value1(), r.value2())))
+                .as("an installed copy is a form of the module as much as its own output is")
+                .containsExactly(
+                    List.of("/build/target/classes", "com.example:own"),
+                    List.of("/repo/model-1.0-SNAPSHOT.jar", "com.example:model"));
         });
     }
 
@@ -264,12 +302,14 @@ class StoreEntriesTest {
     private static List<ClasspathEntry> classpath() {
         return List.of(
             new ClasspathEntry(Path.of("/build/target/classes"), ClasspathEntry.Origin.PROJECT,
-                null, null, ClasspathEntry.Kind.DIRECTORY),
+                null, null, ClasspathEntry.Kind.DIRECTORY,
+                WorkspaceModule.conventional("com.example:own", Path.of("/build"))),
             new ClasspathEntry(Path.of("/repo/jooq-3.20.11.jar"), ClasspathEntry.Origin.DECLARED,
                 "org.jooq:jooq", null, ClasspathEntry.Kind.RELEASE),
             new ClasspathEntry(Path.of("/repo/model-1.0-SNAPSHOT.jar"),
                 ClasspathEntry.Origin.REACTOR, "com.example:model", null,
-                ClasspathEntry.Kind.SNAPSHOT));
+                ClasspathEntry.Kind.SNAPSHOT,
+                WorkspaceModule.conventional("com.example:model", Path.of("/work/model"))));
     }
 
     private static OutputCoordinates output() {
@@ -290,7 +330,7 @@ class StoreEntriesTest {
         STORE_GRAPH_SCHEMA_INPUT, STORE_GRAPH_SCHEMA_EXTENSION, STORE_GRAPH_SUPERGRAPH,
         STORE_GRAPH_OUTPUT, STORE_GRAPH_TENANT_COLUMN, STORE_GRAPH_LINT_DISABLED_RULE,
         STORE_GRAPH_LINT_EXCLUDED_TYPE, STORE_GRAPH_SESSION_MOUNT, STORE_GRAPH_SESSION_UNMOUNT,
-        STORE_GRAPH_DEPENDENCY);
+        STORE_GRAPH_DEPENDENCY, STORE_GRAPH_MODULE, STORE_GRAPH_MODULE_ENTRY);
 
     /** How many rows each of {@code relations} holds for one graph. */
     private static Map<String, Integer> census(DSLContext dsl, String graph, List<Table<?>> relations) {

@@ -33,9 +33,11 @@ import java.util.Objects;
  *                   absent stamp as a claim, since none is the answer for "ask the bytes"
  * @param kind       what the entry is as the producer resolved it: a directory the build writes,
  *                   or a jar that is a release or a snapshot
+ * @param module     the workspace module this entry is a form of, its output or a copy of it;
+ *                   {@code null} for an entry no module of the workspace builds
  */
 public record ClasspathEntry(Path path, Origin origin, String coordinate, String suppliedStamp,
-                             Kind kind) {
+                             Kind kind, WorkspaceModule module) {
 
     /** What an entry is, which decides whether its bytes can change under its name. */
     public enum Kind {
@@ -91,6 +93,12 @@ public record ClasspathEntry(Path path, Origin origin, String coordinate, String
         Objects.requireNonNull(path, "path");
         Objects.requireNonNull(origin, "origin");
         Objects.requireNonNull(kind, "kind");
+    }
+
+    /** An entry no module of the workspace builds. */
+    public ClasspathEntry(Path path, Origin origin, String coordinate, String suppliedStamp,
+                          Kind kind) {
+        this(path, origin, coordinate, suppliedStamp, kind, null);
     }
 
     /** An entry whose producer did not resolve what kind it is; see {@link Kind#unresolved}. */

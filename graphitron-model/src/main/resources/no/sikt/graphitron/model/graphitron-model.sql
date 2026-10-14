@@ -252,6 +252,41 @@ COMMENT ON COLUMN store_graph_dependency.origin IS 'how this entry reached the c
 COMMENT ON COLUMN store_graph_dependency.coordinate IS 'the entry''s groupId:artifactId, or the module name for a reactor sibling found by convention; NULL for the project''s own output, which is what the origin beside it already says. Here for the same reason the refusals carry it: "declare a dependency on module X" needs a name no target/classes path supplies';
 COMMENT ON COLUMN store_graph_dependency.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the entries the build no longer declares, which an upsert cannot find because there is no incoming row to match';
 
+CREATE TABLE store_graph_module (
+  graph_name        VARCHAR NOT NULL,
+  coordinate        VARCHAR NOT NULL,
+  base_directory    VARCHAR NOT NULL,
+  classes_directory VARCHAR NOT NULL,
+  build_directory   VARCHAR NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+COMMENT ON TABLE store_graph_module IS 'One module of the workspace whose output or a copy of it is on the classpath the build handed this graph''s run, with where it lives and where its build writes. For example the consumer''s service module, at its own directory, writing its classes to target/classes and its jar to target.';
+COMMENT ON COLUMN store_graph_module.graph_name IS 'the configuring graph''s partition, anchored by store_graph';
+COMMENT ON COLUMN store_graph_module.coordinate IS 'the module''s groupId:artifactId, its groupId its own or inherited from its parent pom; with the graph, the key';
+COMMENT ON COLUMN store_graph_module.base_directory IS 'the directory holding the module''s pom, under which its sources live';
+COMMENT ON COLUMN store_graph_module.classes_directory IS 'where the module''s build writes its classes, target/classes by convention';
+COMMENT ON COLUMN store_graph_module.build_directory IS 'where the module''s build writes everything else, its jar among them, target by convention';
+COMMENT ON COLUMN store_graph_module.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the modules the run no longer reads';
+
+CREATE TABLE store_graph_module_entry (
+  graph_name  VARCHAR NOT NULL,
+  source_name VARCHAR NOT NULL,
+  coordinate  VARCHAR NOT NULL,
+  touched_at  TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name),
+  FOREIGN KEY (graph_name, source_name)
+    REFERENCES store_graph_dependency (graph_name, source_name) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES store_graph_module (graph_name, coordinate) ON DELETE CASCADE
+);
+COMMENT ON TABLE store_graph_module_entry IS 'One classpath entry of this graph''s run, and the workspace module it is a form of. For example the installed service-1.0-SNAPSHOT.jar Maven resolved for the service module, or that module''s target/classes read in its place.';
+COMMENT ON COLUMN store_graph_module_entry.graph_name IS 'the configuring graph''s partition';
+COMMENT ON COLUMN store_graph_module_entry.source_name IS 'the entry, as store_graph_dependency spells it; with the graph, the key, an entry being a form of one module at most';
+COMMENT ON COLUMN store_graph_module_entry.coordinate IS 'the module the entry is a form of: its own output, or a copy Maven resolved where the module has none';
+COMMENT ON COLUMN store_graph_module_entry.touched_at IS 'when the reading that wrote this row ran; swept with the rest of the graph''s configuration';
+
 CREATE TABLE store_source (
   source_name VARCHAR NOT NULL,
   source_kind VARCHAR NOT NULL,
@@ -13788,6 +13823,12 @@ COMMENT ON COLUMN meta_relation.example IS 'one example row stated concretely, a
 COMMENT ON COLUMN meta_relation.rationale IS 'why this relation exists, a paragraph at most by the CHECK beside it; measurements, rejected shapes and arguments with earlier authors belong in the architecture docs rather than here';
 
 INSERT INTO meta_grain VALUES
+  ('graph-module',
+   'one workspace module whose output or a copy of it one graph''s run reads',
+   'graph_name, coordinate', 'configuration'),
+  ('graph-module-entry',
+   'one classpath entry of one graph''s run that a workspace module provides',
+   'graph_name, source_name', 'configuration'),
   ('graph-dependency',
    'one entry of the compile classpath one graph''s build declares, as the build resolved it',
    'graph_name, source_name', 'configuration'),
@@ -14221,6 +14262,14 @@ INSERT INTO graphitron_defect_type VALUES
    'A field on the subscription root is a subscription, and graphitron generates no subscription resolver yet.');
 
 INSERT INTO meta_relation VALUES
+  ('store_graph_module', 'graph-module', 'store',
+   'One module of the workspace whose output or a copy of it is on the classpath the build handed this graph''s run, with where it lives and where its build writes.',
+   'For example the consumer''s service module, at its own directory, writing its classes to target/classes and its jar to target.',
+   'Configuration the plugin resolves rather than a reading: the workspace is every module under the outermost aggregator, and which of them the run reads is what its classpath holds. Keyed by coordinate, which is the module''s identity across the forms Maven hands a run, its output directory, its packaged jar or its installed jar, where store_graph_dependency is keyed by the path of whichever form it was. Only the modules the run reads: a module the classpath does not hold is no question this graph''s run can be asked. What a reader wants of a module is whether the run read it current, which needs where it lives and where its build writes.'),
+  ('store_graph_module_entry', 'graph-module-entry', 'store',
+   'One classpath entry of this graph''s run, and the workspace module it is a form of.',
+   'For example the installed service-1.0-SNAPSHOT.jar Maven resolved for the service module, or that module''s target/classes read in its place.',
+   'The link between the two identities a module has in a run, the path the classpath holds and the coordinate the module is, held apart so that neither relation carries a column empty on most of its rows: most entries are no module''s, and a module is told by its coordinate whatever form it arrived in.'),
   ('store_graph_progress', 'gatherer-progress', 'capture',
    'How far a capture of one graph got: one row per gatherer that reads it, and one for the capture as a whole.',
    'For example a capture that hung in the graphitron gatherer leaves its row started after it last completed, every gatherer before it completed with this reading''s instants, and the capture row incomplete.',

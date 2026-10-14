@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.maven;
 
 import graphql.schema.idl.errors.SchemaProblem;
 import no.sikt.graphitron.model.config.ClasspathEntry;
+import no.sikt.graphitron.model.config.WorkspaceModule;
 import no.sikt.graphitron.model.config.ClasspathEntry.Origin;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
@@ -645,19 +646,6 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     }
 
     /**
-     * One module of the workspace: its {@code groupId:artifactId}, and where its build writes its
-     * classes and its jar.
-     */
-    record WorkspaceModule(String coordinate, Path classesDirectory, Path buildDirectory) {
-
-        /** A module laid out by convention, its build writing under {@code target}. */
-        static WorkspaceModule conventional(String coordinate, Path basedir) {
-            Path build = basedir.resolve("target").toAbsolutePath().normalize();
-            return new WorkspaceModule(coordinate, build.resolve("classes"), build);
-        }
-    }
-
-    /**
      * Every module of the workspace this module belongs to: the projects Maven loaded, with the
      * output directories their builds declare, then every module under {@link #workspaceRoot}
      * that Maven did not load, laid out by convention. Loaded first because a loaded project's
@@ -670,6 +658,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             String build = p.getBuild().getDirectory();
             byCoordinate.putIfAbsent(p.getGroupId() + ":" + p.getArtifactId(), new WorkspaceModule(
                 p.getGroupId() + ":" + p.getArtifactId(),
+                p.getBasedir().toPath().toAbsolutePath().normalize(),
                 Path.of(p.getBuild().getOutputDirectory()).toAbsolutePath().normalize(),
                 build == null ? p.getBasedir().toPath().resolve("target").toAbsolutePath().normalize()
                     : Path.of(build).toAbsolutePath().normalize()));
@@ -782,8 +771,9 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             Path path = module.classesDirectory();
             if (byPath.containsKey(path) || !Files.isDirectory(path)) continue;
             Origin origin = path.equals(projectOutputDirectory) ? Origin.PROJECT : Origin.SIBLING;
-            byPath.put(path, new ClasspathEntry(path,
-                origin, origin == Origin.PROJECT ? null : module.coordinate()));
+            byPath.put(path, new ClasspathEntry(path, origin,
+                origin == Origin.PROJECT ? null : module.coordinate(), null,
+                ClasspathEntry.Kind.DIRECTORY, module));
         }
         return List.copyOf(byPath.values());
     }
@@ -793,7 +783,8 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
         Set<String> declaredKeys, List<WorkspaceModule> workspace
     ) {
         if (path.equals(projectOutputDirectory)) {
-            return new ClasspathEntry(path, Origin.PROJECT, null, resolvedIdentity(path));
+            return new ClasspathEntry(path, Origin.PROJECT, null, resolvedIdentity(path),
+                ClasspathEntry.Kind.unresolved(path), moduleOf(path, null, workspace));
         }
         Artifact artifact = artifactByPath.get(path);
         boolean direct = artifact != null && isDirect(artifact, declaredKeys);
@@ -810,7 +801,8 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             // and a module the reactor produces is never a release.
             Path own = ownOutput(module, artifact, path);
             return new ClasspathEntry(own, direct ? Origin.REACTOR : Origin.SIBLING,
-                module.coordinate(), resolvedIdentity(own), ClasspathEntry.Kind.unresolved(own));
+                module.coordinate(), resolvedIdentity(own), ClasspathEntry.Kind.unresolved(own),
+                module);
         }
         // Taken once per element and attached to whichever arm claims it: the stamp is a fact
         // about the file, and neither origin below changes what the bytes are.
