@@ -81,14 +81,14 @@ public final class FieldPathResolutions {
         var t = GRAPHITRON_FIELD_PATH_RESOLUTION_KEYED;
         var batch = dsl.batch(dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME,
-                t.TARGET_SOURCE_NAME, t.TARGET_SCHEMA, t.TARGET_TABLE, t.POSITION,
+                t.ARRIVING_TYPE_NAME, t.POSITION,
                 t.VIA, t.KEY_MATCHED_BY,
                 t.CONSTRAINT_SOURCE_NAME, t.CONSTRAINT_SCHEMA, t.CONSTRAINT_TABLE,
                 t.CONSTRAINT_NAME, t.FK_ON_FROM,
                 t.FROM_SOURCE_NAME, t.FROM_SCHEMA, t.FROM_TABLE,
                 t.TO_SOURCE_NAME, t.TO_SCHEMA, t.TO_TABLE,
                 t.REACHED_BY_TAIL, t.REACHED_BY_HEAD, t.TOUCHED_AT)
-            .values(markers(23))
+            .values(markers(21))
             .onDuplicateKeyUpdate()
             .set(t.VIA, excluded(t.VIA))
             .set(t.KEY_MATCHED_BY, excluded(t.KEY_MATCHED_BY))
@@ -103,7 +103,7 @@ public final class FieldPathResolutions {
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
         for (var row : rows) {
             batch = batch.bind(row.getGraphName(), row.getTypeName(), row.getFieldName(),
-                row.getTargetSourceName(), row.getTargetSchema(), row.getTargetTable(),
+                row.getArrivingTypeName(),
                 row.getPosition(), row.getVia(), row.getKeyMatchedBy(),
                 row.getConstraintSourceName(), row.getConstraintSchema(), row.getConstraintTable(),
                 row.getConstraintName(), row.getFkOnFrom(),
@@ -122,11 +122,11 @@ public final class FieldPathResolutions {
         var t = GRAPHITRON_FIELD_PATH_RESOLUTION_KEYLESS;
         var batch = dsl.batch(dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME,
-                t.TARGET_SOURCE_NAME, t.TARGET_SCHEMA, t.TARGET_TABLE, t.POSITION, t.VIA,
+                t.ARRIVING_TYPE_NAME, t.POSITION, t.VIA,
                 t.FROM_SOURCE_NAME, t.FROM_SCHEMA, t.FROM_TABLE,
                 t.TO_SOURCE_NAME, t.TO_SCHEMA, t.TO_TABLE,
                 t.REACHED_BY_TAIL, t.REACHED_BY_HEAD, t.TOUCHED_AT)
-            .values(markers(17))
+            .values(markers(15))
             .onDuplicateKeyUpdate()
             .set(t.VIA, excluded(t.VIA))
             .set(t.REACHED_BY_TAIL, excluded(t.REACHED_BY_TAIL))
@@ -134,7 +134,7 @@ public final class FieldPathResolutions {
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
         for (var row : rows) {
             batch = batch.bind(row.getGraphName(), row.getTypeName(), row.getFieldName(),
-                row.getTargetSourceName(), row.getTargetSchema(), row.getTargetTable(),
+                row.getArrivingTypeName(),
                 row.getPosition(), row.getVia(),
                 row.getFromSourceName(), row.getFromSchema(), row.getFromTable(),
                 row.getToSourceName(), row.getToSchema(), row.getToTable(),
@@ -151,10 +151,10 @@ public final class FieldPathResolutions {
         var t = GRAPHITRON_FIELD_PATH_RESOLUTION_OPEN;
         var batch = dsl.batch(dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME,
-                t.TARGET_SOURCE_NAME, t.TARGET_SCHEMA, t.TARGET_TABLE, t.POSITION, t.VIA,
+                t.ARRIVING_TYPE_NAME, t.POSITION, t.VIA,
                 t.TO_SOURCE_NAME, t.TO_SCHEMA, t.TO_TABLE,
                 t.REACHED_BY_TAIL, t.REACHED_BY_HEAD, t.TOUCHED_AT)
-            .values(markers(14))
+            .values(markers(12))
             .onDuplicateKeyUpdate()
             .set(t.VIA, excluded(t.VIA))
             .set(t.REACHED_BY_TAIL, excluded(t.REACHED_BY_TAIL))
@@ -162,7 +162,7 @@ public final class FieldPathResolutions {
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
         for (var row : rows) {
             batch = batch.bind(row.getGraphName(), row.getTypeName(), row.getFieldName(),
-                row.getTargetSourceName(), row.getTargetSchema(), row.getTargetTable(),
+                row.getArrivingTypeName(),
                 row.getPosition(), row.getVia(),
                 row.getToSourceName(), row.getToSchema(), row.getToTable(),
                 row.getReachedByTail(), row.getReachedByHead(), touchedAt);
@@ -179,12 +179,12 @@ public final class FieldPathResolutions {
         var t = GRAPHITRON_FIELD_PATH_RESOLUTION_CONDITION;
         var batch = dsl.batch(dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME,
-                t.TARGET_SOURCE_NAME, t.TARGET_SCHEMA, t.TARGET_TABLE, t.POSITION, t.VIA,
+                t.ARRIVING_TYPE_NAME, t.POSITION, t.VIA,
                 t.METHOD_SOURCE_NAME, t.METHOD_CLASS_NAME, t.METHOD_NAME, t.METHOD_DESCRIPTOR,
                 t.FROM_SOURCE_NAME, t.FROM_SCHEMA, t.FROM_TABLE,
                 t.TO_SOURCE_NAME, t.TO_SCHEMA, t.TO_TABLE,
                 t.REACHED_BY_TAIL, t.REACHED_BY_HEAD, t.TOUCHED_AT)
-            .values(markers(21))
+            .values(markers(19))
             .onDuplicateKeyUpdate()
             .set(t.VIA, excluded(t.VIA))
             .set(t.FROM_SOURCE_NAME, excluded(t.FROM_SOURCE_NAME))
@@ -195,7 +195,7 @@ public final class FieldPathResolutions {
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
         for (var row : rows) {
             batch = batch.bind(row.getGraphName(), row.getTypeName(), row.getFieldName(),
-                row.getTargetSourceName(), row.getTargetSchema(), row.getTargetTable(),
+                row.getArrivingTypeName(),
                 row.getPosition(), row.getVia(),
                 row.getMethodSourceName(), row.getMethodClassName(), row.getMethodName(),
                 row.getMethodDescriptor(),

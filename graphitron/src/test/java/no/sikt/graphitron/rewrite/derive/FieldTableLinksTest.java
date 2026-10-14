@@ -302,8 +302,11 @@ class FieldTableLinksTest {
     void theLastLinkArrivesAtTheTarget() {
         withCaptured(dsl -> {
             var t = GRAPHITRON_FIELD_TABLE_LINK;
-            var last = dsl.select(t.TYPE_NAME, t.FIELD_NAME, t.TARGET_TABLE, t.TO_TABLE, t.POSITION)
+            var b = no.sikt.graphitron.model.Tables.GRAPHITRON_RESOLVED_TYPE_BINDING;
+            var last = dsl.select(t.TYPE_NAME, t.FIELD_NAME, b.TABLE_NAME, t.TO_TABLE, t.POSITION,
+                    t.ARRIVING_TYPE_NAME)
                 .from(t)
+                .join(b).on(b.GRAPH_NAME.eq(t.GRAPH_NAME), b.TYPE_NAME.eq(t.ARRIVING_TYPE_NAME))
                 .where(t.GRAPH_NAME.eq(CapturedStore.GRAPH))
                 .fetch();
             assertThat(last).isNotEmpty();
@@ -311,7 +314,7 @@ class FieldTableLinksTest {
                 .filter(r -> !dsl.fetchExists(dsl.selectFrom(t)
                     .where(t.GRAPH_NAME.eq(CapturedStore.GRAPH))
                     .and(t.TYPE_NAME.eq(r.value1())).and(t.FIELD_NAME.eq(r.value2()))
-                    .and(t.TARGET_TABLE.eq(r.value3()))
+                    .and(t.ARRIVING_TYPE_NAME.eq(r.value6()))
                     .and(t.POSITION.gt(r.value5()))))
                 .map(r -> r.value1() + "." + r.value2() + " -> " + r.value4()
                     + " (target " + r.value3() + ")")
@@ -375,7 +378,7 @@ class FieldTableLinksTest {
      */
     private static List<String> readings(DSLContext dsl) {
         var r = no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_READING;
-        return dsl.select(r.TYPE_NAME, r.FIELD_NAME, r.TARGET_TABLE, r.POSITION, r.LAST_POSITION,
+        return dsl.select(r.TYPE_NAME, r.FIELD_NAME, r.ARRIVING_TYPE_NAME, r.POSITION, r.LAST_POSITION,
                 r.VIA, r.CONSTRAINT_NAME, r.FK_ON_FROM, r.FROM_TABLE, r.TO_TABLE)
             .from(r).where(r.GRAPH_NAME.eq(CapturedStore.GRAPH))
             .orderBy(r.TYPE_NAME, r.FIELD_NAME, r.POSITION)
@@ -385,7 +388,7 @@ class FieldTableLinksTest {
     /** Every stored link of the fixture's graph, as a comparable line. */
     private static List<String> tableRows(DSLContext dsl) {
         var t = GRAPHITRON_FIELD_TABLE_LINK;
-        return dsl.select(t.TYPE_NAME, t.FIELD_NAME, t.TARGET_TABLE, t.POSITION, t.VIA,
+        return dsl.select(t.TYPE_NAME, t.FIELD_NAME, t.ARRIVING_TYPE_NAME, t.POSITION, t.VIA,
                 t.KEY_MATCHED_BY, t.CONSTRAINT_NAME, t.FK_ON_FROM, t.FROM_TABLE, t.TO_TABLE)
             .from(t).where(t.GRAPH_NAME.eq(CapturedStore.GRAPH))
             .fetch(FieldTableLinksTest::line);
@@ -394,7 +397,7 @@ class FieldTableLinksTest {
     /** The same, as the rule states it. */
     private static List<String> ruleRows(DSLContext dsl) {
         var r = GRAPHITRON_FIELD_TABLE_LINK_RULE;
-        return dsl.select(r.TYPE_NAME, r.FIELD_NAME, r.TARGET_TABLE, r.POSITION, r.VIA,
+        return dsl.select(r.TYPE_NAME, r.FIELD_NAME, r.ARRIVING_TYPE_NAME, r.POSITION, r.VIA,
                 r.KEY_MATCHED_BY, r.CONSTRAINT_NAME, r.FK_ON_FROM, r.FROM_TABLE, r.TO_TABLE)
             .from(r).where(r.GRAPH_NAME.eq(CapturedStore.GRAPH))
             .fetch(FieldTableLinksTest::line);
@@ -410,13 +413,16 @@ class FieldTableLinksTest {
 
     private static List<String> links(DSLContext dsl, String typeName, String fieldName) {
         var t = GRAPHITRON_FIELD_TABLE_LINK;
-        return dsl.select(t.TARGET_TABLE, t.POSITION, t.VIA, t.FROM_TABLE, t.TO_TABLE,
+        // Labelled by the arriving type's table, which is what the cases below were written about.
+        var b = no.sikt.graphitron.model.Tables.GRAPHITRON_RESOLVED_TYPE_BINDING;
+        return dsl.select(b.TABLE_NAME, t.POSITION, t.VIA, t.FROM_TABLE, t.TO_TABLE,
                 t.CONSTRAINT_TABLE, t.CONSTRAINT_NAME, t.FK_ON_FROM)
             .from(t)
+            .join(b).on(b.GRAPH_NAME.eq(t.GRAPH_NAME), b.TYPE_NAME.eq(t.ARRIVING_TYPE_NAME))
             .where(t.GRAPH_NAME.eq(CapturedStore.GRAPH))
             .and(t.TYPE_NAME.eq(typeName))
             .and(t.FIELD_NAME.eq(fieldName))
-            .orderBy(t.TARGET_TABLE, t.POSITION)
+            .orderBy(b.TABLE_NAME, t.POSITION)
             .fetch(r -> "[" + r.value1() + "] " + r.value2() + " " + r.value3() + " "
                 + (r.value4() == null ? "(none)" : r.value4()) + " -> " + r.value5()
                 + (r.value7() == null ? ""

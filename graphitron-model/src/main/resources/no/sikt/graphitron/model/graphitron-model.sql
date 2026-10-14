@@ -5265,6 +5265,28 @@ COMMENT ON COLUMN graphitron_field_target_table.arriving_type_name IS 'the type 
 COMMENT ON COLUMN graphitron_field_target_table.basis IS 'which rule named the type, a closed vocabulary of two. TARGET: the target binds a table, a routine result''s binding included. PARTICIPANT: the target binds none, so each member that binds one is a statement of its own. Disjoint by construction';
 COMMENT ON COLUMN graphitron_field_target_table.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
+CREATE TABLE graphitron_resolved_type_binding (
+  graph_name        VARCHAR NOT NULL,
+  type_name         VARCHAR NOT NULL,
+  table_source_name VARCHAR NOT NULL,
+  table_schema      VARCHAR NOT NULL,
+  table_name        VARCHAR NOT NULL,
+  candidates        INTEGER NOT NULL,
+  PRIMARY KEY (graph_name, type_name, table_source_name, table_schema, table_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+COMMENT ON TABLE graphitron_resolved_type_binding IS 'Which catalog table stands for a graph''s type, from either population that can answer: one row per candidate table. For example a type carrying @table(name: "film") is one row naming film, and a type standing for a @routine chain''s result is one row naming the table that chain lands on.';
+COMMENT ON COLUMN graphitron_resolved_type_binding.graph_name IS 'the owning graph''s partition, carried from whichever arm produced the row';
+COMMENT ON COLUMN graphitron_resolved_type_binding.type_name IS 'the type the table stands for';
+COMMENT ON COLUMN graphitron_resolved_type_binding.table_source_name IS 'the resolved table''s catalog partition, the first column of the sql_table key this row names';
+COMMENT ON COLUMN graphitron_resolved_type_binding.table_schema IS 'the resolved table''s SQL schema; what tells two candidates of one name apart';
+COMMENT ON COLUMN graphitron_resolved_type_binding.table_name IS 'the resolved table''s SQL name. With the two columns above this is sql_table''s full key; the table''s other facts are one join away, per the referenced-side discipline sql_referential_constraint states';
+COMMENT ON COLUMN graphitron_resolved_type_binding.candidates IS 'how many distinct tables stand for this type across both arms, this row''s table being one of them; 1 on an unambiguous binding, which is the guard a reader that must pick one applies. Recounted here rather than carried from an arm, for the reason the view comment gives';
+
+CREATE INDEX ix_resolved_type_binding_type ON graphitron_resolved_type_binding
+  (graph_name, type_name);
+COMMENT ON INDEX ix_resolved_type_binding_type IS 'Serves the type probe every reader of this relation makes: a rule holding a type name and asking which table stands for it. The registration shipped without one, which cost nothing while every reader spelled its type expression inline, H2 pushing that expression down into the probe. It stopped costing nothing the moment intent_field_navigated_type projected the expression into a column of its own: a join onto a projected column is a join the planner is free to satisfy by scanning, and its readers, graphitron_field_scope_table_rule among them, each began visiting more rows through this table than through the view it replaced. That is the same mirror the condition family met on graphitron_field_scope_table, arriving on a third relation: an inlined view can be evaluated restricted where a table can only be scanned, so an unkeyed target is not a faster shape but a differently shaped one, and which of the two wins depends on what the reader has in hand. The index is what makes the table probeable on the key its readers actually hold, and with it the projection costs no reader anything.';
+
 CREATE TABLE graphitron_method_reference_entry (
   graph_name    VARCHAR NOT NULL,
   site          VARCHAR NOT NULL,
@@ -5971,9 +5993,7 @@ CREATE TABLE graphitron_field_table_link (
   graph_name             VARCHAR NOT NULL,
   type_name              VARCHAR NOT NULL,
   field_name             VARCHAR NOT NULL,
-  target_source_name     VARCHAR NOT NULL,
-  target_schema          VARCHAR NOT NULL,
-  target_table           VARCHAR NOT NULL,
+  arriving_type_name     VARCHAR NOT NULL,
   position               INT     NOT NULL,
   via                    VARCHAR NOT NULL,
   key_matched_by         VARCHAR,
@@ -5990,12 +6010,12 @@ CREATE TABLE graphitron_field_table_link (
   to_table               VARCHAR NOT NULL,
   touched_at             TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name,
-               target_source_name, target_schema, target_table, position),
-  -- The chain this link belongs to, which is what makes the row per target rather than per field.
-  FOREIGN KEY (graph_name, type_name, field_name,
-               target_source_name, target_schema, target_table)
-    REFERENCES graphitron_field_table
-      (graph_name, type_name, field_name, to_source_name, to_schema, to_table) ON DELETE CASCADE,
+               arriving_type_name, position),
+  -- The chain this link belongs to, which is what makes the row per arriving type rather than per
+  -- field.
+  FOREIGN KEY (graph_name, type_name, field_name, arriving_type_name)
+    REFERENCES graphitron_field_target_table
+      (graph_name, type_name, field_name, arriving_type_name) ON DELETE CASCADE,
   -- The written link this resolves, so a resolution cannot outlive the writing it is about, and
   -- the chain's own length is one join away: a chain with links this relation holds no row for is
   -- one the resolution did not finish, and a reader can see that rather than having to trust it.
@@ -6030,9 +6050,7 @@ COMMENT ON TABLE graphitron_field_table_link IS 'Where one link of a field''s ch
 COMMENT ON COLUMN graphitron_field_table_link.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_field_table_link.type_name IS 'the type owning the field whose chain this link is part of';
 COMMENT ON COLUMN graphitron_field_table_link.field_name IS 'the field whose chain this link is part of';
-COMMENT ON COLUMN graphitron_field_table_link.target_source_name IS 'the catalog partition of the target this link''s chain leads to, the first column of the graphitron_field_table row this resolution belongs to';
-COMMENT ON COLUMN graphitron_field_table_link.target_schema IS 'the target''s SQL schema';
-COMMENT ON COLUMN graphitron_field_table_link.target_table IS 'the target''s SQL name. With the two columns above and the coordinate, graphitron_field_table''s whole key: the target is not this link''s arrival but the arrival of the chain it stands in, which is why a field with several targets resolves its links once per target rather than once';
+COMMENT ON COLUMN graphitron_field_table_link.arriving_type_name IS 'the type whose table the chain this row stands in arrives at, one of the field''s graphitron_field_target_table rows; its table is graphitron_resolved_type_binding''s. A field with several arriving types walks once per type';
 COMMENT ON COLUMN graphitron_field_table_link.position IS 'the link''s place in the chain, carried from graphitron_field_path, where the order is stated and what makes it an order is argued. Numbered from zero without a hole there; a hole here is a link this resolution could not answer for';
 COMMENT ON COLUMN graphitron_field_table_link.via IS 'which authored arm moved the chain, in a closed vocabulary of five. ROUTINE: the link is a @routine application and its arrival is the function result. KEY: the element named a foreign key, and the constraint columns beside this one say which and which way round. TABLE: the element named a table and a foreign key between the departure and it is what joins them. NAME_MATCH: the element named a table and the departure is a function result, which declares no foreign key, so the join is the whole primary-key name match sql_name_matched_key_column states. CONDITION: the element named neither a key nor a table and carried a condition, whose method signature declares both ends. Provenance and fork at once: it says which relation holds the link''s join columns, so a reader never has to try each in turn';
 COMMENT ON COLUMN graphitron_field_table_link.key_matched_by IS 'which name the author''s key spelling matched, SQL_NAME for the constraint''s own name in the catalog and JOOQ_NAME for the generated constant''s, in that precedence. NULL off the KEY arm, no other arm matching a key name at all. The precedence is the generator''s resolver''s: a written qualifier binds against the schema of the table holding the constraint, an unqualified name matches the SQL name, and the generated name becomes eligible only where no SQL name in this graph''s sources answers';
@@ -6344,7 +6362,7 @@ COMMENT ON COLUMN code_external_field_method.descriptor IS 'the method''s descri
 COMMENT ON COLUMN code_external_field_method.touched_at IS 'when the reading that produced this row ran; swept with the method it hangs on';
 
 CREATE VIEW graphitron_field_path_reading
-  (graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+  (graph_name, type_name, field_name, arriving_type_name,
    position, last_position, via, key_matched_by,
    constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from,
    from_source_name, from_schema, from_table, to_source_name, to_schema, to_table,
@@ -6388,18 +6406,18 @@ condition_spelling (graph_name, source_name, source_line, source_column, class_n
 -- consulting cardinality for a column read through a path.
 link (graph_name, type_name, field_name, position, last_position,
       source_name, source_line, source_column,
-      target_source_name, target_schema, target_table, single_valued) AS (
+      arriving_type_name, single_valued) AS (
   SELECT cl.graph_name, cl.type_name, cl.field_name, cl.position,
          (SELECT MAX(cl2.position) FROM graphitron_field_path cl2
            WHERE cl2.graph_name = cl.graph_name AND cl2.type_name = cl.type_name
              AND cl2.field_name = cl.field_name),
          cl.source_name, cl.source_line, cl.source_column,
-         ft.to_source_name, ft.to_schema, ft.to_table,
+         tt.arriving_type_name,
          NOT (f.is_list OR nv.wrapper_type_name IS NOT NULL) OR nt.kind IN ('SCALAR', 'ENUM')
     FROM graphitron_field_path cl
-    JOIN graphitron_field_table ft
-      ON ft.graph_name = cl.graph_name AND ft.type_name = cl.type_name
-     AND ft.field_name = cl.field_name
+    JOIN graphitron_field_target_table tt
+      ON tt.graph_name = cl.graph_name AND tt.type_name = cl.type_name
+     AND tt.field_name = cl.field_name
     JOIN graphitron_field f
       ON f.graph_name = cl.graph_name AND f.type_name = cl.type_name
      AND f.field_name = cl.field_name
@@ -6418,7 +6436,7 @@ link (graph_name, type_name, field_name, position, last_position,
   -- a function result is where a chain's rows begin. Read at the element, the target playing no
   -- part in what the name resolves to.
   SELECT l.graph_name, l.type_name, l.field_name,
-         l.target_source_name, l.target_schema, l.target_table,
+         l.arriving_type_name,
          l.position, l.last_position, 'ROUTINE', CAST(NULL AS VARCHAR),
          CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
          CAST(NULL AS VARCHAR), CAST(NULL AS BOOLEAN),
@@ -6455,7 +6473,7 @@ link (graph_name, type_name, field_name, position, last_position,
   -- name together; an unqualified one matches the SQL name; and only where no SQL constraint in
   -- the graph's sources answers it does the generated constant become eligible.
   SELECT l.graph_name, l.type_name, l.field_name,
-         l.target_source_name, l.target_schema, l.target_table,
+         l.arriving_type_name,
          l.position, l.last_position, 'KEY', 'SQL_NAME',
          h.source_name, h.table_schema, h.table_name, h.constraint_name, h.fk_on_from,
          h.from_source_name, h.from_schema, h.from_table,
@@ -6479,7 +6497,7 @@ link (graph_name, type_name, field_name, position, last_position,
           OR h.fk_on_from = l.single_valued)
   UNION ALL
   SELECT l.graph_name, l.type_name, l.field_name,
-         l.target_source_name, l.target_schema, l.target_table,
+         l.arriving_type_name,
          l.position, l.last_position, 'KEY', 'SQL_NAME',
          h.source_name, h.table_schema, h.table_name, h.constraint_name, h.fk_on_from,
          h.from_source_name, h.from_schema, h.from_table,
@@ -6503,7 +6521,7 @@ link (graph_name, type_name, field_name, position, last_position,
           OR h.fk_on_from = l.single_valued)
   UNION ALL
   SELECT l.graph_name, l.type_name, l.field_name,
-         l.target_source_name, l.target_schema, l.target_table,
+         l.arriving_type_name,
          l.position, l.last_position, 'KEY', 'JOOQ_NAME',
          h.source_name, h.table_schema, h.table_name, h.constraint_name, h.fk_on_from,
          h.from_source_name, h.from_schema, h.from_table,
@@ -6533,7 +6551,7 @@ link (graph_name, type_name, field_name, position, last_position,
   -- An element naming a table alone arrives there, and the route is a hop of some key that lands
   -- on it. Each such hop is a reading; the chain picks the one whose departure it reaches.
   SELECT l.graph_name, l.type_name, l.field_name,
-         l.target_source_name, l.target_schema, l.target_table,
+         l.arriving_type_name,
          l.position, l.last_position, 'TABLE', CAST(NULL AS VARCHAR),
          h.source_name, h.table_schema, h.table_name, h.constraint_name, h.fk_on_from,
          h.from_source_name, h.from_schema, h.from_table,
@@ -6563,7 +6581,7 @@ link (graph_name, type_name, field_name, position, last_position,
   -- the arm above to find. The route is then the arrival's primary key matched to the function's
   -- columns by name, which sql_name_matched_key_column states and states whole.
   SELECT DISTINCT l.graph_name, l.type_name, l.field_name,
-         l.target_source_name, l.target_schema, l.target_table,
+         l.arriving_type_name,
          l.position, l.last_position, 'NAME_MATCH', CAST(NULL AS VARCHAR),
          CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
          CAST(NULL AS VARCHAR), CAST(NULL AS BOOLEAN),
@@ -6592,7 +6610,7 @@ link (graph_name, type_name, field_name, position, last_position,
   -- arrival, and the first names the departure or leaves it open for the chain's own to stand. A
 -- parameter names the table whose generated class is its erased class, among the graph's sources.
   SELECT l.graph_name, l.type_name, l.field_name,
-         l.target_source_name, l.target_schema, l.target_table,
+         l.arriving_type_name,
          l.position, l.last_position, 'CONDITION', CAST(NULL AS VARCHAR),
          CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
          CAST(NULL AS VARCHAR), CAST(NULL AS BOOLEAN),
@@ -6634,9 +6652,7 @@ COMMENT ON VIEW graphitron_field_path_reading IS 'One way one written link of a 
 COMMENT ON COLUMN graphitron_field_path_reading.graph_name IS 'the graph_name of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
 COMMENT ON COLUMN graphitron_field_path_reading.type_name IS 'the type_name of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
 COMMENT ON COLUMN graphitron_field_path_reading.field_name IS 'the field_name of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
-COMMENT ON COLUMN graphitron_field_path_reading.target_source_name IS 'the target_source_name of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
-COMMENT ON COLUMN graphitron_field_path_reading.target_schema IS 'the target_schema of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
-COMMENT ON COLUMN graphitron_field_path_reading.target_table IS 'the target_table of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
+COMMENT ON COLUMN graphitron_field_path_reading.arriving_type_name IS 'the type whose table the chain this row stands in arrives at, one of the field''s graphitron_field_target_table rows; its table is graphitron_resolved_type_binding''s. A field with several arriving types walks once per type';
 COMMENT ON COLUMN graphitron_field_path_reading.position IS 'the position of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
 COMMENT ON COLUMN graphitron_field_path_reading.last_position IS 'the last_position of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
 COMMENT ON COLUMN graphitron_field_path_reading.via IS 'the via of one reading of a chain link, on graphitron_field_table_link''s terms for the column of that name';
@@ -6657,7 +6673,7 @@ COMMENT ON COLUMN graphitron_field_path_reading.method_class_name IS 'the condit
 COMMENT ON COLUMN graphitron_field_path_reading.method_name IS 'the condition method''s name';
 COMMENT ON COLUMN graphitron_field_path_reading.method_descriptor IS 'the condition method''s descriptor. An overload is its own reading, routed by its own signature';
 CREATE VIEW graphitron_field_path_resolution_rule
-  (graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+  (graph_name, type_name, field_name, arriving_type_name,
    position, via, key_matched_by,
    constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from,
    from_source_name, from_schema, from_table, to_source_name, to_schema, to_table,
@@ -6667,27 +6683,29 @@ WITH RECURSIVE
 -- The chain walked from its end. The target is where the last link arrives and it is the one
 -- anchor that always exists: a field's departure is null exactly where a @routine heads the chain,
 -- which is the root case. Each earlier link is a reading arriving where the link after it departs.
-from_tail (graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+from_tail (graph_name, type_name, field_name, arriving_type_name,
    position, via, key_matched_by,
    constraint_source_name, constraint_schema, constraint_table, constraint_name,
    fk_on_from, from_source_name, from_schema, from_table,
    to_source_name, to_schema, to_table, method_source_name, method_class_name, method_name, method_descriptor) AS (
   SELECT
          r.graph_name, r.type_name, r.field_name,
-         r.target_source_name, r.target_schema, r.target_table,
+         r.arriving_type_name,
          r.position, r.via, r.key_matched_by,
          r.constraint_source_name, r.constraint_schema, r.constraint_table, r.constraint_name,
          r.fk_on_from, r.from_source_name, r.from_schema, r.from_table,
          r.to_source_name, r.to_schema, r.to_table,
          r.method_source_name, r.method_class_name, r.method_name, r.method_descriptor
     FROM graphitron_field_path_reading r
+    JOIN graphitron_resolved_type_binding b
+      ON b.graph_name = r.graph_name AND b.type_name = r.arriving_type_name AND b.candidates = 1
    WHERE r.position = r.last_position
-     AND r.to_source_name = r.target_source_name AND r.to_schema = r.target_schema
-     AND r.to_table = r.target_table
+     AND r.to_source_name = b.table_source_name AND r.to_schema = b.table_schema
+     AND r.to_table = b.table_name
   UNION ALL
   SELECT
          r.graph_name, r.type_name, r.field_name,
-         r.target_source_name, r.target_schema, r.target_table,
+         r.arriving_type_name,
          r.position, r.via, r.key_matched_by,
          r.constraint_source_name, r.constraint_schema, r.constraint_table, r.constraint_name,
          r.fk_on_from, r.from_source_name, r.from_schema, r.from_table,
@@ -6696,8 +6714,7 @@ from_tail (graph_name, type_name, field_name, target_source_name, target_schema,
     FROM from_tail w
     JOIN graphitron_field_path_reading r
       ON r.graph_name = w.graph_name AND r.type_name = w.type_name
-     AND r.field_name = w.field_name AND r.target_source_name = w.target_source_name
-     AND r.target_schema = w.target_schema AND r.target_table = w.target_table
+     AND r.field_name = w.field_name AND r.arriving_type_name = w.arriving_type_name
      AND r.position = w.position - 1
      AND r.to_source_name = w.from_source_name AND r.to_schema = w.from_schema
      AND r.to_table = w.from_table
@@ -6707,24 +6724,20 @@ from_tail (graph_name, type_name, field_name, target_source_name, target_schema,
 -- chain gets here. The head says the other half, departing where the field departs, or departing
 -- nothing where a @routine begins the chain, or taking the field's departure where the element
 -- left it open.
-from_head (graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+from_head (graph_name, type_name, field_name, arriving_type_name,
    position, via, key_matched_by,
    constraint_source_name, constraint_schema, constraint_table, constraint_name,
    fk_on_from, from_source_name, from_schema, from_table,
    to_source_name, to_schema, to_table, method_source_name, method_class_name, method_name, method_descriptor) AS (
   SELECT
          r.graph_name, r.type_name, r.field_name,
-         r.target_source_name, r.target_schema, r.target_table,
+         r.arriving_type_name,
          r.position, r.via, r.key_matched_by,
          r.constraint_source_name, r.constraint_schema, r.constraint_table, r.constraint_name,
          r.fk_on_from, r.from_source_name, r.from_schema, r.from_table,
          r.to_source_name, r.to_schema, r.to_table,
          r.method_source_name, r.method_class_name, r.method_name, r.method_descriptor
     FROM graphitron_field_path_reading r
-    JOIN graphitron_field_table ft
-      ON ft.graph_name = r.graph_name AND ft.type_name = r.type_name
-     AND ft.field_name = r.field_name AND ft.to_source_name = r.target_source_name
-     AND ft.to_schema = r.target_schema AND ft.to_table = r.target_table
    WHERE r.position = 0
      AND (r.from_source_name IS NULL
           OR EXISTS (SELECT 1 FROM graphitron_field_source_table st
@@ -6735,7 +6748,7 @@ from_head (graph_name, type_name, field_name, target_source_name, target_schema,
   UNION ALL
   SELECT
          r.graph_name, r.type_name, r.field_name,
-         r.target_source_name, r.target_schema, r.target_table,
+         r.arriving_type_name,
          r.position, r.via, r.key_matched_by,
          r.constraint_source_name, r.constraint_schema, r.constraint_table, r.constraint_name,
          r.fk_on_from, r.from_source_name, r.from_schema, r.from_table,
@@ -6744,8 +6757,7 @@ from_head (graph_name, type_name, field_name, target_source_name, target_schema,
     FROM from_head w
     JOIN graphitron_field_path_reading r
       ON r.graph_name = w.graph_name AND r.type_name = w.type_name
-     AND r.field_name = w.field_name AND r.target_source_name = w.target_source_name
-     AND r.target_schema = w.target_schema AND r.target_table = w.target_table
+     AND r.field_name = w.field_name AND r.arriving_type_name = w.arriving_type_name
      AND r.position = w.position + 1
      AND (r.from_source_name IS NULL
           OR r.from_source_name = w.to_source_name AND r.from_schema = w.to_schema
@@ -6763,14 +6775,14 @@ from_head (graph_name, type_name, field_name, target_source_name, target_schema,
 -- is a UNION ALL and can reach one reading twice, two readings of the link after it departing the
 -- same table being all it takes; the reading is then the same row arrived at twice, not two facts.
 SELECT
-       graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+       graph_name, type_name, field_name, arriving_type_name,
        position, via, key_matched_by,
        constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from,
        from_source_name, from_schema, from_table, to_source_name, to_schema, to_table,
        method_source_name, method_class_name, method_name, method_descriptor,
        BOOL_OR(reach = 'TAIL'), BOOL_OR(reach = 'HEAD')
   FROM (SELECT
-       graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+       graph_name, type_name, field_name, arriving_type_name,
        position, via, key_matched_by,
        constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from,
        from_source_name, from_schema, from_table, to_source_name, to_schema, to_table,
@@ -6778,14 +6790,14 @@ SELECT
           FROM from_tail
         UNION ALL
         SELECT
-       graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+       graph_name, type_name, field_name, arriving_type_name,
        position, via, key_matched_by,
        constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from,
        from_source_name, from_schema, from_table, to_source_name, to_schema, to_table,
        method_source_name, method_class_name, method_name, method_descriptor, 'HEAD'
           FROM from_head) walked
  GROUP BY
-       graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+       graph_name, type_name, field_name, arriving_type_name,
        position, via, key_matched_by,
        constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from,
        from_source_name, from_schema, from_table, to_source_name, to_schema, to_table,
@@ -6795,9 +6807,7 @@ COMMENT ON VIEW graphitron_field_path_resolution_rule IS 'One row the chain-link
 COMMENT ON COLUMN graphitron_field_path_resolution_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_field_path_resolution.graph_name through the arm table the row''s shape belongs to';
 COMMENT ON COLUMN graphitron_field_path_resolution_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_field_path_resolution.type_name through the arm table the row''s shape belongs to';
 COMMENT ON COLUMN graphitron_field_path_resolution_rule.field_name IS 'the field_name of a row of this rule, which the stage writes into graphitron_field_path_resolution.field_name through the arm table the row''s shape belongs to';
-COMMENT ON COLUMN graphitron_field_path_resolution_rule.target_source_name IS 'the target_source_name of a row of this rule, which the stage writes into graphitron_field_path_resolution.target_source_name through the arm table the row''s shape belongs to';
-COMMENT ON COLUMN graphitron_field_path_resolution_rule.target_schema IS 'the target_schema of a row of this rule, which the stage writes into graphitron_field_path_resolution.target_schema through the arm table the row''s shape belongs to';
-COMMENT ON COLUMN graphitron_field_path_resolution_rule.target_table IS 'the target_table of a row of this rule, which the stage writes into graphitron_field_path_resolution.target_table through the arm table the row''s shape belongs to';
+COMMENT ON COLUMN graphitron_field_path_resolution_rule.arriving_type_name IS 'the type whose table the chain this row stands in arrives at, one of the field''s graphitron_field_target_table rows; its table is graphitron_resolved_type_binding''s. A field with several arriving types walks once per type';
 COMMENT ON COLUMN graphitron_field_path_resolution_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_field_path_resolution.position through the arm table the row''s shape belongs to';
 COMMENT ON COLUMN graphitron_field_path_resolution_rule.via IS 'the via of a row of this rule, which the stage writes into graphitron_field_path_resolution.via through the arm table the row''s shape belongs to';
 COMMENT ON COLUMN graphitron_field_path_resolution_rule.key_matched_by IS 'the key_matched_by of a row of this rule, which the stage writes into graphitron_field_path_resolution.key_matched_by through the arm table the row''s shape belongs to';
@@ -6823,9 +6833,7 @@ CREATE TABLE graphitron_field_path_resolution_keyed (
   graph_name             VARCHAR NOT NULL,
   type_name              VARCHAR NOT NULL,
   field_name             VARCHAR NOT NULL,
-  target_source_name     VARCHAR NOT NULL,
-  target_schema          VARCHAR NOT NULL,
-  target_table           VARCHAR NOT NULL,
+  arriving_type_name     VARCHAR NOT NULL,
   position               INT     NOT NULL,
   via                    VARCHAR NOT NULL,
   key_matched_by         VARCHAR,
@@ -6846,15 +6854,14 @@ CREATE TABLE graphitron_field_path_resolution_keyed (
   -- A foreign key and the side it is walked from are the whole identity: both orientations of one
   -- constraint are separate readings, and the tables at either end follow from the pair.
   PRIMARY KEY (graph_name, type_name, field_name,
-               target_source_name, target_schema, target_table, position,
+               arriving_type_name, position,
                constraint_source_name, constraint_schema, constraint_table, constraint_name,
                fk_on_from),
-  -- The chain this reading belongs to, which is what makes the row per target rather than per
-  -- field, and the written link it reads, so a reading cannot outlive the writing it is about.
-  FOREIGN KEY (graph_name, type_name, field_name,
-               target_source_name, target_schema, target_table)
-    REFERENCES graphitron_field_table
-      (graph_name, type_name, field_name, to_source_name, to_schema, to_table) ON DELETE CASCADE,
+  -- The chain this reading belongs to, which is what makes the row per arriving type rather than
+  -- per field, and the written link it reads, so a reading cannot outlive the writing it is about.
+  FOREIGN KEY (graph_name, type_name, field_name, arriving_type_name)
+    REFERENCES graphitron_field_target_table
+      (graph_name, type_name, field_name, arriving_type_name) ON DELETE CASCADE,
   FOREIGN KEY (graph_name, type_name, field_name, position)
     REFERENCES graphitron_field_path (graph_name, type_name, field_name, position)
       ON DELETE CASCADE,
@@ -6877,9 +6884,7 @@ COMMENT ON TABLE graphitron_field_path_resolution_keyed IS 'One reading of one c
 COMMENT ON COLUMN graphitron_field_path_resolution_keyed.graph_name IS 'the graph_name of a row of this arm, presented on graphitron_field_path_resolution.graph_name, whose comment carries what the value means';
 COMMENT ON COLUMN graphitron_field_path_resolution_keyed.type_name IS 'the type_name of a row of this arm, presented on graphitron_field_path_resolution.type_name, whose comment carries what the value means';
 COMMENT ON COLUMN graphitron_field_path_resolution_keyed.field_name IS 'the field_name of a row of this arm, presented on graphitron_field_path_resolution.field_name, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_path_resolution_keyed.target_source_name IS 'the target_source_name of a row of this arm, presented on graphitron_field_path_resolution.target_source_name, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_path_resolution_keyed.target_schema IS 'the target_schema of a row of this arm, presented on graphitron_field_path_resolution.target_schema, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_path_resolution_keyed.target_table IS 'the target_table of a row of this arm, presented on graphitron_field_path_resolution.target_table, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_field_path_resolution_keyed.arriving_type_name IS 'the type whose table the chain this row stands in arrives at, one of the field''s graphitron_field_target_table rows; its table is graphitron_resolved_type_binding''s. A field with several arriving types walks once per type';
 COMMENT ON COLUMN graphitron_field_path_resolution_keyed.position IS 'the position of a row of this arm, presented on graphitron_field_path_resolution.position, whose comment carries what the value means';
 COMMENT ON COLUMN graphitron_field_path_resolution_keyed.via IS 'the via of a row of this arm, presented on graphitron_field_path_resolution.via, whose comment carries what the value means';
 COMMENT ON COLUMN graphitron_field_path_resolution_keyed.key_matched_by IS 'the key_matched_by of a row of this arm, presented on graphitron_field_path_resolution.key_matched_by, whose comment carries what the value means';
@@ -6902,9 +6907,7 @@ CREATE TABLE graphitron_field_path_resolution_keyless (
   graph_name             VARCHAR NOT NULL,
   type_name              VARCHAR NOT NULL,
   field_name             VARCHAR NOT NULL,
-  target_source_name     VARCHAR NOT NULL,
-  target_schema          VARCHAR NOT NULL,
-  target_table           VARCHAR NOT NULL,
+  arriving_type_name     VARCHAR NOT NULL,
   position               INT     NOT NULL,
   via                    VARCHAR NOT NULL,
   from_source_name       VARCHAR NOT NULL,
@@ -6918,14 +6921,13 @@ CREATE TABLE graphitron_field_path_resolution_keyless (
   touched_at             TIMESTAMP NOT NULL,
   -- No foreign key identifies the reading, so the table pair it joins is the whole identity.
   PRIMARY KEY (graph_name, type_name, field_name,
-               target_source_name, target_schema, target_table, position,
+               arriving_type_name, position,
                from_source_name, from_schema, from_table, to_source_name, to_schema, to_table),
-  -- The chain this reading belongs to, which is what makes the row per target rather than per
-  -- field, and the written link it reads, so a reading cannot outlive the writing it is about.
-  FOREIGN KEY (graph_name, type_name, field_name,
-               target_source_name, target_schema, target_table)
-    REFERENCES graphitron_field_table
-      (graph_name, type_name, field_name, to_source_name, to_schema, to_table) ON DELETE CASCADE,
+  -- The chain this reading belongs to, which is what makes the row per arriving type rather than
+  -- per field, and the written link it reads, so a reading cannot outlive the writing it is about.
+  FOREIGN KEY (graph_name, type_name, field_name, arriving_type_name)
+    REFERENCES graphitron_field_target_table
+      (graph_name, type_name, field_name, arriving_type_name) ON DELETE CASCADE,
   FOREIGN KEY (graph_name, type_name, field_name, position)
     REFERENCES graphitron_field_path (graph_name, type_name, field_name, position)
       ON DELETE CASCADE,
@@ -6942,9 +6944,7 @@ COMMENT ON TABLE graphitron_field_path_resolution_keyless IS 'One reading of one
 COMMENT ON COLUMN graphitron_field_path_resolution_keyless.graph_name IS 'the graph_name of a row of this arm, presented on graphitron_field_path_resolution.graph_name, whose comment carries what the value means';
 COMMENT ON COLUMN graphitron_field_path_resolution_keyless.type_name IS 'the type_name of a row of this arm, presented on graphitron_field_path_resolution.type_name, whose comment carries what the value means';
 COMMENT ON COLUMN graphitron_field_path_resolution_keyless.field_name IS 'the field_name of a row of this arm, presented on graphitron_field_path_resolution.field_name, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_path_resolution_keyless.target_source_name IS 'the target_source_name of a row of this arm, presented on graphitron_field_path_resolution.target_source_name, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_path_resolution_keyless.target_schema IS 'the target_schema of a row of this arm, presented on graphitron_field_path_resolution.target_schema, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_path_resolution_keyless.target_table IS 'the target_table of a row of this arm, presented on graphitron_field_path_resolution.target_table, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_field_path_resolution_keyless.arriving_type_name IS 'the type whose table the chain this row stands in arrives at, one of the field''s graphitron_field_target_table rows; its table is graphitron_resolved_type_binding''s. A field with several arriving types walks once per type';
 COMMENT ON COLUMN graphitron_field_path_resolution_keyless.position IS 'the position of a row of this arm, presented on graphitron_field_path_resolution.position, whose comment carries what the value means';
 COMMENT ON COLUMN graphitron_field_path_resolution_keyless.via IS 'the via of a row of this arm, presented on graphitron_field_path_resolution.via, whose comment carries what the value means';
 COMMENT ON COLUMN graphitron_field_path_resolution_keyless.from_source_name IS 'the from_source_name of a row of this arm, presented on graphitron_field_path_resolution.from_source_name, whose comment carries what the value means';
@@ -6961,9 +6961,7 @@ CREATE TABLE graphitron_field_path_resolution_open (
   graph_name             VARCHAR NOT NULL,
   type_name              VARCHAR NOT NULL,
   field_name             VARCHAR NOT NULL,
-  target_source_name     VARCHAR NOT NULL,
-  target_schema          VARCHAR NOT NULL,
-  target_table           VARCHAR NOT NULL,
+  arriving_type_name     VARCHAR NOT NULL,
   position               INT     NOT NULL,
   via                    VARCHAR NOT NULL,
   to_source_name         VARCHAR NOT NULL,
@@ -6974,14 +6972,13 @@ CREATE TABLE graphitron_field_path_resolution_open (
   touched_at             TIMESTAMP NOT NULL,
   -- A reading that departs from nowhere of its own is told apart by where it arrives alone.
   PRIMARY KEY (graph_name, type_name, field_name,
-               target_source_name, target_schema, target_table, position,
+               arriving_type_name, position,
                to_source_name, to_schema, to_table),
-  -- The chain this reading belongs to, which is what makes the row per target rather than per
-  -- field, and the written link it reads, so a reading cannot outlive the writing it is about.
-  FOREIGN KEY (graph_name, type_name, field_name,
-               target_source_name, target_schema, target_table)
-    REFERENCES graphitron_field_table
-      (graph_name, type_name, field_name, to_source_name, to_schema, to_table) ON DELETE CASCADE,
+  -- The chain this reading belongs to, which is what makes the row per arriving type rather than
+  -- per field, and the written link it reads, so a reading cannot outlive the writing it is about.
+  FOREIGN KEY (graph_name, type_name, field_name, arriving_type_name)
+    REFERENCES graphitron_field_target_table
+      (graph_name, type_name, field_name, arriving_type_name) ON DELETE CASCADE,
   FOREIGN KEY (graph_name, type_name, field_name, position)
     REFERENCES graphitron_field_path (graph_name, type_name, field_name, position)
       ON DELETE CASCADE,
@@ -6997,9 +6994,7 @@ COMMENT ON TABLE graphitron_field_path_resolution_open IS 'One reading of one ch
 COMMENT ON COLUMN graphitron_field_path_resolution_open.graph_name IS 'the graph_name of a row of this arm, presented on graphitron_field_path_resolution.graph_name, whose comment carries what the value means';
 COMMENT ON COLUMN graphitron_field_path_resolution_open.type_name IS 'the type_name of a row of this arm, presented on graphitron_field_path_resolution.type_name, whose comment carries what the value means';
 COMMENT ON COLUMN graphitron_field_path_resolution_open.field_name IS 'the field_name of a row of this arm, presented on graphitron_field_path_resolution.field_name, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_path_resolution_open.target_source_name IS 'the target_source_name of a row of this arm, presented on graphitron_field_path_resolution.target_source_name, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_path_resolution_open.target_schema IS 'the target_schema of a row of this arm, presented on graphitron_field_path_resolution.target_schema, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_path_resolution_open.target_table IS 'the target_table of a row of this arm, presented on graphitron_field_path_resolution.target_table, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_field_path_resolution_open.arriving_type_name IS 'the type whose table the chain this row stands in arrives at, one of the field''s graphitron_field_target_table rows; its table is graphitron_resolved_type_binding''s. A field with several arriving types walks once per type';
 COMMENT ON COLUMN graphitron_field_path_resolution_open.position IS 'the position of a row of this arm, presented on graphitron_field_path_resolution.position, whose comment carries what the value means';
 COMMENT ON COLUMN graphitron_field_path_resolution_open.via IS 'the via of a row of this arm, presented on graphitron_field_path_resolution.via, whose comment carries what the value means';
 COMMENT ON COLUMN graphitron_field_path_resolution_open.to_source_name IS 'the to_source_name of a row of this arm, presented on graphitron_field_path_resolution.to_source_name, whose comment carries what the value means';
@@ -7013,9 +7008,7 @@ CREATE TABLE graphitron_field_path_resolution_condition (
   graph_name             VARCHAR NOT NULL,
   type_name              VARCHAR NOT NULL,
   field_name             VARCHAR NOT NULL,
-  target_source_name     VARCHAR NOT NULL,
-  target_schema          VARCHAR NOT NULL,
-  target_table           VARCHAR NOT NULL,
+  arriving_type_name     VARCHAR NOT NULL,
   position               INT     NOT NULL,
   via                    VARCHAR NOT NULL,
   method_source_name     VARCHAR NOT NULL,
@@ -7033,13 +7026,12 @@ CREATE TABLE graphitron_field_path_resolution_condition (
   touched_at             TIMESTAMP NOT NULL,
   -- The method routing the reading is its identity, with the arrival its second parameter names.
   PRIMARY KEY (graph_name, type_name, field_name,
-               target_source_name, target_schema, target_table, position,
+               arriving_type_name, position,
                method_source_name, method_class_name, method_name, method_descriptor,
                to_source_name, to_schema, to_table),
-  FOREIGN KEY (graph_name, type_name, field_name,
-               target_source_name, target_schema, target_table)
-    REFERENCES graphitron_field_table
-      (graph_name, type_name, field_name, to_source_name, to_schema, to_table) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, type_name, field_name, arriving_type_name)
+    REFERENCES graphitron_field_target_table
+      (graph_name, type_name, field_name, arriving_type_name) ON DELETE CASCADE,
   FOREIGN KEY (graph_name, type_name, field_name, position)
     REFERENCES graphitron_field_path (graph_name, type_name, field_name, position)
       ON DELETE CASCADE,
@@ -7062,9 +7054,7 @@ COMMENT ON TABLE graphitron_field_path_resolution_condition IS 'One reading of o
 COMMENT ON COLUMN graphitron_field_path_resolution_condition.graph_name IS 'the graph_name of a row of this arm, presented on graphitron_field_path_resolution.graph_name, whose comment carries what the value means';
 COMMENT ON COLUMN graphitron_field_path_resolution_condition.type_name IS 'the type_name of a row of this arm, presented on graphitron_field_path_resolution.type_name, whose comment carries what the value means';
 COMMENT ON COLUMN graphitron_field_path_resolution_condition.field_name IS 'the field_name of a row of this arm, presented on graphitron_field_path_resolution.field_name, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_path_resolution_condition.target_source_name IS 'the target_source_name of a row of this arm, presented on graphitron_field_path_resolution.target_source_name, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_path_resolution_condition.target_schema IS 'the target_schema of a row of this arm, presented on graphitron_field_path_resolution.target_schema, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_path_resolution_condition.target_table IS 'the target_table of a row of this arm, presented on graphitron_field_path_resolution.target_table, whose comment carries what the value means';
+COMMENT ON COLUMN graphitron_field_path_resolution_condition.arriving_type_name IS 'the type whose table the chain this row stands in arrives at, one of the field''s graphitron_field_target_table rows; its table is graphitron_resolved_type_binding''s. A field with several arriving types walks once per type';
 COMMENT ON COLUMN graphitron_field_path_resolution_condition.position IS 'the position of a row of this arm, presented on graphitron_field_path_resolution.position, whose comment carries what the value means';
 COMMENT ON COLUMN graphitron_field_path_resolution_condition.via IS 'the via of a row of this arm, presented on graphitron_field_path_resolution.via, whose comment carries what the value means';
 COMMENT ON COLUMN graphitron_field_path_resolution_condition.method_source_name IS 'the method_source_name of a row of this arm, presented on graphitron_field_path_resolution.method_source_name, whose comment carries what the value means';
@@ -7082,13 +7072,13 @@ COMMENT ON COLUMN graphitron_field_path_resolution_condition.reached_by_head IS 
 COMMENT ON COLUMN graphitron_field_path_resolution_condition.touched_at IS 'the capture instant that last wrote this row, the mark the stage sweeps against: a row the latest capture of its graph did not write again is one the corpus no longer has';
 
 CREATE VIEW graphitron_field_path_resolution
-  (graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+  (graph_name, type_name, field_name, arriving_type_name,
    position, via, key_matched_by,
    constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from,
    from_source_name, from_schema, from_table, to_source_name, to_schema, to_table,
    method_source_name, method_class_name, method_name, method_descriptor,
    reached_by_tail, reached_by_head) AS
-SELECT graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+SELECT graph_name, type_name, field_name, arriving_type_name,
        position, via, key_matched_by,
        constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from,
        from_source_name, from_schema, from_table, to_source_name, to_schema, to_table,
@@ -7096,7 +7086,7 @@ SELECT graph_name, type_name, field_name, target_source_name, target_schema, tar
        reached_by_tail, reached_by_head
   FROM graphitron_field_path_resolution_keyed
 UNION ALL
-SELECT graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+SELECT graph_name, type_name, field_name, arriving_type_name,
        position, via, CAST(NULL AS VARCHAR),
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        CAST(NULL AS BOOLEAN),
@@ -7105,7 +7095,7 @@ SELECT graph_name, type_name, field_name, target_source_name, target_schema, tar
        reached_by_tail, reached_by_head
   FROM graphitron_field_path_resolution_keyless
 UNION ALL
-SELECT graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+SELECT graph_name, type_name, field_name, arriving_type_name,
        position, via, CAST(NULL AS VARCHAR),
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        CAST(NULL AS BOOLEAN),
@@ -7115,7 +7105,7 @@ SELECT graph_name, type_name, field_name, target_source_name, target_schema, tar
        reached_by_tail, reached_by_head
   FROM graphitron_field_path_resolution_open
 UNION ALL
-SELECT graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+SELECT graph_name, type_name, field_name, arriving_type_name,
        position, via, CAST(NULL AS VARCHAR),
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        CAST(NULL AS BOOLEAN),
@@ -7128,9 +7118,7 @@ COMMENT ON VIEW graphitron_field_path_resolution IS 'One reading of one chain li
 COMMENT ON COLUMN graphitron_field_path_resolution.graph_name IS 'the owning graph''s partition, carried from the reading; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_field_path_resolution.type_name IS 'the type owning the field whose chain this reading is of';
 COMMENT ON COLUMN graphitron_field_path_resolution.field_name IS 'the field whose chain this reading is of';
-COMMENT ON COLUMN graphitron_field_path_resolution.target_source_name IS 'the catalog partition of the target this reading''s chain leads to, the first column of the graphitron_field_table row the walk was seeded from';
-COMMENT ON COLUMN graphitron_field_path_resolution.target_schema IS 'the target''s SQL schema';
-COMMENT ON COLUMN graphitron_field_path_resolution.target_table IS 'the target''s SQL name. A field with several targets walks once per target, the departure a chain stands on being the enclosing binding rather than anything the element says';
+COMMENT ON COLUMN graphitron_field_path_resolution.arriving_type_name IS 'the type whose table the chain this row stands in arrives at, one of the field''s graphitron_field_target_table rows; its table is graphitron_resolved_type_binding''s. A field with several arriving types walks once per type';
 COMMENT ON COLUMN graphitron_field_path_resolution.position IS 'the link''s place in the chain, carried from graphitron_field_path where the order is stated';
 COMMENT ON COLUMN graphitron_field_path_resolution.via IS 'which authored arm this reading takes, in graphitron_field_table_link''s vocabulary of five, whose comment argues each';
 COMMENT ON COLUMN graphitron_field_path_resolution.key_matched_by IS 'which name the author''s key spelling matched, on graphitron_field_table_link''s terms; NULL off the KEY arm';
@@ -7153,7 +7141,7 @@ COMMENT ON COLUMN graphitron_field_path_resolution.reached_by_tail IS 'whether t
 COMMENT ON COLUMN graphitron_field_path_resolution.reached_by_head IS 'whether the head walk, from the field''s departure forwards, reached this reading. A reading reached by both lies on a chain that runs the whole way; one only the head reaches is where a broken chain got to';
 
 CREATE VIEW graphitron_field_table_link_rule
-  (graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+  (graph_name, type_name, field_name, arriving_type_name,
    position, via, key_matched_by,
    constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from,
    from_source_name, from_schema, from_table, to_source_name, to_schema, to_table) AS
@@ -7163,19 +7151,19 @@ CREATE VIEW graphitron_field_table_link_rule
 -- graphitron_entry_defect reports and what this discards. Routes are counted and not readings: two
 -- overloads of a condition method naming one table pair are two readings and one route.
 SELECT
-       graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+       graph_name, type_name, field_name, arriving_type_name,
        position, via, key_matched_by,
        constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from,
        from_source_name, from_schema, from_table, to_source_name, to_schema, to_table
   FROM (SELECT
-       graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+       graph_name, type_name, field_name, arriving_type_name,
        position, via, key_matched_by,
        constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from,
        from_source_name, from_schema, from_table, to_source_name, to_schema, to_table,
                COUNT(*) OVER (PARTITION BY graph_name, type_name, field_name,
-                              target_source_name, target_schema, target_table,
+                              arriving_type_name,
                               position) AS readings
-          FROM (SELECT DISTINCT graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+          FROM (SELECT DISTINCT graph_name, type_name, field_name, arriving_type_name,
                        position, via, key_matched_by,
                        constraint_source_name, constraint_schema, constraint_table, constraint_name,
                        fk_on_from, from_source_name, from_schema, from_table,
@@ -7187,9 +7175,7 @@ COMMENT ON VIEW graphitron_field_table_link_rule IS 'One row the chain-link reso
 COMMENT ON COLUMN graphitron_field_table_link_rule.graph_name IS 'the graph_name of a row of this rule, which the stage inserts into graphitron_field_table_link.graph_name';
 COMMENT ON COLUMN graphitron_field_table_link_rule.type_name IS 'the type_name of a row of this rule, which the stage inserts into graphitron_field_table_link.type_name';
 COMMENT ON COLUMN graphitron_field_table_link_rule.field_name IS 'the field_name of a row of this rule, which the stage inserts into graphitron_field_table_link.field_name';
-COMMENT ON COLUMN graphitron_field_table_link_rule.target_source_name IS 'the target_source_name of a row of this rule, which the stage inserts into graphitron_field_table_link.target_source_name';
-COMMENT ON COLUMN graphitron_field_table_link_rule.target_schema IS 'the target_schema of a row of this rule, which the stage inserts into graphitron_field_table_link.target_schema';
-COMMENT ON COLUMN graphitron_field_table_link_rule.target_table IS 'the target_table of a row of this rule, which the stage inserts into graphitron_field_table_link.target_table';
+COMMENT ON COLUMN graphitron_field_table_link_rule.arriving_type_name IS 'the type whose table the chain this row stands in arrives at, one of the field''s graphitron_field_target_table rows; its table is graphitron_resolved_type_binding''s. A field with several arriving types walks once per type';
 COMMENT ON COLUMN graphitron_field_table_link_rule.position IS 'the position of a row of this rule, which the stage inserts into graphitron_field_table_link.position';
 COMMENT ON COLUMN graphitron_field_table_link_rule.via IS 'the via of a row of this rule, which the stage inserts into graphitron_field_table_link.via';
 COMMENT ON COLUMN graphitron_field_table_link_rule.key_matched_by IS 'the key_matched_by of a row of this rule, which the stage inserts into graphitron_field_table_link.key_matched_by';
@@ -8775,27 +8761,6 @@ COMMENT ON COLUMN intent_routine_return_binding.table_schema IS 'the landing tab
 COMMENT ON COLUMN intent_routine_return_binding.table_name IS 'the landing table''s SQL name. With the two columns above this is sql_table''s full key, so the table''s kind, its columns and its generated record are each one join away';
 COMMENT ON COLUMN intent_routine_return_binding.candidates IS 'how many distinct tables this type''s routine-returning fields land on, this row''s table being one of them; 1 on an unambiguous binding. Counted over this relation''s own rows rather than carried from the terminus, because a type two fields return is ambiguous here even where each field''s own chain lands certainly; stated as a column rather than left to each reader''s own count, on intent_bound_table.candidates'' terms';
 
-CREATE TABLE graphitron_resolved_type_binding (
-  graph_name        VARCHAR NOT NULL,
-  type_name         VARCHAR NOT NULL,
-  table_source_name VARCHAR NOT NULL,
-  table_schema      VARCHAR NOT NULL,
-  table_name        VARCHAR NOT NULL,
-  candidates        INTEGER NOT NULL,
-  PRIMARY KEY (graph_name, type_name, table_source_name, table_schema, table_name),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
-);
-COMMENT ON TABLE graphitron_resolved_type_binding IS 'Which catalog table stands for a graph''s type, from either population that can answer: one row per candidate table. For example a type carrying @table(name: "film") is one row naming film, and a type standing for a @routine chain''s result is one row naming the table that chain lands on.';
-COMMENT ON COLUMN graphitron_resolved_type_binding.graph_name IS 'the owning graph''s partition, carried from whichever arm produced the row';
-COMMENT ON COLUMN graphitron_resolved_type_binding.type_name IS 'the type the table stands for';
-COMMENT ON COLUMN graphitron_resolved_type_binding.table_source_name IS 'the resolved table''s catalog partition, the first column of the sql_table key this row names';
-COMMENT ON COLUMN graphitron_resolved_type_binding.table_schema IS 'the resolved table''s SQL schema; what tells two candidates of one name apart';
-COMMENT ON COLUMN graphitron_resolved_type_binding.table_name IS 'the resolved table''s SQL name. With the two columns above this is sql_table''s full key; the table''s other facts are one join away, per the referenced-side discipline sql_referential_constraint states';
-COMMENT ON COLUMN graphitron_resolved_type_binding.candidates IS 'how many distinct tables stand for this type across both arms, this row''s table being one of them; 1 on an unambiguous binding, which is the guard a reader that must pick one applies. Recounted here rather than carried from an arm, for the reason the view comment gives';
-
-CREATE INDEX ix_resolved_type_binding_type ON graphitron_resolved_type_binding
-  (graph_name, type_name);
-COMMENT ON INDEX ix_resolved_type_binding_type IS 'Serves the type probe every reader of this relation makes: a rule holding a type name and asking which table stands for it. The registration shipped without one, which cost nothing while every reader spelled its type expression inline, H2 pushing that expression down into the probe. It stopped costing nothing the moment intent_field_navigated_type projected the expression into a column of its own: a join onto a projected column is a join the planner is free to satisfy by scanning, and its readers, graphitron_field_scope_table_rule among them, each began visiting more rows through this table than through the view it replaced. That is the same mirror the condition family met on graphitron_field_scope_table, arriving on a third relation: an inlined view can be evaluated restricted where a table can only be scanned, so an unkeyed target is not a faster shape but a differently shaped one, and which of the two wins depends on what the reader has in hand. The index is what makes the table probeable on the key its readers actually hold, and with it the projection costs no reader anything.';
 
 CREATE VIEW graphitron_field_target_table_rule
   (graph_name, type_name, field_name, arriving_type_name, basis) AS
@@ -9434,43 +9399,41 @@ WITH head (graph_name, type_name, field_name, source_name, source_line, source_c
 -- graphitron_field_table_link_rule keeps only where it is 1. A reading both walks reach lies on a
 -- chain that runs the whole way; two routes at one position is a chain that runs the whole way
 -- twice. Two overloads of a condition method naming one table pair are one route.
-routes (graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+routes (graph_name, type_name, field_name, arriving_type_name,
         position, routes) AS (
-  SELECT graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+  SELECT graph_name, type_name, field_name, arriving_type_name,
          position, COUNT(*)
-    FROM (SELECT DISTINCT graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+    FROM (SELECT DISTINCT graph_name, type_name, field_name, arriving_type_name,
            position, via, key_matched_by,
            constraint_source_name, constraint_schema, constraint_table, constraint_name,
            fk_on_from, from_source_name, from_schema, from_table,
            to_source_name, to_schema, to_table
             FROM graphitron_field_path_resolution
            WHERE reached_by_tail AND reached_by_head) route
-   GROUP BY graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+   GROUP BY graph_name, type_name, field_name, arriving_type_name,
             position
 ),
--- Each chain a field has, with the last position it was written to. One per target, a field with
--- several resolving each on its own departure.
+-- Each chain a field has, with the last position it was written to. One per arriving type, a
+-- field with several resolving each on its own.
 chain (graph_name, type_name, field_name,
-       target_source_name, target_schema, target_table, last_position) AS (
-  SELECT ft.graph_name, ft.type_name, ft.field_name,
-         ft.to_source_name, ft.to_schema, ft.to_table, MAX(cl.position)
-    FROM graphitron_field_table ft
+       arriving_type_name, last_position) AS (
+  SELECT tt.graph_name, tt.type_name, tt.field_name, tt.arriving_type_name, MAX(cl.position)
+    FROM graphitron_field_target_table tt
     JOIN graphitron_field_path cl
-      ON cl.graph_name = ft.graph_name AND cl.type_name = ft.type_name
-     AND cl.field_name = ft.field_name
-   GROUP BY ft.graph_name, ft.type_name, ft.field_name,
-            ft.to_source_name, ft.to_schema, ft.to_table
+      ON cl.graph_name = tt.graph_name AND cl.type_name = tt.type_name
+     AND cl.field_name = tt.field_name
+   GROUP BY tt.graph_name, tt.type_name, tt.field_name, tt.arriving_type_name
 ),
 -- How far the head walk got, which is the half that says where a chain stopped. The tail says
 -- nothing about it: a suffix reaching the target is reachable from nowhere in particular.
 head_reach (graph_name, type_name, field_name,
-            target_source_name, target_schema, target_table, reached) AS (
+            arriving_type_name, reached) AS (
   SELECT graph_name, type_name, field_name,
-         target_source_name, target_schema, target_table, MAX(position)
+         arriving_type_name, MAX(position)
     FROM graphitron_field_path_resolution
    WHERE reached_by_head
    GROUP BY graph_name, type_name, field_name,
-            target_source_name, target_schema, target_table
+            arriving_type_name
 ),
 -- The chains that resolve nowhere, and the one position each of them broke at.
 --
@@ -9483,24 +9446,21 @@ head_reach (graph_name, type_name, field_name,
 --
 -- Where the head reached the last position and nothing resolved, the chain ran the whole way and
 -- landed somewhere else, so the break is the last link rather than one past it.
-broken (graph_name, type_name, field_name, target_source_name, target_schema, target_table,
+broken (graph_name, type_name, field_name, arriving_type_name,
         break_position, overshot) AS (
   SELECT c.graph_name, c.type_name, c.field_name,
-         c.target_source_name, c.target_schema, c.target_table,
+         c.arriving_type_name,
          CASE WHEN COALESCE(h.reached, -1) >= c.last_position THEN c.last_position
               ELSE COALESCE(h.reached, -1) + 1 END,
          CASE WHEN COALESCE(h.reached, -1) >= c.last_position THEN TRUE ELSE FALSE END
     FROM chain c
     LEFT JOIN head_reach h
       ON h.graph_name = c.graph_name AND h.type_name = c.type_name
-     AND h.field_name = c.field_name AND h.target_source_name = c.target_source_name
-     AND h.target_schema = c.target_schema AND h.target_table = c.target_table
+     AND h.field_name = c.field_name AND h.arriving_type_name = c.arriving_type_name
    WHERE NOT EXISTS (SELECT 1 FROM routes rt
                       WHERE rt.graph_name = c.graph_name AND rt.type_name = c.type_name
                         AND rt.field_name = c.field_name
-                        AND rt.target_source_name = c.target_source_name
-                        AND rt.target_schema = c.target_schema
-                        AND rt.target_table = c.target_table)
+                        AND rt.arriving_type_name = c.arriving_type_name)
 )
 -- More than one write on one field. The row sits at the head, the individual applications
 -- being legal each on their own and the plurality being what has no emitter.
@@ -9564,9 +9524,7 @@ SELECT DISTINCT cl.graph_name, cl.source_name, cl.source_line, cl.source_column,
                               WHERE rd.graph_name = b.graph_name
                                 AND rd.type_name = b.type_name
                                 AND rd.field_name = b.field_name
-                                AND rd.target_source_name = b.target_source_name
-                                AND rd.target_schema = b.target_schema
-                                AND rd.target_table = b.target_table
+                                AND rd.arriving_type_name = b.arriving_type_name
                                 AND rd.position = b.break_position)
               THEN 'ELEMENT_UNRESOLVED'
             ELSE 'NO_ROUTE_FROM_DEPARTURE' END, CAST(NULL AS VARCHAR)
@@ -14071,25 +14029,25 @@ INSERT INTO meta_grain VALUES
    'graph_name, class_name, method, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table', 'sdl'),
   ('field-path-reading',
    'one way one written chain link could be read, toward one target, in one graph',
-   'graph_name, type_name, field_name, target_source_name, target_schema, target_table, position, via, constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table, method_source_name, method_class_name, method_name, method_descriptor', 'sdl'),
+   'graph_name, type_name, field_name, arriving_type_name, position, via, constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table, method_source_name, method_class_name, method_name, method_descriptor', 'sdl'),
   ('field-path-reach',
    'one way one written chain link could be read that a walk reaches, and which walks do, toward one target, in one graph',
-   'graph_name, type_name, field_name, target_source_name, target_schema, target_table, position, via, constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table, method_source_name, method_class_name, method_name, method_descriptor', 'sdl'),
+   'graph_name, type_name, field_name, arriving_type_name, position, via, constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table, method_source_name, method_class_name, method_name, method_descriptor', 'sdl'),
   ('field-path-keyed-reach',
    'one reading of one written chain link that joins through a foreign key, toward one target, in one graph',
-   'graph_name, type_name, field_name, target_source_name, target_schema, target_table, position, constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from', 'sdl'),
+   'graph_name, type_name, field_name, arriving_type_name, position, constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from', 'sdl'),
   ('field-path-keyless-reach',
    'one reading of one written chain link that joins a table pair through no foreign key, toward one target, in one graph',
-   'graph_name, type_name, field_name, target_source_name, target_schema, target_table, position, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table', 'sdl'),
+   'graph_name, type_name, field_name, arriving_type_name, position, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table', 'sdl'),
   ('field-path-condition-reach',
    'one reading of one written chain link that a condition method routes, toward one target, in one graph',
-   'graph_name, type_name, field_name, target_source_name, target_schema, target_table, position, method_source_name, method_class_name, method_name, method_descriptor, to_source_name, to_schema, to_table', 'sdl'),
+   'graph_name, type_name, field_name, arriving_type_name, position, method_source_name, method_class_name, method_name, method_descriptor, to_source_name, to_schema, to_table', 'sdl'),
   ('field-path-open-reach',
    'one reading of one written chain link that states its arrival and not its departure, toward one target, in one graph',
-   'graph_name, type_name, field_name, target_source_name, target_schema, target_table, position, to_source_name, to_schema, to_table', 'sdl'),
+   'graph_name, type_name, field_name, arriving_type_name, position, to_source_name, to_schema, to_table', 'sdl'),
   ('field-table-link',
    'one link of one field''s chain toward one target, resolved, in one graph',
-   'graph_name, type_name, field_name, target_source_name, target_schema, target_table, position',
+   'graph_name, type_name, field_name, arriving_type_name, position',
    'sdl'),
   ('argmapping-candidate',
    'one right-hand side an argMapping may write at a coordinate, named by the path that reaches it',

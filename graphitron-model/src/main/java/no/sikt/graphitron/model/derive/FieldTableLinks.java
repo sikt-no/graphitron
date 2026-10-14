@@ -38,7 +38,7 @@ public final class FieldTableLinks {
         var r = GRAPHITRON_FIELD_TABLE_LINK_RULE;
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME,
-                t.TARGET_SOURCE_NAME, t.TARGET_SCHEMA, t.TARGET_TABLE, t.POSITION,
+                t.ARRIVING_TYPE_NAME, t.POSITION,
                 t.VIA, t.KEY_MATCHED_BY,
                 t.CONSTRAINT_SOURCE_NAME, t.CONSTRAINT_SCHEMA, t.CONSTRAINT_TABLE,
                 t.CONSTRAINT_NAME, t.FK_ON_FROM,
@@ -46,7 +46,7 @@ public final class FieldTableLinks {
                 t.TO_SOURCE_NAME, t.TO_SCHEMA, t.TO_TABLE, t.TOUCHED_AT)
             .select(dsl
                 .select(r.GRAPH_NAME, r.TYPE_NAME, r.FIELD_NAME,
-                    r.TARGET_SOURCE_NAME, r.TARGET_SCHEMA, r.TARGET_TABLE, r.POSITION,
+                    r.ARRIVING_TYPE_NAME, r.POSITION,
                     r.VIA, r.KEY_MATCHED_BY,
                     r.CONSTRAINT_SOURCE_NAME, r.CONSTRAINT_SCHEMA, r.CONSTRAINT_TABLE,
                     r.CONSTRAINT_NAME, r.FK_ON_FROM,

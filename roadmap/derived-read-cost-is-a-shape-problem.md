@@ -288,9 +288,13 @@ running from the participant's table toward a `@nodeId` target in key hops alone
   the chain it ends up in: the readings by key, by table, by name match and by condition join the
   spelling by its written position and nothing else, the target only carried along from `link`. So the reading is
   keyed by the step entry, written once for every element of either directive at a field, an argument or an
-  input field alike, and the input-value step entries gain their first reader. The routine reading is
-  the exception, reading `graphitron_field_routine` per target, and whether its resolution can be
-  stated at the entry grain with the target check moving into the walk is the first question.
+  input field alike, and the input-value step entries gain their first reader.
+  * **The routine reading is read at the element** `done`. A `@routine` element's reading joins
+    `graphitron_ast_routine_entry` at its written position and folds the name against the catalog's
+    functions in parts, one candidate only; nothing about the target enters it, so no target check
+    moves into the walk. `graphitron_field_routine`, which held the same resolution once per target
+    keyed by an ordinal, and `FieldRoutines` go. Equal on sakila, 23 readings both ways; sis has no
+    `@routine`. The cases are `field-path-routine`.
   * **A self-referencing key is oriented by the walk, not by the reading**, and how it is
     oriented is R1037's. A key element has two readings, its constraint ridden from the table
     declaring it and against, and keeps both, the cardinality of the field being the second thing
@@ -759,14 +763,18 @@ and the emitters read, and it goes when nothing reads what it builds.
     * **The duplicate statements of a field's tables dissolve** `open`. A field's target and its
       departure are each stated several times at several grains, and each statement goes when its
       readers have moved:
-      * `graphitron_field_table` `blocked`, its target half to the arrival of the field's path,
-        written or implied, its `from_` half to `graphitron_field_source_table`, which has taken
-        over the departure's one reader. The path family
-        references it by foreign key on the arriving table (`graphitron_field_routine`,
-        `graphitron_field_table_link` and the path resolution's keyed, keyless and open tables), so
-        it goes once that family is keyed by the target. Its participant rows read `graphitron_tabletype` with no ambiguity guard, where every
-        other participant reading takes the resolved binding with `candidates = 1`; the two are to be
-        compared when it goes;
+      * `graphitron_field_table` `open`, its target half to `graphitron_field_target_table` and its
+        `from_` half to `graphitron_field_source_table`, each of which has taken over its readers.
+        The path family is keyed by the arriving type: `graphitron_field_table_link`, the path
+        reading, the resolution rule and its keyed, keyless, open and condition tables, with their
+        foreign keys into `graphitron_field_target_table`, the tail walk checking the last link's
+        arrival against the arriving type's binding and the entry defects listing chains per
+        arriving type. Old against new, by the arriving type's table: sis equal (778 links, 3310
+        resolutions), sakila equal but for the six `@routine` payloads, whose target is a carrier
+        binding no table, and the defects unchanged on both. Left reading it: `CHAIN_WITHOUT_TARGET`,
+        `FieldEndpoints` writing it and `FieldEndpointsTest`. Its participant rows read
+        `graphitron_tabletype` with no ambiguity guard, where every other participant reading takes
+        the resolved binding with `candidates = 1`, a difference that leaves with it;
       * `intent_field_participant_scope_table` `done`, to the target and its participants. The scope
         rule's participant rows, `intent_reference_for_application`, `ReferenceForParticipantDefects`
         and `UnlowerableOrderings` read `graphitron_field_target`, `graphql_poly_member` and
@@ -2020,6 +2028,14 @@ The two `@referenceFor` step relations, their one reader having moved to the ste
 `field-chain-link-reach` and its `keyed`, `keyless` and `open` siblings, and
 `field-chain-application`; the classes `FieldChainLinkResolutions` and `FieldChainApplications`, now
 `FieldPathResolutions` and `FieldPathApplications`.
+
+**Dissolved into the reading.** `graphitron_field_routine`, its grain `field-routine-result`,
+`FieldRoutines` and `FieldRoutinesTest`.
+
+**Re-keyed, target table to arriving type.** The `target_source_name`, `target_schema` and
+`target_table` columns of `graphitron_field_table_link`, `graphitron_field_table_link_rule`,
+`graphitron_field_path_reading`, `graphitron_field_path_resolution`, its `_rule` and its `_keyed`,
+`_keyless`, `_open` and `_condition` tables, now `arriving_type_name`.
 
 **Dissolved into a defect.** `intent_field_unlowerable_ordering`, its verdicts
 `PARTICIPANT_FAN_OUT` and `KEY_CAPTURE_SCATTER` and its route `PRIMARY_KEY_FALLBACK`,
