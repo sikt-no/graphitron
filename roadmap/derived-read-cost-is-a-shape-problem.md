@@ -188,9 +188,11 @@ are gone.
     `graphitron_field_path_reading_rule`, a table takes the name both readers spell, and a
     clear-and-insert stage fills it ahead of `FieldPathResolutions`. Two readers, so the write
     is earned; time the stage on the sis store before and after, the KEY arm change above first.
-  * **The defects agree with the generator on a consumer schema** `open`. On sis the four chain
-    codes report 161 coordinates the generator accepts. Each child is a reading that is wrong
-    rather than a rule that is, and evidence is in
+  * **The defects agree with the generator on a consumer schema** `open`. A defect on a schema the
+    generator accepts is a regression, and the editor shows each one to the author as an error. On
+    the 2026-10-14 stores they are 147 coordinates on sis and 34 on sakila, every code but the
+    departure's and the target's at zero on sis. Each child is a reading that is wrong rather than a
+    rule that is, and evidence is in
     `roadmap/audits/2026-10-01-sis-entry-defect-false-positives.md`.
     * **The reactor's own example is the check** `open`. The sakila example reproduces it in tree:
       made build errors, the defects report 44 coordinates it generates, and fail
@@ -198,14 +200,36 @@ are gone.
       This node is done when that example draws no error-severity entry defect, which a build can
       check where sis cannot. Evidence in
       `roadmap/audits/2026-10-02-sakila-entry-defect-false-positives.md`.
-    * **A chain arrives where its field says** `open`. Eight sakila coordinates report
-      `NO_ROUTE_TO_TARGET`, a class sis did not show; not yet examined.
+    * **A chain arrives where its field says** `done`. The eight sakila coordinates reporting
+      `NO_ROUTE_TO_TARGET` report nothing on the 2026-10-14 stores, nor does sis; which change
+      cleared them was not traced.
     * **A departure is inherited through a type with no table of its own** `open`. The endpoints
       take the departure from the enclosing type's own binding only, so a nested type departs from
-      nowhere and its chains report `NO_ROUTE_FROM_DEPARTURE`.
+      nowhere and its chains report `NO_ROUTE_FROM_DEPARTURE`: 99 rows over 60 types on sis, 11
+      over 5 on sakila (`FilmDetails`, `FilmInfo`, `FilmInlineBundle` among them). A nested type
+      reached from two parents on two tables has two departures, which `graphitron_field_table`'s
+      key cannot hold, so the fix is `graphitron_field_source_table` under "The departure is
+      stated", recursive through the types with no table, and the chain rules reading it.
     * **A scalar `@reference` has a target** `open`. The path's last table is where a column read
-      through a chain arrives, and with no target basis for it `CHAIN_WITHOUT_TARGET` fires. Shares
-      its question with "a routine resolving to nothing says so" below.
+      through a chain arrives, and with no target basis for it `CHAIN_WITHOUT_TARGET` fires: all 48
+      on sis and 13 on sakila. The rule reads `graphitron_field_target` and
+      `graphitron_field_target_table` instead of `graphitron_field_table`, and judges only a target
+      that could bind a table, an object, an interface or a union, at a field carrying no `@routine`
+      and no `@pivot`. Shares its question with "a routine resolving to nothing says so" below.
+    * **A `@pivot` projection has a target** `open`. Six sakila coordinates report
+      `CHAIN_WITHOUT_TARGET` (`Film.titleTranslations`, `Film.prices` and their siblings): the target
+      is an object binding no table, `TranslatedTexts` or `PriceByCurrency`, read through `@reference`
+      and `@pivot`, so the path's last table is where its rows come from.
+    * **A condition method over untyped tables resolves** `open`. Two sakila coordinates report
+      `ELEMENT_UNRESOLVED`, `Customer.addressByCondition` and `Film.actorsByCondition`: a
+      condition-only element whose method takes `Table<?>` names no table in its signature, so the
+      reading has no route, where the generator calls it positionally between the departure and the
+      field's target.
+    * **Overloads per participant are one reference** `open`. Two sakila coordinates report
+      `CODE_REFERENCE_METHOD_AMBIGUOUS`, `Query.occupantsByTypedNamePrefix(firstName:)` and
+      `Query.occupantsByMixedNamePrefix(firstName:)`: a `@condition` on an argument of a multitable
+      field names one method with an overload per participant table, and javac selects one per
+      branch, so the overloads are the reference's resolution rather than an ambiguity.
     * **A named self-referencing key reads one way** `done`. Both hops of a self-reference depart
       and arrive at one table, so the reading keeps the one the field's cardinality names, which
       is the generator's rule: along the key on a single-valued field, against it on a list.
